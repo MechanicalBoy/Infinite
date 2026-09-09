@@ -1,6 +1,6 @@
 ---
 name: geometry-transform-sweep
-description: Generic sweeps across every Infinite 3D node type that consumes an IGeometrySource, checking four invariants at once — that moving/rotating/scaling an upstream source propagates to a node's final output, that a Mapping node's UV/offset/rotate/scale propagates the same way, and that a node's revision/generation stamp doesn't change when nothing actually did, and that a node claiming to pass geometry through doesn't swallow an upstream Instance on Points or a wrapping Transform's group matrix. Use when asked to "check for transform bugs", "why did my instances disappear", "test node combinations", "sweep the geometry nodes", "does moving a source actually update the render", "why doesn't my Mapping node do anything", "why did my simulation reset", or after adding/touching any node with a geometry input.
+description: Generic sweeps across every Infinite 3D node type that consumes an IGeometrySource, checking five invariants at once — that moving/rotating/scaling an upstream source propagates to a node's final output, that a Mapping node's UV/offset/rotate/scale propagates the same way, and that a node's revision/generation stamp doesn't change when nothing actually did, that a node claiming to pass geometry through doesn't swallow an upstream Instance on Points or a wrapping Transform's group matrix, and that no node invents per-vertex colour for a colourless mesh (which silently overrides every downstream Material node). Use when asked to "check for transform bugs", "why is my material being ignored", "why is everything one colour after a merge", "why did my red turn white", "why did my instances disappear", "test node combinations", "sweep the geometry nodes", "does moving a source actually update the render", "why doesn't my Mapping node do anything", "why did my simulation reset", or after adding/touching any node with a geometry input.
 ---
 
 Paths below are relative to the repo root (`/Users/namansoni/infinite`), not
@@ -62,6 +62,76 @@ remembered to write:
    `MergeByDistanceNode` and `Switcher3DNode` forwarded `PassthroughSource()`
    without the group matrix, so `Instance on Points -> Transform -> Material
    -> Render 3D` ignored the Transform entirely.
+
+5. **Manufactured vertex colour** (`COLOURSWEEPTEST`) — `Mesh::vertexColor`
+   and `Material::color` are two independent inputs to the *same* shader
+   product (`base = toLinear(uBaseColor) * vInstanceColor * vVertexColor`,
+   `src/nodes/Geometry3DNodes.cpp`), but only `vertexColor` travels **inside
+   the mesh**. So a node that invents `vertexColor` for a mesh whose input
+   had none permanently changes what every downstream node can do to that
+   mesh's colour — and nothing downstream can tell invented filler apart
+   from colour a user actually authored. `JoinGeometryNode`'s merge filled
+   `vertexColor` from its inputs' material albedo unconditionally, so
+   `join -> material(red) -> join -> render 3D` rendered the *first* join's
+   manufactured white and ignored the Material node entirely.
+
+   The rule: **a node fed a colourless mesh must emit a colourless mesh.**
+   Bake colour only when there is genuinely more than one colour to carry
+   (an input already has real vertex colour, or the inputs' albedos differ),
+   and when you do bake, bake each input's *absolute* colour and report a
+   neutral albedo from `GetMaterial()` — otherwise `materialFrom`'s albedo
+   multiplies in a second time and tints every other part by it.
+
+   Its companion trap: **a node that bakes a material into cached mesh data
+   must put that material in its dirty check.** `IGeometrySource` has **no
+   `MaterialRevision()`**, and `MaterialNode::MeshRevision()` forwards its
+   input's stamp verbatim — so nothing about a material change is visible
+   through any revision counter. Keying a rebuild only on `MeshRevision()`
+   means an upstream colour picker moves nothing at all.
+
+6. **Misaligned/dropped per-vertex attribute array** (no driver sweep for
+   the normals half — check by hand) — a mesh-building op writes
+   `vertices`/`indices` correctly but treats a parallel per-vertex array
+   (`vertexColor`, normals) as optional or scalar-shaped, so it goes out of
+   index-alignment with the vertex array it's supposed to ride alongside.
+   Three real bugs, same shape:
+   - `InstanceOnPointsNode::Rebuild`'s mesh point-source path built
+     `mTransforms` every iteration but only pushed into `mColors` on the
+     particle-cloud path — the mesh path left it empty, so every instance
+     rendered white despite `MeshPoint` carrying r/g/b. Fix: push color on
+     the *exact same loop iteration* as the transform, every path, no
+     "if present" branch.
+   - `JoinGeometryNode`'s merge branch only appended `placed.vertexColor`
+     when non-empty, without padding to `vertices.size()*3` for inputs that
+     lacked it — a colourless input ahead of a coloured one shifted every
+     subsequent input's colours out of index-alignment with its vertices.
+     Fix: when the merge bakes colour at all, append exactly one colour
+     triple per vertex per input so the array length is unconditionally
+     `vertexCount*3`, never conditionally sized. **Note the interaction with
+     rule 5**: the first attempt at this fix made the append unconditional
+     across *every* merge, which is what manufactured colour on colourless
+     meshes and broke downstream Material nodes. "Always the right length"
+     and "always present" are different guarantees — this bug needs the
+     first, rule 5 forbids the second.
+   - `MeshOps::RecalculateNormals`'s smooth path accumulated face normals
+     through the *raw, unwelded* `indices` array. Every primitive here
+     duplicates vertices at UV seams/hard edges (`Cube(1)` has 24 vertices
+     for 8 corners), so each duplicate only ever accumulated its own single
+     face normal — smooth and flat shading looked identical. Fix: accumulate
+     per weld-group representative (`BuildWeldMap`), then copy each
+     representative's normal back out to every vertex in its group. A
+     sibling bug in the same function: `flip` negated the normal vector but
+     left `indices` winding untouched, so back-face-culled render (no
+     `gl_FrontFacing` fixup) went black instead of inverting — negating a
+     normal and reversing the winding that produced it are two different
+     operations and both are required for a flip to actually flip.
+
+   The general check when reviewing any node that builds or merges mesh
+   data: for every parallel per-vertex/per-instance array the node writes,
+   is its length driven by the *same loop and same count* as the position/
+   transform array, unconditionally — never "push if this branch had data,
+   skip otherwise"? A conditional push is exactly how these three bugs
+   happened.
 
 See `ARCHITECTURE.md`, "Node Library" → "Invariants for
 `IGeometrySource`-consuming nodes" for the two rules #2 and #3 exist to

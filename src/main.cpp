@@ -60125,6 +60125,182 @@ int main(int argc, char** argv)
          printf("%s\n", allOk ? "MAPPING SWEEP OK" : "MAPPING SWEEP FAIL");
       }
 
+      // Colour ownership, same generic-probe shape as the sweeps above,
+      // guarding the one channel none of them touch.
+      //
+      // Mesh::vertexColor and Material::color are two independent inputs to
+      // the same product - the 3D shader draws
+      // `toLinear(uBaseColor) * vInstanceColor * vVertexColor`
+      // (Geometry3DNodes.cpp) - and only vertexColor travels *inside* the
+      // mesh. So a node that invents vertexColor for a mesh whose input had
+      // none permanently changes what every downstream node can do to that
+      // mesh's colour, and nothing downstream can tell invented filler apart
+      // from colour a user actually authored.
+      //
+      // Found via a real bug: JoinGeometryNode's merge filled vertexColor for
+      // every vertex from its inputs' material albedo, unconditionally. Two
+      // merges feeding a third through Material nodes therefore rendered the
+      // first merge's manufactured white and ignored the Material nodes
+      // entirely - `join -> material(red) -> join -> render` came out white.
+      //
+      // Invariant asserted: fed a colourless mesh, a node's own mesh stays
+      // colourless. main.cpp's AoS/SoA fixture already asserts the same thing
+      // for Mesh conversion ("Trap #5: empty vertexColor must remain empty");
+      // this applies it to the node layer, where it had never been checked.
+      if (getenv("INFINITE_COLOURSWEEPTEST") != nullptr && frameId == 6)
+      {
+         struct ColourProbeSource : public IGeometrySource
+         {
+            IGeometrySource* wrapped = nullptr;
+            Material material;
+            const Mesh& GetMesh() override { return wrapped->GetMesh(); }
+            unsigned long long MeshRevision() override { return wrapped->MeshRevision(); }
+            Mat4 GetModelMatrix() const override { return wrapped->GetModelMatrix(); }
+            Material GetMaterial() const override { return material; }
+            unsigned int GetSurfaceTexture() override { return wrapped->GetSurfaceTexture(); }
+            MappingTransform GetMappingTransform() const override { return wrapped->GetMappingTransform(); }
+         };
+
+         GeometryNode probeMesh;
+         probeMesh.shape = 1; // cube
+         probeMesh.detail = 4;
+
+         ColourProbeSource probe;
+         probe.wrapped = &probeMesh;
+         // A strongly non-neutral albedo, so a node that bakes its input's
+         // material into the mesh is caught by value, not just by presence.
+         probe.material.color[0] = 0.9f; probe.material.color[1] = 0.1f; probe.material.color[2] = 0.1f;
+
+         int frame = 23000;
+         auto cook = [&](IGeometrySource* g) {
+            if (auto* n = dynamic_cast<INode*>(g)) n->CookIfNeeded(frame);
+            frame++;
+         };
+
+         struct Result { std::string name; bool ok; std::string note; };
+         std::vector<Result> results;
+         auto checkNoManufacturedColour = [&](const char* name, IGeometrySource* node)
+         {
+            cook(node);
+            const Mesh& out = node->GetMesh();
+            const bool ok = !out.HasVertexColor();
+            results.push_back({ name, ok, ok ? "" : "invented vertexColor from a colourless input" });
+         };
+
+         if (!probeMesh.GetMesh().HasVertexColor())
+         {
+            GeometryOpNode opNode; opNode.op = GeometryOpNode::kTransform; opNode.input = &probe;
+            checkNoManufacturedColour("GeometryOpNode", &opNode);
+
+            DisplacementNode dispNode; dispNode.input = &probe;
+            checkNoManufacturedColour("DisplacementNode", &dispNode);
+
+            MeshResynthNode resynthNode; resynthNode.input = &probe;
+            checkNoManufacturedColour("MeshResynthNode", &resynthNode);
+
+            Null3DNode nullNode; nullNode.input = &probe;
+            checkNoManufacturedColour("Null3DNode", &nullNode);
+
+            MaterialNode matNode; matNode.input = &probe;
+            checkNoManufacturedColour("MaterialNode", &matNode);
+
+            MergeByDistanceNode mergeNode; mergeNode.input = &probe; mergeNode.threshold = 0.0f;
+            checkNoManufacturedColour("MergeByDistanceNode", &mergeNode);
+
+            Switcher3DNode sw3Node; sw3Node.inputs[0] = &probe; sw3Node.manual = true; sw3Node.manualSlot = 0;
+            checkNoManufacturedColour("Switcher3DNode", &sw3Node);
+
+            // The node the bug was in, in both arrangements that matter.
+            JoinGeometryNode joinSame;
+            joinSame.mode = JoinGeometryNode::kMerge;
+            joinSame.inputs[0] = &probe;
+            joinSame.inputs[1] = &probe;
+            checkNoManufacturedColour("JoinGeometryNode (equal albedos)", &joinSame);
+
+            // Two inputs whose albedos genuinely differ is the case merge's
+            // per-input colour exists for, so here vertexColor *must* appear -
+            // and must carry each input's own colour, not one shared albedo.
+            ColourProbeSource probeBlue;
+            probeBlue.wrapped = &probeMesh;
+            probeBlue.material.color[0] = 0.1f; probeBlue.material.color[1] = 0.1f; probeBlue.material.color[2] = 0.9f;
+
+            JoinGeometryNode joinDiff;
+            joinDiff.mode = JoinGeometryNode::kMerge;
+            joinDiff.inputs[0] = &probe;
+            joinDiff.inputs[1] = &probeBlue;
+            cook(&joinDiff);
+            const Mesh& mixed = joinDiff.GetMesh();
+            bool mixedOk = mixed.HasVertexColor();
+            std::string mixedNote = mixedOk ? "" : "dropped per-input colour when albedos differ";
+            if (mixedOk)
+            {
+               // First vertex belongs to input 0 (red), last to input 1 (blue).
+               const size_t last = mixed.vertices.size() - 1;
+               const bool firstRed = mixed.vertexColor[0] > 0.5f && mixed.vertexColor[2] < 0.5f;
+               const bool lastBlue = mixed.vertexColor[last * 3 + 2] > 0.5f && mixed.vertexColor[last * 3 + 0] < 0.5f;
+               if (!firstRed || !lastBlue)
+               {
+                  mixedOk = false;
+                  mixedNote = "merged parts did not keep their own colours";
+               }
+               // Colour now lives in the vertices, so the reported albedo has
+               // to be neutral or the shader multiplies materialFrom's colour
+               // in a second time and tints the other part by it.
+               const Material joined = joinDiff.GetMaterial();
+               if (mixedOk && (joined.color[0] < 0.99f || joined.color[1] < 0.99f || joined.color[2] < 0.99f))
+               {
+                  mixedOk = false;
+                  mixedNote = "baked per-input colour but still reports a tinted albedo";
+               }
+            }
+            results.push_back({ "JoinGeometryNode (differing albedos)", mixedOk, mixedNote });
+
+            // The exact shape the user hit: merge -> material -> merge. The
+            // downstream material must still decide the colour.
+            JoinGeometryNode innerA, innerB;
+            innerA.mode = JoinGeometryNode::kMerge; innerA.inputs[0] = &probe;
+            innerB.mode = JoinGeometryNode::kMerge; innerB.inputs[0] = &probe;
+            MaterialNode whiteMat, redMat;
+            whiteMat.input = &innerA;
+            whiteMat.color[0] = whiteMat.color[1] = whiteMat.color[2] = 1.0f;
+            redMat.input = &innerB;
+            redMat.color[0] = 0.9f; redMat.color[1] = 0.05f; redMat.color[2] = 0.05f;
+            JoinGeometryNode outer;
+            outer.mode = JoinGeometryNode::kMerge;
+            outer.inputs[0] = &whiteMat;
+            outer.inputs[1] = &redMat;
+            cook(&outer);
+            const Mesh& nested = outer.GetMesh();
+            bool nestedOk = nested.HasVertexColor();
+            std::string nestedNote = nestedOk ? "" : "nested merge lost the downstream materials entirely";
+            if (nestedOk)
+            {
+               const size_t last = nested.vertices.size() - 1;
+               const bool firstWhite = nested.vertexColor[0] > 0.9f && nested.vertexColor[2] > 0.9f;
+               const bool lastRed = nested.vertexColor[last * 3 + 0] > 0.5f && nested.vertexColor[last * 3 + 2] < 0.5f;
+               if (!firstWhite || !lastRed)
+               {
+                  nestedOk = false;
+                  nestedNote = "downstream Material colour was ignored by the outer merge";
+               }
+            }
+            results.push_back({ "JoinGeometryNode (merge -> material -> merge)", nestedOk, nestedNote });
+         }
+         else
+         {
+            results.push_back({ "probe mesh", false, "probe cube unexpectedly carries vertex colour" });
+         }
+
+         bool allOk = true;
+         for (const Result& r : results)
+         {
+            printf("  [%s] %-44s %s\n", r.ok ? "pass" : "FAIL", r.name.c_str(), r.note.c_str());
+            if (!r.ok)
+               allOk = false;
+         }
+         printf("%s\n", allOk ? "COLOUR SWEEP OK" : "COLOUR SWEEP FAIL");
+      }
+
       // The instancing side-channels, same generic-probe shape as the two
       // sweeps above. InstanceOnPointsNode's GetMesh() returns the single
       // stamp mesh and carries its N placements separately, so every consumer

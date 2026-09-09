@@ -34,6 +34,15 @@
 #     from two of those three accessors (MeshToPointsNode, both
 #     DistributePoints* nodes, CurveNode) - the render then cached its first
 #     frame forever and no upstream edit ever showed up in the viewport.
+#   - COLOURSWEEPTEST — a node fed a colourless mesh does not invent
+#     Mesh::vertexColor for it. vertexColor and Material::color are two
+#     independent inputs to the same shader product, but only vertexColor
+#     travels inside the mesh, so a node that manufactures it permanently
+#     overrides every downstream Material node and nothing can tell the
+#     filler apart from authored colour. Caught a real bug: JoinGeometryNode's
+#     merge filled vertexColor from its inputs' material albedo
+#     unconditionally, so `join -> material(red) -> join -> render` rendered
+#     the first join's manufactured white and ignored the Material entirely.
 #   - INSTANCESWEEPTEST — a node that forwards its geometry input's mesh also
 #     forwards the instancing side-channels: the PassthroughSource() chain
 #     walk still reaches an upstream InstanceOnPoints through it, and a
@@ -106,6 +115,7 @@ SWEEPS=(
   "Revision stability:REVISIONSWEEPTEST:REVISION SWEEP OK:REVISION SWEEP FAIL:/tmp/infinite_revision_sweep.log"
   "Render 3D cache invalidation:RENDER3DCACHESWEEPTEST:RENDER3D CACHE SWEEP OK:RENDER3D CACHE SWEEP FAIL:/tmp/infinite_render3d_cache_sweep.log"
   "Instancing passthrough:INSTANCESWEEPTEST:INSTANCE SWEEP OK:INSTANCE SWEEP FAIL:/tmp/infinite_instance_sweep.log"
+  "Colour ownership:COLOURSWEEPTEST:COLOUR SWEEP OK:COLOUR SWEEP FAIL:/tmp/infinite_colour_sweep.log"
 )
 
 overallOk=1

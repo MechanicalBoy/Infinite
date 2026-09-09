@@ -572,6 +572,17 @@ private:
    // to trigger a rebuild exactly like a change to a mesh would. Keying only on
    // the mesh stamp meant moving or scaling an input did nothing at all.
    Mat4 mBuiltMatrices[kSlots];
+   // Same reasoning for albedo: merge bakes each input's colour into the
+   // merged vertices, and no upstream node bumps MeshRevision() when only its
+   // material changed (MaterialNode forwards its input's stamp verbatim), so
+   // without this a colour picker upstream of a merge moved nothing at all.
+   float mBuiltAlbedos[kSlots][3] = {};
+   // Set by RebuildIfNeeded: true when the merged vertices carry each input's
+   // absolute colour, which means GetMaterial() must report a neutral albedo
+   // so the shader's uBaseColor * vVertexColor product reproduces each part
+   // exactly rather than tinting every part by whichever input materialFrom
+   // happens to point at.
+   bool mBakedPerInputColour = false;
    int mLastCookFrame = -1;
 };
 
