@@ -3418,8 +3418,13 @@ namespace
    // stable), which matters because the modulation pass writes through that pointer.
    std::map<std::pair<int, int>, float> gIntParamStore;
 
-   // The last integer this widget itself wrote back, per param. See
-   // ModKnobInt below for why a slider doesn't need it but a knob does.
+   // The last integer this widget itself wrote back, per param. Every
+   // ModXxxInt widget needs this, not just the ones that accumulate a drag
+   // delta: IsModulated only sees a wired cable, so a value pushed by an
+   // expression or a gesture/mod recorder's playback (main.cpp's UI draw runs
+   // before ApplyModulationAndPalette applies those each frame) looks
+   // unmodulated here and would otherwise get overwritten by the reseed on
+   // the very next frame's draw.
    std::map<std::pair<int, int>, int> gIntParamLastWritten;
 
    bool ModSliderInt(const char* label, int* value, int minV, int maxV, float width = kParamWidth,
@@ -3428,7 +3433,11 @@ namespace
       const std::pair<int, int> key(gCurrentNodeIndex, gParamCounter);
       float& slot = gIntParamStore[key];
       if (!Modulation::Instance().IsModulated(key.first, key.second))
-         slot = (float)*value;
+      {
+         auto last = gIntParamLastWritten.find(key);
+         if (last == gIntParamLastWritten.end() || last->second != *value)
+            slot = (float)*value;
+      }
 
       bool changed = ModSlider(label, &slot, (float)minV, (float)maxV, "%.0f", width, audioStyle, /*step=*/1.0f);
       // lroundf, not (int)(x + 0.5f): the latter truncates toward zero, so
@@ -3439,6 +3448,7 @@ namespace
       // float past minV/maxV.
       slot = std::clamp(slot, (float)minV, (float)maxV);
       *value = (int)lroundf(slot);
+      gIntParamLastWritten[key] = *value;
       return changed;
    }
 
