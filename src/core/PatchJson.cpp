@@ -106,6 +106,36 @@ namespace PatchJson
          });
       }
 
+      out["streams"] = json::array();
+      for (const Patch::StreamRecord& s : data.streams)
+      {
+         json clips = json::array();
+         for (const auto& c : s.clips)
+         {
+            clips.push_back({
+               {"startSeconds", c.startSeconds},
+               {"lengthSeconds", c.lengthSeconds},
+               {"srcIndex", c.srcIndex},
+               {"srcOutput", c.srcOutput},
+               {"triggerMode", c.triggerMode},
+               {"fadeInSec", c.fadeInSec},
+               {"fadeOutSec", c.fadeOutSec},
+               {"gainDb", c.gainDb},
+               {"speed", c.speed},
+               {"loop", c.loop}
+            });
+         }
+         out["streams"].push_back({
+            {"type", s.type},
+            {"blendMode", s.blendMode},
+            {"opacity", s.opacity},
+            {"gainDb", s.gainDb},
+            {"pan", s.pan},
+            {"name", s.name},
+            {"clips", clips}
+         });
+      }
+
       return out;
    }
 }

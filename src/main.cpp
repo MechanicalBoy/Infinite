@@ -1022,6 +1022,11 @@ namespace
    char  gPerfRenameElementBuffer[64] = "";
    Patch::PerfLayoutRecord gPerfLayout;
    std::vector<Patch::PerfRecord> gPerfElements;
+   // Arrangement timeline (docs/plans/arrangement/README.md). Same record
+   // type the patch stores - no separate runtime class. Clip srcIndex is a
+   // live node index: rewritten by ApplyPatchData, pruned by
+   // RemoveNodeByIndex, cleared by NewPatch.
+   std::vector<Patch::StreamRecord> gArrangeStreams;
    // Edit-mode selection, by index into gPerfElements. Indices move when the
    // vector is mutated, so every operation that erases or appends clears or
    // rebuilds the selection rather than trying to patch it up.
@@ -29678,6 +29683,12 @@ namespace
       // on NewPatch, and Undo respawns everything), so a stale key can start
       // driving an unrelated param.
       GestureRecorder::Instance().ClearForNode(index);
+      // Fourth, same reason: a clip is keyed by node index too, and indices
+      // are reused (NewPatch / every Undo respawns from 1).
+      for (Patch::StreamRecord& s : gArrangeStreams)
+         s.clips.erase(std::remove_if(s.clips.begin(), s.clips.end(),
+                                      [index](const Patch::ClipRecord& c) { return c.srcIndex == index; }),
+                       s.clips.end());
       ForgetDiscreteSlots(index);
       gModHistory.erase(index);
       DisconnectAllTo(victim->node.get());
@@ -30380,6 +30391,7 @@ namespace
          data.globals.push_back({ g.name, g.expr });
       data.performance = gPerfElements;
       data.perfLayout = gPerfLayout;
+      data.streams = gArrangeStreams;
       data.transport.bpm = Transport::Instance().Tempo();
       data.transport.timeSigNum = Transport::Instance().TimeSigNumerator();
       data.transport.timeSigDen = Transport::Instance().TimeSigDenominator();
@@ -30896,6 +30908,7 @@ namespace
       // clearing here is what makes a recording actually disappear when you
       // undo past the point it was made.
       GestureRecorder::Instance().Clear();
+      gArrangeStreams.clear();
       ForgetAllDiscreteSlots();
       PaletteBinding::Instance().Clear();
       ExprGlobals::Clear();
@@ -32146,6 +32159,26 @@ namespace
       if (gPerfLayout.cellSize < 40) gPerfLayout.cellSize = 76;
       if (gPerfLayout.pageCount < 1) gPerfLayout.pageCount = 1;
       if (gPerfActivePage >= gPerfLayout.pageCount) gPerfActivePage = gPerfLayout.pageCount - 1;
+
+      // A clip whose node didn't survive (deleted at this point in history,
+      // or an unknown type in this build) is dropped, exactly like a cable.
+      // The stream itself is always kept, even if it ends up empty.
+      gArrangeStreams.clear();
+      for (const Patch::StreamRecord& s : data.streams)
+      {
+         Patch::StreamRecord mapped = s;
+         mapped.clips.clear();
+         for (const Patch::ClipRecord& c : s.clips)
+         {
+            GraphNode* src = resolve(c.srcIndex);
+            if (src == nullptr)
+               continue;
+            Patch::ClipRecord mc = c;
+            mc.srcIndex = src->index;
+            mapped.clips.push_back(mc);
+         }
+         gArrangeStreams.push_back(std::move(mapped));
+      }
 
       // Once, after every node and cable above is wired, not once per audio
       // cable while loading - a per-cable rebuild here could call
@@ -55490,6 +55523,338 @@ int main(int argc, char** argv)
          ok = ok && loadClearsUndo;
 
          printf("%s\n", ok ? "UNDO REDO OK" : "SUSPECT");
+      }
+
+      if (getenv("INFINITE_ARRANGETEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+
+         // A. Round trip
+         {
+            Patch::Data data;
+            Patch::NodeRecord nr;
+            nr.index = 1;
+            nr.category = "3D";
+            nr.typeName = "Cube";
+            data.nodes.push_back(nr);
+
+            Patch::StreamRecord s0;
+            s0.type = Patch::kStreamVideo;
+            s0.blendMode = 3;
+            s0.opacity = 0.75f;
+            s0.gainDb = -2.5f;
+            s0.pan = 0.2f;
+            s0.name = "Main Lane";
+
+            Patch::ClipRecord c0_0;
+            c0_0.startSeconds = 0.1;
+            c0_0.lengthSeconds = 0.2;
+            c0_0.srcIndex = 1;
+            c0_0.srcOutput = 1;
+            c0_0.triggerMode = 1;
+            c0_0.fadeInSec = 0.05f;
+            c0_0.fadeOutSec = 0.05f;
+            c0_0.gainDb = -3.0f;
+            c0_0.speed = 0.5f;
+            c0_0.loop = true;
+            s0.clips.push_back(c0_0);
+
+            Patch::ClipRecord c0_1;
+            c0_1.startSeconds = c0_0.startSeconds + c0_0.lengthSeconds;
+            c0_1.lengthSeconds = 0.5;
+            c0_1.srcIndex = 1;
+            c0_1.srcOutput = 2;
+            c0_1.triggerMode = 1;
+            c0_1.fadeInSec = 0.1f;
+            c0_1.fadeOutSec = 0.1f;
+            c0_1.gainDb = 1.5f;
+            c0_1.speed = 1.5f;
+            c0_1.loop = true;
+            s0.clips.push_back(c0_1);
+
+            Patch::StreamRecord s1;
+            s1.type = Patch::kStreamAudio;
+            s1.blendMode = 1;
+            s1.opacity = 0.5f;
+            s1.gainDb = -6.0f;
+            s1.pan = -0.5f;
+            s1.name = "";
+
+            Patch::ClipRecord c1_0;
+            c1_0.startSeconds = 1.0;
+            c1_0.lengthSeconds = 2.0;
+            c1_0.srcIndex = 1;
+            c1_0.srcOutput = 0;
+            c1_0.triggerMode = 1;
+            c1_0.fadeInSec = 0.2f;
+            c1_0.fadeOutSec = 0.3f;
+            c1_0.gainDb = -1.0f;
+            c1_0.speed = 2.0f;
+            c1_0.loop = true;
+            s1.clips.push_back(c1_0);
+
+            Patch::ClipRecord c1_1;
+            c1_1.startSeconds = 3.5;
+            c1_1.lengthSeconds = 1.5;
+            c1_1.srcIndex = 1;
+            c1_1.srcOutput = 1;
+            c1_1.triggerMode = 0;
+            c1_1.fadeInSec = 0.0f;
+            c1_1.fadeOutSec = 0.4f;
+            c1_1.gainDb = 2.0f;
+            c1_1.speed = 0.8f;
+            c1_1.loop = false;
+            s1.clips.push_back(c1_1);
+
+            Patch::StreamRecord s2;
+            s2.type = Patch::kStreamVideo;
+            s2.blendMode = 5;
+            s2.opacity = 0.25f;
+            s2.gainDb = -1.0f;
+            s2.pan = 0.5f;
+            s2.name = "a\\b";
+
+            Patch::ClipRecord c2_0;
+            c2_0.startSeconds = 0.5;
+            c2_0.lengthSeconds = 1.2;
+            c2_0.srcIndex = 1;
+            c2_0.srcOutput = 1;
+            c2_0.triggerMode = 1;
+            c2_0.fadeInSec = 0.1f;
+            c2_0.fadeOutSec = 0.2f;
+            c2_0.gainDb = -4.0f;
+            c2_0.speed = 1.25f;
+            c2_0.loop = true;
+            s2.clips.push_back(c2_0);
+
+            data.streams = { s0, s1, s2 };
+
+            const std::string path = TmpPath("arrange_selftest_roundtrip.inf");
+            std::string err;
+            bool ok = Patch::Write(path, data, err);
+            Patch::Data loaded;
+            ok = ok && Patch::Read(path, loaded, err);
+            std::remove(path.c_str());
+
+            bool streamsMatch = ok && loaded.streams.size() == 3;
+            if (streamsMatch)
+            {
+               for (size_t si = 0; si < 3 && streamsMatch; si++)
+               {
+                  const auto& origS = data.streams[si];
+                  const auto& loadS = loaded.streams[si];
+                  if (loadS.type != origS.type || loadS.blendMode != origS.blendMode ||
+                      loadS.opacity != origS.opacity || loadS.gainDb != origS.gainDb ||
+                      loadS.pan != origS.pan || loadS.name != origS.name ||
+                      loadS.clips.size() != origS.clips.size())
+                  {
+                     streamsMatch = false;
+                     break;
+                  }
+                  for (size_t ci = 0; ci < origS.clips.size() && streamsMatch; ci++)
+                  {
+                     const auto& origC = origS.clips[ci];
+                     const auto& loadC = loadS.clips[ci];
+                     if (loadC.startSeconds != origC.startSeconds ||
+                         loadC.lengthSeconds != origC.lengthSeconds ||
+                         loadC.srcIndex != origC.srcIndex ||
+                         loadC.srcOutput != origC.srcOutput ||
+                         loadC.triggerMode != origC.triggerMode ||
+                         loadC.fadeInSec != origC.fadeInSec ||
+                         loadC.fadeOutSec != origC.fadeOutSec ||
+                         loadC.gainDb != origC.gainDb ||
+                         loadC.speed != origC.speed ||
+                         loadC.loop != origC.loop)
+                     {
+                        streamsMatch = false;
+                        break;
+                     }
+                  }
+               }
+               if (streamsMatch)
+               {
+                  const auto& c0 = loaded.streams[0].clips[0];
+                  const auto& c1 = loaded.streams[0].clips[1];
+                  if (c1.startSeconds != c0.startSeconds + c0.lengthSeconds)
+                     streamsMatch = false;
+               }
+            }
+            printf("arrange roundtrip: %s\n", streamsMatch ? "OK" : "FAIL");
+            allOk = allOk && streamsMatch;
+         }
+
+         // B. Undo/redo, live
+         {
+            NewPatch();
+            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            Patch::StreamRecord s;
+            s.type = Patch::kStreamAudio;
+            Patch::ClipRecord c;
+            c.srcIndex = cube->index;
+            c.startSeconds = 2.0;
+            c.lengthSeconds = 1.0;
+            s.clips.push_back(c);
+            gArrangeStreams = { s };
+
+            PushUndoCheckpoint();
+            gArrangeStreams[0].clips[0].startSeconds = 5.0;
+
+            Undo();
+            bool bOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1;
+            if (bOk)
+            {
+               bOk = gArrangeStreams[0].clips[0].startSeconds == 2.0;
+               GraphNode* gn = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
+               bOk = bOk && (gn != nullptr && gn->typeName == "Cube");
+            }
+
+            Redo();
+            if (bOk)
+            {
+               bOk = bOk && gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1 &&
+                     gArrangeStreams[0].clips[0].startSeconds == 5.0;
+               GraphNode* gn = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
+               bOk = bOk && (gn != nullptr && gn->typeName == "Cube");
+            }
+            printf("arrange undo redo: %s\n", bOk ? "OK" : "FAIL");
+            allOk = allOk && bOk;
+         }
+
+         // C. Deletion, live
+         {
+            GraphNode* sphere = SpawnNode("Sphere", "3D", 200.0f, 0.0f);
+            Patch::ClipRecord sc;
+            sc.srcIndex = sphere->index;
+            sc.startSeconds = 10.0;
+            sc.lengthSeconds = 2.0;
+            gArrangeStreams[0].clips.push_back(sc);
+
+            const int sphereIdx = sphere->index;
+            RemoveNodeByIndex(sphereIdx);
+
+            bool cOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1;
+            if (cOk)
+            {
+               GraphNode* cubeNode = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
+               cOk = cOk && (cubeNode != nullptr && cubeNode->typeName == "Cube");
+            }
+
+            Undo();
+            if (cOk)
+            {
+               cOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 2;
+               if (cOk)
+               {
+                  GraphNode* sphereNode = FindNodeByIndex(gArrangeStreams[0].clips[1].srcIndex);
+                  cOk = cOk && (sphereNode != nullptr && sphereNode->typeName == "Sphere");
+               }
+            }
+
+            // Also test ApplyPatchData dropping clips with non-existent node
+            Patch::Data badData = BuildPatchData();
+            Patch::ClipRecord orphan;
+            orphan.srcIndex = 999999;
+            orphan.startSeconds = 1.0;
+            orphan.lengthSeconds = 1.0;
+            badData.streams[0].clips.push_back(orphan);
+            ApplyPatchData(badData);
+            cOk = cOk && (gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 2);
+
+            printf("arrange deletion: %s\n", cOk ? "OK" : "FAIL");
+            allOk = allOk && cOk;
+         }
+
+         // D. File->New
+         {
+            NewPatch();
+            const bool dOk = gArrangeStreams.empty();
+            printf("arrange new patch: %s\n", dOk ? "OK" : "FAIL");
+            allOk = allOk && dOk;
+         }
+
+         // E. Forward compatibility
+         {
+            const std::string path = TmpPath("arrange_selftest_forward.inf");
+            {
+               std::ofstream f(path);
+               f << "infinite-patch 1\n";
+               f << "node 1 3D Cube\n";
+               f << "end\n";
+               f << "stream 1 0 1 0 0 A\n";
+               f << "arrangefuture 1 2 3\n";
+               f << "clip 0 1 2 -1 0 0 0 0 0 1 0\n";
+            }
+            Patch::Data loaded;
+            std::string err;
+            bool ok = Patch::Read(path, loaded, err);
+            std::remove(path.c_str());
+
+            const bool eOk = ok && loaded.streams.size() == 1 && loaded.streams[0].clips.size() == 1 &&
+                             loaded.streams[0].name == "A" &&
+                             loaded.streams[0].clips[0].startSeconds == 1.0 &&
+                             loaded.streams[0].clips[0].lengthSeconds == 2.0;
+            printf("arrange forward compat: %s\n", eOk ? "OK" : "FAIL");
+            allOk = allOk && eOk;
+         }
+
+         // F. Malformed input
+         {
+            const std::string path = TmpPath("arrange_selftest_malformed.inf");
+            {
+               std::ofstream f(path);
+               f << "infinite-patch 1\n";
+               f << "node 1 3D Cube\n";
+               f << "end\n";
+               f << "stream 1\n";
+               f << "stream 0 0 1 0 0 V\n";
+               f << "clip 7 0 1 -1\n";
+               f << "clip 0 0 0 -1\n";
+               f << "clip 0 -1 1 -1\n";
+               f << "clip 0 0 1 -1\n";
+               f << "clip 1 0 1 -1 0 0 0 0 0 abc 0\n";
+            }
+            Patch::Data loaded;
+            std::string err;
+            bool ok = Patch::Read(path, loaded, err);
+            std::remove(path.c_str());
+
+            bool fOk = ok && loaded.streams.size() == 2;
+            if (fOk)
+            {
+               fOk = fOk && loaded.streams[0].type == 1 &&
+                     loaded.streams[0].opacity == 1.0f &&
+                     loaded.streams[0].gainDb == 0.0f &&
+                     loaded.streams[0].pan == 0.0f &&
+                     loaded.streams[0].name.empty() &&
+                     loaded.streams[0].clips.size() == 1 &&
+                     loaded.streams[1].clips.size() == 1 &&
+                     loaded.streams[1].clips[0].speed == 1.0f;
+            }
+            printf("arrange malformed input: %s\n", fOk ? "OK" : "FAIL");
+            allOk = allOk && fOk;
+         }
+
+         // G. JSON parity
+         {
+            NewPatch();
+            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            Patch::StreamRecord s;
+            Patch::ClipRecord c;
+            c.srcIndex = cube->index;
+            s.clips.push_back(c);
+            gArrangeStreams = { s };
+
+            nlohmann::json j = PatchJson::ToJson(BuildPatchData());
+            const bool gOk = j.contains("streams") && j["streams"].is_array() &&
+                             j["streams"].size() == gArrangeStreams.size() &&
+                             j["streams"][0]["clips"].is_array() &&
+                             j["streams"][0]["clips"].size() == gArrangeStreams[0].clips.size();
+            printf("arrange json parity: %s\n", gOk ? "OK" : "FAIL");
+            allOk = allOk && gOk;
+         }
+
+         printf("arrange test: all  %s\n", allOk ? "OK" : "FAIL");
       }
 
       // Regression guard for the BuildPatchData() perf fix in

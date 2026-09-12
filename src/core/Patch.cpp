@@ -1,6 +1,7 @@
 #include "Patch.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -310,6 +311,17 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
          file << " " << FloatToString(s.value) << " " << DoubleToString(s.timeSec) << " "
               << (s.startsNewGrab ? 1 : 0);
       file << "\n";
+   }
+   for (size_t i = 0; i < data.streams.size(); i++)
+   {
+      const StreamRecord& s = data.streams[i];
+      file << "stream " << s.type << " " << s.blendMode << " " << FloatToString(s.opacity) << " "
+           << FloatToString(s.gainDb) << " " << FloatToString(s.pan) << " " << EscapeLine(s.name) << "\n";
+      for (const ClipRecord& c : s.clips)
+         file << "clip " << i << " " << DoubleToString(c.startSeconds) << " " << DoubleToString(c.lengthSeconds) << " "
+              << c.srcIndex << " " << c.srcOutput << " " << c.triggerMode << " "
+              << FloatToString(c.fadeInSec) << " " << FloatToString(c.fadeOutSec) << " "
+              << FloatToString(c.gainDb) << " " << FloatToString(c.speed) << " " << (c.loop ? 1 : 0) << "\n";
    }
 
    if (!file.good())
@@ -644,6 +656,53 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
                   outData.performance[elemIdx].midiIsNote = (isNoteInt != 0);
                }
             }
+         }
+      }
+      else if (tag == "stream")
+      {
+         // Always pushed, even when malformed: a clip line refers to its
+         // stream by position, so dropping one would shift every later clip
+         // onto the wrong lane. Missing/garbage tokens leave defaults.
+         StreamRecord s;
+         in >> s.type >> s.blendMode >> s.opacity >> s.gainDb >> s.pan;
+         std::string raw;
+         std::getline(in, raw);
+         if (!raw.empty() && raw[0] == ' ')
+            raw.erase(0, 1);
+         s.name = UnescapeLine(raw);
+         if (s.type != kStreamVideo && s.type != kStreamAudio) s.type = kStreamVideo;
+         if (s.blendMode < 0 || s.blendMode > 31) s.blendMode = 0;
+         if (!std::isfinite(s.opacity)) s.opacity = 1.0f;
+         s.opacity = std::clamp(s.opacity, 0.0f, 1.0f);
+         if (!std::isfinite(s.gainDb)) s.gainDb = 0.0f;
+         if (!std::isfinite(s.pan)) s.pan = 0.0f;
+         s.pan = std::clamp(s.pan, -1.0f, 1.0f);
+         outData.streams.push_back(std::move(s));
+      }
+      else if (tag == "clip")
+      {
+         int streamIdx = -1;
+         ClipRecord c;
+         if (in >> streamIdx >> c.startSeconds >> c.lengthSeconds >> c.srcIndex &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() &&
+             std::isfinite(c.startSeconds) && std::isfinite(c.lengthSeconds) &&
+             c.startSeconds >= 0.0 && c.lengthSeconds > 0.0)
+         {
+            // Trailing settings: missing tokens keep ClipRecord's defaults;
+            // a garbage token reads as 0, so each is sanitized below.
+            int loop = 0;
+            in >> c.srcOutput >> c.triggerMode >> c.fadeInSec >> c.fadeOutSec >> c.gainDb >> c.speed >> loop;
+            c.loop = loop != 0;
+            if (c.srcOutput < 0) c.srcOutput = 0;
+            if (c.triggerMode != 0 && c.triggerMode != 1) c.triggerMode = 0;
+            const float len = (float)c.lengthSeconds;
+            if (!std::isfinite(c.fadeInSec)) c.fadeInSec = 0.0f;
+            if (!std::isfinite(c.fadeOutSec)) c.fadeOutSec = 0.0f;
+            c.fadeInSec = std::clamp(c.fadeInSec, 0.0f, len);
+            c.fadeOutSec = std::clamp(c.fadeOutSec, 0.0f, len);
+            if (!std::isfinite(c.gainDb)) c.gainDb = 0.0f;
+            if (!std::isfinite(c.speed) || c.speed <= 0.0f) c.speed = 1.0f;
+            outData.streams[streamIdx].clips.push_back(c);
          }
       }
       // Anything else is from a newer version and is deliberately ignored.

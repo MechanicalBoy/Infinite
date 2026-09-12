@@ -57,6 +57,14 @@ class INode;
 //     on any patch saved before this line existed - gestures were session-
 //     only state then and simply don't come back on load, same as any other
 //     unrecognised tag.
+//   stream <type> <blendMode> <opacity> <gainDb> <pan> <name to end of line>
+//   clip <streamIndex> <start> <length> <srcIndex> <srcOutput> <triggerMode> <fadeIn> <fadeOut> <gainDb> <speed> <loop>
+//     Arrangement timeline (docs/plans/arrangement/README.md). A clip
+//     back-references the stream line it belongs to by position, like
+//     perftarget -> perf. start/length use %.17g so abutting clip edges
+//     reload exactly equal. A clip with an out-of-range stream index, a
+//     non-finite or negative start, or a length <= 0 is dropped; a malformed
+//     stream line is kept with defaults so later clip indices still line up.
 //
 // Names may contain spaces, so anything free-form is always last on its line.
 namespace Patch
@@ -225,6 +233,38 @@ namespace Patch
       std::vector<GestureSample> samples; // >= 2 entries, timeSec strictly increasing
    };
 
+   // Arrangement timeline (docs/plans/arrangement/README.md). A stream is one
+   // lane; it owns its clips, same parent/child shape as PerfRecord::targets,
+   // so reordering or deleting a stream can never leave a clip on the wrong
+   // lane. Clips within one stream never overlap - enforced by the editor,
+   // not here.
+   enum StreamType { kStreamVideo = 0, kStreamAudio = 1 };
+
+   struct ClipRecord
+   {
+      double startSeconds  = 0.0;   // >= 0
+      double lengthSeconds = 1.0;   // > 0
+      int    srcIndex      = -1;    // node index - remapped by ApplyPatchData's resolve()
+      int    srcOutput     = 0;     // which output of srcIndex, as CableRecord::srcOutput
+      int    triggerMode   = 0;     // 0 = continuous, 1 = retrigger
+      float  fadeInSec     = 0.0f;
+      float  fadeOutSec    = 0.0f;
+      float  gainDb        = 0.0f;
+      float  speed         = 1.0f;  // > 0
+      bool   loop          = false;
+   };
+
+   struct StreamRecord
+   {
+      int   type      = kStreamVideo;
+      int   blendMode = 0;      // video only; index into BlendModes::Names() (0-31)
+      float opacity   = 1.0f;   // video only, 0..1
+      float gainDb    = 0.0f;   // audio only
+      float pan       = 0.0f;   // audio only, -1..1
+      std::string name;         // empty = auto ("V1", "A2", ...) - label derived by the UI
+      std::vector<ClipRecord> clips;
+   };
+
    struct Data
    {
       std::vector<NodeRecord> nodes;
@@ -240,6 +280,7 @@ namespace Patch
       PerfLayoutRecord perfLayout;
       TransportRecord transport;
       std::vector<GestureRecord> gestures;
+      std::vector<StreamRecord> streams; // arrangement timeline, clips nested
    };
 
    bool Write(const std::string& path, const Data& data, std::string& outError);
