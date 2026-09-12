@@ -15277,7 +15277,11 @@ namespace
       // only the two OS-standard directories plus whatever the user adds here.
       if (ImGui::TreeNodeEx("VST3 search folders", ImGuiTreeNodeFlags_None))
       {
-         for (const std::string& folder : gPluginScanner.Folders())
+         // Snapshot rather than iterate gPluginScanner.Folders() directly:
+         // RemoveFolder() below erases from that same live vector, which
+         // would invalidate this loop's iterator mid-iteration.
+         const std::vector<std::string> folders = gPluginScanner.Folders();
+         for (const std::string& folder : folders)
          {
             ImGui::TextUnformatted(folder.c_str());
             ImGui::SameLine();
