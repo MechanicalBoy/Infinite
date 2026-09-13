@@ -13,6 +13,7 @@ namespace PatchJson
       {
          json jn;
          jn["index"] = n.index;
+         jn["uid"] = n.uid;
          jn["category"] = n.category;
          jn["typeName"] = n.typeName;
          jn["x"] = n.x;
@@ -113,19 +114,24 @@ namespace PatchJson
          for (const auto& c : s.clips)
          {
             clips.push_back({
-               {"startSeconds", c.startSeconds},
-               {"lengthSeconds", c.lengthSeconds},
-               {"srcIndex", c.srcIndex},
+               {"id", c.id},
+               {"startTick", c.startTick},
+               {"lengthTick", c.lengthTick},
+               {"srcUid", c.srcUid},
                {"srcOutput", c.srcOutput},
-               {"triggerMode", c.triggerMode},
-               {"fadeInSec", c.fadeInSec},
-               {"fadeOutSec", c.fadeOutSec},
+               {"fadeInTick", c.fadeInTick},
+               {"fadeOutTick", c.fadeOutTick},
                {"gainDb", c.gainDb},
-               {"speed", c.speed},
-               {"loop", c.loop}
+               {"enabled", c.enabled},
+               {"groupId", c.groupId},
+               {"name", c.name},
+               {"colorR", c.colorR},
+               {"colorG", c.colorG},
+               {"colorB", c.colorB}
             });
          }
          out["streams"].push_back({
+            {"id", s.id},
             {"type", s.type},
             {"blendMode", s.blendMode},
             {"opacity", s.opacity},
@@ -134,6 +140,44 @@ namespace PatchJson
             {"name", s.name},
             {"clips", clips}
          });
+      }
+
+      out["markers"] = json::array();
+      for (const Patch::MarkerRecord& mk : data.markers)
+      {
+         out["markers"].push_back({
+            {"id", mk.id},
+            {"posTick", mk.posTick},
+            {"color", mk.color},
+            {"name", mk.name}
+         });
+      }
+
+      {
+         const Patch::ArrangeSettingsRecord& a = data.arrangeSettings;
+         out["arrange"] = {
+            {"nextId", a.nextId},
+            {"timeDisplay", a.timeDisplay},
+            {"snapDivision", a.snapDivision},
+            {"snapTriplet", a.snapTriplet},
+            {"zoom", a.zoom},
+            {"scroll", a.scroll},
+            {"loopEnabled", a.loopEnabled},
+            {"loopStart", a.loopStart},
+            {"loopEnd", a.loopEnd},
+            {"dockSide", a.dockSide},
+            {"renderWidth", a.renderWidth},
+            {"renderHeight", a.renderHeight},
+            {"renderFps", a.renderFps},
+            {"renderSampleRate", a.renderSampleRate},
+            {"renderFormat", a.renderFormat},
+            {"renderRangeKind", a.renderRangeKind},
+            {"renderRangeStart", a.renderRangeStart},
+            {"renderRangeEnd", a.renderRangeEnd},
+            {"renderAudioSource", a.renderAudioSource},
+            {"renderVideoSource", a.renderVideoSource},
+            {"renderFolder", a.renderFolder}
+         };
       }
 
       return out;

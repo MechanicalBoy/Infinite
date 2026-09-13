@@ -108,6 +108,8 @@ namespace
 #include "core/ExprGlobals.h"
 #include "core/Palette.h"
 #include "core/Patch.h"
+#include "arrange/ArrangeModel.h"
+#include "arrange/ArrangeLegacy.h"
 #include "core/NodeViewport.h"
 #include "core/AudioCable.h"
 #include "core/NoteCable.h"
@@ -582,6 +584,10 @@ namespace
    // ModSlider and friends (the widgets that call it) are among the first
    // functions in the file.
    void PushUndoCheckpoint();
+   // Timeline-only undo entry: see UndoEntry::arrangeOnly. Declared here
+   // because the arrangement panel (far above the undo machinery in file
+   // order) is its only caller.
+   void PushArrangeUndo();
    GraphNode* FindNodeByIndex(int index);
 
    // Field 'graph' domain (build step 10): forward-declared for the same
@@ -1075,7 +1081,7 @@ namespace
    {
       int streamIndexHint = -1; // stream copied from, tried first on paste so relative track layout survives when possible
       int streamType = Patch::kStreamAudio; // StreamRecord::type is a plain int (Patch::StreamType value)
-      Patch::ClipRecord clip;
+      LegacyArrange::ClipRecord clip;
    };
    struct ArrangeClipClipboardRecord
    {
@@ -1127,11 +1133,21 @@ namespace
    char  gPerfRenameElementBuffer[64] = "";
    Patch::PerfLayoutRecord gPerfLayout;
    std::vector<Patch::PerfRecord> gPerfElements;
-   // Arrangement timeline (docs/plans/arrangement/README.md). Same record
-   // type the patch stores - no separate runtime class. Clip srcIndex is a
-   // live node index: rewritten by ApplyPatchData, pruned by
-   // RemoveNodeByIndex, cleared by NewPatch.
-   std::vector<Patch::StreamRecord> gArrangeStreams;
+   // Arrangement timeline (docs/plans/arrangement/overhaul-prompt.md).
+   //
+   // gArrange is the source of truth: ticks, stable clip ids, markers and
+   // settings, and the only thing that is saved, loaded or undone.
+   // gArrangeStreams is what the panel's UI code still edits - seconds and
+   // live node indices - and is synced to/from gArrange at the save and load
+   // boundaries only (see src/arrange/ArrangeLegacy.h). WP5 deletes it.
+   Arrange::Model gArrange;
+   std::vector<LegacyArrange::StreamRecord> gArrangeStreams;
+   // Stable node identity, handed out at spawn and never reused, unlike
+   // GraphNode::index. Arrangement clips reference it, so a clip survives its
+   // node being deleted and undone back. Persisted per node in the patch;
+   // ApplyPatchData clamps this above every restored uid so a reload can never
+   // mint a duplicate.
+   uint64_t gNextNodeUid = 1;
    // Edit-mode selection, by index into gPerfElements. Indices move when the
    // vector is mutated, so every operation that erases or appends clears or
    // rebuilds the selection rather than trying to patch it up.
@@ -5423,6 +5439,209 @@ namespace
       return nullptr;
    }
 
+   // The arrangement's node lookup. A linear scan like FindNodeByIndex rather
+   // than a cached map: it runs at the save/load/undo boundaries, not per clip
+   // per frame. WP5 adds the per-frame cached map the panel draw needs.
+   GraphNode* FindNodeByUid(uint64_t uid)
+   {
+      if (uid == 0)
+         return nullptr;
+      for (GraphNode& gn : gNodes)
+      {
+         if (gn.uid == uid)
+            return &gn;
+      }
+      return nullptr;
+   }
+
+   // The two LegacyArrange callbacks, in one place so both boundaries agree on
+   // what "unassigned" means: index -1 and uid 0 are the same thing.
+   uint64_t ArrangeIndexToUid(int index, void*)
+   {
+      const GraphNode* gn = FindNodeByIndex(index);
+      return gn ? gn->uid : 0;
+   }
+
+   int ArrangeUidToIndex(uint64_t uid, void*)
+   {
+      const GraphNode* gn = FindNodeByUid(uid);
+      return gn ? gn->index : -1;
+   }
+
+   // gArrange <- the UI's streams. Called anywhere the model is about to be
+   // read as truth (serialize, undo push, fixture).
+   void SyncArrangeFromLegacy()
+   {
+      LegacyArrange::FromLegacyStreams(gArrangeStreams, (double)Transport::Instance().Tempo(),
+                                       &ArrangeIndexToUid, nullptr, gArrange);
+   }
+
+   // The UI's streams <- gArrange. Called after anything replaces the model.
+   void SyncLegacyFromArrange()
+   {
+      LegacyArrange::ToLegacyStreams(gArrange, (double)Transport::Instance().Tempo(),
+                                     &ArrangeUidToIndex, nullptr, gArrangeStreams);
+   }
+
+   // Arrange::Model <-> Patch::Data. Straight field copies in both directions:
+   // both sides are already ticks, so nothing here is lossy and nothing here
+   // needs the transport.
+   void ArrangeModelToPatchData(const Arrange::Model& m, Patch::Data& data)
+   {
+      data.streams.clear();
+      data.streams.reserve(m.lanes.size());
+      for (const Arrange::Lane& lane : m.lanes)
+      {
+         Patch::StreamRecord s;
+         s.id = lane.id;
+         s.type = lane.type;
+         s.blendMode = lane.blendMode;
+         s.opacity = lane.opacity;
+         s.gainDb = lane.gainDb;
+         s.pan = lane.pan;
+         s.name = lane.name;
+         for (const Arrange::Clip& c : lane.clips)
+         {
+            Patch::ClipRecord r;
+            r.id = c.id;
+            r.startTick = c.start;
+            r.lengthTick = c.length;
+            r.srcUid = c.srcUid;
+            r.srcOutput = c.srcOutput;
+            r.fadeInTick = c.fadeIn;
+            r.fadeOutTick = c.fadeOut;
+            r.gainDb = c.gainDb;
+            r.enabled = c.enabled;
+            r.groupId = c.groupId;
+            r.name = c.name;
+            r.colorR = c.colorR;
+            r.colorG = c.colorG;
+            r.colorB = c.colorB;
+            s.clips.push_back(std::move(r));
+         }
+         data.streams.push_back(std::move(s));
+      }
+
+      data.markers.clear();
+      for (const Arrange::Marker& mk : m.markers)
+      {
+         Patch::MarkerRecord r;
+         r.id = mk.id;
+         r.posTick = mk.pos;
+         r.color = mk.color;
+         r.name = mk.name;
+         data.markers.push_back(std::move(r));
+      }
+
+      Patch::ArrangeSettingsRecord& a = data.arrangeSettings;
+      // Saved, not recomputed as max-id + 1: a clip deleted after taking a
+      // high id would otherwise let the next session hand that id out again,
+      // and every cache keyed on clip id (selection, waveform, thumbnail)
+      // would silently attach to the wrong clip.
+      a.nextId = m.nextId;
+      a.timeDisplay = m.settings.timeDisplay;
+      a.snapDivision = m.settings.snapDivision;
+      a.snapTriplet = m.settings.snapTriplet;
+      a.zoom = m.settings.zoom;
+      a.scroll = m.settings.scroll;
+      a.loopEnabled = m.settings.loop.enabled;
+      a.loopStart = m.settings.loop.start;
+      a.loopEnd = m.settings.loop.end;
+      a.dockSide = m.settings.dockSide;
+      a.renderWidth = m.settings.renderWidth;
+      a.renderHeight = m.settings.renderHeight;
+      a.renderFps = m.settings.renderFps;
+      a.renderSampleRate = m.settings.renderSampleRate;
+      a.renderFormat = m.settings.renderFormat;
+      a.renderRangeKind = m.settings.renderRangeKind;
+      a.renderRangeStart = m.settings.renderRangeStart;
+      a.renderRangeEnd = m.settings.renderRangeEnd;
+      a.renderAudioSource = m.settings.renderAudioSource;
+      a.renderVideoSource = m.settings.renderVideoSource;
+      a.renderFolder = m.settings.renderFolder;
+   }
+
+   // `resolveLegacy` maps a pre-uid patch's saved node index to the uid of the
+   // node ApplyPatchData just spawned for it. Null when there is no graph to
+   // resolve against (the headless fixtures), in which case a legacy clip
+   // simply comes back offline.
+   void PatchDataToArrangeModel(const Patch::Data& data, Arrange::Model& m,
+                                const std::function<uint64_t(int)>& resolveLegacy = {})
+   {
+      m = Arrange::Model();
+      m.nextId = std::max<uint64_t>(1, data.arrangeSettings.nextId);
+      for (const Patch::StreamRecord& s : data.streams)
+      {
+         Arrange::Lane lane;
+         lane.id = s.id;
+         lane.type = (s.type == Patch::kStreamAudio) ? Arrange::kLaneAudio : Arrange::kLaneVideo;
+         lane.blendMode = s.blendMode;
+         lane.opacity = s.opacity;
+         lane.gainDb = s.gainDb;
+         lane.pan = s.pan;
+         lane.name = s.name;
+         for (const Patch::ClipRecord& c : s.clips)
+         {
+            Arrange::Clip clip;
+            clip.id = c.id;
+            clip.start = c.startTick;
+            clip.length = c.lengthTick;
+            clip.srcUid = c.srcUid;
+            if (clip.srcUid == 0 && c.legacySrcIndex >= 0 && resolveLegacy)
+               clip.srcUid = resolveLegacy(c.legacySrcIndex);
+            clip.srcOutput = c.srcOutput;
+            clip.fadeIn = c.fadeInTick;
+            clip.fadeOut = c.fadeOutTick;
+            clip.gainDb = c.gainDb;
+            clip.enabled = c.enabled;
+            clip.groupId = c.groupId;
+            clip.name = c.name;
+            clip.colorR = c.colorR;
+            clip.colorG = c.colorG;
+            clip.colorB = c.colorB;
+            lane.clips.push_back(std::move(clip));
+         }
+         m.lanes.push_back(std::move(lane));
+      }
+      for (const Patch::MarkerRecord& r : data.markers)
+      {
+         Arrange::Marker mk;
+         mk.id = r.id;
+         mk.pos = r.posTick;
+         mk.color = r.color;
+         mk.name = r.name;
+         m.markers.push_back(std::move(mk));
+      }
+
+      const Patch::ArrangeSettingsRecord& a = data.arrangeSettings;
+      m.settings.timeDisplay = a.timeDisplay;
+      m.settings.snapDivision = a.snapDivision;
+      m.settings.snapTriplet = a.snapTriplet;
+      m.settings.zoom = a.zoom;
+      m.settings.scroll = a.scroll;
+      m.settings.loop.enabled = a.loopEnabled;
+      m.settings.loop.start = a.loopStart;
+      m.settings.loop.end = a.loopEnd;
+      m.settings.dockSide = a.dockSide;
+      m.settings.renderWidth = a.renderWidth;
+      m.settings.renderHeight = a.renderHeight;
+      m.settings.renderFps = a.renderFps;
+      m.settings.renderSampleRate = a.renderSampleRate;
+      m.settings.renderFormat = a.renderFormat;
+      m.settings.renderRangeKind = a.renderRangeKind;
+      m.settings.renderRangeStart = a.renderRangeStart;
+      m.settings.renderRangeEnd = a.renderRangeEnd;
+      m.settings.renderAudioSource = a.renderAudioSource;
+      m.settings.renderVideoSource = a.renderVideoSource;
+      m.settings.renderFolder = a.renderFolder;
+
+      // Legacy patches carry no ids at all; Normalize mints them and, either
+      // way, re-seats nextId above everything present. Without that clamp a
+      // file whose saved nextId was stale would hand out a duplicate id on
+      // the very first edit after loading.
+      Arrange::Normalize(m);
+   }
+
    IPaletteSource* PaletteSourceByIndex(int nodeIndex)
    {
       GraphNode* gn = FindNodeByIndex(nodeIndex);
@@ -6390,6 +6609,10 @@ namespace
       gn.typeName = typeName;
       gn.category = category;
       gn.index = gNextIndex++;
+      // Every node gets one, not just the ones an arrangement clip happens to
+      // point at: a node can be added to the timeline at any later moment, and
+      // a uid minted then would not be the one an older patch recorded.
+      gn.uid = gNextNodeUid++;
       gn.spawnX = x;
       gn.spawnY = y;
       gNodes.push_back(std::move(gn));
@@ -25959,13 +26182,13 @@ namespace
    // paste, or a duplicate should all get instead of silently overlapping
    // (which used to be possible from every one of those paths: only the
    // live drag itself was ever clamped against neighbors).
-   void PlaceClipTrimmingOverlap(std::vector<Patch::ClipRecord>& clips, Patch::ClipRecord newClip)
+   void PlaceClipTrimmingOverlap(std::vector<LegacyArrange::ClipRecord>& clips, LegacyArrange::ClipRecord newClip)
    {
       const double newStart = newClip.startSeconds;
       const double newEnd = newClip.startSeconds + newClip.lengthSeconds;
-      std::vector<Patch::ClipRecord> result;
+      std::vector<LegacyArrange::ClipRecord> result;
       result.reserve(clips.size() + 1);
-      for (Patch::ClipRecord existing : clips)
+      for (LegacyArrange::ClipRecord existing : clips)
       {
          const double exStart = existing.startSeconds;
          const double exEnd = existing.startSeconds + existing.lengthSeconds;
@@ -25978,11 +26201,17 @@ namespace
          {
             // The new clip lands fully inside this one - split it in two,
             // leaving a gap for the new clip in between.
-            Patch::ClipRecord left = existing;
+            LegacyArrange::ClipRecord left = existing;
             left.lengthSeconds = newStart - exStart;
-            Patch::ClipRecord right = existing;
+            LegacyArrange::ClipRecord right = existing;
             right.startSeconds = newEnd;
             right.lengthSeconds = exEnd - newEnd;
+            // The right half is a *new* clip, not the same one moved. Leaving
+            // `existing`'s id on both halves would put two clips with one id
+            // into the model, where Find() resolves to whichever comes first
+            // and every later edit hits the wrong one. Zero means "mint me
+            // one" at the next sync (LegacyArrange::FromLegacyStreams).
+            right.id = 0;
             if (left.lengthSeconds > 0.05) result.push_back(left);
             if (right.lengthSeconds > 0.05) result.push_back(right);
             continue;
@@ -26053,9 +26282,9 @@ namespace
 
       for (size_t si = 0; si < gArrangeStreams.size(); si++)
       {
-         const Patch::StreamRecord& st = gArrangeStreams[si];
+         const LegacyArrange::StreamRecord& st = gArrangeStreams[si];
          if (st.type != Patch::kStreamVideo) continue;
-         for (const Patch::ClipRecord& c : st.clips)
+         for (const LegacyArrange::ClipRecord& c : st.clips)
          {
             if (timeSec >= c.startSeconds && timeSec < (c.startSeconds + c.lengthSeconds))
             {
@@ -26233,7 +26462,7 @@ namespace
          // If none exists, create one
          if (streamIndex < 0)
          {
-            Patch::StreamRecord newStream;
+            LegacyArrange::StreamRecord newStream;
             newStream.type = targetType;
             newStream.name = isAudio ? ("Audio " + std::to_string(gArrangeStreams.size() + 1))
                                      : ("Video " + std::to_string(gArrangeStreams.size() + 1));
@@ -26251,8 +26480,8 @@ namespace
          startSec = maxEnd;
       }
 
-      PushUndoCheckpoint();
-      Patch::ClipRecord clip;
+      PushArrangeUndo();
+      LegacyArrange::ClipRecord clip;
       clip.srcIndex = nodeIndex;
       clip.srcOutput = 0;
       clip.startSeconds = std::max(0.0, startSec);
@@ -26405,7 +26634,7 @@ namespace
          {
             if (gArrangeClipClipboard.hasData)
             {
-               PushUndoCheckpoint();
+               PushArrangeUndo();
                // Anchor the whole copied group by its earliest clip so
                // relative spacing/track layout between pasted clips matches
                // what was copied, shifted so that earliest clip lands at
@@ -26436,14 +26665,20 @@ namespace
                   }
                   if (targetStream < 0)
                   {
-                     Patch::StreamRecord ns;
+                     LegacyArrange::StreamRecord ns;
                      ns.type = item.streamType;
                      ns.name = (ns.type == Patch::kStreamAudio ? "Audio " : "Video ") + std::to_string(gArrangeStreams.size() + 1);
                      gArrangeStreams.push_back(ns);
                      targetStream = (int)gArrangeStreams.size() - 1;
                   }
 
-                  Patch::ClipRecord pasted = item.clip;
+                  LegacyArrange::ClipRecord pasted = item.clip;
+                  // A paste is a new clip: it must not carry the source's id
+                  // (two clips, one id) nor its groupId (the copy would join
+                  // the original's group, which is the opposite of what
+                  // Arrange::DuplicateBlock does and what WP5 will ship).
+                  pasted.id = 0;
+                  pasted.groupId = 0;
                   pasted.startSeconds = std::max(0.0, pasteAt + (item.clip.startSeconds - anchorStart));
                   PlaceClipTrimmingOverlap(gArrangeStreams[targetStream].clips, pasted);
                   gArrangeSelectedStream = targetStream;
@@ -26458,14 +26693,16 @@ namespace
             const auto refs = selectedClipRefs();
             if (!refs.empty())
             {
-               PushUndoCheckpoint();
+               PushArrangeUndo();
                // Values captured up front - PlaceClipTrimmingOverlap rebuilds
                // its stream's whole clip vector per call, which would
                // invalidate any remaining index in `refs` for that stream.
-               std::vector<std::pair<int, Patch::ClipRecord>> toDuplicate;
+               std::vector<std::pair<int, LegacyArrange::ClipRecord>> toDuplicate;
                for (const auto& ref : refs)
                {
-                  Patch::ClipRecord dup = gArrangeStreams[ref.first].clips[ref.second];
+                  LegacyArrange::ClipRecord dup = gArrangeStreams[ref.first].clips[ref.second];
+                  dup.id = 0;      // new clip - see the paste path above
+                  dup.groupId = 0;
                   dup.startSeconds = dup.startSeconds + dup.lengthSeconds;
                   toDuplicate.push_back({ ref.first, dup });
                }
@@ -26485,7 +26722,7 @@ namespace
             const auto refs = selectedClipRefs(); // already largest-index-first per stream
             if (!refs.empty())
             {
-               PushUndoCheckpoint();
+               PushArrangeUndo();
                for (const auto& ref : refs)
                   gArrangeStreams[ref.first].clips.erase(gArrangeStreams[ref.first].clips.begin() + ref.second);
                gArrangeSelectedClip = -1;
@@ -26580,9 +26817,9 @@ namespace
             int detectedClipW = 1920;
             int detectedClipH = 1080;
             bool foundClipRes = false;
-            for (const Patch::StreamRecord& s : gArrangeStreams)
+            for (const LegacyArrange::StreamRecord& s : gArrangeStreams)
             {
-               for (const Patch::ClipRecord& c : s.clips)
+               for (const LegacyArrange::ClipRecord& c : s.clips)
                {
                   arrangeEndSec = std::max(arrangeEndSec, c.startSeconds + c.lengthSeconds);
                   if (!foundClipRes && s.type == Patch::kStreamVideo)
@@ -27292,8 +27529,8 @@ namespace
       // set beforehand to say where it lands (-1 = append at end).
       auto InsertArrangeTrack = [&](bool isVideo)
       {
-         PushUndoCheckpoint();
-         Patch::StreamRecord s;
+         PushArrangeUndo();
+         LegacyArrange::StreamRecord s;
          s.type = isVideo ? Patch::kStreamVideo : Patch::kStreamAudio;
          s.name = (isVideo ? "Video " : "Audio ") + std::to_string(gArrangeStreams.size() + 1);
          if (gArrangeAddTrackInsertAfter < 0 || gArrangeAddTrackInsertAfter >= (int)gArrangeStreams.size())
@@ -27329,7 +27566,7 @@ namespace
 
       for (size_t i = 0; i < gArrangeStreams.size(); i++)
       {
-         Patch::StreamRecord& stream = gArrangeStreams[i];
+         LegacyArrange::StreamRecord& stream = gArrangeStreams[i];
          ImGui::PushID((int)i * 1000);
 
          // Cross-track drop target: a moved clip released over a lane of the
@@ -27490,7 +27727,7 @@ namespace
          bool clipHoveredAny = false;
          for (size_t ci = 0; ci < stream.clips.size(); ci++)
          {
-            Patch::ClipRecord& clip = stream.clips[ci];
+            LegacyArrange::ClipRecord& clip = stream.clips[ci];
             const float clipX0 = rulerStartX + (float)((clip.startSeconds - startSec) * pps);
             const float clipX1 = rulerStartX + (float)((clip.startSeconds + clip.lengthSeconds - startSec) * pps);
 
@@ -27586,7 +27823,7 @@ namespace
                       other.startSeconds < gArrangeDragUpperBound)
                      gArrangeDragUpperBound = other.startSeconds;
                }
-               PushUndoCheckpoint();
+               PushArrangeUndo();
             }
 
             if (clipActive && gArrangeDraggingClipStream == (int)i && gArrangeDraggingClipIndex == (int)ci)
@@ -27745,7 +27982,7 @@ namespace
                      ImVec4 cVec = ImGui::ColorConvertU32ToFloat4(kPaletteColors[ci2].col);
                      if (ImGui::ColorButton(kPaletteColors[ci2].name, cVec, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24)))
                      {
-                        PushUndoCheckpoint();
+                        PushArrangeUndo();
                         if (ci2 == 0)
                         {
                            clip.colorR = clip.colorG = clip.colorB = 0.0f;
@@ -27806,7 +28043,7 @@ namespace
                if (ImGui::InputText("##renamingclipfield", gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer),
                                     ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll))
                {
-                  PushUndoCheckpoint();
+                  PushArrangeUndo();
                   clip.name = gArrangeRenameClipBuffer;
                   gArrangeRenamingClipStream = -1;
                   gArrangeRenamingClipIndex = -1;
@@ -27854,8 +28091,8 @@ namespace
             ImGui::Separator();
             if (ImGui::MenuItem("Add Clip"))
             {
-               PushUndoCheckpoint();
-               Patch::ClipRecord newClip;
+               PushArrangeUndo();
+               LegacyArrange::ClipRecord newClip;
                newClip.startSeconds = addClipAtTimeSec;
                newClip.lengthSeconds = 4.0;
                newClip.srcIndex = -1;
@@ -27905,14 +28142,14 @@ namespace
           streamToMoveSrc < (int)gArrangeStreams.size() &&
           streamToMoveDst < (int)gArrangeStreams.size())
       {
-         PushUndoCheckpoint();
-         Patch::StreamRecord moved = gArrangeStreams[streamToMoveSrc];
+         PushArrangeUndo();
+         LegacyArrange::StreamRecord moved = gArrangeStreams[streamToMoveSrc];
          gArrangeStreams.erase(gArrangeStreams.begin() + streamToMoveSrc);
          gArrangeStreams.insert(gArrangeStreams.begin() + streamToMoveDst, moved);
       }
       else if (streamToDelete >= 0 && streamToDelete < (int)gArrangeStreams.size())
       {
-         PushUndoCheckpoint();
+         PushArrangeUndo();
          gArrangeStreams.erase(gArrangeStreams.begin() + streamToDelete);
       }
 
@@ -27922,7 +28159,7 @@ namespace
          auto& clips = gArrangeStreams[clipToDeleteStream].clips;
          if (clipToDeleteIndex >= 0 && clipToDeleteIndex < (int)clips.size())
          {
-            PushUndoCheckpoint();
+            PushArrangeUndo();
             clips.erase(clips.begin() + clipToDeleteIndex);
          }
       }
@@ -27934,7 +28171,7 @@ namespace
           gArrangeDraggingClipIndex >= 0 && gArrangeDraggingClipIndex < (int)gArrangeStreams[gArrangeDraggingClipStream].clips.size())
       {
          auto& srcClips = gArrangeStreams[gArrangeDraggingClipStream].clips;
-         Patch::ClipRecord moved = srcClips[gArrangeDraggingClipIndex];
+         LegacyArrange::ClipRecord moved = srcClips[gArrangeDraggingClipIndex];
          srcClips.erase(srcClips.begin() + gArrangeDraggingClipIndex);
          PlaceClipTrimmingOverlap(gArrangeStreams[arrangeCrossTrackDropStream].clips, moved);
          gArrangeSelectedStream = arrangeCrossTrackDropStream;
@@ -31449,6 +31686,10 @@ namespace
                const float streamLinear = std::pow(10.0f, stream.gainDb / 20.0f);
                for (const auto& c : stream.clips)
                {
+                  // An offline clip (its node deleted, or never assigned) is
+                  // silent, not a terminal on node index -1.
+                  if (c.srcIndex < 0)
+                     continue;
                   if (curTime >= c.startSeconds && curTime < (c.startSeconds + c.lengthSeconds))
                   {
                      activeTimelineAudioClips.push_back({ c.srcIndex, c.srcOutput, std::pow(10.0f, c.gainDb / 20.0f) * streamLinear,
@@ -32124,12 +32365,22 @@ namespace
       // on NewPatch, and Undo respawns everything), so a stale key can start
       // driving an unrelated param.
       GestureRecorder::Instance().ClearForNode(index);
-      // Fourth, same reason: a clip is keyed by node index too, and indices
-      // are reused (NewPatch / every Undo respawns from 1).
-      for (Patch::StreamRecord& s : gArrangeStreams)
-         s.clips.erase(std::remove_if(s.clips.begin(), s.clips.end(),
-                                      [index](const Patch::ClipRecord& c) { return c.srcIndex == index; }),
-                       s.clips.end());
+      // Fourth: a clip points at this node. The clip is NOT deleted - it goes
+      // offline (srcIndex -1), draws hatched, and is silent and invisible
+      // until something is assigned to it. Deleting it instead is what used
+      // to make "delete a node, undo" silently lose the arrangement around
+      // it, since the clip's own edits had no way back.
+      //
+      // srcUid is deliberately kept. Index is a live-session handle and is
+      // reused, so it has to go; uid is permanent and never reused, so a clip
+      // that still remembers it re-binds by itself the moment the node comes
+      // back - undo, or a reload of a patch saved while the node was gone.
+      // Clearing it here would make the binding depend on the arrangement
+      // snapshot riding along in the undo entry, which a reload doesn't have.
+      for (LegacyArrange::StreamRecord& s : gArrangeStreams)
+         for (LegacyArrange::ClipRecord& c : s.clips)
+            if (c.srcIndex == index)
+               c.srcIndex = -1;
       ForgetDiscreteSlots(index);
       gModHistory.erase(index);
       DisconnectAllTo(victim->node.get());
@@ -32699,6 +32950,7 @@ namespace
       {
          Patch::NodeRecord rec;
          rec.index = gn.index;
+         rec.uid = gn.uid;
          rec.category = gn.category;
          rec.typeName = gn.typeName;
          // The cached live position, not the spawn position: the node has almost
@@ -32832,7 +33084,11 @@ namespace
          data.globals.push_back({ g.name, g.expr });
       data.performance = gPerfElements;
       data.perfLayout = gPerfLayout;
-      data.streams = gArrangeStreams;
+      // The UI's seconds/index view is folded into the model here and the
+      // model is what gets written - never gArrangeStreams directly. This is
+      // the only place the two can be out of step, and it closes the gap.
+      SyncArrangeFromLegacy();
+      ArrangeModelToPatchData(gArrange, data);
       data.transport.bpm = Transport::Instance().Tempo();
       data.transport.timeSigNum = Transport::Instance().TimeSigNumerator();
       data.transport.timeSigDen = Transport::Instance().TimeSigDenominator();
@@ -33281,6 +33537,15 @@ namespace
    {
       Patch::Data patch;
       GestureRecorder::PlaybackMap gestures;
+      // Set only for timeline-only gestures (move a clip, trim, split, add a
+      // marker). Undoing one of these swaps the arrangement back and touches
+      // nothing else - it must NOT go through ApplyPatchData, which tears down
+      // and respawns the whole graph. That respawn is why dragging a clip used
+      // to reset every node's internal state, drop audio, and rebuild every
+      // FBO. Clips reference node uids, which the graph side never changes
+      // here, so the two entry kinds coexist with no remapping.
+      bool arrangeOnly = false;
+      Arrange::Model arrange;
    };
    std::deque<UndoEntry> gUndoStack;
    std::deque<UndoEntry> gRedoStack;
@@ -33332,18 +33597,23 @@ namespace
          return;
       for (int i = 0; i < 4; i++)
       {
-         Patch::StreamRecord v;
+         LegacyArrange::StreamRecord v;
          v.type = Patch::kStreamVideo;
          v.name = "Video " + std::to_string(i + 1);
          gArrangeStreams.push_back(v);
       }
       for (int i = 0; i < 4; i++)
       {
-         Patch::StreamRecord a;
+         LegacyArrange::StreamRecord a;
          a.type = Patch::kStreamAudio;
          a.name = "Audio " + std::to_string(i + 1);
          gArrangeStreams.push_back(a);
       }
+      // The lanes exist in both views from the first frame, with the same ids
+      // on both sides - otherwise the first save would mint lane ids that the
+      // running UI had never seen.
+      SyncArrangeFromLegacy();
+      SyncLegacyFromArrange();
    }
 
    void NewPatch()
@@ -33379,10 +33649,15 @@ namespace
       // undo past the point it was made.
       GestureRecorder::Instance().Clear();
       gArrangeStreams.clear();
+      gArrange = Arrange::Model();
       ForgetAllDiscreteSlots();
       PaletteBinding::Instance().Clear();
       ExprGlobals::Clear();
       gNextIndex = 1;
+      // Unlike gNextIndex, this does NOT restart: uids are only useful because
+      // they are never reused, and a fresh document that started minting 1, 2,
+      // 3 again would collide with the uids an undo entry from the previous
+      // document still carries. ApplyPatchData clamps it upward, never down.
       gPatchPath.clear();
       gPatchDirty = false;
       gPatchStatus = "New patch";
@@ -34432,6 +34707,20 @@ namespace
             continue;
          }
          remap[rec.index] = spawned->index;
+         // SpawnNode already minted a fresh uid; a patch that carries one
+         // overrides it, which is what lets a clip's srcUid still resolve
+         // after a full undo or a reload. A patch saved before uids existed
+         // (rec.uid == 0) keeps the fresh one. gNextNodeUid is clamped past
+         // every restored value below, so no later spawn can collide.
+         // ...unless something else already answers to it. A patch that mixes
+         // uid-bearing and uid-less node lines (a hand edit, a bad merge) can
+         // name the same uid twice; FindNodeByUid returns the first, so the
+         // second node would shadow it and every clip bound to it would
+         // resolve to the wrong node. Keeping the freshly minted uid is the
+         // only lossless option - the clip goes offline rather than silently
+         // attaching to a different node.
+         if (rec.uid != 0 && FindNodeByUid(rec.uid) == nullptr)
+            spawned->uid = rec.uid;
          spawned->showParams = rec.showParams;
          spawned->node->bypassed = rec.bypassed;
          spawned->showMiniViewport = rec.showMiniViewport;
@@ -34631,25 +34920,24 @@ namespace
       if (gPerfLayout.pageCount < 1) gPerfLayout.pageCount = 1;
       if (gPerfActivePage >= gPerfLayout.pageCount) gPerfActivePage = gPerfLayout.pageCount - 1;
 
-      // A clip whose node didn't survive (deleted at this point in history,
-      // or an unknown type in this build) is dropped, exactly like a cable.
-      // The stream itself is always kept, even if it ends up empty.
-      gArrangeStreams.clear();
-      for (const Patch::StreamRecord& s : data.streams)
-      {
-         Patch::StreamRecord mapped = s;
-         mapped.clips.clear();
-         for (const Patch::ClipRecord& c : s.clips)
-         {
-            GraphNode* src = resolve(c.srcIndex);
-            if (src == nullptr)
-               continue;
-            Patch::ClipRecord mc = c;
-            mc.srcIndex = src->index;
-            mapped.clips.push_back(mc);
-         }
-         gArrangeStreams.push_back(std::move(mapped));
-      }
+      // A clip whose node didn't survive (an unknown type in this build, or a
+      // legacy patch whose saved index no longer resolves) is kept and goes
+      // offline rather than being dropped - see RemoveNodeByIndex. Clips point
+      // at uids now, so a node deleted and undone back re-attaches on its own.
+      for (const GraphNode& gn : gNodes)
+         if (gn.uid >= gNextNodeUid)
+            gNextNodeUid = gn.uid + 1;
+      const uint64_t priorArrangeNextId = gArrange.nextId;
+      PatchDataToArrangeModel(data, gArrange, [&](int savedIndex) -> uint64_t {
+         const GraphNode* src = resolve(savedIndex);
+         return src ? src->uid : 0;
+      });
+      // ApplyPatchData is both "open a file" and "restore an undo entry". For
+      // the undo case nextId must only ever climb (see ApplyArrangeOnlyEntry);
+      // for the file case carrying the previous document's mark forward just
+      // starts the new document's ids higher, which costs nothing.
+      gArrange.nextId = std::max(gArrange.nextId, priorArrangeNextId);
+      SyncLegacyFromArrange();
 
       // Once, after every node and cable above is wired, not once per audio
       // cable while loading - a per-cable rebuild here could call
@@ -35282,10 +35570,57 @@ namespace
       gSuppressUndoCheckpoints = false;
    }
 
+   // Snapshots the arrangement alone, for a gesture that changed nothing but
+   // the timeline. Cheap enough to call per gesture (no graph walk, no node
+   // serialization) and, more to the point, undoing it cannot disturb the
+   // running graph.
+   void PushArrangeUndo()
+   {
+      if (gSuppressUndoCheckpoints)
+         return;
+      SyncArrangeFromLegacy();
+      UndoEntry e;
+      e.arrangeOnly = true;
+      e.arrange = gArrange;
+      gUndoStack.push_back(std::move(e));
+      if (gUndoStack.size() > kMaxUndoDepth)
+         gUndoStack.pop_front();
+      gRedoStack.clear();
+      gPatchDirty = true;
+   }
+
+   // Swaps gArrange for `e`'s snapshot and hands the current one back for the
+   // opposite stack. Shared by Undo and Redo so the two can never disagree
+   // about what a timeline-only entry means.
+   void ApplyArrangeOnlyEntry(UndoEntry& e)
+   {
+      SyncArrangeFromLegacy();
+      Arrange::Model current = gArrange;
+      gArrange = e.arrange;
+      // nextId is a high-water mark, not part of the snapshot. Restoring the
+      // snapshot's value would hand out ids the undone edit already used:
+      // duplicate a clip (id 10, nextId 11), undo (nextId back to 10), make a
+      // different edit and a *different* clip gets id 10 - exactly the reuse
+      // the persisted nextId exists to prevent. Same rule as gNextNodeUid.
+      gArrange.nextId = std::max(gArrange.nextId, current.nextId);
+      e.arrange = std::move(current);
+      SyncLegacyFromArrange();
+   }
+
    void Undo()
    {
       if (gUndoStack.empty())
          return;
+      if (gUndoStack.back().arrangeOnly)
+      {
+         UndoEntry prev = std::move(gUndoStack.back());
+         gUndoStack.pop_back();
+         ApplyArrangeOnlyEntry(prev);
+         gRedoStack.push_back(std::move(prev));
+         gPatchDirty = true;
+         gPatchStatus = "Undo";
+         return;
+      }
       gRedoStack.push_back({ BuildPatchData(), GestureRecorder::Instance().Playbacks() });
       UndoEntry prev = std::move(gUndoStack.back());
       gUndoStack.pop_back();
@@ -35303,6 +35638,16 @@ namespace
    {
       if (gRedoStack.empty())
          return;
+      if (gRedoStack.back().arrangeOnly)
+      {
+         UndoEntry next = std::move(gRedoStack.back());
+         gRedoStack.pop_back();
+         ApplyArrangeOnlyEntry(next);
+         gUndoStack.push_back(std::move(next));
+         gPatchDirty = true;
+         gPatchStatus = "Redo";
+         return;
+      }
       gUndoStack.push_back({ BuildPatchData(), GestureRecorder::Instance().Playbacks() });
       UndoEntry next = std::move(gRedoStack.back());
       gRedoStack.pop_back();
@@ -54738,7 +55083,8 @@ int main(int argc, char** argv)
                      {
                         for (const auto& c : stream.clips)
                         {
-                           if (videoSec >= c.startSeconds && videoSec < (c.startSeconds + c.lengthSeconds))
+                           if (c.srcIndex >= 0 &&
+                               videoSec >= c.startSeconds && videoSec < (c.startSeconds + c.lengthSeconds))
                               currOfflineAudioClips.insert(c.srcIndex);
                         }
                      }
@@ -54875,7 +55221,8 @@ int main(int argc, char** argv)
                {
                   for (const auto& c : stream.clips)
                   {
-                     if (curTime >= c.startSeconds && curTime < (c.startSeconds + c.lengthSeconds))
+                     if (c.srcIndex >= 0 &&
+                         curTime >= c.startSeconds && curTime < (c.startSeconds + c.lengthSeconds))
                      {
                         currActiveTimelineClips.insert(c.srcIndex);
                      }
@@ -58166,279 +58513,446 @@ int main(int argc, char** argv)
          NewPatch();
          bool allOk = true;
 
-         // A. Round trip
+         // Every section drives Arrange::Model directly - that is the point of
+         // WP1. gArrangeStreams is only touched where a section is deliberately
+         // exercising the legacy UI bridge.
+         auto seedModel = [](Arrange::Model& m, int videoLanes, int audioLanes)
          {
-            Patch::Data data;
-            Patch::NodeRecord nr;
-            nr.index = 1;
-            nr.category = "3D";
-            nr.typeName = "Cube";
-            data.nodes.push_back(nr);
+            m = Arrange::Model();
+            for (int i = 0; i < videoLanes; i++) Arrange::AddLane(m, Arrange::kLaneVideo);
+            for (int i = 0; i < audioLanes; i++) Arrange::AddLane(m, Arrange::kLaneAudio);
+         };
 
-            Patch::StreamRecord s0;
-            s0.type = Patch::kStreamVideo;
-            s0.blendMode = 3;
-            s0.opacity = 0.75f;
-            s0.gainDb = -2.5f;
-            s0.pan = 0.2f;
-            s0.name = "Main Lane";
+         // --- A. Model invariants under the edit ops -----------------------
+         {
+            Arrange::Model m;
+            seedModel(m, 2, 1);
+            bool aOk = true;
+            std::string why;
 
-            Patch::ClipRecord c0_0;
-            c0_0.startSeconds = 0.1;
-            c0_0.lengthSeconds = 0.2;
-            c0_0.srcIndex = 1;
-            c0_0.srcOutput = 1;
-            c0_0.triggerMode = 1;
-            c0_0.fadeInSec = 0.05f;
-            c0_0.fadeOutSec = 0.05f;
-            c0_0.gainDb = -3.0f;
-            c0_0.speed = 0.5f;
-            c0_0.loop = true;
-            s0.clips.push_back(c0_0);
+            Arrange::Clip c;
+            c.start = 0;
+            c.length = Arrange::kTicksPerBar;
+            c.srcUid = 7;
+            uint64_t first = 0, second = 0;
+            aOk = aOk && Arrange::PlaceOverwrite(m, m.lanes[0].id, c, &first);
+            c.start = Arrange::kTicksPerBar;
+            aOk = aOk && Arrange::PlaceOverwrite(m, m.lanes[0].id, c, &second);
+            aOk = aOk && m.lanes[0].clips.size() == 2 && first != second;
 
-            Patch::ClipRecord c0_1;
-            c0_1.startSeconds = c0_0.startSeconds + c0_0.lengthSeconds;
-            c0_1.lengthSeconds = 0.5;
-            c0_1.srcIndex = 1;
-            c0_1.srcOutput = 2;
-            c0_1.triggerMode = 1;
-            c0_1.fadeInSec = 0.1f;
-            c0_1.fadeOutSec = 0.1f;
-            c0_1.gainDb = 1.5f;
-            c0_1.speed = 1.5f;
-            c0_1.loop = true;
-            s0.clips.push_back(c0_1);
+            // Overwrite straddling both: the left one is truncated, the right
+            // one has its head eaten - the exact case index-based editing kept
+            // getting wrong.
+            c.start = Arrange::kPPQ * 2;
+            c.length = Arrange::kPPQ * 4;
+            uint64_t third = 0;
+            aOk = aOk && Arrange::PlaceOverwrite(m, m.lanes[0].id, c, &third);
+            aOk = aOk && m.lanes[0].clips.size() == 3;
+            aOk = aOk && Arrange::Validate(m, &why);
 
-            Patch::StreamRecord s1;
-            s1.type = Patch::kStreamAudio;
-            s1.blendMode = 1;
-            s1.opacity = 0.5f;
-            s1.gainDb = -6.0f;
-            s1.pan = -0.5f;
-            s1.name = "";
+            // Splitting inside a clip yields two, and the ids are distinct.
+            uint64_t rightHalf = 0;
+            aOk = aOk && Arrange::Split(m, third, Arrange::kPPQ * 4, &rightHalf);
+            aOk = aOk && rightHalf != 0 && rightHalf != third;
+            aOk = aOk && Arrange::Validate(m, &why);
 
-            Patch::ClipRecord c1_0;
-            c1_0.startSeconds = 1.0;
-            c1_0.lengthSeconds = 2.0;
-            c1_0.srcIndex = 1;
-            c1_0.srcOutput = 0;
-            c1_0.triggerMode = 1;
-            c1_0.fadeInSec = 0.2f;
-            c1_0.fadeOutSec = 0.3f;
-            c1_0.gainDb = -1.0f;
-            c1_0.speed = 2.0f;
-            c1_0.loop = true;
-            s1.clips.push_back(c1_0);
-
-            Patch::ClipRecord c1_1;
-            c1_1.startSeconds = 3.5;
-            c1_1.lengthSeconds = 1.5;
-            c1_1.srcIndex = 1;
-            c1_1.srcOutput = 1;
-            c1_1.triggerMode = 0;
-            c1_1.fadeInSec = 0.0f;
-            c1_1.fadeOutSec = 0.4f;
-            c1_1.gainDb = 2.0f;
-            c1_1.speed = 0.8f;
-            c1_1.loop = false;
-            s1.clips.push_back(c1_1);
-
-            Patch::StreamRecord s2;
-            s2.type = Patch::kStreamVideo;
-            s2.blendMode = 5;
-            s2.opacity = 0.25f;
-            s2.gainDb = -1.0f;
-            s2.pan = 0.5f;
-            s2.name = "a\\b";
-
-            Patch::ClipRecord c2_0;
-            c2_0.startSeconds = 0.5;
-            c2_0.lengthSeconds = 1.2;
-            c2_0.srcIndex = 1;
-            c2_0.srcOutput = 1;
-            c2_0.triggerMode = 1;
-            c2_0.fadeInSec = 0.1f;
-            c2_0.fadeOutSec = 0.2f;
-            c2_0.gainDb = -4.0f;
-            c2_0.speed = 1.25f;
-            c2_0.loop = true;
-            s2.clips.push_back(c2_0);
-
-            data.streams = { s0, s1, s2 };
-
-            const std::string path = TmpPath("arrange_selftest_roundtrip.inf");
-            std::string err;
-            bool ok = Patch::Write(path, data, err);
-            Patch::Data loaded;
-            ok = ok && Patch::Read(path, loaded, err);
-            std::remove(path.c_str());
-
-            bool streamsMatch = ok && loaded.streams.size() == 3;
-            if (streamsMatch)
+            // A clip that strictly contains an overwrite splits into two, so
+            // the lane grows by one rather than losing the tail.
             {
-               for (size_t si = 0; si < 3 && streamsMatch; si++)
-               {
-                  const auto& origS = data.streams[si];
-                  const auto& loadS = loaded.streams[si];
-                  if (loadS.type != origS.type || loadS.blendMode != origS.blendMode ||
-                      loadS.opacity != origS.opacity || loadS.gainDb != origS.gainDb ||
-                      loadS.pan != origS.pan || loadS.name != origS.name ||
-                      loadS.clips.size() != origS.clips.size())
-                  {
-                     streamsMatch = false;
-                     break;
-                  }
-                  for (size_t ci = 0; ci < origS.clips.size() && streamsMatch; ci++)
-                  {
-                     const auto& origC = origS.clips[ci];
-                     const auto& loadC = loadS.clips[ci];
-                     if (loadC.startSeconds != origC.startSeconds ||
-                         loadC.lengthSeconds != origC.lengthSeconds ||
-                         loadC.srcIndex != origC.srcIndex ||
-                         loadC.srcOutput != origC.srcOutput ||
-                         loadC.triggerMode != origC.triggerMode ||
-                         loadC.fadeInSec != origC.fadeInSec ||
-                         loadC.fadeOutSec != origC.fadeOutSec ||
-                         loadC.gainDb != origC.gainDb ||
-                         loadC.speed != origC.speed ||
-                         loadC.loop != origC.loop)
-                     {
-                        streamsMatch = false;
-                        break;
-                     }
-                  }
-               }
-               if (streamsMatch)
-               {
-                  const auto& c0 = loaded.streams[0].clips[0];
-                  const auto& c1 = loaded.streams[0].clips[1];
-                  if (c1.startSeconds != c0.startSeconds + c0.lengthSeconds)
-                     streamsMatch = false;
-               }
+               Arrange::Model m2;
+               seedModel(m2, 1, 0);
+               Arrange::Clip big;
+               big.start = 0;
+               big.length = Arrange::kPPQ * 16;
+               uint64_t bigId = 0;
+               Arrange::PlaceOverwrite(m2, m2.lanes[0].id, big, &bigId);
+               Arrange::Clip mid;
+               mid.start = Arrange::kPPQ * 4;
+               mid.length = Arrange::kPPQ * 4;
+               Arrange::PlaceOverwrite(m2, m2.lanes[0].id, mid);
+               aOk = aOk && m2.lanes[0].clips.size() == 3 && Arrange::Validate(m2, &why);
             }
-            printf("arrange roundtrip: %s\n", streamsMatch ? "OK" : "FAIL");
-            allOk = allOk && streamsMatch;
+
+            // Groups: two members live, one member deleted dissolves the group
+            // rather than leaving the singleton Validate rejects.
+            {
+               uint64_t gid = 0;
+               aOk = aOk && Arrange::Group(m, { first, second }, &gid) && gid != 0;
+               aOk = aOk && Arrange::Validate(m, &why);
+               aOk = aOk && Arrange::Delete(m, { first });
+               const Arrange::Clip* survivor = Arrange::FindClip(m, second);
+               aOk = aOk && survivor != nullptr && survivor->groupId == 0;
+               aOk = aOk && Arrange::Validate(m, &why);
+            }
+
+            // MoveClips is all-or-nothing: onto a lane of the wrong type it
+            // must refuse, leaving the model exactly as it was.
+            {
+               const uint64_t before = m.revision;
+               const bool refused = !Arrange::MoveClips(m, { second }, 0, 2); // video -> audio
+               aOk = aOk && refused && m.revision == before;
+            }
+
+            // Anything that reaches the model without an edit op - the legacy
+            // UI bridge appends without sorting - must still come out sorted,
+            // non-overlapping and valid.
+            {
+               Arrange::Model m3;
+               seedModel(m3, 1, 0);
+               Arrange::Clip a1, a2;
+               a1.id = m3.NewId(); a1.start = Arrange::kPPQ * 4; a1.length = Arrange::kPPQ * 4;
+               a2.id = m3.NewId(); a2.start = 0;                 a2.length = Arrange::kPPQ * 6;
+               m3.lanes[0].clips.push_back(a1);   // deliberately out of order
+               m3.lanes[0].clips.push_back(a2);   // and overlapping
+               Arrange::Normalize(m3);
+               aOk = aOk && m3.lanes[0].clips.size() == 2 &&
+                     m3.lanes[0].clips[0].start == 0 &&
+                     m3.lanes[0].clips[0].End() == Arrange::kPPQ * 4 &&
+                     Arrange::Validate(m3, &why);
+            }
+
+            printf("arrange model ops: %s%s%s\n", aOk ? "OK" : "FAIL",
+                   why.empty() ? "" : "  reason: ", why.c_str());
+            allOk = allOk && aOk;
          }
 
-         // B. Undo/redo, live
+         // --- B. Fuzz: 2000 seeded random ops, Validate after every one ----
          {
-            NewPatch();
-            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
-            Patch::StreamRecord s;
-            s.type = Patch::kStreamAudio;
-            Patch::ClipRecord c;
-            c.srcIndex = cube->index;
-            c.startSeconds = 2.0;
-            c.lengthSeconds = 1.0;
-            s.clips.push_back(c);
-            gArrangeStreams = { s };
+            Arrange::Model m;
+            seedModel(m, 3, 2);
+            std::mt19937 rng(0xA44A47E5u);
+            auto rnd = [&rng](int lo, int hi) { return lo + (int)(rng() % (uint32_t)(hi - lo + 1)); };
 
-            PushUndoCheckpoint();
-            gArrangeStreams[0].clips[0].startSeconds = 5.0;
-
-            Undo();
-            bool bOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1;
-            if (bOk)
+            bool bOk = true;
+            std::string why;
+            int applied = 0;
+            for (int i = 0; i < 2000 && bOk; i++)
             {
-               bOk = gArrangeStreams[0].clips[0].startSeconds == 2.0;
-               GraphNode* gn = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
-               bOk = bOk && (gn != nullptr && gn->typeName == "Cube");
-            }
+               // Collect the live ids fresh each iteration - an op may have
+               // deleted or split anything from the previous one.
+               std::vector<uint64_t> ids;
+               for (const Arrange::Lane& l : m.lanes)
+                  for (const Arrange::Clip& c : l.clips)
+                     ids.push_back(c.id);
 
-            Redo();
-            if (bOk)
-            {
-               bOk = bOk && gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1 &&
-                     gArrangeStreams[0].clips[0].startSeconds == 5.0;
-               GraphNode* gn = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
-               bOk = bOk && (gn != nullptr && gn->typeName == "Cube");
+               // Group ids and marker ids, also refreshed every iteration.
+               std::vector<uint64_t> groups;
+               for (const Arrange::Lane& l : m.lanes)
+                  for (const Arrange::Clip& c : l.clips)
+                     if (c.groupId != 0 &&
+                         std::find(groups.begin(), groups.end(), c.groupId) == groups.end())
+                        groups.push_back(c.groupId);
+
+               const int op = rnd(0, 14);
+               bool changed = false;
+               switch (op)
+               {
+                  case 0: case 1: case 2:
+                  {
+                     Arrange::Clip c;
+                     c.start = (Arrange::Tick)rnd(0, 64) * (Arrange::kPPQ / 4);
+                     c.length = (Arrange::Tick)rnd(1, 16) * (Arrange::kPPQ / 4);
+                     c.srcUid = (uint64_t)rnd(1, 5);
+                     c.fadeIn = (Arrange::Tick)rnd(0, 4) * (Arrange::kPPQ / 4);
+                     c.fadeOut = (Arrange::Tick)rnd(0, 4) * (Arrange::kPPQ / 4);
+                     c.enabled = rnd(0, 1) != 0;
+                     changed = Arrange::PlaceOverwrite(m, m.lanes[rnd(0, (int)m.lanes.size() - 1)].id, c);
+                     break;
+                  }
+                  case 3:
+                     if (!ids.empty())
+                        changed = Arrange::MoveClips(m, { ids[rnd(0, (int)ids.size() - 1)] },
+                                                     (Arrange::Tick)rnd(-8, 8) * (Arrange::kPPQ / 4),
+                                                     rnd(-1, 1));
+                     break;
+                  case 4:
+                     if (!ids.empty())
+                        changed = Arrange::TrimEdge(m, ids[rnd(0, (int)ids.size() - 1)], rnd(0, 1),
+                                                    (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                     break;
+                  case 5:
+                     if (!ids.empty())
+                        changed = Arrange::Split(m, ids[rnd(0, (int)ids.size() - 1)],
+                                                 (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                     break;
+                  case 6:
+                     if (ids.size() >= 2)
+                     {
+                        std::vector<uint64_t> pick = { ids[rnd(0, (int)ids.size() - 1)],
+                                                       ids[rnd(0, (int)ids.size() - 1)] };
+                        changed = (rnd(0, 1) == 0) ? Arrange::Group(m, pick)
+                                                   : Arrange::DuplicateBlock(m, pick);
+                     }
+                     break;
+                  case 7:
+                     if (!ids.empty())
+                        changed = Arrange::Delete(m, { ids[rnd(0, (int)ids.size() - 1)] });
+                     break;
+                  case 8:
+                     if (!ids.empty())
+                        changed = Arrange::SetEnabled(m, { ids[rnd(0, (int)ids.size() - 1)] }, Arrange::kToggle);
+                     break;
+                  // The group ops. Ungroup/RemoveFromGroup are the two that
+                  // can strand a singleton group, which is invariant 3.
+                  case 9:
+                     if (!groups.empty())
+                     {
+                        const uint64_t g = groups[rnd(0, (int)groups.size() - 1)];
+                        const int which = rnd(0, 3);
+                        if (which == 0)
+                           changed = Arrange::Ungroup(m, { g });
+                        else if (which == 1)
+                        {
+                           const std::vector<uint64_t> members = Arrange::ClipsInGroup(m, g);
+                           if (!members.empty())
+                              changed = Arrange::RemoveFromGroup(m, { members[rnd(0, (int)members.size() - 1)] });
+                        }
+                        else if (which == 2)
+                           changed = Arrange::TrimGroupEdge(m, g, rnd(0, 1),
+                                                            (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                        else
+                           changed = Arrange::ScaleGroup(m, g, rnd(0, 1),
+                                                         (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                     }
+                     break;
+                  case 10:
+                     if (!ids.empty())
+                     {
+                        // ExpandSelectionToGroups has no side effect, but it
+                        // must never return an id the model doesn't hold.
+                        const std::vector<uint64_t> sel =
+                            Arrange::ExpandSelectionToGroups(m, { ids[rnd(0, (int)ids.size() - 1)] });
+                        for (uint64_t id : sel)
+                           bOk = bOk && Arrange::FindClip(m, id) != nullptr;
+                     }
+                     break;
+                  // Lane ops. Add is capped so the fuzz doesn't just grow
+                  // lanes forever, and remove takes whole lanes of clips with
+                  // it - the path most likely to strand a group.
+                  case 11:
+                     if (m.lanes.size() < 8)
+                        changed = Arrange::AddLane(m, rnd(0, 1), rnd(-1, (int)m.lanes.size())) != 0;
+                     break;
+                  case 12:
+                     if (m.lanes.size() > 2)
+                        changed = Arrange::RemoveLane(m, m.lanes[rnd(0, (int)m.lanes.size() - 1)].id);
+                     break;
+                  case 13:
+                     if (m.lanes.size() > 1)
+                        changed = Arrange::ReorderLane(m, m.lanes[rnd(0, (int)m.lanes.size() - 1)].id,
+                                                       rnd(0, (int)m.lanes.size() - 1));
+                     break;
+                  // Markers, and the "a node went away" path.
+                  default:
+                  {
+                     const int which = rnd(0, 3);
+                     if (which == 0)
+                        changed = Arrange::AddMarker(m, (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4), "m") != 0;
+                     else if (!m.markers.empty())
+                     {
+                        const uint64_t mk = m.markers[rnd(0, (int)m.markers.size() - 1)].id;
+                        if (which == 1)
+                           changed = Arrange::MoveMarker(m, mk, (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                        else if (which == 2)
+                           changed = Arrange::DeleteMarker(m, mk);
+                        else
+                           changed = Arrange::ClearSource(m, (uint64_t)rnd(1, 5));
+                     }
+                     break;
+                  }
+               }
+               applied += changed ? 1 : 0;
+               if (!Arrange::Validate(m, &why))
+               {
+                  printf("arrange fuzz: invariant broken at op %d (%d): %s\n", i, op, why.c_str());
+                  bOk = false;
+               }
             }
-            printf("arrange undo redo: %s\n", bOk ? "OK" : "FAIL");
+            printf("arrange fuzz: 2000 ops, %d changed the model  %s\n", applied, bOk ? "OK" : "FAIL");
             allOk = allOk && bOk;
          }
 
-         // C. Deletion, live
+         // --- C. Tick save/load round trip, including markers and settings --
          {
-            GraphNode* sphere = SpawnNode("Sphere", "3D", 200.0f, 0.0f);
-            Patch::ClipRecord sc;
-            sc.srcIndex = sphere->index;
-            sc.startSeconds = 10.0;
-            sc.lengthSeconds = 2.0;
-            gArrangeStreams[0].clips.push_back(sc);
-
-            const int sphereIdx = sphere->index;
-            RemoveNodeByIndex(sphereIdx);
-
-            bool cOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1;
+            NewPatch();
+            // gNodes is a vector, so the second SpawnNode can reallocate and
+            // invalidate the first pointer - read what is needed immediately.
+            GraphNode* spawned = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            const uint64_t cubeUid = spawned ? spawned->uid : 0;
+            spawned = SpawnNode("Sphere", "3D", 200.0f, 0.0f);
+            const uint64_t sphereUid = spawned ? spawned->uid : 0;
+            bool cOk = cubeUid != 0 && sphereUid != 0;
             if (cOk)
             {
-               GraphNode* cubeNode = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
-               cOk = cOk && (cubeNode != nullptr && cubeNode->typeName == "Cube");
-            }
+               Arrange::Model& m = gArrange;
+               seedModel(m, 1, 1);
+               Arrange::Clip c;
+               c.start = Arrange::kPPQ * 3;          // deliberately off the bar
+               c.length = Arrange::kPPQ * 5;
+               c.srcUid = cubeUid;
+               c.fadeIn = Arrange::kPPQ / 3;         // a triplet, exact in ticks
+               c.gainDb = -6.0f;
+               c.enabled = false;
+               c.name = "clip one";
+               uint64_t idA = 0, idB = 0;
+               Arrange::PlaceOverwrite(m, m.lanes[0].id, c, &idA);
+               c.start = Arrange::kPPQ * 9;
+               c.srcUid = sphereUid;
+               c.enabled = true;
+               c.name.clear();
+               Arrange::PlaceOverwrite(m, m.lanes[1].id, c, &idB);
+               Arrange::Group(m, { idA, idB });
+               Arrange::AddMarker(m, Arrange::kTicksPerBar * 2, "chorus", 0xFF00FF00u);
+               m.settings.timeDisplay = 1;
+               m.settings.snapDivision = 8;
+               m.settings.loop.enabled = true;
+               m.settings.loop.start = 0;
+               m.settings.loop.end = Arrange::kTicksPerBar * 4;
+               m.settings.renderFps = 30;
+               const uint64_t savedNextId = m.nextId;
+               SyncLegacyFromArrange();
 
-            Undo();
-            if (cOk)
-            {
-               cOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 2;
+               const std::string path = TmpPath("arrange_selftest_tick.inf");
+               SavePatchTo(path);
+               LoadPatchFrom(path);
+               std::remove(path.c_str());
+
+               const Arrange::Model& r = gArrange;
+               cOk = r.lanes.size() == 2 && r.lanes[0].clips.size() == 1 && r.lanes[1].clips.size() == 1;
                if (cOk)
                {
-                  GraphNode* sphereNode = FindNodeByIndex(gArrangeStreams[0].clips[1].srcIndex);
-                  cOk = cOk && (sphereNode != nullptr && sphereNode->typeName == "Sphere");
+                  const Arrange::Clip& ra = r.lanes[0].clips[0];
+                  const Arrange::Clip& rb = r.lanes[1].clips[0];
+                  // Ticks are exact - no epsilon, which is the whole reason
+                  // the time base moved off doubles.
+                  cOk = ra.start == Arrange::kPPQ * 3 && ra.length == Arrange::kPPQ * 5 &&
+                        ra.fadeIn == Arrange::kPPQ / 3 && ra.gainDb == -6.0f &&
+                        !ra.enabled && ra.name == "clip one" && ra.id == idA &&
+                        rb.id == idB && ra.groupId != 0 && ra.groupId == rb.groupId;
+                  // srcUid survives the whole respawn, which srcIndex could not.
+                  GraphNode* ca = FindNodeByUid(ra.srcUid);
+                  GraphNode* cb = FindNodeByUid(rb.srcUid);
+                  cOk = cOk && ca != nullptr && cb != nullptr && ca->typeName == "Cube" &&
+                        cb->typeName == "Sphere";
+                  cOk = cOk && r.markers.size() == 1 && r.markers[0].pos == Arrange::kTicksPerBar * 2 &&
+                        r.markers[0].name == "chorus" && r.markers[0].color == 0xFF00FF00u;
+                  cOk = cOk && r.settings.timeDisplay == 1 && r.settings.snapDivision == 8 &&
+                        r.settings.loop.enabled && r.settings.loop.end == Arrange::kTicksPerBar * 4 &&
+                        r.settings.renderFps == 30;
+                  // nextId is persisted, not recomputed: a reload must not be
+                  // able to hand out an id a deleted clip already used.
+                  cOk = cOk && r.nextId >= savedNextId;
+                  std::string why;
+                  cOk = cOk && Arrange::Validate(r, &why);
                }
             }
-
-            // Also test ApplyPatchData dropping clips with non-existent node
-            Patch::Data badData = BuildPatchData();
-            Patch::ClipRecord orphan;
-            orphan.srcIndex = 999999;
-            orphan.startSeconds = 1.0;
-            orphan.lengthSeconds = 1.0;
-            badData.streams[0].clips.push_back(orphan);
-            ApplyPatchData(badData);
-            cOk = cOk && (gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 2);
-
-            printf("arrange deletion: %s\n", cOk ? "OK" : "FAIL");
+            printf("arrange tick roundtrip: %s\n", cOk ? "OK" : "FAIL");
             allOk = allOk && cOk;
          }
 
-         // D. File->New
+         // --- D. Legacy seconds patch converts to ticks --------------------
          {
-            NewPatch();
-            // Fresh document seeds default empty streams (no clips)
-            size_t totalClips = 0;
-            for (const auto& st : gArrangeStreams)
-               totalClips += st.clips.size();
-            const bool dOk = !gArrangeStreams.empty() && totalClips == 0;
-            printf("arrange new patch: %s\n", dOk ? "OK" : "FAIL");
-            allOk = allOk && dOk;
-         }
-
-         // E. Forward compatibility
-         {
-            const std::string path = TmpPath("arrange_selftest_forward.inf");
+            // 120 bpm -> 1 beat = 0.5 s, so 1.0 s is exactly 2 beats and
+            // 2.0 s is 4. The transport line deliberately sits AFTER the clip
+            // to prove the conversion waits for the whole file.
+            const std::string path = TmpPath("arrange_selftest_legacy.inf");
             {
                std::ofstream f(path);
                f << "infinite-patch 1\n";
                f << "node 1 3D Cube\n";
                f << "end\n";
-               f << "stream 1 0 1 0 0 A\n";
-               f << "arrangefuture 1 2 3\n";
-               f << "clip 0 1 2 -1 0 0 0 0 0 1 0\n";
+               f << "stream 0 0 1 0 0 V\n";
+               f << "clip 0 1 2 1 0 1 0.25 0 -3 0.5 1\n";
+               f << "transport 120 4 4 0 0\n";
             }
             Patch::Data loaded;
             std::string err;
-            bool ok = Patch::Read(path, loaded, err);
+            const bool read = Patch::Read(path, loaded, err);
             std::remove(path.c_str());
 
-            const bool eOk = ok && loaded.streams.size() == 1 && loaded.streams[0].clips.size() == 1 &&
-                             loaded.streams[0].name == "A" &&
-                             loaded.streams[0].clips[0].startSeconds == 1.0 &&
-                             loaded.streams[0].clips[0].lengthSeconds == 2.0;
-            printf("arrange forward compat: %s\n", eOk ? "OK" : "FAIL");
+            bool dOk = read && loaded.streams.size() == 1 && loaded.streams[0].clips.size() == 1;
+            if (dOk)
+            {
+               const Patch::ClipRecord& c = loaded.streams[0].clips[0];
+               dOk = c.startTick == Arrange::kPPQ * 2 && c.lengthTick == Arrange::kPPQ * 4 &&
+                     c.fadeInTick == Arrange::kPPQ / 2 && c.gainDb == -3.0f &&
+                     c.legacySrcIndex == 1 && c.srcUid == 0 && c.enabled;
+            }
+            printf("arrange legacy seconds -> ticks: %s\n", dOk ? "OK" : "FAIL");
+            allOk = allOk && dOk;
+         }
+
+         // --- E. Undo/redo, interleaved with node add and delete -----------
+         {
+            NewPatch();
+            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            bool eOk = cube != nullptr;
+            const uint64_t cubeUid = cube ? cube->uid : 0;
+            const int cubeIndex = cube ? cube->index : -1;
+            if (eOk)
+            {
+               seedModel(gArrange, 1, 0);
+               Arrange::Clip c;
+               c.length = Arrange::kTicksPerBar;
+               c.srcUid = cubeUid;
+               uint64_t clipId = 0;
+               Arrange::PlaceOverwrite(gArrange, gArrange.lanes[0].id, c, &clipId);
+               SyncLegacyFromArrange();
+
+               // A timeline-only gesture: the entry must not respawn the graph
+               // on undo, so the node's pointer identity survives it.
+               const GraphNode* before = FindNodeByUid(cubeUid);
+               PushArrangeUndo();
+               Arrange::MoveClips(gArrange, { clipId }, Arrange::kTicksPerBar, 0);
+               SyncLegacyFromArrange();
+               eOk = eOk && gArrange.lanes[0].clips[0].start == Arrange::kTicksPerBar;
+
+               Undo();
+               eOk = eOk && gArrange.lanes[0].clips[0].start == 0;
+               eOk = eOk && FindNodeByUid(cubeUid) == before;   // no respawn
+               Redo();
+               eOk = eOk && gArrange.lanes[0].clips[0].start == Arrange::kTicksPerBar;
+               Undo();
+
+               // A graph gesture: deleting the node must leave the clip in
+               // place but offline, and undo must re-attach it by uid.
+               const size_t clipsBefore = gArrange.lanes[0].clips.size();
+               PushUndoCheckpoint();
+               RemoveNodeByIndex(cubeIndex);
+               SyncArrangeFromLegacy();
+               // Offline, but not forgetful: srcIndex is gone, srcUid is kept
+               // so the clip re-binds by itself when the node comes back.
+               eOk = eOk && gArrange.lanes.size() == 1 &&
+                     gArrange.lanes[0].clips.size() == clipsBefore &&
+                     gArrange.lanes[0].clips[0].srcUid == cubeUid &&
+                     FindNodeByUid(cubeUid) == nullptr;
+
+               Undo();
+               eOk = eOk && gArrange.lanes.size() == 1 && gArrange.lanes[0].clips.size() == clipsBefore;
+               if (eOk)
+               {
+                  const uint64_t restored = gArrange.lanes[0].clips[0].srcUid;
+                  GraphNode* back = FindNodeByUid(restored);
+                  eOk = restored == cubeUid && back != nullptr && back->typeName == "Cube";
+               }
+               std::string why;
+               eOk = eOk && Arrange::Validate(gArrange, &why);
+            }
+            printf("arrange undo redo + node delete: %s\n", eOk ? "OK" : "FAIL");
             allOk = allOk && eOk;
          }
 
-         // F. Malformed input
+         // --- F. File->New clears the model --------------------------------
+         {
+            NewPatch();
+            const bool fOk = gArrange.lanes.size() == gArrangeStreams.size() &&
+                             gArrange.markers.empty() &&
+                             Arrange::ArrangementEnd(gArrange) == 0;
+            printf("arrange new patch: %s\n", fOk ? "OK" : "FAIL");
+            allOk = allOk && fOk;
+         }
+
+         // --- G. Unknown tags and malformed lines ---------------------------
          {
             const std::string path = TmpPath("arrange_selftest_malformed.inf");
             {
@@ -58446,52 +58960,111 @@ int main(int argc, char** argv)
                f << "infinite-patch 1\n";
                f << "node 1 3D Cube\n";
                f << "end\n";
-               f << "stream 1\n";
+               f << "stream 1\n";                      // malformed, kept with defaults
                f << "stream 0 0 1 0 0 V\n";
-               f << "clip 7 0 1 -1\n";
-               f << "clip 0 0 0 -1\n";
-               f << "clip 0 -1 1 -1\n";
-               f << "clip 0 0 1 -1\n";
-               f << "clip 1 0 1 -1 0 0 0 0 0 abc 0\n";
+               f << "arrangefuture 1 2 3\n";           // from a newer build
+               f << "cliptick 7 0 0 960 0\n";          // out-of-range lane, dropped
+               f << "cliptick 0 0 0 0 0\n";            // zero length, dropped
+               f << "cliptick 0 0 -5 960 0\n";         // negative start, dropped
+               f << "cliptick 0 0 0 960 0 0 99999 0\n"; // fade past the end, clamped
+               f << "marker 0 -4 0 bad\n";             // negative position, dropped
+               f << "marker 0 1920 4278190080 good\n";
             }
             Patch::Data loaded;
             std::string err;
-            bool ok = Patch::Read(path, loaded, err);
+            const bool read = Patch::Read(path, loaded, err);
             std::remove(path.c_str());
 
-            bool fOk = ok && loaded.streams.size() == 2;
-            if (fOk)
+            bool gOk = read && loaded.streams.size() == 2;
+            if (gOk)
             {
-               fOk = fOk && loaded.streams[0].type == 1 &&
-                     loaded.streams[0].opacity == 1.0f &&
-                     loaded.streams[0].gainDb == 0.0f &&
-                     loaded.streams[0].pan == 0.0f &&
+               // The malformed `stream 1` line is kept with defaults rather
+               // than dropped: the clip lines below address their lane by
+               // position, so dropping it would move every later clip onto the
+               // wrong lane. All four cliptick lines name lane 0, which IS
+               // that malformed line - only the last one survives its checks.
+               gOk = loaded.streams[0].type == 1 && loaded.streams[0].opacity == 1.0f &&
                      loaded.streams[0].name.empty() &&
                      loaded.streams[0].clips.size() == 1 &&
-                     loaded.streams[1].clips.size() == 1 &&
-                     loaded.streams[1].clips[0].speed == 1.0f;
+                     loaded.streams[0].clips[0].fadeInTick == 960 &&
+                     loaded.streams[1].clips.empty() &&
+                     loaded.markers.size() == 1 && loaded.markers[0].name == "good";
             }
-            printf("arrange malformed input: %s\n", fOk ? "OK" : "FAIL");
-            allOk = allOk && fOk;
+            printf("arrange malformed input: %s\n", gOk ? "OK" : "FAIL");
+            allOk = allOk && gOk;
          }
 
-         // G. JSON parity
+         // --- H. JSON parity -----------------------------------------------
          {
             NewPatch();
             GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
-            Patch::StreamRecord s;
-            Patch::ClipRecord c;
-            c.srcIndex = cube->index;
-            s.clips.push_back(c);
-            gArrangeStreams = { s };
+            seedModel(gArrange, 1, 0);
+            Arrange::Clip c;
+            c.length = Arrange::kTicksPerBar;
+            c.srcUid = cube ? cube->uid : 0;
+            Arrange::PlaceOverwrite(gArrange, gArrange.lanes[0].id, c);
+            Arrange::AddMarker(gArrange, Arrange::kPPQ, "m");
+            SyncLegacyFromArrange();
 
             nlohmann::json j = PatchJson::ToJson(BuildPatchData());
-            const bool gOk = j.contains("streams") && j["streams"].is_array() &&
-                             j["streams"].size() == gArrangeStreams.size() &&
+            const bool hOk = j.contains("streams") && j["streams"].is_array() &&
+                             j["streams"].size() == gArrange.lanes.size() &&
                              j["streams"][0]["clips"].is_array() &&
-                             j["streams"][0]["clips"].size() == gArrangeStreams[0].clips.size();
-            printf("arrange json parity: %s\n", gOk ? "OK" : "FAIL");
-            allOk = allOk && gOk;
+                             j["streams"][0]["clips"].size() == gArrange.lanes[0].clips.size() &&
+                             j["streams"][0]["clips"][0].contains("startTick") &&
+                             j.contains("markers") && j["markers"].size() == 1 &&
+                             j.contains("arrange") && j["arrange"].contains("nextId") &&
+                             j["nodes"][0].contains("uid");
+            printf("arrange json parity: %s\n", hOk ? "OK" : "FAIL");
+            allOk = allOk && hOk;
+         }
+
+         // --- I. Ids are unique and never reused ---------------------------
+         // The two defects the WP1 review found, both of which reached disk:
+         // the legacy UI's copy paths clone a clip record verbatim (id and
+         // all), and undo used to restore nextId along with the snapshot.
+         {
+            NewPatch();
+            seedModel(gArrange, 1, 0);
+            const uint64_t laneId = gArrange.lanes[0].id;
+            Arrange::Clip c;
+            c.length = Arrange::kTicksPerBar;
+            uint64_t firstId = 0;
+            Arrange::PlaceOverwrite(gArrange, laneId, c, &firstId);
+
+            // (1) A duplicate id arriving from outside an edit op - exactly
+            // what Cmd+D used to produce - must be re-minted, not accepted.
+            Arrange::Clip clone = gArrange.lanes[0].clips[0];
+            clone.start = Arrange::kTicksPerBar * 2;
+            gArrange.lanes[0].clips.push_back(clone);   // same id, deliberately
+            Arrange::Normalize(gArrange);
+            std::string why;
+            bool iOk = gArrange.lanes[0].clips.size() == 2 &&
+                       gArrange.lanes[0].clips[0].id != gArrange.lanes[0].clips[1].id &&
+                       Arrange::Validate(gArrange, &why);
+
+            // (2) nextId only ever climbs. Snapshot, spend an id, undo, and
+            // the next id handed out must still be a fresh one.
+            SyncLegacyFromArrange();
+            PushArrangeUndo();
+            uint64_t spentId = 0;
+            Arrange::Clip extra;
+            extra.start = Arrange::kTicksPerBar * 8;
+            extra.length = Arrange::kTicksPerBar;
+            Arrange::PlaceOverwrite(gArrange, laneId, extra, &spentId);
+            SyncLegacyFromArrange();
+            Undo();
+            iOk = iOk && spentId != 0 && gArrange.nextId > spentId;
+
+            Arrange::Clip after;
+            after.start = Arrange::kTicksPerBar * 12;
+            after.length = Arrange::kTicksPerBar;
+            uint64_t afterId = 0;
+            Arrange::PlaceOverwrite(gArrange, laneId, after, &afterId);
+            iOk = iOk && afterId != spentId && Arrange::Validate(gArrange, &why);
+
+            printf("arrange id uniqueness: %s\n", iOk ? "OK" : "FAIL");
+            allOk = allOk && iOk;
          }
 
          printf("arrange test: all  %s\n", allOk ? "OK" : "FAIL");
@@ -71915,7 +72488,7 @@ int main(int argc, char** argv)
           gArrangeAssigningClipIndex >= 0 &&
           gArrangeAssigningClipIndex < (int)gArrangeStreams[gArrangeAssigningClipStream].clips.size())
       {
-         Patch::ClipRecord& assignClip = gArrangeStreams[gArrangeAssigningClipStream].clips[gArrangeAssigningClipIndex];
+         LegacyArrange::ClipRecord& assignClip = gArrangeStreams[gArrangeAssigningClipStream].clips[gArrangeAssigningClipIndex];
          const bool assignIsVideo = gArrangeStreams[gArrangeAssigningClipStream].type == Patch::kStreamVideo;
          const ImVec2 mp = ImGui::GetMousePos();
 

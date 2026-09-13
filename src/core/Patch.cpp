@@ -8,6 +8,7 @@
 #include <map>
 #include <sstream>
 
+#include "../arrange/ArrangeModel.h"
 #include "INode.h"
 #include "platform/AppPaths.h"
 
@@ -214,6 +215,10 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
       const float px = (std::isfinite(node.x) && std::abs(node.x) <= 1e6f && node.x > -2e9f) ? node.x : 0.0f;
       const float py = (std::isfinite(node.y) && std::abs(node.y) <= 1e6f && node.y > -2e9f) ? node.y : 0.0f;
       file << "node " << node.index << " " << node.category << " " << node.typeName << "\n";
+      // Its own line, not an `s uid` param: FieldGraphNode already writes an
+      // unrelated `s uid <hex>` param and the two would collide on load.
+      if (node.uid != 0)
+         file << "  uid " << node.uid << "\n";
       file << "  pos " << FloatToString(px) << " " << FloatToString(py) << "\n";
       file << "  flags " << (node.showParams ? 1 : 0) << " " << (node.bypassed ? 1 : 0) << " "
            << (node.showMiniViewport ? 1 : 0) << " " << (node.showAdvancedParams ? 1 : 0) << "\n";
@@ -317,13 +322,33 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
       const StreamRecord& s = data.streams[i];
       file << "stream " << s.type << " " << s.blendMode << " " << FloatToString(s.opacity) << " "
            << FloatToString(s.gainDb) << " " << FloatToString(s.pan) << " " << EscapeLine(s.name) << "\n";
+      // The stream's own id trails the line it has always had, so an older
+      // build reading a newer patch still gets the lane (it just ignores the
+      // extra token, which lands after the name and so is part of the name -
+      // hence a separate line instead).
+      if (s.id != 0)
+         file << "streamid " << i << " " << s.id << "\n";
+      // `cliptick`, not `clip`: the old tag's fields are seconds in fixed
+      // positions and reinterpreting them as ticks would silently corrupt
+      // every pre-tick patch. New tag, new grammar, old tag stays readable.
       for (const ClipRecord& c : s.clips)
-         file << "clip " << i << " " << DoubleToString(c.startSeconds) << " " << DoubleToString(c.lengthSeconds) << " "
-              << c.srcIndex << " " << c.srcOutput << " " << c.triggerMode << " "
-              << FloatToString(c.fadeInSec) << " " << FloatToString(c.fadeOutSec) << " "
-              << FloatToString(c.gainDb) << " " << FloatToString(c.speed) << " " << (c.loop ? 1 : 0) << " "
+         file << "cliptick " << i << " " << c.id << " " << c.startTick << " " << c.lengthTick << " "
+              << c.srcUid << " " << c.srcOutput << " " << c.fadeInTick << " " << c.fadeOutTick << " "
+              << FloatToString(c.gainDb) << " " << (c.enabled ? 1 : 0) << " " << c.groupId << " "
               << FloatToString(c.colorR) << " " << FloatToString(c.colorG) << " " << FloatToString(c.colorB) << " "
               << EscapeLine(c.name) << "\n";
+   }
+   for (const MarkerRecord& mk : data.markers)
+      file << "marker " << mk.id << " " << mk.posTick << " " << mk.color << " " << EscapeLine(mk.name) << "\n";
+   {
+      const ArrangeSettingsRecord& a = data.arrangeSettings;
+      file << "arrange " << a.nextId << " " << a.timeDisplay << " " << a.snapDivision << " "
+           << (a.snapTriplet ? 1 : 0) << " " << FloatToString(a.zoom) << " " << FloatToString(a.scroll) << " "
+           << (a.loopEnabled ? 1 : 0) << " " << a.loopStart << " " << a.loopEnd << " " << a.dockSide << " "
+           << a.renderWidth << " " << a.renderHeight << " " << a.renderFps << " " << a.renderSampleRate << " "
+           << a.renderFormat << " " << a.renderRangeKind << " " << a.renderRangeStart << " "
+           << a.renderRangeEnd << " " << a.renderAudioSource << " " << a.renderVideoSource << " "
+           << EscapeLine(a.renderFolder) << "\n";
    }
 
    if (!file.good())
@@ -369,6 +394,21 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
    NodeRecord current;
    bool inNode = false;
 
+   // Legacy `clip` lines are seconds; converting them needs the file's bpm,
+   // which the `transport` line may carry *after* them. So they are parked
+   // here and folded in once the whole file has been read.
+   struct LegacyClip
+   {
+      int stream = -1;
+      double startSeconds = 0.0, lengthSeconds = 1.0;
+      int srcIndex = -1, srcOutput = 0;
+      float fadeInSec = 0.0f, fadeOutSec = 0.0f, gainDb = 0.0f;
+      float colorR = 0.0f, colorG = 0.0f, colorB = 0.0f;
+      std::string name;
+   };
+   std::vector<LegacyClip> legacyClips;
+   bool sawArrangeLine = false;
+
    while (std::getline(file, line))
    {
       // Leading whitespace is cosmetic in the file, so strip it before parsing.
@@ -395,6 +435,10 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
          if (inNode)
             outData.nodes.push_back(current);
          inNode = false;
+      }
+      else if (tag == "uid" && inNode)
+      {
+         in >> current.uid;
       }
       else if (tag == "pos" && inNode)
       {
@@ -681,33 +725,33 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
          s.pan = std::clamp(s.pan, -1.0f, 1.0f);
          outData.streams.push_back(std::move(s));
       }
-      else if (tag == "clip")
+      else if (tag == "streamid")
+      {
+         int streamIdx = -1;
+         uint64_t id = 0;
+         if (in >> streamIdx >> id && streamIdx >= 0 && streamIdx < (int)outData.streams.size())
+            outData.streams[streamIdx].id = id;
+      }
+      else if (tag == "cliptick")
       {
          int streamIdx = -1;
          ClipRecord c;
-         if (in >> streamIdx >> c.startSeconds >> c.lengthSeconds >> c.srcIndex &&
+         int enabled = 1;
+         if (in >> streamIdx >> c.id >> c.startTick >> c.lengthTick >> c.srcUid &&
              streamIdx >= 0 && streamIdx < (int)outData.streams.size() &&
-             std::isfinite(c.startSeconds) && std::isfinite(c.lengthSeconds) &&
-             c.startSeconds >= 0.0 && c.lengthSeconds > 0.0)
+             c.startTick >= 0 && c.lengthTick > 0)
          {
-            // Trailing settings: missing tokens keep ClipRecord's defaults;
-            // a garbage token reads as 0, so each is sanitized below.
-            int loop = 0;
-            in >> c.srcOutput >> c.triggerMode >> c.fadeInSec >> c.fadeOutSec >> c.gainDb >> c.speed >> loop;
-            c.loop = loop != 0;
+            // Trailing settings: a missing token keeps ClipRecord's default
+            // (C++11 failed-extraction), a garbage one reads as 0, so each is
+            // sanitized below. Same forward-compat pattern as `cable`.
+            in >> c.srcOutput >> c.fadeInTick >> c.fadeOutTick >> c.gainDb >> enabled >> c.groupId;
+            c.enabled = enabled != 0;
             if (c.srcOutput < 0) c.srcOutput = 0;
-            if (c.triggerMode != 0 && c.triggerMode != 1) c.triggerMode = 0;
-            const float len = (float)c.lengthSeconds;
-            if (!std::isfinite(c.fadeInSec)) c.fadeInSec = 0.0f;
-            if (!std::isfinite(c.fadeOutSec)) c.fadeOutSec = 0.0f;
-            c.fadeInSec = std::clamp(c.fadeInSec, 0.0f, len);
-            c.fadeOutSec = std::clamp(c.fadeOutSec, 0.0f, len);
+            if (c.fadeInTick < 0) c.fadeInTick = 0;
+            if (c.fadeOutTick < 0) c.fadeOutTick = 0;
+            if (c.fadeInTick > c.lengthTick) c.fadeInTick = c.lengthTick;
+            if (c.fadeOutTick > c.lengthTick) c.fadeOutTick = c.lengthTick;
             if (!std::isfinite(c.gainDb)) c.gainDb = 0.0f;
-            if (!std::isfinite(c.speed) || c.speed <= 0.0f) c.speed = 1.0f;
-            // colorR/G/B + name are a newer addition - a patch saved before
-            // they existed leaves the stream at eof here, so the >> fails and
-            // the getline below reads nothing, leaving both at their default
-            // (no tint, auto label), same forward-compat pattern as above.
             if (in >> c.colorR >> c.colorG >> c.colorB) {}
             if (!std::isfinite(c.colorR)) c.colorR = 0.0f;
             if (!std::isfinite(c.colorG)) c.colorG = 0.0f;
@@ -723,7 +767,136 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
             outData.streams[streamIdx].clips.push_back(c);
          }
       }
+      else if (tag == "clip")
+      {
+         // LEGACY seconds form. Parked, not stored: see legacyClips above.
+         LegacyClip lc;
+         int triggerMode = 0, loop = 0;
+         float speed = 1.0f;
+         if (in >> lc.stream >> lc.startSeconds >> lc.lengthSeconds >> lc.srcIndex &&
+             lc.stream >= 0 && lc.stream < (int)outData.streams.size() &&
+             std::isfinite(lc.startSeconds) && std::isfinite(lc.lengthSeconds) &&
+             lc.startSeconds >= 0.0 && lc.lengthSeconds > 0.0)
+         {
+            // triggerMode/speed/loop are read and dropped - the engine never
+            // used them (overhaul WP1). Phase 6 re-adds its own field when
+            // retrigger is actually built.
+            in >> lc.srcOutput >> triggerMode >> lc.fadeInSec >> lc.fadeOutSec >> lc.gainDb >> speed >> loop;
+            if (lc.srcOutput < 0) lc.srcOutput = 0;
+            const float len = (float)lc.lengthSeconds;
+            if (!std::isfinite(lc.fadeInSec)) lc.fadeInSec = 0.0f;
+            if (!std::isfinite(lc.fadeOutSec)) lc.fadeOutSec = 0.0f;
+            lc.fadeInSec = std::clamp(lc.fadeInSec, 0.0f, len);
+            lc.fadeOutSec = std::clamp(lc.fadeOutSec, 0.0f, len);
+            if (!std::isfinite(lc.gainDb)) lc.gainDb = 0.0f;
+            if (in >> lc.colorR >> lc.colorG >> lc.colorB) {}
+            if (!std::isfinite(lc.colorR)) lc.colorR = 0.0f;
+            if (!std::isfinite(lc.colorG)) lc.colorG = 0.0f;
+            if (!std::isfinite(lc.colorB)) lc.colorB = 0.0f;
+            lc.colorR = std::clamp(lc.colorR, 0.0f, 1.0f);
+            lc.colorG = std::clamp(lc.colorG, 0.0f, 1.0f);
+            lc.colorB = std::clamp(lc.colorB, 0.0f, 1.0f);
+            std::string rawName;
+            std::getline(in, rawName);
+            if (!rawName.empty() && rawName[0] == ' ')
+               rawName.erase(0, 1);
+            lc.name = UnescapeLine(rawName);
+            legacyClips.push_back(lc);
+         }
+      }
+      else if (tag == "marker")
+      {
+         MarkerRecord mk;
+         if (in >> mk.id >> mk.posTick >> mk.color && mk.posTick >= 0)
+         {
+            std::string raw;
+            std::getline(in, raw);
+            if (!raw.empty() && raw[0] == ' ')
+               raw.erase(0, 1);
+            mk.name = UnescapeLine(raw);
+            outData.markers.push_back(mk);
+         }
+      }
+      else if (tag == "arrange")
+      {
+         ArrangeSettingsRecord& a = outData.arrangeSettings;
+         int triplet = 0, loopOn = 0;
+         in >> a.nextId >> a.timeDisplay >> a.snapDivision >> triplet >> a.zoom >> a.scroll
+            >> loopOn >> a.loopStart >> a.loopEnd >> a.dockSide
+            >> a.renderWidth >> a.renderHeight >> a.renderFps >> a.renderSampleRate
+            >> a.renderFormat >> a.renderRangeKind >> a.renderRangeStart >> a.renderRangeEnd
+            >> a.renderAudioSource >> a.renderVideoSource;
+         a.snapTriplet = triplet != 0;
+         a.loopEnabled = loopOn != 0;
+         std::string raw;
+         std::getline(in, raw);
+         if (!raw.empty() && raw[0] == ' ')
+            raw.erase(0, 1);
+         a.renderFolder = UnescapeLine(raw);
+         sawArrangeLine = true;
+      }
       // Anything else is from a newer version and is deliberately ignored.
+   }
+
+   // Legacy seconds -> ticks, now that the file's own transport bpm is known
+   // (the `transport` line may appear after the clips). Done here rather than
+   // at parse time so a pre-tick patch lands on exactly the bar/beat it played
+   // at, instead of on whatever the app's current tempo happens to be.
+   if (!legacyClips.empty())
+   {
+      const double bpm = (std::isfinite(outData.transport.bpm) && outData.transport.bpm > 0.0f)
+                             ? (double)outData.transport.bpm
+                             : 120.0;
+      auto toTicks = [bpm](double sec) -> int64_t {
+         if (!(sec > 0.0)) return 0;
+         return (int64_t)llround(sec * bpm / 60.0 * (double)Arrange::kPPQ);
+      };
+      for (const LegacyClip& lc : legacyClips)
+      {
+         if (lc.stream < 0 || lc.stream >= (int)outData.streams.size())
+            continue;
+         ClipRecord c;
+         c.startTick = toTicks(lc.startSeconds);
+         c.lengthTick = std::max<int64_t>(1, toTicks(lc.lengthSeconds));
+         c.legacySrcIndex = lc.srcIndex;
+         c.srcOutput = lc.srcOutput;
+         c.fadeInTick = std::clamp<int64_t>(toTicks(lc.fadeInSec), 0, c.lengthTick);
+         c.fadeOutTick = std::clamp<int64_t>(toTicks(lc.fadeOutSec), 0, c.lengthTick);
+         c.gainDb = lc.gainDb;
+         c.colorR = lc.colorR;
+         c.colorG = lc.colorG;
+         c.colorB = lc.colorB;
+         c.name = lc.name;
+         outData.streams[lc.stream].clips.push_back(c);
+      }
+      // Clips were written in lane order but the tick rounding above can make
+      // two of them abut exactly; sorting here keeps the model's sorted
+      // invariant true before anything else looks at them.
+      for (StreamRecord& st : outData.streams)
+         std::stable_sort(st.clips.begin(), st.clips.end(),
+                          [](const ClipRecord& a, const ClipRecord& b) { return a.startTick < b.startTick; });
+   }
+   std::stable_sort(outData.markers.begin(), outData.markers.end(),
+                    [](const MarkerRecord& a, const MarkerRecord& b) { return a.posTick < b.posTick; });
+   if (sawArrangeLine)
+   {
+      ArrangeSettingsRecord& a = outData.arrangeSettings;
+      if (a.timeDisplay != 0 && a.timeDisplay != 1) a.timeDisplay = 0;
+      if (a.snapDivision < 1 || a.snapDivision > 64) a.snapDivision = 4;
+      if (!std::isfinite(a.zoom) || a.zoom <= 0.0f) a.zoom = 1.0f;
+      if (!std::isfinite(a.scroll) || a.scroll < 0.0f) a.scroll = 0.0f;
+      if (a.loopStart < 0) a.loopStart = 0;
+      if (a.loopEnd < a.loopStart) a.loopEnd = a.loopStart;
+      if (a.dockSide != 0 && a.dockSide != 1) a.dockSide = 0;
+      a.renderWidth = std::clamp(a.renderWidth, 16, 16384);
+      a.renderHeight = std::clamp(a.renderHeight, 16, 16384);
+      a.renderFps = std::clamp(a.renderFps, 1, 240);
+      if (a.renderSampleRate < 8000 || a.renderSampleRate > 192000) a.renderSampleRate = 48000;
+      a.renderFormat = std::clamp(a.renderFormat, 0, 2);
+      a.renderRangeKind = std::clamp(a.renderRangeKind, 0, 3);
+      if (a.renderRangeStart < 0) a.renderRangeStart = 0;
+      if (a.renderRangeEnd < 0) a.renderRangeEnd = 0;
+      if (a.nextId < 1) a.nextId = 1;
    }
 
    // Ensure primary destination is in targets list if targets is empty

@@ -243,6 +243,8 @@ set(COMMON_SOURCES
     src/core/ExprGlobals.cpp
     src/core/Palette.cpp
     src/core/Patch.cpp
+    src/arrange/ArrangeModel.cpp
+    src/arrange/ArrangeLegacy.cpp
     src/core/RemoteControl.cpp
     src/core/PatchJson.cpp
     src/core/OscMessage.cpp

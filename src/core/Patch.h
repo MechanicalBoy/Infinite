@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -58,13 +59,27 @@ class INode;
 //     only state then and simply don't come back on load, same as any other
 //     unrecognised tag.
 //   stream <type> <blendMode> <opacity> <gainDb> <pan> <name to end of line>
+//   streamid <id>
+//     The preceding `stream` line's stable lane id. Its own line rather than a
+//     field on `stream` so that builds predating it still read the stream.
+//   cliptick <streamIndex> <id> <startTick> <lengthTick> <srcUid> <srcOutput>
+//            <fadeInTick> <fadeOutTick> <gainDb> <enabled> <groupId> <r> <g> <b> <name>
+//   marker <id> <posTick> <colorRGBA8> <name to end of line>
+//   arrange <nextId> <timeDisplay> <snap> <triplet> <zoom> <scroll> <loopOn>
+//           <loopStart> <loopEnd> <dock> <w> <h> <fps> <sr> <format>
+//           <rangeKind> <rangeStart> <rangeEnd> <audioSrc> <videoSrc> <folder>
 //   clip <streamIndex> <start> <length> <srcIndex> <srcOutput> <triggerMode> <fadeIn> <fadeOut> <gainDb> <speed> <loop>
+//     LEGACY, read-only. Seconds and node indices, written by builds before
+//     the tick model. Converted to `cliptick` form after the whole file is
+//     parsed (the conversion needs the file's own bpm, which the transport
+//     line may carry after the clips). triggerMode/speed/loop are accepted
+//     and ignored - the engine never used them.
+//
 //     Arrangement timeline (docs/plans/arrangement/README.md). A clip
 //     back-references the stream line it belongs to by position, like
-//     perftarget -> perf. start/length use %.17g so abutting clip edges
-//     reload exactly equal. A clip with an out-of-range stream index, a
-//     non-finite or negative start, or a length <= 0 is dropped; a malformed
-//     stream line is kept with defaults so later clip indices still line up.
+//     perftarget -> perf. A clip with an out-of-range stream index or a
+//     length <= 0 is dropped; a malformed stream line is kept with defaults
+//     so later clip indices still line up.
 //
 // Names may contain spaces, so anything free-form is always last on its line.
 namespace Patch
@@ -72,6 +87,13 @@ namespace Patch
    struct NodeRecord
    {
       int index = 0;
+      // Stable identity, unlike `index`, which RemoveNodeByIndex reuses.
+      // Arrangement clips reference this, so a clip survives node delete +
+      // undo and a full reload. Written on its own `uid` line rather than as
+      // a generic `s uid` param because FieldGraphNode already writes an
+      // unrelated `s uid <hex>` param that would collide. 0 in a patch saved
+      // before this existed - ApplyPatchData mints a fresh uid for those.
+      uint64_t uid = 0;
       std::string category;
       std::string typeName;
       float x = 0.0f, y = 0.0f;
@@ -242,22 +264,30 @@ namespace Patch
 
    struct ClipRecord
    {
-      double startSeconds  = 0.0;   // >= 0
-      double lengthSeconds = 1.0;   // > 0
-      int    srcIndex      = -1;    // node index - remapped by ApplyPatchData's resolve()
-      int    srcOutput     = 0;     // which output of srcIndex, as CableRecord::srcOutput
-      int    triggerMode   = 0;     // 0 = continuous, 1 = retrigger
-      float  fadeInSec     = 0.0f;
-      float  fadeOutSec    = 0.0f;
-      float  gainDb        = 0.0f;
-      float  speed         = 1.0f;  // > 0
-      bool   loop          = false;
-      std::string name;             // empty = auto (source node's own title)
-      float  colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = no tint override
+      // Ticks, never seconds (Arrange::kPPQ per quarter note). A tempo change
+      // therefore leaves every clip on its bar/beat. Legacy `clip` lines are
+      // seconds; Read() converts them once the whole file (and so the file's
+      // own bpm) has been parsed.
+      uint64_t id        = 0;
+      int64_t  startTick  = 0;   // >= 0
+      int64_t  lengthTick = 0;   // > 0
+      uint64_t srcUid    = 0;    // GraphNode::uid, 0 = unassigned
+      // Only set by legacy `clip` lines, which predate uids. ApplyPatchData
+      // resolves it to a uid and then ignores it. -1 once converted.
+      int      legacySrcIndex = -1;
+      int      srcOutput = 0;
+      int64_t  fadeInTick  = 0;
+      int64_t  fadeOutTick = 0;
+      float    gainDb    = 0.0f;
+      bool     enabled   = true;
+      uint64_t groupId   = 0;    // 0 = not grouped
+      std::string name;          // empty = auto (source node's own title)
+      float  colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = no tint
    };
 
    struct StreamRecord
    {
+      uint64_t id     = 0;
       int   type      = kStreamVideo;
       int   blendMode = 0;      // video only; index into BlendModes::Names() (0-31)
       float opacity   = 1.0f;   // video only, 0..1
@@ -265,6 +295,35 @@ namespace Patch
       float pan       = 0.0f;   // audio only, -1..1
       std::string name;         // empty = auto ("V1", "A2", ...) - label derived by the UI
       std::vector<ClipRecord> clips;
+   };
+
+   struct MarkerRecord
+   {
+      uint64_t id  = 0;
+      int64_t  posTick = 0;
+      uint32_t color = 0xFFFFFFFFu;
+      std::string name;
+   };
+
+   // Arrange::Settings, flattened. Audio mode is deliberately absent: the app
+   // always starts in Canvas mode, so it must never be saved.
+   struct ArrangeSettingsRecord
+   {
+      uint64_t nextId = 1;     // persisted, not recomputed - see Arrange::Model
+      int   timeDisplay = 0;
+      int   snapDivision = 4;
+      bool  snapTriplet = false;
+      float zoom = 1.0f;
+      float scroll = 0.0f;
+      bool  loopEnabled = false;
+      int64_t loopStart = 0, loopEnd = 0;
+      int   dockSide = 0;
+      int   renderWidth = 1920, renderHeight = 1080, renderFps = 60;
+      int   renderSampleRate = 48000, renderFormat = 0;
+      int   renderRangeKind = 0;
+      int64_t renderRangeStart = 0, renderRangeEnd = 0;
+      int   renderAudioSource = -1, renderVideoSource = -1;
+      std::string renderFolder;
    };
 
    struct Data
@@ -283,6 +342,8 @@ namespace Patch
       TransportRecord transport;
       std::vector<GestureRecord> gestures;
       std::vector<StreamRecord> streams; // arrangement timeline, clips nested
+      std::vector<MarkerRecord> markers; // arrangement markers, sorted by pos
+      ArrangeSettingsRecord arrangeSettings;
    };
 
    bool Write(const std::string& path, const Data& data, std::string& outError);
