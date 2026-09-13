@@ -61,7 +61,7 @@ namespace Platform
                       int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
    {
       outError = "not yet implemented on Linux (P1)";
-       
+      return false;
    }
 
    bool LoadImageRGBAFromMemory(const std::vector<unsigned char>& /*bytes*/,
@@ -69,7 +69,7 @@ namespace Platform
                                 int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
    {
       outError = "not yet implemented on Linux (P1)";
-       
+      return false;
    }
 
    std::string OpenHdrDialog()
@@ -81,7 +81,7 @@ namespace Platform
                           int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
    {
       outError = "not yet implemented on Linux (P1)";
-       
+      return false;
    }
 
    std::string OpenModelDialog()
@@ -93,7 +93,7 @@ namespace Platform
                   std::vector<unsigned int>& /*outIndices*/, std::string& outError)
    {
       outError = "not yet implemented on Linux (P1)";
-       
+      return false;
    }
 
    std::string OpenPatchDialog()
@@ -116,19 +116,18 @@ namespace Platform
       return "";
    }
 
-   std::string OpenFolderDialog(const char* /*title*/, const char* /*initialDir*/,
-                                std::string& /*outError*/)
+   std::string OpenFolderDialog(const char* /*title*/, const std::string& /*initialDir*/)
    {
       return "";
    }
 
    void OpenExternalUrl(const std::string& /*url*/)
    {
-       
    }
 
-   bool HttpGet(const std::string& /*url*/, std::string& /*outBody*/,
-                int /*timeoutSeconds*/, size_t /*maxBytes*/, std::string& outError)
+   bool HttpGet(const std::string& /*url*/, const std::string& /*userAgent*/,
+                std::string& /*outBody*/, std::string& outError,
+                int /*timeoutSeconds*/)
    {
       outError = "not yet implemented on Linux (P1)";
       return false;
@@ -144,7 +143,7 @@ namespace Platform
 
    bool PollPendingOpenFile(std::string& /*outPath*/)
    {
-       
+      return false;
    }
 
    std::string ExecutablePath()
@@ -190,11 +189,10 @@ namespace Platform
       return kNames;
    }
 
-   bool DecodeAudioFileToBuffer(const std::string& /*path*/, std::vector<float>& /*outLeft*/,
-                                std::vector<float>& /*outRight*/, double& /*outSampleRate*/,
+   bool DecodeAudioFileToBuffer(const std::string& /*path*/, SampleBuffer& /*outBuffer*/,
                                 std::string& outError)
    {
       outError = "not yet implemented on Linux (P1)";
-       
+      return false;
    }
 }
