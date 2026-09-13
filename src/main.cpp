@@ -37884,7 +37884,25 @@ static bool RunMolderFixture()
 
       const MolderDsp::Genome g1 = replay(4242u, 7, 0.6f);
       const MolderDsp::Genome g2 = replay(4242u, 7, 0.6f);
-      bool identical = memcmp(&g1, &g2, sizeof(MolderDsp::Genome)) == 0;
+      // Field-by-field, not memcmp: Genome ends in a trailing `bool`, so the
+      // struct carries 3 bytes of compiler-inserted padding after it that no
+      // constructor or Mutate() ever writes. Two independently-constructed
+      // Genomes are logically identical but can differ in that uninitialized
+      // padding, which a raw memcmp would misreport as a determinism bug.
+      bool identical =
+         memcmp(g1.partialAmp, g2.partialAmp, sizeof(g1.partialAmp)) == 0 &&
+         memcmp(g1.bandAmp, g2.bandAmp, sizeof(g1.bandAmp)) == 0 &&
+         g1.noiseAmount == g2.noiseAmount &&
+         g1.transientAmount == g2.transientAmount &&
+         g1.tonalAmount == g2.tonalAmount &&
+         g1.attackScale == g2.attackScale &&
+         g1.decayScale == g2.decayScale &&
+         g1.decayTilt == g2.decayTilt &&
+         g1.brightnessTilt == g2.brightnessTilt &&
+         g1.inharmonicity == g2.inharmonicity &&
+         g1.harmonicStretch == g2.harmonicStretch &&
+         g1.pitchShiftSemitones == g2.pitchShiftSemitones &&
+         g1.reverseResidual == g2.reverseResidual;
       if (!identical)
       {
          printf("MOLDERTEST determinism: same seed/generation diverged FAIL\n");

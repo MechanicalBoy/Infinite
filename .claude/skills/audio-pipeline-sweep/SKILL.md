@@ -106,6 +106,27 @@ that line before trusting the result as an *audio*-clock check.
   noise. Do not turn it into a graded threshold without deciding what the
   threshold means.
 
+## Known pre-existing failures
+
+This sweep's own `driver.sh`/`scripts/sweep_runner.sh` has no known-failure
+baseline mechanism (unlike `run-infinite-hygiene`'s `known-test-failures.txt`)
+- every `[FAIL]` here is reported fresh every run. The following is tracked
+here instead, so it isn't mistaken for a new regression:
+
+- **`MOLDERTEST` "reconstruction error" prints -6.7dB, needs < -20dB.** This is
+  a real, understood gap in `MolderDsp::Render`'s additive resynthesis, not a
+  stale threshold - see the long comment above the assertion at
+  `src/main.cpp` (search `MOLDERTEST reconstruction error`) for the full
+  history. Short version: a single sustained partial clears -20dB; a dense
+  48-harmonic sawtooth does not, because neighbouring harmonics' Hann
+  mainlobes overlap and corrupt each other's measured magnitude/phase. Closing
+  the remaining gap needs per-harmonic mainlobe-overlap compensation or a
+  proper spectral-envelope phase model - a real DSP undertaking, not a tuning
+  constant - so it's left open rather than papered over with a relaxed
+  threshold. The fixture's other five MOLDERTEST assertions (pitch, voicing,
+  silenced-partials residual match, pitch-shift anti-aliasing, determinism,
+  save/load) are expected to pass.
+
 ## What this sweep does not cover
 
 - **No audible-quality assertion.** Nothing here says a filter sounds right,
