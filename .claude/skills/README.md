@@ -53,7 +53,7 @@ descriptions. Broadly:
   `panels-sweep`, `pillar-parity-audit`, `rate-analysis-sweep`,
   `render-pipeline-sweep`, `shortcuts-sweep`
 - **Process** — `bug-blast-radius`, `invariant-interaction-audit`,
-  `codebase-navigation`, `git-branch-workflow`,
+  `codebase-navigation`, `git-branch-workflow`, `prior-art-scout`,
   `infinite-code-review`, `write-fix-brief`, `run-infinite-hygiene`,
   `ship-infinite`, `release-notes-audit`, `windows-parity`,
   `plugin-host-hardening`

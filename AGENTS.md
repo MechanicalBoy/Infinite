@@ -44,6 +44,7 @@ Whenever working on tasks in this repository, **you must consult and follow the 
 | `git-branch-workflow` | Process | Branch-per-feature workflow for this repo | `.claude/skills/git-branch-workflow/SKILL.md` |
 | `bug-blast-radius` | Process | 9-question impact analysis before fixing a bug | `.claude/skills/bug-blast-radius/SKILL.md` |
 | `write-fix-brief` | Process | Turn a bug report into a verified implementation prompt | `.claude/skills/write-fix-brief/SKILL.md` |
+| `prior-art-scout` | Process | Search peer repos and public fixes for platform/audio/packaging problems | `.claude/skills/prior-art-scout/SKILL.md` |
 | `codebase-navigation` | Process | How to search this codebase completely | `.claude/skills/codebase-navigation/SKILL.md` |
 | `infinite-code-review` | Process | Review code against Infinite's standards | `.claude/skills/infinite-code-review/SKILL.md` |
 | `pillar-parity-audit` | Process | Cross-platform feature coverage audit | `.claude/skills/pillar-parity-audit/SKILL.md` |
