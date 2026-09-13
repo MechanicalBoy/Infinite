@@ -193,6 +193,17 @@ entry if a refactor makes it stale.
   forwards Material and per-map texture from its `instanceShape` input but
   not `GetMappingTransform()`, with no comment explaining why.
 
+- **Arrange timeline video** fans out across four places in `main.cpp`: lane
+  order and the skip rules live only in `CollectArrangeVideoLayers` (reads the
+  legacy `gArrangeStreams` mirror until WP5), geometry clips render through
+  their own `gArrangeGeomViewports` cache keyed by (node uid, target slot) —
+  never `gPanelViewports` — and the monitor is composited by
+  `CompositeArrangeMonitorIfRequested()` right after the main cook loop, not
+  inside the panel that displays it. The offline render calls
+  `CompositeArrangeTimelineVideo(gArrangeRenderTarget, ...)` from the pump at
+  the top of the loop. A change to "what the timeline shows" that edits only
+  the panel lambda misses all of these.
+
 ## Adding to this map
 
 At the end of a task that touched `src/`, if you found a cross-file wiring

@@ -281,6 +281,7 @@ bool NodeViewport::EnsureFbo(int w, int h)
       return true;
 
    ReleaseFbo();
+   GLUtil::NoteFboAllocation();
 
    glGenTextures(1, &mColorTex);
    glBindTexture(GL_TEXTURE_2D, mColorTex);

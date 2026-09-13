@@ -116,6 +116,7 @@ namespace GLUtil
          return true;
 
       DestroyFbo(fbo);
+      NoteFboAllocation();
 
       GLenum format = GL_RGBA;
       GLenum type = (internalFormat == GL_RGBA16F || internalFormat == GL_RGBA32F) ? GL_FLOAT : GL_UNSIGNED_BYTE;
@@ -149,6 +150,10 @@ namespace GLUtil
       fbo.internalFormat = internalFormat;
       return true;
    }
+
+   static unsigned long long sFboAllocationCount = 0;
+   void NoteFboAllocation() { sFboAllocationCount++; }
+   unsigned long long FboAllocationCount() { return sFboAllocationCount; }
 
    void DestroyFbo(Fbo& fbo)
    {

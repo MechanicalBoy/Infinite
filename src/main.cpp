@@ -877,11 +877,11 @@ namespace
 
       // Set only for a render started from the Arrangement Timeline's own
       // Render button - switches on two behaviors that would be wrong for
-      // an ordinary manually-wired OutputNode take: (1) each frame, the
-      // node's video Input is repointed at whichever track's clip is
-      // active at that instant (topmost track wins - see the stepping
-      // loop), instead of staying on whatever was wired before the take
-      // started; (2) RebuildAudioTopology's Timeline Strict terminals also
+      // an ordinary manually-wired OutputNode take: (1) each frame, every
+      // video lane's active clip is composited onto the node's FBO after
+      // the cook (CompositeArrangeTimelineVideo - bottom lane first, so the
+      // top lane is frontmost, each lane's blend mode and opacity applied),
+      // replacing whatever the node's own Input produced; (2) RebuildAudioTopology's Timeline Strict terminals also
       // write into this node's capture ring (see arrangeAudioCapture
       // below), so the take's audio is the live sum of every active
       // timeline audio clip rather than whatever's cabled into AudioInput.
@@ -26263,205 +26263,346 @@ namespace
       clips = std::move(result);
    }
 
-   int CountActiveArrangeVideoClips(double timeSec, std::string* outFirstTitle = nullptr)
+   // ---- arrangement video compositing (overhaul WP4) ---------------------
+   //
+   // One pass per active video lane, bottom lane first, so the lane drawn at
+   // the TOP of the panel lands in front - the NLE convention (spec §1). Each
+   // caller owns an ArrangeCompositeTarget: the live monitor has one, the
+   // offline render another. They used to share a single static scratch FBO,
+   // which the two resized against each other every frame a render ran with
+   // the panel open.
+
+   // A render target's private GL state. `scratch` is the ping-pong pair the
+   // lane passes alternate between; `result` is the stable output for a
+   // caller that has no FBO of its own to land in (the monitor). `slot` keys
+   // this target's own geometry viewports (gArrangeGeomViewports), so two
+   // targets at different sizes never share - and thrash - one NodeViewport.
+   struct ArrangeCompositeTarget
    {
-      int count = 0;
-      for (const auto& st : gArrangeStreams)
+      int slot = 0;
+      GLUtil::Fbo scratch[2];
+      GLUtil::Fbo result;
+      // `result` from before its last resize. The monitor's texture id goes
+      // into the ImGui draw list during the UI pass, and the composite runs
+      // after the cook loop but before ImGui::Render - so a resize there
+      // would leave the draw list sampling a deleted texture for one frame.
+      // Kept one composite longer, then freed.
+      GLUtil::Fbo retiredResult;
+      // Set by the monitor during the UI pass; consumed by the post-cook
+      // composite. 0 = the panel did not draw the monitor this frame.
+      int requestW = 0;
+      int requestH = 0;
+   };
+   ArrangeCompositeTarget gArrangeMonitorTarget{ 0 };
+   ArrangeCompositeTarget gArrangeRenderTarget{ 1 };
+
+   // Geometry clips' solo renders. A geometry node has no image of its own
+   // (GeometryNode::GetOutputTexture), so a clip of one needs a NodeViewport
+   // sized to the composite. These used to borrow gPanelViewports, which the
+   // Viewport Panel erases every frame for any node it is not showing - so a
+   // geometry clip allocated and freed a full-size FBO every frame (4K per
+   // frame during a render). Keyed by (node uid, target slot); an entry
+   // unused for kArrangeGeomEvictFrames main-loop frames is dropped by
+   // ReapArrangeGeomViewports(). std::map, not unordered: NodeViewport is
+   // neither copyable nor movable, and a node-based map never relocates it.
+   struct ArrangeGeomViewport
+   {
+      NodeViewport viewport;
+      uint64_t lastUsedFrame = 0;
+   };
+   std::map<std::pair<uint64_t, int>, ArrangeGeomViewport> gArrangeGeomViewports;
+   uint64_t gArrangeGeomFrame = 0;
+   constexpr uint64_t kArrangeGeomEvictFrames = 120;
+
+   // Called once per main-loop frame, after that frame's composites. Safe to
+   // free immediately: a geometry viewport's texture is only ever sampled by
+   // the composite pass, never queued into an ImGui draw list.
+   // An entry survives kArrangeGeomEvictFrames consecutive frames without a
+   // composite and is dropped on the next one.
+   void ReapArrangeGeomViewports()
+   {
+      for (auto it = gArrangeGeomViewports.begin(); it != gArrangeGeomViewports.end();)
       {
-         if (st.type != Patch::kStreamVideo) continue;
-         for (const auto& c : st.clips)
-         {
-            if (timeSec >= c.startSeconds && timeSec < (c.startSeconds + c.lengthSeconds))
-            {
-               count++;
-               if (outFirstTitle != nullptr && outFirstTitle->empty())
-               {
-                  if (GraphNode* gn = FindNodeByIndex(c.srcIndex))
-                     *outFirstTitle = NodeTitle(*gn);
-               }
-               break;
-            }
-         }
+         if (gArrangeGeomFrame - it->second.lastUsedFrame > kArrangeGeomEvictFrames)
+            it = gArrangeGeomViewports.erase(it);
+         else
+            ++it;
       }
-      return count;
+      gArrangeGeomFrame++;
    }
 
-   // Multi-track GPU video compositing for Timeline Arranger (both live monitor and offline render).
-   // Evaluates all active video clips covering `timeSec` across gArrangeStreams, and composites them
-   // in track order onto `targetFbo` (targetW x targetH) using each track's blend mode and opacity,
-   // preserving aspect ratio with clean letterboxing/pillarboxing. If no clips are active, clears to black.
-   unsigned int CompositeArrangeTimelineVideo(GLUtil::Fbo& targetFbo, double timeSec, int targetW, int targetH, int frameId = 0)
+   // One lane's contribution at a given instant.
+   struct ArrangeVideoLayer
    {
-      (void)frameId;
-      if (targetW <= 1 || targetH <= 1) return 0;
-      if (!GLUtil::EnsureFbo(targetFbo, targetW, targetH)) return 0;
+      GraphNode* gn = nullptr;
+      int srcOutput = 0;
+      int blendMode = 0;
+      float opacity = 1.0f;
+   };
 
-      struct ArrangeVideoLayer
-      {
-         unsigned int tex = 0;
-         int srcW = 0;
-         int srcH = 0;
-         int blendMode = 0;
-         float opacity = 1.0f;
-      };
-      std::vector<ArrangeVideoLayer> activeLayers;
-
-      for (size_t si = 0; si < gArrangeStreams.size(); si++)
+   // Every video lane's active clip at `beat`, in COMPOSITE order: bottom lane
+   // first, top lane last (frontmost). Disabled clips and unassigned/offline
+   // clips (no live source node) contribute nothing - the same rule the audio
+   // scheduler applies (RebuildAudioTopology's `scheduled` loop).
+   //
+   // Reads the legacy mirror, not gArrange, for the same reason the audio
+   // scheduler does: until WP5 deletes the bridge, gArrangeStreams is the
+   // UI's live truth and gArrange is only synced at save/undo boundaries, so
+   // reading the model here would show an in-progress drag one sync late.
+   // Clip seconds convert to beats at the live tempo, so the playhead is
+   // Transport::Beats() - the axis the audio envelope uses.
+   void CollectArrangeVideoLayers(double beat, std::vector<ArrangeVideoLayer>& out)
+   {
+      out.clear();
+      const double beatsPerSec = std::max(1.0, (double)Transport::Instance().Tempo()) / 60.0;
+      for (size_t si = gArrangeStreams.size(); si-- > 0;)
       {
          const LegacyArrange::StreamRecord& st = gArrangeStreams[si];
-         if (st.type != Patch::kStreamVideo) continue;
+         if (st.type != Patch::kStreamVideo)
+            continue;
          for (const LegacyArrange::ClipRecord& c : st.clips)
          {
-            if (timeSec >= c.startSeconds && timeSec < (c.startSeconds + c.lengthSeconds))
+            const double startBeat = c.startSeconds * beatsPerSec;
+            const double endBeat = (c.startSeconds + c.lengthSeconds) * beatsPerSec;
+            if (!(beat >= startBeat && beat < endBeat))
+               continue;
+            // Lanes never overlap, so this is the lane's only candidate
+            // whether or not it turns out to be usable.
+            if (c.enabled && c.srcIndex >= 0)
             {
                GraphNode* gn = FindNodeByIndex(c.srcIndex);
                if (gn != nullptr && gn->node != nullptr)
-               {
-                  unsigned int tex = 0;
-                  int w = 0, h = 0;
-                  if (auto* geo = dynamic_cast<IGeometrySource*>(gn->node.get()))
-                  {
-                     NodeViewport& vp = gPanelViewports[gn->index];
-                     SharedViewportCamera& cam = gNodeCameras[gn->index];
-                     tex = vp.Render(geo, cam, targetW, targetH);
-                     w = targetW;
-                     h = targetH;
-                  }
-                  else
-                  {
-                     tex = gn->node->GetOutputTexture();
-                     w = gn->node->GetOutputWidth();
-                     h = gn->node->GetOutputHeight();
-                  }
-                  if (tex != 0 && w > 0 && h > 0)
-                  {
-                     activeLayers.push_back({ tex, w, h, st.blendMode, std::clamp(st.opacity, 0.0f, 1.0f) });
-                  }
-               }
-               break; // only one clip active per stream at this instant
+                  out.push_back({ gn, c.srcOutput, st.blendMode, std::clamp(st.opacity, 0.0f, 1.0f) });
             }
+            break;
          }
+      }
+   }
+
+   int CountActiveArrangeVideoClips(double beat, std::string* outFrontTitle = nullptr)
+   {
+      static std::vector<ArrangeVideoLayer> sLayers;
+      CollectArrangeVideoLayers(beat, sLayers);
+      if (outFrontTitle != nullptr && !sLayers.empty())
+         *outFrontTitle = NodeTitle(*sLayers.back().gn);
+      return (int)sLayers.size();
+   }
+
+   // The lane blend program, compiled once with its uniform locations.
+   struct ArrangeComposeProgram
+   {
+      unsigned int program = 0;
+      int uTexBase = -1, uTexTop = -1, uMode = -1, uOpacity = -1, uTopFit = -1;
+   };
+   const ArrangeComposeProgram& ArrangeComposeShader()
+   {
+      static ArrangeComposeProgram sProg;
+      static bool sTried = false;
+      if (sTried)
+         return sProg;
+      sTried = true;
+      const std::string src =
+         std::string(
+            "#version 150\n"
+            "in vec2 vUv;\n"
+            "out vec4 fragColor;\n"
+            "uniform sampler2D uTexBase;\n"
+            "uniform sampler2D uTexTop;\n"
+            "uniform int uMode;\n"
+            "uniform float uOpacity;\n"
+            "uniform vec4 uTopFit;\n")
+         + BlendModes::kBlendGLSL
+         + "void main() {\n"
+           "   vec2 topUv = (vUv - uTopFit.zw) / uTopFit.xy;\n"
+           "   vec4 top = vec4(0.0);\n"
+           "   if (topUv.x >= 0.0 && topUv.x <= 1.0 && topUv.y >= 0.0 && topUv.y <= 1.0) {\n"
+           "      top = texture(uTexTop, topUv);\n"
+           "   }\n"
+           "   vec4 base = texture(uTexBase, vUv);\n"
+           "   float as = top.a * uOpacity;\n"
+           "   if (as <= 1e-6) {\n"
+           "      fragColor = base;\n"
+           "      return;\n"
+           "   }\n"
+           "   if (uMode == 30) { fragColor = vec4(base.rgb, base.a * (1.0 - as)); return; }\n"
+           "   if (uMode == 31) { fragColor = vec4(base.rgb, base.a * (1.0 - (1.0 - top.a) * uOpacity)); return; }\n"
+           "   vec3 blended = blendMode(uMode, base.rgb, top.rgb);\n"
+           "   vec3 cs = mix(top.rgb, blended, base.a);\n"
+           "   float ar = as + base.a * (1.0 - as);\n"
+           "   vec3 cr = (ar > 1e-5) ? (cs * as + base.rgb * base.a * (1.0 - as)) / ar : vec3(0.0);\n"
+           "   fragColor = vec4(cr, ar);\n"
+           "}\n";
+      sProg.program = GLUtil::CompileProgram(src.c_str());
+      if (sProg.program != 0)
+      {
+         sProg.uTexBase = glGetUniformLocation(sProg.program, "uTexBase");
+         sProg.uTexTop = glGetUniformLocation(sProg.program, "uTexTop");
+         sProg.uMode = glGetUniformLocation(sProg.program, "uMode");
+         sProg.uOpacity = glGetUniformLocation(sProg.program, "uOpacity");
+         sProg.uTopFit = glGetUniformLocation(sProg.program, "uTopFit");
+      }
+      return sProg;
+   }
+
+   // Composites every active video lane at `beat` into `dest` (targetW x
+   // targetH), or into target.result when `dest` is null. Each lane uses its
+   // own blend mode and opacity from the model (no UI for them yet - owner
+   // decision) and is aspect-fit with letterboxing. No active clip clears
+   // the destination to opaque black. Returns the destination texture.
+   //
+   // Sources are read as they stand: the caller cooks the graph first (the
+   // main loop's cook, or the offline pump's), so every clip's texture
+   // belongs to the same frame as the clip state that selected it.
+   unsigned int CompositeArrangeTimelineVideo(ArrangeCompositeTarget& target, GLUtil::Fbo* dest,
+                                              double beat, int targetW, int targetH)
+   {
+      if (targetW <= 1 || targetH <= 1)
+         return 0;
+      if (dest == nullptr)
+      {
+         // The resize survives one more composite (see retiredResult).
+         GLUtil::DestroyFbo(target.retiredResult);
+         if (target.result.fbo != 0 && (target.result.w != targetW || target.result.h != targetH))
+         {
+            target.retiredResult = target.result;
+            target.result = GLUtil::Fbo();
+         }
+         dest = &target.result;
+      }
+      if (!GLUtil::EnsureFbo(*dest, targetW, targetH))
+         return 0;
+
+      static std::vector<ArrangeVideoLayer> sLayers;
+      CollectArrangeVideoLayers(beat, sLayers);
+
+      struct ResolvedLayer
+      {
+         unsigned int tex;
+         int srcW, srcH;
+         int blendMode;
+         float opacity;
+      };
+      static std::vector<ResolvedLayer> sResolved;
+      sResolved.clear();
+      for (const ArrangeVideoLayer& layer : sLayers)
+      {
+         GraphNode* gn = layer.gn;
+         unsigned int tex = 0;
+         int w = 0, h = 0;
+         if (auto* geo = dynamic_cast<IGeometrySource*>(gn->node.get()))
+         {
+            ArrangeGeomViewport& slot = gArrangeGeomViewports[{ gn->uid, target.slot }];
+            slot.lastUsedFrame = gArrangeGeomFrame;
+            tex = slot.viewport.Render(geo, gNodeCameras[gn->index], targetW, targetH);
+            w = targetW;
+            h = targetH;
+         }
+         else
+         {
+            // The clip's chosen output, as a cable would pull it (index 0 is
+            // the ordinary image; FieldPixel's aux texture is index 1).
+            // Every multi-output node sizes its outputs alike.
+            tex = gn->node->GetOutputTexture(layer.srcOutput);
+            w = gn->node->GetOutputWidth();
+            h = gn->node->GetOutputHeight();
+         }
+         if (tex != 0 && w > 0 && h > 0)
+            sResolved.push_back({ tex, w, h, layer.blendMode, layer.opacity });
       }
 
       GLint prevFbo = 0;
       glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
       GLint prevVp[4];
       glGetIntegerv(GL_VIEWPORT, prevVp);
-
-      if (activeLayers.empty())
+      auto clearToBlack = [&](const GLUtil::Fbo& f)
       {
-         glBindFramebuffer(GL_FRAMEBUFFER, targetFbo.fbo);
+         glBindFramebuffer(GL_FRAMEBUFFER, f.fbo);
          glViewport(0, 0, targetW, targetH);
          glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
          glClear(GL_COLOR_BUFFER_BIT);
+      };
+      auto restore = [&]()
+      {
          glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
          glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
-         return targetFbo.tex;
+      };
+
+      const ArrangeComposeProgram& prog = ArrangeComposeShader();
+      if (sResolved.empty() || prog.program == 0)
+      {
+         clearToBlack(*dest);
+         restore();
+         return dest->tex;
       }
 
-      static unsigned int sComposeProgram = 0;
-      static bool sComposeShaderTried = false;
-      if (!sComposeShaderTried)
+      // Pass k reads `base` and writes the other scratch buffer, except the
+      // last pass, which writes `dest` directly - so the result never needs a
+      // copy back, and `dest` is never read and written by the same pass.
+      // The second scratch buffer is only needed from two layers up.
+      const size_t n = sResolved.size();
+      if (!GLUtil::EnsureFbo(target.scratch[0], targetW, targetH) ||
+          (n >= 2 && !GLUtil::EnsureFbo(target.scratch[1], targetW, targetH)))
       {
-         sComposeShaderTried = true;
-         static const std::string src =
-            std::string(
-               "#version 150\n"
-               "in vec2 vUv;\n"
-               "out vec4 fragColor;\n"
-               "uniform sampler2D uTexBase;\n"
-               "uniform sampler2D uTexTop;\n"
-               "uniform int uMode;\n"
-               "uniform float uOpacity;\n"
-               "uniform vec4 uTopFit;\n")
-            + BlendModes::kBlendGLSL
-            + "void main() {\n"
-              "   vec2 topUv = (vUv - uTopFit.zw) / uTopFit.xy;\n"
-              "   vec4 top = vec4(0.0);\n"
-              "   if (topUv.x >= 0.0 && topUv.x <= 1.0 && topUv.y >= 0.0 && topUv.y <= 1.0) {\n"
-              "      top = texture(uTexTop, topUv);\n"
-              "   }\n"
-              "   vec4 base = texture(uTexBase, vUv);\n"
-              "   float as = top.a * uOpacity;\n"
-              "   if (as <= 1e-6) {\n"
-              "      fragColor = base;\n"
-              "      return;\n"
-              "   }\n"
-              "   if (uMode == 30) { fragColor = vec4(base.rgb, base.a * (1.0 - as)); return; }\n"
-              "   if (uMode == 31) { fragColor = vec4(base.rgb, base.a * (1.0 - (1.0 - top.a) * uOpacity)); return; }\n"
-              "   vec3 blended = blendMode(uMode, base.rgb, top.rgb);\n"
-              "   vec3 cs = mix(top.rgb, blended, base.a);\n"
-              "   float ar = as + base.a * (1.0 - as);\n"
-              "   vec3 cr = (ar > 1e-5) ? (cs * as + base.rgb * base.a * (1.0 - as)) / ar : vec3(0.0);\n"
-              "   fragColor = vec4(cr, ar);\n"
-              "}\n";
-         sComposeProgram = GLUtil::CompileProgram(src.c_str());
+         clearToBlack(*dest);
+         restore();
+         return dest->tex;
       }
-      if (sComposeProgram == 0) return 0;
-
-      static GLUtil::Fbo sArrangeScratchFbo;
-      GLUtil::EnsureFbo(sArrangeScratchFbo, targetW, targetH);
-
-      // Start with clean black base in targetFbo
-      glBindFramebuffer(GL_FRAMEBUFFER, targetFbo.fbo);
-      glViewport(0, 0, targetW, targetH);
-      glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT);
-
-      GLUtil::Fbo* curBase = &targetFbo;
-      GLUtil::Fbo* curDest = &sArrangeScratchFbo;
-
-      for (size_t k = 0; k < activeLayers.size(); k++)
+      clearToBlack(target.scratch[0]);
+      int baseIdx = 0;
+      const float targetAspect = (float)targetW / (float)targetH;
+      for (size_t k = 0; k < n; k++)
       {
-         const ArrangeVideoLayer& layer = activeLayers[k];
-         const float targetAspect = (float)targetW / (float)targetH;
-         const float srcAspect = (layer.srcH > 0) ? ((float)layer.srcW / (float)layer.srcH) : targetAspect;
+         const ResolvedLayer& layer = sResolved[k];
+         const float srcAspect = (float)layer.srcW / (float)layer.srcH;
          float scaleX = 1.0f, scaleY = 1.0f, offX = 0.0f, offY = 0.0f;
          if (srcAspect > targetAspect)
          {
-            scaleX = 1.0f;
             scaleY = targetAspect / srcAspect;
-            offX = 0.0f;
             offY = (1.0f - scaleY) * 0.5f;
          }
          else
          {
             scaleX = srcAspect / targetAspect;
-            scaleY = 1.0f;
             offX = (1.0f - scaleX) * 0.5f;
-            offY = 0.0f;
          }
 
-         const unsigned int baseTex = curBase->tex;
-         GLUtil::RunShaderPass(*curDest, sComposeProgram, [&]()
+         const bool last = (k + 1 == n);
+         const GLUtil::Fbo& out = last ? *dest : target.scratch[1 - baseIdx];
+         const unsigned int baseTex = target.scratch[baseIdx].tex;
+         GLUtil::RunShaderPass(out, prog.program, [&]()
          {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, baseTex);
-            glUniform1i(glGetUniformLocation(sComposeProgram, "uTexBase"), 0);
-
+            glUniform1i(prog.uTexBase, 0);
             glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_2D, layer.tex);
-            glUniform1i(glGetUniformLocation(sComposeProgram, "uTexTop"), 1);
-
-            glUniform1i(glGetUniformLocation(sComposeProgram, "uMode"), layer.blendMode);
-            glUniform1f(glGetUniformLocation(sComposeProgram, "uOpacity"), layer.opacity);
-            glUniform4f(glGetUniformLocation(sComposeProgram, "uTopFit"), scaleX, scaleY, offX, offY);
+            glUniform1i(prog.uTexTop, 1);
+            glUniform1i(prog.uMode, layer.blendMode);
+            glUniform1f(prog.uOpacity, layer.opacity);
+            glUniform4f(prog.uTopFit, scaleX, scaleY, offX, offY);
          });
-
-         std::swap(curBase, curDest);
+         baseIdx = 1 - baseIdx;
       }
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, 0);
 
-      // If the final accumulated composite ended up in sArrangeScratchFbo, blit it back into targetFbo
-      if (curBase != &targetFbo)
-      {
-         glBindFramebuffer(GL_READ_FRAMEBUFFER, sArrangeScratchFbo.fbo);
-         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, targetFbo.fbo);
-         glBlitFramebuffer(0, 0, targetW, targetH, 0, 0, targetW, targetH, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-      }
+      restore();
+      return dest->tex;
+   }
 
-      glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
-      glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
-      return targetFbo.tex;
+   // The monitor's composite, run once per main-loop frame right after the
+   // cook loop so it sees this frame's textures (it used to run inside the
+   // panel draw, before the cook, and showed last frame's). The panel only
+   // records a request and draws target.result; ImGui renders after this.
+   void CompositeArrangeMonitorIfRequested()
+   {
+      ArrangeCompositeTarget& t = gArrangeMonitorTarget;
+      if (t.requestW > 1 && t.requestH > 1)
+         CompositeArrangeTimelineVideo(t, nullptr, Transport::Instance().Beats(), t.requestW, t.requestH);
+      t.requestW = 0;
+      t.requestH = 0;
    }
 
    bool AddNodeToArrangeTimeline(int nodeIndex, int streamIndex = -1, double startSec = -1.0, double lengthSec = 4.0)
@@ -26835,8 +26976,8 @@ namespace
             // arrangement's own timeline (every track's clips, composited
             // and stacked, over a selected time range) to a movie file.
             // Operates as an internal timeline renderer (never spawns an Output
-            // node on the canvas). Video tracks are composited in track order
-            // with aspect-ratio preservation and blend modes/opacity; audio is
+            // node on the canvas). Video tracks are composited bottom lane first
+            // (top lane frontmost) with aspect-ratio preservation and blend modes/opacity; audio is
             // the live sum of every active audio clip.
             static bool sArrangeRenderIncludeVideo = true;
             static bool sArrangeRenderIncludeAudio = true;
@@ -27266,13 +27407,15 @@ namespace
                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
          PopDockedPanelStyle();
 
-         static GLUtil::Fbo sArrangeMonitorFbo;
          const ImVec2 monAvail = ImGui::GetContentRegionAvail();
          const int monW = std::max(16, (int)monAvail.x);
          const int monH = std::max(16, (int)monAvail.y);
 
+         // Same clock and same skip rules as the composite itself, so the
+         // label names exactly what is on screen (the frontmost lane's node).
+         const double monBeat = tr.Beats();
          std::string activeClipTitle;
-         const int activeClipCount = CountActiveArrangeVideoClips(curSec, &activeClipTitle);
+         const int activeClipCount = CountActiveArrangeVideoClips(monBeat, &activeClipTitle);
          if (activeClipCount == 0)
             ImGui::TextDisabled("Viewport: No Active Clip");
          else if (activeClipCount == 1)
@@ -27287,7 +27430,12 @@ namespace
 
          if (activeClipCount > 0)
          {
-            const unsigned int tex = CompositeArrangeTimelineVideo(sArrangeMonitorFbo, curSec, monW, monH, 0);
+            // Only a request here: the composite runs after the cook loop
+            // (CompositeArrangeMonitorIfRequested) into this same stable
+            // texture, before ImGui renders the draw list recorded now.
+            gArrangeMonitorTarget.requestW = monW;
+            gArrangeMonitorTarget.requestH = monH;
+            const unsigned int tex = gArrangeMonitorTarget.result.tex;
             if (tex != 0)
                monDl->AddImage((ImTextureID)(intptr_t)tex, monOrigin, monBR, ImVec2(0, 1), ImVec2(1, 0));
          }
@@ -55317,11 +55465,17 @@ int main(int argc, char** argv)
                for (GraphNode& gn : gNodes)
                   gn.node->CookIfNeeded(frameId);
 
-               // Arrangement render: composite all active timeline video tracks in track stack
-               // order directly onto on->GetFbo() (using each track's blend mode, opacity, and aspect fit).
+               // Arrangement render: composite every active video lane, bottom
+               // lane first so the top lane is frontmost, directly onto
+               // on->GetFbo() (each lane's blend mode, opacity and aspect fit).
+               // Its own target, never the monitor's: the panel keeps drawing
+               // under the progress window at a different size. Beats() here
+               // reads the video time just set, on the same axis as the audio
+               // envelope's clip windows.
                if (gOfflineRender.arrangeDriven)
                {
-                  CompositeArrangeTimelineVideo(on->GetFbo(), videoSec, on->GetOutputWidth(), on->GetOutputHeight(), frameId);
+                  CompositeArrangeTimelineVideo(gArrangeRenderTarget, &on->GetFbo(), Transport::Instance().Beats(),
+                                                on->GetOutputWidth(), on->GetOutputHeight());
                }
 
                // INFINITE_OFFLINERENDER_COOKDELAYMS simulates a heavy
@@ -59784,6 +59938,191 @@ int main(int argc, char** argv)
          RebuildAudioTopology();
 
          printf("arrange audio test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Overhaul WP4: the arrangement video compositor. Lane order (top lane
+      // frontmost), skip rules (disabled, unassigned), model opacity, and the
+      // geometry-clip cache (no FBO allocation in steady state, per-target
+      // keying, eviction, gPanelViewports untouched). Runs whole inside one
+      // main-loop frame on fixture-owned targets, so neither the panel nor a
+      // render has to be open.
+      if (getenv("INFINITE_ARRANGEVIDEOTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0); // commits the tempo; clip seconds convert at it
+         const double kBeat = 1.0; // the instant every check composites at
+
+         const int kSize = 64;
+         auto spawnRamp = [&](float r, float g, float b) -> int
+         {
+            GraphNode* gn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+            auto* ramp = gn != nullptr ? dynamic_cast<RampNode*>(gn->node.get()) : nullptr;
+            if (ramp == nullptr)
+               return -1;
+            ramp->width = (float)kSize;
+            ramp->height = (float)kSize;
+            for (int s = 0; s < 2; s++)
+            {
+               ramp->stopColor[s][0] = r;
+               ramp->stopColor[s][1] = g;
+               ramp->stopColor[s][2] = b;
+            }
+            return gn->index;
+         };
+         const int redIndex = spawnRamp(1.0f, 0.0f, 0.0f);
+         const int blueIndex = spawnRamp(0.0f, 0.0f, 1.0f);
+         GraphNode* cubeGn = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+         const int cubeIndex = cubeGn != nullptr ? cubeGn->index : -1;
+         const uint64_t cubeUid = cubeGn != nullptr ? cubeGn->uid : 0;
+         cubeGn = nullptr; // SpawnNode pointers dangle across later spawns
+         const bool spawned = redIndex >= 0 && blueIndex >= 0 && cubeIndex >= 0 &&
+                              dynamic_cast<IGeometrySource*>(FindNodeByIndex(cubeIndex)->node.get()) != nullptr;
+         printf("arrange video spawn: %s\n", spawned ? "OK" : "FAIL");
+         allOk = allOk && spawned;
+
+         if (spawned)
+         {
+            // Lane 0 is the TOP lane in the panel, lane 1 the one below it.
+            gArrangeStreams.clear();
+            for (int l = 0; l < 2; l++)
+            {
+               LegacyArrange::StreamRecord lane;
+               lane.id = (uint64_t)(l + 1);
+               lane.type = Patch::kStreamVideo;
+               lane.name = l == 0 ? "V1" : "V2";
+               LegacyArrange::ClipRecord c;
+               c.startSeconds = 0.0;
+               c.lengthSeconds = 2.0; // beats [0, 4) at 120 bpm
+               c.srcIndex = l == 0 ? redIndex : blueIndex;
+               c.srcUid = FindNodeByIndex(c.srcIndex)->uid;
+               lane.clips.push_back(c);
+               gArrangeStreams.push_back(lane);
+            }
+            LegacyArrange::ClipRecord& top = gArrangeStreams[0].clips[0];
+
+            int cookFrame = 2000000;
+            auto cookAll = [&]()
+            {
+               cookFrame++;
+               for (GraphNode& gn : gNodes)
+                  gn.node->CookIfNeeded(cookFrame);
+            };
+            auto readCenter = [&](const GLUtil::Fbo& f, unsigned char* px)
+            {
+               GLint prev = 0;
+               glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev);
+               glBindFramebuffer(GL_FRAMEBUFFER, f.fbo);
+               glReadPixels(f.w / 2, f.h / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+               glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prev);
+            };
+
+            ArrangeCompositeTarget t{ 90 };
+            auto compositeAndRead = [&](unsigned char* px)
+            {
+               cookAll();
+               CompositeArrangeTimelineVideo(t, nullptr, kBeat, kSize, kSize);
+               readCenter(t.result, px);
+            };
+            unsigned char px[4] = { 0, 0, 0, 0 };
+
+            // --- A. Top lane is frontmost ---------------------------------
+            compositeAndRead(px);
+            const bool aOk = px[0] > 200 && px[2] < 40;
+            printf("arrange video top lane frontmost: %s (rgb %d,%d,%d)\n", aOk ? "OK" : "FAIL", px[0], px[1], px[2]);
+            allOk = allOk && aOk;
+
+            // --- B. Model opacity is honoured (no UI) ---------------------
+            gArrangeStreams[0].opacity = 0.5f;
+            compositeAndRead(px);
+            const bool bOk = px[0] > 100 && px[0] < 155 && px[2] > 100 && px[2] < 155;
+            printf("arrange video lane opacity: %s (rgb %d,%d,%d)\n", bOk ? "OK" : "FAIL", px[0], px[1], px[2]);
+            allOk = allOk && bOk;
+            gArrangeStreams[0].opacity = 1.0f;
+
+            // --- C. A disabled clip is skipped ----------------------------
+            top.enabled = false;
+            compositeAndRead(px);
+            const int countDisabled = CountActiveArrangeVideoClips(kBeat);
+            const bool cOk = px[2] > 200 && px[0] < 40 && countDisabled == 1;
+            printf("arrange video disabled clip skipped: %s (rgb %d,%d,%d, active %d)\n",
+                   cOk ? "OK" : "FAIL", px[0], px[1], px[2], countDisabled);
+            allOk = allOk && cOk;
+            top.enabled = true;
+
+            // --- D. An unassigned clip is skipped -------------------------
+            top.srcIndex = -1;
+            top.srcUid = 0;
+            compositeAndRead(px);
+            const bool dOk = px[2] > 200 && px[0] < 40 && CountActiveArrangeVideoClips(kBeat) == 1;
+            printf("arrange video unassigned clip skipped: %s (rgb %d,%d,%d)\n", dOk ? "OK" : "FAIL", px[0], px[1], px[2]);
+            allOk = allOk && dOk;
+
+            // --- E. Nothing usable -> opaque black ------------------------
+            gArrangeStreams[1].clips[0].enabled = false;
+            compositeAndRead(px);
+            const bool eOk = px[0] < 10 && px[1] < 10 && px[2] < 10 && px[3] > 245 &&
+                             CountActiveArrangeVideoClips(kBeat) == 0;
+            printf("arrange video nothing active clears black: %s (rgba %d,%d,%d,%d)\n",
+                   eOk ? "OK" : "FAIL", px[0], px[1], px[2], px[3]);
+            allOk = allOk && eOk;
+            gArrangeStreams[1].clips[0].enabled = true;
+
+            // --- F. Geometry clip: zero FBO allocations over 100 frames ---
+            // Two targets at different sizes composite the same geometry
+            // clip every frame, the shape of a render running under an open
+            // monitor - per-target keying is what keeps them from thrashing.
+            top.srcIndex = cubeIndex;
+            top.srcUid = cubeUid;
+            ArrangeCompositeTarget t2{ 91 };
+            const size_t panelViewportsBefore = gPanelViewports.size();
+            auto geomFrame = [&]()
+            {
+               cookAll();
+               CompositeArrangeTimelineVideo(t, nullptr, kBeat, kSize, kSize);
+               CompositeArrangeTimelineVideo(t2, nullptr, kBeat, 96, 54);
+               ReapArrangeGeomViewports();
+            };
+            geomFrame(); // warm-up: first sight allocates each target's viewport + scratch
+            const unsigned long long allocsBefore = GLUtil::FboAllocationCount();
+            for (int f = 0; f < 100; f++)
+               geomFrame();
+            const unsigned long long allocs = GLUtil::FboAllocationCount() - allocsBefore;
+            const bool cached = gArrangeGeomViewports.count({ cubeUid, 90 }) == 1 &&
+                                gArrangeGeomViewports.count({ cubeUid, 91 }) == 1;
+            const bool panelUntouched = gPanelViewports.size() == panelViewportsBefore &&
+                                        gPanelViewports.count(cubeIndex) == 0;
+            const bool fOk = allocs == 0 && cached && panelUntouched;
+            printf("arrange video geometry clip steady state: %s (%llu FBO allocations in 100 frames, cached %d, panel viewports untouched %d)\n",
+                   fOk ? "OK" : "FAIL", allocs, cached ? 1 : 0, panelUntouched ? 1 : 0);
+            allOk = allOk && fOk;
+
+            // --- G. Unused geometry viewports are evicted -----------------
+            top.enabled = false;
+            for (uint64_t f = 0; f < kArrangeGeomEvictFrames; f++)
+               geomFrame();
+            const bool stillThere = gArrangeGeomViewports.count({ cubeUid, 90 }) == 1;
+            geomFrame();
+            const bool evicted = gArrangeGeomViewports.count({ cubeUid, 90 }) == 0 &&
+                                 gArrangeGeomViewports.count({ cubeUid, 91 }) == 0;
+            const bool gOk = stillThere && evicted;
+            printf("arrange video geometry cache eviction: %s (kept through %llu frames %d, then evicted %d)\n",
+                   gOk ? "OK" : "FAIL", (unsigned long long)kArrangeGeomEvictFrames, stillThere ? 1 : 0, evicted ? 1 : 0);
+            allOk = allOk && gOk;
+
+            for (ArrangeCompositeTarget* ft : { &t, &t2 })
+            {
+               GLUtil::DestroyFbo(ft->scratch[0]);
+               GLUtil::DestroyFbo(ft->scratch[1]);
+               GLUtil::DestroyFbo(ft->result);
+               GLUtil::DestroyFbo(ft->retiredResult);
+            }
+         }
+
+         NewPatch();
+         printf("arrange video test: all  %s\n", allOk ? "OK" : "FAIL");
       }
 
       if (getenv("INFINITE_UNDOPERFTEST") != nullptr && frameId == 4)
@@ -75081,6 +75420,11 @@ int main(int argc, char** argv)
 
       for (GraphNode& gn : gNodes)
          gn.node->CookIfNeeded(frameId);
+
+      // Arrangement monitor (overhaul WP4): after the cook, so the clips it
+      // selects and the textures it reads belong to the same frame.
+      CompositeArrangeMonitorIfRequested();
+      ReapArrangeGeomViewports();
 
       // The node cook loop above is the longest single stretch of the frame,
       // and it runs after glfwPollEvents() with the run loop otherwise
