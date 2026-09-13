@@ -31131,6 +31131,20 @@ namespace
             }
 
             ImGui::Spacing();
+            ImGui::SeparatorText("Display");
+            float uiScale = CategoryColors::GetUiScale();
+            ImGui::SetNextItemWidth(200.0f);
+            if (ImGui::SliderFloat("UI Scale", &uiScale, 0.5f, 2.0f, "%.2fx"))
+            {
+               CategoryColors::SetUiScale(uiScale, false);
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+               CategoryColors::SaveAppearanceOverrides();
+            }
+            ImGui::TextWrapped("Manual multiplier on top of the display's own DPI scale. Requires a restart to take effect.");
+
+            ImGui::Spacing();
             // Transparency Backdrop
             ImGui::SeparatorText("Transparency Backdrop");
             static const char* kBackdropStyles[] = { "Checkerboard", "Solid Color" };
@@ -49865,6 +49879,11 @@ int main(int argc, char** argv)
    ImGui::CreateContext();
    ImGui::StyleColorsDark();
 
+   // Loaded here (rather than down with the other Load*Settings() calls)
+   // because the font/DPI block right below needs gUiScale before it bakes
+   // the font atlas - loading it after the atlas already exists is too late.
+   CategoryColors::LoadPreference();
+
    // A proper UI typeface instead of ImGui's bitmap default. Retina-aware:
    // load at 2x and scale down so text stays sharp on a HiDPI display.
    //
@@ -49878,10 +49897,35 @@ int main(int argc, char** argv)
    // back to its built-in tiny bitmap font (Proggy). The old macOS system
    // fonts stay in the list as a fallback chain (belt-and-suspenders for a
    // dev build missing the bundled asset), they just no longer run first.
+   // manualScale is the user's optional "UI Scale" override (Appearance tab),
+   // on top of whatever the OS reports for the monitor. Windows and macOS
+   // need different math here because glfwGetWindowContentScale means
+   // something different on each: on macOS the window is sized in points and
+   // the framebuffer is a separate, larger pixel buffer (Retina), so xscale
+   // only needs to inform how *sharp* the baked glyphs are - the actual
+   // on-screen point size stays baseSize regardless of xscale, which is what
+   // the FontGlobalScale = 1/xscale below restores. On Windows there is no
+   // such points/pixels split - the window and framebuffer are both in
+   // physical pixels, and xscale is the real OS/monitor DPI factor - so text
+   // must actually get bigger there, not just sharper. Previously this block
+   // used the macOS formula unconditionally, which baked the font at
+   // baseSize*xscale and then divided the *same* xscale back out via
+   // FontGlobalScale, cancelling to a fixed 15 physical px on every Windows
+   // display regardless of its scaling setting (issue #21).
+   const float manualScale = CategoryColors::GetUiScale();
+   float styleScale = manualScale;
    {
       float xscale = 1.0f, yscale = 1.0f;
       glfwGetWindowContentScale(window, &xscale, &yscale);
       const float baseSize = 15.0f;
+      const float bakeScale = xscale * manualScale;
+#if defined(_WIN32)
+      const float displayScale = 1.0f;
+      styleScale = xscale * manualScale;
+#else
+      const float displayScale = 1.0f / xscale;
+      styleScale = manualScale;
+#endif
       const std::string bundledInter = BundledResourcePath("fonts/Inter-Regular.ttf");
       const char* candidates[] = {
          bundledInter.c_str(),
@@ -49896,10 +49940,10 @@ int main(int argc, char** argv)
       {
          if (path[0] == '\0')
             continue;
-         uiFont = io.Fonts->AddFontFromFileTTF(path, baseSize * xscale);
+         uiFont = io.Fonts->AddFontFromFileTTF(path, baseSize * bakeScale);
          if (uiFont != nullptr)
          {
-            io.FontGlobalScale = 1.0f / xscale;
+            io.FontGlobalScale = displayScale;
             break;
          }
       }
@@ -49922,8 +49966,8 @@ int main(int argc, char** argv)
             ImFontConfig iconCfg;
             iconCfg.MergeMode = true;
             iconCfg.PixelSnapH = true;
-            iconCfg.GlyphMinAdvanceX = baseSize * xscale;
-            io.Fonts->AddFontFromFileTTF(bundledLucide.c_str(), baseSize * xscale, &iconCfg, iconRanges);
+            iconCfg.GlyphMinAdvanceX = baseSize * bakeScale;
+            io.Fonts->AddFontFromFileTTF(bundledLucide.c_str(), baseSize * bakeScale, &iconCfg, iconRanges);
          }
       }
    }
@@ -49939,6 +49983,13 @@ int main(int argc, char** argv)
    // knob row. Left unset before this, which meant they inherited 0.
    style.PopupRounding = 12.0f;
    style.ScrollbarRounding = 10.0f;
+   // Scales padding/spacing/rounding/etc alongside the font. On Windows this
+   // also carries the real monitor DPI factor (see styleScale above), since
+   // widget metrics need to grow with the display the same way text does;
+   // on macOS the OS/framebuffer already handles that half, so only the
+   // manual override multiplies here.
+   if (styleScale != 1.0f)
+      style.ScaleAllSizes(styleScale);
 
    ImGui_ImplGlfw_InitForOpenGL(window, true);
    // Installed after the backend so it chains rather than replacing ImGui's.
@@ -50024,7 +50075,8 @@ int main(int argc, char** argv)
    config.SettingsFile = graphPath.c_str();
    config.EnableSmoothZoom = true; // trackpad momentum made stepped zoom feel jumpy
    Patch::LoadRecents();
-   CategoryColors::LoadPreference();
+   // CategoryColors::LoadPreference() already ran earlier, before the font/DPI
+   // block, so gUiScale is available in time for font baking.
    LoadGeneralSettings();
    LoadWorkspaceSettings();
    LoadAudioSettings();

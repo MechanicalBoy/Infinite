@@ -220,6 +220,7 @@ float gNodeOpacityLight = -1.0f;
 float gTintWeightDark = -1.0f;
 float gTintWeightLight = -1.0f;
 float gNodeRounding = -1.0f;
+float gUiScale = -1.0f;
 
 std::string ThemePath()
 {
@@ -252,6 +253,7 @@ void LoadAppearanceOverrides()
    gTintWeightDark = -1.0f;
    gTintWeightLight = -1.0f;
    gNodeRounding = -1.0f;
+   gUiScale = -1.0f;
 
    const std::string path = AppearancePath();
    if (path.empty())
@@ -326,6 +328,10 @@ void LoadAppearanceOverrides()
       else if (key == "node.rounding")
       {
          gNodeRounding = std::strtof(val.c_str(), nullptr);
+      }
+      else if (key == "ui.scale")
+      {
+         gUiScale = std::strtof(val.c_str(), nullptr);
       }
    }
 }
@@ -603,6 +609,23 @@ void SetTintWeight(float weight, bool light, bool saveToFile)
       SaveAppearanceOverrides();
 }
 
+bool HasUiScaleOverride()
+{
+   return gUiScale >= 0.0f;
+}
+
+float GetUiScale()
+{
+   return gUiScale >= 0.0f ? gUiScale : 1.0f;
+}
+
+void SetUiScale(float scale, bool saveToFile)
+{
+   gUiScale = scale;
+   if (saveToFile)
+      SaveAppearanceOverrides();
+}
+
 void ResetAllAppearance(bool light)
 {
    ResetAllCategoryColors(light);
@@ -638,7 +661,7 @@ void SaveAppearanceOverrides()
        gCableOverridesDark.empty() && gCableOverridesLight.empty() &&
        gNodeOpacityDark < 0.0f && gNodeOpacityLight < 0.0f &&
        gTintWeightDark < 0.0f && gTintWeightLight < 0.0f &&
-       gNodeRounding < 0.0f)
+       gNodeRounding < 0.0f && gUiScale < 0.0f)
    {
       std::remove(path.c_str());
       return;
@@ -667,6 +690,8 @@ void SaveAppearanceOverrides()
       file << "node.light.tintWeight=" << gTintWeightLight << "\n";
    if (gNodeRounding >= 0.0f)
       file << "node.rounding=" << gNodeRounding << "\n";
+   if (gUiScale >= 0.0f)
+      file << "ui.scale=" << gUiScale << "\n";
 }
 
 int SemanticRank(const std::string& category)
