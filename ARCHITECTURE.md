@@ -1,9 +1,19 @@
 # Architecture Map
 
 Documentation-only index of where things live in this codebase. No code was
-moved to produce this — `main.cpp` is a single ~9,146-line file (almost
-entirely one `int main()`), so instead of a risky physical split, this doc
-tells you which line ranges to open for a given kind of task.
+moved to produce this — `main.cpp` is a single file that has grown to roughly
+71,000 lines (almost entirely one `int main()` plus the free functions it
+calls), so instead of a risky physical split, this doc tells you which named
+symbol to grep for a given kind of task.
+
+**Anchors below are symbols (function names, global variables, or — where
+neither exists because the code is inline in `main()` — a distinctive
+`grep`-able call/string right at that spot), never line numbers.** A 71k-line
+file that gets edited constantly makes any line number stale within days;
+`grep -n '\bSymbolName\b' src/main.cpp` finds the current location in
+milliseconds and was used to verify every row in this doc. When a row's
+anchor is a call/string rather than a real symbol, that's called out — it
+means the code lives inline in `main()` with no function of its own.
 
 ## Categories
 
@@ -14,14 +24,15 @@ split:
 2. **Engine / Runtime Core** — the machinery nodes and UI both sit on: graph
    model, patch format, factory, clock, modulation routing, GL/mesh utils
 3. **Editor UI** — the interactive canvas surface: menus, widgets, minimap,
-   groups, keyboard shortcuts
+   groups, docked panels, keyboard shortcuts
 4. **App Features** — cross-cutting, document-level behavior: undo/redo,
    save/load, export, clipboard, preferences, the cook/eval tick
-5. **Platform Layer** — macOS-native shims (file dialogs, image/model decode)
+5. **Platform Layer** — macOS and Windows native shims (file dialogs, audio
+   device I/O, MIDI, video/image decode, plugin hosting)
 6. **Dev/Test Harness** — env-var-gated self-tests, not product code
 
-When asked to review/enhance/build a feature in one of these, open only the
-files/line-ranges listed under it.
+When asked to review/enhance/build a feature in one of these, grep the
+anchors listed under it rather than scrolling.
 
 ---
 
@@ -65,11 +76,30 @@ What each node type does: math, state, per-node parameter UI.
 | SceneNodes | Camera & lights |
 | FeedbackNodes | Feedback/trails/reaction-diffusion |
 | SwitcherNode | Cycles between inputs on a timer |
-| TextNode | Typography via CoreText/CoreGraphics |
-| SyphonInNode | Syphon video client (zero-copy GPU texture receiver) |
-| SyphonOutNode | Syphon video server (zero-copy GPU texture publisher) |
+| TextNode | Typography via CoreText/CoreGraphics (macOS) or GDI+ (Windows) |
+| SyphonInNode | Syphon video client (zero-copy GPU texture receiver, macOS) / Spout (Windows) |
+| SyphonOutNode | Syphon video server (zero-copy GPU texture publisher, macOS) / Spout (Windows) |
 | ProjectionNode | Projection mapping, 4-corner homography warp, mesh warping, and test patterns |
 | OutputNode | Terminal node — identity-pass FBO, drives recording |
+
+### Field node system
+
+`Field` is a small embedded expression language with its own compiler
+(lexer → typed IR → three backends), hosted by six node types rather than
+one — see the `field-language`, `field-compiler`, `field-domains`,
+`field-integration` and `field-state` skills for the language itself; this
+row is only the code-location map.
+
+**Files:** `src/nodes/FieldElementNode.h`/`.cpp`, `FieldPrimitiveNode.h`/`.cpp`,
+`FieldSampleNode.h`/`.cpp`, `FieldSynthNode.h`/`.cpp`, `FieldGraphNode.h`/`.cpp`,
+`FieldPixelNode.h`/`.cpp` (the shared compiler lives behind
+`src/core/Expression.cpp`, see `field-compiler`).
+
+**File:** `src/main.cpp` — anchors: `DrawFieldElementParams`,
+`DrawFieldPrimitiveParams`, `DrawFieldSampleParams`, `DrawFieldSynthParams`,
+`DrawFieldGraphParams`, `DrawFieldPixelParams` (one per node type's param
+panel), `DrawFieldDeviceControls` (shared preset-device chrome templated
+across the Field node types).
 
 ### Audio / note node system
 
@@ -100,7 +130,8 @@ getting a file each:
   anti-aliased Fourier mip pyramid wavetable via 1024-point Radix-2 FFT, and renders
   as a polyphonic synthesizer with ADSR envelopes, SVF filter, unison, and glide.
 - **`src/nodes/AudioPluginNode.h`/`.cpp`** — hosts a third-party plugin (Audio
-  Units today) as an ordinary audio effect node. Unusually for this codebase it
+  Units on macOS, VST3 on Windows — see `PluginHostWin.cpp`/`PluginVST3Win.cpp`)
+  as an ordinary audio effect node. Unusually for this codebase it
   is a *three*-object node: the `INode` main-thread half, its `AudioNode` audio
   half, and the plugin instance itself, an opaque `Platform::PluginHandle` the
   main half owns and the audio half only ever reads through a
@@ -145,7 +176,7 @@ getting a file each:
 - **`src/audio/PluginScanner.h`/`.cpp`** — `SampleScanner`'s thread +
   `PollResults()` + disk-cache shape, over a component-registry query instead
   of a directory walk, so it has no user-managed folder list. Backs the docked
-  panel's fourth mode.
+  panel's fourth mode (anchor: `gPluginFilter`, `DrawBrowserFilterStrip`).
 - **Every Objective-C object involved in plugin hosting lives behind
   `Platform.h`'s plugin section** — `src/nodes/` and `src/audio/` stay pure
   C++, and the audio thread never sends a message or touches ARC: the render
@@ -153,10 +184,10 @@ getting a file each:
   an `__unsafe_unretained` stack pull-input block. The plugin's editor is a
   plain `NSWindow` (the only one in the app), which works because
   `glfwPollEvents` drains and dispatches `NSApp`'s queue. AU is always
-  supported; VST3 is a second backend behind the same surface, gated behind
-  the `INFINITE_ENABLE_VST3` build option (off by default — the VST3 SDK is
-  GPLv3-or-commercial and this codebase is MIT, see `LICENSE` and
-  `docs/plans/audio/plugin-hosting.md`).
+  supported; VST3 is a second backend behind the same surface on both
+  platforms, gated behind the `INFINITE_ENABLE_VST3` build option (off by
+  default — the VST3 SDK is GPLv3-or-commercial and this codebase is MIT, see
+  `LICENSE` and `docs/plans/audio/plugin-hosting.md`).
 - Per-effect body/visualizer UI lives in `src/main.cpp` as `DrawXxxBody`/
   `DrawXxxVisualizer` pairs next to the `EffectVisualizerId` switch inside
   `DrawAudioNodeBody` — see `.claude/skills/new-audio-node/SKILL.md` for the
@@ -231,21 +262,21 @@ SKILL.md, "Adding a new node type to a sweep."
 **File:** `src/main.cpp` — registration, per-node UI, and node-graph wiring
 (as opposed to the *rendering* of pins/links, which is Editor UI)
 
-| Lines | What |
+| Anchor (grep this symbol) | What |
 |---|---|
-| 84-93 | `DisplayName` — display-name formatting for registered types |
-| 534-635 | `RegisterNodes()` — registers every type with `NodeFactory` |
-| 637-654 | `ModulatorForOutput`, `FindNodeByIndex` |
-| 656-728 | `InputCountFor` — per-type input pin counts |
-| 730-781 | `CableFor` — node/slot → `ImageCable` mapping |
-| 783-878 | `ConnectGeometrySlot` — geometry/camera/light connection mapping |
-| 879-913 | `ReloadDerivedState`, `CopyParams` |
-| 914-2769 | **All `DrawXParams` functions** — one per node type's parameter panel (the bulk of the file; grep `DrawXxxParams` to jump to a specific node's UI) |
-| 3262-3635 | `DisconnectLinkById`, `DisconnectAllTo`, `RemoveNodeByIndex` — node/link lifecycle |
-| 5226-5275 | Drag-and-drop file → auto-spawn matching source node |
-| 7500-7823 | Per-frame dispatch: routes each node to its `DrawXParams` (chrome around this dispatch is Editor UI, see below) |
-| 7957-8148 | New-connection validation (`QueryNewLink`) — type-checks proposed links per node kind |
-| 8396-8416 | Editor-initiated delete → `DisconnectLinkById`/`RemoveNodeByIndex` |
+| `DisplayName` | Display-name formatting for registered types |
+| `RegisterNodes` | Registers every type with `NodeFactory` |
+| `ModulatorForOutput`, `FindNodeByIndex` | Node/output lookups |
+| `InputCountFor` | Per-type input pin counts |
+| `CableFor` | Node/slot → `ImageCable` mapping |
+| `ConnectGeometrySlot` | Geometry/camera/light connection mapping |
+| `ReloadDerivedState`, `CopyParams` | Post-load/paste state rebuild and param copy |
+| `DrawXxxParams` (grep the pattern) | **All per-node parameter panel functions** — one per node type, the bulk of the file; grep the specific node's name, e.g. `DrawShapeParams`, `DrawFormulaParams` |
+| `DisconnectLinkById`, `DisconnectAllTo`, `RemoveNodeByIndex` | Node/link lifecycle |
+| `OnFilesDropped` (GLFW drop callback) / `gDroppedFiles` | Drag-and-drop file → auto-spawn matching source node |
+| `dynamic_cast<...Node*>(gn.node.get())` chain inside `main()` (not its own function — grep any `DrawXxxParams(n)` call inside it, e.g. `DrawFormulaParams(n);`) | Per-frame dispatch: routes each node to its `DrawXxxParams` (chrome around this dispatch is Editor UI, see below) |
+| `ed::QueryNewLink` | New-connection validation — type-checks proposed links per node kind |
+| `ed::QueryDeletedNode`, `ed::QueryDeletedLink` | Editor-initiated delete → `RemoveNodeByIndex`/`DisconnectLinkById` |
 
 ---
 
@@ -260,105 +291,139 @@ The graph data model and low-level machinery underneath both nodes and UI.
 - `src/core/NodeFactory.h/.cpp` — module registry
 - `src/core/Modulation.h/.cpp` — control-value node base
 - `src/core/Palette.h/.cpp` — colour bindings (palette node + swatch -> a colour param), the colour counterpart of Modulation
-- `src/core/Transport.h/.cpp` — global clock (drives modulators, video playback)
+- `src/core/Transport.h/.cpp` — global clock (drives modulators, video playback); accessed as the `Transport::Instance()` singleton
 - `src/core/BlendModes.h/.cpp` — shared blend-mode vocabulary + GLSL
 - `src/core/FilterDefs.h/.cpp` — declarative filter-type table
 - `src/core/GLUtil.h/.cpp` — FBO/shader-pass helpers
 - `src/core/Mesh.h/.cpp` — mesh + matrix math for 3D nodes
-- `src/core/Patch.h/.cpp` — patch file *format* (struct + read/write primitives; the save/load/undo *flows* that use it are App Features, below)
+- `src/core/Patch.h/.cpp` — patch file *format* (struct + read/write primitives, including `Patch::StreamRecord` for the arrangement timeline; the save/load/undo *flows* that use it are App Features, below)
 
 **File:** `src/main.cpp`
 
-| Lines | What |
+| Anchor (grep this symbol) | What |
 |---|---|
-| 1-70 | Includes |
-| 95-138 | `gNodes`/`gGroupMembers`/`gNextIndex`/`gEditor`, `LinkInfo`/`gLinks`/`FindLink` — core node/link registries |
-| 4130-4213 | App bootstrap: GLFW/GL/ImGui init, HiDPI fonts, backend init, App Support dir, `ed::Config` |
-| 4890-4964 | Main-loop top: poll events, `NewFrame()` |
-| 7823-7941 | Per-frame link-table rebuild (image/geometry/modulator link data — rendering the resulting `ed::Link()` calls is Editor UI) |
-| 8791-8818 | **Modulation/cook pipeline** — applies bound modulator values into params, then `CookIfNeeded(frameId)` per Output node (the core generative-evaluation tick; listed again under App Features since it's also the thing "play" triggers) |
-| 9071-9146 | Render/present: `ImGui::Render()`, GL clear, swap buffers, frame limiter, `main()` exit |
+| `#include` block at the top of the file | Includes |
+| `gNodes`, `gGroupMembers`, `gNextIndex`, `gEditor`, `struct LinkInfo` / `gLinks` / `FindLink` | Core node/link registries |
+| `glfwInit()` (the real call, not a comment referencing it) | App bootstrap: GLFW/GL/ImGui init, HiDPI fonts (`AddFontFromFileTTF`), backend init, App Support dir, `ed::Config` |
+| `while (!glfwWindowShouldClose(window))` in `main()` | Main-loop top: poll events, `ImGui_ImplOpenGL3_NewFrame`/`NewFrame()` |
+| `gLinks.clear()` inside the per-frame block in `main()` (not its own function) | Per-frame link-table rebuild (image/geometry/modulator link data — rendering the resulting `ed::Link()` calls is Editor UI) |
+| `ApplyModulationAndPalette` | **Modulation/cook pipeline** — applies bound modulator values into params; paired with `CookIfNeeded(frameId)` per Output node in `main()`'s frame loop (the core generative-evaluation tick; listed again under App Features since it's also the thing "play" triggers) |
+| `ImGui::Render()` / `glfwSwapBuffers(window)` at the bottom of `main()` | Render/present: GL clear, swap buffers, frame limiter, `main()` exit |
 
 ---
 
 ## 3. Editor UI
 
 The interactive canvas: rendering, layout, menus, widgets, theming, minimap,
-groups, popups, keyboard shortcuts for interaction.
+groups, docked panels, popups, keyboard shortcuts for interaction.
 
 **File:** `src/main.cpp`
 
-| Lines | What |
+| Anchor (grep this symbol) | What |
 |---|---|
-| 74-83 | Layout constants (`kPreviewSize`, `kViewportSize`, `kParamWidth`, `kPinRadius`, `kPinHit`) |
-| 139-175 | Canvas/UI globals: grid snap, frame-timing display, target FPS/vsync, minimap globals, zoom sensitivity, pan/hover state |
-| 176-210 | Deferred dropdown & color-picker popup infra (works around node-editor canvas-transform bug) |
-| 211-232 | Drag-and-drop file globals + `OnFilesDropped` GLFW callback |
-| 233-274 | `DropdownButton`, `ColorSwatch` — reusable param widget chrome |
-| 276-403 | `ModSlider` / `BeginNodeParams` / `ModSliderInt` — the modulatable-slider widget used by nearly every node's param panel |
-| 405-432 | `NodeSeparator` |
-| 434-438 | `AlignOptions()` |
-| 440-503 | `EyeToggle`, `BypassToggle` — hand-drawn param-visibility/bypass icons |
-| 505-532 | `DrawPin` — generic pin-drawing helper |
-| 1176-1236 | `DrawFxPad` — XY control-surface widget (Resynth) |
-| 1388-1485 | `DrawCurveEditor` — interactive tone-curve widget |
-| 2792-2884 | `DrawPaintablePreview`, `DrawCommentPreview`/`DrawCommentParams` |
-| 2885-3092 | **Node group UI system**: `GroupOwning`, `PruneDeadGroups`, `AutoFitGroupToMembers`, `DrawGroupNode` |
-| 3148-3261 | `DrawPreview` (image/3D thumbnail), `DrawModulatorMeter` (scope-style meter) |
-| 3315-3509 | `DrawHelpWindow` — module reference modal |
-| 3956-4069 | `DrawMinimap` — rendering, click/drag-to-navigate |
-| 4154-4184 | ImGui context/HiDPI font setup, base style |
-| 4980-5225 | Main menu bar: File/Edit/View menus, minimap settings, performance (FPS/vsync), transport buttons + BPM slider, trackpad wheel damping, canvas rect capture |
-| 7500-7823 | Per-frame node chrome: pin layout, node body, preview dispatch, Eye/Bypass row, "mod" badge (the dispatch-*to*-param-panel logic itself is Node Library) |
-| 7823-7941 | Rendering the rebuilt link table (`ed::Link()` calls, orange-tinted for modulation) |
-| 8151-8449 | Keyboard shortcuts: Undo/Redo, Delete, Shift+D duplicate, Cmd+G group/ungroup, Cmd+C/V, drag-checkpoint capture, snap-on-release |
-| 8461-8730 | Popup layer: minimap draw site, right-click node-spawner popup, deferred popups, docked node-browser side panel |
-| 8734-8790 | Floating windows: GLSL Formula editor, Help window |
-| 9095-9110 | Cmd+S/O/N global shortcuts (when no text field focused) |
+| `kPreviewSize`, `kViewportSize`, `kParamWidth`, `kPinRadius`, `kPinHit` | Layout constants |
+| `gGridSnap`, `gTargetFps`, `gVsync` | Canvas/UI globals: grid snap, target FPS/vsync, (frame-timing and minimap globals live alongside these) |
+| `struct DropdownRequest` / `gDropdown` | Deferred dropdown & color-picker popup infra (works around node-editor canvas-transform bug) |
+| `OnFilesDropped` | Drag-and-drop file globals + GLFW drop callback |
+| `DropdownButton`, `ColorSwatch` | Reusable param widget chrome |
+| `ModSlider`, `BeginNodeParams`, `ModSliderInt` | The modulatable-slider widget used by nearly every node's param panel |
+| `NodeSeparator` | Param-panel section separator |
+| `AlignOptions` | Alignment dropdown option list |
+| `EyeToggle`, `BypassToggle` | Hand-drawn param-visibility/bypass icons |
+| `DrawPin` | Generic pin-drawing helper |
+| `DrawFxPad` | XY control-surface widget (Resynth) |
+| `DrawCurveEditor` | Interactive tone-curve widget |
+| `DrawPaintablePreview`, `DrawCommentPreview`/`DrawCommentParams` | Paintable-canvas and comment-node chrome |
+| `GroupOwning`, `PruneDeadGroups`, `AutoFitGroupToMembers`, `DrawGroupNode` | **Node group UI system** |
+| `DrawPreview`, `DrawModulatorMeter` | Image/3D thumbnail; scope-style modulator meter |
+| `DrawModMatrixDocked` (content: `DrawModMatrixTable`) | **Modulation matrix docked panel** — dockable to any of 4 sides (`gModMatrixDock`), lists every bound modulator × destination |
+| `DrawPerfPanelDocked` (content: `DrawPerfPanelContent`) | **Performance (macro) matrix docked panel** — dockable to any of 4 sides (`gPerfPanelDock`); `gPerfElements`/`gPerfLayout` are its records, `gArrangeStreams` (see App Features) reuses the same `Patch::PerfRecord` shape for the arrangement timeline |
+| `DrawViewportPanelDocked` | Docked 3D viewport panel |
+| `DrawBrowserFilterStrip` (call sites: `gModulesFilter`, `gPluginFilter`, `gFieldFilter`) | Shared search/sort/filter strip used by the docked node-browser side panel (module/plugin/Field/media tabs — `gSearchPanelMode`) |
+| `DrawShortcutsWindow` / `gShortcutsOpen` | **Keyboard shortcuts reference window** (floating, opened from Help) |
+| `DrawHelpWindow` | Module reference modal |
+| `DrawMinimap` | Rendering, click/drag-to-navigate |
+| `AddFontFromFileTTF` | ImGui context/HiDPI font setup, base style |
+| `ImGui::BeginMenu("File")` inside `main()`'s `ImGui::BeginMenuBar()` block (not its own function) | Main menu bar: File/Edit/View menus, minimap settings, performance (FPS/vsync), transport buttons + BPM slider, trackpad wheel damping, canvas rect capture |
+| same `dynamic_cast<...Node*>(gn.node.get())` chain as Node Library, above | Per-frame node chrome: pin layout, node body, preview dispatch, Eye/Bypass row, "mod" badge (the dispatch-*to*-param-panel logic itself is Node Library) |
+| `gLinks.clear()` block (see Engine Core above) | Rendering the rebuilt link table (`ed::Link()` calls, orange-tinted for modulation) |
+| `gRequestCopy`, `gRequestPaste`, `gRequestDuplicate`, `gRequestGroup`, `gShortcutsOpen = true` | Keyboard shortcuts: Undo/Redo, Delete, Shift+D duplicate, Cmd+G group/ungroup, Cmd+C/V, drag-checkpoint capture, snap-on-release |
+| `DrawMinimap` call site / right-click `ImGui::OpenPopup` for the node spawner / `DrawBrowserFilterStrip` docked panel | Popup layer: minimap draw site, right-click node-spawner popup, deferred popups, docked node-browser side panel |
+| `gFormulaEditorOpen`, `DrawHelpWindow` | Floating windows: GLSL Formula editor, Help window |
+| `ImGuiKey_S`/`ImGuiKey_O`/`ImGuiKey_N` checks near the bottom of `main()` | Cmd+S/O/N global shortcuts (when no text field focused) |
 
 ---
 
 ## 4. App Features
 
 Cross-cutting, document-level behavior: undo/redo, save/load, export,
-clipboard, preferences, transport wiring.
+clipboard, preferences, transport wiring, the arrangement timeline.
 
 **File:** `src/main.cpp`
 
-| Lines | What |
+| Anchor (grep this symbol) | What |
 |---|---|
-| 3636-3762 | `BuildPatchData()` — serializes live graph to `Patch::Data` (shared by save + undo/redo) |
-| 3763-3807 | `SavePatchTo`, `NewPatch()` |
-| 3808-3895 | `ApplyPatchData`, `LoadPatchFrom` — restore graph from snapshot/disk |
-| 3896-3955 | **Undo/redo**: `PushUndoCheckpoint`/`PushUndoSnapshot`, `Undo()`, `Redo()` |
-| 4106-4126 | `SavePatchInteractive` — Save/Save-As dialog flow |
-| 4206-4211 | Preferences persistence: `imgui.ini`, `Infinite.json` (node-editor layout) under `~/Library/Application Support/Infinite` |
-| 4211, 5002-5018 | Recent-files list (`Patch::LoadRecents`/`NoteRecent`/`Recents()`) |
-| 2770-2791 | `ExportPng` |
-| 7776-7813 | Video recording controls (path, fps, include-audio, start/stop) — backs `OutputNode::StartRecording/StopRecording` |
-| 8189-8222 | Shift+D duplicate |
-| 8350-8394 | Copy/paste clipboard (Cmd+C/Cmd+V) |
-| 4956-4966, 5103-5122 | Transport wiring: per-frame `Tick`, Play/Pause/Rewind, BPM slider (buttons themselves are Editor UI; the `Tick()` call and what it drives is the feature) |
-| 8791-8818 | Modulation/cook pipeline (see also Engine Core — this is the same code, listed here because "press Play" is the user-facing feature it powers) |
-| 5075-5077, 9115-9124 | Vsync toggle, target-FPS frame limiter |
+| `BuildPatchData` | Serializes live graph to `Patch::Data` (shared by save + undo/redo) |
+| `SavePatchTo`, `NewPatch` | Save-to-path, new/blank patch |
+| `ApplyPatchData`, `LoadPatchFrom` | Restore graph from snapshot/disk |
+| `PushUndoCheckpoint`, `PushUndoSnapshot`, `Undo`, `Redo` | **Undo/redo** |
+| `SavePatchInteractive` | Save/Save-As dialog flow |
+| `iniPath`/`graphPath` next to the settings-dir resolution near the top of `main()` | Preferences persistence: `imgui.ini`, `Infinite.json` (node-editor layout) under the per-user settings dir (`AppPaths.h`) |
+| `Patch::LoadRecents`/`Patch::NoteRecent`/`Patch::Recents` (declared in `src/core/Patch.h`) | Recent-files list |
+| `ExportPng` | PNG export |
+| `OutputNode::StartRecording`/`OutputNode::StopRecording` (declared in `src/nodes/OutputNode.h`; UI call sites are the `n->StartRecording()`/`n->StopRecording()` calls in the transport/menu-bar and per-node body code in `main.cpp`) | Video recording controls (path, fps, include-audio, start/stop) |
+| `ClusterClipboard`, `CaptureClusterLinks`, `ApplyClusterLinks` | Copy/paste and Shift+D duplicate clipboard (Cmd+C/Cmd+V; the request flags live under Editor UI above) |
+| `Transport::Instance().Tick(...)` inside `main()`'s frame loop | Transport wiring: per-frame `Tick`, Play/Pause/Rewind, BPM slider (buttons themselves are Editor UI; the `Tick()` call and what it drives is the feature) |
+| `ApplyModulationAndPalette` | Modulation/cook pipeline (see also Engine Core — this is the same code, listed here because "press Play" is the user-facing feature it powers) |
+| `glfwSwapInterval`, `gTargetFps`, `kFpsValues` | Vsync toggle, target-FPS frame limiter |
+| `Patch::StreamRecord` (`src/core/Patch.h`) / `gArrangeStreams` in `main.cpp` | **Arrangement timeline** — data model and serialization only so far (`docs/plans/arrangement/README.md`); no docked timeline panel exists in `main.cpp` yet. Reuses `Patch::PerfRecord`, the same record type the performance matrix stores — see `gArrangeStreams`'s doc comment for the node-index-rewrite rules on `ApplyPatchData`/`RemoveNodeByIndex`/`NewPatch` |
 
 ---
 
 ## 5. Platform Layer
 
-macOS-native shims kept out of the main C++ translation units.
+Native shims kept out of the main C++ translation units — one abstraction
+(`Platform.h`) with two implementations, picked by `CMakeLists.txt`. See
+`.claude/skills/windows-parity` for the full contract: `src/nodes/` must
+never branch on `_WIN32` (0 occurrences is load-bearing), every
+`Platform::` declaration needs a macOS implementation, a Windows
+implementation, and (for a new `.cpp`) a `CMakeLists.txt` `WIN32_SOURCES`
+entry — a missing Windows definition is not a legitimate landing, only a
+stub that fills `outError` and returns `false` is.
 
-**Files:** `src/platform/Platform.h`, `src/platform/Platform.mm`
+**Files (macOS):** `src/platform/Platform.h` (shared declaration surface,
+829 lines, pure C++ — no Objective-C/COM types leak through it),
+`src/platform/Platform.mm`
 - Native open-file dialog (image-filtered)
 - Image decode via ImageIO (any OS-supported format → RGBA8)
 - 3D model loading via ModelIO (OBJ/PLY/STL/USD/USDZ)
+- Audio Unit plugin hosting, Syphon GPU texture share
+- Vision-based subject segmentation (`RemoveBgNode`'s `Platform::SubjectMask`)
+
+**Files (Windows):** `src/platform/win/`
+- `PlatformWin.cpp` — the `Platform.h` surface's Windows implementation: file
+  dialogs, image decode, model loading, `WinCommon.h`'s `Utf8ToWide`/
+  `WideToUtf8`/`HrToString` helpers (deliberately on no include path — only
+  Windows translation units may include it)
+- `AudioDeviceWin.cpp` — WASAPI audio device I/O
+- `MidiWin.cpp` — WinMM MIDI I/O
+- `MediaWin.cpp`, `MediaDecodeWin.cpp` — Media Foundation video/image decode
+- `PluginHostWin.cpp`, `PluginVST3Win.cpp` — VST3 plugin hosting (the
+  Windows counterpart of macOS's Audio Unit hosting; gated behind
+  `INFINITE_ENABLE_VST3` on both platforms)
+- `SpoutGLBridge.h`/`.cpp`, `PlatformWinSyphon.cpp` — Spout GPU texture
+  share (the Windows counterpart of macOS Syphon)
+- `CrashHandlerWin.cpp` — Windows crash/minidump handling
 
 ---
 
 ## 6. Dev/Test Harness (not product code)
 
-**File:** `src/main.cpp`, lines **4225-4834** and **5277-7500** (~2,000-2,500
-lines interleaved with real UI/node code)
+**File:** `src/main.cpp` — no single symbol anchors this; it is interleaved
+throughout the file rather than confined to a block. Grep the specific
+`INFINITE_*`/`IMAGERESYNTH_*` env var name (e.g. `AUDIOPARAMSWEEPTEST`,
+`MAPPINGSWEEPTEST`, `UNDOTEST`, `PATCHTEST`) or the `*TEST` printf verdict
+string to jump straight to one test.
 
 Automated regression/visual-verification tests gated behind
 `getenv("INFINITE_*")` / `getenv("IMAGERESYNTH_*")` env vars (e.g.
@@ -372,7 +437,7 @@ is specifically about the self-test harness itself.
 
 - **"Add a new node type" / "fix a node's parameters or math"** → Node Library
 - **"Fix how connections/pins/the graph model work"** → Engine / Runtime Core
-- **"Change how X looks/behaves in the editor UI"** → Editor UI
-- **"Undo isn't working" / "add export format" / "fix save/load"** → App Features
-- **"Fix file dialogs / model import on macOS"** → Platform Layer
+- **"Change how X looks/behaves in the editor UI" / "fix a docked panel"** → Editor UI
+- **"Undo isn't working" / "add export format" / "fix save/load" / "arrangement timeline"** → App Features
+- **"Fix file dialogs / audio device / MIDI / video decode / plugin hosting on macOS or Windows"** → Platform Layer
 - **"Something in the self-test harness"** → Dev/Test Harness
