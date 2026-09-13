@@ -1,5 +1,7 @@
 #include "Transport.h"
 
+#include <cmath>
+
 Transport& Transport::Instance()
 {
    static Transport instance;
@@ -49,6 +51,48 @@ double Transport::Beats() const
           (Seconds() - secOffset) * (mBpm.load(std::memory_order_relaxed) / 60.0);
 }
 
+void Transport::SetTempo(float bpm)
+{
+   mPendingBpm.store(bpm < 1.0f ? 1.0f : bpm, std::memory_order_relaxed);
+}
+
+void Transport::ApplyPendingTempo()
+{
+   const float pending = mPendingBpm.exchange(-1.0f, std::memory_order_relaxed);
+   if (pending <= 0.0f || pending == mBpm.load(std::memory_order_relaxed))
+      return;
+
+   // Rebase first: pin the offsets to where the clock is *now*, under the old
+   // bpm, so the new bpm only affects time from this instant forward. Without
+   // this the whole elapsed span gets re-measured at the new tempo and the
+   // playhead teleports.
+   const double beats = Beats();
+   const double secs = Seconds();
+   mAudioBeatsOffset.store(beats, std::memory_order_relaxed);
+   mAudioSecondsOffset.store(secs, std::memory_order_relaxed);
+   mAudioSampleCounter.store(0, std::memory_order_relaxed);
+   // mBeats/mSeconds are the non-atomic fallback pair, owned by the main
+   // thread. Only touch them on the path where no audio clock is live -
+   // otherwise this runs on the audio thread and would race Tick().
+   if (mAudioSampleRate.load(std::memory_order_relaxed) <= 0.0 &&
+       !mOfflineActive.load(std::memory_order_relaxed))
+   {
+      mBeats = beats;
+      mSeconds = secs;
+   }
+   mBpm.store(pending, std::memory_order_relaxed); // publish last
+}
+
+double Transport::CommitTempoForSeek()
+{
+   // A seek re-seats both offsets from scratch, so there is nothing to rebase
+   // - the staged tempo can just land, and the seek is measured with it.
+   const float pending = mPendingBpm.exchange(-1.0f, std::memory_order_relaxed);
+   if (pending > 0.0f)
+      mBpm.store(pending, std::memory_order_relaxed);
+   return (double)mBpm.load(std::memory_order_relaxed);
+}
+
 void Transport::Tick(float deltaSeconds)
 {
    // clamp so a stalled frame (window drag, file dialog) doesn't jump the clock
@@ -61,11 +105,65 @@ void Transport::Tick(float deltaSeconds)
    if (mAudioSampleRate.load(std::memory_order_relaxed) > 0.0)
       return; // audio-driven: Beats()/Seconds() compute live, nothing to accumulate here
 
+   ApplyPendingTempo(); // applies while paused too - tempo isn't a transport move
+
    if (!mPlaying.load(std::memory_order_relaxed))
       return;
 
    mSeconds += deltaSeconds;
    mBeats += deltaSeconds * (mBpm.load(std::memory_order_relaxed) / 60.0);
+
+   WrapLoopIfNeeded();
+}
+
+void Transport::SetLoop(bool enabled, double beatStart, double beatEnd)
+{
+   if (beatStart < 0.0)
+      beatStart = 0.0;
+   if (beatEnd < beatStart)
+      beatEnd = beatStart;
+   mLoopStartBeats.store(beatStart, std::memory_order_relaxed);
+   mLoopEndBeats.store(beatEnd, std::memory_order_relaxed);
+   mLoopEnabled.store(enabled && (beatEnd > beatStart), std::memory_order_relaxed); // publish last
+}
+
+void Transport::WrapLoopIfNeeded()
+{
+   if (!mLoopEnabled.load(std::memory_order_relaxed) ||
+       mLoopSuspended.load(std::memory_order_relaxed) ||
+       !mPlaying.load(std::memory_order_relaxed))
+      return;
+
+   const double loopStart = mLoopStartBeats.load(std::memory_order_relaxed);
+   const double loopEnd = mLoopEndBeats.load(std::memory_order_relaxed);
+   const double span = loopEnd - loopStart;
+   if (!(span > 0.0))
+      return;
+
+   const double beats = Beats();
+   if (beats < loopEnd)
+      return;
+
+   // fmod, not "snap to loopStart": the block that crossed the end carries an
+   // overshoot, and dropping it would make every lap a fraction of a block
+   // short. fmod also covers the case where the loop was shrunk under a
+   // playhead that is now several spans past the end.
+   const double wrapped = loopStart + std::fmod(beats - loopStart, span);
+   const double bpm = mBpm.load(std::memory_order_relaxed);
+   const double seconds = Seconds() - (beats - wrapped) * (60.0 / bpm);
+
+   mAudioBeatsOffset.store(wrapped, std::memory_order_relaxed);
+   mAudioSecondsOffset.store(seconds, std::memory_order_relaxed);
+   mAudioSampleCounter.store(0, std::memory_order_relaxed);
+   if (mAudioSampleRate.load(std::memory_order_relaxed) <= 0.0 &&
+       !mOfflineActive.load(std::memory_order_relaxed))
+   {
+      mBeats = wrapped;
+      mSeconds = seconds;
+   }
+   // Same epoch bump the old panel-side Seek() produced, so anything that
+   // retriggers on a transport jump still does on every lap.
+   mResetEpoch.fetch_add(1, std::memory_order_relaxed);
 }
 
 void Transport::NotifyAudioEngineStarted(double sampleRate)
@@ -93,8 +191,10 @@ void Transport::AdvanceAudioClock(int numFrames)
       mAudioBeatsOffset.store(pending * (mBpm.load(std::memory_order_relaxed) / 60.0), std::memory_order_relaxed);
       mAudioSampleCounter.store(0, std::memory_order_relaxed);
    }
+   ApplyPendingTempo(); // after the seek consumed its offsets, before we advance
    if (mPlaying.load(std::memory_order_relaxed))
       mAudioSampleCounter.fetch_add((uint64_t)numFrames, std::memory_order_relaxed);
+   WrapLoopIfNeeded();
 }
 
 void Transport::Rewind()
@@ -106,9 +206,23 @@ void Transport::Seek(double seconds)
 {
    if (seconds < 0.0)
       seconds = 0.0;
+   const double bpm = CommitTempoForSeek();
+   SeekInternal(seconds, seconds * (bpm / 60.0));
+}
+
+void Transport::SeekBeats(double beats)
+{
+   if (beats < 0.0)
+      beats = 0.0;
+   const double bpm = CommitTempoForSeek();
+   SeekInternal(beats * (60.0 / bpm), beats);
+}
+
+void Transport::SeekInternal(double seconds, double beats)
+{
    mResetEpoch.fetch_add(1, std::memory_order_relaxed);
    mSeconds = seconds;
-   mBeats = seconds * (mBpm.load(std::memory_order_relaxed) / 60.0);
+   mBeats = beats;
    mOfflineVideoSeconds.store(seconds, std::memory_order_relaxed);
    if (mOfflineActive.load(std::memory_order_relaxed))
    {
@@ -141,6 +255,9 @@ void Transport::SetOfflineMode(bool active, double sampleRate)
       mAudioSampleRate.store(sampleRate, std::memory_order_relaxed);
       mOfflineVideoSeconds.store(mSeconds, std::memory_order_relaxed);
       mOfflineInAudioBlock.store(false, std::memory_order_relaxed);
+      // An offline render walks the range once; leaving the loop live would
+      // wrap it back and render the loop body until the frame budget ran out.
+      mLoopSuspended.store(true, std::memory_order_relaxed);
       mOfflineActive.store(true, std::memory_order_relaxed);
    }
    else
@@ -148,6 +265,7 @@ void Transport::SetOfflineMode(bool active, double sampleRate)
       mPendingSeekSeconds.store(-1.0, std::memory_order_relaxed);
       mOfflineActive.store(false, std::memory_order_relaxed);
       mOfflineInAudioBlock.store(false, std::memory_order_relaxed);
+      mLoopSuspended.store(false, std::memory_order_relaxed); // the user's loop comes back
    }
 }
 
@@ -165,6 +283,7 @@ void Transport::BeginOfflineAudioBlock(int numFrames)
       mAudioBeatsOffset.store(pending * (mBpm.load(std::memory_order_relaxed) / 60.0), std::memory_order_relaxed);
       mAudioSampleCounter.store(0, std::memory_order_relaxed);
    }
+   ApplyPendingTempo();
    if (mPlaying.load(std::memory_order_relaxed))
       mAudioSampleCounter.fetch_add((uint64_t)numFrames, std::memory_order_relaxed);
    mOfflineInAudioBlock.store(true, std::memory_order_relaxed);

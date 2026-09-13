@@ -5479,8 +5479,20 @@ namespace
    // The UI's streams <- gArrange. Called after anything replaces the model.
    void SyncLegacyFromArrange()
    {
-      LegacyArrange::ToLegacyStreams(gArrange, (double)Transport::Instance().Tempo(),
+      Transport& tr = Transport::Instance();
+      LegacyArrange::ToLegacyStreams(gArrange, (double)tr.Tempo(),
                                      &ArrangeUidToIndex, nullptr, gArrangeStreams);
+
+      // The loop is model state (ticks) that the panel still edits in seconds.
+      // Anything that replaces the model - load, undo, New - has to re-seat
+      // both the panel's seconds and Transport's beats, or the loop the user
+      // saved comes back as a band on screen that playback ignores.
+      const double secPerBeat = 60.0 / (double)tr.Tempo();
+      gArrangeLoopEnabled = gArrange.settings.loop.enabled;
+      gArrangeLoopStartSec = Arrange::TicksToBeats(gArrange.settings.loop.start) * secPerBeat;
+      gArrangeLoopEndSec = Arrange::TicksToBeats(gArrange.settings.loop.end) * secPerBeat;
+      tr.SetLoop(gArrangeLoopEnabled, Arrange::TicksToBeats(gArrange.settings.loop.start),
+                 Arrange::TicksToBeats(gArrange.settings.loop.end));
    }
 
    // Arrange::Model <-> Patch::Data. Straight field copies in both directions:
@@ -26572,10 +26584,25 @@ namespace
       // Strict loop: once armed, playback never runs past the region end -
       // it snaps back to the region start instead, same as the loop toggle
       // on any DAW transport.
-      if (gArrangeLoopEnabled && tr.IsPlaying() && gArrangeLoopEndSec > gArrangeLoopStartSec &&
-          curSec >= gArrangeLoopEndSec)
+      //
+      // The wrap itself lives in Transport (WP2). Doing it here meant it only
+      // ran once per UI frame, so the playhead sailed past the loop end by a
+      // whole frame - tens of ms of audio that shouldn't have been heard, and
+      // unbounded during a stall. This block now only *publishes* the loop;
+      // Transport wraps at its own block boundary, within one audio block.
+      //
+      // The panel still edits the loop in seconds (WP5 moves the UI to ticks),
+      // so the conversion happens here, at the boundary, using the tempo the
+      // loop was drawn against.
       {
-         tr.Seek(gArrangeLoopStartSec);
+         const double beatsPerSec = (double)tr.Tempo() / 60.0;
+         tr.SetLoop(gArrangeLoopEnabled, gArrangeLoopStartSec * beatsPerSec,
+                    gArrangeLoopEndSec * beatsPerSec);
+         // The model owns the loop for save/load; ticks, not seconds, so it
+         // survives a tempo change with its bar positions intact.
+         gArrange.settings.loop.enabled = gArrangeLoopEnabled;
+         gArrange.settings.loop.start = Arrange::BeatsToTicks(gArrangeLoopStartSec * beatsPerSec);
+         gArrange.settings.loop.end = Arrange::BeatsToTicks(gArrangeLoopEndSec * beatsPerSec);
       }
 
       // Keyboard shortcuts for timeline clip manipulation: Copy, Paste, Duplicate, Delete.
@@ -59068,6 +59095,174 @@ int main(int argc, char** argv)
          }
 
          printf("arrange test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Overhaul WP2 (docs/plans/arrangement/overhaul-prompt.md): the transport
+      // clock's three new contracts - a tempo change doesn't move the
+      // playhead, Beats() is seekable, and the loop wraps at a block boundary
+      // rather than a UI frame.
+      //
+      // The audio clock is driven by hand here (NotifyAudioEngineStarted +
+      // AdvanceAudioClock) with the real engine stopped first, so the fixture
+      // is deterministic, needs no audio device, and never races a live audio
+      // thread calling the same functions.
+      if (getenv("INFINITE_TRANSPORTTEST") != nullptr && frameId == 4)
+      {
+         Transport& tr = Transport::Instance();
+         bool allOk = true;
+
+         const bool hadEngine = AudioEngine::Instance().SampleRate() > 0.0;
+         AudioEngine::Instance().Stop();
+         tr.NotifyAudioEngineStopped();
+
+         const double kSr = 48000.0;
+         const int kBlock = 512;
+         const double kBlockSec = (double)kBlock / kSr;
+
+         auto startFakeEngine = [&]() {
+            tr.NotifyAudioEngineStarted(kSr);
+         };
+
+         // --- A. Tempo change mid-play doesn't move the playhead ------------
+         {
+            tr.SetTempo(120.0f);
+            tr.SetLoop(false, 0.0, 0.0);
+            tr.SetPlaying(true);
+            tr.Seek(0.0);
+            startFakeEngine();
+
+            for (int i = 0; i < 400; i++)      // ~4.3 s at 120 bpm
+               tr.AdvanceAudioClock(kBlock);
+
+            const double before = tr.Beats();
+            tr.SetTempo(240.0f);
+            tr.AdvanceAudioClock(kBlock);      // the block that applies it
+            const double after = tr.Beats();
+
+            // One block at the *new* tempo is the largest legitimate step.
+            const double maxStep = kBlockSec * (240.0 / 60.0) * 1.001;
+            const bool continuous = std::fabs(after - before) <= maxStep;
+
+            // ...and the tempo really did change: the next block must advance
+            // at twice the old rate.
+            const double b0 = tr.Beats();
+            tr.AdvanceAudioClock(kBlock);
+            const double rate = (tr.Beats() - b0) / kBlockSec;
+            const bool doubled = std::fabs(rate - 4.0) < 0.01;
+
+            const bool aOk = continuous && doubled;
+            printf("transport tempo continuity: %s (jump %.6f beats, max %.6f; rate %.3f)\n",
+                   aOk ? "OK" : "FAIL", std::fabs(after - before), maxStep, rate);
+            allOk = allOk && aOk;
+         }
+
+         // --- B. SeekBeats ---------------------------------------------------
+         {
+            tr.SetTempo(120.0f);
+            tr.SeekBeats(8.0);
+            tr.AdvanceAudioClock(0);           // consume the pending seek
+            const bool bOk = std::fabs(tr.Beats() - 8.0) < 1e-6 &&
+                             std::fabs(tr.Seconds() - 4.0) < 1e-6 &&
+                             (tr.SeekBeats(-3.0), tr.AdvanceAudioClock(0), tr.Beats() >= 0.0);
+            printf("transport seek beats: %s\n", bOk ? "OK" : "FAIL");
+            allOk = allOk && bOk;
+         }
+
+         // --- C. Loop wraps within one block ---------------------------------
+         {
+            tr.SetTempo(120.0f);
+            tr.SetPlaying(true);
+            tr.SeekBeats(0.0);
+            tr.SetLoop(true, 2.0, 6.0);        // a 4-beat / 2-second loop
+            tr.AdvanceAudioClock(0);
+
+            const double oneBlockBeats = kBlockSec * 2.0;   // 120 bpm
+            double worstOvershoot = 0.0;
+            int laps = 0;
+            double prev = tr.Beats();
+            for (int i = 0; i < 2000; i++)     // ~21 s, five laps' worth
+            {
+               tr.AdvanceAudioClock(kBlock);
+               const double b = tr.Beats();
+               worstOvershoot = std::max(worstOvershoot, b - 6.0);
+               if (b < prev)
+                  laps++;
+               prev = b;
+            }
+            // Never past the end by more than one block, and it really looped
+            // rather than simply stopping.
+            const bool cOk = worstOvershoot <= oneBlockBeats * 1.001 && laps >= 4 &&
+                             tr.Beats() >= 2.0 && tr.Beats() < 6.0;
+            printf("transport loop wrap: %s (%d laps, worst overshoot %.6f beats, budget %.6f)\n",
+                   cOk ? "OK" : "FAIL", laps, worstOvershoot, oneBlockBeats);
+            allOk = allOk && cOk;
+         }
+
+         // --- D. Offline render suspends the loop ----------------------------
+         {
+            tr.SetTempo(120.0f);
+            tr.SetPlaying(true);
+            tr.SeekBeats(0.0);
+            tr.SetLoop(true, 0.0, 4.0);
+            tr.SetOfflineMode(true, kSr);
+            // Read inside the block: offline, Seconds() outside a block is the
+            // video clock, which only moves when the renderer calls
+            // SetOfflineVideoTime. The audio clock is only live between
+            // Begin/EndOfflineAudioBlock, which is where the wrap would have
+            // fired if the loop weren't suspended.
+            double offlineBeats = 0.0;
+            for (int i = 0; i < 600; i++)      // well past four beats
+            {
+               tr.BeginOfflineAudioBlock(kBlock);
+               offlineBeats = tr.Beats();
+               tr.EndOfflineAudioBlock();
+            }
+            tr.SetOfflineMode(false, 0.0);
+            // ...and the user's loop is still armed afterwards.
+            const bool dOk = offlineBeats > 4.0 && tr.LoopEnabled() &&
+                             std::fabs(tr.LoopEndBeats() - 4.0) < 1e-9;
+            printf("transport offline suspends loop: %s (reached %.2f beats)\n",
+                   dOk ? "OK" : "FAIL", offlineBeats);
+            allOk = allOk && dOk;
+         }
+
+         // --- E. Loop also wraps on the no-engine fallback clock -------------
+         {
+            tr.NotifyAudioEngineStopped();     // back to Tick()-driven
+            tr.SetTempo(120.0f);
+            tr.SetPlaying(true);
+            tr.Seek(0.0);
+            tr.SetLoop(true, 0.0, 2.0);        // 1 second at 120 bpm
+            bool wrapped = false;
+            double worst = 0.0;
+            for (int i = 0; i < 300; i++)
+            {
+               tr.Tick(1.0f / 60.0f);
+               const double b = tr.Beats();
+               worst = std::max(worst, b - 2.0);
+               if (b < 2.0 && i > 40)
+                  wrapped = true;
+            }
+            const double frameBeats = (1.0 / 60.0) * 2.0;
+            const bool eOk = wrapped && worst <= frameBeats * 1.001;
+            printf("transport loop wrap (no engine): %s (worst overshoot %.6f beats)\n",
+                   eOk ? "OK" : "FAIL", worst);
+            allOk = allOk && eOk;
+         }
+
+         // Leave the transport the way the rest of the session expects it.
+         tr.SetLoop(false, 0.0, 0.0);
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         tr.SetPlaying(true);
+         if (hadEngine)
+         {
+            std::string startErr;
+            if (AudioEngine::Instance().Start(startErr))
+               tr.NotifyAudioEngineStarted(AudioEngine::Instance().SampleRate());
+         }
+
+         printf("transport test: all  %s\n", allOk ? "OK" : "FAIL");
       }
 
       // Regression guard for the BuildPatchData() perf fix in

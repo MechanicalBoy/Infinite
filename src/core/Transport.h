@@ -42,9 +42,36 @@ public:
 
    void Rewind();
    void Seek(double seconds);
+   // Beat-addressed seek. The arrangement playhead is Beats(), so every
+   // timeline gesture goes through this one; Seek(seconds) stays for the
+   // seconds-native callers (video scrub, offline render frame stepping).
+   void SeekBeats(double beats);
 
-   void SetTempo(float bpm) { mBpm = bpm < 1.0f ? 1.0f : bpm; }
-   float Tempo() const { return mBpm; }
+   // Tempo is *staged*, not applied in place. Applying it here would move
+   // Beats() instantly: Beats() is beatsOffset + (Seconds - secOffset) * bpm,
+   // so swapping bpm under a live clock jumps the beat position and drags
+   // every beat-placed clip with it. The clock owner (AdvanceAudioClock,
+   // BeginOfflineAudioBlock, Tick) applies the pending value at a block
+   // boundary after rebasing the offsets to the current position, which keeps
+   // Beats() continuous across the change. Tempo() reports the staged value
+   // so UI and conversions see what was asked for, not a one-block-old bpm.
+   void SetTempo(float bpm);
+   float Tempo() const
+   {
+      const float pending = mPendingBpm.load(std::memory_order_relaxed);
+      return pending > 0.0f ? pending : mBpm.load(std::memory_order_relaxed);
+   }
+
+   // ---- loop (overhaul WP2) ---------------------------------------------
+   // Lives here rather than in the arrangement panel's draw: the panel only
+   // runs once per UI frame, so a frame-granular wrap overshoots the loop end
+   // by however long the frame took (tens of ms, and unbounded during a
+   // stall). The wrap now happens wherever the clock is advanced, so the
+   // overshoot is at most one audio block.
+   void SetLoop(bool enabled, double beatStart, double beatEnd);
+   bool LoopEnabled() const { return mLoopEnabled.load(std::memory_order_relaxed); }
+   double LoopStartBeats() const { return mLoopStartBeats.load(std::memory_order_relaxed); }
+   double LoopEndBeats() const { return mLoopEndBeats.load(std::memory_order_relaxed); }
 
    // Musical position; modulator rates are expressed in beats.
    double Beats() const;
@@ -141,6 +168,26 @@ private:
    std::atomic<double> mAudioBeatsOffset { 0.0 };
    std::atomic<double> mAudioSecondsOffset { 0.0 };
    std::atomic<double> mPendingSeekSeconds { -1.0 };
+   std::atomic<float> mPendingBpm { -1.0f }; // <= 0 means "nothing staged"
+
+   std::atomic<bool> mLoopEnabled { false };
+   std::atomic<double> mLoopStartBeats { 0.0 };
+   std::atomic<double> mLoopEndBeats { 0.0 };
+   // Offline render walks the timeline once, start to end; a loop would make
+   // it render the loop body forever. SetOfflineMode(true) suspends the wrap
+   // without clearing the user's loop, and false restores it.
+   std::atomic<bool> mLoopSuspended { false };
+
+   // Applies a staged tempo, rebasing the offsets first so Beats() doesn't
+   // jump. Called only by the live clock owner, never by UI code.
+   void ApplyPendingTempo();
+   // Consumes a staged tempo for a seek, which re-seats both offsets anyway
+   // and so needs no rebasing. Returns the bpm to use for the seek.
+   double CommitTempoForSeek();
+   void SeekInternal(double seconds, double beats);
+   // Wraps the position back into the loop range if it has run past the end.
+   // Called after the clock advances, on whichever thread owns it.
+   void WrapLoopIfNeeded();
 
    std::atomic<int> mTimeSigNum { 4 };
    std::atomic<int> mTimeSigDen { 4 };
