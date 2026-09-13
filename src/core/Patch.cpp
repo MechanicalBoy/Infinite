@@ -321,7 +321,9 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
          file << "clip " << i << " " << DoubleToString(c.startSeconds) << " " << DoubleToString(c.lengthSeconds) << " "
               << c.srcIndex << " " << c.srcOutput << " " << c.triggerMode << " "
               << FloatToString(c.fadeInSec) << " " << FloatToString(c.fadeOutSec) << " "
-              << FloatToString(c.gainDb) << " " << FloatToString(c.speed) << " " << (c.loop ? 1 : 0) << "\n";
+              << FloatToString(c.gainDb) << " " << FloatToString(c.speed) << " " << (c.loop ? 1 : 0) << " "
+              << FloatToString(c.colorR) << " " << FloatToString(c.colorG) << " " << FloatToString(c.colorB) << " "
+              << EscapeLine(c.name) << "\n";
    }
 
    if (!file.good())
@@ -702,6 +704,22 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
             c.fadeOutSec = std::clamp(c.fadeOutSec, 0.0f, len);
             if (!std::isfinite(c.gainDb)) c.gainDb = 0.0f;
             if (!std::isfinite(c.speed) || c.speed <= 0.0f) c.speed = 1.0f;
+            // colorR/G/B + name are a newer addition - a patch saved before
+            // they existed leaves the stream at eof here, so the >> fails and
+            // the getline below reads nothing, leaving both at their default
+            // (no tint, auto label), same forward-compat pattern as above.
+            if (in >> c.colorR >> c.colorG >> c.colorB) {}
+            if (!std::isfinite(c.colorR)) c.colorR = 0.0f;
+            if (!std::isfinite(c.colorG)) c.colorG = 0.0f;
+            if (!std::isfinite(c.colorB)) c.colorB = 0.0f;
+            c.colorR = std::clamp(c.colorR, 0.0f, 1.0f);
+            c.colorG = std::clamp(c.colorG, 0.0f, 1.0f);
+            c.colorB = std::clamp(c.colorB, 0.0f, 1.0f);
+            std::string rawName;
+            std::getline(in, rawName);
+            if (!rawName.empty() && rawName[0] == ' ')
+               rawName.erase(0, 1);
+            c.name = UnescapeLine(rawName);
             outData.streams[streamIdx].clips.push_back(c);
          }
       }

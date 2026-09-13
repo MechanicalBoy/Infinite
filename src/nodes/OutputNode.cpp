@@ -234,10 +234,15 @@ void OutputNode::WaitForFinalize()
    }
 }
 
-bool OutputNode::StartOfflineRender(const std::string& path, double audioSampleRate)
+bool OutputNode::StartOfflineRender(const std::string& path, double audioSampleRate,
+                                    int width, int height, bool forceGraphAudio)
 {
    if (mRecorder != nullptr || IsFinalizing() || mOfflineActive || IsOfflineFinalizing())
       return false;
+   if (width > 0 && height > 0)
+   {
+      GLUtil::EnsureFbo(mOut, width, height);
+   }
    if (mOut.w <= 1 || mOut.h <= 1)
    {
       mRecordStatus = "nothing connected to record";
@@ -257,17 +262,15 @@ bool OutputNode::StartOfflineRender(const std::string& path, double audioSampleR
    std::string audioPath;
    bool audioLoop = true;
    double liveAudioSampleRate = 0.0;
-   mOfflineIncludeAudio = includeAudio && mAudioInput.IsConnected();
+   mOfflineIncludeAudio = includeAudio && (mAudioInput.IsConnected() || forceGraphAudio);
 
    if (mOfflineIncludeAudio)
    {
-      if (auto* file = dynamic_cast<AudioFileNode*>(mAudioInput.GetSource()))
+      AudioFileNode* file = !forceGraphAudio ? dynamic_cast<AudioFileNode*>(mAudioInput.GetSource()) : nullptr;
+      if (file != nullptr && file->IsLoaded())
       {
-         if (file->IsLoaded())
-         {
-            audioPath = file->FilePath();
-            audioLoop = file->loop;
-         }
+         audioPath = file->FilePath();
+         audioLoop = file->loop;
       }
       else
       {

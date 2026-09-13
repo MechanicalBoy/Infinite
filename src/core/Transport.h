@@ -40,20 +40,8 @@ public:
       mPlaying = !mPlaying;
    }
 
-   void Rewind()
-   {
-      mResetEpoch.fetch_add(1, std::memory_order_relaxed);
-      mBeats = 0.0;
-      mSeconds = 0.0;
-      // These three stores aren't atomic as a group, so a concurrent
-      // AdvanceAudioClock() fetch_add from the audio thread can race a
-      // Rewind() from the main thread. Worst case is one block's worth
-      // (~10ms) of position error on the sample a rewind lands on, which
-      // is inaudible - not worth a lock for.
-      mAudioSampleCounter.store(0, std::memory_order_relaxed);
-      mAudioBeatsOffset.store(0.0, std::memory_order_relaxed);
-      mAudioSecondsOffset.store(0.0, std::memory_order_relaxed);
-   }
+   void Rewind();
+   void Seek(double seconds);
 
    void SetTempo(float bpm) { mBpm = bpm < 1.0f ? 1.0f : bpm; }
    float Tempo() const { return mBpm; }
@@ -87,6 +75,7 @@ public:
    // blocks ahead of the current video frame.
    void SetOfflineMode(bool active, double sampleRate = 0.0);
    bool IsOfflineMode() const { return mOfflineActive.load(std::memory_order_relaxed); }
+   double AudioSampleRate() const { return mAudioSampleRate.load(std::memory_order_relaxed); }
    void SetOfflineVideoTime(double seconds);
    void BeginOfflineAudioBlock(int numFrames);
    void EndOfflineAudioBlock();
@@ -151,6 +140,7 @@ private:
    std::atomic<double> mAudioSampleRate { 0.0 };
    std::atomic<double> mAudioBeatsOffset { 0.0 };
    std::atomic<double> mAudioSecondsOffset { 0.0 };
+   std::atomic<double> mPendingSeekSeconds { -1.0 };
 
    std::atomic<int> mTimeSigNum { 4 };
    std::atomic<int> mTimeSigDen { 4 };

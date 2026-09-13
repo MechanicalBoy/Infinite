@@ -220,14 +220,14 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          {
             inputPtrs[i] = nullptr;
          }
-         else if (entry.inputCompensation[i].IsActive())
+         else if (entry.node->inputCompensation[i].IsActive())
          {
             AudioBuffer src = list->buffers[idx].View(numFrames, numChannels);
             AudioBuffer delayed;
             delayed.channels = sCompScratchChannels[i];
             delayed.numChannels = numChannels;
             delayed.numFrames = numFrames;
-            entry.inputCompensation[i].ProcessBlock(src, delayed);
+            entry.node->inputCompensation[i].ProcessBlock(src, delayed);
             inputViews[i] = delayed;
             inputPtrs[i] = &inputViews[i];
          }
@@ -280,18 +280,72 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
    for (AudioTerminal& terminal : list->topology.terminalBufferIndices)
    {
       AudioBuffer src = list->buffers[terminal.bufferIndex].View(numFrames, numChannels);
-      if (terminal.compensation.IsActive())
+      // Prefer the capture ring's own persistent compensation (survives
+      // across topology rebuilds) over the terminal's own value, which is
+      // rebuilt from scratch every generation - see AudioCaptureRing's and
+      // AudioTerminal's comments. A Timeline Strict clip terminal has no
+      // ring at all, so it falls back to its own (rebuild-transient) one.
+      CompensationDelay& terminalComp = terminal.capture != nullptr ? terminal.capture->compensation : terminal.compensation;
+      if (terminalComp.IsActive())
       {
          AudioBuffer delayed;
          delayed.channels = sTerminalScratchChannels;
          delayed.numChannels = numChannels;
          delayed.numFrames = numFrames;
-         terminal.compensation.ProcessBlock(src, delayed);
+         terminalComp.ProcessBlock(src, delayed);
          src = delayed;
       }
-      for (int ch = 0; ch < numChannels; ch++)
+      const float gain = terminal.gain;
+
+      // Timeline Strict clip fade in/out: a per-sample envelope on top of
+      // the flat gain above, ramping from/to silence across fadeInSec /
+      // fadeOutSec at the clip's start/end. Every non-timeline terminal
+      // (fadeClipStartSec < 0) skips straight to the flat-gain path below,
+      // unchanged from before fades existed.
+      static thread_local float sEnvScratch[kAudioMaxBlockFrames];
+      double runSampleRate = mSampleRate.load(std::memory_order_relaxed);
+      if (runSampleRate <= 0.0 && Transport::Instance().IsOfflineMode())
+         runSampleRate = Transport::Instance().AudioSampleRate();
+
+      const bool isTimelineClip = terminal.fadeClipStartSec >= 0.0 && terminal.fadeClipLengthSec > 0.0;
+      if (isTimelineClip && runSampleRate > 0.0)
+      {
+         const double blockStartSec = Transport::Instance().Seconds() - (double)numFrames / runSampleRate;
+         const double clipStart = terminal.fadeClipStartSec;
+         const double clipEnd = terminal.fadeClipStartSec + terminal.fadeClipLengthSec;
          for (int i = 0; i < numFrames; i++)
-            deviceBuffer.channels[ch][i] += src.channels[ch][i];
+         {
+            const double tSec = blockStartSec + (double)i / runSampleRate;
+            if (tSec < clipStart || tSec >= clipEnd)
+            {
+               sEnvScratch[i] = 0.0f;
+               continue;
+            }
+            float env = 1.0f;
+            if (terminal.fadeInSec > 0.0f)
+            {
+               const double sinceStart = tSec - clipStart;
+               if (sinceStart < terminal.fadeInSec)
+                  env *= std::clamp((float)(sinceStart / terminal.fadeInSec), 0.0f, 1.0f);
+            }
+            if (terminal.fadeOutSec > 0.0f)
+            {
+               const double untilEnd = clipEnd - tSec;
+               if (untilEnd < terminal.fadeOutSec)
+                  env *= std::clamp((float)(untilEnd / terminal.fadeOutSec), 0.0f, 1.0f);
+            }
+            sEnvScratch[i] = env;
+         }
+         for (int ch = 0; ch < numChannels; ch++)
+            for (int i = 0; i < numFrames; i++)
+               deviceBuffer.channels[ch][i] += src.channels[ch][i] * gain * sEnvScratch[i];
+      }
+      else
+      {
+         for (int ch = 0; ch < numChannels; ch++)
+            for (int i = 0; i < numFrames; i++)
+               deviceBuffer.channels[ch][i] += src.channels[ch][i] * gain;
+      }
 
       if (terminal.capture != nullptr && terminal.capture->enabled.load(std::memory_order_relaxed))
       {
@@ -301,8 +355,9 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          sInterleaveScratch.resize((size_t)numFrames * 2);
          for (int i = 0; i < numFrames; i++)
          {
-            const float l = src.channels[0][i];
-            const float r = numChannels > 1 ? src.channels[1][i] : l;
+            const float env = isTimelineClip ? sEnvScratch[i] : 1.0f;
+            const float l = src.channels[0][i] * gain * env;
+            const float r = numChannels > 1 ? src.channels[1][i] * gain * env : l;
             sInterleaveScratch[(size_t)i * 2 + 0] = l;
             sInterleaveScratch[(size_t)i * 2 + 1] = r;
          }

@@ -27,6 +27,7 @@ public:
    unsigned int GetOutputTexture() override { return GLUtil::FboTexture(mOut); }
    int GetOutputWidth() const override { return mOut.w; }
    int GetOutputHeight() const override { return mOut.h; }
+   GLUtil::Fbo& GetFbo() { return mOut; }
    void CookIfNeeded(int frameId) override;
 
    ImageCable& Input() { return mInput; }
@@ -127,7 +128,8 @@ public:
    // 44100. Everything downstream - the per-frame sample budget and the
    // muxer's declared audio rate - is derived from this one number; a
    // mismatch here is heard directly as the take playing back off-speed.
-   bool StartOfflineRender(const std::string& path, double audioSampleRate);
+   bool StartOfflineRender(const std::string& path, double audioSampleRate,
+                           int width = 0, int height = 0, bool forceGraphAudio = false);
    bool IsOfflineRendering() const { return mOfflineActive; }
    // True from the moment CancelOfflineRender()/the frame-count target hands
    // the handle to the background finalize thread until PollOfflineFinalize()

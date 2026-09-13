@@ -252,6 +252,8 @@ namespace Patch
       float  gainDb        = 0.0f;
       float  speed         = 1.0f;  // > 0
       bool   loop          = false;
+      std::string name;             // empty = auto (source node's own title)
+      float  colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = no tint override
    };
 
    struct StreamRecord

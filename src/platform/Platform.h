@@ -20,6 +20,16 @@ namespace Platform
    // Call once at startup and keep the app running for the token to matter.
    void PreventAppNap();
 
+   // Trackpad pinch (macOS "magnify" gesture), drained as an incremental
+   // delta since the last call - e.g. +0.02 for a small pinch-open, negative
+   // for pinch-close. GLFW's Cocoa backend only forwards scrollWheel: (see
+   // cocoa_window.m), never magnifyWithEvent:, so without this a trackpad
+   // pinch produces no GLFW/ImGui event at all - not merely a wrong one.
+   // Lazily attaches an NSMagnificationGestureRecognizer to the app's key
+   // window the first time this is called from within a frame where one
+   // exists yet. Always returns 0.0 on Windows (no equivalent gesture).
+   double PollTrackpadMagnificationDelta();
+
    // Native open panel filtered to image types. Returns "" if cancelled.
    std::string OpenImageDialog();
 

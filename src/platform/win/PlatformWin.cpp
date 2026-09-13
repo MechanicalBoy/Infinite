@@ -237,6 +237,13 @@ namespace Platform
       // equivalent power-throttling behavior that affects GLFW timers.
    }
 
+   double PollTrackpadMagnificationDelta()
+   {
+      // macOS-only gesture (NSMagnificationGestureRecognizer). Windows
+      // precision touchpads have no equivalent pinch API exposed to GLFW.
+      return 0.0;
+   }
+
    std::string OpenImageDialog()
    {
       std::string err;

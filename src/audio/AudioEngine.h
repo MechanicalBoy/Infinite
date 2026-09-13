@@ -37,17 +37,26 @@ struct AudioTopologyEntry
    int numOutputs = 1;
    int outputBufferIndex = -1; // primary output buffer (mirrors outputBufferIndices[0] for backwards compatibility)
 
-   // Plugin/effect delay compensation (PDC): per input pin, the
-   // CompensationDelay that pin's source branch needs so every pin merging
-   // into this node arrives sample-aligned - RebuildAudioTopology (main.cpp)
-   // computes each branch's cumulative latency and, for a multi-input node
-   // whose connected pins carry different cumulative latencies, prepares the
-   // shallower pins' delay to make up the difference; a pin whose branch is
-   // already the slowest (or the node has only one connected pin) gets an
-   // inactive (0-sample, unallocated) one. RunTopology applies these before
-   // handing the node its inputs - see its comment.
-   CompensationDelay inputCompensation[kAudioMaxNodeInputs];
+   // Plugin/effect delay compensation (PDC): per input pin, the pin's source
+   // branch needs a CompensationDelay so every pin merging into this node
+   // arrives sample-aligned - RebuildAudioTopology (main.cpp) computes each
+   // branch's cumulative latency and, for a multi-input node whose connected
+   // pins carry different cumulative latencies, prepares the shallower pins'
+   // delay to make up the difference; a pin whose branch is already the
+   // slowest (or the node has only one connected pin) gets an inactive
+   // (0-sample, unallocated) one. RunTopology applies these before handing
+   // the node its inputs - see its comment.
+   //
+   // Lives on `node` itself (AudioNode::inputCompensation), NOT as a value
+   // here: `order` is rebuilt from scratch every RebuildAudioTopology call,
+   // so a CompensationDelay stored directly in this struct would lose its
+   // in-flight ring contents (and the audio passing through it would click)
+   // on every single rebuild, even when the delay amount never changed. See
+   // AudioNode::inputCompensation's comment.
 };
+
+static_assert(AudioNode::kMaxInputPins == kAudioMaxNodeInputs,
+              "AudioNode::inputCompensation must have one slot per AudioTopologyEntry input pin");
 
 // One connected Audio Out: the pooled buffer its source writes into, and
 // (unconditionally) that Audio Out's own capture ring - RunTopology writes
@@ -58,12 +67,39 @@ struct AudioTerminal
    int bufferIndex = -1;
    AudioCaptureRing* capture = nullptr;
 
-   // Same PDC role as AudioTopologyEntry::inputCompensation, one level up:
-   // when more than one Audio Out (or one Audio Out among several) feeds the
-   // device buffer with different cumulative latency, each terminal but the
-   // slowest gets a compensating delay here so RunTopology's unconditional
-   // sum lands every terminal sample-aligned. Inactive for the common case
-   // of one terminal, or several with equal (usually zero) latency.
+   // Linear gain applied when this terminal is summed into the device
+   // buffer - 1.0 for every ordinary canvas Audio Out. Arrangement
+   // Timeline's Timeline Strict mode is the one producer of terminals with
+   // gain != 1.0, one per active clip, carrying that clip's own gainDb.
+   float gain = 1.0f;
+
+   // Arrangement Timeline clip fade in/out (ClipRecord::fadeInSec/fadeOutSec)
+   // - only meaningful when fadeClipStartSec >= 0.0 (a Timeline Strict clip
+   // terminal); every ordinary canvas Audio Out terminal leaves this at -1
+   // and RunTopology takes the flat-gain fast path unchanged. Times are
+   // absolute Transport seconds so RunTopology can compare against
+   // Transport::Instance().Seconds() each block without the topology needing
+   // rebuilding every block just to keep a "seconds since clip start" number
+   // fresh.
+   double fadeClipStartSec = -1.0;
+   double fadeClipLengthSec = 0.0;
+   float fadeInSec = 0.0f;
+   float fadeOutSec = 0.0f;
+
+   // Same PDC role as AudioNode::inputCompensation, one level up: when more
+   // than one Audio Out (or one Audio Out among several) feeds the device
+   // buffer with different cumulative latency, each terminal but the
+   // slowest gets a compensating delay so RunTopology's unconditional sum
+   // lands every terminal sample-aligned. Inactive for the common case of
+   // one terminal, or several with equal (usually zero) latency.
+   //
+   // Only actually used when `capture` is null (a Timeline Strict clip
+   // terminal, which has no AudioCaptureRing of its own to persist state
+   // on) - RunTopology and RebuildAudioTopology both prefer
+   // `capture->compensation` when a ring is present, exactly like
+   // AudioTopologyEntry's own compensation moved onto AudioNode: a value
+   // here is rebuilt fresh every generation and would click on every rebuild
+   // if it were the one actually driving an ordinary canvas Audio Out.
    CompensationDelay compensation;
 };
 

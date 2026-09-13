@@ -40,6 +40,35 @@
 #include <mutex>
 #include <unordered_map>
 
+// Backs Platform::PollTrackpadMagnificationDelta(). NSMagnificationGesture-
+// Recognizer's `magnification` property is a running total from the start
+// of the current gesture, not a per-callback delta, so this tracks the last
+// value seen and reports the difference - resetting the baseline to 0 at
+// NSGestureRecognizerStateBegan, same as reading `event.magnification`
+// would give for a raw scrollWheel-style event.
+static std::atomic<double> gPendingTrackpadMagnification{0.0};
+
+@interface InfiniteMagnifyGestureHandler : NSObject
+@property(nonatomic, assign) CGFloat lastMagnification;
+- (void)handleMagnify:(NSMagnificationGestureRecognizer*)recognizer;
+@end
+
+@implementation InfiniteMagnifyGestureHandler
+- (void)handleMagnify:(NSMagnificationGestureRecognizer*)recognizer
+{
+   if (recognizer.state == NSGestureRecognizerStateBegan)
+      self.lastMagnification = 0.0;
+   const CGFloat delta = recognizer.magnification - self.lastMagnification;
+   self.lastMagnification = recognizer.magnification;
+   // std::atomic<double> has no fetch_add pre-C++20 - accumulate via CAS loop.
+   double expected = gPendingTrackpadMagnification.load(std::memory_order_relaxed);
+   while (!gPendingTrackpadMagnification.compare_exchange_weak(
+      expected, expected + (double)delta, std::memory_order_relaxed))
+   {
+   }
+}
+@end
+
 namespace Platform
 {
    void PreventAppNap()
@@ -53,6 +82,26 @@ namespace Platform
       sActivityToken = [[NSProcessInfo processInfo]
          beginActivityWithOptions:(NSActivityUserInitiated | NSActivityLatencyCritical)
                             reason:@"continuous node-graph rendering"];
+   }
+
+   double PollTrackpadMagnificationDelta()
+   {
+      static InfiniteMagnifyGestureHandler* sHandler = nil;
+      if (sHandler == nil)
+      {
+         // GLFW creates its window lazily during glfwCreateWindow(), so the
+         // first several calls (before the main loop starts) find no key
+         // window yet - retried every call (cheap) until one exists rather
+         // than requiring a separate init hook.
+         NSWindow* window = [NSApp keyWindow] ?: [NSApp mainWindow];
+         if (window == nil || window.contentView == nil)
+            return 0.0;
+         sHandler = [[InfiniteMagnifyGestureHandler alloc] init];
+         NSMagnificationGestureRecognizer* recognizer = [[NSMagnificationGestureRecognizer alloc]
+            initWithTarget:sHandler action:@selector(handleMagnify:)];
+         [window.contentView addGestureRecognizer:recognizer];
+      }
+      return gPendingTrackpadMagnification.exchange(0.0, std::memory_order_relaxed);
    }
 
    // No-op on macOS: the crashreporter daemon writes a `.ips` report for any
