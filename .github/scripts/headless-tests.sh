@@ -106,6 +106,9 @@ check_verdict INFINITE_RECSYNCTEST "REC SYNC OK"
 if [ "$UNAME_S" = "Darwin" ]; then
    echo "== INFINITE_RECEXPORTTEST"
    echo "   SKIP (GitHub's macOS runners lack hardware video encode access - see this script's comment)"
+elif [ "$UNAME_S" = "Linux" ]; then
+   echo "== INFINITE_RECEXPORTTEST"
+   echo "   SKIP (Linux recorder lands in P3)"
 else
    check_verdict INFINITE_RECEXPORTTEST "REC EXPORT OK"
 fi

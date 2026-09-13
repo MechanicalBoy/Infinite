@@ -919,6 +919,158 @@ namespace Platform
       }
    }
 
+   void RasterizeText(const TextRasterRequest& req, int width, int height,
+                      unsigned char* outPixelsRGBA, float& outFittedSize)
+   {
+      @autoreleasepool
+      {
+         CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+         CGContextRef ctx = CGBitmapContextCreate(
+            outPixelsRGBA, width, height, 8, width * 4, colorSpace, kCGImageAlphaPremultipliedLast);
+
+         if (ctx != nullptr)
+         {
+            CGColorRef fillColor =
+               CGColorCreateGenericRGB(req.color[0], req.color[1], req.color[2], 1.0);
+            CGColorRef strokeColor = CGColorCreateGenericRGB(
+               req.outlineColor[0], req.outlineColor[1], req.outlineColor[2], 1.0);
+
+            float strokeSetting = 0.0f;
+            if (req.outlineWidth > 0.0f)
+               strokeSetting = req.outlineOnly ? req.outlineWidth : -req.outlineWidth;
+
+            CTTextAlignment ctAlign = kCTTextAlignmentCenter;
+            if (req.align == 0) ctAlign = kCTTextAlignmentLeft;
+            else if (req.align == 2) ctAlign = kCTTextAlignmentRight;
+            else if (req.align == 3) ctAlign = kCTTextAlignmentJustified;
+
+            CGFloat lineSpacingMultiple = std::max(0.1f, req.lineSpacing);
+            CTParagraphStyleSetting paragraphSettings[] = {
+               { kCTParagraphStyleSpecifierAlignment, sizeof(ctAlign), &ctAlign },
+               { kCTParagraphStyleSpecifierLineHeightMultiple,
+                 sizeof(lineSpacingMultiple), &lineSpacingMultiple },
+            };
+            CTParagraphStyleRef paragraphStyle =
+               CTParagraphStyleCreate(paragraphSettings, 2);
+
+            CFStringRef cfText = CFStringCreateWithCString(kCFAllocatorDefault, req.text.c_str(), kCFStringEncodingUTF8);
+            CFNumberRef kern =
+               CFNumberCreate(kCFAllocatorDefault, kCFNumberFloatType, &req.tracking);
+            CFNumberRef strokeNum =
+               CFNumberCreate(kCFAllocatorDefault, kCFNumberFloatType, &strokeSetting);
+
+            auto buildAttrString = [&](float pointSize) -> CFAttributedStringRef
+            {
+               CFStringRef nameRef = CFStringCreateWithCString(kCFAllocatorDefault, req.fontName.c_str(), kCFStringEncodingUTF8);
+               CTFontRef trialFont = CTFontCreateWithName(nameRef, pointSize, nullptr);
+               CFRelease(nameRef);
+
+               CFStringRef keys[] = {
+                  kCTFontAttributeName, kCTForegroundColorAttributeName, kCTKernAttributeName,
+                  kCTStrokeWidthAttributeName, kCTStrokeColorAttributeName,
+                  kCTParagraphStyleAttributeName
+               };
+               CFTypeRef values[] = { trialFont, fillColor, kern, strokeNum, strokeColor,
+                                      paragraphStyle };
+               CFDictionaryRef attrs = CFDictionaryCreate(
+                  kCFAllocatorDefault, (const void**)keys, (const void**)values, 6,
+                  &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+               CFAttributedStringRef result =
+                  CFAttributedStringCreate(kCFAllocatorDefault, cfText, attrs);
+               CFRelease(attrs);
+               CFRelease(trialFont);
+               return result;
+            };
+
+            const double sx = std::max(0.01f, req.scaleX);
+            const double sy = std::max(0.01f, req.scaleY);
+            CGContextSaveGState(ctx);
+            const double anchorX = width * req.posX;
+            const double anchorY = height * (1.0 - req.posY);
+            CGContextTranslateCTM(ctx, anchorX, anchorY);
+            CGContextScaleCTM(ctx, sx, sy);
+            CGContextTranslateCTM(ctx, -anchorX, -anchorY);
+
+            if (req.wordWrap)
+            {
+               const CGFloat boxW = std::max(8.0, (double)width * std::max(0.05f, req.wrapWidth) / sx);
+               const CGFloat boxH = std::max(8.0, (double)height * std::max(0.05f, req.wrapHeight) / sy);
+
+               float usedSize = req.fontSize;
+               if (req.fitToBox)
+               {
+                  float lo = 4.0f;
+                  float hi = std::max(5.0f, req.fontSize);
+                  for (int i = 0; i < 9; i++)
+                  {
+                     const float mid = (lo + hi) * 0.5f;
+                     CFAttributedStringRef trial = buildAttrString(mid);
+                     CTFramesetterRef trialSetter =
+                        CTFramesetterCreateWithAttributedString(trial);
+                     CGSize fit = CTFramesetterSuggestFrameSizeWithConstraints(
+                        trialSetter, CFRangeMake(0, 0), nullptr, CGSizeMake(boxW, CGFLOAT_MAX),
+                        nullptr);
+                     CFRelease(trialSetter);
+                     CFRelease(trial);
+
+                     if (fit.height <= boxH && fit.width <= boxW)
+                        lo = mid;
+                     else
+                        hi = mid;
+                  }
+                  usedSize = lo;
+               }
+
+               CFAttributedStringRef finalString = buildAttrString(usedSize);
+               CTFramesetterRef setter = CTFramesetterCreateWithAttributedString(finalString);
+               CGSize finalFit = CTFramesetterSuggestFrameSizeWithConstraints(
+                  setter, CFRangeMake(0, 0), nullptr, CGSizeMake(boxW, CGFLOAT_MAX), nullptr);
+
+               const CGFloat frameH = std::max(finalFit.height, (CGFloat)1.0);
+               CGRect box = CGRectMake(anchorX - boxW * 0.5, anchorY - frameH * 0.5, boxW, frameH);
+               CGPathRef path = CGPathCreateWithRect(box, nullptr);
+               CTFrameRef frame = CTFramesetterCreateFrame(setter, CFRangeMake(0, 0), path, nullptr);
+               CTFrameDraw(frame, ctx);
+               CFRelease(frame);
+               CGPathRelease(path);
+               CFRelease(setter);
+               CFRelease(finalString);
+               outFittedSize = usedSize;
+            }
+            else
+            {
+               CFAttributedStringRef single = buildAttrString(req.fontSize);
+               CTLineRef line = CTLineCreateWithAttributedString(single);
+               CGRect bounds = CTLineGetImageBounds(line, ctx);
+               double originX = anchorX;
+               double originY = anchorY - bounds.size.height * 0.5;
+               if (req.align == 1 || req.align == 3)
+                  originX -= bounds.size.width * 0.5;
+               else if (req.align == 2)
+                  originX -= bounds.size.width;
+
+               CGContextSetTextPosition(ctx, originX, originY);
+               CTLineDraw(line, ctx);
+               CFRelease(line);
+               CFRelease(single);
+               outFittedSize = req.fontSize;
+            }
+
+            CGContextRestoreGState(ctx);
+
+            CFRelease(strokeNum);
+            CFRelease(kern);
+            CFRelease(cfText);
+            CFRelease(paragraphStyle);
+            CGColorRelease(strokeColor);
+            CGColorRelease(fillColor);
+            CGContextRelease(ctx);
+         }
+
+         CGColorSpaceRelease(colorSpace);
+      }
+   }
+
    bool LoadModel(const std::string& path, std::vector<ModelVertex>& outVertices,
                   std::vector<unsigned int>& outIndices, std::string& outError)
    {
@@ -2354,6 +2506,11 @@ namespace Platform
 namespace Platform
 {
    std::string MattingBackend() { return "Apple Vision (on-device)"; }
+   const std::vector<std::string>& MattingModeNames()
+   {
+      static const std::vector<std::string> kNames = { "Subject (macOS 14+)", "Person (macOS 12+)" };
+      return kNames;
+   }
 
    bool SubjectMask(const std::vector<unsigned char>& rgbaPixels, int width, int height,
                     MattingMode mode, std::vector<unsigned char>& outMask,

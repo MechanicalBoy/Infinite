@@ -79,6 +79,10 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
+endif()
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
@@ -87,10 +91,10 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glfw)
 
-# FLAC writing on Windows: dr_libs is decode-only, so the file writer links
+# FLAC writing on Windows & Linux: dr_libs is decode-only, so the file writer links
 # the real libFLAC instead (static, no Ogg). macOS keeps CoreAudio's
 # ExtAudioFile and never compiles this in.
-if(WIN32)
+if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -178,8 +182,13 @@ set(SYPHON_DIR external/syphon)
 set(SPOUT_DIR external/spout2/SPOUTSDK/SpoutGL)
 
 if(INFINITE_ENABLE_VST3 AND NOT APPLE AND NOT WIN32)
-    message(FATAL_ERROR "INFINITE_ENABLE_VST3 is only wired up on macOS and Windows right now; "
-                        "this platform's layer reports plugin hosting as unavailable.")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(INFINITE_ENABLE_VST3 OFF CACHE BOOL "" FORCE)
+        message(STATUS "VST3 on Linux lands in P4")
+    else()
+        message(FATAL_ERROR "INFINITE_ENABLE_VST3 is only wired up on macOS and Windows right now; "
+                            "this platform's layer reports plugin hosting as unavailable.")
+    endif()
 endif()
 
 if(INFINITE_ENABLE_VST3)
@@ -217,6 +226,7 @@ set(COMMON_SOURCES
     src/core/Modulation.cpp
     src/core/GestureRecorder.cpp
     src/core/Expression.cpp
+    src/core/SysInfo.cpp
     src/core/field/FieldLex.cpp
     src/core/field/FieldParse.cpp
     src/core/field/FieldIR.cpp
@@ -445,6 +455,7 @@ set(WIN32_SOURCES
     # exe shows Explorer's generic application icon everywhere.
     ${CMAKE_CURRENT_BINARY_DIR}/generated/Infinite.rc
     src/platform/win/PlatformWin.cpp
+    src/platform/win/TextWin.cpp
     src/platform/win/CrashHandlerWin.cpp
     # GL-only half of the Spout bridge (glad), kept out of PlatformWin.cpp's
     # TU since that file also includes SpoutGL's headers, which drag in the
@@ -470,6 +481,20 @@ set(WIN32_SOURCES
     # PlatformWin.cpp (also compiled into the GL/DX-free scanner helper).
     src/platform/win/PlatformWinSyphon.cpp
     ${SPOUT_SOURCES}
+)
+
+set(LINUX_SOURCES
+    src/platform/linux/PlatformLinux.cpp
+    src/platform/linux/TextLinux.cpp
+    src/platform/linux/AudioDeviceLinux.cpp
+    src/platform/linux/MidiLinux.cpp
+    src/platform/linux/MediaLinux.cpp
+    src/platform/linux/CameraLinux.cpp
+    src/platform/linux/PluginHostLinux.cpp
+    src/platform/linux/SyphonLinux.cpp
+    src/audio/AudioFileWriter.cpp
+    external/miniz.c
+    external/glad/src/gl.c
 )
 
 # MSVC's x64 code generator hits an internal compiler error on src/main.cpp at
@@ -538,6 +563,11 @@ endif()
 
 if(WIN32)
     target_sources(Infinite PRIVATE ${WIN32_SOURCES})
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Threads REQUIRED)
+    target_sources(Infinite PRIVATE ${LINUX_SOURCES})
 endif()
 
 target_include_directories(Infinite PRIVATE
@@ -714,6 +744,27 @@ elseif(APPLE)
         ${SYPHON_DIR}/include
         ${SYPHON_DIR}/src
     )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(Infinite PRIVATE
+        Threads::Threads
+        ${CMAKE_DL_LIBS}
+        m
+        FLAC::FLAC
+    )
+    add_custom_command(TARGET Infinite POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:Infinite>/Resources/fonts"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:Infinite>/Resources/icons"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Inter/Inter-Regular.ttf"
+                "${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Inter/Inter-Medium.ttf"
+                "${CMAKE_CURRENT_SOURCE_DIR}/external/fonts/Inter/Inter-SemiBold.ttf"
+                "$<TARGET_FILE_DIR:Infinite>/Resources/fonts/"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_CURRENT_SOURCE_DIR}/external/icons/Lucide/lucide.ttf"
+                "$<TARGET_FILE_DIR:Infinite>/Resources/icons/"
+        COMMENT "Copying bundled fonts next to Infinite")
 endif()
 
 # imgui-node-editor 0.9.1 ships its own GetKeyIndex() shim, which collides with

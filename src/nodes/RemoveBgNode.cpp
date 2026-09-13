@@ -8,16 +8,6 @@
 
 namespace
 {
-   // The macOS Vision request types (subject lifting vs. person segmentation)
-   // don't exist on Windows, where a single salient-object model (u2netp) runs
-   // through ONNX Runtime + DirectML and the mode is ignored entirely - so
-   // showing the macOS-only labels there was misleading. Each platform gets the
-   // options it can actually honour.
-#if defined(_WIN32)
-   const std::vector<std::string> kModeNames = { "Salient subject (GPU)" };
-#else
-   const std::vector<std::string> kModeNames = { "Subject (macOS 14+)", "Person (macOS 12+)" };
-#endif
    const std::vector<std::string> kOutputModeNames = { "Cutout", "Mask only", "Background only" };
 
    const char* kFragSrc =
@@ -62,7 +52,7 @@ namespace
       "}\n";
 }
 
-const std::vector<std::string>& RemoveBgNode::ModeNames() { return kModeNames; }
+const std::vector<std::string>& RemoveBgNode::ModeNames() { return Platform::MattingModeNames(); }
 const std::vector<std::string>& RemoveBgNode::OutputModeNames() { return kOutputModeNames; }
 
 RemoveBgNode::~RemoveBgNode()

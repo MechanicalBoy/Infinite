@@ -48,6 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_windows: ${{ steps.check.outputs.has_windows }}
+      has_linux: ${{ steps.check.outputs.has_linux }}
     steps:
       - uses: actions/checkout@v4
       - id: check
@@ -57,6 +58,12 @@ jobs:
           else
             echo "has_windows=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No src/platform/win - skipping the Windows jobs."
+          fi
+          if [ -f src/platform/linux/PlatformLinux.cpp ]; then
+            echo "has_linux=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_linux=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No src/platform/linux - skipping the Linux jobs."
           fi
 
   macos:
@@ -186,3 +193,81 @@ jobs:
           name: Infinite-windows-${{ matrix.arch }}
           path: dist/Infinite
           if-no-files-found: error
+
+  linux:
+    name: Linux (${{ matrix.compiler }})
+    needs: detect
+    if: needs.detect.outputs.has_linux == 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: clang
+            cc_family: clang
+          - compiler: gcc
+            cc_family: gcc
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: sudo tools/linux/deps-apt.sh
+
+      - name: Spike ALSA sequencer kernel module
+        run: |
+          echo "Checking runner kernel ALSA modules..."
+          sudo apt-get install -y linux-modules-extra-$(uname -r) || true
+          sudo modprobe snd-seq snd-virmidi || true
+          if [ -e /dev/snd/seq ]; then
+            echo "ALSA seq available at /dev/snd/seq!"
+          else
+            echo "No ALSA seq device available on this runner kernel ($(uname -r))."
+          fi
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-${{ matrix.compiler }}-${{ github.ref }}
+          restore-keys: |
+            linux-${{ matrix.compiler }}-
+
+      - name: Build
+        run: |
+          export CC_FAMILY="${{ matrix.cc_family }}"
+          tools/linux/build.sh
+
+      - name: Assert no direct OpenGL library linkage
+        run: |
+          echo "Checking dynamic link dependencies of Infinite..."
+          if ldd build-linux/Infinite | grep -E "libOpenGL|libGL\.so|libGLX|libEGL"; then
+            echo "ERROR: Infinite must NOT link libOpenGL/libGL/libGLX/libEGL directly (see audacity#12093)"
+            exit 1
+          fi
+          echo "OK: No disallowed GL libraries linked directly."
+
+      - name: Headless self-tests
+        run: ./.github/scripts/headless-tests.sh build-linux/Infinite
+
+      - name: Virtual display Xvfb tests & screenshot smoke
+        run: |
+          tools/linux/xvfb-harness.sh --fast
+
+      - name: Upload Linux test & visual artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Infinite-linux-${{ matrix.compiler }}-artifacts
+          path: artifacts-linux
+          if-no-files-found: ignore
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v4
+        if: matrix.compiler == 'clang'
+        with:
+          name: Infinite-linux-x86_64-bin
+          path: build-linux/Infinite
+          if-no-files-found: error
+

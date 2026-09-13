@@ -837,6 +837,12 @@ namespace Platform
       }
    }
 
+   const std::vector<std::string>& MattingModeNames()
+   {
+      static const std::vector<std::string> kNames = { "Salient subject (GPU)" };
+      return kNames;
+   }
+
    // ---- audio synthesis spike (throwaway feasibility probe) ---------------
 
    bool AudioSpikeStart(std::string&)

@@ -40,6 +40,7 @@
 #include "platform/AppPaths.h"
 #include "platform/Platform.h"
 #include "IconsLucide.h"
+#include "core/SysInfo.h"
 
 #if defined(_WIN32)
 #include <fcntl.h>
@@ -49,10 +50,10 @@
 // Displayed shortcut labels: the modifier key shown in menus and the
 // shortcuts reference differs by platform (Cmd doesn't exist on Windows),
 // while the underlying handling already accepts Ctrl on both (see cmdOrCtrl).
-#if defined(_WIN32)
-   #define MODKEY "Ctrl"
-#else
+#if defined(__APPLE__)
    #define MODKEY "Cmd"
+#else
+   #define MODKEY "Ctrl"
 #endif
 
 namespace
@@ -33431,10 +33432,10 @@ namespace
    // instead. Both extensions are accepted when opening (see the HasExtension
    // calls on the launch-argument and drag-drop paths), so patches stay
    // portable in both directions - only the default for NEW saves differs.
-#if defined(_WIN32)
-   constexpr const char* kPatchExtension = ".infinite";
-#else
+#if defined(__APPLE__)
    constexpr const char* kPatchExtension = ".inf";
+#else
+   constexpr const char* kPatchExtension = ".infinite";
 #endif
 
    void SavePatchInteractive(bool forceDialog)
@@ -49792,6 +49793,13 @@ int main(int argc, char** argv)
       glfwInitHint(GLFW_COCOA_MENUBAR, GLFW_FALSE);
    }
 
+#if !defined(__APPLE__) && !defined(_WIN32)
+   if (getenv("INFINITE_WAYLAND") == nullptr && getenv("DISPLAY") != nullptr)
+   {
+      glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+   }
+#endif
+
    Platform::InitDocumentHandlingPreGlfw();
    if (!glfwInit())
    {
@@ -49852,6 +49860,11 @@ int main(int argc, char** argv)
       return 1;
    }
 #endif
+
+   if (getenv("INFINITE_SYSINFO") != nullptr)
+   {
+      SysInfo::PrintAndExit(window);
+   }
 
    if (getenv("INFINITE_SPOUTLOOPTEST") != nullptr)
    {

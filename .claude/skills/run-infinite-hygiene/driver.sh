@@ -29,8 +29,18 @@ export INFINITE_NO_UPDATE_CHECK=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
-BUILD_DIR="build"
-BIN="$BUILD_DIR/Infinite.app/Contents/MacOS/Infinite"
+OS="$(uname -s 2>/dev/null || echo unknown)"
+if [ "$OS" = "Darwin" ]; then
+  BUILD_DIR="build"
+  DEFAULT_BIN="$BUILD_DIR/Infinite.app/Contents/MacOS/Infinite"
+  DEFAULT_KNOWN_FAILURES="$(dirname "${BASH_SOURCE[0]}")/known-test-failures.txt"
+else
+  BUILD_DIR="build-linux"
+  DEFAULT_BIN="$BUILD_DIR/Infinite"
+  DEFAULT_KNOWN_FAILURES="$(dirname "${BASH_SOURCE[0]}")/known-test-failures-linux.txt"
+fi
+
+BIN="${INFINITE_BIN:-$DEFAULT_BIN}"
 SKIP_BUILD=0
 SHOT_ONLY=0
 TIER="full"
@@ -374,6 +384,12 @@ step() { printf '\n== %s ==\n' "$1"; }
 step "Build"
 if [ "$SKIP_BUILD" -eq 1 ]; then
   echo "skipped (--skip-build)"
+elif [ "$OS" = "Linux" ]; then
+  echo "building with tools/linux/build.sh"
+  if ! ./tools/linux/build.sh 2>&1 | tee /tmp/infinite_build.log; then
+    echo "BUILD FAILED — see /tmp/infinite_build.log"
+    exit 1
+  fi
 elif [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
   if ! cmake --build "$BUILD_DIR" -j8 2>&1 | tee /tmp/infinite_build.log; then
     echo "BUILD FAILED — see /tmp/infinite_build.log"
