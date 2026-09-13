@@ -41345,7 +41345,7 @@ static int RunFieldElementTest()
 
          if (node.Program()->elementEvalCount != N)
          {
-            printf("N-element: FAIL - element loop ran %llu times (expected %d)\n", node.Program()->elementEvalCount, N);
+            printf("N-element: FAIL - element loop ran %llu times (expected %d)\n", (unsigned long long)node.Program()->elementEvalCount, N);
             secOk = false;
          }
 
