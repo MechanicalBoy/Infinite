@@ -132,6 +132,9 @@ works. CI is authoritative.
      Otherwise mark them `SKIP (no ALSA seq on runner)`. Try it in the
      OrbStack container too (it shares OrbStack's kernel). Record both
      answers in this file.
+     * **P0 Spike Result (GitHub Actions runner `6.17.0-1022-azure`):** Failed as expected. `linux-modules-extra` package is unavailable and `modprobe snd-seq` fails with `FATAL: Module snd-seq not found in directory /lib/modules/6.17.0-1022-azure`. No `/dev/snd/seq` available.
+     * **P0 Spike Result (Local OrbStack container `7.0.14-orbstack-00380`):** `modprobe snd-seq` fails with `FATAL: Module snd-seq not found in directory /lib/modules/7.0.14-orbstack-00380-ga7e0a2dc9535`. Only `/dev/snd/timer` is exposed.
+     * **Conclusion:** Real end-to-end ALSA sequencer devices cannot run in either GitHub Actions runners or standard OrbStack containers. As planned, the primary MIDI proof is the synthetic unit parser test in Phase 2, while live ALSA hardware is L4.
    - Real MIDI gear remains L4.
 5. Run `driver.sh --skip-build <tier>` with `BIN=build-linux/Infinite`.
 6. Always (even on failure) copy logs + every screenshot to

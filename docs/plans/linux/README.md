@@ -94,7 +94,7 @@ P0 skeleton + rig ─► P1 desktop ─► P2 audio+MIDI ─► P3 media ─► 
 
 | # | File | Branch | Exit (proof required) |
 |---|---|---|---|
-| 0 | [phase-00-skeleton-and-rig.md](phase-00-skeleton-and-rig.md) | `feature/linux-step-00-skeleton` | Linux CI job green (Clang + GCC); headless tests pass; screenshot artifact of the canvas under Xvfb |
+| 0 | [phase-00-skeleton-and-rig.md](phase-00-skeleton-and-rig.md) | `feature/linux-step-00-skeleton` | **COMPLETE** (`b25b5bd` / [Run 34769650449](https://github.com/n1m21n/Infinite/actions/runs/34769650449)) — Clang + GCC green, headless pass, Xvfb screenshot artifact verified |
 | 1 | [phase-01-desktop.md](phase-01-desktop.md) | `feature/linux-step-01-desktop` | Hygiene `--fast` + UI/3D/compositing groups green under Xvfb; per-category screenshots |
 | 2 | [phase-02-audio-midi.md](phase-02-audio-midi.md) | `feature/linux-step-02-audio-midi` | Audio group green on miniaudio null + PulseAudio null sink; MIDI fixtures green on a virtual ALSA port (or a documented reason they can't run) |
 | 3 | [phase-03-media.md](phase-03-media.md) | `feature/linux-step-03-media` | `RECEXPORTTEST`, `RECSYNCTEST`, video/media groups green; recorded-movie artifact |
