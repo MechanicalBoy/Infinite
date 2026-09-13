@@ -24,6 +24,12 @@ instead.
 - Several of the above bundled into one message → split them. Triage each one
   separately and give each its own branch — don't bundle unrelated asks onto one branch.
 
+Then invoke `codebase-lenses` and run its **Mode A, steps A1–A3 only**: mark each of the
+seven lenses Primary / Touched / Clear, with sub-lens numbers. Classify from the request
+and the lens trigger questions. Don't read source to do it, since grounding belongs to
+`write-fix-brief`. The lens map goes in your report so `infinite-planner` doesn't have to
+redo it.
+
 ## 2. Bug or findings-list input
 
 If the scope of a bug report is ambiguous (unclear which node/system owns it, whether it's
@@ -62,6 +68,8 @@ Follow `git-branch-workflow` exactly:
 
 Return, concisely:
 - **Category**: bug / findings-list / feature, and node type if applicable.
+- **Lens map**: the seven-row Primary / Touched / Clear table from `codebase-lenses`,
+  with sub-lens numbers and a one-line reason for each Clear.
 - **Branch**: the exact branch name you created (or reused).
 - **Skills invoked**: which of `bug-blast-radius` / `write-fix-brief` ran, and a short
   digest of what they found — not the full brief verbatim, the next agent will re-read

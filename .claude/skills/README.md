@@ -52,8 +52,13 @@ descriptions. Broadly:
   `node-param-audit`, `node-ui-sweep`, `output-projection-sweep`,
   `panels-sweep`, `pillar-parity-audit`, `rate-analysis-sweep`,
   `render-pipeline-sweep`, `shortcuts-sweep`
+- **Understanding a request** — `codebase-lenses` splits any change or deep
+  dive into seven concern lenses (Structure, Execution, Data & State, UI/UX,
+  Platform, Performance, Correctness), each with numbered sub-lenses and the
+  skills that own them; `codebase-navigation` is how to search once you know
+  which lenses matter
 - **Process** — `bug-blast-radius`, `invariant-interaction-audit`,
-  `codebase-navigation`, `git-branch-workflow`,
+  `git-branch-workflow`,
   `infinite-code-review`, `write-fix-brief`, `run-infinite-hygiene`,
   `ship-infinite`, `release-notes-audit`, `windows-parity`,
   `plugin-host-hardening`

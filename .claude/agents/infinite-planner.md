@@ -16,7 +16,14 @@ registration tables, platform pairs, and wiring hotspots that a plan can silentl
 this is the same first step `cartographer` takes, for the same reason: half-context is
 exactly what causes missed connections.
 
-Then, based on the category you were given (from `triage`, or inferred directly from the
+Then invoke `codebase-lenses`. If `triage` handed you a lens map, verify it against the
+code and correct it. Otherwise run Mode A (A1–A5) yourself. The lens map decides which
+of the domain skills below you load: Primary lenses load every owning skill for their
+touched sub-lenses, Touched lenses load one, and Clear lenses load none. The list below
+is the category view of the same decision. Use it to sanity-check the lens map, not to
+replace it.
+
+Based on the category you were given (from `triage`, or inferred directly from the
 request if you were called without it):
 
 - **New node** → the matching `new-audio-node` / `new-source-node` / `new-effect-node` /
@@ -41,7 +48,9 @@ against a remembered or assumed shape of it.
 
 ## 2. Plan
 
-Produce a concrete, file-by-file plan:
+Produce a concrete plan **organised by sub-lens**: one section per touched sub-lens from
+the lens map (e.g. `2a Threads`, `3b Persistence`, `4a Node body`), so a reviewer can
+check coverage row by row. Inside each section, go file by file:
 - Which files change and what specifically moves in each.
 - Which existing function, pattern, or utility gets reused — never invent a new
   abstraction the codebase already has one for.
@@ -59,6 +68,7 @@ implementer builds it in rather than bolting it on.
 
 ## 4. Report
 
-Return the plan, plus a short list of which skills you loaded and why — so whoever
+Return the final lens map (seven rows, with the reasons for any Clear), then the plan,
+plus a short list of which skills you loaded and why — so whoever
 executes the plan (or reviews it) can see it's grounded in this codebase's actual rules,
 not a generic implementation plan that happens to be about Infinite.
