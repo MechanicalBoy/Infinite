@@ -41395,12 +41395,12 @@ static int RunFieldElementTest()
 
          if (node.Program()->prologueEvalCount != 1)
          {
-            printf("Hoisting: FAIL - prologue ran %llu times (expected exactly 1)\n", node.Program()->prologueEvalCount);
+            printf("Hoisting: FAIL - prologue ran %llu times (expected exactly 1)\n", (unsigned long long)node.Program()->prologueEvalCount);
             secOk = false;
          }
          if (node.Program()->elementEvalCount != N)
          {
-            printf("Hoisting: FAIL - element loop ran %llu times (expected %d)\n", node.Program()->elementEvalCount, N);
+            printf("Hoisting: FAIL - element loop ran %llu times (expected %d)\n", (unsigned long long)node.Program()->elementEvalCount, N);
             secOk = false;
          }
 
