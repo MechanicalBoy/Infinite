@@ -81,7 +81,7 @@ PASS=0
 FAIL=0
 FAILED_NAMES=()
 EXPECTED_FILE="$(dirname "${BASH_SOURCE[0]}")/audio-param-sweep-expected.txt"
-KNOWN_FAILURES_FILE="$(dirname "${BASH_SOURCE[0]}")/known-test-failures.txt"
+KNOWN_FAILURES_FILE="${KNOWN_FAILURES_FILE:-$DEFAULT_KNOWN_FAILURES}"
 XFAIL_NAMES=()
 STALE_NAMES=()
 
