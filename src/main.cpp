@@ -43466,12 +43466,12 @@ static int RunFieldTransferTest()
             {
                if (prog->prologueEvalCount != 1)
                {
-                  printf("SECTION 3: FAIL - prologue eval count = %llu, expected 1\n", prog->prologueEvalCount);
+                  printf("SECTION 3: FAIL - prologue eval count = %llu, expected 1\n", (unsigned long long)prog->prologueEvalCount);
                   secOk = false;
                }
                if (prog->elementEvalCount != (uint64_t)N)
                {
-                  printf("SECTION 3: FAIL - element loop eval count = %llu, expected %d\n", prog->elementEvalCount, N);
+                  printf("SECTION 3: FAIL - element loop eval count = %llu, expected %d\n", (unsigned long long)prog->elementEvalCount, N);
                   secOk = false;
                }
             }
