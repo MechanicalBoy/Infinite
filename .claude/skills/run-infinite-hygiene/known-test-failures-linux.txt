@@ -31,3 +31,4 @@ VST3SCANTEST|stubbed: VST3 scanner (P4)
 # Other pre-existing test quirks shared with macOS
 GROUPTEST|"after ungroup: ... member freed" sub-check fails — pre-existing and unrelated to Linux port
 DRAGTEST|"after canvas drag: node pos=(66,66) viewAnchor=(168,149) -> node MOVED, view panned : BUG" — pre-existing canvas-vs-node drag issue
+DSPTEST|stubbed: audio file decode / sampler in DSP fixtures (P1/P2)
