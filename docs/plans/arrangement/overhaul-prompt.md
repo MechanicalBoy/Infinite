@@ -20,35 +20,36 @@ each number.
 
 ## Status — start here
 
-**WP0-WP3 are built, verified and committed. Start at WP4.**
+**WP0-WP4 are built, verified and committed. Start at WP5.**
 
 ```
-WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► [WP4] ──► [WP5] ──► [WP6] ──► [WP7] ──► [WP8] ──► verify-gate ──► owner merges
-  baseline      model core      transport      audio sched      ▲ you are here
+WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► [WP5] ──► [WP6] ──► [WP7] ──► [WP8] ──► verify-gate ──► owner merges
+  baseline      model core      transport      audio sched      video          ▲ you are here
 ```
 
 ```bash
 cd /Users/namansoni/infinte
-git checkout feature/arrange-step-05-audio-scheduling      # WP3 tip, 4bac3b2
-git checkout -b feature/arrange-step-06-video              # WP4 branch
+git checkout feature/arrange-step-06-video                 # WP4 tip
+git checkout -b feature/arrange-step-07-editing            # WP5 branch
 cmake --build build -j"$(sysctl -n hw.ncpu)"               # must be clean before you touch anything
 ```
 
-Last known-good state on `4bac3b2`:
+Last known-good state on the WP4 tip:
 
 | Check | Result |
 |---|---|
 | Build | clean |
-| `.claude/skills/run-infinite-hygiene/driver.sh --skip-build --full` | **72 passed, 0 failed, 3 xfail, exit 0** |
+| `.claude/skills/run-infinite-hygiene/driver.sh --skip-build --full` | **73 passed, 0 failed, 3 xfail, exit 0** (72 + ARRANGEVIDEOTEST) |
+| `INFINITE_ARRANGEVIDEOTEST` (new, WP4) | 8/8 |
 | `INFINITE_ARRANGEAUDIOTEST` | 8/8 |
 | `INFINITE_TRANSPORTTEST` | 6/6 |
 | `INFINITE_ARRANGETEST` | 9/9 |
 | Known xfails (pre-existing, not ours) | `GROUPTEST`, `DRAGTEST`, `PLUGINDRAGTEST` |
 | `MOLDERTEST` | fails 3/3, **unbaselined and unrelated** — handled on its own branch, don't fold it into this work |
 
-Before writing WP4 code, read **"As built (WP1-WP3)"** below. Several things
-landed differently from the plan text, and WP4-WP8 depend on the as-built
-shape, not on the original wording.
+Before writing WP5 code, read **"As built (WP1-WP3)"** and **"As built (WP4)"**
+below. Several things landed differently from the plan text, and WP5-WP8
+depend on the as-built shape, not on the original wording.
 
 ## Owner's working rules (apply throughout)
 
@@ -80,8 +81,8 @@ end of every package:
 | 1 | `feature/arrange-step-03-model-core` | `src/arrange/` model, ticks time base, stable IDs, node UIDs, serialization, arrange-only undo | High | **done** `2dad7e7` |
 | 2 | `feature/arrange-step-04-transport` | Tempo-safe beats, `SeekBeats`, loop moved into Transport | Medium | **done** `38443af` |
 | 3 | `feature/arrange-step-05-audio-scheduling` | Audio-thread clip scheduling, Timeline/Canvas mode, persistent PDC | **Highest** | **done** `4bac3b2` |
-| 4 | `feature/arrange-step-06-video` | Lane order, FBO ownership, geometry cache, compose-after-cook | Medium | next |
-| 5 | `feature/arrange-step-07-editing` | ID-based selection, multi-drag, groups, enable key `0`, offline clips, lane pick, undo coverage, **deletes the legacy bridge** | **High — largest** | |
+| 4 | `feature/arrange-step-06-video` | Lane order, FBO ownership, geometry cache, compose-after-cook | Medium | **done** `7220d09` |
+| 5 | `feature/arrange-step-07-editing` | ID-based selection, multi-drag, groups, enable key `0`, offline clips, lane pick, undo coverage, **deletes the legacy bridge** | **High — largest** | next |
 | 6 | `feature/arrange-step-08-time-markers` | Bars/Time display, markers, playhead keys, scrub fix | Low–Med | |
 | 7 | `feature/arrange-step-09-export-queue` | Render fixes + export queue + persisted settings | Medium | |
 | 8 | `feature/arrange-step-10-thumbs-waves` | Live audio waveforms, video thumbnails | Low–Med | |
@@ -317,6 +318,7 @@ Those WPs are now mostly **UI wiring**:
 | `INFINITE_ARRANGETEST` | — | model fuzz + `Validate`, undo/redo round trip, save/load incl. a legacy seconds fixture, uid survival |
 | `INFINITE_TRANSPORTTEST` | — | mid-play BPM continuity, `SeekBeats`, loop wrap ≤ 1 block, the lapping block's own start beat |
 | `INFINITE_ARRANGEAUDIOTEST` | 4 | abutting clips, onset ≤ 1 sample, disabled silent, paused silent, seek across clips, rebuild mid-clip, mode reset on New/Open |
+| `INFINITE_ARRANGEVIDEOTEST` | 4 | top lane frontmost, lane opacity, disabled/unassigned skipped, empty → opaque black, geometry clip 0 FBO allocs over 100 frames on two targets, cache eviction (WP4) |
 
 Run one directly:
 
@@ -333,9 +335,56 @@ All three are registered in `.claude/skills/run-infinite-hygiene/driver.sh`.
 - Count hygiene results from the driver's own `== Summary ==` line, never by grepping `[pass]` while it is still running.
 - A `[stale-baseline]` entry in `known-test-failures.txt` makes the driver exit 1 even with 0 failures. Delete lines for tests that now pass.
 
+## As built (WP4) — read this before WP5
+
+### What landed (`src/main.cpp` unless noted)
+
+| Symbol | What it is |
+|---|---|
+| `struct ArrangeCompositeTarget` | Owns `scratch[2]` (ping-pong pair), `result` (stable output for the monitor), `retiredResult` (the pre-resize `result`, kept one composite so the draw list never samples a deleted texture), `requestW/H`, and `slot` (geometry-cache key) |
+| `gArrangeMonitorTarget` (slot 0), `gArrangeRenderTarget` (slot 1) | One per consumer. Replace the old shared `static sArrangeScratchFbo` and `static sArrangeMonitorFbo` |
+| `CollectArrangeVideoLayers(beat, out)` | **The single place lane order and the skip rules live.** Bottom lane first (top lane frontmost); skips `!enabled`, `srcIndex < 0`, and a missing node. Honours `srcOutput` via `INode::GetOutputTexture(int)` |
+| `CountActiveArrangeVideoClips(beat, title)` | Now built on the collector, so the monitor label counts exactly what is composited and names the frontmost node |
+| `CompositeArrangeTimelineVideo(target, dest, beat, w, h)` | New signature. `dest == nullptr` → `target.result`. Last pass writes `dest` directly (no copy-back). `frameId` is gone |
+| `ArrangeComposeShader()` | Program + uniform locations cached once at build |
+| `gArrangeGeomViewports` | `std::map<std::pair<uid, slot>, {NodeViewport, lastUsedFrame}>`; `ReapArrangeGeomViewports()` evicts after 120 unused main-loop frames. `gPanelViewports` is never touched |
+| `CompositeArrangeMonitorIfRequested()` | Runs right after the main cook loop (`for (gn : gNodes) CookIfNeeded(frameId)`), then the reaper. The panel only sets `requestW/H` and draws `result.tex`; ImGui renders after the composite, so the monitor shows **this** frame, not the previous one |
+| `GLUtil::NoteFboAllocation()` / `FboAllocationCount()` (`src/core/GLUtil.*`) | Diagnostic counter bumped by `GLUtil::EnsureFbo` and `NodeViewport::EnsureFbo` on every real allocation |
+| `INFINITE_ARRANGEVIDEOTEST` (frame 4) | Top lane frontmost, lane opacity honoured, disabled skipped, unassigned skipped, nothing active → opaque black, geometry clip 0 FBO allocations over 100 frames on two targets of different size, eviction at 121 unused frames. Registered in `driver.sh` tier1, `GROUP_VIDEO` and full |
+
+### Deviations from the WP4 text
+
+| Plan said | Actually built | Why |
+|---|---|---|
+| Geometry cache keyed by node uid | Keyed by **(uid, target slot)** | The panel keeps drawing under the render's progress window, so the monitor and the render composite the same geometry clip in the same frame at different sizes. One `NodeViewport` per uid would reallocate twice a frame — the exact bug #3 removes |
+| "Prefer reading `gArrange`" (session brief) | The collector reads `gArrangeStreams` (legacy mirror) | Same reason WP3's scheduler does: `gArrange` is only synced at save/undo boundaries, so it would show a live drag one sync late. **WP5: switch `CollectArrangeVideoLayers` to `gArrange` + the uid map when the bridge dies — it is the only reader to change** |
+| Playhead | Compositor time is `Transport::Beats()` for both monitor and render (clip seconds × live bpm/60) | The audio envelope's axis. The render's `Beats()` reads the video time just set by `SetOfflineVideoTime`, so picture and sound agree. The panel's drawn playhead still uses `Seconds()` — WP6's to unify |
+| — | `srcOutput` is now honoured on video lanes | It was ignored (always output 0). WP5's "Output ▸" menu needs it; an index the node doesn't have yields no layer rather than the wrong image |
+
+### Debts carried forward
+
+| Debt | Where | Due |
+|---|---|---|
+| Collector reads the legacy mirror and `FindNodeByIndex` per clip per frame | `CollectArrangeVideoLayers` | **WP5** (bridge deletion + per-frame uid map) |
+| Render "Match Clips" size detection and `arrangeEndSec` still include disabled/unassigned clips | render popup, `detectedClipW/H` | **WP7** #5 |
+| `gNodeCameras` is still index-keyed; the geometry clip's camera follows the node's index | compositor geometry branch | Out of scope (moving other systems to uids) |
+| A geometry clip's texture is only ever sampled by the composite pass, which is what makes immediate eviction safe | `ReapArrangeGeomViewports` | **WP8**: if thumbnails blit a geometry clip's texture into a draw list, retire evicted entries one frame first |
+
+### Pre-existing sweep findings (not WP4, not fixed)
+
+Both reproduce identically with WP4's `src/` stashed (WP3 tip `4bac3b2`).
+
+| Fixture | Observation | Cause |
+|---|---|---|
+| `IMAGERESYNTH_SELFTEST` | `279 node types, 35 failures` — compositing sweep exits 1 | Fixture classification gap, not a render bug: every failure is a texture-less type the fixture has no branch for (Notes nodes, 3D point/field ops, Comment, OSC Send, Audio Texture) and so falls through to the `tex != 0` test (`main.cpp` SELFTEST loop). Hygiene doesn't run it |
+| `CACHETEST+SHOWCASE` | `idleStreak=0` for all 24 frames, `work` +1 per frame | One SHOWCASE node re-cooks every frame. Unexamined |
+
+
 ---
 
 ## WP4 — Video
+
+> **DONE — `7220d09`.** Reference only; *As built (WP4)* below is authoritative.
 
 | # | Bug | Fix |
 |---|---|---|
@@ -476,7 +525,7 @@ cp -R build/Infinite.app ~/Desktop/Infinite.app
 | WP | Sweeps to run | State |
 |---|---|---|
 | 3 | `audio-pipeline-sweep`, `audio-node-sweep` | done — both clean |
-| 4 | `compositing-pipeline-sweep` | |
+| 4 | `compositing-pipeline-sweep` | done — static 0 problems, BYPASS/PALETTE/REMOVEBG pass; SELFTEST's 35 failures and CACHETEST's 0 idle streak are pre-existing (identical on `4bac3b2`) |
 | 5, 6 | `shortcuts-sweep`, `panels-sweep` | |
 | 7 | `av-sync-sweep` | |
 
