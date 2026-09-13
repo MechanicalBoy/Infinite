@@ -891,7 +891,6 @@ namespace
       // there instead of leaving it wherever Transport::SetOfflineMode(false)
       // happens to revert to (whatever mSeconds was before the take started).
       double endSeconds = 0.0;
-      std::set<int> prevArrangeAudioClips;
    };
    OfflineRenderState gOfflineRender;
 
@@ -1069,7 +1068,22 @@ namespace
    bool   gArrangeFitViewToLoopPending = false; // set by the manual duration field; consumed once rulerWidth is known
    bool  gArrangeClaimedKeys = false;
    bool  gArrangeFocused = false;
-   bool  gArrangeAudioMode = true; // Timeline audio mode: true = canvas muted, timeline clips active
+   // Which of the two mutually exclusive audio routings is live (overhaul
+   // WP3). Canvas = the node graph's own Audio Out nodes feed the device, the
+   // arrangement is silent. Timeline = the arrangement's audio clips feed the
+   // device directly and every canvas Audio Out is bypassed.
+   //
+   // Deliberately NOT persisted and NOT part of a patch: it is a monitoring
+   // choice, not a property of the work, and a patch that silently reopened
+   // in Timeline mode would play nothing until the user found the button.
+   // Reset to Canvas on launch (this initialiser), File > New and File > Open.
+   //
+   // Routing depends on this and nothing else. It used to also require the
+   // arrangement panel to be open and the transport to be playing, which made
+   // hiding the panel or hitting pause change what the topology contained -
+   // a rebuild-driven mode leak rather than a routing rule.
+   enum class AudioMode { Canvas, Timeline };
+   AudioMode gAudioMode = AudioMode::Canvas;
    // Where the per-row "+" (or the empty-state one when there are no
    // tracks yet) should insert a new track: -1 appends at the end,
    // otherwise inserts right after that stream index. Set when the "+" is
@@ -26773,7 +26787,7 @@ namespace
          // Start/Stop Audio, pinned top-right of the panel - the Timeline's
          // driver toggle, and the deliberate INVERSE of the main canvas
          // toolbar's own Start/Stop Audio button, not a mirror of it: the
-         // two read gArrangeAudioMode (already the existing Timeline-
+         // two read gAudioMode (the Timeline-vs-Canvas routing mode) from
          // Strict-vs-Live-Canvas routing flag) from opposite sides, so
          // turning this one on always turns the canvas's off and vice
          // versa - they can never both show "on" at once, since only one
@@ -26782,7 +26796,7 @@ namespace
          // assigned to, same as before.
          {
             const bool engineOn = AudioEngine::Instance().SampleRate() > 0.0;
-            const bool audioOn = engineOn && gArrangeAudioMode;
+            const bool audioOn = engineOn && gAudioMode == AudioMode::Timeline;
             const char* audioLabel = audioOn ? "Stop Audio" : "Start Audio";
             const float audioBtnW = ImGui::CalcTextSize(audioLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
             const ImVec2 audioBtnPos(panelOrigin.x + panelSize.x - audioBtnW - 6.0f, panelOrigin.y + 2.0f);
@@ -26803,11 +26817,7 @@ namespace
                   // Claim the Timeline as the active driver, muting the
                   // canvas - same "no restart if already running" rule as
                   // the canvas button's own claim of this flag.
-                  if (!gArrangeAudioMode)
-                  {
-                     gArrangeAudioMode = true;
-                     RebuildAudioTopology();
-                  }
+                  gAudioMode = AudioMode::Timeline;
                   if (!engineOn)
                   {
                      gAudioStartError.clear();
@@ -27017,7 +27027,10 @@ namespace
                      (int)std::ceil(sArrangeRenderEndSec - sArrangeRenderStartSec), 1, 3600);
                   rn->includeAudio = sArrangeRenderIncludeAudio;
 
-                  gArrangeAudioMode = true; // arms Timeline Strict Audio for the take
+                  // The render does NOT change the monitoring mode (WP3
+                  // mode leak): it routes through gOfflineRender.arrangeDriven,
+                  // which RebuildAudioTopology treats as Timeline for the
+                  // duration of the take and nothing else.
                   Transport::Instance().Seek(sArrangeRenderStartSec);
                   gOfflineRender.arrangeDriven = true;
                   gOfflineRender.endSeconds = sArrangeRenderEndSec;
@@ -27208,7 +27221,7 @@ namespace
 
          // The old standalone "Audio: Timeline Strict"/"Audio: Live Canvas"
          // mode toggle used to live here as its own button. It set the same
-         // gArrangeAudioMode flag the top-right Start/Stop Audio button now
+         // gAudioMode flag the top-right Start/Stop Audio button now
          // owns directly (see above) - keeping both would let them drift
          // out of sync (this one never touched the engine's actual on/off
          // state), so it's folded into that single control instead.
@@ -28416,7 +28429,17 @@ namespace
    {
       if (gn == nullptr || gn->node == nullptr) return;
       PushUndoCheckpoint();
-      if (boolName == "bypassed") { gn->node->bypassed = newVal; return; }
+      if (boolName == "bypassed")
+      {
+         gn->node->bypassed = newVal;
+         // ResolvedAudioSource follows `bypassed`, so this changes what an
+         // Audio Out cable - and every arrangement clip terminal - actually
+         // resolves to. The two ImGui bypass toggles already rebuild; this
+         // one (Performance panel bindings, RPC) did not, which made it the
+         // one path that could change the audio graph invisibly.
+         RebuildAudioTopology();
+         return;
+      }
       if (auto* mixer = dynamic_cast<MixerNode*>(gn->node.get()))
       {
          if (boolName == "mute" && channelIdx >= 0 && channelIdx < MixerNode::kMaxSlots)
@@ -31681,6 +31704,114 @@ namespace
       }
    };
 
+   // Everything the timeline audio schedule is built from, folded into one
+   // number: the mode, the tempo (the legacy mirror is still in seconds until
+   // WP5, so bpm is part of the conversion), and every audio clip's identity,
+   // placement, fades, gain and enabled flag, plus its lane's gain.
+   //
+   // A fingerprint rather than a revision counter deliberately. The
+   // arrangement panel edits gArrangeStreams from roughly 190 call sites; any
+   // one of them forgetting to bump a counter would silently reintroduce
+   // exactly the bug WP3 exists to kill (an edit you cannot hear until
+   // something else rebuilds). This cannot be bypassed, and it costs one pass
+   // over the clips per frame.
+   uint64_t ArrangeAudioScheduleHash()
+   {
+      auto mix = [](uint64_t h, uint64_t v)
+      { h ^= v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2); return h; };
+      auto mixd = [&](uint64_t h, double v)
+      { uint64_t bits; static_assert(sizeof(bits) == sizeof(v), ""); memcpy(&bits, &v, sizeof(bits)); return mix(h, bits); };
+
+      uint64_t h = 0xC0FFEEull;
+      h = mix(h, gAudioMode == AudioMode::Timeline ? 1ull : 2ull);
+      h = mix(h, (gOfflineRender.active && gOfflineRender.arrangeDriven) ? 3ull : 4ull);
+      h = mixd(h, (double)Transport::Instance().Tempo());
+      for (const auto& stream : gArrangeStreams)
+      {
+         if (stream.type != Patch::kStreamAudio)
+            continue;
+         h = mix(h, stream.id);
+         h = mixd(h, (double)stream.gainDb);
+         for (const auto& c : stream.clips)
+         {
+            h = mix(h, c.srcUid);
+            h = mix(h, (uint64_t)(uint32_t)c.srcIndex);
+            h = mix(h, (uint64_t)(uint32_t)c.srcOutput);
+            h = mix(h, c.enabled ? 1ull : 0ull);
+            h = mixd(h, c.startSeconds);
+            h = mixd(h, c.lengthSeconds);
+            h = mixd(h, (double)c.fadeInSec);
+            h = mixd(h, (double)c.fadeOutSec);
+            h = mixd(h, (double)c.gainDb);
+         }
+      }
+      return h;
+   }
+
+   // ---- timeline terminal PDC (overhaul WP3) -----------------------------
+   //
+   // A timeline clip terminal has no AudioCaptureRing to hang its delay-
+   // compensation state on, and a value living in the disposable terminal
+   // vector is rebuilt from zero every generation - which clicked on every
+   // rebuild, and rebuilds used to happen at every clip boundary. So the
+   // state lives here instead, keyed by the same (laneId, srcUid, srcOutput)
+   // that identifies the terminal, and survives any number of rebuilds.
+   //
+   // unique_ptr, not a value: the audio thread holds a raw pointer to the
+   // CompensationDelay for the life of a generation, so it must not move when
+   // the map rehashes. Entries are dropped only once CompletedGeneration()
+   // confirms the audio thread has finished with the last topology that
+   // referenced them - the same rule gRetiredNodes uses.
+   struct ArrangeTerminalComp
+   {
+      std::unique_ptr<CompensationDelay> delay;
+      uint64_t lastUsedGeneration = 0;
+      bool usedThisRebuild = false;
+   };
+   std::unordered_map<uint64_t, ArrangeTerminalComp> gArrangeTerminalComp;
+   // ArrangeAudioScheduleHash() as of the currently published topology.
+   // The sentinel differs from any real hash so the first frame always builds.
+   uint64_t gArrangeAudioScheduleBuiltHash = ~0ull;
+   bool gArrangeAudioScheduleEverBuilt = false;
+
+   CompensationDelay& ArrangeTerminalCompensation(uint64_t laneId, uint64_t srcUid, int srcOutput)
+   {
+      uint64_t key = laneId * 0x9E3779B97F4A7C15ull;
+      key ^= srcUid + 0x9E3779B97F4A7C15ull + (key << 6) + (key >> 2);
+      key ^= (uint64_t)(uint32_t)srcOutput + 0x9E3779B97F4A7C15ull + (key << 6) + (key >> 2);
+      ArrangeTerminalComp& slot = gArrangeTerminalComp[key];
+      if (slot.delay == nullptr)
+         slot.delay = std::make_unique<CompensationDelay>();
+      slot.usedThisRebuild = true;
+      return *slot.delay;
+   }
+
+   // Called once, immediately after SetTopology, so CurrentGeneration() is
+   // the generation that just started referencing the surviving entries.
+   void ReapArrangeTerminalCompensation()
+   {
+      const uint64_t current = AudioEngine::Instance().CurrentGeneration();
+      const uint64_t completed = AudioEngine::Instance().CompletedGeneration();
+      const bool audioRaceable = AudioEngine::Instance().SampleRate() > 0.0 && AudioEngine::Instance().IsAlive();
+      for (auto it = gArrangeTerminalComp.begin(); it != gArrangeTerminalComp.end();)
+      {
+         if (it->second.usedThisRebuild)
+         {
+            it->second.usedThisRebuild = false;
+            it->second.lastUsedGeneration = current;
+            ++it;
+         }
+         else if (!audioRaceable || completed > it->second.lastUsedGeneration)
+         {
+            it = gArrangeTerminalComp.erase(it);
+         }
+         else
+         {
+            ++it;
+         }
+      }
+   }
+
    void RebuildAudioTopology()
    {
       if (gDeferAudioRebuild)
@@ -31692,36 +31823,99 @@ namespace
       std::vector<AudioTerminal> terminals;
       int nextBufferIndex = 0;
 
-      // When Arrangement Timeline panel is open in Timeline Strict Audio mode and playback is active
-      // (or during an offline Arrangement render), canvas audio is completely silenced unless an audio
-      // clip on the timeline is active at the playhead.
-      const bool timelineStrictPlaying = (gArrangePanelOpen && gArrangeAudioMode && Transport::Instance().IsPlaying()) ||
-                                         (gOfflineRender.active && gOfflineRender.arrangeDriven);
-      struct ActiveTimelineClip
+      // Timeline routing: the arrangement's audio clips feed the device and
+      // every canvas Audio Out is bypassed. Depends on the mode alone (plus
+      // an arrangement-driven offline render, which is Timeline by
+      // definition) - not on the panel being open and not on the transport
+      // playing. Pausing silences the sum in RunTopology instead, which
+      // leaves the topology, the PDC state and the node graph untouched.
+      const bool timelineRouting = (gAudioMode == AudioMode::Timeline) ||
+                                   (gOfflineRender.active && gOfflineRender.arrangeDriven);
+
+      // Every enabled, assigned clip on every audio lane - the WHOLE
+      // arrangement, not the ones under the playhead. Grouped into one
+      // terminal per (laneId, srcUid, srcOutput) carrying all of that
+      // combination's windows, so a node used by five clips on one lane is
+      // scheduled once and its five onsets are sample-accurate.
+      struct ScheduledTerminal
       {
-         int srcIndex; int srcOutput; float linearGain;
-         double startSeconds; double lengthSeconds; float fadeInSec; float fadeOutSec;
+         uint64_t laneId; uint64_t srcUid; int srcIndex; int srcOutput;
+         float laneGain;
+         std::vector<ClipWindow> windows;
       };
-      std::vector<ActiveTimelineClip> activeTimelineAudioClips;
-      if (timelineStrictPlaying)
+      std::vector<ScheduledTerminal> scheduled;
+      std::vector<ClipWindow> clipWindows;
+      if (timelineRouting)
       {
-         const double curTime = Transport::Instance().Seconds();
+         // Legacy streams are still the UI's live truth until WP5, so the
+         // seconds -> beats conversion happens here with the transport's
+         // current tempo. That is why a tempo change is a rebuild trigger:
+         // once the bridge is gone the model's ticks convert directly and
+         // the trigger goes with it.
+         const double bpm = std::max(1.0, (double)Transport::Instance().Tempo());
+         const double beatsPerSec = bpm / 60.0;
+         std::unordered_map<std::string, size_t> indexOfKey;
          for (const auto& stream : gArrangeStreams)
          {
-            if (stream.type == Patch::kStreamAudio)
+            if (stream.type != Patch::kStreamAudio)
+               continue;
+            const float streamLinear = std::pow(10.0f, stream.gainDb / 20.0f);
+            for (const auto& c : stream.clips)
             {
-               const float streamLinear = std::pow(10.0f, stream.gainDb / 20.0f);
-               for (const auto& c : stream.clips)
+               // An offline clip (node deleted, or never assigned) and a
+               // disabled clip are both silent. `enabled` was not read at all
+               // before WP3, so disabling an audio clip changed nothing you
+               // could hear.
+               if (c.srcIndex < 0 || !c.enabled || c.lengthSeconds <= 0.0)
+                  continue;
+               char keyBuf[80];
+               snprintf(keyBuf, sizeof(keyBuf), "%llu/%llu/%d",
+                        (unsigned long long)stream.id, (unsigned long long)c.srcUid, c.srcOutput);
+               const std::string key(keyBuf);
+               auto it = indexOfKey.find(key);
+               if (it == indexOfKey.end())
                {
-                  // An offline clip (its node deleted, or never assigned) is
-                  // silent, not a terminal on node index -1.
-                  if (c.srcIndex < 0)
-                     continue;
-                  if (curTime >= c.startSeconds && curTime < (c.startSeconds + c.lengthSeconds))
-                  {
-                     activeTimelineAudioClips.push_back({ c.srcIndex, c.srcOutput, std::pow(10.0f, c.gainDb / 20.0f) * streamLinear,
-                        c.startSeconds, c.lengthSeconds, c.fadeInSec, c.fadeOutSec });
-                  }
+                  it = indexOfKey.emplace(key, scheduled.size()).first;
+                  scheduled.push_back({ stream.id, c.srcUid, c.srcIndex, c.srcOutput, streamLinear, {} });
+               }
+               ClipWindow w;
+               w.startBeat = c.startSeconds * beatsPerSec;
+               w.endBeat = (c.startSeconds + c.lengthSeconds) * beatsPerSec;
+               w.fadeInBeats = (double)c.fadeInSec * beatsPerSec;
+               w.fadeOutBeats = (double)c.fadeOutSec * beatsPerSec;
+               w.gain = std::pow(10.0f, c.gainDb / 20.0f);
+               scheduled[it->second].windows.push_back(w);
+            }
+         }
+         // Sort each terminal's windows and mark the abutting edges. WP1's
+         // model forbids overlap on a lane, but this runs off the legacy
+         // mirror, so an overlap here is clamped rather than trusted.
+         for (ScheduledTerminal& st : scheduled)
+         {
+            std::sort(st.windows.begin(), st.windows.end(),
+                      [](const ClipWindow& x, const ClipWindow& y) { return x.startBeat < y.startBeat; });
+            // Clamping startBeat alone would invert a window fully contained
+            // in its predecessor (start pushed past its own end), leaving the
+            // array unsorted - and RunTopology's cursor walk assumes sorted,
+            // so it would stall there and silence every later window on the
+            // lane. Clamp the end up too, then drop what is left empty.
+            for (size_t i = 1; i < st.windows.size(); i++)
+            {
+               st.windows[i].startBeat = std::max(st.windows[i].startBeat, st.windows[i - 1].endBeat);
+               st.windows[i].endBeat = std::max(st.windows[i].endBeat, st.windows[i].startBeat);
+            }
+            st.windows.erase(std::remove_if(st.windows.begin(), st.windows.end(),
+                                            [](const ClipWindow& w) { return !(w.endBeat > w.startBeat); }),
+                             st.windows.end());
+            // An edge shared with the neighbouring window to within half a
+            // tick is one continuous run of the same node, so no declick.
+            const double kAbutEpsilonBeats = 0.5 / (double)Arrange::kPPQ;
+            for (size_t i = 0; i + 1 < st.windows.size(); i++)
+            {
+               if (std::abs(st.windows[i].endBeat - st.windows[i + 1].startBeat) <= kAbutEpsilonBeats)
+               {
+                  st.windows[i].abutsNext = true;
+                  st.windows[i + 1].abutsPrev = true;
                }
             }
          }
@@ -31749,8 +31943,8 @@ namespace
                const int idx = AudioBufferIndexOf(resolved, outputSlot, bufferIndexOf);
                if (idx >= 0)
                {
-                  // Timeline Strict replaces canvas routing outright (see the
-                  // activeTimelineAudioClips loop below), rather than gating
+                  // Timeline routing replaces canvas routing outright (see the
+                  // `scheduled` loop below), rather than gating
                   // this terminal per-cable. Gating by reachability let a
                   // shared mixer downstream of the active clip leak whatever
                   // else it was also summing in - it answered "is the active
@@ -31760,7 +31954,7 @@ namespace
                   // resolved's own node is still walked into `order` above,
                   // so if it happens to BE (or feed) an active clip's node,
                   // that clip's own terminal below still finds it processed.
-                  if (!timelineStrictPlaying)
+                  if (!timelineRouting)
                   {
                      // Capture is set unconditionally, gated at write-time on
                      // the ring's own `enabled` flag - see AudioTerminal's comment.
@@ -31771,39 +31965,40 @@ namespace
          }
       }
 
-      // Timeline Strict: route each active clip's own resolved node output
-      // straight to the device, one terminal per clip, bypassing every
-      // canvas Audio Out and any mixer downstream of it. A clip's node does
-      // not need to be wired to an Audio Out on canvas at all - the
-      // timeline is its own routing, that's the point of "strict".
-      // In offline Arrangement render, all active timeline terminals are summed
+      // Route each scheduled (lane, node, output) straight to the device, one
+      // terminal carrying all of its windows, bypassing every canvas Audio
+      // Out and any mixer downstream of it. A clip's node does not need to be
+      // wired to an Audio Out on canvas at all - the timeline is its own
+      // routing. In an offline arrangement render these terminals are summed
       // into the master offline buffer in RunTopology and written in one pass
-      // into OutputNode's CaptureRing by pumpOfflineAudio, avoiding multiple
-      // terminals writing interleaved non-summed blocks.
-      if (timelineStrictPlaying)
+      // into OutputNode's CaptureRing by pumpOfflineAudio.
+      for (ScheduledTerminal& st : scheduled)
       {
-         for (const ActiveTimelineClip& active : activeTimelineAudioClips)
-         {
-            GraphNode* activeGn = FindNodeByIndex(active.srcIndex);
-            if (activeGn == nullptr || activeGn->node == nullptr)
-               continue;
-            INode* resolved = ResolvedAudioSource(activeGn->node.get());
-            if (resolved == nullptr)
-               continue;
-            CollectAudioChain(resolved, visited, order, bufferIndexOf, nextBufferIndex);
-            const int idx = AudioBufferIndexOf(resolved, active.srcOutput, bufferIndexOf);
-            if (idx >= 0)
-            {
-               AudioTerminal term;
-               term.bufferIndex = idx;
-               term.gain = active.linearGain;
-               term.fadeClipStartSec = active.startSeconds;
-               term.fadeClipLengthSec = active.lengthSeconds;
-               term.fadeInSec = active.fadeInSec;
-               term.fadeOutSec = active.fadeOutSec;
-               terminals.push_back(term);
-            }
-         }
+         // Node indices restart at 1 on NewPatch, so they are reused; a uid
+         // never is. The index is only consulted for a clip that has no uid
+         // at all (a legacy clip mid-session, before its first save), never
+         // as a fallback for a uid that failed to resolve - that would bind
+         // the clip to whatever node happens to hold the recycled index.
+         GraphNode* activeGn = st.srcUid != 0 ? FindNodeByUid(st.srcUid)
+                                              : FindNodeByIndex(st.srcIndex);
+         if (activeGn == nullptr || activeGn->node == nullptr)
+            continue;
+         INode* resolved = ResolvedAudioSource(activeGn->node.get());
+         if (resolved == nullptr)
+            continue;
+         CollectAudioChain(resolved, visited, order, bufferIndexOf, nextBufferIndex);
+         const int idx = AudioBufferIndexOf(resolved, st.srcOutput, bufferIndexOf);
+         if (idx < 0)
+            continue;
+         AudioTerminal term;
+         term.bufferIndex = idx;
+         term.gain = 1.0f; // clip gain rides on the window, lane gain on laneGain
+         term.laneGain = st.laneGain;
+         term.windowOffset = (int)clipWindows.size();
+         term.numWindows = (int)st.windows.size();
+         term.externalCompensation = &ArrangeTerminalCompensation(st.laneId, st.srcUid, st.srcOutput);
+         clipWindows.insert(clipWindows.end(), st.windows.begin(), st.windows.end());
+         terminals.push_back(term);
       }
 
       // Note-only chains that never reach an Audio Out at all - an Envelope
@@ -32045,7 +32240,11 @@ namespace
             int delay = 0;
             if (terminal.bufferIndex >= 0 && terminal.bufferIndex < (int)cumulativeLatencyByBuffer.size())
                delay = maxAmongTerminals - cumulativeLatencyByBuffer[(size_t)terminal.bufferIndex];
-            CompensationDelay& terminalComp = terminal.capture != nullptr ? terminal.capture->compensation : terminal.compensation;
+            CompensationDelay& terminalComp = terminal.capture != nullptr
+                                                  ? terminal.capture->compensation
+                                                  : (terminal.externalCompensation != nullptr
+                                                        ? *terminal.externalCompensation
+                                                        : terminal.compensation);
             terminalComp.Prepare(std::max(0, delay), kAudioMaxChannels);
          }
       }
@@ -32053,8 +32252,15 @@ namespace
       AudioTopology topology;
       topology.order = std::move(order);
       topology.terminalBufferIndices = std::move(terminals);
+      topology.clipWindows = std::move(clipWindows);
       topology.numBuffers = nextBufferIndex;
       AudioEngine::Instance().SetTopology(std::move(topology));
+      // The topology just published is the one the schedule revision
+      // describes, so the main loop's trigger below stops firing until
+      // something else marks it dirty.
+      gArrangeAudioScheduleBuiltHash = ArrangeAudioScheduleHash();
+      gArrangeAudioScheduleEverBuilt = true;
+      ReapArrangeTerminalCompensation();
    }
 
    // Single choke point for turning the audio engine on. Every call site that
@@ -32277,7 +32483,6 @@ namespace
       gOfflineRender.lastFramesDone = -1;
       gOfflineRender.waitingOnEncoder = false;
       gOfflineRender.arrangeDriven = isArrange;
-      gOfflineRender.prevArrangeAudioClips.clear();
 
       // An offline render is meant to run as fast as the hardware allows, and
       // with vsync on it cannot: the main loop blocks in glfwSwapBuffers for
@@ -33708,6 +33913,11 @@ namespace
          // seeds from the app-wide default set.
          LoadDefaultExprGlobals();
          SeedDefaultArrangeStreams();
+         // Audio routing is a monitoring choice, not part of the document
+         // (see gAudioMode): a fresh document always starts on the canvas.
+         // Inside this branch and not above it, so an undo/redo - which runs
+         // NewPatch as its first step - never changes what you are hearing.
+         gAudioMode = AudioMode::Canvas;
       }
    }
 
@@ -34995,6 +35205,11 @@ namespace
       }
 
       ApplyPatchData(data);
+
+      // Opening a file is a new-document boundary for the routing mode too.
+      // ApplyPatchData runs NewPatch with undo checkpoints suppressed, so
+      // NewPatch's own fresh-document branch deliberately did not fire.
+      gAudioMode = AudioMode::Canvas;
 
       // A freshly opened file is a new-document boundary: undoing back into
       // whatever was open before this file is not a thing anyone wants.
@@ -55099,30 +55314,6 @@ int main(int argc, char** argv)
                Transport::Instance().SetOfflineVideoTime(videoSec);
                ApplyModulationAndPalette(frameId);
 
-               // Arrangement render: dynamically track active audio clips across
-               // the timeline and update audio topology if needed.
-               if (gOfflineRender.arrangeDriven)
-               {
-                  std::set<int> currOfflineAudioClips;
-                  for (const auto& stream : gArrangeStreams)
-                  {
-                     if (stream.type == Patch::kStreamAudio)
-                     {
-                        for (const auto& c : stream.clips)
-                        {
-                           if (c.srcIndex >= 0 &&
-                               videoSec >= c.startSeconds && videoSec < (c.startSeconds + c.lengthSeconds))
-                              currOfflineAudioClips.insert(c.srcIndex);
-                        }
-                     }
-                  }
-                  if (currOfflineAudioClips != gOfflineRender.prevArrangeAudioClips)
-                  {
-                     gOfflineRender.prevArrangeAudioClips = currOfflineAudioClips;
-                     RebuildAudioTopology();
-                  }
-               }
-
                for (GraphNode& gn : gNodes)
                   gn.node->CookIfNeeded(frameId);
 
@@ -55205,7 +55396,6 @@ int main(int argc, char** argv)
             gOfflineRender.active = false;
             gOfflineRender.arrangeDriven = false;
             gOfflineRender.node = nullptr;
-            gOfflineRender.prevArrangeAudioClips.clear();
             RebuildAudioTopology();
          }
       }
@@ -55230,41 +55420,18 @@ int main(int argc, char** argv)
       // thread only.
       PollAudioRecovery();
 
-      // Timeline Strict Audio Mode: dynamically rebuild topology when crossing
-      // clip boundaries or starting/stopping playback so canvas audio is strictly
-      // muted and only active timeline audio clips produce sound.
-      if (!gOfflineRender.active)
-      {
-         static bool sPrevTimelineStrictPlaying = false;
-         static std::set<int> sPrevActiveTimelineClips;
-         const bool currTimelineStrictPlaying = gArrangePanelOpen && gArrangeAudioMode && Transport::Instance().IsPlaying();
-         std::set<int> currActiveTimelineClips;
-         if (currTimelineStrictPlaying)
-         {
-            const double curTime = Transport::Instance().Seconds();
-            for (const auto& stream : gArrangeStreams)
-            {
-               if (stream.type == Patch::kStreamAudio)
-               {
-                  for (const auto& c : stream.clips)
-                  {
-                     if (c.srcIndex >= 0 &&
-                         curTime >= c.startSeconds && curTime < (c.startSeconds + c.lengthSeconds))
-                     {
-                        currActiveTimelineClips.insert(c.srcIndex);
-                     }
-                  }
-               }
-            }
-         }
-         if (currTimelineStrictPlaying != sPrevTimelineStrictPlaying ||
-             currActiveTimelineClips != sPrevActiveTimelineClips)
-         {
-            sPrevTimelineStrictPlaying = currTimelineStrictPlaying;
-            sPrevActiveTimelineClips = currActiveTimelineClips;
-            RebuildAudioTopology();
-         }
-      }
+      // Timeline audio schedule: rebuild the topology only when the schedule
+      // itself changed - mode, an arrangement edit, or tempo, all folded into
+      // ArrangeAudioScheduleHash() - at most once a frame. This replaced a
+      // per-frame std::set<int> of the clips under the playhead, whose diff
+      // rebuilt the topology at every clip boundary: that is what made the
+      // second of two adjacent clips of one node silent (the set never
+      // changed, so the stale single-clip window stayed), made onsets land a
+      // UI frame late, and reset PDC at every boundary. One topology now
+      // covers the whole arrangement, and clip boundaries never rebuild.
+      if (!gOfflineRender.active &&
+          (!gArrangeAudioScheduleEverBuilt || ArrangeAudioScheduleHash() != gArrangeAudioScheduleBuiltHash))
+         RebuildAudioTopology();
 
       // Update-checker worker handoff - once a frame, main thread only.
       UpdateCheck::Poll();
@@ -56247,15 +56414,15 @@ int main(int argc, char** argv)
          TopBarSameLine(4.0f);
 
          // Audio engine on/off - this is specifically the *canvas's* driver:
-         // "on" means the engine is running AND gArrangeAudioMode has the
+         // "on" means the engine is running AND gAudioMode has the
          // canvas (not the Arrangement Timeline) as the active source. The
          // Arrangement panel's own Start/Stop Audio button is the mutually
          // exclusive counterpart of this one (see DrawArrangePanelContent) -
-         // the two must never both read "on", since gArrangeAudioMode only
+         // the two must never both read "on", since gAudioMode only
          // ever names one driver at a time.
          {
             const bool engineOn = AudioEngine::Instance().SampleRate() > 0.0;
-            const bool audioOn = engineOn && !gArrangeAudioMode;
+            const bool audioOn = engineOn && gAudioMode == AudioMode::Canvas;
             const bool audioIsLight = isLight;
             ImGui::PushStyleColor(ImGuiCol_Button, audioOn
                                                        ? (audioIsLight ? ImVec4(0.20f, 0.62f, 0.34f, 1.0f) : ImVec4(0.16f, 0.52f, 0.28f, 1.0f))
@@ -56272,11 +56439,7 @@ int main(int argc, char** argv)
                   // Claim the canvas as the active driver. If the Timeline
                   // was driving (engine already running), this just flips
                   // routing - no restart, so no DSP-state-wipe pop.
-                  if (gArrangeAudioMode)
-                  {
-                     gArrangeAudioMode = false;
-                     RebuildAudioTopology();
-                  }
+                  gAudioMode = AudioMode::Canvas;
                   if (!engineOn)
                   {
                      gAudioStartError.clear();
@@ -59226,6 +59389,45 @@ int main(int argc, char** argv)
             allOk = allOk && dOk;
          }
 
+         // --- F. The block that laps keeps its own start on the pre-wrap axis
+         // BlockStartBeats() is what RunTopology builds its per-sample beat
+         // axis from. If it were derived as Beats() - numFrames*rate it would
+         // land on the NEW lap for the block that crossed the loop end, and
+         // every sample of that block would be re-placed at the top of the
+         // loop - which silences the last few ms before the loop point on
+         // every lap, with a declick ramp instead of continuity.
+         {
+            tr.SetTempo(120.0f);
+            tr.SetPlaying(true);
+            tr.Seek(0.0);
+            tr.SetLoop(true, 0.0, 4.0);
+            startFakeEngine();
+
+            const double blockBeats = kBlockSec * 2.0; // 120 bpm = 2 beats/s
+            bool sawLap = false;
+            bool axisOk = true;
+            double prevBeats = tr.Beats();
+            for (int i = 0; i < 600; i++)
+            {
+               tr.AdvanceAudioClock(kBlock);
+               const double now = tr.Beats();
+               if (now < prevBeats) // this block crossed the loop end
+               {
+                  sawLap = true;
+                  const double start = tr.BlockStartBeats();
+                  // The start must sit in the last block before the loop end,
+                  // not at the top of the new lap.
+                  axisOk = axisOk && start <= 4.0 && start > 4.0 - blockBeats * 1.001;
+               }
+               prevBeats = now;
+            }
+            tr.SetLoop(false, 0.0, 0.0);
+            const bool fOk = sawLap && axisOk;
+            printf("transport block start across loop: %s (laps seen %d)\n",
+                   fOk ? "OK" : "FAIL", (int)sawLap);
+            allOk = allOk && fOk;
+         }
+
          // --- E. Loop also wraps on the no-engine fallback clock -------------
          {
             tr.NotifyAudioEngineStopped();     // back to Tick()-driven
@@ -59273,6 +59475,317 @@ int main(int argc, char** argv)
       // in low single-digit milliseconds even at this node count, so this is
       // here to catch a return to O(N^2) (or worse), not to chase a specific
       // number.
+      // Arrangement timeline audio scheduling (overhaul WP3). Deterministic:
+      // no device, no wall clock - the transport runs in offline mode and
+      // AudioEngine::ProcessOffline is pumped by hand, so a block is a block
+      // no matter how loaded the machine is.
+      //
+      // Everything here goes through the REAL RebuildAudioTopology over the
+      // real gArrangeStreams, not a hand-built topology: the bugs WP3 fixes
+      // all lived in what that function decided to put in the topology, so a
+      // fixture that built its own would test nothing.
+      if (getenv("INFINITE_ARRANGEAUDIOTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+
+         Transport& tr = Transport::Instance();
+         const double kSr = 48000.0;
+         const int kBlock = 256;
+         const double kBpm = 120.0;            // 2 beats per second
+         const double kSamplesPerBeat = kSr * 60.0 / kBpm;
+
+         const bool hadEngine = AudioEngine::Instance().SampleRate() > 0.0;
+         AudioEngine::Instance().Stop();
+         tr.NotifyAudioEngineStopped();
+         const AudioMode savedMode = gAudioMode;
+
+         GraphNode* oscGn = SpawnNode("Oscillator", "Synthesizers", 0.0f, 0.0f);
+         const bool spawned = oscGn != nullptr && oscGn->node != nullptr;
+         printf("arrange audio spawn oscillator: %s\n", spawned ? "OK" : "FAIL");
+         allOk = allOk && spawned;
+
+         if (spawned)
+         {
+            const uint64_t oscUid = oscGn->uid;
+            const int oscIndex = oscGn->index;
+
+            // One audio lane, clips filled in per section.
+            gArrangeStreams.clear();
+            LegacyArrange::StreamRecord lane;
+            lane.id = 1;
+            lane.type = Patch::kStreamAudio;
+            lane.name = "A1";
+            gArrangeStreams.push_back(lane);
+
+            auto addClip = [&](double startBeat, double lengthBeats, bool enabled)
+            {
+               LegacyArrange::ClipRecord c;
+               c.startSeconds = startBeat * 60.0 / kBpm;
+               c.lengthSeconds = lengthBeats * 60.0 / kBpm;
+               c.srcIndex = oscIndex;
+               c.srcUid = oscUid;
+               c.enabled = enabled;
+               gArrangeStreams[0].clips.push_back(c);
+            };
+
+            gAudioMode = AudioMode::Timeline;
+            tr.SetTempo((float)kBpm);
+            tr.SetLoop(false, 0.0, 0.0);
+            tr.SetPlaying(true);
+            tr.SetOfflineMode(true, kSr);
+
+            // Renders [startBeat, startBeat + numBlocks*kBlock samples) and
+            // returns channel 0, concatenated. Rebuilds the topology first,
+            // then prepares every node by hand: the PrepareToPlay loop inside
+            // RebuildAudioTopology keys off a live device or an offline render
+            // job, and this fixture has neither.
+            // Params reach an AudioNode through its mailbox, which
+            // CookIfNeeded fills - a node that has never been cooked runs on
+            // its constructor defaults with an empty mailbox and produces
+            // nothing. The main loop does this every frame; this fixture runs
+            // its whole life inside one.
+            int fixtureCookFrame = 1000000;
+            auto cookAll = [&]()
+            {
+               fixtureCookFrame++;
+               for (GraphNode& gn : gNodes)
+                  gn.node->CookIfNeeded(fixtureCookFrame);
+            };
+
+            auto render = [&](double startBeat, int numBlocks)
+            {
+               RebuildAudioTopology();
+               cookAll();
+               for (GraphNode& gn : gNodes)
+                  if (auto* an = dynamic_cast<AudioNode*>(gn.node.get()))
+                     if (an->preparedForSampleRate != kSr)
+                     {
+                        an->PrepareToPlay(kSr, kAudioMaxBlockFrames);
+                        an->preparedForSampleRate = kSr;
+                     }
+               tr.SeekBeats(startBeat);
+
+               std::vector<float> chan0((size_t)kBlock), chan1((size_t)kBlock);
+               float* chans[2] = { chan0.data(), chan1.data() };
+               AudioBuffer buffer;
+               buffer.channels = chans;
+               buffer.numChannels = 2;
+               buffer.numFrames = kBlock;
+
+               std::vector<float> out;
+               out.reserve((size_t)kBlock * (size_t)numBlocks);
+               for (int b = 0; b < numBlocks; b++)
+               {
+                  AudioEngine::Instance().ProcessOffline(buffer);
+                  out.insert(out.end(), chan0.begin(), chan0.end());
+               }
+               return out;
+            };
+
+            // Peak |x| over the samples covering [fromBeat, toBeat) of a
+            // render that started at `originBeat`.
+            auto peakOverBeats = [&](const std::vector<float>& x, double originBeat,
+                                     double fromBeat, double toBeat)
+            {
+               const long long lo = std::max(0LL, (long long)((fromBeat - originBeat) * kSamplesPerBeat));
+               const long long hi = std::min((long long)x.size(), (long long)((toBeat - originBeat) * kSamplesPerBeat));
+               float peak = 0.0f;
+               for (long long i = lo; i < hi; i++)
+                  peak = std::max(peak, std::fabs(x[(size_t)i]));
+               return peak;
+            };
+
+            // --- A. Two abutting clips of the same node are both audible ----
+            // The original bug: the per-frame set of active srcIndex never
+            // changed across the seam, so no rebuild happened and the stale
+            // single-clip window silenced everything after the first clip.
+            {
+               gArrangeStreams[0].clips.clear();
+               addClip(0.0, 2.0, true);
+               addClip(2.0, 2.0, true);
+               const std::vector<float> x = render(0.0, 800); // 800*256 = 204800 samples = 4.27 beats
+
+               const float first = peakOverBeats(x, 0.0, 0.2, 1.8);
+               const float second = peakOverBeats(x, 0.0, 2.2, 3.8);
+               // The seam itself: abutting windows skip the declick, so the
+               // signal must run straight through rather than dip to silence.
+               const float seam = peakOverBeats(x, 0.0, 1.98, 2.02);
+               const bool aOk = first > 0.05f && second > 0.05f && seam > 0.05f;
+               printf("arrange audio abutting clips: %s (first %.4f, second %.4f, seam %.4f)\n",
+                      aOk ? "OK" : "FAIL", first, second, seam);
+               allOk = allOk && aOk;
+            }
+
+            // --- B. Onset lands on the scheduled sample --------------------
+            {
+               gArrangeStreams[0].clips.clear();
+               addClip(2.0, 2.0, true);
+               const std::vector<float> x = render(0.0, 800);
+
+               const long long expected = (long long)(2.0 * kSamplesPerBeat);
+               long long firstAudible = -1;
+               for (size_t i = 0; i < x.size(); i++)
+                  if (std::fabs(x[i]) > 1e-5f) { firstAudible = (long long)i; break; }
+               // The declick ramp is zero at exactly the onset sample and the
+               // oscillator's own phase starts near zero, so the first sample
+               // over the noise floor lands a hair after the scheduled one -
+               // never before it, and never a UI frame later.
+               const bool bOk = firstAudible >= expected && (firstAudible - expected) <= 8;
+               printf("arrange audio onset: %s (scheduled %lld, first audible %lld, error %lld samples)\n",
+                      bOk ? "OK" : "FAIL", expected, firstAudible, firstAudible - expected);
+               allOk = allOk && bOk;
+            }
+
+            // --- C. A disabled clip is silent -------------------------------
+            // `enabled` was not read by the audio path at all before WP3.
+            {
+               gArrangeStreams[0].clips.clear();
+               addClip(0.0, 4.0, false);
+               const std::vector<float> x = render(0.0, 400);
+               const float peak = peakOverBeats(x, 0.0, 0.0, 2.0);
+               const bool cOk = peak < 1e-6f;
+               printf("arrange audio disabled clip: %s (peak %.8f)\n", cOk ? "OK" : "FAIL", peak);
+               allOk = allOk && cOk;
+            }
+
+            // --- D. Paused in Timeline mode is silent -----------------------
+            {
+               gArrangeStreams[0].clips.clear();
+               addClip(0.0, 4.0, true);
+               tr.SetPlaying(false);
+               const std::vector<float> x = render(0.0, 200);
+               const float peak = peakOverBeats(x, 0.0, 0.0, 1.0);
+               tr.SetPlaying(true);
+               const bool dOk = peak < 1e-6f;
+               printf("arrange audio paused: %s (peak %.8f)\n", dOk ? "OK" : "FAIL", peak);
+               allOk = allOk && dOk;
+            }
+
+            // --- E. Seeking from clip A into clip B of the same node --------
+            // The other half of the original bug: the set of active srcIndex
+            // is identical on both sides of the seek, so nothing rebuilt and
+            // clip B played silence.
+            {
+               gArrangeStreams[0].clips.clear();
+               addClip(0.0, 2.0, true);
+               addClip(4.0, 2.0, true);
+               render(0.5, 100);                     // land inside clip A
+               const std::vector<float> x = render(4.5, 200); // jump into clip B
+               const float peak = peakOverBeats(x, 4.5, 4.6, 5.5);
+               const bool eOk = peak > 0.05f;
+               printf("arrange audio seek across clips: %s (peak %.4f)\n", eOk ? "OK" : "FAIL", peak);
+               allOk = allOk && eOk;
+            }
+
+            // --- F. A rebuild mid-clip does not break the signal ------------
+            // Editing an unrelated lane rebuilds the whole topology. With the
+            // schedule carried on the terminal (and PDC state living outside
+            // the topology), the block after the rebuild must continue the
+            // same envelope rather than restart it.
+            {
+               gArrangeStreams[0].clips.clear();
+               addClip(0.0, 8.0, true);
+               RebuildAudioTopology();
+               cookAll();
+               for (GraphNode& gn : gNodes)
+                  if (auto* an = dynamic_cast<AudioNode*>(gn.node.get()))
+                     if (an->preparedForSampleRate != kSr)
+                     {
+                        an->PrepareToPlay(kSr, kAudioMaxBlockFrames);
+                        an->preparedForSampleRate = kSr;
+                     }
+               tr.SeekBeats(1.0);
+
+               std::vector<float> chan0((size_t)kBlock), chan1((size_t)kBlock);
+               float* chans[2] = { chan0.data(), chan1.data() };
+               AudioBuffer buffer;
+               buffer.channels = chans;
+               buffer.numChannels = 2;
+               buffer.numFrames = kBlock;
+
+               float beforePeak = 0.0f, afterPeak = 0.0f;
+               for (int b = 0; b < 40; b++)
+               {
+                  if (b == 20)
+                  {
+                     // An edit on a *different* lane - the clip under the
+                     // playhead is untouched.
+                     LegacyArrange::StreamRecord other;
+                     other.id = 2;
+                     other.type = Patch::kStreamAudio;
+                     other.name = "A2";
+                     gArrangeStreams.push_back(other);
+                     RebuildAudioTopology();
+                  }
+                  AudioEngine::Instance().ProcessOffline(buffer);
+                  for (int i = 0; i < kBlock; i++)
+                  {
+                     if (b == 19) beforePeak = std::max(beforePeak, std::fabs(chan0[i]));
+                     if (b == 20) afterPeak = std::max(afterPeak, std::fabs(chan0[i]));
+                  }
+               }
+               const bool fOk = beforePeak > 0.05f && afterPeak > 0.05f &&
+                                std::fabs(afterPeak - beforePeak) < 0.25f * beforePeak;
+               printf("arrange audio rebuild mid-clip: %s (before %.4f, after %.4f)\n",
+                      fOk ? "OK" : "FAIL", beforePeak, afterPeak);
+               allOk = allOk && fOk;
+               gArrangeStreams.resize(1);
+            }
+
+            // --- G. Mode resets to Canvas on New and on Open ---------------
+            {
+               gAudioMode = AudioMode::Timeline;
+               NewPatch();
+               const bool afterNew = gAudioMode == AudioMode::Canvas;
+
+               gAudioMode = AudioMode::Timeline;
+               const bool afterOpen = !LoadPatchFrom("/nonexistent-arrangeaudiotest.ifp") ||
+                                      gAudioMode == AudioMode::Canvas;
+               // A failed open must NOT reset the mode - it never became a new
+               // document - so re-check with a real round trip through a file
+               // this fixture writes itself.
+               bool afterRealOpen = true;
+               {
+                  const std::string path = "/tmp/infinite-arrangeaudiotest.ifp";
+                  SpawnNode("Oscillator", "Synthesizers", 0.0f, 0.0f); // a patch with no nodes will not save
+                  const bool saved = SavePatchTo(path);
+                  if (saved)
+                  {
+                     gAudioMode = AudioMode::Timeline;
+                     const bool loaded = LoadPatchFrom(path);
+                     afterRealOpen = loaded && gAudioMode == AudioMode::Canvas;
+                     if (!afterRealOpen)
+                        printf("  [diag] saved %d loaded %d status '%s'\n", (int)saved, (int)loaded, gPatchStatus.c_str());
+                     remove(path.c_str());
+                  }
+                  else
+                  {
+                     printf("  [diag] save failed: '%s'\n", gPatchStatus.c_str());
+                  }
+               }
+               const bool gOk = afterNew && afterOpen && afterRealOpen;
+               printf("arrange audio mode resets: %s (new %d, failed-open %d, open %d)\n",
+                      gOk ? "OK" : "FAIL", (int)afterNew, (int)afterOpen, (int)afterRealOpen);
+               allOk = allOk && gOk;
+            }
+         }
+
+         tr.SetOfflineMode(false);
+         tr.SetPlaying(true);
+         gAudioMode = savedMode;
+         gArrangeStreams.clear();
+         if (hadEngine)
+         {
+            std::string startErr;
+            if (AudioEngine::Instance().Start(startErr))
+               tr.NotifyAudioEngineStarted(AudioEngine::Instance().SampleRate());
+         }
+         RebuildAudioTopology();
+
+         printf("arrange audio test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
       if (getenv("INFINITE_UNDOPERFTEST") != nullptr && frameId == 4)
       {
          NewPatch();

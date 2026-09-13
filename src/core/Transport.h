@@ -96,6 +96,15 @@ public:
    // frame-driven one.
    void AdvanceAudioClock(int numFrames);
 
+   // The musical position at the START of the block the clock owner most
+   // recently advanced over - captured before the advance, so it is the real
+   // start even when that block crossed a loop end and Beats() has already
+   // wrapped to the loop start. RunTopology derives its per-sample beat axis
+   // from this rather than from Beats() - numFrames*rate: on the lap block
+   // that subtraction lands on the loop-start axis and misplaces the whole
+   // block's envelope, dropping the last few ms before the loop point.
+   double BlockStartBeats() const { return mBlockStartBeats.load(std::memory_order_relaxed); }
+
    // Offline render clock decoupling: keeps visual cooking locked to frame k's
    // exact timestamp (k / fps) while audio synthesis advances along its own
    // sample clock (numFrames / sampleRate), even when lookahead renders audio
@@ -168,6 +177,7 @@ private:
    std::atomic<double> mAudioBeatsOffset { 0.0 };
    std::atomic<double> mAudioSecondsOffset { 0.0 };
    std::atomic<double> mPendingSeekSeconds { -1.0 };
+   std::atomic<double> mBlockStartBeats { 0.0 };
    std::atomic<float> mPendingBpm { -1.0f }; // <= 0 means "nothing staged"
 
    std::atomic<bool> mLoopEnabled { false };

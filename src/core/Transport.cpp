@@ -192,6 +192,7 @@ void Transport::AdvanceAudioClock(int numFrames)
       mAudioSampleCounter.store(0, std::memory_order_relaxed);
    }
    ApplyPendingTempo(); // after the seek consumed its offsets, before we advance
+   mBlockStartBeats.store(Beats(), std::memory_order_relaxed); // before the advance AND before any wrap
    if (mPlaying.load(std::memory_order_relaxed))
       mAudioSampleCounter.fetch_add((uint64_t)numFrames, std::memory_order_relaxed);
    WrapLoopIfNeeded();
@@ -284,9 +285,15 @@ void Transport::BeginOfflineAudioBlock(int numFrames)
       mAudioSampleCounter.store(0, std::memory_order_relaxed);
    }
    ApplyPendingTempo();
+   // Enter the block BEFORE reading Beats(): outside an offline audio block
+   // Seconds() deliberately reports the renderer's video time, not the audio
+   // clock, so capturing the block start any earlier would read the frame's
+   // timestamp instead of the sample position. See AdvanceAudioClock for why
+   // the capture has to happen before the counter advances.
+   mOfflineInAudioBlock.store(true, std::memory_order_relaxed);
+   mBlockStartBeats.store(Beats(), std::memory_order_relaxed);
    if (mPlaying.load(std::memory_order_relaxed))
       mAudioSampleCounter.fetch_add((uint64_t)numFrames, std::memory_order_relaxed);
-   mOfflineInAudioBlock.store(true, std::memory_order_relaxed);
 }
 
 void Transport::EndOfflineAudioBlock()

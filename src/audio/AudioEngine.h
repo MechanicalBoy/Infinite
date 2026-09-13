@@ -58,6 +58,29 @@ struct AudioTopologyEntry
 static_assert(AudioNode::kMaxInputPins == kAudioMaxNodeInputs,
               "AudioNode::inputCompensation must have one slot per AudioTopologyEntry input pin");
 
+// One arrangement clip's slot in musical time, as the audio thread sees it.
+// Beats, not seconds: a tempo change must not move a clip's onset, and
+// Transport::Beats() is the one position both the UI and the audio callback
+// agree on (see Transport's tempo-staging comment). Allocated on the main
+// thread into AudioTopology::clipWindows and published with the topology, so
+// the audio thread never allocates and never frees - the array dies with the
+// ProcessList through the existing mRetiring path.
+struct ClipWindow
+{
+   double startBeat    = 0.0;
+   double endBeat      = 0.0;   // exclusive
+   double fadeInBeats  = 0.0;
+   double fadeOutBeats = 0.0;
+   float  gain         = 1.0f;  // clip gain, linear (lane gain is on the terminal)
+   // True when the previous / next window on the same terminal abuts this one
+   // exactly. An abutting edge is not a discontinuity - the same node's output
+   // runs straight through it - so the declick ramp is skipped there, which is
+   // what keeps two adjacent clips of one node sounding like one take instead
+   // of dipping every boundary.
+   bool   abutsPrev    = false;
+   bool   abutsNext    = false;
+};
+
 // One connected Audio Out: the pooled buffer its source writes into, and
 // (unconditionally) that Audio Out's own capture ring - RunTopology writes
 // into it whenever the ring's own `enabled` flag is set, so starting/
@@ -73,18 +96,24 @@ struct AudioTerminal
    // gain != 1.0, one per active clip, carrying that clip's own gainDb.
    float gain = 1.0f;
 
-   // Arrangement Timeline clip fade in/out (ClipRecord::fadeInSec/fadeOutSec)
-   // - only meaningful when fadeClipStartSec >= 0.0 (a Timeline Strict clip
-   // terminal); every ordinary canvas Audio Out terminal leaves this at -1
-   // and RunTopology takes the flat-gain fast path unchanged. Times are
-   // absolute Transport seconds so RunTopology can compare against
-   // Transport::Instance().Seconds() each block without the topology needing
-   // rebuilding every block just to keep a "seconds since clip start" number
-   // fresh.
-   double fadeClipStartSec = -1.0;
-   double fadeClipLengthSec = 0.0;
-   float fadeInSec = 0.0f;
-   float fadeOutSec = 0.0f;
+   // Arrangement Timeline clip scheduling. `numWindows > 0` marks this as a
+   // timeline terminal: [windowOffset, windowOffset + numWindows) indexes
+   // AudioTopology::clipWindows, sorted by startBeat and non-overlapping (one
+   // terminal is one lane, and WP1's model invariant forbids overlap on a
+   // lane). RunTopology walks them with `windowCursor` rather than searching,
+   // so a block costs O(1) amortized no matter how long the arrangement is.
+   //
+   // This replaced a single fadeClipStart/Length pair rebuilt at every clip
+   // boundary: carrying the WHOLE lane's windows is what lets one rebuild
+   // cover the entire arrangement, so a second clip of the same node is no
+   // longer silent and an onset no longer waits for a UI frame.
+   int   windowOffset = -1;
+   int   numWindows   = 0;
+   float laneGain     = 1.0f;   // the lane's own gain, multiplied with each window's
+   // Audio-thread scratch, not configuration: the index of the window the
+   // last block left off at. Monotonic forward, reset to 0 whenever the
+   // position moves backwards (a seek or a loop wrap).
+   mutable int windowCursor = 0;
 
    // Same PDC role as AudioNode::inputCompensation, one level up: when more
    // than one Audio Out (or one Audio Out among several) feeds the device
@@ -93,14 +122,18 @@ struct AudioTerminal
    // lands every terminal sample-aligned. Inactive for the common case of
    // one terminal, or several with equal (usually zero) latency.
    //
-   // Only actually used when `capture` is null (a Timeline Strict clip
-   // terminal, which has no AudioCaptureRing of its own to persist state
-   // on) - RunTopology and RebuildAudioTopology both prefer
-   // `capture->compensation` when a ring is present, exactly like
-   // AudioTopologyEntry's own compensation moved onto AudioNode: a value
-   // here is rebuilt fresh every generation and would click on every rebuild
-   // if it were the one actually driving an ordinary canvas Audio Out.
+   // Only actually used when both `capture` and `externalCompensation` are
+   // null - a value here is rebuilt fresh every generation and would click on
+   // every rebuild if it were the one driving a long-lived terminal.
    CompensationDelay compensation;
+
+   // A main-thread-owned CompensationDelay that outlives this generation, for
+   // terminals that have no AudioCaptureRing to hang one off. Timeline clip
+   // terminals use it: their PDC state has to survive a rebuild (an edit on an
+   // unrelated lane rebuilds everything), and the owning map in main.cpp only
+   // drops an entry once CompletedGeneration() has passed the generation that
+   // stopped referencing it. Null for every canvas terminal.
+   CompensationDelay* externalCompensation = nullptr;
 };
 
 // A full audio-thread topology: nodes in a valid topological order (sources
@@ -113,6 +146,12 @@ struct AudioTopology
 {
    std::vector<AudioTopologyEntry> order;
    std::vector<AudioTerminal> terminalBufferIndices;
+   // Backing store for every timeline terminal's window range. One flat array
+   // rather than a vector per terminal so the whole schedule is a single
+   // allocation, and so terminals index into it (an index survives this
+   // vector being moved into the ProcessList; a pointer taken while it was
+   // still being filled would not).
+   std::vector<ClipWindow> clipWindows;
    int numBuffers = 0; // buffer indices used across `order` span [0, numBuffers)
 };
 
