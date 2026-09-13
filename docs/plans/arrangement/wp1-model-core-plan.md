@@ -1,5 +1,9 @@
 # WP1 — Model core: implementation plan
 
+> **Historical.** WP1 shipped as `2dad7e7`. Kept for the reasoning behind the
+> model's shape. For what the model actually looks like now, see the
+> *As built (WP1-WP3)* section of `overhaul-prompt.md`.
+
 Branch: `feature/arrange-step-03-model-core` (already created, stacked on
 `feature/arrange-step-02-panel-shell`, which has the WP0 baseline commit
 `181e1c1`). Paste this file into a fresh session along with

@@ -11,9 +11,44 @@ phases 3, 4, 5, 7 and 8 as they were built**, and adds features the owner has
 asked for. Every design decision below is already made. Don't re-open them
 unless the code proves one impossible. If that happens, stop and report.
 
-Line numbers were verified on branch `feature/arrange-step-02-panel-shell`
-with a large uncommitted diff (`src/main.cpp` = 74,220 lines). Before editing,
-**re-grep the symbol** named next to each number.
+Line numbers in this file were captured on the WP0 baseline
+(`src/main.cpp` = 74,220 lines; it is now ~75k and **every number has drifted**).
+Treat them as hints only. Before editing, **re-grep the symbol** named next to
+each number.
+
+---
+
+## Status — start here
+
+**WP0-WP3 are built, verified and committed. Start at WP4.**
+
+```
+WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► [WP4] ──► [WP5] ──► [WP6] ──► [WP7] ──► [WP8] ──► verify-gate ──► owner merges
+  baseline      model core      transport      audio sched      ▲ you are here
+```
+
+```bash
+cd /Users/namansoni/infinte
+git checkout feature/arrange-step-05-audio-scheduling      # WP3 tip, 4bac3b2
+git checkout -b feature/arrange-step-06-video              # WP4 branch
+cmake --build build -j"$(sysctl -n hw.ncpu)"               # must be clean before you touch anything
+```
+
+Last known-good state on `4bac3b2`:
+
+| Check | Result |
+|---|---|
+| Build | clean |
+| `.claude/skills/run-infinite-hygiene/driver.sh --skip-build --full` | **72 passed, 0 failed, 3 xfail, exit 0** |
+| `INFINITE_ARRANGEAUDIOTEST` | 8/8 |
+| `INFINITE_TRANSPORTTEST` | 6/6 |
+| `INFINITE_ARRANGETEST` | 9/9 |
+| Known xfails (pre-existing, not ours) | `GROUPTEST`, `DRAGTEST`, `PLUGINDRAGTEST` |
+| `MOLDERTEST` | fails 3/3, **unbaselined and unrelated** — handled on its own branch, don't fold it into this work |
+
+Before writing WP4 code, read **"As built (WP1-WP3)"** below. Several things
+landed differently from the plan text, and WP4-WP8 depend on the as-built
+shape, not on the original wording.
 
 ## Owner's working rules (apply throughout)
 
@@ -39,21 +74,25 @@ end of every package:
 
 **Don't merge to `main`.** The owner merges.
 
-| WP | Branch | Content | Risk |
-|---|---|---|---|
-| 0 | `feature/arrange-step-02-panel-shell` (existing) | Commit the current uncommitted work as the baseline | — |
-| 1 | `…-step-03-model-core` | `src/arrange/` model, ticks time base, stable IDs, node UIDs, serialization, arrange-only undo | High |
-| 2 | `…-step-04-transport` | Tempo-safe beats, `SeekBeats`, loop moved into Transport | Medium |
-| 3 | `…-step-05-audio-schedule` | Audio-thread clip scheduling, Timeline/Canvas mode, persistent PDC | **Highest** |
-| 4 | `…-step-06-video` | Lane order, FBO ownership, geometry cache, compose-after-cook | Medium |
-| 5 | `…-step-07-editing` | ID-based selection, multi-drag, groups, enable key `0`, offline clips, lane pick, undo coverage, misc | High |
-| 6 | `…-step-08-time-markers` | Bars/Time display, markers, playhead keys, scrub fix | Low–Med |
-| 7 | `…-step-09-export-queue` | Render fixes + export queue + persisted settings | Medium |
-| 8 | `…-step-10-thumbs-waves` | Live audio waveforms, video thumbnails | Low–Med |
+| WP | Branch | Content | Risk | State |
+|---|---|---|---|---|
+| 0 | `feature/arrange-step-02-panel-shell` | Baseline commit of the WIP panel work | — | **done** `181e1c1` |
+| 1 | `feature/arrange-step-03-model-core` | `src/arrange/` model, ticks time base, stable IDs, node UIDs, serialization, arrange-only undo | High | **done** `2dad7e7` |
+| 2 | `feature/arrange-step-04-transport` | Tempo-safe beats, `SeekBeats`, loop moved into Transport | Medium | **done** `38443af` |
+| 3 | `feature/arrange-step-05-audio-scheduling` | Audio-thread clip scheduling, Timeline/Canvas mode, persistent PDC | **Highest** | **done** `4bac3b2` |
+| 4 | `feature/arrange-step-06-video` | Lane order, FBO ownership, geometry cache, compose-after-cook | Medium | next |
+| 5 | `feature/arrange-step-07-editing` | ID-based selection, multi-drag, groups, enable key `0`, offline clips, lane pick, undo coverage, **deletes the legacy bridge** | **High — largest** | |
+| 6 | `feature/arrange-step-08-time-markers` | Bars/Time display, markers, playhead keys, scrub fix | Low–Med | |
+| 7 | `feature/arrange-step-09-export-queue` | Render fixes + export queue + persisted settings | Medium | |
+| 8 | `feature/arrange-step-10-thumbs-waves` | Live audio waveforms, video thumbnails | Low–Med | |
+
+Each remaining branch stacks on the previous one's tip.
 
 ---
 
 ## WP0 — Baseline
+
+> **DONE — `181e1c1`.** Reference only; skip.
 
 ```bash
 cd /Users/namansoni/infinte && git status --short
@@ -68,6 +107,8 @@ If it doesn't compile, stop and report. Don't fix unrelated breakage silently.
 ---
 
 ## WP1 — Model core (the foundation everything else stands on)
+
+> **DONE — `2dad7e7`.** Reference only; skip to *As built* for what differs.
 
 ### Why
 - Clips are identified by `(stream, clip)` vector indices, which go stale after any reorder, overlap trim, delete or undo.
@@ -132,6 +173,8 @@ Extend `INFINITE_ARRANGETEST` ([main.cpp:58164](../../../src/main.cpp)):
 
 ## WP2 — Transport
 
+> **DONE — `38443af`.** Reference only.
+
 | Bug | Fix |
 |---|---|
 | `Beats()` = `beatsOffset + (Seconds − secOffset) × currentBpm` (`Transport.cpp:38-50`), so changing BPM mid-play **jumps** the beat position and every beat-placed clip | `SetTempo` stores a pending tempo. The audio thread applies it in `AdvanceAudioClock` by rebasing (`beatsOffset = Beats()`, `secOffset = Seconds()`, counter reset) before swapping BPM. The fallback `Tick()` path already integrates correctly |
@@ -145,6 +188,8 @@ Exit:
 ---
 
 ## WP3 — Audio scheduling (the root bug)
+
+> **DONE — `4bac3b2`.** Reference only; the *As built* section is authoritative where the two disagree.
 
 ### Current flow (wrong)
 
@@ -202,6 +247,91 @@ New `INFINITE_ARRANGEAUDIOTEST`, deterministic and using offline mode. With a si
 - A rebuild mid-clip (edit another lane) produces no discontinuity above threshold at the rebuild block.
 
 Also run the `audio-pipeline-sweep` and `audio-node-sweep` skills (`AUDIOTEARDOWNSWEEPTEST`, which includes deleting a node referenced by a clip mid-playback).
+
+---
+
+## As built (WP1-WP3) — read this before WP4
+
+Everything below is **already in the tree** on `4bac3b2`. Where it disagrees
+with the WP1-WP3 sections above, this section wins.
+
+### New and changed files
+
+| File | What it is |
+|---|---|
+| `src/arrange/ArrangeModel.h/.cpp` | The model. Ticks, `kPPQ = 960`, `Clip`, `Lane`, `Marker`, `Settings`, `Validate`, and every edit op. No ImGui, no GL, no audio |
+| `src/arrange/ArrangeLegacy.h/.cpp` | **Transitional bridge, deleted in WP5.** Read its header comment first |
+| `src/core/Patch.cpp/.h` | Tick keys on `clip`, new `marker` lines, one `arrange` settings line. `kVersion` unchanged; legacy seconds convert after the whole file parses |
+| `src/core/Transport.h/.cpp` | `SeekBeats`, pending-tempo rebase, `SetLoop` + block-accurate wrap, `BlockStartBeats()` |
+| `src/audio/AudioEngine.h/.cpp` | `ClipWindow`, window-array topology, beat-domain per-sample envelope, `externalCompensation` |
+| `src/main.cpp` | `gArrange`, `gAudioMode`, node uids, arrange-only undo, the whole-timeline scheduler, `INFINITE_ARRANGEAUDIOTEST` |
+
+### Deviations from the plan text above
+
+| Plan said | Actually built | Why it matters to you |
+|---|---|---|
+| "Replace `gArrangeStreams` with `Arrange::Model`" | **Both exist.** `gArrange` is the source of truth for save/load/undo/fixtures; the ~190 UI call sites still edit `LegacyArrange::StreamRecord` (seconds + node indices) and are funnelled through `SyncArrangeFromLegacy()` / `SyncLegacyFromArrange()` (`main.cpp:5487`, `:5495`) at each boundary | **WP5 deletes the bridge.** Until then, any new UI you write should prefer `gArrange` and must not assume the legacy array is authoritative |
+| Rebuild trigger is `gArrange.revision` | A content **fingerprint**, `ArrangeAudioScheduleHash()` — folds mode, offline-arrange flag, tempo, per-lane id/gain, per-clip `srcUid/srcIndex/srcOutput/enabled/start/length/fades/gain`. The main loop rebuilds when the hash moves | A revision counter was unusable while ~190 call sites mutate the legacy array directly. **When WP5 kills the bridge, switch the trigger back to `revision` and delete the hash** |
+| `ClipWindow { startBeat, endBeat, fadeInBeats, fadeOutBeats, gain }` + `const ClipWindow* windows` | Same fields plus `abutsPrev` / `abutsNext`, stored as `AudioTopology::clipWindows` (one flat vector) addressed by `AudioTerminal::windowOffset` + `numWindows` | Indices, not pointers, so the array retires with the ProcessList through the existing `mRetiring` path |
+| `blockStartBeat = Beats() − n·bpm/(60·sr)` | `Transport::BlockStartBeats()`, captured **before** the advance and before any loop wrap | The subtraction lands on the *new* lap for the block that crosses a loop end. Use `BlockStartBeats()` anywhere you need a block's start on the pre-wrap axis |
+| — | `AudioTerminal::externalCompensation` points into `gArrangeTerminalComp`, a main-thread `unordered_map` keyed by `(laneId, srcUid, srcOutput)`, reaped via `CompletedGeneration()` | Don't free a `CompensationDelay` at rebuild time; it can still be in flight |
+
+### Already built, ahead of its WP — don't rewrite it
+
+The **model layer** for several later packages already exists and is fixture-covered.
+Those WPs are now mostly **UI wiring**:
+
+| Later WP needs | Already in `ArrangeModel` |
+|---|---|
+| WP5 groups | `Group`, `Ungroup`, `RemoveFromGroup`, `ClipsInGroup`, `ExpandSelectionToGroups`, `TrimGroupEdge`, `ScaleGroup` |
+| WP5 enable / offline media | `SetEnabled`, `ClearSource(uid)` (sets `srcUid = 0`, never erases clips) |
+| WP5 editing | `PlaceOverwrite`, `MoveClips`, `TrimEdge`, `Split`, `DuplicateBlock`, `Delete` |
+| WP5 dock, WP6 display/snap, WP7 render defaults | `Model::settings` (`dockSide`, `timeDisplay`, `snapDivision`, `snapTriplet`, `zoom`, `scroll`, `loop`, `render*`) — **already persisted** in the `arrange` patch line |
+| WP6 markers | `AddMarker`, `MoveMarker`, `RenameMarker`, `RecolorMarker`, `DeleteMarker` — **already serialized** as `marker` lines |
+| WP6 `End` key | `ArrangementEnd(m)` |
+| WP5 undo | `PushArrangeUndo()` + `UndoEntry::arrangeOnly`; timeline edits never call `ApplyPatchData` |
+| WP5 uid resolution | `GraphNode::uid`, `gNextNodeUid`, `FindNodeByUid(uid)` (linear today — WP5 owes the per-frame map) |
+
+### Invariants later packages must not break
+
+1. **No allocation on the audio thread.** Window arrays are built on the main thread and retire with the ProcessList.
+2. **Lanes stay sorted and non-overlapping.** Go through the model edit ops; `Validate` runs after every op in debug and in every fixture.
+3. **Audio routing depends on `gAudioMode` and nothing else** — not panel visibility, not `IsPlaying()`. The offline render must not assign to it (WP7 #6).
+4. **`gAudioMode` is never persisted** and resets to `Canvas` on launch, `File▸New` and `File▸Open`.
+5. **A rebuild must not be triggerable from a clip boundary** — the whole timeline is scheduled once.
+
+### Debts carried forward (fix them in the WP that makes them matter)
+
+| Debt | Where | Due |
+|---|---|---|
+| `ScaleGroup` deep-copies the whole `Model` per call; `TrimGroupEdge` and `ExpandSelectionToGroups` are O(n²) | `ArrangeModel.cpp` | **WP5**, when they go under a live drag |
+| `Lane::pan` is stored, serialized and round-tripped but **read by nothing** — a lane's pan is silently inert | `main.cpp` scheduler | Mixer UI is out of scope; either wire pan into the terminal or tell the owner it is inert |
+| `ReapArrangeTerminalCompensation()` only runs from inside `RebuildAudioTopology()`, so a stale `CompensationDelay` survives until the next rebuild | `main.cpp` | Bounded leak, harmless; revisit only if it grows |
+| `ApplyPatchData` rebuilds the topology before `SetTempo` lands, so the first frame after a load schedules at the old bpm | `main.cpp` | Self-heals in one frame via the hash; clean up when the bridge dies in WP5 |
+| `FindNodeByUid` is a linear scan per clip per frame | `main.cpp:5459` | **WP5** (the per-frame uid → `GraphNode*` map) |
+
+### Fixtures that must stay green
+
+| Env var | Frame | Covers |
+|---|---|---|
+| `INFINITE_ARRANGETEST` | — | model fuzz + `Validate`, undo/redo round trip, save/load incl. a legacy seconds fixture, uid survival |
+| `INFINITE_TRANSPORTTEST` | — | mid-play BPM continuity, `SeekBeats`, loop wrap ≤ 1 block, the lapping block's own start beat |
+| `INFINITE_ARRANGEAUDIOTEST` | 4 | abutting clips, onset ≤ 1 sample, disabled silent, paused silent, seek across clips, rebuild mid-clip, mode reset on New/Open |
+
+Run one directly:
+
+```bash
+INFINITE_ARRANGEAUDIOTEST=1 INFINITE_EXITAFTER=12 ./build/Infinite.app/Contents/MacOS/Infinite
+```
+
+All three are registered in `.claude/skills/run-infinite-hygiene/driver.sh`.
+**Register every new fixture there too**, in both tier1 and tier2.
+
+### Environment gotchas
+
+- macOS here has no `timeout`, and the agent harness blocks `sleep N; cmd` chains. Run long things in the background and poll.
+- Count hygiene results from the driver's own `== Summary ==` line, never by grepping `[pass]` while it is still running.
+- A `[stale-baseline]` entry in `known-test-failures.txt` makes the driver exit 1 even with 0 failures. Delete lines for tests that now pass.
 
 ---
 
@@ -343,12 +473,12 @@ cp -R build/Infinite.app ~/Desktop/Infinite.app
 - Register `INFINITE_ARRANGETEST` changes and the new `INFINITE_ARRANGEAUDIOTEST` in `.claude/skills/run-infinite-hygiene/driver.sh`.
 - Sweeps per WP:
 
-| WP | Sweeps to run |
-|---|---|
-| 3 | `audio-pipeline-sweep`, `audio-node-sweep` |
-| 4 | `compositing-pipeline-sweep` |
-| 5, 6 | `shortcuts-sweep`, `panels-sweep` |
-| 7 | `av-sync-sweep` |
+| WP | Sweeps to run | State |
+|---|---|---|
+| 3 | `audio-pipeline-sweep`, `audio-node-sweep` | done — both clean |
+| 4 | `compositing-pipeline-sweep` | |
+| 5, 6 | `shortcuts-sweep`, `panels-sweep` | |
+| 7 | `av-sync-sweep` | |
 
 - Before each commit, run the `invariant-interaction-audit` skill on WP1 (no-overlap invariant) and WP3 (sample-accurate window invariant): check that no sibling path (paste, drop, render, undo) bypasses the model ops.
 - Finish with the `verify-gate` agent on the final branch.
@@ -366,7 +496,8 @@ cp -R build/Infinite.app ~/Desktop/Infinite.app
 - Fixture results, with pass counts.
 - Any decision above that the code forced you to change, and why.
 - Choices the owner should eyeball by hand:
-  - the 2 ms declick
-  - the group-edge trim vs Shift-scale behaviour
-  - silence while paused in Timeline mode
-  - the Bottom/Top-only dock
+  - the 2 ms declick — **shipped in WP3, still unverified by ear**
+  - silence while paused in Timeline mode — **shipped in WP3, still unverified by ear**
+  - the group-edge trim vs Shift-scale behaviour (WP5)
+  - the Bottom/Top-only dock (WP5)
+  - whether `Lane::pan` should be wired up or declared inert (see *Debts carried forward*)
