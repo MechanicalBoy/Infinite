@@ -338,6 +338,13 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
               << FloatToString(c.gainDb) << " " << (c.enabled ? 1 : 0) << " " << c.groupId << " "
               << FloatToString(c.colorR) << " " << FloatToString(c.colorG) << " " << FloatToString(c.colorB) << " "
               << EscapeLine(c.name) << "\n";
+      // Own lines, not cliptick fields: cliptick ends in a to-end-of-line
+      // name, so nothing can be appended after it.
+      if (s.mute || s.solo)
+         file << "streammix " << i << " " << (s.mute ? 1 : 0) << " " << (s.solo ? 1 : 0) << "\n";
+      for (const ClipRecord& c : s.clips)
+         if (c.blendMode > 0)
+            file << "clipblend " << i << " " << c.id << " " << c.blendMode << "\n";
    }
    for (const MarkerRecord& mk : data.markers)
       file << "marker " << mk.id << " " << mk.posTick << " " << mk.color << " " << EscapeLine(mk.name) << "\n";
@@ -748,6 +755,25 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
          uint64_t id = 0;
          if (in >> streamIdx >> id && streamIdx >= 0 && streamIdx < (int)outData.streams.size())
             outData.streams[streamIdx].id = id;
+      }
+      else if (tag == "streammix")
+      {
+         int streamIdx = -1, mute = 0, solo = 0;
+         if (in >> streamIdx >> mute >> solo && streamIdx >= 0 && streamIdx < (int)outData.streams.size())
+         {
+            outData.streams[streamIdx].mute = mute != 0;
+            outData.streams[streamIdx].solo = solo != 0;
+         }
+      }
+      else if (tag == "clipblend")
+      {
+         int streamIdx = -1, mode = 0;
+         uint64_t clipId = 0;
+         if (in >> streamIdx >> clipId >> mode && streamIdx >= 0 && streamIdx < (int)outData.streams.size() &&
+             clipId != 0)
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+                  c.blendMode = (mode >= 0 && mode <= 31) ? mode : 0;
       }
       else if (tag == "cliptick")
       {

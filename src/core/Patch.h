@@ -64,6 +64,11 @@ class INode;
 //     field on `stream` so that builds predating it still read the stream.
 //   cliptick <streamIndex> <id> <startTick> <lengthTick> <srcUid> <srcOutput>
 //            <fadeInTick> <fadeOutTick> <gainDb> <enabled> <groupId> <r> <g> <b> <name>
+//   streammix <streamIndex> <mute> <solo>
+//     Audio lane mute/solo. Only written when either is set.
+//   clipblend <streamIndex> <clipId> <blendMode>
+//     A video clip's compositing mode, only written when non-Normal. Files
+//     without it inherit the stream line's (legacy, lane-wide) blendMode.
 //   marker <id> <posTick> <colorRGBA8> <name to end of line>
 //   arrange <nextId> <timeDisplay> <snap> <triplet> <zoom> <scroll> <loopOn>
 //           <loopStart> <loopEnd> <dock> <w> <h> <fps> <sr> <format>
@@ -283,13 +288,14 @@ namespace Patch
       uint64_t groupId   = 0;    // 0 = not grouped
       std::string name;          // empty = auto (source node's own title)
       float  colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = no tint
+      int    blendMode = -1;     // -1 = not in the file: inherit the stream's legacy blendMode
    };
 
    struct StreamRecord
    {
       uint64_t id     = 0;
       int   type      = kStreamVideo;
-      int   blendMode = 0;      // video only; index into BlendModes::Names() (0-31)
+      int   blendMode = 0;      // legacy lane-wide mode; now per clip (ClipRecord::blendMode)
       float opacity   = 1.0f;   // video only, 0..1
       float gainDb    = 0.0f;   // audio only
       float pan       = 0.0f;   // audio only, -1..1
@@ -300,6 +306,8 @@ namespace Patch
       // would load with every track silently disabled.
       bool     enabled = true;
       uint64_t groupId = 0;     // 0 = not in a track group
+      bool  mute      = false;  // audio only; saved on its own `streammix` line
+      bool  solo      = false;  // audio only
       std::string name;         // empty = auto ("V1", "A2", ...) - label derived by the UI
       std::vector<ClipRecord> clips;
    };
