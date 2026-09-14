@@ -26,6 +26,7 @@ apt-get install -y --no-install-recommends \
   mesa-utils \
   libgl1-mesa-dri \
   libfontconfig-dev \
+  libfreetype-dev \
   libasound2-dev \
   xvfb \
   xauth \

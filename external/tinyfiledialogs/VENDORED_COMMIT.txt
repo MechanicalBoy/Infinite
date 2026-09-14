@@ -1,0 +1,15 @@
+tinyfiledialogs v2.9.3 [July 12, 2017]
+
+Upstream: http://tinyfiledialogs.sourceforge.net
+          git://git.code.sf.net/p/tinyfiledialogs/code
+
+Vendored as plain source (tinyfiledialogs.c/.h), the same way external/spout2
+and external/syphon are, rather than through a package manager - it is two
+files with no build system and no dependencies.
+
+Compiled into the Linux build only (LINUX_SOURCES in CMakeLists.txt). It backs
+every Platform:: file dialog and ShowFatalError's message box on Linux by
+shelling out to zenity / kdialog / yad / qarma / matedialog; see
+src/platform/linux/PlatformLinux.cpp.
+
+Unmodified from upstream. Licence: zlib (see LICENSE in this directory).
