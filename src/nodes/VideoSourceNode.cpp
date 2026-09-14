@@ -274,6 +274,38 @@ bool VideoSourceNode::Open(const std::string& path)
    return true;
 }
 
+bool VideoSourceNode::OpenFromHandle(const std::string& path, Platform::VideoHandle* handle,
+                                     Platform::SampleBuffer* audioTrack)
+{
+   if (handle == nullptr)
+      return false;
+
+   if (mVideo != nullptr)
+      Platform::VideoClose(mVideo);
+   mVideo = handle;
+   mDuration = Platform::VideoDuration(mVideo);
+   mLoadedPath = path;
+   mLastError.clear();
+   mHasPlaceholder = false;
+   mPosition = trimStart;
+   mLastTransportSeconds = Transport::Instance().Seconds();
+
+   if (audioTrack != nullptr)
+   {
+      mAudioLoaded = true;
+      mAudioError.clear();
+      if (!mAudioNode)
+         mAudioNode = std::make_unique<VideoAudioNode>();
+      mAudioNode->PushBuffer(audioTrack);
+   }
+   else
+   {
+      mAudioLoaded = false;
+      mAudioError.clear();
+   }
+   return true;
+}
+
 bool VideoSourceNode::OpenViaDialog()
 {
    std::string path = Platform::OpenVideoDialog();

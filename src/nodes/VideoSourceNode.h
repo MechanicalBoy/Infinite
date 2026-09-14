@@ -42,6 +42,15 @@ public:
    bool OpenViaDialog();
    bool Open(const std::string& path);
 
+   // Adopts an already-open handle and pre-decoded audio track instead of
+   // opening/decoding `path` itself - for the Arrange panel's async
+   // media-drop import, where Platform::VideoOpen and the audio-track
+   // decode already ran on a worker thread (see ArrangeMediaImport.h).
+   // Takes ownership of `handle`; `audioTrack` may be null (no audio track
+   // in the file - a normal case, not an error).
+   bool OpenFromHandle(const std::string& path, Platform::VideoHandle* handle,
+                       Platform::SampleBuffer* audioTrack);
+
    const std::string& LastError() const { return mLastError; }
    const std::string& LoadedPath() const { return mLoadedPath; }
    double Duration() const { return mDuration; }

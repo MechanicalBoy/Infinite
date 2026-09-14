@@ -81,6 +81,13 @@ struct ClipWindow
    double fadeInBeats  = 0.0;
    double fadeOutBeats = 0.0;
    float  gain         = 1.0f;  // clip gain, linear (lane gain is on the terminal)
+   // Clip pan, as per-channel gains (Mixer's equal-power law, unity - both
+   // 1.0 - at centre), multiplied with the terminal's own lanePanL/R at
+   // apply time. Channels past the second are left alone. A sample-dropped
+   // audio clip's own `pan` field (Arrange::Clip::pan); every other clip
+   // stays at the default (no additional pan beyond the lane's).
+   float  panL         = 1.0f;
+   float  panR         = 1.0f;
    // True when the previous / next window on the same terminal abuts this one
    // exactly. An abutting edge is not a discontinuity - the same node's output
    // runs straight through it - so the declick ramp is skipped there, which is

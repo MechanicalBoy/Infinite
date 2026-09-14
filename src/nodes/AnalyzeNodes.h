@@ -214,6 +214,13 @@ public:
    bool OpenViaDialog();
    bool Open(const std::string& path);
 
+   // Adopts an already-decoded buffer instead of decoding `path` itself -
+   // for the Arrange panel's async media-drop import, where the real
+   // dr_wav/dr_mp3/dr_flac/AVAudioFile decode already ran on a worker thread
+   // (see ArrangeMediaImport.h). Same tail as Open(), just skipping its own
+   // decode step. Takes ownership of `decoded`.
+   bool OpenFromDecoded(const std::string& path, Platform::SampleBuffer* decoded);
+
    void Play();
    void Pause();
    void Restart();
@@ -234,6 +241,12 @@ public:
    float gain = 1.0f;
    float attack = 0.5f;
    float release = 0.12f;
+   // Varispeed, semitones, +/-24 - mirrors SamplerNode::pitch. Set directly
+   // by an Arrange audio clip's own `pitch` field (Arrange::Clip::pitch)
+   // when this node is a sample-dropped clip's source; a node shared by more
+   // than one clip (duplicate/split) takes whichever clip last wrote it,
+   // same limitation every other per-node knob here already has.
+   float pitch = 0.0f;
 
    void VisitParams(ParamVisitor& v) override
    {
@@ -241,6 +254,7 @@ public:
       v.Bool("loop", loop); v.Bool("followTransport", followTransport);
       v.Bool("monitor", monitor); v.Float("volume", volume); v.Float("gain", gain);
       v.Float("attack", attack); v.Float("release", release);
+      v.Float("pitch", pitch);
    }
 
    // Reloads from whatever path a patch restored. Called after loading.
