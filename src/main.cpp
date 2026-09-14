@@ -64130,16 +64130,20 @@ int main(int argc, char** argv)
          tr.Seek(0.0);
          const AudioMode modeBefore = gAudioMode;
 
+         // uid read right after each spawn, not after both: SpawnNode()
+         // push_backs onto gNodes, which can reallocate and invalidate every
+         // GraphNode* into it - including a pointer from an earlier spawn
+         // still held when a later one runs.
          GraphNode* rampGn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+         const uint64_t rampUid = rampGn != nullptr ? rampGn->uid : 0;
          GraphNode* oscGn = SpawnNode("Oscillator", "Synthesizers", 200.0f, 0.0f);
+         const uint64_t oscUid = oscGn != nullptr ? oscGn->uid : 0;
          const bool spawned = rampGn != nullptr && oscGn != nullptr;
          printf("arrange render spawn: %s\n", spawned ? "OK" : "FAIL");
          allOk = allOk && spawned;
 
          if (spawned)
          {
-            const uint64_t rampUid = rampGn->uid;
-            const uint64_t oscUid = oscGn->uid;
 
             const uint64_t revBefore = gArrange.revision;
             gArrange = Arrange::Model();
@@ -64583,16 +64587,20 @@ int main(int argc, char** argv)
             allOk = allOk && bOk;
          }
 
+         // uid read right after each spawn, not after both: SpawnNode()
+         // push_backs onto gNodes, which can reallocate and invalidate every
+         // GraphNode* into it - including a pointer from an earlier spawn
+         // still held when a later one runs.
          GraphNode* oscGn = SpawnNode("Oscillator", "Synthesizers", 200.0f, 0.0f);
+         const uint64_t oscUid = oscGn != nullptr ? oscGn->uid : 0;
          GraphNode* rampGn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+         const uint64_t rampUid = rampGn != nullptr ? rampGn->uid : 0;
          const bool spawned = oscGn != nullptr && rampGn != nullptr;
          printf("arrange wave spawn: %s\n", spawned ? "OK" : "FAIL");
          allOk = allOk && spawned;
 
          if (spawned)
          {
-            const uint64_t oscUid = oscGn->uid;
-            const uint64_t rampUid = rampGn->uid;
             const uint64_t revBefore = gArrange.revision;
             gArrange = Arrange::Model();
             gArrange.revision = revBefore + 1;
@@ -64776,6 +64784,28 @@ int main(int argc, char** argv)
                gAudioMode = AudioMode::Timeline;
                ArrangeSyncClipVisuals();
                RebuildAudioTopology();
+               // Params reach an AudioNode through its mailbox, which
+               // CookIfNeeded fills - a node that has never been cooked runs
+               // on its constructor defaults with an empty mailbox and
+               // produces silence. The main loop does this every frame; this
+               // fixture runs its whole life inside one, and the
+               // PrepareToPlay loop inside RebuildAudioTopology keys off a
+               // live device or an offline render job, neither of which this
+               // fixture is - see the WP7 arrange render test fixture above
+               // for the same priming.
+               {
+                  static int sCookFrame = 2000000;
+                  sCookFrame++;
+                  for (GraphNode& gn : gNodes)
+                     gn.node->CookIfNeeded(sCookFrame);
+                  for (GraphNode& gn : gNodes)
+                     if (auto* an = dynamic_cast<AudioNode*>(gn.node.get()))
+                        if (an->preparedForSampleRate != rate)
+                        {
+                           an->PrepareToPlay(rate, kAudioMaxBlockFrames);
+                           an->preparedForSampleRate = rate;
+                        }
+               }
 
                const uint64_t droppedBefore = AudioEngine::Instance().ClipPeaks().DroppedCount();
                tr.Seek(0.0);
