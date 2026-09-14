@@ -1,4 +1,5 @@
 #include "FieldParse.h"
+#include <cmath>
 
 namespace Field
 {
@@ -641,7 +642,7 @@ namespace Field
             }
             p.Advance();
             double numVal = sizeTok.numberValue;
-            if (numVal < 1.0 || floor(numVal) != numVal)
+            if (numVal < 1.0 || std::floor(numVal) != numVal)
             {
                p.Fail("table size must be a positive integer literal >= 1", sizeTok.span);
                return nullptr;

@@ -37,7 +37,9 @@ status=0
 # --- exit-code gated -------------------------------------------------------
 
 echo "== INFINITE_DSPTEST"
-if INFINITE_DSPTEST=1 "$BIN"; then
+if [ "$UNAME_S" = "Linux" ]; then
+   echo "   SKIP (Linux audio decode and sampler test fixtures land in P1/P2)"
+elif INFINITE_DSPTEST=1 "$BIN"; then
    echo "   pass"
 else
    echo "   FAIL (exit $?)"
@@ -106,6 +108,9 @@ check_verdict INFINITE_RECSYNCTEST "REC SYNC OK"
 if [ "$UNAME_S" = "Darwin" ]; then
    echo "== INFINITE_RECEXPORTTEST"
    echo "   SKIP (GitHub's macOS runners lack hardware video encode access - see this script's comment)"
+elif [ "$UNAME_S" = "Linux" ]; then
+   echo "== INFINITE_RECEXPORTTEST"
+   echo "   SKIP (Linux recorder lands in P3)"
 else
    check_verdict INFINITE_RECEXPORTTEST "REC EXPORT OK"
 fi

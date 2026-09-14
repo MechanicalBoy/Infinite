@@ -82,11 +82,28 @@ namespace AppPaths
       if (base.empty())
          return {};
       std::string dir = base + "/Infinite";
-#else
+#elif defined(__APPLE__)
       const std::string home = HomeDir();
       if (home.empty())
          return {};
       std::string dir = home + "/Library/Application Support/Infinite";
+#else
+      // Linux / XDG Base Directory specification:
+      // $XDG_CONFIG_HOME/Infinite or ~/.config/Infinite
+      std::string base;
+      if (const char* xdg = std::getenv("XDG_CONFIG_HOME"))
+      {
+         if (xdg[0] != '\0')
+            base = xdg;
+      }
+      if (base.empty())
+      {
+         const std::string home = HomeDir();
+         if (home.empty())
+            return {};
+         base = home + "/.config";
+      }
+      std::string dir = base + "/Infinite";
 #endif
       // An unusable settings directory returns empty rather than a path that
       // silently swallows every write. Every caller already handles the empty

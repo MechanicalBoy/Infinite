@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -141,6 +142,31 @@ namespace Platform
                         float letterSpacing, std::vector<TextContour>& outContours,
                         std::string& outError);
 
+   struct TextRasterRequest
+   {
+      std::string text;
+      std::string fontName;
+      float fontSize = 24.0f;
+      float color[3] = { 1, 1, 1 };
+      float tracking = 0.0f;
+      float posX = 0.5f;
+      float posY = 0.5f;
+      int align = 1; // 0 left, 1 center, 2 right, 3 justified
+      bool wordWrap = false;
+      bool fitToBox = false;
+      float wrapWidth = 0.9f;  // fraction of canvas width
+      float wrapHeight = 0.9f; // fraction of canvas height
+      float lineSpacing = 1.0f;
+      float outlineWidth = 0.0f;
+      float outlineColor[3] = { 0, 0, 0 };
+      bool outlineOnly = false;
+      float scaleX = 1.0f;
+      float scaleY = 1.0f;
+   };
+
+   void RasterizeText(const TextRasterRequest& req, int width, int height,
+                      unsigned char* outPixelsRGBA, float& outFittedSize);
+
    bool LoadModel(const std::string& path, std::vector<ModelVertex>& outVertices,
                   std::vector<unsigned int>& outIndices, std::string& outError);
 
@@ -224,6 +250,7 @@ namespace Platform
    // does NOT construct the ONNX session, it only reports what the last (or
    // pending) SubjectMask call resolved to.
    std::string MattingBackend();
+   const std::vector<std::string>& MattingModeNames();
 
    // ---- audio input ----
    // Taps the default input device and keeps a running spectrum. Everything is

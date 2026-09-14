@@ -20,11 +20,7 @@
 #include "audio/dsp/SpectralAdditiveSynth.h"
 #include "core/GLUtil.h"
 
-#ifdef __APPLE__
-#include "gl3.h"
-#else
-#include <GL/gl.h>
-#endif
+#include "core/gl3.h"
 
 namespace
 {

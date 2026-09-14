@@ -84,6 +84,12 @@ namespace CategoryColors
    float DefaultTintWeight(bool light);
    bool HasTintWeightOverride(bool light);
 
+   // Manual UI scale multiplier, applied on top of the OS/monitor DPI scale.
+   // 1.0 = no manual adjustment (the default).
+   float GetUiScale();
+   void SetUiScale(float scale, bool saveToFile = true);
+   bool HasUiScaleOverride();
+
    // Reset all appearance overrides for active polarity (or both)
    void ResetAllAppearance(bool light);
    void ResetAllAppearanceBoth();

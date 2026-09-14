@@ -28,6 +28,7 @@ request if you were called without it):
   `field-domains` / `field-state` / `field-compiler` / `field-realtime` the change
   actually needs — follow the reading order already documented in
   `.claude/skills/README.md`, don't load all of them by default.
+- **Platform, integration, or dependency work** (or when a bug's root cause is outside Infinite's own code) → call `prior-art-scout` to search peer repos and public fixes before designing a solution.
 - **Cross-platform-sensitive subsystem** (audio device, MIDI, video, camera, text
   outline, Spout) → `windows-parity`.
 - If none of these obviously apply, say so in your report rather than guessing — a plan

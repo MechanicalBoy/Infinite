@@ -3,6 +3,7 @@
 #include "gl3.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
