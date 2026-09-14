@@ -19,6 +19,10 @@
    #define INFINITE_VERSION_STRING "dev"
 #endif
 
+#if defined(__linux__)
+namespace Platform { extern bool HasGuiDialogHelper(); }
+#endif
+
 namespace SysInfo
 {
    void PrintAndExit(GLFWwindow* /*window*/)
@@ -57,9 +61,17 @@ namespace SysInfo
       std::printf("GL Vendor:    %s\n", vendor ? (const char*)vendor : "null");
       std::printf("GL Renderer:  %s\n", renderer ? (const char*)renderer : "null");
       std::printf("GL Version:   %s\n", version ? (const char*)version : "null");
-      std::printf("GLSL Version: %s\n", glslVersion ? (const char*)glslVersion : "null");
+#if defined(__linux__)
+      std::printf("Dialog helper: %s\n", Platform::HasGuiDialogHelper() ? "yes" : "no (zenity/kdialog missing)");
+#endif
       std::printf("======================================================\n");
       std::fflush(stdout);
       std::exit(0);
+   }
+
+   void CrashTest()
+   {
+      volatile int* bad = nullptr;
+      *bad = 42;
    }
 }

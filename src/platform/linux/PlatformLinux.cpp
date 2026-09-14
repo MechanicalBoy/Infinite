@@ -1,5 +1,6 @@
 #include "platform/Platform.h"
 #include "platform/AppPaths.h"
+#include "tinyfiledialogs.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -8,11 +9,95 @@
 #include <vector>
 #include <climits>
 #include <unistd.h>
+#include <spawn.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+
+extern char** environ;
+
+namespace
+{
+   bool IsHeadlessOrExitAfter()
+   {
+      if (std::getenv("INFINITE_EXITAFTER") != nullptr)
+         return true;
+      const char* disp = std::getenv("DISPLAY");
+      const char* wayland = std::getenv("WAYLAND_DISPLAY");
+      if ((!disp || disp[0] == '\0') && (!wayland || wayland[0] == '\0'))
+         return true;
+      return false;
+   }
+
+   bool CheckExecutableOnPath(const char* exe)
+   {
+      const char* pathEnv = std::getenv("PATH");
+      if (!pathEnv) return false;
+      std::string pathStr = pathEnv;
+      size_t start = 0;
+      while (start < pathStr.size())
+      {
+         size_t colon = pathStr.find(':', start);
+         std::string dir = (colon == std::string::npos) ? pathStr.substr(start) : pathStr.substr(start, colon - start);
+         if (!dir.empty())
+         {
+            std::string full = dir + "/" + exe;
+            if (access(full.c_str(), X_OK) == 0)
+               return true;
+         }
+         if (colon == std::string::npos) break;
+         start = colon + 1;
+      }
+      return false;
+   }
+
+   bool sDialogBackendChecked = false;
+   bool sDialogBackendPresent = false;
+
+   void EnsureDialogBackendChecked()
+   {
+      if (sDialogBackendChecked) return;
+      sDialogBackendChecked = true;
+      const char* const candidates[] = {
+         "zenity", "kdialog", "yad", "qarma", "matedialog"
+      };
+      for (const char* c : candidates)
+      {
+         if (CheckExecutableOnPath(c))
+         {
+            sDialogBackendPresent = true;
+            break;
+         }
+      }
+      if (!sDialogBackendPresent)
+      {
+         Platform::AppendLogLine("[WARNING] No GUI dialog helper (zenity, kdialog, yad, qarma, matedialog) found on PATH. Native file dialogs may fail silently.");
+      }
+   }
+
+   std::string AppendExtensionIfMissing(const std::string& path, const char* ext)
+   {
+      if (path.empty() || !ext || ext[0] == '\0')
+         return path;
+      std::string dotExt = (ext[0] == '.') ? std::string(ext) : (std::string(".") + ext);
+      if (path.size() >= dotExt.size())
+      {
+         const std::string end = path.substr(path.size() - dotExt.size());
+         if (strcasecmp(end.c_str(), dotExt.c_str()) == 0)
+            return path;
+      }
+      return path + dotExt;
+   }
+}
 
 namespace Platform
 {
+   bool HasGuiDialogHelper()
+   {
+      EnsureDialogBackendChecked();
+      return sDialogBackendPresent;
+   }
+
    void PreventAppNap()
    {
       // No App Nap mechanism on Linux that affects GLFW.
@@ -22,11 +107,6 @@ namespace Platform
    {
       // GLFW does not expose trackpad magnification gestures on X11/Wayland.
       return 0.0f;
-   }
-
-   void InstallCrashHandler()
-   {
-      // Real sigaction crash handler lands in Phase 1.
    }
 
    void AppendLogLine(const std::string& line)
@@ -49,51 +129,173 @@ namespace Platform
    {
       std::fprintf(stderr, "[FATAL] %s: %s\n", title.c_str(), message.c_str());
       AppendLogLine(std::string("[FATAL] ") + title + ": " + message);
-      // tinyfiledialogs message box arrives in Phase 1.
+
+      if (!IsHeadlessOrExitAfter())
+      {
+         tinyfd_messageBox(title.c_str(), message.c_str(), "ok", "error", 1);
+      }
    }
 
    std::string OpenImageDialog()
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.tif", "*.tiff",
+         "*.tga", "*.webp", "*.hdr", "*.pic", "*.ppm", "*.pgm"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Choose Image",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "Image files",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
    std::string OpenHdrDialog()
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.hdr", "*.exr"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Choose HDR Environment",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "HDR images (*.hdr, *.exr)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
    std::string OpenModelDialog()
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.obj", "*.ply", "*.stl"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Choose Model",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "3D models (*.obj, *.ply, *.stl)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
    std::string OpenPatchDialog()
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.infinite", "*.inf"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Open Patch",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "Infinite patches (*.infinite, *.inf)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
-   std::string SavePatchDialog(const std::string& /*suggestedName*/)
+   std::string SavePatchDialog(const std::string& suggestedName)
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.infinite"
+      };
+      std::string defaultPath = suggestedName.empty() ? "Untitled.infinite" : suggestedName;
+      defaultPath = AppendExtensionIfMissing(defaultPath, ".infinite");
+
+      const char* res = tinyfd_saveFileDialog(
+         "Save Patch",
+         defaultPath.c_str(),
+         1,
+         filterPatterns,
+         "Infinite patch (*.infinite)"
+      );
+      if (!res) return "";
+      return AppendExtensionIfMissing(std::string(res), ".infinite");
    }
 
    std::string OpenDeviceDialog()
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.field", "*.infdev"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Open Device",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "Field device (*.field, *.infdev)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
-   std::string SaveDeviceDialog(const std::string& /*suggestedName*/)
+   std::string SaveDeviceDialog(const std::string& suggestedName)
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.field"
+      };
+      std::string defaultPath = suggestedName.empty() ? "Untitled.field" : suggestedName;
+      defaultPath = AppendExtensionIfMissing(defaultPath, ".field");
+
+      const char* res = tinyfd_saveFileDialog(
+         "Save Device",
+         defaultPath.c_str(),
+         1,
+         filterPatterns,
+         "Field device (*.field)"
+      );
+      if (!res) return "";
+      return AppendExtensionIfMissing(std::string(res), ".field");
    }
 
-   std::string OpenFolderDialog(const char* /*title*/, const std::string& /*initialDir*/)
+   std::string OpenFolderDialog(const char* title, const std::string& initialDir)
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* res = tinyfd_selectFolderDialog(
+         title ? title : "Select Folder",
+         initialDir.empty() ? nullptr : initialDir.c_str()
+      );
+      return res ? std::string(res) : std::string();
    }
 
-   void OpenExternalUrl(const std::string& /*url*/)
+   void OpenExternalUrl(const std::string& url)
    {
+      if (url.rfind("https://", 0) != 0 && url.rfind("http://", 0) != 0)
+         return;
+
+      pid_t pid;
+      char* argv[] = {
+         const_cast<char*>("xdg-open"),
+         const_cast<char*>(url.c_str()),
+         nullptr
+      };
+      if (posix_spawnp(&pid, "xdg-open", nullptr, nullptr, argv, environ) == 0)
+      {
+         int status = 0;
+         waitpid(pid, &status, WNOHANG);
+      }
    }
 
    bool HttpGet(const std::string& /*url*/, const std::string& /*userAgent*/,

@@ -145,6 +145,31 @@ else
    status=1
 fi
 
+if [ "$UNAME_S" = "Linux" ]; then
+   echo "== INFINITE_CRASHTEST (crash log verification)"
+   CRASH_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/Infinite/crash"
+   rm -rf "$CRASH_DIR"
+   if INFINITE_CRASHTEST=1 "$BIN" > /dev/null 2>&1; then
+      echo "   FAIL (expected process to crash but exited 0)"
+      status=1
+   else
+      # Process died from signal as expected; verify crash log file was generated
+      if [ -d "$CRASH_DIR" ] && ls "$CRASH_DIR"/crash-*.txt >/dev/null 2>&1; then
+         CRASH_FILE="$(ls -t "$CRASH_DIR"/crash-*.txt | head -1)"
+         if grep -q "SIGSEGV" "$CRASH_FILE"; then
+            echo "   pass (crash log written with SIGSEGV backtrace)"
+         else
+            echo "   FAIL (crash log missing SIGSEGV details)"
+            cat "$CRASH_FILE"
+            status=1
+         fi
+      else
+         echo "   FAIL (no crash-*.txt file found in $CRASH_DIR)"
+         status=1
+      fi
+   fi
+fi
+
 echo
 if [ "$status" -eq 0 ]; then
    echo "All headless self-tests passed."

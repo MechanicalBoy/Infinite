@@ -5,4 +5,5 @@ struct GLFWwindow;
 namespace SysInfo
 {
    void PrintAndExit(GLFWwindow* window);
+   void CrashTest();
 }

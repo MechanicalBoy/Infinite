@@ -49583,6 +49583,12 @@ int main(int argc, char** argv)
    // crash in a headless CI fixture leaves a dump/log the same as a real run.
    Platform::InstallCrashHandler();
 
+   if (getenv("INFINITE_CRASHTEST") != nullptr)
+   {
+      SysInfo::CrashTest();
+      return 0;
+   }
+
    // Dynamic pins, Phase 2b (build step 13, §5.1): install the live-cable
    // checker bridge (see CheckFieldLiveCableBridge's comment above) before
    // anything can call a Field*Node::Apply() - including the FIELDPINSTEST/

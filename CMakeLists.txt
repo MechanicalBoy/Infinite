@@ -486,6 +486,7 @@ set(WIN32_SOURCES
 set(LINUX_SOURCES
     src/platform/linux/PlatformLinux.cpp
     src/platform/linux/TextLinux.cpp
+    src/platform/linux/CrashHandlerLinux.cpp
     src/platform/linux/AudioDeviceLinux.cpp
     src/platform/linux/MidiLinux.cpp
     src/platform/linux/MediaLinux.cpp
@@ -494,6 +495,7 @@ set(LINUX_SOURCES
     src/platform/linux/SyphonLinux.cpp
     src/platform/common/MediaDecodePortable.cpp
     src/audio/AudioFileWriter.cpp
+    external/tinyfiledialogs/tinyfiledialogs.c
     external/miniz.c
     external/glad/src/gl.c
 )
@@ -580,6 +582,7 @@ target_include_directories(Infinite PRIVATE
     external
     external/json
     external/shine
+    external/tinyfiledialogs
     external/glad/include
 )
 

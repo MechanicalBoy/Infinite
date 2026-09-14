@@ -1,5 +1,7 @@
 #include "platform/Platform.h"
+#include "tinyfiledialogs.h"
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -14,7 +16,23 @@ namespace Platform
 
    std::string OpenVideoDialog()
    {
-      return "";
+      if (std::getenv("INFINITE_EXITAFTER") != nullptr) return "";
+      const char* disp = std::getenv("DISPLAY");
+      const char* wayland = std::getenv("WAYLAND_DISPLAY");
+      if ((!disp || disp[0] == '\0') && (!wayland || wayland[0] == '\0')) return "";
+
+      const char* const filterPatterns[] = {
+         "*.mp4", "*.mov", "*.m4v", "*.avi", "*.mkv", "*.webm", "*.wmv"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Choose Video",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "Video files",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
    VideoHandle* VideoOpen(const std::string& /*path*/, std::string& outError)
