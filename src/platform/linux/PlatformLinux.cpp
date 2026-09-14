@@ -18,10 +18,10 @@ namespace Platform
       // No App Nap mechanism on Linux that affects GLFW.
    }
 
-   float PollTrackpadMagnificationDelta()
+   double PollTrackpadMagnificationDelta()
    {
       // GLFW does not expose trackpad magnification gestures on X11/Wayland.
-      return 0.0f;
+      return 0.0;
    }
 
    void InstallCrashHandler()
@@ -123,6 +123,12 @@ namespace Platform
 
    void OpenExternalUrl(const std::string& /*url*/)
    {
+   }
+
+   void RevealInFileManager(const std::string& /*path*/)
+   {
+      // Real org.freedesktop.FileManager1.ShowItems / xdg-open reveal lands
+      // with the desktop-integration step, alongside OpenExternalUrl.
    }
 
    bool HttpGet(const std::string& /*url*/, const std::string& /*userAgent*/,
