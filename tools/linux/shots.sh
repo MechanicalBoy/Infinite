@@ -23,12 +23,19 @@
 set -uo pipefail
 
 OUT_DIR="${OUT_DIR:-artifacts-linux/shots}"
+# Pick by host OS, not by "which file happens to exist". Both binaries are
+# usually present in the same worktree - the container writes build-linux/
+# into the same mounted tree the macOS build writes build/ into - so probing
+# for build-linux/Infinite first silently handed macOS a Linux ELF and every
+# shot died with "cannot execute binary file".
+MAC_BIN="build/Infinite.app/Contents/MacOS/Infinite"
+LINUX_BIN="build-linux/Infinite"
 if [ -n "${BIN:-}" ]; then
   BIN_PATH="$BIN"
-elif [ -x "build-linux/Infinite" ]; then
-  BIN_PATH="build-linux/Infinite"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  BIN_PATH="$MAC_BIN"
 else
-  BIN_PATH="build/Infinite.app/Contents/MacOS/Infinite"
+  BIN_PATH="$LINUX_BIN"
 fi
 
 if [ ! -x "$BIN_PATH" ]; then
@@ -37,8 +44,51 @@ if [ ! -x "$BIN_PATH" ]; then
 fi
 
 mkdir -p "$OUT_DIR"
+# Absolute, because macOS chdir's a bundled app to Contents/Resources before
+# main() runs (Cocoa does it for any .app), so a relative IMAGERESYNTH_SCREENSHOT
+# resolves against the bundle and the write fails.
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
 export INFINITE_NO_UPDATE_CHECK=1
+
+# Run every fixture against a THROWAWAY HOME.
+#
+# imgui-node-editor persists the canvas pan/zoom, and ImGui persists window
+# layout, under the user's home directory. Capturing references on a machine
+# that has actually been used for editing therefore restores that operator's
+# saved view - which scrolled the showcase graph completely off-screen and
+# produced six "successful" reference shots of an empty canvas. CI never saw
+# it because a fresh container has no saved state, which is exactly the kind
+# of difference that makes a reference set worthless.
+SHOT_HOME="$(mktemp -d)"
+trap 'rm -rf "$SHOT_HOME"' EXIT
+export HOME="$SHOT_HOME"
+export XDG_CONFIG_HOME="$SHOT_HOME/.config"
+mkdir -p "$XDG_CONFIG_HOME"
+
+# "Did anything actually render" gate.
+#
+# Counts distinct colours. File size does NOT work here and the earlier version
+# of this script was wrong to use it: a blank-canvas shot came out LARGER than
+# the correct one (finely-dithered grid compresses worse than flat node
+# panels), so blank frames sailed straight through a 20 kB floor.
+#
+# Measured on this app at native resolution: an empty editor is 183 colours;
+# the six fixtures below span 1125 (kaleidoscope - a white circle on a
+# checkerboard is genuinely low-colour) to 7071 (3D render). 600 sits clear of
+# both. Measure at NATIVE resolution if you retune this - downscaling
+# resamples and roughly doubles the count, which is how 1500 got picked first
+# and promptly failed two perfectly good shots.
+UNIQ_COLORS_MIN=600
+uniq_colors() {
+   if command -v identify >/dev/null 2>&1; then
+      identify -format "%k" "$1" 2>/dev/null
+   elif command -v python3 >/dev/null 2>&1; then
+      python3 "$(dirname "$0")/png-uniq-colors.py" "$1" 2>/dev/null
+   else
+      echo "SKIP"
+   fi
+}
 
 # name|fixture env var|screenshot frame
 #
@@ -72,15 +122,18 @@ for entry in "${SHOTS[@]}"; do
   fi
 
   bytes=$(wc -c < "$out" | tr -d ' ')
-  # A window that came up but drew nothing still yields a valid PNG - a flat
-  # fill compresses to a few KB, so size is a cheap "did anything render"
-  # gate. Real shots of these fixtures are hundreds of KB.
-  if [ "$bytes" -lt 20000 ]; then
-    echo "    FAILED - PNG is only ${bytes} bytes, almost certainly blank"
+  colors=$(uniq_colors "$out")
+  if [ "$colors" = "SKIP" ]; then
+    echo "    ok (${bytes} bytes; NO blank-check - install ImageMagick or python3)"
+  elif [ -z "$colors" ] || ! [ "$colors" -eq "$colors" ] 2>/dev/null; then
+    echo "    FAILED - could not read $out as a PNG"
     status=1
-    continue
+  elif [ "$colors" -lt "$UNIQ_COLORS_MIN" ]; then
+    echo "    FAILED - only ${colors} distinct colours (<${UNIQ_COLORS_MIN}): rendered blank"
+    status=1
+  else
+    echo "    ok (${bytes} bytes, ${colors} colours)"
   fi
-  echo "    ok (${bytes} bytes)"
 done
 
 echo
