@@ -606,6 +606,7 @@ namespace
    INode* FindHardwareDrivenNode();
    void StartOfflineRenderSession(OutputNode* n, int width = 0, int height = 0, bool isArrange = false);
    void DrawOfflineRenderProgressWindow();
+   void DrawArrangeWavRenderProgressWindow();
    bool StartAudioEngine(std::string& outError);
 
    std::vector<GraphNode> gNodes;
@@ -888,6 +889,27 @@ namespace
       // below), so the take's audio is the live sum of every active
       // timeline audio clip rather than whatever's cabled into AudioInput.
       bool arrangeDriven = false;
+      // WP7 #6b splits arrangeDriven's two behaviours apart, because a job
+      // can now take its picture from one place and its sound from another
+      // ("video-only timeline over live canvas music" is a first-class job).
+      // Both are only read while arrangeDriven.
+      //   timelineVideo - composite the video lanes onto the take's FBO,
+      //                   replacing whatever its own Input produced.
+      //   timelineAudio - RebuildAudioTopology builds the Timeline Strict
+      //                   terminals rather than the canvas Audio Outs
+      //                   (ArrangeTimelineRoutingActive).
+      // Audio always reaches the file through the take node's capture ring
+      // either way: the timeline's export node has nothing cabled into its
+      // AudioInput, so both sources are the master sum, and only the
+      // terminals feeding that sum differ.
+      bool timelineVideo = false;
+      bool timelineAudio = false;
+      // The job's range in ticks. StartOfflineRenderSession scopes its
+      // hardware-source refusal (WP7 #4) to the clips that actually play
+      // inside it, so it has to be set before the take is armed - same
+      // discipline as arrangeDriven and endSeconds.
+      int64_t rangeStartTick = 0;
+      int64_t rangeEndTick = 0;
       // Only meaningful when arrangeDriven: the timeline second the render
       // should end on, so the render-finish cleanup can park the playhead
       // there instead of leaving it wherever Transport::SetOfflineMode(false)
@@ -895,6 +917,78 @@ namespace
       double endSeconds = 0.0;
    };
    OfflineRenderState gOfflineRender;
+
+   // ---- Arrangement render jobs (WP7) --------------------------------------
+   // One job = one file. The timeline's Render popup fills one in, and either
+   // runs it immediately or parks it in the queue; both paths go through
+   // ArrangeRenderBeginJob, so the hardware-source refusal, the overwrite
+   // check and the source routing can't be skipped by one of them.
+   enum ArrangeRenderAudioSource { kArrangeAudioTimeline = 0, kArrangeAudioCanvas = 1, kArrangeAudioNone = 2 };
+   enum ArrangeRenderVideoSource { kArrangeVideoTimeline = 0, kArrangeVideoCanvas = 1, kArrangeVideoNone = 2 };
+   enum ArrangeRenderRangeKind { kArrangeRangeWhole = 0, kArrangeRangeLoop = 1, kArrangeRangeMarkers = 2, kArrangeRangeCustom = 3 };
+   enum ArrangeRenderStatus
+   {
+      kArrangeJobQueued = 0,
+      kArrangeJobRendering,
+      kArrangeJobFinalizing,
+      kArrangeJobDone,
+      kArrangeJobFailed,
+      kArrangeJobCancelled
+   };
+
+   struct ArrangeRenderJob
+   {
+      uint64_t id = 0;
+      int rangeKind = kArrangeRangeWhole;
+      int64_t startTick = 0;
+      int64_t endTick = 0;
+      int audioSource = kArrangeAudioTimeline;
+      int videoSource = kArrangeVideoTimeline;
+      uint64_t canvasVideoUid = 0; // only when videoSource == kArrangeVideoCanvas
+      int width = 1920, height = 1080, fps = 60;
+      int sampleRate = 48000;
+      int format = 0;              // 0 = mp4, 1 = mov, 2 = wav
+      std::string path;
+      int status = kArrangeJobQueued;
+      std::string message;         // failure reason, or a note about the take
+      int framesDone = 0, framesTotal = 0;
+      double startedTime = 0.0;    // glfwGetTime() when it began, for the ETA
+   };
+
+   // The timeline's own render target. Never a canvas node: an arrangement
+   // take composites its lanes onto this node's FBO and nothing else, so it
+   // stays off the graph, out of the patch and out of every node list.
+   std::unique_ptr<OutputNode> gArrangeTimelineExportNode;
+
+   std::vector<ArrangeRenderJob> gArrangeRenderQueue;
+   uint64_t gArrangeRenderNextJobId = 1;
+   uint64_t gArrangeRenderActiveJobId = 0; // 0 = nothing in flight
+   bool gArrangeRenderQueueRunning = false;
+
+   // An audio-only take (Video source = None). It has no OutputNode, no
+   // encoder and no frames - just AudioEngine::ProcessOffline block by block
+   // into a WAV file - so it can't ride on gOfflineRender, which is built
+   // around a node's video take. Only one of the two ever runs at a time.
+   struct ArrangeWavRenderState
+   {
+      bool active = false;
+      bool timelineAudio = true;   // same meaning as gOfflineRender.timelineAudio
+      bool cancelRequested = false;
+      AudioFileWriter writer;
+      long long framesTotal = 0, framesDone = 0;
+      double sampleRate = 0.0;
+      double startSeconds = 0.0, endSeconds = 0.0;
+      bool deviceWasRunning = false, wasPlaying = true, vsyncWasOn = true;
+      double startedTime = 0.0;
+   };
+   ArrangeWavRenderState gArrangeWavRender;
+
+   // Defined next to StartOfflineRenderSession; called from the timeline panel
+   // (far above it in file order) and from the main loop's pump (far below).
+   bool ArrangeRenderBeginJob(ArrangeRenderJob& job);
+   void ArrangeRenderQueueTick();
+   void ArrangeRenderCancelActive();
+   bool ArrangeRenderBusy();
 
    // ---- device-change / sleep-wake recovery state (PollAudioRecovery) ----
    // docs/plans/optimization/prompts/02-device-change-and-wake-recovery.md.
@@ -27566,6 +27660,119 @@ namespace
       return std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
    }
 
+   // ---- render-range and render-target helpers (WP7) ------------------------
+
+   // The end of the arrangement as the *render* sees it: disabled clips and
+   // clips whose source is gone contribute nothing to a take, so counting
+   // them padded every "Whole arrangement" job with silence and black
+   // (WP7 #5). Arrange::ArrangementEnd stays as it is - the End key and the
+   // ruler deliberately still jump to the last clip, enabled or not.
+   Arrange::Tick ArrangeRenderableEndTick()
+   {
+      Arrange::Tick end = 0;
+      for (const Arrange::Lane& l : gArrange.lanes)
+         for (const Arrange::Clip& c : l.clips)
+         {
+            if (!c.enabled || c.srcUid == 0 || FindNodeByUid(c.srcUid) == nullptr)
+               continue;
+            end = std::max(end, c.End());
+         }
+      return end;
+   }
+
+   // "Match Clips": the first *renderable* video clip that actually reports a
+   // size, else the patch's own Output node, else 1080p. A geometry clip has
+   // no texture size of its own, and a disabled or unassigned one isn't in
+   // the picture at all - either used to hand the job a 0x0 or a stale size.
+   void ArrangeRenderDetectClipSize(int& outW, int& outH)
+   {
+      outW = 0;
+      outH = 0;
+      for (const Arrange::Lane& l : gArrange.lanes)
+      {
+         if (l.type != Arrange::kLaneVideo)
+            continue;
+         for (const Arrange::Clip& c : l.clips)
+         {
+            if (!c.enabled || c.srcUid == 0)
+               continue;
+            GraphNode* gn = FindNodeByUid(c.srcUid);
+            if (gn == nullptr || gn->node == nullptr)
+               continue;
+            if (gn->node->GetOutputWidth() > 0 && gn->node->GetOutputHeight() > 0)
+            {
+               outW = gn->node->GetOutputWidth();
+               outH = gn->node->GetOutputHeight();
+               return;
+            }
+         }
+      }
+      for (GraphNode& gn : gNodes)
+      {
+         if (auto* on = dynamic_cast<OutputNode*>(gn.node.get()))
+         {
+            if (on->GetOutputWidth() > 0 && on->GetOutputHeight() > 0)
+            {
+               outW = on->GetOutputWidth();
+               outH = on->GetOutputHeight();
+               return;
+            }
+         }
+      }
+      outW = 1920;
+      outH = 1080;
+   }
+
+   // Every Output node on the canvas, in index order, for the video-source
+   // picker. uid, not index: a job outlives an undo that renumbers indices.
+   void ArrangeRenderCollectOutputNodes(std::vector<std::pair<uint64_t, std::string>>& out)
+   {
+      out.clear();
+      for (GraphNode& gn : gNodes)
+      {
+         if (dynamic_cast<OutputNode*>(gn.node.get()) != nullptr)
+            out.emplace_back(gn.uid, NodeTitle(gn));
+      }
+   }
+
+   // "name.mp4" -> "name (2).mp4", counting up past anything already on disk
+   // or already queued (WP7 #8's Auto-rename).
+   // Does an unfinished job already own this path? Two queued jobs writing
+   // the same file is the same collision as one overwriting an existing file,
+   // and is easier to miss - the second one only clobbers the first once the
+   // queue gets there.
+   bool ArrangeRenderPathQueued(const std::string& path, uint64_t exceptJobId)
+   {
+      for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+      {
+         if (j.id == exceptJobId)
+            continue;
+         if (j.status != kArrangeJobQueued && j.status != kArrangeJobRendering &&
+             j.status != kArrangeJobFinalizing)
+            continue;
+         if (j.path == path)
+            return true;
+      }
+      return false;
+   }
+
+   std::string ArrangeRenderUniquePath(const std::string& path)
+   {
+      const size_t dot = path.rfind('.');
+      const size_t slash = path.find_last_of("/\\");
+      const bool dotInName = dot != std::string::npos && (slash == std::string::npos || dot > slash);
+      const std::string stem = dotInName ? path.substr(0, dot) : path;
+      const std::string ext = dotInName ? path.substr(dot) : std::string();
+      std::error_code ec;
+      for (int n = 2; n < 1000; n++)
+      {
+         const std::string candidate = stem + " (" + std::to_string(n) + ")" + ext;
+         if (!std::filesystem::exists(candidate, ec) && !ArrangeRenderPathQueued(candidate, 0))
+            return candidate;
+      }
+      return path;
+   }
+
    void DrawArrangePanelContent()
    {
       // Every id this panel holds (selection, anchor, rename/context/assign
@@ -27801,67 +28008,129 @@ namespace
             // node on the canvas). Video tracks are composited bottom lane first
             // (top lane frontmost) with aspect-ratio preservation and blend modes/opacity; audio is
             // the live sum of every active audio clip.
-            static bool sArrangeRenderIncludeVideo = true;
-            static bool sArrangeRenderIncludeAudio = true;
-            static double sArrangeRenderStartSec = 0.0;
-            static double sArrangeRenderEndSec = 1.0;
-            static int sArrangeRenderFps = 30;
-            static int sArrangeRenderVideoFormat = 0; // 0 = .mp4, 1 = .mov
-            static int sArrangeRenderWidth = 1920;
-            static int sArrangeRenderHeight = 1080;
-            static int sArrangeRenderResPreset = 0; // 0=Match Clips, 1=1080p, 2=4K, 3=720p, 4=Vertical (1080x1920), 5=Custom
-            static std::string sArrangeRenderVideoPath;
-            static std::unique_ptr<OutputNode> sArrangeTimelineExportNode;
+            // ---- Render / export (WP7) ----
+            // The settings themselves are patch state (Arrange::Settings,
+            // persisted in the `arrange` line) rather than the statics they
+            // used to be, so a patch reopens with the same output size, fps,
+            // format, range kind, sources and folder it was last rendered at
+            // (WP7 #7). Only the file's name and the marker picks are
+            // session-local: a filename belongs to a take, not to a document.
+            Arrange::Settings& rset = gArrange.settings;
+            static std::string sArrangeRenderFileName = "infinite_timeline";
+            static int sArrangeRenderMarkerA = 0;
+            static int sArrangeRenderMarkerB = 1;
+            static uint64_t sArrangeRenderCanvasUid = 0;
+            static ArrangeRenderJob sArrangePendingJob;
+            static bool sArrangePendingStartNow = false;
+            static bool sArrangeOpenOverwrite = false;
 
-            const double arrangeEndSec =
-               Arrange::TicksToSeconds(Arrange::ArrangementEnd(gArrange), std::max(1.0, (double)tr.Tempo()));
-            int detectedClipW = 1920;
-            int detectedClipH = 1080;
-            bool foundClipRes = false;
-            for (const Arrange::Lane& l : gArrange.lanes)
-            {
-               if (l.type != Arrange::kLaneVideo || foundClipRes)
-                  continue;
-               for (const Arrange::Clip& c : l.clips)
+            const double renderBpm = std::max(1.0, (double)tr.Tempo());
+            const Arrange::Tick renderableEnd = ArrangeRenderableEndTick();
+
+            std::vector<std::pair<uint64_t, std::string>> renderOutputNodes;
+            ArrangeRenderCollectOutputNodes(renderOutputNodes);
+
+            // Is there anything for a timeline *video* source to draw in a
+            // given range? Decides the video source's default and whether
+            // "Timeline clips" is offered at all.
+            auto rangeHasVideoClips = [&](Arrange::Tick a, Arrange::Tick b) -> int {
+               int n = 0;
+               for (const Arrange::Lane& l : gArrange.lanes)
                {
-                  GraphNode* gn = nodeForUid(c.srcUid);
-                  if (gn != nullptr && gn->node != nullptr && gn->node->GetOutputWidth() > 0 && gn->node->GetOutputHeight() > 0)
-                  {
-                     detectedClipW = gn->node->GetOutputWidth();
-                     detectedClipH = gn->node->GetOutputHeight();
-                     foundClipRes = true;
-                     break;
-                  }
+                  if (l.type != Arrange::kLaneVideo)
+                     continue;
+                  for (const Arrange::Clip& c : l.clips)
+                     if (c.enabled && c.srcUid != 0 && c.End() > a && c.start < b && FindNodeByUid(c.srcUid) != nullptr)
+                        n++;
                }
-            }
+               return n;
+            };
 
-            const char* renderLabel = gOfflineRender.active ? "Rendering..." : "Render";
+            // The range the current settings describe, in ticks.
+            auto currentRange = [&](Arrange::Tick& outA, Arrange::Tick& outB) {
+               switch (rset.renderRangeKind)
+               {
+               case kArrangeRangeLoop:
+                  outA = rset.loop.start;
+                  outB = rset.loop.end;
+                  break;
+               case kArrangeRangeMarkers:
+               {
+                  const int n = (int)gArrange.markers.size();
+                  const int ia = std::clamp(sArrangeRenderMarkerA, 0, std::max(0, n - 1));
+                  const int ib = std::clamp(sArrangeRenderMarkerB, 0, std::max(0, n - 1));
+                  outA = n > 0 ? gArrange.markers[ia].pos : 0;
+                  outB = n > 0 ? gArrange.markers[ib].pos : 0;
+                  if (outB < outA)
+                     std::swap(outA, outB);
+                  break;
+               }
+               case kArrangeRangeCustom:
+                  outA = rset.renderRangeStart;
+                  outB = rset.renderRangeEnd;
+                  break;
+               case kArrangeRangeWhole:
+               default:
+                  outA = 0;
+                  outB = renderableEnd;
+                  break;
+               }
+               if (outB <= outA) // never hand the runner an empty job
+                  outB = outA + Arrange::kPPQ;
+            };
+
+            Arrange::Tick rangeA = 0, rangeB = 0;
+            currentRange(rangeA, rangeB);
+
+            // -1 means "decide at draw time", which is what makes the default
+            // track the monitoring mode instead of freezing whatever it was
+            // when the patch was saved ("render what you hear", WP7 #6b).
+            auto effectiveAudioSource = [&]() -> int {
+               if (rset.renderAudioSource >= 0)
+                  return std::clamp(rset.renderAudioSource, 0, 2);
+               return gAudioMode == AudioMode::Timeline ? kArrangeAudioTimeline : kArrangeAudioCanvas;
+            };
+            auto effectiveVideoSource = [&]() -> int {
+               if (rset.renderVideoSource >= 0)
+                  return std::clamp(rset.renderVideoSource, 0, 2);
+               if (rangeHasVideoClips(rangeA, rangeB) > 0)
+                  return kArrangeVideoTimeline;
+               return renderOutputNodes.empty() ? kArrangeVideoNone : kArrangeVideoCanvas;
+            };
+
+            auto renderExtension = [&]() -> const char* {
+               if (effectiveVideoSource() == kArrangeVideoNone)
+                  return ".wav";
+               return rset.renderFormat == 1 ? ".mov" : ".mp4";
+            };
+            auto renderFullPath = [&]() -> std::string {
+               std::string folder = rset.renderFolder;
+               if (folder.empty())
+               {
+                  const std::string home = AppPaths::HomeDir();
+                  folder = home.empty() ? std::string(".") : home + "/Desktop";
+               }
+               while (!folder.empty() && (folder.back() == '/' || folder.back() == '\\'))
+                  folder.pop_back();
+               return folder + "/" + sArrangeRenderFileName + renderExtension();
+            };
+
+            const char* renderLabel = ArrangeRenderBusy() ? "Rendering..." : "Render";
             const float renderBtnW = ImGui::CalcTextSize(renderLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
             const ImVec2 renderBtnPos(audioBtnPos.x - renderBtnW - 8.0f, panelOrigin.y + 2.0f);
             ImGui::SetCursorScreenPos(renderBtnPos);
-            ImGui::BeginDisabled(gOfflineRender.active);
+            ImGui::BeginDisabled(ArrangeRenderBusy());
             if (ImGui::Button(renderLabel, ImVec2(renderBtnW, 0.0f)))
             {
-               if (gArrange.settings.loop.enabled && gArrange.settings.loop.end > gArrange.settings.loop.start)
+               if (rset.renderRangeKind == kArrangeRangeCustom && rset.renderRangeEnd <= rset.renderRangeStart)
                {
-                  sArrangeRenderStartSec = ArrangeLoopStartSec();
-                  sArrangeRenderEndSec = ArrangeLoopEndSec();
+                  rset.renderRangeStart = 0;
+                  rset.renderRangeEnd = std::max<Arrange::Tick>(renderableEnd, Arrange::kPPQ);
                }
-               else
-               {
-                  sArrangeRenderStartSec = 0.0;
-                  sArrangeRenderEndSec = std::max(1.0, arrangeEndSec);
-               }
-               if (sArrangeRenderResPreset == 0)
-               {
-                  sArrangeRenderWidth = detectedClipW;
-                  sArrangeRenderHeight = detectedClipH;
-               }
-               if (sArrangeRenderVideoPath.empty())
+               if (rset.renderFolder.empty())
                {
                   const std::string home = AppPaths::HomeDir();
-                  sArrangeRenderVideoPath = (home.empty() ? std::string() : home + "/Desktop/") +
-                     "infinite_timeline." + (sArrangeRenderVideoFormat == 1 ? "mov" : "mp4");
+                  rset.renderFolder = home.empty() ? std::string(".") : home + "/Desktop";
                }
                ImGui::OpenPopup("##arrangeRenderPopup");
             }
@@ -27874,133 +28143,367 @@ namespace
                ImGui::Separator();
 
                // ---- Time range ----
-               ImGui::TextDisabled("Export Time Range:");
-               ImGui::SetNextItemWidth(80.0f);
-               ImGui::InputDouble("Start (s)##arrRenderStart", &sArrangeRenderStartSec, 0.0, 0.0, "%.2f");
-               ImGui::SameLine();
-               ImGui::SetNextItemWidth(80.0f);
-               ImGui::InputDouble("End (s)##arrRenderEnd", &sArrangeRenderEndSec, 0.0, 0.0, "%.2f");
-               sArrangeRenderStartSec = std::clamp(sArrangeRenderStartSec, 0.0, 3600.0);
-               sArrangeRenderEndSec = std::clamp(sArrangeRenderEndSec, sArrangeRenderStartSec + 0.1, 3600.0 + sArrangeRenderStartSec);
-
-               if (ImGui::SmallButton("Entire Timeline"))
+               ImGui::TextDisabled("Range:");
+               ImGui::SetNextItemWidth(150.0f);
+               int rangeKind = std::clamp(rset.renderRangeKind, 0, 3);
+               if (ImGui::Combo("##arrRangeKind", &rangeKind, "Whole arrangement\0Loop\0Marker A -> B\0Custom\0"))
                {
-                  sArrangeRenderStartSec = 0.0;
-                  sArrangeRenderEndSec = std::max(1.0, arrangeEndSec);
+                  rset.renderRangeKind = rangeKind;
+                  gPatchDirty = true;
                }
-               if (gArrange.settings.loop.enabled && gArrange.settings.loop.end > gArrange.settings.loop.start)
+
+               if (rset.renderRangeKind == kArrangeRangeMarkers)
                {
-                  ImGui::SameLine();
-                  if (ImGui::SmallButton("Loop Region"))
+                  const int markerCount = (int)gArrange.markers.size();
+                  if (markerCount < 2)
                   {
-                     sArrangeRenderStartSec = ArrangeLoopStartSec();
-                     sArrangeRenderEndSec = ArrangeLoopEndSec();
+                     ImGui::TextDisabled("(needs two markers)");
+                  }
+                  else
+                  {
+                     std::string markerItems;
+                     for (const Arrange::Marker& mk : gArrange.markers)
+                     {
+                        markerItems += mk.name.empty() ? ArrangeFormatPos(mk.pos) : mk.name;
+                        markerItems.push_back('\0');
+                     }
+                     markerItems.push_back('\0');
+                     sArrangeRenderMarkerA = std::clamp(sArrangeRenderMarkerA, 0, markerCount - 1);
+                     sArrangeRenderMarkerB = std::clamp(sArrangeRenderMarkerB, 0, markerCount - 1);
+                     ImGui::SetNextItemWidth(110.0f);
+                     ImGui::Combo("##arrMarkA", &sArrangeRenderMarkerA, markerItems.c_str());
+                     ImGui::SameLine(0.0f, 6.0f);
+                     ImGui::TextDisabled("->");
+                     ImGui::SameLine(0.0f, 6.0f);
+                     ImGui::SetNextItemWidth(110.0f);
+                     ImGui::Combo("##arrMarkB", &sArrangeRenderMarkerB, markerItems.c_str());
                   }
                }
+               else if (rset.renderRangeKind == kArrangeRangeCustom)
+               {
+                  // Typed in whichever unit the timeline is showing (WP6's
+                  // ArrangeParsePos/ArrangeFormatPos), so a range reads the
+                  // same way as every other position in the panel.
+                  auto tickField = [&](const char* id, Arrange::Tick& t) {
+                     char buf[48];
+                     snprintf(buf, sizeof(buf), "%s", ArrangeFormatPos(t).c_str());
+                     ImGui::SetNextItemWidth(90.0f);
+                     if (ImGui::InputText(id, buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue))
+                     {
+                        const Arrange::Tick parsed = ArrangeParsePos(buf);
+                        if (parsed >= 0)
+                        {
+                           t = parsed;
+                           gPatchDirty = true;
+                        }
+                     }
+                  };
+                  tickField("##arrRangeStart", rset.renderRangeStart);
+                  ImGui::SameLine(0.0f, 6.0f);
+                  ImGui::TextDisabled("->");
+                  ImGui::SameLine(0.0f, 6.0f);
+                  tickField("##arrRangeEnd", rset.renderRangeEnd);
+               }
+               currentRange(rangeA, rangeB);
+               const double rangeSec = Arrange::TicksToSeconds(rangeB - rangeA, renderBpm);
+               ImGui::TextDisabled("%s -> %s  (%.2fs)", ArrangeFormatPos(rangeA).c_str(),
+                                   ArrangeFormatPos(rangeB).c_str(), rangeSec);
 
-               ImGui::Dummy(ImVec2(0, 2));
                ImGui::Separator();
 
-               // ---- Resolution ----
+               // ---- Sources (WP7 #1 / #6b) ----
+               ImGui::TextDisabled("Audio source:");
+               ImGui::SetNextItemWidth(150.0f);
+               int audioSrcUi = rset.renderAudioSource < 0 ? effectiveAudioSource() : rset.renderAudioSource;
+               if (ImGui::Combo("##arrAudioSrc", &audioSrcUi, "Timeline clips\0Canvas output\0None\0"))
+               {
+                  rset.renderAudioSource = audioSrcUi;
+                  gPatchDirty = true;
+               }
+               if (rset.renderAudioSource < 0)
+               {
+                  ImGui::SameLine();
+                  ImGui::TextDisabled("(follows monitoring)");
+               }
+
+               ImGui::TextDisabled("Video source:");
+               ImGui::SetNextItemWidth(150.0f);
+               int videoSrcUi = rset.renderVideoSource < 0 ? effectiveVideoSource() : rset.renderVideoSource;
+               if (ImGui::Combo("##arrVideoSrc", &videoSrcUi, "Timeline clips\0Canvas Output node\0None (audio only)\0"))
+               {
+                  rset.renderVideoSource = videoSrcUi;
+                  gPatchDirty = true;
+               }
+               if (effectiveVideoSource() == kArrangeVideoCanvas)
+               {
+                  if (renderOutputNodes.empty())
+                  {
+                     ImGui::TextDisabled("(no Output node on the canvas)");
+                  }
+                  else if (renderOutputNodes.size() > 1)
+                  {
+                     int pick = 0;
+                     for (int i = 0; i < (int)renderOutputNodes.size(); i++)
+                        if (renderOutputNodes[(size_t)i].first == sArrangeRenderCanvasUid)
+                           pick = i;
+                     std::string items;
+                     for (const auto& o : renderOutputNodes)
+                     {
+                        items += o.second;
+                        items.push_back('\0');
+                     }
+                     items.push_back('\0');
+                     ImGui::SetNextItemWidth(150.0f);
+                     if (ImGui::Combo("##arrCanvasOut", &pick, items.c_str()))
+                        sArrangeRenderCanvasUid = renderOutputNodes[(size_t)pick].first;
+                  }
+                  if (sArrangeRenderCanvasUid == 0 && !renderOutputNodes.empty())
+                     sArrangeRenderCanvasUid = renderOutputNodes.front().first;
+               }
+
+               // One line saying what this job will actually contain, so the
+               // two pickers don't have to be read together every time.
+               {
+                  const int aSrc = effectiveAudioSource();
+                  const int vSrc = effectiveVideoSource();
+                  const int clipCount = rangeHasVideoClips(rangeA, rangeB);
+                  char summary[192];
+                  const char* aTxt = aSrc == kArrangeAudioTimeline ? "Timeline clips"
+                                     : aSrc == kArrangeAudioCanvas ? "Canvas output"
+                                                                   : "None";
+                  char vTxt[96];
+                  if (vSrc == kArrangeVideoTimeline)
+                     snprintf(vTxt, sizeof(vTxt), "Timeline (%d clip%s)", clipCount, clipCount == 1 ? "" : "s");
+                  else if (vSrc == kArrangeVideoCanvas)
+                     snprintf(vTxt, sizeof(vTxt), "Canvas output");
+                  else
+                     snprintf(vTxt, sizeof(vTxt), "None");
+                  snprintf(summary, sizeof(summary), "Audio: %s  -  Video: %s", aTxt, vTxt);
+                  ImGui::TextUnformatted(summary);
+               }
+
+               ImGui::Separator();
+
+               const bool audioOnly = effectiveVideoSource() == kArrangeVideoNone;
+
+               // ---- Resolution / fps (video jobs only) ----
+               ImGui::BeginDisabled(audioOnly);
                ImGui::TextDisabled("Resolution:");
-               const char* kResPresets[] = { "Match Clips", "1080p (1920x1080)", "4K (3840x2160)", "720p (1280x720)", "Vertical (1080x1920)", "Custom" };
-               ImGui::SetNextItemWidth(170.0f);
+               static int sArrangeRenderResPreset = 0; // 0=Match Clips, 1..4 fixed, 5=Custom
+               int detectedClipW = 0, detectedClipH = 0;
+               ArrangeRenderDetectClipSize(detectedClipW, detectedClipH);
+               const char* kResPresets[] = { "Match Clips", "1080p", "4K", "720p", "Vertical", "Custom" };
+               ImGui::SetNextItemWidth(120.0f);
                if (ImGui::Combo("##arrResPreset", &sArrangeRenderResPreset, kResPresets, IM_ARRAYSIZE(kResPresets)))
                {
-                  if (sArrangeRenderResPreset == 0) { sArrangeRenderWidth = detectedClipW; sArrangeRenderHeight = detectedClipH; }
-                  else if (sArrangeRenderResPreset == 1) { sArrangeRenderWidth = 1920; sArrangeRenderHeight = 1080; }
-                  else if (sArrangeRenderResPreset == 2) { sArrangeRenderWidth = 3840; sArrangeRenderHeight = 2160; }
-                  else if (sArrangeRenderResPreset == 3) { sArrangeRenderWidth = 1280; sArrangeRenderHeight = 720; }
-                  else if (sArrangeRenderResPreset == 4) { sArrangeRenderWidth = 1080; sArrangeRenderHeight = 1920; }
+                  if (sArrangeRenderResPreset == 0) { rset.renderWidth = detectedClipW; rset.renderHeight = detectedClipH; }
+                  else if (sArrangeRenderResPreset == 1) { rset.renderWidth = 1920; rset.renderHeight = 1080; }
+                  else if (sArrangeRenderResPreset == 2) { rset.renderWidth = 3840; rset.renderHeight = 2160; }
+                  else if (sArrangeRenderResPreset == 3) { rset.renderWidth = 1280; rset.renderHeight = 720; }
+                  else if (sArrangeRenderResPreset == 4) { rset.renderWidth = 1080; rset.renderHeight = 1920; }
+                  gPatchDirty = true;
                }
                ImGui::SameLine();
                ImGui::SetNextItemWidth(60.0f);
-               ImGui::InputInt("##arrResW", &sArrangeRenderWidth, 0, 0);
-               ImGui::SameLine();
-               ImGui::TextUnformatted("x");
-               ImGui::SameLine();
+               if (ImGui::InputInt("##arrResW", &rset.renderWidth, 0, 0))
+                  gPatchDirty = true;
+               ImGui::SameLine(0.0f, 4.0f);
+               ImGui::TextDisabled("x");
+               ImGui::SameLine(0.0f, 4.0f);
                ImGui::SetNextItemWidth(60.0f);
-               ImGui::InputInt("##arrResH", &sArrangeRenderHeight, 0, 0);
-               sArrangeRenderWidth = std::clamp(sArrangeRenderWidth, 16, 7680);
-               sArrangeRenderHeight = std::clamp(sArrangeRenderHeight, 16, 4320);
+               if (ImGui::InputInt("##arrResH", &rset.renderHeight, 0, 0))
+                  gPatchDirty = true;
+               rset.renderWidth = std::clamp(rset.renderWidth, 16, 7680);
+               rset.renderHeight = std::clamp(rset.renderHeight, 16, 4320);
 
-               // ---- Frame rate ----
                ImGui::SetNextItemWidth(90.0f);
-               ImGui::InputInt("fps##arrRenderFps", &sArrangeRenderFps);
-               sArrangeRenderFps = std::clamp(sArrangeRenderFps, 1, 240);
+               if (ImGui::InputInt("fps##arrRenderFps", &rset.renderFps))
+                  gPatchDirty = true;
+               rset.renderFps = std::clamp(rset.renderFps, 1, 240);
+               ImGui::EndDisabled();
 
-               ImGui::Dummy(ImVec2(0, 2));
-               ImGui::Checkbox("Include video", &sArrangeRenderIncludeVideo);
-               ImGui::SameLine(0.0f, 16.0f);
-               ImGui::Checkbox("Include audio", &sArrangeRenderIncludeAudio);
-
-               ImGui::Dummy(ImVec2(0, 2));
                ImGui::Separator();
 
-               // ---- Export file path & format ----
+               // ---- Output file ----
                ImGui::TextDisabled("Output File:");
-               char renderVidBuf[512];
-               snprintf(renderVidBuf, sizeof(renderVidBuf), "%s", sArrangeRenderVideoPath.c_str());
+               char renderNameBuf[256];
+               snprintf(renderNameBuf, sizeof(renderNameBuf), "%s", sArrangeRenderFileName.c_str());
+               ImGui::SetNextItemWidth(200.0f);
+               if (ImGui::InputText("##arrangeRenderName", renderNameBuf, sizeof(renderNameBuf)))
+                  sArrangeRenderFileName = renderNameBuf;
+               ImGui::SameLine();
+               ImGui::TextDisabled("%s", renderExtension());
+
+               char renderFolderBuf[512];
+               snprintf(renderFolderBuf, sizeof(renderFolderBuf), "%s", rset.renderFolder.c_str());
                ImGui::SetNextItemWidth(260.0f);
-               if (ImGui::InputText("##arrangeRenderPath", renderVidBuf, sizeof(renderVidBuf)))
+               if (ImGui::InputText("##arrangeRenderFolder", renderFolderBuf, sizeof(renderFolderBuf)))
                {
-                  sArrangeRenderVideoPath = renderVidBuf;
-                  std::string low = sArrangeRenderVideoPath;
-                  for (char& c : low) c = (char)tolower((unsigned char)c);
-                  if (low.size() >= 4 && low.rfind(".mov") == low.size() - 4)
-                     sArrangeRenderVideoFormat = 1;
-                  else if (low.size() >= 4 && low.rfind(".mp4") == low.size() - 4)
-                     sArrangeRenderVideoFormat = 0;
+                  rset.renderFolder = renderFolderBuf;
+                  gPatchDirty = true;
                }
 
-               const int fmtActive = sArrangeRenderVideoFormat;
-               if (fmtActive == 0) ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
-               if (ImGui::Button(".mp4##arrRenderMp4", ImVec2(56, 0)))
+               // Format follows the video source: an audio-only job is a WAV
+               // by definition, so the container buttons stand down rather
+               // than offering a choice that cannot apply (WP7 #1).
+               if (audioOnly)
                {
-                  sArrangeRenderVideoFormat = 0;
-                  const size_t dot = sArrangeRenderVideoPath.rfind('.');
-                  sArrangeRenderVideoPath = (dot != std::string::npos ? sArrangeRenderVideoPath.substr(0, dot) : sArrangeRenderVideoPath) + ".mp4";
+                  ImGui::TextDisabled("Audio-only job - writes a .wav");
                }
-               if (fmtActive == 0) ImGui::PopStyleColor();
-               ImGui::SameLine();
-               if (fmtActive == 1) ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
-               if (ImGui::Button(".mov##arrRenderMov", ImVec2(56, 0)))
+               else
                {
-                  sArrangeRenderVideoFormat = 1;
-                  const size_t dot = sArrangeRenderVideoPath.rfind('.');
-                  sArrangeRenderVideoPath = (dot != std::string::npos ? sArrangeRenderVideoPath.substr(0, dot) : sArrangeRenderVideoPath) + ".mov";
+                  const int fmtActive = rset.renderFormat == 1 ? 1 : 0;
+                  if (fmtActive == 0) ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+                  if (ImGui::Button(".mp4##arrRenderMp4", ImVec2(56, 0)))
+                  {
+                     rset.renderFormat = 0;
+                     gPatchDirty = true;
+                  }
+                  if (fmtActive == 0) ImGui::PopStyleColor();
+                  ImGui::SameLine();
+                  if (fmtActive == 1) ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+                  if (ImGui::Button(".mov##arrRenderMov", ImVec2(56, 0)))
+                  {
+                     rset.renderFormat = 1;
+                     gPatchDirty = true;
+                  }
+                  if (fmtActive == 1) ImGui::PopStyleColor();
                }
-               if (fmtActive == 1) ImGui::PopStyleColor();
+               ImGui::TextDisabled("%s", renderFullPath().c_str());
 
                ImGui::Separator();
-               const bool canRender = sArrangeRenderIncludeVideo || sArrangeRenderIncludeAudio;
-               ImGui::BeginDisabled(!canRender);
+
+               // Builds the job the two submit buttons share, so "Render Now"
+               // and "Add to Queue" can never disagree about what was asked
+               // for - they differ only in where the job is put.
+               auto buildJob = [&]() -> ArrangeRenderJob {
+                  ArrangeRenderJob job;
+                  job.rangeKind = rset.renderRangeKind;
+                  job.startTick = rangeA;
+                  job.endTick = rangeB;
+                  job.audioSource = effectiveAudioSource();
+                  job.videoSource = effectiveVideoSource();
+                  job.canvasVideoUid = sArrangeRenderCanvasUid;
+                  job.width = rset.renderWidth;
+                  job.height = rset.renderHeight;
+                  job.fps = rset.renderFps;
+                  job.sampleRate = rset.renderSampleRate;
+                  job.format = job.videoSource == kArrangeVideoNone ? 2 : (rset.renderFormat == 1 ? 1 : 0);
+                  job.path = renderFullPath();
+                  return job;
+               };
+               auto commitJob = [](ArrangeRenderJob job, bool startNow) {
+                  job.id = gArrangeRenderNextJobId++;
+                  job.status = kArrangeJobQueued;
+                  if (startNow)
+                  {
+                     // Ahead of anything already parked, so "Render Now"
+                     // means this job, not "whatever is first in the queue".
+                     gArrangeRenderQueue.insert(gArrangeRenderQueue.begin(), job);
+                     gArrangeRenderQueueRunning = true;
+                  }
+                  else
+                  {
+                     gArrangeRenderQueue.push_back(job);
+                  }
+               };
+               auto submitJob = [&](bool startNow) {
+                  ArrangeRenderJob job = buildJob();
+                  std::error_code ec;
+                  const bool collides =
+                     std::filesystem::exists(job.path, ec) || ArrangeRenderPathQueued(job.path, 0);
+                  if (collides)
+                  {
+                     // Asking before the queue gets there, not while it runs:
+                     // a job that silently overwrote yesterday's export is
+                     // only noticed once it is already gone (WP7 #8).
+                     sArrangePendingJob = job;
+                     sArrangePendingStartNow = startNow;
+                     sArrangeOpenOverwrite = true;
+                  }
+                  else
+                  {
+                     commitJob(job, startNow);
+                  }
+               };
+
+               const bool canRender = !(effectiveAudioSource() == kArrangeAudioNone &&
+                                        effectiveVideoSource() == kArrangeVideoNone) &&
+                                      !sArrangeRenderFileName.empty() &&
+                                      !(effectiveVideoSource() == kArrangeVideoCanvas && renderOutputNodes.empty());
+               ImGui::BeginDisabled(!canRender || ArrangeRenderBusy());
                if (ImGui::Button("Render Now", ImVec2(110, 0)))
                {
-                  if (!sArrangeTimelineExportNode)
-                     sArrangeTimelineExportNode = std::make_unique<OutputNode>();
-
-                  OutputNode* rn = sArrangeTimelineExportNode.get();
-                  rn->recordVideoPath = sArrangeRenderVideoPath;
-                  rn->videoFormat = sArrangeRenderVideoFormat;
-                  rn->offlineFps = sArrangeRenderFps;
-                  rn->offlineDurationSeconds = std::clamp(
-                     (int)std::ceil(sArrangeRenderEndSec - sArrangeRenderStartSec), 1, 3600);
-                  rn->includeAudio = sArrangeRenderIncludeAudio;
-
-                  // The render does NOT change the monitoring mode (WP3
-                  // mode leak): it routes through gOfflineRender.arrangeDriven,
-                  // which RebuildAudioTopology treats as Timeline for the
-                  // duration of the take and nothing else.
-                  Transport::Instance().Seek(sArrangeRenderStartSec);
-                  gOfflineRender.arrangeDriven = true;
-                  gOfflineRender.endSeconds = sArrangeRenderEndSec;
-                  StartOfflineRenderSession(rn, sArrangeRenderWidth, sArrangeRenderHeight, true /* isArrange */);
+                  submitJob(true);
+                  ImGui::CloseCurrentPopup();
+               }
+               ImGui::EndDisabled();
+               ImGui::SameLine();
+               ImGui::BeginDisabled(!canRender);
+               if (ImGui::Button("Add to Queue", ImVec2(110, 0)))
+               {
+                  submitJob(false);
                   ImGui::CloseCurrentPopup();
                }
                ImGui::EndDisabled();
                ImGui::SameLine();
                if (ImGui::Button("Cancel", ImVec2(70, 0)))
+                  ImGui::CloseCurrentPopup();
+               ImGui::EndPopup();
+            }
+
+            // ---- overwrite / duplicate-path prompt (WP7 #8) ----
+            // Drawn at toolbar level rather than inside the render popup: the
+            // popup closes on submit, and a modal owned by a closed popup
+            // never opens.
+            if (sArrangeOpenOverwrite)
+            {
+               ImGui::OpenPopup("Overwrite file?##arrangeOverwrite");
+               sArrangeOpenOverwrite = false;
+            }
+            if (ImGui::BeginPopupModal("Overwrite file?##arrangeOverwrite", nullptr,
+                                       ImGuiWindowFlags_AlwaysAutoResize))
+            {
+               const bool queuedClash = ArrangeRenderPathQueued(sArrangePendingJob.path, 0);
+               ImGui::TextUnformatted(queuedClash ? "Another queued job already writes:" : "This file already exists:");
+               ImGui::TextDisabled("%s", sArrangePendingJob.path.c_str());
+               ImGui::Dummy(ImVec2(0, 4));
+               if (ImGui::Button("Overwrite", ImVec2(100, 0)))
+               {
+                  ArrangeRenderJob job = sArrangePendingJob;
+                  job.id = gArrangeRenderNextJobId++;
+                  job.status = kArrangeJobQueued;
+                  if (sArrangePendingStartNow)
+                  {
+                     gArrangeRenderQueue.insert(gArrangeRenderQueue.begin(), job);
+                     gArrangeRenderQueueRunning = true;
+                  }
+                  else
+                  {
+                     gArrangeRenderQueue.push_back(job);
+                  }
+                  ImGui::CloseCurrentPopup();
+               }
+               ImGui::SameLine();
+               if (ImGui::Button("Auto-rename", ImVec2(100, 0)))
+               {
+                  ArrangeRenderJob job = sArrangePendingJob;
+                  job.path = ArrangeRenderUniquePath(job.path);
+                  job.id = gArrangeRenderNextJobId++;
+                  job.status = kArrangeJobQueued;
+                  if (sArrangePendingStartNow)
+                  {
+                     gArrangeRenderQueue.insert(gArrangeRenderQueue.begin(), job);
+                     gArrangeRenderQueueRunning = true;
+                  }
+                  else
+                  {
+                     gArrangeRenderQueue.push_back(job);
+                  }
+                  ImGui::CloseCurrentPopup();
+               }
+               ImGui::SameLine();
+               if (ImGui::Button("Cancel", ImVec2(80, 0)))
                   ImGui::CloseCurrentPopup();
                ImGui::EndPopup();
             }
@@ -33247,7 +33750,9 @@ namespace
    // offline render, which is Timeline by definition.
    bool ArrangeTimelineRoutingActive()
    {
-      return gAudioMode == AudioMode::Timeline || (gOfflineRender.active && gOfflineRender.arrangeDriven);
+      return gAudioMode == AudioMode::Timeline ||
+             (gOfflineRender.active && gOfflineRender.arrangeDriven && gOfflineRender.timelineAudio) ||
+             (gArrangeWavRender.active && gArrangeWavRender.timelineAudio);
    }
 
    void RebuildAudioTopology()
@@ -33863,6 +34368,40 @@ namespace
       return nullptr;
    }
 
+   // The same refusal, scoped to an arrangement render (WP7 #4). A timeline
+   // take only pre-synthesizes the nodes its own clips reference, so the
+   // whole-patch sweep above would refuse a perfectly renderable timeline
+   // just because an unrelated camera sits on the canvas. Only clips that
+   // actually play are considered: disabled ones are excluded everywhere
+   // else in the render path (WP5's `0` key), and an unassigned clip
+   // (srcUid = 0, or a uid whose node is gone) references nothing at all.
+   //
+   // `wantVideo`/`wantAudio` say which lane types this job draws from, so a
+   // video-only job isn't refused by a camera an audio clip happens to point
+   // at. A canvas-sourced side is NOT covered here - that side renders the
+   // live graph and is checked with the whole-patch sweep by the caller.
+   INode* FindHardwareDrivenNodeInArrangeRange(int64_t startTick, int64_t endTick,
+                                               bool wantVideo, bool wantAudio)
+   {
+      for (const Arrange::Lane& l : gArrange.lanes)
+      {
+         const bool isVideo = l.type == Arrange::kLaneVideo;
+         if (isVideo ? !wantVideo : !wantAudio)
+            continue;
+         for (const Arrange::Clip& c : l.clips)
+         {
+            if (!c.enabled || c.srcUid == 0)
+               continue;
+            if (c.End() <= startTick || c.start >= endTick) // half-open, same as the scheduler
+               continue;
+            GraphNode* gn = FindNodeByUid(c.srcUid);
+            if (gn != nullptr && gn->node != nullptr && gn->node->IsHardwareDriven())
+               return gn->node.get();
+         }
+      }
+      return nullptr;
+   }
+
    // Entry point for the "Render" button in an OutputNode's params (see the
    // node-params drawing code below). Refuses up front if the patch has a
    // hardware-driven source or another take (on this or any other OutputNode)
@@ -33877,15 +34416,22 @@ namespace
       if (n->IsRecording() || n->IsFinalizing())
          return;
 
-      if (!isArrange)
+      // A live source can't be pre-synthesized for an offline take, so refuse
+      // rather than write a file full of one frozen frame. An arrangement
+      // take scopes the sweep to the clips inside its own range (WP7 #4);
+      // any side of it that renders the canvas instead falls back to the
+      // whole-patch sweep, which is what that side actually cooks.
+      const bool arrangeScoped = isArrange && gOfflineRender.timelineVideo && gOfflineRender.timelineAudio;
+      INode* hw = arrangeScoped
+                     ? FindHardwareDrivenNodeInArrangeRange(gOfflineRender.rangeStartTick,
+                                                            gOfflineRender.rangeEndTick, true, true)
+                     : FindHardwareDrivenNode();
+      if (hw != nullptr)
       {
-         if (INode* hw = FindHardwareDrivenNode())
-         {
-            (void)hw;
-            n->SetRecordStatus("refused: patch has a live source (camera/MIDI/Syphon In) "
-                                "that can't be pre-synthesized for an offline take");
-            return;
-         }
+         n->SetRecordStatus("refused: " + std::string(isArrange ? "the render range has" : "patch has") +
+                            " a live source (camera/MIDI/Syphon In) "
+                            "that can't be pre-synthesized for an offline take");
+         return;
       }
 
       // The graph's AudioNodes are only PrepareToPlay'd once the engine has
@@ -34037,6 +34583,389 @@ namespace
 
       ImGui::End();
       PopElevatedPanelStyle();
+   }
+
+
+   // The audio-only twin of DrawOfflineRenderProgressWindow. Same dim +
+   // click-catcher discipline: a WAV take drives the graph synchronously from
+   // the main loop, so editing underneath it while it runs would be editing
+   // the thing being rendered.
+   void DrawArrangeWavRenderProgressWindow()
+   {
+      if (!gArrangeWavRender.active)
+         return;
+
+      ImGuiIO& io = ImGui::GetIO();
+      ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+      ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
+      ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.35f));
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+      ImGui::Begin("##ArrangeWavRenderBlocker", nullptr,
+                   ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav |
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+      ImGui::InvisibleButton("##ArrangeWavRenderBlockerCatch", io.DisplaySize);
+      ImGui::End();
+      ImGui::PopStyleVar(2);
+      ImGui::PopStyleColor();
+
+      ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                              ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+      PushElevatedPanelStyle(/*isChild=*/false);
+      ImGui::Begin("Rendering Audio", nullptr,
+                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize |
+                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
+
+      const long long total = std::max<long long>(1, gArrangeWavRender.framesTotal);
+      const long long done = std::min(gArrangeWavRender.framesDone, total);
+      const float frac = (float)((double)done / (double)total);
+      if (gArrangeWavRender.cancelRequested)
+         ImGui::Text("Cancelling...");
+      else
+         ImGui::Text("%.1fs of %.1fs at %d Hz", (double)done / gArrangeWavRender.sampleRate,
+                     (double)total / gArrangeWavRender.sampleRate,
+                     (int)llround(gArrangeWavRender.sampleRate));
+      ImGui::ProgressBar(frac, ImVec2(280, 0));
+      ImGui::BeginDisabled(gArrangeWavRender.cancelRequested);
+      if (ImGui::Button("Cancel", ImVec2(120, 0)))
+         ArrangeRenderCancelActive();
+      ImGui::EndDisabled();
+      ImGui::End();
+      PopElevatedPanelStyle();
+   }
+
+   // ---- Arrangement render jobs: the runner (WP7) ---------------------------
+
+   bool ArrangeRenderBusy()
+   {
+      return gOfflineRender.active || gArrangeWavRender.active;
+   }
+
+   ArrangeRenderJob* ArrangeRenderFindJob(uint64_t id)
+   {
+      for (ArrangeRenderJob& j : gArrangeRenderQueue)
+         if (j.id == id)
+            return &j;
+      return nullptr;
+   }
+
+   // Seconds are derived from the live tempo at the moment the job starts, not
+   // when it was queued: a job is a tick range, so re-tempoing the patch
+   // between queueing and rendering changes its duration on purpose (same
+   // rule the clips themselves follow, WP6).
+   double ArrangeRenderTickSeconds(int64_t t)
+   {
+      return Arrange::TicksToSeconds((Arrange::Tick)t, std::max(1.0, (double)Transport::Instance().Tempo()));
+   }
+
+   void ArrangeRenderFailJob(ArrangeRenderJob& job, const std::string& why)
+   {
+      job.status = kArrangeJobFailed;
+      job.message = why;
+      gArrangeRenderActiveJobId = 0;
+   }
+
+   // Restores everything a take borrowed. Shared by the WAV path's finish and
+   // its failure exits so a half-started take can't leave the device detached
+   // or the transport stuck in offline mode.
+   void ArrangeWavRenderRestore()
+   {
+      Transport::Instance().SetOfflineMode(false);
+      Transport::Instance().Seek(gArrangeWavRender.endSeconds);
+      if (gArrangeWavRender.deviceWasRunning)
+         StartAudioEngine(gAudioStartError);
+      else
+         Transport::Instance().NotifyAudioEngineStopped();
+      Transport::Instance().SetPlaying(gArrangeWavRender.wasPlaying);
+      glfwSwapInterval(gArrangeWavRender.vsyncWasOn ? 1 : 0);
+      gArrangeWavRender.active = false;
+      gArrangeWavRender.timelineAudio = false;
+      gArrangeWavRender.cancelRequested = false;
+      RebuildAudioTopology();
+   }
+
+   // Audio-only take: no encoder, no frames, no OutputNode. Follows the same
+   // order as StartOfflineRenderSession - warm the graph, detach the device,
+   // then arm - because the live callback writes into the same graph this
+   // take drives synchronously, and AudioDeviceClose is not instant.
+   bool ArrangeWavRenderBegin(ArrangeRenderJob& job, double startSec, double endSec)
+   {
+      if (ArrangeRenderBusy())
+         return false;
+
+      const bool deviceWasRunningBefore = AudioEngine::Instance().SampleRate() > 0.0;
+      if (!deviceWasRunningBefore)
+      {
+         // The graph's AudioNodes are only PrepareToPlay'd once a device has
+         // opened at least once this session, so a cold start would render
+         // silence at an unknown rate.
+         if (!StartAudioEngine(gAudioStartError))
+         {
+            ArrangeRenderFailJob(job, "no audio device (" + gAudioStartError + ")");
+            return false;
+         }
+      }
+
+      // The file is written at the rate the graph was actually prepared at,
+      // not at the job's requested rate: every AudioNode keeps generating as
+      // if the device rate still applies, so muxing at anything else plays
+      // back at the wrong speed (the same bug the video path's comment in
+      // OutputNode::StartOfflineRender describes).
+      const double rate = AudioEngine::Instance().SampleRate();
+      if (!(rate > 0.0))
+      {
+         ArrangeRenderFailJob(job, "no audio device");
+         return false;
+      }
+      AudioEngine::Instance().Stop();
+
+      if (!gArrangeWavRender.writer.Open(job.path, rate, 2, AudioFileWriter::Format::Wav))
+      {
+         if (deviceWasRunningBefore)
+            StartAudioEngine(gAudioStartError);
+         ArrangeRenderFailJob(job, "could not create " + job.path);
+         return false;
+      }
+
+      gArrangeWavRender.active = true;
+      gArrangeWavRender.timelineAudio = job.audioSource == kArrangeAudioTimeline;
+      gArrangeWavRender.cancelRequested = false;
+      gArrangeWavRender.sampleRate = rate;
+      gArrangeWavRender.framesTotal = std::max<long long>(1, llround((endSec - startSec) * rate));
+      gArrangeWavRender.framesDone = 0;
+      gArrangeWavRender.startSeconds = startSec;
+      gArrangeWavRender.endSeconds = endSec;
+      gArrangeWavRender.deviceWasRunning = deviceWasRunningBefore;
+      gArrangeWavRender.wasPlaying = Transport::Instance().IsPlaying();
+      gArrangeWavRender.vsyncWasOn = gVsync;
+      gArrangeWavRender.startedTime = glfwGetTime();
+      glfwSwapInterval(0);
+
+      Transport::Instance().Seek(startSec);
+      Transport::Instance().SetOfflineMode(true, rate);
+      Transport::Instance().SetPlaying(true);
+      RebuildAudioTopology(); // picks up timelineAudio through ArrangeTimelineRoutingActive
+
+      job.status = kArrangeJobRendering;
+      job.framesTotal = (int)std::min<long long>(gArrangeWavRender.framesTotal, (long long)2147483647);
+      job.framesDone = 0;
+      job.startedTime = gArrangeWavRender.startedTime;
+      if (std::abs(rate - (double)job.sampleRate) > 1.0)
+         job.message = "written at the device rate (" + std::to_string((int)llround(rate)) + " Hz)";
+      return true;
+   }
+
+   // One main-loop slice of an audio-only take. Same ~10Hz budget as the video
+   // pump, for the same reason: the progress window and its Cancel button
+   // still have to repaint.
+   void ArrangeWavRenderPump()
+   {
+      if (!gArrangeWavRender.active)
+         return;
+
+      static float sWavL[kAudioMaxBlockFrames];
+      static float sWavR[kAudioMaxBlockFrames];
+      static float* sWavChannels[2] = { sWavL, sWavR };
+      static std::vector<float> sWavInterleave;
+
+      const double budgetStart = glfwGetTime();
+      while (!gArrangeWavRender.cancelRequested &&
+             gArrangeWavRender.framesDone < gArrangeWavRender.framesTotal)
+      {
+         const int blockFrames = (int)std::min<long long>(
+            kAudioMaxBlockFrames, gArrangeWavRender.framesTotal - gArrangeWavRender.framesDone);
+         AudioBuffer buf;
+         buf.channels = sWavChannels;
+         buf.numChannels = 2;
+         buf.numFrames = blockFrames;
+         AudioEngine::Instance().ProcessOffline(buf);
+
+         sWavInterleave.resize((size_t)blockFrames * 2);
+         for (int i = 0; i < blockFrames; i++)
+         {
+            sWavInterleave[(size_t)i * 2 + 0] = sWavL[i];
+            sWavInterleave[(size_t)i * 2 + 1] = sWavR[i];
+         }
+         gArrangeWavRender.writer.Append(sWavInterleave.data(), blockFrames);
+         gArrangeWavRender.framesDone += blockFrames;
+
+         // Keeps the drawn playhead and anything reading video time honest
+         // while the take runs; the clip windows themselves are scheduled off
+         // the audio clock ProcessOffline just advanced (WP3).
+         Transport::Instance().SetOfflineVideoTime(
+            gArrangeWavRender.startSeconds +
+            (double)gArrangeWavRender.framesDone / gArrangeWavRender.sampleRate);
+
+         if (glfwGetTime() - budgetStart > 0.1)
+            break;
+      }
+
+      if (ArrangeRenderJob* job = ArrangeRenderFindJob(gArrangeRenderActiveJobId))
+         job->framesDone = (int)std::min<long long>(gArrangeWavRender.framesDone, (long long)2147483647);
+
+      if (!gArrangeWavRender.cancelRequested &&
+          gArrangeWavRender.framesDone < gArrangeWavRender.framesTotal)
+         return;
+
+      const bool cancelled = gArrangeWavRender.cancelRequested;
+      gArrangeWavRender.writer.Close();
+      ArrangeWavRenderRestore();
+
+      if (ArrangeRenderJob* job = ArrangeRenderFindJob(gArrangeRenderActiveJobId))
+      {
+         job->status = cancelled ? kArrangeJobCancelled : kArrangeJobDone;
+         if (cancelled)
+            job->message = "cancelled";
+      }
+      gArrangeRenderActiveJobId = 0;
+   }
+
+   bool ArrangeRenderBeginJob(ArrangeRenderJob& job)
+   {
+      if (ArrangeRenderBusy())
+         return false;
+
+      const double startSec = ArrangeRenderTickSeconds(job.startTick);
+      const double endSec = ArrangeRenderTickSeconds(job.endTick);
+      const double durSec = endSec - startSec;
+      if (!(durSec > 0.0))
+      {
+         ArrangeRenderFailJob(job, "empty range");
+         return false;
+      }
+      if (job.audioSource == kArrangeAudioNone && job.videoSource == kArrangeVideoNone)
+      {
+         ArrangeRenderFailJob(job, "nothing to render (both sources are None)");
+         return false;
+      }
+      if (job.path.empty())
+      {
+         ArrangeRenderFailJob(job, "no output path");
+         return false;
+      }
+
+      gArrangeRenderActiveJobId = job.id;
+
+      if (job.videoSource == kArrangeVideoNone)
+         return ArrangeWavRenderBegin(job, startSec, endSec);
+
+      OutputNode* rn = nullptr;
+      if (job.videoSource == kArrangeVideoTimeline)
+      {
+         if (!gArrangeTimelineExportNode)
+            gArrangeTimelineExportNode = std::make_unique<OutputNode>();
+         rn = gArrangeTimelineExportNode.get();
+      }
+      else
+      {
+         GraphNode* gn = FindNodeByUid(job.canvasVideoUid);
+         rn = gn != nullptr ? dynamic_cast<OutputNode*>(gn->node.get()) : nullptr;
+         if (rn == nullptr)
+         {
+            ArrangeRenderFailJob(job, "the job's canvas Output node is gone");
+            return false;
+         }
+      }
+
+      rn->recordVideoPath = job.path;
+      rn->videoFormat = job.format == 1 ? 1 : 0;
+      rn->offlineFps = job.fps;
+      // Both are set: the override is what the take actually uses (WP7 #2),
+      // the seconds keep the node's own params readable if the user opens it.
+      rn->offlineDurationSeconds = std::clamp((int)std::ceil(durSec), 1, 3600);
+      rn->offlineTotalFramesOverride =
+         std::clamp((int)std::ceil(durSec * (double)std::max(1, job.fps)), 1, 240 * 3600);
+      rn->includeAudio = job.audioSource != kArrangeAudioNone;
+
+      // Set before arming: StartOfflineRenderSession's refusal reads the range
+      // and RebuildAudioTopology (its last line) reads the routing flags.
+      Transport::Instance().Seek(startSec);
+      gOfflineRender.arrangeDriven = true;
+      gOfflineRender.timelineVideo = job.videoSource == kArrangeVideoTimeline;
+      gOfflineRender.timelineAudio = job.audioSource == kArrangeAudioTimeline;
+      gOfflineRender.rangeStartTick = job.startTick;
+      gOfflineRender.rangeEndTick = job.endTick;
+      gOfflineRender.endSeconds = endSec;
+      StartOfflineRenderSession(rn, job.width, job.height, true /* isArrange */);
+
+      if (!gOfflineRender.active)
+      {
+         // Refused (hardware source, nothing connected, another take). Put the
+         // flags back so the next job starts from a clean slate.
+         gOfflineRender.arrangeDriven = false;
+         gOfflineRender.timelineVideo = false;
+         gOfflineRender.timelineAudio = false;
+         ArrangeRenderFailJob(job, rn->RecordStatus().empty() ? "could not start the take" : rn->RecordStatus());
+         return false;
+      }
+
+      job.status = kArrangeJobRendering;
+      job.framesTotal = rn->OfflineFramesTotal();
+      job.framesDone = 0;
+      job.startedTime = glfwGetTime();
+      return true;
+   }
+
+   void ArrangeRenderCancelActive()
+   {
+      if (gArrangeWavRender.active)
+      {
+         gArrangeWavRender.cancelRequested = true;
+         return;
+      }
+      if (gOfflineRender.active && gOfflineRender.node != nullptr)
+         gOfflineRender.node->RequestFinishOfflineRender(true);
+   }
+
+   // Called once a frame from the main loop, after the offline pump has had
+   // its slice. Notices a finished video take and starts the next queued job.
+   void ArrangeRenderQueueTick()
+   {
+      ArrangeWavRenderPump();
+
+      if (gArrangeRenderActiveJobId != 0 && !ArrangeRenderBusy())
+      {
+         // A video take just finished (the pump's teardown cleared .active).
+         // The WAV path settles its own job inside ArrangeWavRenderPump.
+         if (ArrangeRenderJob* job = ArrangeRenderFindJob(gArrangeRenderActiveJobId))
+         {
+            if (job->status == kArrangeJobRendering || job->status == kArrangeJobFinalizing)
+            {
+               const bool cancelled = job->framesDone < job->framesTotal;
+               job->status = cancelled ? kArrangeJobCancelled : kArrangeJobDone;
+               if (cancelled)
+                  job->message = "cancelled";
+            }
+         }
+         gArrangeRenderActiveJobId = 0;
+      }
+      else if (gArrangeRenderActiveJobId != 0 && gOfflineRender.active)
+      {
+         if (ArrangeRenderJob* job = ArrangeRenderFindJob(gArrangeRenderActiveJobId))
+         {
+            OutputNode* on = gOfflineRender.node;
+            if (on != nullptr)
+            {
+               job->framesDone = on->OfflineFramesDone();
+               job->framesTotal = on->OfflineFramesTotal();
+               job->status = on->IsOfflineFinalizing() ? kArrangeJobFinalizing : kArrangeJobRendering;
+            }
+         }
+      }
+
+      if (!gArrangeRenderQueueRunning || ArrangeRenderBusy() || gArrangeRenderActiveJobId != 0)
+         return;
+
+      for (ArrangeRenderJob& j : gArrangeRenderQueue)
+      {
+         if (j.status != kArrangeJobQueued)
+            continue;
+         ArrangeRenderBeginJob(j); // failure marks the job and falls through to the next
+         return;
+      }
+      gArrangeRenderQueueRunning = false;
    }
 
    void RemoveNodeByIndex(int index)
@@ -56843,7 +57772,7 @@ int main(int argc, char** argv)
                // under the progress window at a different size. Beats() here
                // reads the video time just set, on the same axis as the audio
                // envelope's clip windows.
-               if (gOfflineRender.arrangeDriven)
+               if (gOfflineRender.arrangeDriven && gOfflineRender.timelineVideo)
                {
                   CompositeArrangeTimelineVideo(gArrangeRenderTarget, &on->GetFbo(), Transport::Instance().Beats(),
                                                 on->GetOutputWidth(), on->GetOutputHeight());
@@ -56920,10 +57849,17 @@ int main(int argc, char** argv)
             glfwSwapInterval(gOfflineRender.vsyncWasOn ? 1 : 0);
             gOfflineRender.active = false;
             gOfflineRender.arrangeDriven = false;
+            gOfflineRender.timelineVideo = false;
+            gOfflineRender.timelineAudio = false;
             gOfflineRender.node = nullptr;
             RebuildAudioTopology();
          }
       }
+
+      // Audio-only takes and the export queue: run after the video pump's
+      // slice so a take that just finished is noticed this frame, and the
+      // next queued job starts on the next one (WP7).
+      ArrangeRenderQueueTick();
 
       // Same dev-harness carve-out as the startup check above.
       if (getenv("INFINITE_EXITAFTER") == nullptr)
@@ -77720,6 +78656,7 @@ int main(int argc, char** argv)
 
       if (gOfflineRender.active)
          DrawOfflineRenderProgressWindow();
+      DrawArrangeWavRenderProgressWindow();
 
       ImGui::Render();
       int fbW, fbH;

@@ -252,7 +252,12 @@ bool OutputNode::StartOfflineRender(const std::string& path, double audioSampleR
    mOfflineRecordW = mOut.w & ~1;
    mOfflineRecordH = mOut.h & ~1;
    mOfflineRecordFps = offlineFps > 0 ? offlineFps : 30;
-   mOfflineTotalFrames = mOfflineRecordFps * (offlineDurationSeconds > 0 ? offlineDurationSeconds : 1);
+   // An explicit frame budget wins over whole-seconds x fps: the timeline's
+   // render range is a tick span that rarely lands on a second boundary
+   // (offlineTotalFramesOverride, WP7 #2).
+   mOfflineTotalFrames = offlineTotalFramesOverride > 0
+                            ? offlineTotalFramesOverride
+                            : mOfflineRecordFps * (offlineDurationSeconds > 0 ? offlineDurationSeconds : 1);
    mOfflinePrerollRemaining = offlinePrerollFrames > 0 ? offlinePrerollFrames : 0;
    mOfflineFramesDone = 0;
    mOfflineAudioSampleRate = 0.0;

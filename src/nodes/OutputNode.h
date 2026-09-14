@@ -215,6 +215,13 @@ public:
    int offlineFps = 30;
    int offlineDurationSeconds = 10;
    int offlinePrerollFrames = 0;
+   // Exact frame budget for this take, when the caller knows it better than
+   // whole seconds x fps can express. The Arrangement Timeline's render range
+   // is an arbitrary tick span, so ceil(durationSec) rounded a 2.4s range up
+   // to a 3s file (WP7 #2); it sets this to ceil(durationSec * fps) instead.
+   // Transient - set per take by the caller, never serialized, and ignored
+   // (0) by the ordinary per-node Render button, which is still whole seconds.
+   int offlineTotalFramesOverride = 0;
 
    void VisitParams(ParamVisitor& v) override
    {
