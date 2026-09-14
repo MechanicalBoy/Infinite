@@ -80520,8 +80520,16 @@ int main(int argc, char** argv)
             std::vector<unsigned char> px(fbW * fbH * 4);
             glReadPixels(0, 0, fbW, fbH, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
             stbi_flip_vertically_on_write(1);
-            stbi_write_png(shotPath, fbW, fbH, 4, px.data(), fbW * 4);
-            printf("wrote %s (%dx%d)\n", shotPath, fbW, fbH);
+            // Report the real result. This printed "wrote ..." unconditionally,
+            // so a failed write announced success - and on macOS it fails
+            // easily, because Cocoa chdir's a bundled app to
+            // Contents/Resources and a relative shotPath then names a
+            // directory that does not exist there. A screenshot harness whose
+            // only signal is this line was reading a lie.
+            if (stbi_write_png(shotPath, fbW, fbH, 4, px.data(), fbW * 4))
+               printf("wrote %s (%dx%d)\n", shotPath, fbW, fbH);
+            else
+               printf("FAILED to write %s (%dx%d)\n", shotPath, fbW, fbH);
             glfwSetWindowShouldClose(window, GLFW_TRUE);
          }
       }

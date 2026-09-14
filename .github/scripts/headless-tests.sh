@@ -78,6 +78,14 @@ check_verdict() {
 
 check_verdict INFINITE_AUDIOPDCTEST "AUDIOPDCTEST OK"
 
+# Syphon/Spout nodes are hidden from the Add menu on Linux (no equivalent
+# exists) but stay registered so existing patches keep loading. Hiding a node
+# type from the spawn path is exactly the change that can break reading it back
+# from a file, and nothing else covers that: writes a two-node Syphon patch,
+# reads it back and asserts both nodes survive ApplyPatchData. Headless -
+# returns before glfwInit().
+check_verdict INFINITE_SYPHONPATCHTEST "SYPHONPATCHTEST OK"
+
 # Exported-movie A/V sync: pure arithmetic over the same pacing both
 # recorders' PTS depend on, so it runs headless here as well as on macOS -
 # and the recorders it guards are two separate implementations
