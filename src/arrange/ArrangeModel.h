@@ -194,7 +194,9 @@ namespace Arrange
    // --- groups ---------------------------------------------------------
    // A group needs >= 2 members; grouping fewer does nothing. Dropping to one
    // member (delete, ungroup-one) dissolves the group rather than leaving a
-   // singleton, which Validate would reject.
+   // singleton, which Validate would reject. Group works on whole groups: a
+   // member brings its group along, so mixed selections merge into one new
+   // group, and a selection that already is exactly one group is a no-op.
    bool Group(Model& m, const std::vector<uint64_t>& ids, uint64_t* outGroupId = nullptr);
    bool Ungroup(Model& m, const std::vector<uint64_t>& groupIds);
    bool RemoveFromGroup(Model& m, const std::vector<uint64_t>& ids);

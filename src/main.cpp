@@ -1148,7 +1148,16 @@ namespace
    // the tempo changes mid-drag.
    bool   gArrangeShiftDraggingLoop = false;
    int64_t gArrangeLoopDragAnchorTick = 0;
-   bool   gArrangeFitViewToLoopPending = false; // set by the manual duration field; consumed once rulerWidth is known
+   // Blade tool (toolbar scissors / B): while on, a click on a clip splits
+   // it at the mouse (snapped when snap is on) instead of selecting it.
+   bool  gArrangeBladeOn = false;
+   // A clip Add to Timeline just made: the panel scrolls it into view once
+   // (it can land past the right edge, or on a lane below the fold) and
+   // pulses its outline so it is found at a glance.
+   uint64_t gArrangeRevealClipId = 0;
+   int      gArrangeRevealFrames = 0;
+   uint64_t gArrangeFlashClipId = 0;
+   double   gArrangeFlashStart = 0.0;
    bool  gArrangeClaimedKeys = false;
    bool  gArrangeFocused = false;
    // Which of the two mutually exclusive audio routings is live (overhaul
@@ -27583,6 +27592,28 @@ namespace
       return true;
    }
 
+   // Blade click: cuts the clicked clip at `tick` - and, groups being whole,
+   // every other member of its group the tick passes through. One undo
+   // entry. A right half joins the selection only if its left half was in it.
+   bool ArrangeBladeSplitAt(uint64_t clipId, Arrange::Tick tick)
+   {
+      ArrangePruneSelection();
+      const std::vector<uint64_t> ids = Arrange::ExpandSelectionToGroups(gArrange, { clipId });
+      std::vector<uint64_t> rights;
+      if (!ArrangeEdit([&]()
+          {
+             for (uint64_t id : ids)
+             {
+                uint64_t right = 0;
+                if (Arrange::Split(gArrange, id, tick, &right) && gArrangeSel.count(id) != 0)
+                   rights.push_back(right);
+             }
+          }))
+         return false;
+      gArrangeSel.insert(rights.begin(), rights.end());
+      return true;
+   }
+
    // `0`: a mixed selection is disabled first (any enabled clip wins), so one
    // press always leaves the whole selection in one state.
    bool ArrangeToggleEnabledSelection()
@@ -27595,12 +27626,44 @@ namespace
       return ArrangeEdit([&]() { Arrange::SetEnabled(gArrange, ids, anyEnabled ? Arrange::kDisable : Arrange::kEnable); });
    }
 
+   // Whether Group would do anything: the selection, grown to whole groups,
+   // is at least two clips and not already exactly one group.
+   bool ArrangeCanGroupSelection()
+   {
+      const std::vector<uint64_t> ids = Arrange::ExpandSelectionToGroups(gArrange, ArrangeSelectionIds());
+      if (ids.size() < 2)
+         return false;
+      uint64_t only = 0;
+      for (uint64_t id : ids)
+      {
+         const Arrange::Clip* c = Arrange::FindClip(gArrange, id);
+         if (c == nullptr || c->groupId == 0 || (only != 0 && c->groupId != only))
+            return true;
+         only = c->groupId;
+      }
+      return false;
+   }
+
+   bool ArrangeCanUngroupSelection()
+   {
+      for (uint64_t id : ArrangeSelectionIds())
+         if (const Arrange::Clip* c = Arrange::FindClip(gArrange, id))
+            if (c->groupId != 0)
+               return true;
+      return false;
+   }
+
+   // Groups are whole (Arrange::Group): grouping merges every group the
+   // selection touches plus its loose clips into one, and the selection
+   // grows to match so it shows what was grouped.
    bool ArrangeGroupSelection()
    {
       const std::vector<uint64_t> ids = ArrangeSelectionIds();
-      if (ids.size() < 2)
+      if (!ArrangeEdit([&]() { Arrange::Group(gArrange, ids); }))
          return false;
-      return ArrangeEdit([&]() { Arrange::Group(gArrange, ids); });
+      const std::vector<uint64_t> all = Arrange::ExpandSelectionToGroups(gArrange, ids);
+      gArrangeSel.insert(all.begin(), all.end());
+      return true;
    }
 
    bool ArrangeUngroupSelection()
@@ -27789,9 +27852,18 @@ namespace
             lane = Arrange::LaneIndex(gArrange, laneId);
             gArrange.lanes[lane].name = (laneType == Arrange::kLaneAudio ? "Audio " : "Video ") + std::to_string(n);
          }
+         // The first one-bar gap at or after the playhead - not after the
+         // lane's last clip, which on a long arrangement put the new clip
+         // far off-screen. Clips on a lane are sorted and never overlap.
          Arrange::Tick start = ArrangePlayTick();
-         if (!gArrange.lanes[lane].clips.empty())
-            start = std::max(start, gArrange.lanes[lane].clips.back().End());
+         for (const Arrange::Clip& lc : gArrange.lanes[lane].clips)
+         {
+            if (lc.End() <= start)
+               continue;
+            if (lc.start >= start + Arrange::kTicksPerBar)
+               break;
+            start = lc.End();
+         }
          Arrange::Clip c;
          c.start = start;
          c.length = Arrange::kTicksPerBar;
@@ -27804,6 +27876,10 @@ namespace
          gArrangePanelOpen = true;
          gArrangeSel = { made };
          gArrangeSelAnchor = made;
+         gArrangeRevealClipId = made;
+         gArrangeRevealFrames = 3;
+         gArrangeFlashClipId = made;
+         gArrangeFlashStart = ImGui::GetTime();
       }
       return made;
    }
@@ -28333,6 +28409,9 @@ namespace
          // keys (Shift+M is the mod matrix, hence noMods on M).
          else if (noMods && ImGui::IsKeyPressed(ImGuiKey_M, false))
             ArrangeAddMarkerAtPlayhead();
+         // The canvas's B (bypass) is gated off while the timeline is focused.
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_B, false))
+            gArrangeBladeOn = !gArrangeBladeOn;
          else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
             ArrangeJumpToMarker(-1);
          else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
@@ -28350,6 +28429,7 @@ namespace
             gArrangeSel.clear();
             gArrangeSelAnchor = 0;
             gArrangeAssigningClipId = 0;
+            gArrangeBladeOn = false;
          }
       }
 
@@ -28396,15 +28476,9 @@ namespace
                }
             }
             ImGui::PopStyleColor(2);
-            if (ImGui::IsItemHovered())
-            {
-               if (!gAudioStartError.empty() && !engineOn)
-                  ImGui::SetTooltip("%s", gAudioStartError.c_str());
-               else if (timelineMode)
-                  ImGui::SetTooltip("The timeline's clips drive audio. Click to hand audio back to the canvas (the engine keeps running).");
-               else
-                  ImGui::SetTooltip("Play the timeline's audio clips instead of the canvas (starts the audio engine if it is off).");
-            }
+            // Only a failure explains itself on hover; the label says the rest.
+            if (ImGui::IsItemHovered() && !gAudioStartError.empty() && !engineOn)
+               ImGui::SetTooltip("%s", gAudioStartError.c_str());
             ImGui::SetCursorScreenPos(savedCursor);
 
             // Render, pinned just left of Start/Stop Audio - exports the
@@ -28430,7 +28504,6 @@ namespace
             static bool sArrangePendingStartNow = false;
             static bool sArrangeOpenOverwrite = false;
 
-            const double renderBpm = std::max(1.0, (double)tr.Tempo());
             const Arrange::Tick renderableEnd = ArrangeRenderableEndTick();
 
             std::vector<std::pair<uint64_t, std::string>> renderOutputNodes;
@@ -28535,9 +28608,6 @@ namespace
                ImGui::SetCursorScreenPos(ImVec2(renderBtnPos.x - queueBtnW - 6.0f, renderBtnPos.y));
                if (ImGui::Button(queueLabel, ImVec2(queueBtnW, 0.0f)))
                   gArrangeShowRenderQueue = !gArrangeShowRenderQueue;
-               if (ImGui::IsItemHovered())
-                  ImGui::SetTooltip("Export queue (%d job%s)", (int)gArrangeRenderQueue.size(),
-                                    gArrangeRenderQueue.size() == 1 ? "" : "s");
             }
             ImGui::SetCursorScreenPos(savedCursor);
 
@@ -28609,9 +28679,6 @@ namespace
                   tickField("##arrRangeEnd", rset.renderRangeEnd);
                }
                currentRange(rangeA, rangeB);
-               const double rangeSec = Arrange::TicksToSeconds(rangeB - rangeA, renderBpm);
-               ImGui::TextDisabled("%s -> %s  (%.2fs)", ArrangeFormatPos(rangeA).c_str(),
-                                   ArrangeFormatPos(rangeB).c_str(), rangeSec);
 
                ImGui::Separator();
 
@@ -28623,11 +28690,6 @@ namespace
                {
                   rset.renderAudioSource = audioSrcUi;
                   gPatchDirty = true;
-               }
-               if (rset.renderAudioSource < 0)
-               {
-                  ImGui::SameLine();
-                  ImGui::TextDisabled("(follows monitoring)");
                }
 
                ImGui::TextDisabled("Video source:");
@@ -28663,27 +28725,6 @@ namespace
                   }
                   if (sArrangeRenderCanvasUid == 0 && !renderOutputNodes.empty())
                      sArrangeRenderCanvasUid = renderOutputNodes.front().first;
-               }
-
-               // One line saying what this job will actually contain, so the
-               // two pickers don't have to be read together every time.
-               {
-                  const int aSrc = effectiveAudioSource();
-                  const int vSrc = effectiveVideoSource();
-                  const int clipCount = rangeHasVideoClips(rangeA, rangeB);
-                  char summary[192];
-                  const char* aTxt = aSrc == kArrangeAudioTimeline ? "Timeline clips"
-                                     : aSrc == kArrangeAudioCanvas ? "Canvas output"
-                                                                   : "None";
-                  char vTxt[96];
-                  if (vSrc == kArrangeVideoTimeline)
-                     snprintf(vTxt, sizeof(vTxt), "Timeline (%d clip%s)", clipCount, clipCount == 1 ? "" : "s");
-                  else if (vSrc == kArrangeVideoCanvas)
-                     snprintf(vTxt, sizeof(vTxt), "Canvas output");
-                  else
-                     snprintf(vTxt, sizeof(vTxt), "None");
-                  snprintf(summary, sizeof(summary), "Audio: %s  -  Video: %s", aTxt, vTxt);
-                  ImGui::TextUnformatted(summary);
                }
 
                ImGui::Separator();
@@ -28726,17 +28767,6 @@ namespace
                rset.renderFps = std::clamp(rset.renderFps, 1, 240);
                ImGui::EndDisabled();
 
-               // Read-out, not a control: both render paths write at the rate
-               // and block size the live audio graph runs at, so the only
-               // honest thing the popup can do is say what those are and
-               // where to change them.
-               ImGui::TextDisabled("Audio: %d Hz, %d-frame blocks",
-                                   (int)llround(ArrangeRenderActiveSampleRate()),
-                                   OfflineAudioBlockFrames());
-               if (ImGui::IsItemHovered())
-                  ImGui::SetTooltip("Renders follow the global audio settings.\n"
-                                    "Change them in Menu > Settings > Audio.");
-
                ImGui::Separator();
 
                // ---- Output file ----
@@ -28759,13 +28789,10 @@ namespace
                }
 
                // Format follows the video source: an audio-only job is a WAV
-               // by definition, so the container buttons stand down rather
-               // than offering a choice that cannot apply (WP7 #1).
-               if (audioOnly)
-               {
-                  ImGui::TextDisabled("Audio-only job - writes a .wav");
-               }
-               else
+               // by definition (the extension beside the name already says
+               // so), so the container buttons stand down rather than
+               // offering a choice that cannot apply (WP7 #1).
+               if (!audioOnly)
                {
                   const int fmtActive = rset.renderFormat == 1 ? 1 : 0;
                   if (fmtActive == 0) ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
@@ -28784,7 +28811,6 @@ namespace
                   }
                   if (fmtActive == 1) ImGui::PopStyleColor();
                }
-               ImGui::TextDisabled("%s", renderFullPath().c_str());
 
                ImGui::Separator();
 
@@ -28954,8 +28980,6 @@ namespace
             else
                Tabler::DrawPlayerPlay(ImGui::GetWindowDrawList(), center, iconSize, arrangeIconCol);
          }
-         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(arrangeIsPlaying ? "Pause" : "Play");
 
          ImGui::SameLine();
          if (ImGui::Button("##arrangerewindbtn", ImVec2(30, 0)))
@@ -28967,8 +28991,6 @@ namespace
             const float iconSize = (bmax.y - bmin.y) * 0.72f;
             Tabler::DrawPlayerRewind(ImGui::GetWindowDrawList(), center, iconSize, arrangeIconCol);
          }
-         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Rewind");
 
          // Bars | Time: which unit the ruler, the clip popup and the loop
          // fields speak (Settings::timeDisplay, saved with the patch). A view
@@ -28978,10 +29000,6 @@ namespace
          {
             const int shownUnit = gArrange.settings.timeDisplay; // pre-click, for the push/pop pairs
             const char* kUnitLabels[2] = { "Bars##arrunitbars", "Time##arrunittime" };
-            const char* kUnitTips[2] = {
-               "Show positions as bar.beat.sixteenth (the ruler adds the time in seconds beside each label).",
-               "Show positions as minutes:seconds (the ruler adds bar.beat beside each label)."
-            };
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, ImGui::GetStyle().ItemSpacing.y));
             for (int u = 0; u < 2; u++)
             {
@@ -28994,8 +29012,6 @@ namespace
                   ArrangeSetTimeDisplay(u);
                if (on)
                   ImGui::PopStyleColor();
-               if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-                  ImGui::SetTooltip("%s", kUnitTips[u]);
             }
             ImGui::PopStyleVar();
          }
@@ -29037,8 +29053,6 @@ namespace
          }
          if (snapWasOn)
             ImGui::PopStyleColor(2);
-         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Snap clips, markers, the playhead and the loop to the grid.\nClick to turn snapping on or off; pick the grid on the right.");
 
          // Grid division dropdown. The divisions are MusicTime's own
          // RateDivision entries (names and lengths from that one table -
@@ -29060,8 +29074,6 @@ namespace
             if (ImGui::Button(gridBtn, ImVec2(58.0f, 0.0f)))
                ImGui::OpenPopup("##arrgridpopup");
             PopDropdownStyle();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-               ImGui::SetTooltip("Snap grid");
             if (ImGui::BeginPopup("##arrgridpopup"))
             {
                for (const GridChoice& c : kGridChoices)
@@ -29074,9 +29086,8 @@ namespace
             }
          }
 
-         // Loop region toggle + manual start/end entry. The same region a
-         // Shift+drag on the ruler sets - these fields just set it directly
-         // instead of dragging it out by hand.
+         // Loop region toggle. The region itself is a Shift+drag on the
+         // ruler; right-clicking the ruler disarms it.
          ImGui::SameLine();
          const Arrange::LoopRange loopNow = gArrange.settings.loop; // the loop as of this frame
          const bool loopWasOn = loopNow.enabled; // see snapWasOn above
@@ -29097,61 +29108,37 @@ namespace
          }
          if (loopWasOn)
             ImGui::PopStyleColor(2);
-         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Loop playback within the region below.\nShift+drag the ruler to set a region, or type start/end.");
 
-         // The fields show and take the chosen unit (bar.beat.sixteenth or
-         // M:SS); the loop itself stays in ticks, so it keeps its bars
-         // across a tempo change. Re-formatted whenever the field is idle,
-         // so flipping Bars | Time updates them at once.
-         ImGui::SameLine();
+         // Blade (scissors, B): while on, clicking a clip cuts it at the
+         // mouse instead of selecting it; the cursor becomes the scissors.
+         ImGui::SameLine(0.0f, 14.0f);
+         const bool bladeWasOn = gArrangeBladeOn; // see snapWasOn above
+         if (bladeWasOn)
          {
-            static char loopStartBuf[24] = "";
-            static bool loopStartEditing = false;
-            if (!loopStartEditing)
-               snprintf(loopStartBuf, sizeof(loopStartBuf), "%s", ArrangeFormatPos(gArrange.settings.loop.start).c_str());
-            ImGui::SetNextItemWidth(70.0f);
-            if (ImGui::InputText("##loopstart", loopStartBuf, sizeof(loopStartBuf), ImGuiInputTextFlags_EnterReturnsTrue))
-            {
-               const Arrange::Tick parsedTick = ArrangeParsePos(loopStartBuf);
-               const Arrange::LoopRange& loop = gArrange.settings.loop;
-               if (parsedTick >= 0 && parsedTick < loop.end)
-                  ArrangeSetLoop(true, parsedTick, loop.end);
-               loopStartEditing = false;
-            }
-            else
-            {
-               loopStartEditing = ImGui::IsItemActive();
-            }
-            if (ImGui::IsItemHovered())
-               ImGui::SetTooltip(gArrange.settings.timeDisplay == 1 ? "Loop start (M:SS)" : "Loop start (bar.beat.sixteenth)");
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(16, 185, 129, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(5, 150, 105, 255));
          }
-         ImGui::SameLine();
-         ImGui::TextUnformatted("-");
-         ImGui::SameLine();
+         if (ImGui::Button("##arrangebladebtn", ImVec2(30, 0)))
+            gArrangeBladeOn = !gArrangeBladeOn;
          {
-            static char loopEndBuf[24] = "";
-            static bool loopEndEditing = false;
-            if (!loopEndEditing)
-               snprintf(loopEndBuf, sizeof(loopEndBuf), "%s", ArrangeFormatPos(gArrange.settings.loop.end).c_str());
-            ImGui::SetNextItemWidth(70.0f);
-            if (ImGui::InputText("##loopend", loopEndBuf, sizeof(loopEndBuf), ImGuiInputTextFlags_EnterReturnsTrue))
-            {
-               const Arrange::Tick parsedTick = ArrangeParsePos(loopEndBuf);
-               const Arrange::LoopRange& loop = gArrange.settings.loop;
-               if (parsedTick >= 0 && parsedTick > loop.start)
-               {
-                  ArrangeSetLoop(true, loop.start, parsedTick);
-                  gArrangeFitViewToLoopPending = true;
-               }
-               loopEndEditing = false;
-            }
-            else
-            {
-               loopEndEditing = ImGui::IsItemActive();
-            }
-            if (ImGui::IsItemHovered())
-               ImGui::SetTooltip(gArrange.settings.timeDisplay == 1 ? "Loop end (M:SS)" : "Loop end (bar.beat.sixteenth)");
+            const ImVec2 bmin = ImGui::GetItemRectMin();
+            const ImVec2 bmax = ImGui::GetItemRectMax();
+            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            Tabler::DrawScissors(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f,
+               bladeWasOn ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+         }
+         if (bladeWasOn)
+            ImGui::PopStyleColor(2);
+
+         // Add Marker (M): drops one at the playhead, on the snap grid.
+         ImGui::SameLine();
+         if (ImGui::Button("##arrangemarkerbtn", ImVec2(30, 0)))
+            ArrangeAddMarkerAtPlayhead();
+         {
+            const ImVec2 bmin = ImGui::GetItemRectMin();
+            const ImVec2 bmax = ImGui::GetItemRectMax();
+            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            Tabler::DrawFlag(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
@@ -29181,17 +29168,8 @@ namespace
          const int monW = std::max(16, (int)monAvail.x);
          const int monH = std::max(16, (int)monAvail.y);
 
-         // Same clock and same skip rules as the composite itself, so the
-         // label names exactly what is on screen (the frontmost lane's node).
-         const double monBeat = tr.Beats();
-         std::string activeClipTitle;
-         const int activeClipCount = CountActiveArrangeVideoClips(monBeat, &activeClipTitle);
-         if (activeClipCount == 0)
-            ImGui::TextDisabled("Viewport: No Active Clip");
-         else if (activeClipCount == 1)
-            ImGui::TextDisabled("Viewport: %s", activeClipTitle.c_str());
-         else
-            ImGui::TextDisabled("Viewport: %d Tracks Composited", activeClipCount);
+         // Same clock and same skip rules as the composite itself.
+         const int activeClipCount = CountActiveArrangeVideoClips(tr.Beats());
 
          const ImVec2 monOrigin = ImGui::GetCursorScreenPos();
          const ImVec2 monBR(monOrigin.x + monAvail.x, monOrigin.y + monAvail.y);
@@ -29208,11 +29186,6 @@ namespace
             const unsigned int tex = gArrangeMonitorTarget.result.tex;
             if (tex != 0)
                monDl->AddImage((ImTextureID)(intptr_t)tex, monOrigin, monBR, ImVec2(0, 1), ImVec2(1, 0));
-         }
-         else
-         {
-            monDl->AddText(ImVec2(monOrigin.x + 8.0f, monOrigin.y + monAvail.y * 0.5f - 8.0f),
-                           IM_COL32(140, 140, 150, 255), "No Active Video Clip");
          }
 
          ImGui::Dummy(monAvail);
@@ -29291,13 +29264,33 @@ namespace
       // "top of the visible child" the ruler should stay glued to
       // regardless of how far down the track list is scrolled.
       const float pinnedTopY = scrollTL.y + ImGui::GetScrollY();
-      if (gArrangeFitViewToLoopPending)
+      // Scroll a clip Add to Timeline just made into view, once: in time if
+      // any of it is off the visible width, and down/up to its lane if that
+      // lane is under the pinned ruler or below the fold.
+      if (gArrangeRevealClipId != 0)
       {
-         gArrangeFitViewToLoopPending = false;
-         const double loopEndBeats = Arrange::TicksToBeats(gArrange.settings.loop.end);
-         if (loopEndBeats > 0.01)
-            gArrangePixelsPerBeat = std::clamp((float)(rulerWidth * 0.92 / loopEndBeats),
-                                               kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
+         const Arrange::Loc rl = Arrange::Find(gArrange, gArrangeRevealClipId);
+         if (rl.Valid())
+         {
+            const Arrange::Clip& rc = gArrange.lanes[rl.lane].clips[rl.index];
+            const double visBeats = std::max(1.0, (double)(avail.x - kHeaderWidth) / gArrangePixelsPerBeat);
+            const double a = Arrange::TicksToBeats(rc.start);
+            const double b = Arrange::TicksToBeats(rc.End());
+            if (a < gArrangeScrollBeats || b > gArrangeScrollBeats + visBeats)
+               gArrangeScrollBeats = std::max(0.0, a - visBeats * 0.1);
+            const float laneScrollMax = (float)rl.lane * kLaneHeight;
+            const float laneScrollMin = kRulerHeight + (float)(rl.lane + 1) * kLaneHeight - avail.y;
+            const float sy = ImGui::GetScrollY();
+            if (sy > laneScrollMax)
+               ImGui::SetScrollY(laneScrollMax);
+            else if (sy < laneScrollMin)
+               ImGui::SetScrollY(laneScrollMin);
+         }
+         // A few frames, not one: a lane added with the clip only counts
+         // toward the child's scroll range from the frame after it is laid
+         // out, so the first SetScrollY can be clamped short.
+         if (!rl.Valid() || --gArrangeRevealFrames <= 0)
+            gArrangeRevealClipId = 0;
       }
 
       // ---- view geometry (WP6: beats, not seconds) ----
@@ -29539,9 +29532,6 @@ namespace
                   gArrangeCtxMarkerId = mk.id;
                   openMarkerCtx = true;
                }
-               if (hovered && gArrangeMarkerDragId == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-                  ImGui::SetTooltip("%s\n%s  |  %s\nDrag to move, double-click to rename, right-click for colour or delete.",
-                                    nm, ArrangeFormatBBT(mk.pos).c_str(), ArrangeFormatTickSeconds(mk.pos).c_str());
             }
             ImGui::PopID();
          }
@@ -29608,13 +29598,6 @@ namespace
          const Arrange::LoopRange& loop = gArrange.settings.loop;
          ArrangeSetLoop(loop.end - loop.start > Arrange::kPPQ / 16, loop.start, loop.end);
       }
-      if (ImGui::IsItemHovered() && !gArrangeScrubbing && !gArrangeShiftDraggingLoop &&
-          ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-      {
-         const Arrange::Tick ht = std::max<Arrange::Tick>(0, xToTick(mouse.x));
-         ImGui::SetTooltip("%s  |  %s\nClick or drag to move the playhead; Shift+drag sets the loop.",
-                           ArrangeFormatBBT(ht).c_str(), ArrangeFormatTickSeconds(ht).c_str());
-      }
       // Right-click the ruler while a loop region is armed to drop it (a
       // marker flag's own right-click opens its menu instead).
       const bool mouseInRuler = mouse.x >= rulerPos.x && mouse.x < rulerPos.x + rulerSize.x &&
@@ -29659,8 +29642,6 @@ namespace
                   ArrangeEdit([&]() { Arrange::RecolorMarker(gArrange, mid, rgba); });
                if (rgba == curColor)
                   ImGui::PopStyleVar();
-               if (ImGui::IsItemHovered())
-                  ImGui::SetTooltip("%s", kArrangePalette[pi].name);
                ImGui::PopID();
             }
             ImGui::Separator();
@@ -29941,8 +29922,6 @@ namespace
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             Tabler::DrawPlus(dl, center, (bmax.y - bmin.y) * 0.55f, ImGui::GetColorU32(ImGuiCol_Text));
-            if (ImGui::IsItemHovered())
-               ImGui::SetTooltip("Add Track");
          }
          ImGui::SameLine(0.0f, 5.0f);
 
@@ -29959,10 +29938,7 @@ namespace
          ImGui::SetCursorScreenPos(badgePos);
          ImGui::InvisibleButton("##trackdragbadge", badgeSize);
          if (ImGui::IsItemHovered())
-         {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-            ImGui::SetTooltip("%s track - drag to reorder", isVideo ? "Video" : "Audio");
-         }
 
          if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
          {
@@ -30077,8 +30053,9 @@ namespace
             // each side (2..6 px), so the middle half of any clip always moves.
             const ImVec2 mPos = cio.MousePos;
             const float handleW = std::clamp((clipX1 - clipX0) * 0.25f, 2.0f, 6.0f);
-            const bool onLeftEdge = clipHovered && clipX0 >= rulerStartX && (mPos.x - clipX0 <= handleW);
-            const bool onRightEdge = clipHovered && !onLeftEdge && clipX1 <= rulerStartX + rulerWidth &&
+            // The blade has no trim zones: the whole clip is a cut target.
+            const bool onLeftEdge = clipHovered && !gArrangeBladeOn && clipX0 >= rulerStartX && (mPos.x - clipX0 <= handleW);
+            const bool onRightEdge = clipHovered && !gArrangeBladeOn && !onLeftEdge && clipX1 <= rulerStartX + rulerWidth &&
                                      (clipX1 - mPos.x <= handleW);
             const int edgeHit = onLeftEdge ? Arrange::kEdgeStart : (onRightEdge ? Arrange::kEdgeEnd : -1);
             // A grouped clip's edge that is also the group's edge drives the
@@ -30099,7 +30076,24 @@ namespace
             // the selection (no drag) - except Shift on a group edge, which is
             // the proportional scale. A plain click keeps an existing
             // selection that contains the clip, so the drag moves all of it.
-            if (clipActivated && gArrangeDrag.mode == kArrangeDragNone)
+            // Blade: the click cuts at the mouse (on the grid when snap is
+            // on) and neither selects nor drags.
+            const Arrange::Tick bladeTick = gridSnap(xToTick(mPos.x));
+            const bool bladeCuts = gArrangeBladeOn && bladeTick > clip.start && bladeTick < clip.End();
+            if (clipActivated && gArrangeBladeOn)
+            {
+               if (bladeCuts)
+                  ArrangeBladeSplitAt(clip.id, bladeTick);
+            }
+            // Double-click renames in place (the first click of the pair
+            // already selected it and ended as a zero-length drag).
+            else if (clipActivated && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
+                     gArrangeDrag.mode == kArrangeDragNone && !cio.KeyShift && !cio.KeySuper && !cio.KeyCtrl)
+            {
+               gArrangeRenamingClipId = clip.id;
+               snprintf(gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer), "%s", clipLabel.c_str());
+            }
+            else if (clipActivated && gArrangeDrag.mode == kArrangeDragNone)
             {
                const Arrange::Tick grabTick = xToTick(mPos.x);
                const bool alt = cio.KeyAlt;
@@ -30139,27 +30133,6 @@ namespace
                openClipCtx = true;
             }
 
-            // Hover: where the clip sits in both units (WP6), plus the
-            // unassigned note for an offline clip.
-            if (clipHovered && gArrangeDrag.mode == kArrangeDragNone && gArrangeRenamingClipId != clip.id &&
-                ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-            {
-               ImGui::BeginTooltip();
-               ImGui::TextUnformatted(clipLabel.c_str());
-               ImGui::TextDisabled("Start   %s  |  %s", ArrangeFormatBBT(clip.start).c_str(),
-                                   ArrangeFormatTickSeconds(clip.start).c_str());
-               ImGui::TextDisabled("End     %s  |  %s", ArrangeFormatBBT(clip.End()).c_str(),
-                                   ArrangeFormatTickSeconds(clip.End()).c_str());
-               ImGui::TextDisabled("Length  %s  |  %.2fs", ArrangeFormatBBTLength(clip.length).c_str(),
-                                   Arrange::TicksToSeconds(clip.length, arrBpm));
-               if (offline)
-               {
-                  ImGui::Separator();
-                  ImGui::TextUnformatted("Unassigned: this clip has no source node, so it plays nothing.\nRight-click > Assign Node... to link one.");
-               }
-               ImGui::EndTooltip();
-            }
-
             // Styling. A Color Tint overrides the type palette; a disabled or
             // offline clip is drawn desaturated under a diagonal hatch - the
             // "this will not play" mark.
@@ -30176,7 +30149,13 @@ namespace
                clipBaseCol = isLight ? IM_COL32(176, 178, 186, 220) : IM_COL32(72, 72, 80, 220);
                clipActiveCol = isLight ? IM_COL32(160, 162, 170, 255) : IM_COL32(88, 88, 96, 255);
             }
-            const ImU32 clipBorderCol = isSelected
+            // A grouped clip is edged in its group's colour (brighter when
+            // the group is selected - the group frame drawn after the lanes
+            // carries the selection); a loose selected clip stays gold.
+            const bool grouped = clip.groupId != 0;
+            const ImU32 clipBorderCol = grouped
+               ? ArrangeGroupColor(clip.groupId, isSelected ? 255 : (clipHovered ? 235 : 190))
+               : isSelected
                ? IM_COL32(250, 204, 21, 255) // gold for selected
                : (clipActive ? IM_COL32(255, 255, 255, 240) : (clipHovered ? IM_COL32(230, 230, 240, 220) : IM_COL32(20, 20, 24, 180)));
 
@@ -30185,8 +30164,8 @@ namespace
             if (muted)
                DrawArrangeHatch(dl, ImVec2(cLeft, cTop), ImVec2(cRight, cBottom),
                                 isLight ? IM_COL32(0, 0, 0, 45) : IM_COL32(255, 255, 255, 38));
-            if (clip.groupId != 0)
-               dl->AddRectFilled(ImVec2(cLeft, cTop), ImVec2(cRight, cTop + 3.0f), ArrangeGroupColor(clip.groupId),
+            if (grouped)
+               dl->AddRectFilled(ImVec2(cLeft, cTop), ImVec2(cRight, cTop + 4.0f), ArrangeGroupColor(clip.groupId),
                                  4.0f, ImDrawFlags_RoundCornersTop);
 
             // Live waveform (WP8). Position-indexed, so a column shows what
@@ -30270,7 +30249,30 @@ namespace
                }
             }
 
-            dl->AddRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), clipBorderCol, 4.0f, 0, isSelected ? 2.5f : 1.2f);
+            dl->AddRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), clipBorderCol, 4.0f, 0,
+                        isSelected ? 2.5f : (grouped ? 1.8f : 1.2f));
+
+            // Just added from the canvas: a white outline that fades over a
+            // second, so the new clip is found at a glance.
+            if (gArrangeFlashClipId == clip.id)
+            {
+               const float t = (float)(ImGui::GetTime() - gArrangeFlashStart);
+               if (t >= 1.2f)
+                  gArrangeFlashClipId = 0;
+               else
+               {
+                  const int a = (int)(255.0f * (1.0f - t / 1.2f));
+                  dl->AddRect(ImVec2(cLeft - 2.0f, cTop - 2.0f), ImVec2(cRight + 2.0f, cBottom + 2.0f),
+                              IM_COL32(255, 255, 255, a), 5.0f, 0, 2.5f);
+               }
+            }
+
+            // Blade preview: the cut line where a click would split.
+            if (clipHovered && bladeCuts)
+            {
+               const float bx = tickToX(bladeTick);
+               dl->AddLine(ImVec2(bx, cTop), ImVec2(bx, cBottom), IM_COL32(255, 255, 255, 235), 1.5f);
+            }
 
             // Trim handle marks
             if (cWidth > 20.0f)
@@ -30331,15 +30333,16 @@ namespace
             ImGui::PopID();
          }
 
-         // Empty lane body: left-click clears the selection, right-click
-         // offers "Add Clip" at that tick.
+         // Empty lane body: left-click clears the selection (not with the
+         // blade on - a missed cut keeps it), right-click offers "Add Clip"
+         // at that tick.
          const bool mouseInLane = mouse.x >= rulerStartX && mouse.x < rulerStartX + rulerWidth &&
                                   mouse.y >= curY && mouse.y < curY + kLaneHeight;
          if (mouseInLane && !clipHoveredAny && ImGui::IsWindowHovered())
          {
             const ImGuiIO& lio = ImGui::GetIO();
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
-                !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
+                !gArrangeBladeOn && !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
             {
                gArrangeSel.clear();
                gArrangeSelAnchor = 0;
@@ -30387,7 +30390,8 @@ namespace
          }
       }
 
-      // Outline around every selected group's bounds, in the group colour.
+      // A selected group is framed as one object: a soft wash in its colour
+      // plus a 2px frame just outside its clips' bounds.
       {
          std::set<uint64_t> selectedGroups;
          for (uint64_t id : gArrangeSel)
@@ -30399,13 +30403,28 @@ namespace
             auto it = arrangeGroupSpans.find(gid);
             if (it == arrangeGroupSpans.end())
                continue;
-            const float x0 = std::max(rulerStartX, tickToX(it->second.start)) - 1.0f;
-            const float x1 = std::min(rulerStartX + rulerWidth, tickToX(it->second.end)) + 1.0f;
-            const float y0 = lanesTopY + (float)it->second.laneMin * kLaneHeight + 1.0f;
-            const float y1 = lanesTopY + (float)(it->second.laneMax + 1) * kLaneHeight - 1.0f;
+            const float x0 = std::max(rulerStartX, tickToX(it->second.start)) - 3.0f;
+            const float x1 = std::min(rulerStartX + rulerWidth, tickToX(it->second.end)) + 3.0f;
+            const float y0 = lanesTopY + (float)it->second.laneMin * kLaneHeight + 0.5f;
+            const float y1 = lanesTopY + (float)(it->second.laneMax + 1) * kLaneHeight - 0.5f;
             if (x1 > x0)
-               dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), ArrangeGroupColor(gid, 230), 5.0f, 0, 1.5f);
+            {
+               dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), ArrangeGroupColor(gid, 22), 6.0f);
+               dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), ArrangeGroupColor(gid, 245), 6.0f, 0, 2.0f);
+            }
          }
+      }
+
+      // Blade: the system cursor gives way to a scissor drawn at the mouse
+      // anywhere over the lanes.
+      if (gArrangeBladeOn && ImGui::IsWindowHovered() && mouse.x >= rulerStartX &&
+          mouse.x < rulerStartX + rulerWidth && mouse.y >= lanesTopY &&
+          mouse.y < lanesTopY + (float)gArrange.lanes.size() * kLaneHeight)
+      {
+         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+         ImDrawList* fg = ImGui::GetForegroundDrawList();
+         Tabler::DrawScissors(fg, ImVec2(mouse.x + 1.0f, mouse.y + 1.0f), 20.0f, IM_COL32(0, 0, 0, 200), 3.2f);
+         Tabler::DrawScissors(fg, mouse, 20.0f, IM_COL32(255, 255, 255, 255), 1.8f);
       }
       dl->PopClipRect();
 
@@ -30427,9 +30446,6 @@ namespace
             GraphNode* ctxNode = nodeForUid(cp->srcUid);
             const std::string ctxLabel = !cp->name.empty() ? cp->name
                : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
-            ImGui::TextDisabled("Clip: %s", ctxLabel.c_str());
-            ImGui::Separator();
-
             if (ImGui::MenuItem("Rename"))
             {
                gArrangeRenamingClipId = cid;
@@ -30518,8 +30534,6 @@ namespace
                   gArrange.revision++;
                }
                fieldGestureEnd();
-               if (ImGui::IsItemHovered())
-                  ImGui::SetTooltip("Ramps this clip's gain in/out over the given time so it doesn't click against its neighbor.");
                ImGui::SetNextItemWidth(160.0f);
                if (ImGui::DragFloat("Gain", &gainF, 0.1f, -60.0f, 12.0f, "%.1f dB"))
                {
@@ -30531,30 +30545,14 @@ namespace
                fieldGestureEnd();
             }
 
+            // Enable, split, copy, duplicate and delete live on the keyboard
+            // and the blade; the menu keeps to per-clip settings. Group and
+            // Ungroup act on whole groups only.
             ImGui::Separator();
-            cp = Arrange::FindClip(gArrange, cid);
-            const bool ctxGrouped = cp->groupId != 0;
-            if (ImGui::MenuItem("Enabled", "0", cp->enabled))
-               ArrangeToggleEnabledSelection();
-            if (ImGui::MenuItem("Split at Playhead", MODKEY "+E"))
-               ArrangeSplitSelectionAt(playTick);
-            if (ImGui::MenuItem("Copy", MODKEY "+C"))
-               ArrangeCopySelection();
-            if (ImGui::MenuItem("Duplicate", MODKEY "+D"))
-               ArrangeDuplicateSelection();
-            if (ImGui::MenuItem("Delete", "Backspace"))
-               ArrangeDeleteSelection();
-
-            ImGui::Separator();
-            if (ImGui::MenuItem("Group", MODKEY "+G", false, gArrangeSel.size() >= 2))
+            if (ImGui::MenuItem("Group", MODKEY "+G", false, ArrangeCanGroupSelection()))
                ArrangeGroupSelection();
-            if (ctxGrouped)
-            {
-               if (ImGui::MenuItem("Ungroup", MODKEY "+Shift+G"))
-                  ArrangeUngroupSelection();
-               if (ImGui::MenuItem("Remove from Group"))
-                  ArrangeEdit([&]() { Arrange::RemoveFromGroup(gArrange, { cid }); });
-            }
+            if (ImGui::MenuItem("Ungroup", MODKEY "+Shift+G", false, ArrangeCanUngroupSelection()))
+               ArrangeUngroupSelection();
 
             ImGui::Separator();
             if (ImGui::MenuItem("Assign Node..."))
@@ -30620,8 +30618,6 @@ namespace
                         }
                      });
                   }
-                  if (ImGui::IsItemHovered())
-                     ImGui::SetTooltip("%s", kPaletteColors[ci2].name);
                   ImGui::PopID();
                }
                ImGui::EndMenu();
@@ -33602,7 +33598,8 @@ namespace
          { "Arrangement Timeline", "Duplicate Clips", MODKEY "+D / Shift+D", "Copy the selected block right after itself" },
          { "Arrangement Timeline", "Split at Playhead", MODKEY "+E", "Cut every selected clip the playhead passes through" },
          { "Arrangement Timeline", "Enable / Disable Clips", "0 / Keypad 0", "Mute the selected clips (they draw hatched) or bring them back" },
-         { "Arrangement Timeline", "Group / Ungroup Clips", MODKEY "+G / " MODKEY "+Shift+G", "Group moves, copies and deletes as one; a click selects the whole group" },
+         { "Arrangement Timeline", "Blade Tool", "B", "Toggle the blade: click a clip to cut it (and its group) at the mouse; Esc turns it off" },
+         { "Arrangement Timeline", "Group / Ungroup Clips", MODKEY "+G / " MODKEY "+Shift+G", "Group merges whole groups and loose clips into one; Ungroup dissolves every group touched" },
          { "Arrangement Timeline", "Delete Clips", "Delete / Backspace", "Delete the selected clips" },
          { "Arrangement Timeline", "Add Marker", "M", "Drop a marker at the playhead, on the snap grid" },
          { "Arrangement Timeline", "Previous / Next Marker", "Alt+Left / Right", "Jump the playhead to the previous or next marker" },
@@ -63744,6 +63741,103 @@ int main(int argc, char** argv)
             }
             printf("arrange edit add to timeline lane pick: %s\n", fOk ? "OK" : "FAIL");
             allOk = allOk && fOk;
+         }
+
+         // --- G. Whole-group Group/Ungroup, blade, add-at-playhead ----------
+         {
+            freshModel(3, 0);
+            auto gidOf = [&](uint64_t id) { return Arrange::FindClip(gArrange, id)->groupId; };
+            auto groupAll = [&](std::vector<uint64_t> ids)
+            {
+               ArrangePruneSelection(); // settle a patch-generation reset first
+               gArrangeSel.clear();
+               gArrangeSel.insert(ids.begin(), ids.end());
+               return ArrangeGroupSelection();
+            };
+            const uint64_t a = place(0, 0, kBar, 0);
+            const uint64_t b = place(0, kBar * 2, kBar, 0);
+            const uint64_t c = place(1, 0, kBar, 0);
+            const uint64_t d = place(1, kBar * 2, kBar, 0);
+            const uint64_t e = place(2, 0, kBar, 0);
+            bool gOk = groupAll({ a, b }) && groupAll({ c, d }) && gidOf(a) != gidOf(c);
+
+            // Two groups merge into one; one undo entry.
+            size_t undoBefore = gUndoStack.size();
+            ArrangeClickSelect(a, false, false);
+            ArrangeClickSelect(c, true, false);
+            gOk = gOk && ArrangeCanGroupSelection() && ArrangeGroupSelection() &&
+                  gUndoStack.size() == undoBefore + 1 && gidOf(a) != 0 && gidOf(a) == gidOf(b) &&
+                  gidOf(a) == gidOf(c) && gidOf(a) == gidOf(d) && selIs({ a, b, c, d });
+            const bool mergeOk = gOk;
+
+            // Exactly one whole group: nothing to do, nothing pushed, same id.
+            const uint64_t g4 = gidOf(a);
+            undoBefore = gUndoStack.size();
+            ArrangeClickSelect(b, false, false);
+            gOk = gOk && !ArrangeCanGroupSelection() && !ArrangeGroupSelection() &&
+                  gUndoStack.size() == undoBefore && gidOf(a) == g4;
+            const bool noopOk = gOk;
+
+            // A loose clip plus one member of a group: the whole group joins.
+            ArrangeUngroupSelection();
+            gOk = gOk && gidOf(a) == 0 && gidOf(d) == 0 && groupAll({ a, b, c });
+            ArrangeClickSelect(a, false, true); // Alt: this member only
+            ArrangeClickSelect(e, true, false);
+            gOk = gOk && selIs({ a, e }) && ArrangeGroupSelection() && gidOf(e) != 0 &&
+                  gidOf(e) == gidOf(a) && gidOf(e) == gidOf(b) && gidOf(e) == gidOf(c) && gidOf(d) == 0;
+            const bool mixOk = gOk;
+
+            // Ungroup from any one member dissolves the whole group.
+            ArrangeClickSelect(c, false, true);
+            gOk = gOk && ArrangeCanUngroupSelection() && ArrangeUngroupSelection() && gidOf(a) == 0 &&
+                  gidOf(b) == 0 && gidOf(c) == 0 && gidOf(e) == 0 && !ArrangeCanUngroupSelection();
+            const bool ungroupOk = gOk;
+
+            // Blade on a grouped clip cuts every member at that tick, as one
+            // undo entry; the right halves stay in the group.
+            gOk = gOk && groupAll({ a, c });
+            gArrangeSel.clear();
+            undoBefore = gUndoStack.size();
+            gOk = gOk && ArrangeBladeSplitAt(a, kBar / 4) && gUndoStack.size() == undoBefore + 1 &&
+                  gArrange.lanes[0].clips.size() == 3 && gArrange.lanes[1].clips.size() == 3 &&
+                  Arrange::FindClip(gArrange, a)->length == kBar / 4 &&
+                  Arrange::FindClip(gArrange, c)->length == kBar / 4 && gArrangeSel.empty();
+            if (gOk)
+            {
+               const Arrange::Clip& r0 = gArrange.lanes[0].clips[1];
+               const Arrange::Clip& r1 = gArrange.lanes[1].clips[1];
+               gOk = r0.start == kBar / 4 && r1.start == kBar / 4 && r0.groupId == gidOf(a) &&
+                     r1.groupId == gidOf(a) && Arrange::Validate(gArrange, &why);
+            }
+            // Outside the clip (or on an edge) is not a cut.
+            gOk = gOk && !ArrangeBladeSplitAt(b, kBar * 2) && !ArrangeBladeSplitAt(b, kBar * 5);
+            const bool bladeOk = gOk;
+
+            // Add to Timeline lands in the first one-bar gap at the playhead
+            // and asks the panel to scroll to it.
+            NewPatch();
+            freshModel(1, 0);
+            GraphNode* video = SpawnNode("Video", "Source", 0.0f, 0.0f);
+            const int videoIndex = video ? video->index : -1;
+            const uint64_t videoUid = video ? video->uid : 0;
+            gOk = gOk && videoIndex >= 0;
+            if (videoIndex >= 0)
+            {
+               place(0, 0, kBar, videoUid);
+               place(0, kBar * 2, kBar, videoUid);
+               tr.SeekBeats(2.0); // half a bar in, inside the first clip
+               const uint64_t n1 = AddNodeToArrangeTimeline(videoIndex);
+               tr.SeekBeats(0.0);
+               const uint64_t n2 = AddNodeToArrangeTimeline(videoIndex);
+               gOk = gOk && n1 != 0 && n2 != 0 && Arrange::FindClip(gArrange, n1)->start == kBar &&
+                     Arrange::FindClip(gArrange, n2)->start == kBar * 3 && gArrangeRevealClipId == n2 &&
+                     gArrangeFlashClipId == n2 && Arrange::Validate(gArrange, &why);
+            }
+            gArrangeRevealClipId = 0;
+            gArrangeFlashClipId = 0;
+            printf("arrange edit whole groups + blade + add at playhead: %s (merge %d noop %d mix %d ungroup %d blade %d)\n",
+                   gOk ? "OK" : "FAIL", mergeOk, noopOk, mixOk, ungroupOk, bladeOk);
+            allOk = allOk && gOk;
          }
 
          if (!why.empty())

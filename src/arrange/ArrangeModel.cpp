@@ -554,10 +554,28 @@ std::vector<uint64_t> ExpandSelectionToGroups(const Model& m, const std::vector<
 
 bool Group(Model& m, const std::vector<uint64_t>& ids, uint64_t* outGroupId)
 {
+   // Groups are whole: any member drags its entire group in, so grouping
+   // merges (two groups, or a group plus loose clips, become one) and can
+   // never split a group by stealing some of its members.
    std::unordered_set<uint64_t> uniq;
-   for (uint64_t id : ids)
+   for (uint64_t id : ExpandSelectionToGroups(m, ids))
       if (Find(m, id).Valid()) uniq.insert(id);
    if (uniq.size() < 2) return false;
+   // Already exactly one group: nothing to do (a fresh id would only
+   // recolour it and cost an undo entry).
+   uint64_t only = 0;
+   bool oneGroup = true;
+   for (uint64_t id : uniq)
+   {
+      const uint64_t g = FindClip(m, id)->groupId;
+      if (g == 0 || (only != 0 && g != only)) { oneGroup = false; break; }
+      only = g;
+   }
+   if (oneGroup)
+   {
+      if (outGroupId) *outGroupId = only;
+      return false;
+   }
    const uint64_t gid = m.NewId();
    for (Lane& l : m.lanes)
       for (Clip& c : l.clips)

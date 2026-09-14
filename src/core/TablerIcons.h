@@ -407,6 +407,37 @@ namespace Tabler
       dl->AddLine(c, lowerLeft, col, stroke);
    }
 
+   // Tabler: scissors (two finger rings, blades crossing to the right)
+   inline void DrawScissors(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.3f, 1.8f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      dl->AddCircle(P(6.0f, 7.0f), 3.0f * s, col, 16, stroke);
+      dl->AddCircle(P(6.0f, 17.0f), 3.0f * s, col, 16, stroke);
+      dl->AddLine(P(8.6f, 8.6f), P(19.0f, 19.0f), col, stroke);
+      dl->AddLine(P(8.6f, 15.4f), P(19.0f, 5.0f), col, stroke);
+   }
+
+   // Tabler: flag (pole plus a waving pennant)
+   inline void DrawFlag(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.3f, 1.8f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      dl->AddLine(P(5.0f, 21.0f), P(5.0f, 4.0f), col, stroke);
+      dl->PathClear();
+      dl->PathLineTo(P(5.0f, 5.0f));
+      dl->PathBezierCubicCurveTo(P(8.0f, 2.5f), P(11.0f, 7.5f), P(19.0f, 5.0f), 10);
+      dl->PathLineTo(P(19.0f, 14.0f));
+      dl->PathBezierCubicCurveTo(P(11.0f, 16.5f), P(8.0f, 11.5f), P(5.0f, 14.0f), 10);
+      dl->PathStroke(col, ImDrawFlags_Closed, stroke);
+   }
+
    // Blank-icon-slot fallback: a crisp rounded rect with a subtle inner square
    // (matching Apple SF Symbols missing asset convention) so that any unset or
    // missing icon never silently leaves an empty rect.
