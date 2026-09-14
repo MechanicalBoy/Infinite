@@ -446,7 +446,6 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
                deviceBuffer.channels[ch][i] += src.channels[ch][i] * chGain * sEnvScratch[i];
             }
          }
-         }
       }
       else if (terminal.numWindows > 0)
       {

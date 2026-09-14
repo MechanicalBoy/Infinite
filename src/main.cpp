@@ -37344,53 +37344,40 @@ namespace
                ImGui::EndCombo();
             }
 
-            float opacity = clip->opacity;
-            ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Opacity##clipop", &opacity, 0.0f, 1.0f, "%.2f"))
-            {
-               ArrangeEdit([&]() {
-                  if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
-                  {
-                     c->opacity = opacity;
-                     gArrange.revision++;
-                  }
-               });
-            }
-
-            float brightness = clip->brightness;
+            float brightness = clip->colorBrightness;
             ImGui::SetNextItemWidth(fieldW);
             if (ImGui::SliderFloat("Bright##clipbright", &brightness, -1.0f, 1.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                   {
-                     c->brightness = brightness;
+                     c->colorBrightness = std::clamp(brightness, -1.0f, 1.0f);
                      gArrange.revision++;
                   }
                });
             }
 
-            float contrast = clip->contrast;
+            float contrast = clip->colorContrast;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Contrast##clipcont", &contrast, 0.0f, 2.0f, "%.2f"))
+            if (ImGui::SliderFloat("Contrast##clipcont", &contrast, -1.0f, 1.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                   {
-                     c->contrast = contrast;
+                     c->colorContrast = std::clamp(contrast, -1.0f, 1.0f);
                      gArrange.revision++;
                   }
                });
             }
 
-            float saturation = clip->saturation;
+            float saturation = clip->colorSaturation;
             ImGui::SetNextItemWidth(fieldW);
             if (ImGui::SliderFloat("Sat##clipsat", &saturation, 0.0f, 2.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                   {
-                     c->saturation = saturation;
+                     c->colorSaturation = std::clamp(saturation, 0.0f, 2.0f);
                      gArrange.revision++;
                   }
                });
