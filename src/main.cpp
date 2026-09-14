@@ -61718,8 +61718,16 @@ int main(int argc, char** argv)
                 gGraphScreenTL.y + gGraphScreenSize.y * 0.5f));
 
       // Dropping a file on the canvas spawns the matching source node, already
-      // loaded, at the drop point.
-      if (!gDroppedFiles.empty())
+      // loaded, at the drop point. Skip entirely if the drop landed inside the
+      // Arrange panel's own screen rect - that panel has its own row-level
+      // drop handling (DrawArrangePanelContent) which is order-dependent on
+      // dock side (it can run before OR after this block, depending on
+      // Arrange::Settings::dockSide), so this canvas handler must not race it
+      // for gDroppedFiles by consuming/clearing paths meant for the timeline.
+      const bool dropInsideArrangePanel =
+         gDropPos.x >= gArrangePanelRectMin.x && gDropPos.x < gArrangePanelRectMax.x &&
+         gDropPos.y >= gArrangePanelRectMin.y && gDropPos.y < gArrangePanelRectMax.y;
+      if (!gDroppedFiles.empty() && !dropInsideArrangePanel)
       {
          // Everything ModelIO reads. Checked before video because "usdz" and
          // "abc" would otherwise fall through to the image branch and fail.
