@@ -1,3 +1,23 @@
+// Linux text: FreeType for glyphs, fontconfig for family -> file resolution.
+//
+// KNOWN LIMITATION - no complex-script shaping.
+//
+// Both entry points here map each code point to a glyph with FT_Get_Char_Index
+// and advance by that glyph's own advance, with an optional FT_Get_Kerning pair
+// adjustment. That is correct for Latin, Greek, Cyrillic and CJK, and it is
+// what the Windows GDI path already does, so the two ports agree. It is NOT
+// correct for Arabic, Devanagari, Thai or any script that needs contextual
+// joining, reordering or mandatory ligatures: those render as isolated,
+// unjoined base forms. macOS gets shaping for free from Core Text, so a patch
+// authored there with Arabic text will not round-trip faithfully to Linux or
+// Windows.
+//
+// The fix is HarfBuzz (hb_shape over an hb_font_t wrapping the same FT_Face,
+// then iterate the glyph infos/positions instead of the code points), which
+// adds a dependency in both the Linux and Windows builds. Deliberately out of
+// scope for the phase-01 desktop port - it is a shared Linux+Windows gap, not
+// a Linux regression, and should be closed on both platforms at once.
+
 #include "platform/Platform.h"
 
 #include <fontconfig/fontconfig.h>
@@ -34,10 +54,25 @@ namespace
       return true;
    }
 
-   std::string ResolveFontPath(const std::string& family, bool bold = false, bool italic = false)
+   // One fontconfig config for the whole process.
+   //
+   // FcInitLoadConfigAndFonts() parses /etc/fonts/**, every user config, and
+   // validates the font cache - tens of milliseconds on a normal desktop, more
+   // on a cold cache. The original code called it once per ResolveFontPath, and
+   // ResolveFontPath runs up to three times (requested family -> DejaVu Sans ->
+   // fontconfig default) per RasterizeText, which itself re-runs whenever any
+   // Text node parameter moves. Never destroyed: owned for the process
+   // lifetime. Callers hold gFtMutex, so there is no locking here.
+   FcConfig* SharedFcConfig()
+   {
+      static FcConfig* sConfig = FcInitLoadConfigAndFonts();
+      return sConfig;
+   }
+
+   std::string ResolveFontPathUncached(const std::string& family, bool bold, bool italic)
    {
       std::string result;
-      FcConfig* config = FcInitLoadConfigAndFonts();
+      FcConfig* config = SharedFcConfig();
       if (!config) return result;
 
       std::string queryFamily = family.empty() ? "sans-serif" : family;
@@ -61,8 +96,45 @@ namespace
          FcPatternDestroy(match);
       }
       FcPatternDestroy(pat);
-      FcConfigDestroy(config);
       return result;
+   }
+
+   // family+style -> font file. The answer only changes when the user installs
+   // or removes a font, which already needs a restart to appear in the font
+   // picker (AvailableFontFamilies is likewise load-once).
+   std::string ResolveFontPath(const std::string& family, bool bold = false, bool italic = false)
+   {
+      static std::unordered_map<std::string, std::string> sCache;
+      std::string key = family;
+      key += bold ? "|b" : "|-";
+      key += italic ? "i" : "-";
+      auto it = sCache.find(key);
+      if (it != sCache.end()) return it->second;
+      std::string path = ResolveFontPathUncached(family, bold, italic);
+      sCache.emplace(key, path);
+      return path;
+   }
+
+   // path -> face, kept alive for the process.
+   //
+   // FT_New_Face mmaps and parses the font file; the previous code paired one
+   // with a matching teardown on every single rasterize. Both entry points call
+   // FT_Set_Pixel_Sizes before they measure or draw, so a reused face carries no
+   // size state between calls. Callers hold gFtMutex, and an FT_Face is not
+   // thread-safe, so that lock is what makes sharing one safe. A path that fails
+   // to load is cached as nullptr so a broken font file is not re-parsed every
+   // frame.
+   FT_Face AcquireFace(const std::string& path)
+   {
+      static std::unordered_map<std::string, FT_Face> sFaces;
+      auto it = sFaces.find(path);
+      if (it != sFaces.end()) return it->second;
+
+      FT_Face face = nullptr;
+      if (FT_New_Face(gFtLib, path.c_str(), 0, &face) != 0)
+         face = nullptr;
+      sFaces.emplace(path, face);
+      return face;
    }
 
    std::vector<uint32_t> Utf8ToCodepoints(const std::string& str)
@@ -201,7 +273,8 @@ namespace Platform
       if (sLoaded) return sFamilies;
       sLoaded = true;
 
-      FcConfig* config = FcInitLoadConfigAndFonts();
+      std::lock_guard<std::mutex> lock(gFtMutex);
+      FcConfig* config = SharedFcConfig();
       if (config)
       {
          FcPattern* pat = FcPatternCreate();
@@ -221,7 +294,6 @@ namespace Platform
          }
          FcObjectSetDestroy(os);
          FcPatternDestroy(pat);
-         FcConfigDestroy(config);
       }
 
       std::sort(sFamilies.begin(), sFamilies.end());
@@ -260,8 +332,8 @@ namespace Platform
          return false;
       }
 
-      FT_Face face = nullptr;
-      if (FT_New_Face(gFtLib, path.c_str(), 0, &face) != 0 || !face)
+      FT_Face face = AcquireFace(path);
+      if (!face)
       {
          outError = "failed to load font face";
          return false;
@@ -331,8 +403,6 @@ namespace Platform
          prevGlyph = gIdx;
       }
 
-      FT_Done_Face(face);
-
       if (outContours.empty())
       {
          outError = "text produced no outlines";
@@ -380,8 +450,8 @@ namespace Platform
       if (path.empty()) path = ResolveFontPath("");
       if (path.empty()) return;
 
-      FT_Face face = nullptr;
-      if (FT_New_Face(gFtLib, path.c_str(), 0, &face) != 0 || !face)
+      FT_Face face = AcquireFace(path);
+      if (!face)
          return;
 
       const double sx = std::max(0.01f, req.scaleX);
@@ -628,6 +698,5 @@ namespace Platform
 
       if (stroker)
          FT_Stroker_Done(stroker);
-      FT_Done_Face(face);
    }
 }
