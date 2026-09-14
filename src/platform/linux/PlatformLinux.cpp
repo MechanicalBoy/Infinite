@@ -57,43 +57,14 @@ namespace Platform
       return "";
    }
 
-   bool LoadImageRGBA(const std::string& /*path*/, std::vector<unsigned char>& /*outPixels*/,
-                      int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
-   }
-
-   bool LoadImageRGBAFromMemory(const std::vector<unsigned char>& /*bytes*/,
-                                std::vector<unsigned char>& /*outPixels*/,
-                                int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
-   }
-
    std::string OpenHdrDialog()
    {
       return "";
    }
 
-   bool LoadImageFloatRGB(const std::string& /*path*/, std::vector<float>& /*outPixels*/,
-                          int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
-   }
-
    std::string OpenModelDialog()
    {
       return "";
-   }
-
-   bool LoadModel(const std::string& /*path*/, std::vector<ModelVertex>& /*outVertices*/,
-                  std::vector<unsigned int>& /*outIndices*/, std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
    }
 
    std::string OpenPatchDialog()
@@ -187,12 +158,5 @@ namespace Platform
    {
       static const std::vector<std::string> kNames = { "Default" };
       return kNames;
-   }
-
-   bool DecodeAudioFileToBuffer(const std::string& /*path*/, SampleBuffer& /*outBuffer*/,
-                                std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
    }
 }

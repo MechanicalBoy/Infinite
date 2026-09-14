@@ -464,10 +464,10 @@ set(WIN32_SOURCES
     src/platform/win/AudioDeviceWin.cpp
     src/platform/win/MidiWin.cpp
     src/platform/win/MediaWin.cpp
-    src/platform/win/MediaDecodeWin.cpp
+    src/platform/common/MediaDecodePortable.cpp
     src/platform/win/PluginHostWin.cpp
     src/audio/AudioFileWriter.cpp
-    # zlib backend for tinyexr's EXR decode (see MediaDecodeWin.cpp).
+    # zlib backend for tinyexr's EXR decode (see MediaDecodePortable.cpp).
     external/miniz.c
     # GL loader for the non-Apple branch of core/gl3.h. Must load via
     # gladLoadGL((GLADloadfunc)glfwGetProcAddress) right after context
@@ -492,6 +492,7 @@ set(LINUX_SOURCES
     src/platform/linux/CameraLinux.cpp
     src/platform/linux/PluginHostLinux.cpp
     src/platform/linux/SyphonLinux.cpp
+    src/platform/common/MediaDecodePortable.cpp
     src/audio/AudioFileWriter.cpp
     external/miniz.c
     external/glad/src/gl.c
