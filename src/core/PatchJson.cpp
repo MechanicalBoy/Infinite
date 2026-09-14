@@ -127,7 +127,8 @@ namespace PatchJson
                {"name", c.name},
                {"colorR", c.colorR},
                {"colorG", c.colorG},
-               {"colorB", c.colorB}
+               {"colorB", c.colorB},
+               {"blendMode", c.blendMode}
             });
          }
          out["streams"].push_back({
@@ -137,6 +138,8 @@ namespace PatchJson
             {"opacity", s.opacity},
             {"gainDb", s.gainDb},
             {"pan", s.pan},
+            {"mute", s.mute},
+            {"solo", s.solo},
             {"name", s.name},
             {"clips", clips}
          });

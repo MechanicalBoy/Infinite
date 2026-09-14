@@ -119,6 +119,12 @@ struct AudioTerminal
    int   windowOffset = -1;
    int   numWindows   = 0;
    float laneGain     = 1.0f;   // the lane's own gain, multiplied with each window's
+                                // (0 for a muted / solo-silenced lane: still scheduled,
+                                // so its live waveform keeps drawing)
+   // The lane's pan, as per-channel gains (Mixer's equal-power law, unity at
+   // centre). Channels past the second are left alone.
+   float lanePanL     = 1.0f;
+   float lanePanR     = 1.0f;
    // Audio-thread scratch, not configuration: the index of the window the
    // last block left off at. Monotonic forward, reset to 0 whenever the
    // position moves backwards (a seek or a loop wrap).

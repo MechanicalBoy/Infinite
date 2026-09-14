@@ -68,6 +68,7 @@ namespace Arrange
       uint64_t groupId  = 0;   // 0 = not grouped; a live group has >= 2 members
       std::string name;        // empty = auto (the source node's own title)
       float    colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = no tint
+      int      blendMode = 0;  // video only, index into BlendModes::Names()
 
       Tick End() const { return start + length; }
    };
@@ -76,10 +77,12 @@ namespace Arrange
    {
       uint64_t id        = 0;
       int      type      = kLaneVideo;
-      int      blendMode = 0;     // video only, index into BlendModes::Names()
+      int      blendMode = 0;     // legacy: pre-clip-blend files; migrated onto clips at load, always 0 after
       float    opacity   = 1.0f;  // video only, 0..1
       float    gainDb    = 0.0f;  // audio only
       float    pan       = 0.0f;  // audio only, -1..1
+      bool     mute      = false; // audio only
+      bool     solo      = false; // audio only; any soloed audio lane silences the unsoloed ones
       std::string name;           // empty = auto ("V1", "A2", ...)
       std::vector<Clip> clips;    // always sorted by start, never overlapping
    };

@@ -143,6 +143,7 @@ void Normalize(Model& m)
          if (clip.length < 1) clip.length = 1;
          if (clip.srcOutput < 0) clip.srcOutput = 0;
          if (!std::isfinite(clip.gainDb)) clip.gainDb = 0.0f;
+         if (clip.blendMode < 0 || clip.blendMode > 31) clip.blendMode = 0; // BlendModes::Names() range
          ClampFades(clip);
          if (clip.id == 0) clip.id = m.NewId();
       }
