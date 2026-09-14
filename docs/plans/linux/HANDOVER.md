@@ -44,14 +44,16 @@ step back to a bare `find` over the worktree.**
 
 ## Left to do, in order
 
-1. **Confirm the container build after `da2fdbd`.** A build was running when
-   this handover was written — log at
-   `scratchpad/linuxbuild-after-text.log`. The `TextLinux.cpp` caching edit
-   is the only unverified change on the branch. If it fails, the suspects are
-   the new `AcquireFace` / `SharedFcConfig` helpers in the anonymous
-   namespace. Then rerun `tools/linux/local.sh test --fast`, the
-   `ui,3d,compositing` group, and `tools/linux/shots.sh` — text rasterization
-   is exactly what the shots exercise, so a caching bug shows up there.
+1. ~~Confirm the container build.~~ **Done.** The build caught a real defect
+   the review had not: `SetWindowIcon` called `stbi_load`, which does not
+   exist in this target — the one `STB_IMAGE_IMPLEMENTATION`
+   (`EnvironmentNode.cpp`) is compiled with `STBI_NO_STDIO`, so only the
+   `*_from_memory` loaders are emitted. Invisible on macOS and Windows since
+   neither takes that branch. Fixed in `fix(linux): decode the window icon
+   from memory`. After the fix: build exit 0, `--fast` 22/22, and all six
+   `shots.sh` PNGs real (216–364 kB). `2d-text-compositing.png` was inspected
+   directly and FreeType text rasterizes correctly through the new face
+   cache. **Still to run: the `ui,3d,compositing` group and macOS `--fast`.**
 
 2. **Register `INFINITE_SYPHONPATCHTEST`.** The fixture exists in `main.cpp`
    and prints `SYPHONPATCHTEST OK`, but nothing runs it. Add it to
