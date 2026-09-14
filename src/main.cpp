@@ -588,6 +588,9 @@ namespace
    // because the arrangement panel (far above the undo machinery in file
    // order) is its only caller.
    void PushArrangeUndo();
+   // Pushes a timeline-only entry holding `before`, the model as it was
+   // before the edit - but only if gArrange's revision has moved past it.
+   void PushArrangeUndoSnapshot(const Arrange::Model& before);
    GraphNode* FindNodeByIndex(int index);
 
    // Field 'graph' domain (build step 10): forward-declared for the same
@@ -1007,38 +1010,12 @@ namespace
    const float kPerfPanelMinHeight = 160.0f;
    // The dockable arrangement timeline panel: DAW/video-editor style lanes and clips.
    bool  gArrangePanelOpen = false;
-   // Bottom-only by design (a timeline's own horizontal axis fights a side
-   // dock); the 1/2/3 dock values still exist in DrawArrangePanelDocked's
-   // shared grip-resize code below but nothing ever sets this to them.
-   const int gArrangePanelDock = 0;
    float gArrangePanelWidth = 480.0f;
    float gArrangePanelHeight = 240.0f;
    const float kArrangePanelMinWidth = 300.0f;
    const float kArrangePanelMinHeight = 140.0f;
    float gArrangePixelsPerSecond = 80.0f;    // zoom level
    double gArrangeScrollSeconds = 0.0;       // horizontal scroll offset
-   int   gArrangeDraggingClipStream = -1;
-   int   gArrangeDraggingClipIndex = -1;
-   int   gArrangeDraggingClipMode = 0;        // 0 = move, 1 = trim left, 2 = trim right
-   double gArrangeDragStartSec = 0.0;
-   double gArrangeDragInitialStartSec = 0.0;
-   double gArrangeDragInitialLengthSec = 0.0;
-   // Neighbor clamp captured once at drag activation (Patch.h documents
-   // "clips within one stream never overlap - enforced by the editor, not
-   // here"; this is that enforcement). lower = end of the nearest clip
-   // before the dragged one, upper = start of the nearest clip after it,
-   // at the position the drag started from.
-   double gArrangeDragLowerBound = 0.0;
-   double gArrangeDragUpperBound = DBL_MAX;
-   int   gArrangeSelectedStream = -1;
-   int   gArrangeSelectedClip = -1;
-   // Cmd/Ctrl-click adds a clip to this set without disturbing the single
-   // gArrangeSelectedStream/Clip "anchor" above (which stays whatever was
-   // last plain-clicked, and still drives the per-clip right-click menu and
-   // trim/move drag). Copy/Duplicate/Delete/Paste act on this set when it's
-   // non-empty, falling back to the single selection otherwise - see the
-   // keyboard-shortcut block in DrawArrangePanelContent.
-   std::set<std::pair<int, int>> gArrangeMultiSelectedClips;
    // Which side of the timeline lanes the global viewport monitor docks to -
    // toggled via right-click on the monitor itself.
    bool  gArrangeViewportOnRight = false;
@@ -1046,16 +1023,6 @@ namespace
    // scrubbing to the tempo-derived beat grid (see the ruler's bar.beat
    // ticks) - separate from gSnapToGrid, which is the node canvas's grid.
    bool  gArrangeSnapToGrid = true;
-   // Inline clip rename, mirrors gPerfRenamingElementIdx's pattern.
-   int   gArrangeRenamingClipStream = -1;
-   int   gArrangeRenamingClipIndex = -1;
-   char  gArrangeRenameClipBuffer[64] = "";
-   // "Assign Node..." canvas picker - click-to-assign, same UX as the
-   // performance matrix's Assign Parameter (gPerfAssigningElemIdx): armed by
-   // the clip's context menu, resolved by clicking a compatible node on the
-   // canvas (see the click-catch block alongside gPerfAssigningElemIdx's own).
-   int   gArrangeAssigningClipStream = -1;
-   int   gArrangeAssigningClipIndex = -1;
    bool  gArrangeDraggingPlayhead = false;
    // Loop region: Shift+drag on the ruler sets [start,end) and arms it;
    // right-clicking the ruler while armed disarms it. The manual duration
@@ -1091,21 +1058,6 @@ namespace
    int   gArrangeAddTrackInsertAfter = -1;
    ImVec2 gArrangePanelRectMin(0.0f, 0.0f);
    ImVec2 gArrangePanelRectMax(0.0f, 0.0f);
-   struct ArrangeClipClipboardItem
-   {
-      int streamIndexHint = -1; // stream copied from, tried first on paste so relative track layout survives when possible
-      int streamType = Patch::kStreamAudio; // StreamRecord::type is a plain int (Patch::StreamType value)
-      LegacyArrange::ClipRecord clip;
-   };
-   struct ArrangeClipClipboardRecord
-   {
-      bool hasData = false;
-      // One entry per copied clip (a plain single-clip copy is just a
-      // one-entry vector) - startSeconds stays absolute at copy time, and
-      // Paste re-anchors the whole group by the smallest one's offset from
-      // the playhead so relative spacing between clips survives the paste.
-      std::vector<ArrangeClipClipboardItem> items;
-   } gArrangeClipClipboard;
    bool  gPerfEditMode = true;            // true = Edit (rearrange/customize/cable drag), false = Perform (live perform)
    int   gPerfActivePage = 0;
    int   gPerfRenamingPage = -1;
@@ -1150,12 +1102,94 @@ namespace
    // Arrangement timeline (docs/plans/arrangement/overhaul-prompt.md).
    //
    // gArrange is the source of truth: ticks, stable clip ids, markers and
-   // settings, and the only thing that is saved, loaded or undone.
-   // gArrangeStreams is what the panel's UI code still edits - seconds and
-   // live node indices - and is synced to/from gArrange at the save and load
-   // boundaries only (see src/arrange/ArrangeLegacy.h). WP5 deletes it.
+   // settings, and the only thing that is saved, loaded, undone or edited -
+   // every panel edit goes through an Arrange:: op (WP5a).
+   // gArrangeStreams is a read-only mirror in seconds and live node indices,
+   // rebuilt from gArrange whenever its revision (or the tempo) moves - see
+   // RefreshArrangeMirror. Only the audio topology, the video layer walk and
+   // two fixtures still read it; WP5b moves those onto gArrange and deletes it.
    Arrange::Model gArrange;
    std::vector<LegacyArrange::StreamRecord> gArrangeStreams;
+   uint64_t gArrangeMirroredRevision = UINT64_MAX;
+   float    gArrangeMirroredTempo = 0.0f;
+   // Bumped on every new-document boundary (File > New, File > Open) and never
+   // by undo. Anything that must not outlive the document it was made in -
+   // the clip clipboard, the selection - carries the generation it was made
+   // under and is dropped when it no longer matches.
+   uint64_t gArrangePatchGeneration = 1;
+
+   // The panel dock is model state (Settings::dockSide, 0 = bottom, 1 = top),
+   // mapped onto the shared docked-panel slots (0 = bottom, 3 = top). The
+   // side slots (1, 2) are never produced: a timeline's own horizontal axis
+   // fights a side dock.
+   inline int ArrangePanelDock() { return gArrange.settings.dockSide == 1 ? 3 : 0; }
+
+   // Selection is by clip id, never by (lane, index): an index is only valid
+   // until the next edit, an id for the life of the clip. Ids that stop
+   // resolving (deleted, undone away) are pruned every frame, so a stale id
+   // clears rather than landing on a different clip.
+   std::set<uint64_t> gArrangeSel;
+   uint64_t gArrangeSelAnchor = 0;          // last plain-clicked clip; paste lands on its lane
+   uint64_t gArrangeSelGeneration = 1;      // gArrangePatchGeneration the selection belongs to
+
+   // Copy/paste clipboard: clips by value, with each clip's lane and tick
+   // offset relative to the copied block's first lane / earliest start.
+   struct ArrangeClipboardItem
+   {
+      Arrange::Clip clip;
+      int laneOffset = 0;
+      int laneType = Arrange::kLaneVideo;
+      Arrange::Tick tickOffset = 0;
+   };
+   struct ArrangeClipboardData
+   {
+      std::vector<ArrangeClipboardItem> items;
+      uint64_t generation = 0;
+   } gArrangeClipboard;
+
+   // One gesture's pre-edit snapshot (a clip drag, a popup DragFloat, a
+   // rename). Pushed as a single undo entry at the gesture's end, and only if
+   // the model's revision moved - a click that changed nothing pushes nothing.
+   Arrange::Model gArrangeGestureBefore;
+   bool gArrangeGestureOpen = false;
+
+   // Live clip drag. Every frame the model is rebuilt from the gesture
+   // snapshot plus the current (delta, laneDelta) through the same op the
+   // release would run, so what is drawn is exactly what the drop will do.
+   enum ArrangeDragMode
+   {
+      kArrangeDragNone = 0,
+      kArrangeDragMove,
+      kArrangeDragTrimStart,
+      kArrangeDragTrimEnd,
+      kArrangeDragGroupEdge,   // TrimGroupEdge: only members flush with the edge
+      kArrangeDragGroupScale,  // ScaleGroup: Shift-drag on a group edge
+   };
+   struct ArrangeDragState
+   {
+      int mode = kArrangeDragNone;
+      uint64_t clipId = 0;      // the clip under the mouse at mouse-down
+      uint64_t groupId = 0;     // group edge / scale modes
+      int edge = Arrange::kEdgeStart;
+      std::vector<uint64_t> ids; // move mode: every clip that moves
+      Arrange::Tick grabTick = 0; // mouse tick at mouse-down
+      Arrange::Tick origStart = 0, origEnd = 0; // the grabbed clip (or group) at mouse-down
+      int grabLane = 0;
+      Arrange::Tick appliedDelta = 0; // what the model currently reflects
+      int appliedLaneDelta = 0;
+      Arrange::Tick appliedTick = -1;
+      bool live = false;          // past the drag threshold; until then nothing moves
+      bool collapseOnClick = false; // plain click on an already-selected clip: a
+                                    // release without a drag narrows the selection to it
+      bool singleMember = false;  // Alt held at mouse-down
+   } gArrangeDrag;
+
+   // Rename, context-menu and Assign Node... targets, all by id.
+   uint64_t gArrangeRenamingClipId = 0;
+   char     gArrangeRenameClipBuffer[64] = "";
+   uint64_t gArrangeRenamingLaneId = 0;     // lane name field currently being edited
+   uint64_t gArrangeCtxClipId = 0;
+   uint64_t gArrangeAssigningClipId = 0;
    // Stable node identity, handed out at spawn and never reused, unlike
    // GraphNode::index. Arrangement clips reference it, so a clip survives its
    // node being deleted and undone back. Persisted per node in the patch;
@@ -5482,20 +5516,130 @@ namespace
       return gn ? gn->index : -1;
    }
 
-   // gArrange <- the UI's streams. Called anywhere the model is about to be
-   // read as truth (serialize, undo push, fixture).
+   // gArrange <- the legacy streams. Production code no longer calls this
+   // (gArrange is edited directly since WP5a); only the WP3/WP4 fixtures that
+   // still build their scenes in gArrangeStreams do. WP5b deletes it.
    void SyncArrangeFromLegacy()
    {
       LegacyArrange::FromLegacyStreams(gArrangeStreams, (double)Transport::Instance().Tempo(),
                                        &ArrangeIndexToUid, nullptr, gArrange);
    }
 
-   // The UI's streams <- gArrange. Called after anything replaces the model.
+   // The legacy mirror <- gArrange, lanes and clips only. Cheap no-op unless
+   // the model's revision or the tempo moved since the last rebuild, so it is
+   // safe to call after every edit and once per frame (the main loop does,
+   // just before the audio schedule check reads the mirror). A tempo change
+   // re-mirrors because the model is in ticks: clips keep their bar
+   // positions and only their seconds change.
+   void RefreshArrangeMirror()
+   {
+      const float tempo = Transport::Instance().Tempo();
+      if (gArrange.revision == gArrangeMirroredRevision && tempo == gArrangeMirroredTempo)
+         return;
+      LegacyArrange::ToLegacyStreams(gArrange, (double)tempo, &ArrangeUidToIndex, nullptr, gArrangeStreams);
+      gArrangeMirroredRevision = gArrange.revision;
+      gArrangeMirroredTempo = tempo;
+   }
+
+   // Every panel edit ends here: republish the mirror and mark the document
+   // dirty. The undo push is the caller's (see ArrangeEdit below).
+   void ArrangeCommitEdit()
+   {
+      RefreshArrangeMirror();
+      gPatchDirty = true;
+   }
+
+   // Runs `op` against gArrange and, if it changed anything (the revision
+   // moved), pushes one timeline undo entry holding the pre-edit model.
+   // Returns whether anything changed. The one shape every discrete timeline
+   // edit (key, menu item, button) goes through.
+   template <class Op>
+   bool ArrangeEdit(Op&& op)
+   {
+      Arrange::Model before = gArrange;
+      op();
+      if (gArrange.revision == before.revision)
+         return false;
+      PushArrangeUndoSnapshot(before);
+      ArrangeCommitEdit();
+      return true;
+   }
+
+   // Continuous-gesture undo (drag, popup DragFloat, rename): snapshot at the
+   // gesture's start, push at its end only if the revision moved.
+   bool ArrangeGestureEnd();
+
+   void ArrangeGestureBegin()
+   {
+      // Two gestures never overlap (a lost deactivate would otherwise leave
+      // the older snapshot open and fold the next edit into it).
+      if (gArrangeGestureOpen)
+         ArrangeGestureEnd();
+      gArrangeGestureBefore = gArrange;
+      gArrangeGestureOpen = true;
+   }
+
+   // Whether two models hold the same document content (lanes, clips,
+   // markers, loop) - revision and nextId aside. A gesture that went away and
+   // came back bumps revision without changing anything, and must not leave
+   // an undo entry behind.
+   bool ArrangeContentEqual(const Arrange::Model& a, const Arrange::Model& b)
+   {
+      if (a.lanes.size() != b.lanes.size() || a.markers.size() != b.markers.size())
+         return false;
+      for (size_t i = 0; i < a.lanes.size(); i++)
+      {
+         const Arrange::Lane& la = a.lanes[i];
+         const Arrange::Lane& lb = b.lanes[i];
+         if (la.id != lb.id || la.type != lb.type || la.blendMode != lb.blendMode || la.opacity != lb.opacity ||
+             la.gainDb != lb.gainDb || la.pan != lb.pan || la.name != lb.name || la.clips.size() != lb.clips.size())
+            return false;
+         for (size_t k = 0; k < la.clips.size(); k++)
+         {
+            const Arrange::Clip& ca = la.clips[k];
+            const Arrange::Clip& cb = lb.clips[k];
+            if (ca.id != cb.id || ca.start != cb.start || ca.length != cb.length || ca.srcUid != cb.srcUid ||
+                ca.srcOutput != cb.srcOutput || ca.fadeIn != cb.fadeIn || ca.fadeOut != cb.fadeOut ||
+                ca.gainDb != cb.gainDb || ca.enabled != cb.enabled || ca.groupId != cb.groupId || ca.name != cb.name ||
+                ca.colorR != cb.colorR || ca.colorG != cb.colorG || ca.colorB != cb.colorB)
+               return false;
+         }
+      }
+      for (size_t i = 0; i < a.markers.size(); i++)
+         if (a.markers[i].id != b.markers[i].id || a.markers[i].pos != b.markers[i].pos ||
+             a.markers[i].name != b.markers[i].name || a.markers[i].color != b.markers[i].color)
+            return false;
+      return a.settings.loop.enabled == b.settings.loop.enabled && a.settings.loop.start == b.settings.loop.start &&
+             a.settings.loop.end == b.settings.loop.end;
+   }
+
+   // Returns whether an undo entry was pushed.
+   bool ArrangeGestureEnd()
+   {
+      if (!gArrangeGestureOpen)
+         return false;
+      gArrangeGestureOpen = false;
+      if (gArrangeGestureBefore.revision == gArrange.revision)
+         return false;
+      if (ArrangeContentEqual(gArrangeGestureBefore, gArrange))
+      {
+         RefreshArrangeMirror();
+         return false;
+      }
+      PushArrangeUndoSnapshot(gArrangeGestureBefore);
+      ArrangeCommitEdit();
+      return true;
+   }
+
+   // The legacy mirror <- gArrange, plus the loop re-seat. Called after
+   // anything replaces the model wholesale (load, undo, New).
    void SyncLegacyFromArrange()
    {
       Transport& tr = Transport::Instance();
       LegacyArrange::ToLegacyStreams(gArrange, (double)tr.Tempo(),
                                      &ArrangeUidToIndex, nullptr, gArrangeStreams);
+      gArrangeMirroredRevision = gArrange.revision;
+      gArrangeMirroredTempo = tr.Tempo();
 
       // The loop is model state (ticks) that the panel still edits in seconds.
       // Anything that replaces the model - load, undo, New - has to re-seat
@@ -26202,67 +26346,6 @@ namespace
       return std::round(t / unit) * unit;
    }
 
-   // Places `newClip` into `clips` at its own startSeconds/lengthSeconds,
-   // trimming, splitting or removing whatever it lands on top of instead of
-   // just refusing the placement - the friendlier default a drag-drop, a
-   // paste, or a duplicate should all get instead of silently overlapping
-   // (which used to be possible from every one of those paths: only the
-   // live drag itself was ever clamped against neighbors).
-   void PlaceClipTrimmingOverlap(std::vector<LegacyArrange::ClipRecord>& clips, LegacyArrange::ClipRecord newClip)
-   {
-      const double newStart = newClip.startSeconds;
-      const double newEnd = newClip.startSeconds + newClip.lengthSeconds;
-      std::vector<LegacyArrange::ClipRecord> result;
-      result.reserve(clips.size() + 1);
-      for (LegacyArrange::ClipRecord existing : clips)
-      {
-         const double exStart = existing.startSeconds;
-         const double exEnd = existing.startSeconds + existing.lengthSeconds;
-         if (exEnd <= newStart || exStart >= newEnd)
-         {
-            result.push_back(existing); // No overlap at all.
-            continue;
-         }
-         if (exStart < newStart && exEnd > newEnd)
-         {
-            // The new clip lands fully inside this one - split it in two,
-            // leaving a gap for the new clip in between.
-            LegacyArrange::ClipRecord left = existing;
-            left.lengthSeconds = newStart - exStart;
-            LegacyArrange::ClipRecord right = existing;
-            right.startSeconds = newEnd;
-            right.lengthSeconds = exEnd - newEnd;
-            // The right half is a *new* clip, not the same one moved. Leaving
-            // `existing`'s id on both halves would put two clips with one id
-            // into the model, where Find() resolves to whichever comes first
-            // and every later edit hits the wrong one. Zero means "mint me
-            // one" at the next sync (LegacyArrange::FromLegacyStreams).
-            right.id = 0;
-            if (left.lengthSeconds > 0.05) result.push_back(left);
-            if (right.lengthSeconds > 0.05) result.push_back(right);
-            continue;
-         }
-         if (exStart < newStart)
-         {
-            // Overlaps only the new clip's left half - trim this one's tail.
-            existing.lengthSeconds = newStart - exStart;
-            if (existing.lengthSeconds > 0.05) result.push_back(existing);
-            continue;
-         }
-         if (exEnd > newEnd)
-         {
-            // Overlaps only the new clip's right half - trim this one's head.
-            existing.lengthSeconds = exEnd - newEnd;
-            existing.startSeconds = newEnd;
-            if (existing.lengthSeconds > 0.05) result.push_back(existing);
-            continue;
-         }
-         // Fully covered by the new clip - drop it.
-      }
-      result.push_back(newClip);
-      clips = std::move(result);
-   }
-
    // ---- arrangement video compositing (overhaul WP4) ---------------------
    //
    // One pass per active video lane, bottom lane first, so the lane drawn at
@@ -26605,78 +26688,546 @@ namespace
       t.requestH = 0;
    }
 
-   bool AddNodeToArrangeTimeline(int nodeIndex, int streamIndex = -1, double startSec = -1.0, double lengthSec = 4.0)
+   // ---- arrangement editing on gArrange (overhaul WP5a) -------------------
+   //
+   // Everything below edits gArrange through Arrange:: ops only, so the two
+   // model invariants (lanes sorted and non-overlapping, ids unique) hold by
+   // construction, and every discrete edit is exactly one undo entry
+   // (ArrangeEdit). They are free functions rather than panel code so
+   // INFINITE_ARRANGEEDITTEST can drive the same paths a key press does.
+
+   // Which outputs of `gn` carry the given lane type. Audio: the outputs its
+   // IAudioSource says are audio (VideoSourceNode: only 1). Video: every
+   // other output that is not a modulator (FieldPixelNode: 0 = out, 1 = the
+   // aux "state" texture when exposed, plus declared image outputs).
+   std::vector<int> ArrangeOutputsOfType(const GraphNode& gn, int laneType)
    {
-      GraphNode* gn = FindNodeByIndex(nodeIndex);
-      if (gn == nullptr) return false;
-
-      const bool isAudio = IsNodeAudioCompatible(*gn);
-      const int targetType = isAudio ? Patch::kStreamAudio : Patch::kStreamVideo;
-
-      // Find or create appropriate stream
-      if (streamIndex < 0 || streamIndex >= (int)gArrangeStreams.size() || gArrangeStreams[streamIndex].type != targetType)
+      std::vector<int> out;
+      if (gn.node == nullptr)
+         return out;
+      IAudioSource* audio = dynamic_cast<IAudioSource*>(gn.node.get());
+      const int count = std::max(1, gn.node->OutputCount());
+      for (int i = 0; i < count; i++)
       {
-         // Find first compatible stream
-         streamIndex = -1;
-         for (size_t i = 0; i < gArrangeStreams.size(); i++)
+         const bool isAudio = audio != nullptr && audio->IsAudioOutputIndex(i);
+         if (laneType == Arrange::kLaneAudio)
          {
-            if (gArrangeStreams[i].type == targetType)
+            if (isAudio)
+               out.push_back(i);
+         }
+         else if (!isAudio && gn.node->ModulatorOutput(i) == nullptr)
+         {
+            out.push_back(i);
+         }
+      }
+      return out;
+   }
+
+   int ArrangeDefaultOutput(const GraphNode& gn, int laneType)
+   {
+      const std::vector<int> outs = ArrangeOutputsOfType(gn, laneType);
+      return outs.empty() ? 0 : outs.front();
+   }
+
+   // A lane type's natural home for a node: anything that produces an image
+   // goes on a video lane (including VideoSourceNode, whose audio half is
+   // offered separately); audio-only nodes go on an audio lane.
+   int ArrangeLaneTypeForNode(const GraphNode& gn)
+   {
+      return IsNodeVideoCompatible(gn) ? Arrange::kLaneVideo : Arrange::kLaneAudio;
+   }
+
+   // Drops everything that must not outlive its document or its clips: on a
+   // new-document boundary the selection, rename/assign/context targets and
+   // clipboard go; otherwise only the ids that no longer resolve. A stale id
+   // therefore clears - it can never land on a different clip, because ids
+   // are never reused.
+   void ArrangePruneSelection()
+   {
+      if (gArrangeSelGeneration != gArrangePatchGeneration)
+      {
+         gArrangeSel.clear();
+         gArrangeSelAnchor = 0;
+         gArrangeRenamingClipId = 0;
+         gArrangeCtxClipId = 0;
+         gArrangeAssigningClipId = 0;
+         gArrangeSelGeneration = gArrangePatchGeneration;
+      }
+      if (gArrangeClipboard.generation != gArrangePatchGeneration)
+         gArrangeClipboard.items.clear();
+      for (auto it = gArrangeSel.begin(); it != gArrangeSel.end();)
+         it = Arrange::Find(gArrange, *it).Valid() ? std::next(it) : gArrangeSel.erase(it);
+      if (gArrangeSelAnchor != 0 && !Arrange::Find(gArrange, gArrangeSelAnchor).Valid())
+         gArrangeSelAnchor = 0;
+      if (gArrangeRenamingClipId != 0 && !Arrange::Find(gArrange, gArrangeRenamingClipId).Valid())
+         gArrangeRenamingClipId = 0;
+      if (gArrangeCtxClipId != 0 && !Arrange::Find(gArrange, gArrangeCtxClipId).Valid())
+         gArrangeCtxClipId = 0;
+      if (gArrangeAssigningClipId != 0 && !Arrange::Find(gArrange, gArrangeAssigningClipId).Valid())
+         gArrangeAssigningClipId = 0;
+   }
+
+   std::vector<uint64_t> ArrangeSelectionIds()
+   {
+      ArrangePruneSelection();
+      return std::vector<uint64_t>(gArrangeSel.begin(), gArrangeSel.end());
+   }
+
+   // Click semantics. A grouped clip selects its whole group unless
+   // `singleMember` (Alt-click). `toggle` (Cmd/Shift-click) adds or removes
+   // without disturbing the rest of the selection.
+   void ArrangeClickSelect(uint64_t clipId, bool toggle, bool singleMember)
+   {
+      ArrangePruneSelection();
+      std::vector<uint64_t> ids{ clipId };
+      if (!singleMember)
+         ids = Arrange::ExpandSelectionToGroups(gArrange, ids);
+      if (toggle)
+      {
+         const bool wasSelected = gArrangeSel.count(clipId) != 0;
+         for (uint64_t id : ids)
+         {
+            if (wasSelected)
+               gArrangeSel.erase(id);
+            else
+               gArrangeSel.insert(id);
+         }
+      }
+      else
+      {
+         // Clicking a clip that is already part of a multi-selection keeps
+         // the selection, so the drag that follows moves all of it.
+         if (gArrangeSel.count(clipId) == 0 || singleMember)
+         {
+            gArrangeSel.clear();
+            gArrangeSel.insert(ids.begin(), ids.end());
+         }
+      }
+      gArrangeSelAnchor = gArrangeSel.count(clipId) ? clipId : 0;
+   }
+
+   bool ArrangeCopySelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      if (ids.empty())
+         return false;
+      int minLane = INT_MAX;
+      Arrange::Tick minStart = Arrange::kMaxTick;
+      for (uint64_t id : ids)
+      {
+         const Arrange::Loc loc = Arrange::Find(gArrange, id);
+         minLane = std::min(minLane, loc.lane);
+         minStart = std::min(minStart, gArrange.lanes[loc.lane].clips[loc.index].start);
+      }
+      gArrangeClipboard.items.clear();
+      gArrangeClipboard.generation = gArrangePatchGeneration;
+      for (uint64_t id : ids)
+      {
+         const Arrange::Loc loc = Arrange::Find(gArrange, id);
+         ArrangeClipboardItem item;
+         item.clip = gArrange.lanes[loc.lane].clips[loc.index];
+         item.laneOffset = loc.lane - minLane;
+         item.laneType = gArrange.lanes[loc.lane].type;
+         item.tickOffset = item.clip.start - minStart;
+         gArrangeClipboard.items.push_back(item);
+      }
+      return true;
+   }
+
+   // Paste at `atTick` (the playhead) with the copied block's top lane on the
+   // anchor clip's lane. A clipboard item whose relative lane is missing or of
+   // the wrong type falls to the nearest lane of its type below that, then
+   // any lane of its type, then a new one. Groups come back as new groups.
+   bool ArrangePasteAt(Arrange::Tick atTick)
+   {
+      ArrangePruneSelection();
+      if (gArrangeClipboard.items.empty())
+         return false;
+      std::vector<uint64_t> made;
+      const bool changed = ArrangeEdit([&]()
+      {
+         int baseLane = -1;
+         if (gArrangeSelAnchor != 0)
+            baseLane = Arrange::Find(gArrange, gArrangeSelAnchor).lane;
+         if (baseLane < 0)
+         {
+            for (int i = 0; i < (int)gArrange.lanes.size(); i++)
+               if (gArrange.lanes[i].type == gArrangeClipboard.items.front().laneType) { baseLane = i; break; }
+         }
+         if (baseLane < 0)
+            baseLane = 0;
+
+         std::map<uint64_t, std::vector<uint64_t>> newGroups;
+         for (const ArrangeClipboardItem& item : gArrangeClipboard.items)
+         {
+            int lane = baseLane + item.laneOffset;
+            auto fits = [&](int i) { return i >= 0 && i < (int)gArrange.lanes.size() && gArrange.lanes[i].type == item.laneType; };
+            if (!fits(lane))
             {
-               streamIndex = (int)i;
-               break;
+               int found = -1;
+               for (int i = std::max(0, lane); i < (int)gArrange.lanes.size() && found < 0; i++)
+                  if (fits(i)) found = i;
+               for (int i = 0; i < (int)gArrange.lanes.size() && found < 0; i++)
+                  if (fits(i)) found = i;
+               if (found < 0)
+               {
+                  const uint64_t laneId = Arrange::AddLane(gArrange, item.laneType);
+                  found = Arrange::LaneIndex(gArrange, laneId);
+               }
+               lane = found;
+            }
+            Arrange::Clip c = item.clip;
+            c.id = 0;          // a paste is a new clip
+            c.groupId = 0;     // regrouped below, all members at once
+            c.start = std::max<Arrange::Tick>(0, atTick + item.tickOffset);
+            uint64_t newId = 0;
+            if (Arrange::PlaceOverwrite(gArrange, gArrange.lanes[lane].id, c, &newId))
+            {
+               made.push_back(newId);
+               if (item.clip.groupId != 0)
+                  newGroups[item.clip.groupId].push_back(newId);
             }
          }
-         // If none exists, create one
-         if (streamIndex < 0)
-         {
-            LegacyArrange::StreamRecord newStream;
-            newStream.type = targetType;
-            newStream.name = isAudio ? ("Audio " + std::to_string(gArrangeStreams.size() + 1))
-                                     : ("Video " + std::to_string(gArrangeStreams.size() + 1));
-            gArrangeStreams.push_back(newStream);
-            streamIndex = (int)gArrangeStreams.size() - 1;
-         }
-      }
-
-      if (startSec < 0.0)
-      {
-         // Place after last clip in this stream, or at playhead
-         double maxEnd = Transport::Instance().Seconds();
-         for (const auto& c : gArrangeStreams[streamIndex].clips)
-            maxEnd = std::max(maxEnd, c.startSeconds + c.lengthSeconds);
-         startSec = maxEnd;
-      }
-
-      PushArrangeUndo();
-      LegacyArrange::ClipRecord clip;
-      clip.srcIndex = nodeIndex;
-      clip.srcOutput = 0;
-      clip.startSeconds = std::max(0.0, startSec);
-      clip.lengthSeconds = std::max(0.2, lengthSec);
-      PlaceClipTrimmingOverlap(gArrangeStreams[streamIndex].clips, clip);
-      gArrangePanelOpen = true;
+         // PlaceOverwrite dissolves singleton groups, so a group is only
+         // re-created once every member is back.
+         for (auto& kv : newGroups)
+            Arrange::Group(gArrange, kv.second);
+      });
+      if (!changed)
+         return false;
+      gArrangeSel.clear();
+      for (uint64_t id : made)
+         if (Arrange::Find(gArrange, id).Valid())
+            gArrangeSel.insert(id);
+      gArrangeSelAnchor = made.empty() ? 0 : made.front();
       return true;
+   }
+
+   bool ArrangeDuplicateSelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      std::vector<uint64_t> made;
+      if (!ArrangeEdit([&]() { Arrange::DuplicateBlock(gArrange, ids, &made); }))
+         return false;
+      gArrangeSel.clear();
+      gArrangeSel.insert(made.begin(), made.end());
+      gArrangeSelAnchor = made.empty() ? 0 : made.front();
+      return true;
+   }
+
+   bool ArrangeDeleteSelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      if (!ArrangeEdit([&]() { Arrange::Delete(gArrange, ids); }))
+         return false;
+      gArrangeSel.clear();
+      gArrangeSelAnchor = 0;
+      return true;
+   }
+
+   // Cmd+E: cuts every selected clip the tick passes through; both halves
+   // stay selected.
+   bool ArrangeSplitSelectionAt(Arrange::Tick tick)
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      std::vector<uint64_t> rights;
+      if (!ArrangeEdit([&]()
+          {
+             for (uint64_t id : ids)
+             {
+                uint64_t right = 0;
+                if (Arrange::Split(gArrange, id, tick, &right))
+                   rights.push_back(right);
+             }
+          }))
+         return false;
+      gArrangeSel.insert(rights.begin(), rights.end());
+      return true;
+   }
+
+   // `0`: a mixed selection is disabled first (any enabled clip wins), so one
+   // press always leaves the whole selection in one state.
+   bool ArrangeToggleEnabledSelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      bool anyEnabled = false;
+      for (uint64_t id : ids)
+         if (const Arrange::Clip* c = Arrange::FindClip(gArrange, id))
+            anyEnabled = anyEnabled || c->enabled;
+      return ArrangeEdit([&]() { Arrange::SetEnabled(gArrange, ids, anyEnabled ? Arrange::kDisable : Arrange::kEnable); });
+   }
+
+   bool ArrangeGroupSelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      if (ids.size() < 2)
+         return false;
+      return ArrangeEdit([&]() { Arrange::Group(gArrange, ids); });
+   }
+
+   bool ArrangeUngroupSelection()
+   {
+      std::vector<uint64_t> groups;
+      for (uint64_t id : ArrangeSelectionIds())
+         if (const Arrange::Clip* c = Arrange::FindClip(gArrange, id))
+            if (c->groupId != 0)
+               groups.push_back(c->groupId);
+      return ArrangeEdit([&]() { Arrange::Ungroup(gArrange, groups); });
+   }
+
+   // ---- live clip drag ------------------------------------------------------
+
+   // Starts a drag gesture on `clipId`. `mode` is an ArrangeDragMode; for a
+   // move, the current selection is what moves.
+   void ArrangeDragBegin(int mode, uint64_t clipId, int edge, Arrange::Tick grabTick)
+   {
+      ArrangeGestureBegin();
+      ArrangeDragState d;
+      d.mode = mode;
+      d.clipId = clipId;
+      d.edge = edge;
+      d.grabTick = grabTick;
+      const Arrange::Loc loc = Arrange::Find(gArrange, clipId);
+      if (!loc.Valid())
+      {
+         gArrangeDrag = ArrangeDragState();
+         return;
+      }
+      const Arrange::Clip& c = gArrange.lanes[loc.lane].clips[loc.index];
+      d.grabLane = loc.lane;
+      d.groupId = c.groupId;
+      d.origStart = c.start;
+      d.origEnd = c.End();
+      if (mode == kArrangeDragGroupEdge || mode == kArrangeDragGroupScale)
+      {
+         bool first = true;
+         for (const Arrange::Lane& l : gArrange.lanes)
+            for (const Arrange::Clip& m : l.clips)
+               if (m.groupId == c.groupId)
+               {
+                  d.origStart = first ? m.start : std::min(d.origStart, m.start);
+                  d.origEnd = first ? m.End() : std::max(d.origEnd, m.End());
+                  first = false;
+               }
+      }
+      if (mode == kArrangeDragMove)
+      {
+         d.ids = ArrangeSelectionIds();
+         if (std::find(d.ids.begin(), d.ids.end(), clipId) == d.ids.end())
+            d.ids = { clipId };
+         d.appliedDelta = 0;
+      }
+      else
+      {
+         d.appliedTick = (edge == Arrange::kEdgeStart) ? d.origStart : d.origEnd;
+      }
+      d.appliedLaneDelta = 0;
+      gArrangeDrag = d;
+   }
+
+   // Rebuilds gArrange as (gesture snapshot + this drag). `value` is the tick
+   // delta for a move and the absolute edge tick for every edge mode.
+   // Returns whether the model changed this call. The same op the release
+   // would run, so the live view is exactly the drop.
+   bool ArrangeDragUpdate(Arrange::Tick value, int laneDelta)
+   {
+      ArrangeDragState& d = gArrangeDrag;
+      if (d.mode == kArrangeDragNone || !gArrangeGestureOpen)
+         return false;
+      if (d.mode == kArrangeDragMove)
+      {
+         if (value == d.appliedDelta && laneDelta == d.appliedLaneDelta)
+            return false;
+      }
+      else if (value == d.appliedTick)
+      {
+         return false;
+      }
+
+      const uint64_t liveRevision = gArrange.revision;
+      const uint64_t liveNextId = gArrange.nextId;
+      const Arrange::LoopRange liveLoop = gArrange.settings.loop;
+      gArrange = gArrangeGestureBefore;
+      gArrange.nextId = std::max(gArrange.nextId, liveNextId);
+      gArrange.settings.loop = liveLoop;
+      // Restoring the snapshot is itself a change of what is on screen, and
+      // revision must only climb (the mirror and the audio rebuild key on it).
+      gArrange.revision = liveRevision + 1;
+
+      switch (d.mode)
+      {
+         case kArrangeDragMove:
+            // The lane delta applies only if every clip lands on a lane of its
+            // own type; otherwise the block still moves in time on its lanes.
+            if (!Arrange::MoveClips(gArrange, d.ids, value, laneDelta) && laneDelta != 0)
+               Arrange::MoveClips(gArrange, d.ids, value, 0);
+            // Keyed on what was asked for, so the next frame with the same
+            // mouse position is a no-op.
+            d.appliedDelta = value;
+            d.appliedLaneDelta = laneDelta;
+            break;
+         case kArrangeDragTrimStart:
+         case kArrangeDragTrimEnd:
+            Arrange::TrimEdge(gArrange, d.clipId, d.edge, value);
+            d.appliedTick = value;
+            break;
+         case kArrangeDragGroupEdge:
+            Arrange::TrimGroupEdge(gArrange, d.groupId, d.edge, value);
+            d.appliedTick = value;
+            break;
+         case kArrangeDragGroupScale:
+            Arrange::ScaleGroup(gArrange, d.groupId, d.edge, value);
+            d.appliedTick = value;
+            break;
+         default:
+            break;
+      }
+      RefreshArrangeMirror();
+      return true;
+   }
+
+   // Mouse up. One undo entry for the whole drag, and none at all if it ended
+   // where it started (ArrangeGestureEnd compares content, not revision).
+   // Returns whether an entry was pushed.
+   bool ArrangeDragEnd()
+   {
+      if (gArrangeDrag.mode == kArrangeDragNone)
+         return false;
+      gArrangeDrag = ArrangeDragState();
+      return ArrangeGestureEnd();
+   }
+
+   // Adds `nodeIndex` to the timeline as a one-bar clip. `laneType` -1 picks
+   // the node's natural lane (ArrangeLaneTypeForNode); `srcOutput` -1 picks
+   // that lane type's first matching output (VideoSourceNode audio: 1). Lands
+   // on the first lane of that type (a new one if there is none), at the
+   // later of the playhead and that lane's last clip end. Returns the new
+   // clip's id, 0 if nothing was added.
+   uint64_t AddNodeToArrangeTimeline(int nodeIndex, int laneType = -1, int srcOutput = -1)
+   {
+      GraphNode* gn = FindNodeByIndex(nodeIndex);
+      if (gn == nullptr || gn->node == nullptr)
+         return 0;
+      if (laneType < 0)
+         laneType = ArrangeLaneTypeForNode(*gn);
+      if (laneType == Arrange::kLaneAudio ? !IsNodeAudioCompatible(*gn) : !IsNodeVideoCompatible(*gn))
+         return 0;
+      if (srcOutput < 0)
+         srcOutput = ArrangeDefaultOutput(*gn, laneType);
+
+      uint64_t made = 0;
+      ArrangeEdit([&]()
+      {
+         int lane = -1;
+         for (int i = 0; i < (int)gArrange.lanes.size(); i++)
+            if (gArrange.lanes[i].type == laneType) { lane = i; break; }
+         if (lane < 0)
+         {
+            int n = 1;
+            for (const Arrange::Lane& l : gArrange.lanes)
+               if (l.type == laneType) n++;
+            const uint64_t laneId = Arrange::AddLane(gArrange, laneType);
+            lane = Arrange::LaneIndex(gArrange, laneId);
+            gArrange.lanes[lane].name = (laneType == Arrange::kLaneAudio ? "Audio " : "Video ") + std::to_string(n);
+         }
+         const double bpm = (double)Transport::Instance().Tempo();
+         Arrange::Tick start = std::max<Arrange::Tick>(0, Arrange::SecondsToTicks(Transport::Instance().Seconds(), bpm));
+         if (!gArrange.lanes[lane].clips.empty())
+            start = std::max(start, gArrange.lanes[lane].clips.back().End());
+         Arrange::Clip c;
+         c.start = start;
+         c.length = Arrange::kTicksPerBar;
+         c.srcUid = gn->uid;
+         c.srcOutput = srcOutput;
+         Arrange::PlaceOverwrite(gArrange, gArrange.lanes[lane].id, c, &made);
+      });
+      if (made != 0)
+      {
+         gArrangePanelOpen = true;
+         gArrangeSel = { made };
+         gArrangeSelAnchor = made;
+      }
+      return made;
+   }
+
+   // Points clip `clipId` at node `uid` (the canvas "Assign Node..." picker
+   // and the fixtures). The node must fit the clip's lane type; the output
+   // is that lane type's first matching one. One undo entry, none if the
+   // clip already had exactly this source.
+   bool ArrangeAssignClipSource(uint64_t clipId, uint64_t uid)
+   {
+      const Arrange::Loc loc = Arrange::Find(gArrange, clipId);
+      GraphNode* gn = FindNodeByUid(uid);
+      if (!loc.Valid() || gn == nullptr || gn->node == nullptr)
+         return false;
+      const int laneType = gArrange.lanes[loc.lane].type;
+      if (laneType == Arrange::kLaneAudio ? !IsNodeAudioCompatible(*gn) : !IsNodeVideoCompatible(*gn))
+         return false;
+      const int out = ArrangeDefaultOutput(*gn, laneType);
+      return ArrangeEdit([&]()
+      {
+         Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+         if (c == nullptr || (c->srcUid == uid && c->srcOutput == out))
+            return;
+         c->srcUid = uid;
+         c->srcOutput = out;
+         gArrange.revision++;
+      });
+   }
+
+   // A stable per-group colour, so a group reads as one thing on every lane.
+   ImU32 ArrangeGroupColor(uint64_t groupId, int alpha = 255)
+   {
+      uint64_t h = groupId * 0x9E3779B97F4A7C15ull;
+      h ^= h >> 29;
+      const float hue = (float)(h % 360ull) / 360.0f;
+      float r, g, b;
+      ImGui::ColorConvertHSVtoRGB(hue, 0.65f, 0.95f, r, g, b);
+      return IM_COL32((int)(r * 255.0f), (int)(g * 255.0f), (int)(b * 255.0f), alpha);
+   }
+
+   // Diagonal hatch over a rect - the shared "this clip will not play" mark
+   // for disabled and unassigned (offline) clips.
+   void DrawArrangeHatch(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col, float spacing = 7.0f)
+   {
+      dl->PushClipRect(a, b, true);
+      const float h = b.y - a.y;
+      for (float x = a.x - h; x < b.x; x += spacing)
+         dl->AddLine(ImVec2(x, b.y), ImVec2(x + h, a.y), col, 1.0f);
+      dl->PopClipRect();
    }
 
    void DrawArrangePanelContent()
    {
+      // Every id this panel holds (selection, anchor, rename/context/assign
+      // targets) is re-resolved here; one that no longer exists clears.
+      ArrangePruneSelection();
+
+      // uid -> node, once per draw: clip labels, the offline test and the
+      // render popup's resolution probe all look nodes up by uid.
+      std::unordered_map<uint64_t, GraphNode*> arrangeNodeByUid;
+      arrangeNodeByUid.reserve(gNodes.size());
+      for (GraphNode& gn : gNodes)
+         arrangeNodeByUid[gn.uid] = &gn;
+      auto nodeForUid = [&](uint64_t uid) -> GraphNode*
+      {
+         if (uid == 0)
+            return nullptr;
+         auto it = arrangeNodeByUid.find(uid);
+         return it == arrangeNodeByUid.end() ? nullptr : it->second;
+      };
+
       // Assign Node picker alert banner - mirrors the performance matrix's
       // own "Assigning to '...'" banner (gPerfAssigningElemIdx) for the same
       // click-to-canvas-assign flow, just for a clip's source node instead
       // of a control's parameter.
-      if (gArrangeAssigningClipStream >= 0 &&
-          gArrangeAssigningClipStream < (int)gArrangeStreams.size() &&
-          gArrangeAssigningClipIndex >= 0 &&
-          gArrangeAssigningClipIndex < (int)gArrangeStreams[gArrangeAssigningClipStream].clips.size())
+      if (gArrangeAssigningClipId != 0)
       {
          ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 230, 255, 255));
          ImGui::Text("Assigning clip source: Click any compatible node on the canvas (Esc to cancel)...");
          ImGui::SameLine();
          if (ImGui::SmallButton("Cancel"))
-         {
-            gArrangeAssigningClipStream = -1;
-            gArrangeAssigningClipIndex = -1;
-         }
+            gArrangeAssigningClipId = 0;
          ImGui::PopStyleColor();
          ImGui::Spacing();
       }
@@ -26702,18 +27253,35 @@ namespace
       // moment the mouse crosses in.
       const double pinchDelta = Platform::PollTrackpadMagnificationDelta();
 
+      // Zoom keeps the time under the mouse fixed (pinch and Cmd/Ctrl+wheel
+      // alike). The ruler's left edge is only known further down, so the
+      // previous frame's is used - it moves only when the panel does.
+      static float sArrangeLastRulerStartX = 0.0f;
+      const bool arrangeWheelZoomMod = overPanel && (ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper);
+      auto zoomAroundMouse = [&](float factor)
+      {
+         const float oldPps = gArrangePixelsPerSecond;
+         const float newPps = std::clamp(oldPps * factor, 10.0f, 1000.0f);
+         const float mx = mouse.x - sArrangeLastRulerStartX;
+         if (mx > 0.0f)
+         {
+            const double mouseSec = gArrangeScrollSeconds + (double)mx / oldPps;
+            gArrangeScrollSeconds = std::max(0.0, mouseSec - (double)mx / newPps);
+         }
+         gArrangePixelsPerSecond = newPps;
+      };
+
       if (overPanel)
       {
          const float wheel = ImGui::GetIO().MouseWheel;
          const float wheelH = ImGui::GetIO().MouseWheelH;
-         const bool zoomMod = ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper;
          if (std::abs(pinchDelta) > 0.0005)
          {
-            gArrangePixelsPerSecond = std::clamp(gArrangePixelsPerSecond * (float)(1.0 + pinchDelta), 10.0f, 1000.0f);
+            zoomAroundMouse((float)(1.0 + pinchDelta));
          }
-         else if (zoomMod && std::abs(wheel) > 0.001f)
+         else if (arrangeWheelZoomMod && std::abs(wheel) > 0.001f)
          {
-            gArrangePixelsPerSecond = std::clamp(gArrangePixelsPerSecond * (wheel > 0.0f ? 1.15f : 0.87f), 10.0f, 1000.0f);
+            zoomAroundMouse(wheel > 0.0f ? 1.15f : 0.87f);
          }
          else if (std::abs(wheelH) > 0.001f)
          {
@@ -26760,163 +27328,44 @@ namespace
          gArrange.settings.loop.end = Arrange::BeatsToTicks(gArrangeLoopEndSec * beatsPerSec);
       }
 
-      // Keyboard shortcuts for timeline clip manipulation: Copy, Paste, Duplicate, Delete.
-      // Each acts on the full multi-select set (Cmd/Ctrl-click on clips)
-      // when it's non-empty, falling back to the single anchor selection
-      // otherwise, so a plain click-then-shortcut on one clip keeps working
-      // exactly as before multi-select existed.
-      if (gArrangeFocused && !ImGui::GetIO().WantTextInput)
+      // Timeline shortcuts, only while the panel owns the keyboard and no
+      // text field is taking input. Each acts on gArrangeSel (ids; a grouped
+      // clip's whole group is selected with it) through one Arrange:: op and
+      // leaves one undo entry. The canvas's own Cmd+C/V/D/G and Delete are
+      // gated off while gArrangeFocused, so nothing fires twice. Not during a
+      // clip drag or an active popup field either: those rebuild gArrange
+      // from their gesture snapshot every frame, which would silently undo
+      // (and double-push) an edit made mid-gesture.
+      if (gArrangeFocused && !ImGui::GetIO().WantTextInput &&
+          gArrangeDrag.mode == kArrangeDragNone && !gArrangeGestureOpen)
       {
          const ImGuiIO& kio = ImGui::GetIO();
          const bool cmd = kio.KeySuper || kio.KeyCtrl;
+         const Arrange::Tick playTick =
+            std::max<Arrange::Tick>(0, Arrange::SecondsToTicks(tr.Seconds(), std::max(1.0, (double)tr.Tempo())));
 
-         // Every valid (streamIndex, clipIndex) the shortcut below should
-         // touch, largest clipIndex first per stream so an erase in one
-         // stream never invalidates another pending index in the same
-         // stream.
-         auto selectedClipRefs = [&]() -> std::vector<std::pair<int, int>>
-         {
-            std::vector<std::pair<int, int>> refs;
-            if (!gArrangeMultiSelectedClips.empty())
-            {
-               for (const auto& ref : gArrangeMultiSelectedClips)
-                  if (ref.first >= 0 && ref.first < (int)gArrangeStreams.size() &&
-                      ref.second >= 0 && ref.second < (int)gArrangeStreams[ref.first].clips.size())
-                     refs.push_back(ref);
-            }
-            else if (gArrangeSelectedStream >= 0 && gArrangeSelectedStream < (int)gArrangeStreams.size() &&
-                     gArrangeSelectedClip >= 0 && gArrangeSelectedClip < (int)gArrangeStreams[gArrangeSelectedStream].clips.size())
-            {
-               refs.push_back({ gArrangeSelectedStream, gArrangeSelectedClip });
-            }
-            std::sort(refs.begin(), refs.end(), [](const auto& a, const auto& b)
-            {
-               return a.first != b.first ? a.first < b.first : a.second > b.second;
-            });
-            return refs;
-         };
-
-         // Copy: Cmd+C / Ctrl+C
          if (cmd && ImGui::IsKeyPressed(ImGuiKey_C, false))
-         {
-            const auto refs = selectedClipRefs();
-            if (!refs.empty())
-            {
-               gArrangeClipClipboard.hasData = true;
-               gArrangeClipClipboard.items.clear();
-               for (const auto& ref : refs)
-               {
-                  const auto& s = gArrangeStreams[ref.first];
-                  gArrangeClipClipboard.items.push_back(ArrangeClipClipboardItem{ ref.first, s.type, s.clips[ref.second] });
-               }
-            }
-         }
-         // Paste: Cmd+V / Ctrl+V
+            ArrangeCopySelection();
          else if (cmd && ImGui::IsKeyPressed(ImGuiKey_V, false))
-         {
-            if (gArrangeClipClipboard.hasData)
-            {
-               PushArrangeUndo();
-               // Anchor the whole copied group by its earliest clip so
-               // relative spacing/track layout between pasted clips matches
-               // what was copied, shifted so that earliest clip lands at
-               // the playhead.
-               double anchorStart = DBL_MAX;
-               for (const auto& item : gArrangeClipClipboard.items)
-                  anchorStart = std::min(anchorStart, item.clip.startSeconds);
-               const double pasteAt = std::max(0.0, tr.Seconds());
-
-               gArrangeMultiSelectedClips.clear();
-               gArrangeSelectedStream = -1;
-               gArrangeSelectedClip = -1;
-               for (const auto& item : gArrangeClipClipboard.items)
-               {
-                  int targetStream = (item.streamIndexHint >= 0 && item.streamIndexHint < (int)gArrangeStreams.size() &&
-                                       gArrangeStreams[item.streamIndexHint].type == item.streamType)
-                                      ? item.streamIndexHint : -1;
-                  if (targetStream < 0)
-                  {
-                     for (size_t si = 0; si < gArrangeStreams.size(); si++)
-                     {
-                        if (gArrangeStreams[si].type == item.streamType)
-                        {
-                           targetStream = (int)si;
-                           break;
-                        }
-                     }
-                  }
-                  if (targetStream < 0)
-                  {
-                     LegacyArrange::StreamRecord ns;
-                     ns.type = item.streamType;
-                     ns.name = (ns.type == Patch::kStreamAudio ? "Audio " : "Video ") + std::to_string(gArrangeStreams.size() + 1);
-                     gArrangeStreams.push_back(ns);
-                     targetStream = (int)gArrangeStreams.size() - 1;
-                  }
-
-                  LegacyArrange::ClipRecord pasted = item.clip;
-                  // A paste is a new clip: it must not carry the source's id
-                  // (two clips, one id) nor its groupId (the copy would join
-                  // the original's group, which is the opposite of what
-                  // Arrange::DuplicateBlock does and what WP5 will ship).
-                  pasted.id = 0;
-                  pasted.groupId = 0;
-                  pasted.startSeconds = std::max(0.0, pasteAt + (item.clip.startSeconds - anchorStart));
-                  PlaceClipTrimmingOverlap(gArrangeStreams[targetStream].clips, pasted);
-                  gArrangeSelectedStream = targetStream;
-                  gArrangeSelectedClip = (int)gArrangeStreams[targetStream].clips.size() - 1;
-                  gArrangeMultiSelectedClips.insert({ targetStream, gArrangeSelectedClip });
-               }
-            }
-         }
-         // Duplicate: Cmd+D / Ctrl+D / Shift+D
+            ArrangePasteAt(playTick);
          else if ((cmd || kio.KeyShift) && ImGui::IsKeyPressed(ImGuiKey_D, false))
-         {
-            const auto refs = selectedClipRefs();
-            if (!refs.empty())
-            {
-               PushArrangeUndo();
-               // Values captured up front - PlaceClipTrimmingOverlap rebuilds
-               // its stream's whole clip vector per call, which would
-               // invalidate any remaining index in `refs` for that stream.
-               std::vector<std::pair<int, LegacyArrange::ClipRecord>> toDuplicate;
-               for (const auto& ref : refs)
-               {
-                  LegacyArrange::ClipRecord dup = gArrangeStreams[ref.first].clips[ref.second];
-                  dup.id = 0;      // new clip - see the paste path above
-                  dup.groupId = 0;
-                  dup.startSeconds = dup.startSeconds + dup.lengthSeconds;
-                  toDuplicate.push_back({ ref.first, dup });
-               }
-               gArrangeMultiSelectedClips.clear();
-               for (const auto& [streamIdx, dup] : toDuplicate)
-               {
-                  PlaceClipTrimmingOverlap(gArrangeStreams[streamIdx].clips, dup);
-                  gArrangeSelectedStream = streamIdx;
-                  gArrangeSelectedClip = (int)gArrangeStreams[streamIdx].clips.size() - 1;
-                  gArrangeMultiSelectedClips.insert({ streamIdx, gArrangeSelectedClip });
-               }
-            }
-         }
-         // Delete: Delete / Backspace
+            ArrangeDuplicateSelection();
+         else if (cmd && ImGui::IsKeyPressed(ImGuiKey_E, false))
+            ArrangeSplitSelectionAt(playTick);
+         else if (cmd && kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false))
+            ArrangeUngroupSelection();
+         else if (cmd && ImGui::IsKeyPressed(ImGuiKey_G, false))
+            ArrangeGroupSelection();
+         else if (!cmd && !kio.KeyAlt &&
+                  (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)))
+            ArrangeToggleEnabledSelection();
          else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false))
+            ArrangeDeleteSelection();
+         else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && gArrangeDrag.mode == kArrangeDragNone)
          {
-            const auto refs = selectedClipRefs(); // already largest-index-first per stream
-            if (!refs.empty())
-            {
-               PushArrangeUndo();
-               for (const auto& ref : refs)
-                  gArrangeStreams[ref.first].clips.erase(gArrangeStreams[ref.first].clips.begin() + ref.second);
-               gArrangeSelectedClip = -1;
-               gArrangeMultiSelectedClips.clear();
-            }
-         }
-         // Deselect: Escape
-         else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
-         {
-            gArrangeSelectedStream = -1;
-            gArrangeSelectedClip = -1;
-            gArrangeMultiSelectedClips.clear();
+            gArrangeSel.clear();
+            gArrangeSelAnchor = 0;
+            gArrangeAssigningClipId = 0;
          }
       }
 
@@ -26925,39 +27374,34 @@ namespace
          const bool arrangeToolbarLight = IsThemeLight();
          const ImU32 arrangeIconCol = ImGui::GetColorU32(ImGuiCol_Text);
 
-         // Start/Stop Audio, pinned top-right of the panel - the Timeline's
-         // driver toggle, and the deliberate INVERSE of the main canvas
-         // toolbar's own Start/Stop Audio button, not a mirror of it: the
-         // two read gAudioMode (the Timeline-vs-Canvas routing mode) from
-         // Strict-vs-Live-Canvas routing flag) from opposite sides, so
-         // turning this one on always turns the canvas's off and vice
-         // versa - they can never both show "on" at once, since only one
-         // driver can be active. Clip audio itself is untouched by this;
-         // it always still resolves from whatever node the clip is
-         // assigned to, same as before.
+         // Timeline audio mode toggle, pinned top-right of the panel. It owns
+         // the routing mode only (gAudioMode); the top bar's Start/Stop Audio
+         // owns engine power. Turning the mode on also starts the engine if it
+         // is off (asking for timeline audio with no engine would be silent);
+         // turning it off hands audio back to the canvas and leaves the engine
+         // running.
          {
             const bool engineOn = AudioEngine::Instance().SampleRate() > 0.0;
-            const bool audioOn = engineOn && gAudioMode == AudioMode::Timeline;
-            const char* audioLabel = audioOn ? "Stop Audio" : "Start Audio";
+            const bool timelineMode = gAudioMode == AudioMode::Timeline;
+            const char* audioLabel = timelineMode ? "Timeline Audio On" : "Enable Timeline Audio";
             const float audioBtnW = ImGui::CalcTextSize(audioLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
             const ImVec2 audioBtnPos(panelOrigin.x + panelSize.x - audioBtnW - 6.0f, panelOrigin.y + 2.0f);
             const ImVec2 savedCursor = ImGui::GetCursorScreenPos();
             ImGui::SetCursorScreenPos(audioBtnPos);
-            ImGui::PushStyleColor(ImGuiCol_Button, audioOn
+            ImGui::PushStyleColor(ImGuiCol_Button, timelineMode
                ? (arrangeToolbarLight ? ImVec4(0.20f, 0.62f, 0.34f, 1.0f) : ImVec4(0.16f, 0.52f, 0.28f, 1.0f))
                : (arrangeToolbarLight ? ImVec4(0.80f, 0.82f, 0.87f, 1.0f) : ImVec4(0.30f, 0.30f, 0.34f, 1.0f)));
-            ImGui::PushStyleColor(ImGuiCol_Text, audioOn
+            ImGui::PushStyleColor(ImGuiCol_Text, timelineMode
                ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
                : (arrangeToolbarLight ? ImVec4(0.12f, 0.14f, 0.20f, 1.0f) : ImVec4(0.92f, 0.94f, 0.98f, 1.0f)));
             if (ImGui::Button(audioLabel, ImVec2(audioBtnW, 0.0f)))
             {
-               if (audioOn)
-                  AudioEngine::Instance().Stop();
+               if (timelineMode)
+               {
+                  gAudioMode = AudioMode::Canvas;
+               }
                else
                {
-                  // Claim the Timeline as the active driver, muting the
-                  // canvas - same "no restart if already running" rule as
-                  // the canvas button's own claim of this flag.
                   gAudioMode = AudioMode::Timeline;
                   if (!engineOn)
                   {
@@ -26968,8 +27412,15 @@ namespace
                }
             }
             ImGui::PopStyleColor(2);
-            if (!audioOn && !gAudioStartError.empty() && ImGui::IsItemHovered())
-               ImGui::SetTooltip("%s", gAudioStartError.c_str());
+            if (ImGui::IsItemHovered())
+            {
+               if (!gAudioStartError.empty() && !engineOn)
+                  ImGui::SetTooltip("%s", gAudioStartError.c_str());
+               else if (timelineMode)
+                  ImGui::SetTooltip("The timeline's clips drive audio. Click to hand audio back to the canvas (the engine keeps running).");
+               else
+                  ImGui::SetTooltip("Play the timeline's audio clips instead of the canvas (starts the audio engine if it is off).");
+            }
             ImGui::SetCursorScreenPos(savedCursor);
 
             // Render, pinned just left of Start/Stop Audio - exports the
@@ -26991,26 +27442,24 @@ namespace
             static std::string sArrangeRenderVideoPath;
             static std::unique_ptr<OutputNode> sArrangeTimelineExportNode;
 
-            double arrangeEndSec = 0.0;
+            const double arrangeEndSec =
+               Arrange::TicksToSeconds(Arrange::ArrangementEnd(gArrange), std::max(1.0, (double)tr.Tempo()));
             int detectedClipW = 1920;
             int detectedClipH = 1080;
             bool foundClipRes = false;
-            for (const LegacyArrange::StreamRecord& s : gArrangeStreams)
+            for (const Arrange::Lane& l : gArrange.lanes)
             {
-               for (const LegacyArrange::ClipRecord& c : s.clips)
+               if (l.type != Arrange::kLaneVideo || foundClipRes)
+                  continue;
+               for (const Arrange::Clip& c : l.clips)
                {
-                  arrangeEndSec = std::max(arrangeEndSec, c.startSeconds + c.lengthSeconds);
-                  if (!foundClipRes && s.type == Patch::kStreamVideo)
+                  GraphNode* gn = nodeForUid(c.srcUid);
+                  if (gn != nullptr && gn->node != nullptr && gn->node->GetOutputWidth() > 0 && gn->node->GetOutputHeight() > 0)
                   {
-                     if (GraphNode* gn = FindNodeByIndex(c.srcIndex))
-                     {
-                        if (gn->node != nullptr && gn->node->GetOutputWidth() > 0 && gn->node->GetOutputHeight() > 0)
-                        {
-                           detectedClipW = gn->node->GetOutputWidth();
-                           detectedClipH = gn->node->GetOutputHeight();
-                           foundClipRes = true;
-                        }
-                     }
+                     detectedClipW = gn->node->GetOutputWidth();
+                     detectedClipH = gn->node->GetOutputHeight();
+                     foundClipRes = true;
+                     break;
                   }
                }
             }
@@ -27360,35 +27809,14 @@ namespace
                ImGui::SetTooltip("Loop end (M:SS)");
          }
 
-         // The old standalone "Audio: Timeline Strict"/"Audio: Live Canvas"
-         // mode toggle used to live here as its own button. It set the same
-         // gAudioMode flag the top-right Start/Stop Audio button now
-         // owns directly (see above) - keeping both would let them drift
-         // out of sync (this one never touched the engine's actual on/off
-         // state), so it's folded into that single control instead.
+         // The routing mode (gAudioMode) is owned by the "Enable Timeline
+         // Audio" toggle pinned top-right above; engine power is the top
+         // bar's Start/Stop Audio. Neither changes the other's state, except
+         // that enabling timeline audio starts a stopped engine.
       }
 
       ImGui::Separator();
 
-      // Right-click context popup to switch dock or close
-      if (overPanel && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
-          !ImGui::IsPopupOpen("##clipctx") && !ImGui::IsPopupOpen("##addcliptolane"))
-      {
-         // Only open dock popup if not right-clicking inside lane content
-      }
-
-      // A move-drag (not a trim) released this frame may be dropped onto a
-      // different track of the same type - resolved once the lane loop
-      // below has seen where the mouse actually let go, then applied and
-      // the drag state cleared at the end of this function. Trims stay on
-      // their own track; only whole-clip moves can cross tracks.
-      const bool arrangeClipMoveDraggingActive = ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
-         gArrangeDraggingClipStream >= 0 && gArrangeDraggingClipStream < (int)gArrangeStreams.size() &&
-         gArrangeDraggingClipIndex >= 0 && gArrangeDraggingClipMode == 0;
-      const bool arrangeClipMoveReleasedThisFrame = ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
-         gArrangeDraggingClipStream >= 0 && gArrangeDraggingClipStream < (int)gArrangeStreams.size() &&
-         gArrangeDraggingClipIndex >= 0 && gArrangeDraggingClipMode == 0;
-      int arrangeCrossTrackDropStream = -1;
       if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
          gArrangeDraggingPlayhead = false;
 
@@ -27456,6 +27884,21 @@ namespace
                gArrangeViewportOnRight = false;
             if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
                gArrangeViewportOnRight = true;
+            // The whole timeline panel: bottom or top of the window (saved
+            // with the document, not undoable - same as View > Arrangement
+            // Timeline > Dock).
+            ImGui::Separator();
+            const bool panelTop = gArrange.settings.dockSide == 1;
+            if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
+            {
+               gArrange.settings.dockSide = 0;
+               gPatchDirty = true;
+            }
+            if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
+            {
+               gArrange.settings.dockSide = 1;
+               gPatchDirty = true;
+            }
             ImGui::EndPopup();
          }
 
@@ -27483,14 +27926,17 @@ namespace
          ? -(kViewportW + ImGui::GetStyle().ItemSpacing.x)
          : 0.0f;
       PushDockedPanelStyle(/*isChild=*/true);
+      // Cmd/Ctrl+wheel zooms (above); it must not also scroll the lanes.
       ImGui::BeginChild("##arrangetimelinescroll", ImVec2(timelineChildWidth, 0), false,
-                        ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysUseWindowPadding);
+                        ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysUseWindowPadding |
+                        (arrangeWheelZoomMod ? ImGuiWindowFlags_NoScrollWithMouse : 0));
       PopDockedPanelStyle();
 
       ImDrawList* dl = ImGui::GetWindowDrawList();
       const ImVec2 scrollTL = ImGui::GetCursorScreenPos();
       const ImVec2 avail = ImGui::GetContentRegionAvail();
       const float rulerStartX = scrollTL.x + kHeaderWidth;
+      sArrangeLastRulerStartX = rulerStartX;
       const float rulerWidth = std::max(avail.x - kHeaderWidth, 800.0f);
       // scrollTL.y already has the child's current vertical scroll baked in
       // (it moves up off-screen as the user scrolls down through many
@@ -27657,59 +28103,167 @@ namespace
          arrangeGridLines.push_back({ x, frac < 1e-4 });
       }
 
-      // Where a whole-clip move-drag would currently land, in seconds -
-      // computed once here (mirroring the per-clip Move-mode math below) so
-      // the cross-track drop highlight can be sized to just that span
-      // instead of painting the entire target lane, which read as "which
-      // lane" but not "where in the lane".
-      double arrangeMovePreviewStartSec = gArrangeDragInitialStartSec;
-      if (arrangeClipMoveDraggingActive)
+      // ---- clip geometry and snapping, in ticks ----
+      // Clips live in ticks; the view is still laid out in seconds (pps,
+      // gArrangeScrollSeconds), so these convert at the live tempo.
+      const double arrBpm = std::max(1.0, (double)tr.Tempo());
+      auto tickToX = [&](Arrange::Tick t)
       {
-         const double currentMouseSec = startSec + (double)(mouse.x - rulerStartX) / pps;
-         const double deltaSec = currentMouseSec - gArrangeDragStartSec;
-         const double snapSec = 8.0 / pps;
-         auto snapToPreview = [&](double candidate, std::initializer_list<double> targets) -> double
+         return rulerStartX + (float)((Arrange::TicksToSeconds(t, arrBpm) - startSec) * pps);
+      };
+      auto xToTick = [&](float x)
+      {
+         return Arrange::SecondsToTicks(startSec + (double)(x - rulerStartX) / pps, arrBpm);
+      };
+      const double pxPerTick = (double)pps * 60.0 / (arrBpm * (double)Arrange::kPPQ);
+      const Arrange::Tick snapThresholdTicks = std::max<Arrange::Tick>(1, (Arrange::Tick)(8.0 / std::max(1e-9, pxPerTick)));
+      const Arrange::Tick gridTicks = std::max<Arrange::Tick>(1, (Arrange::Tick)std::llround(beatStep * (double)Arrange::kPPQ));
+      const Arrange::Tick playTick = std::max<Arrange::Tick>(0, Arrange::SecondsToTicks(curSec, arrBpm));
+      const float lanesTopY = scrollTL.y + kRulerHeight;
+      auto laneRowAt = [&](float y) { return (int)std::floor((y - lanesTopY) / kLaneHeight); };
+
+      // Nearest snap target within ~8 px of `t`: the visible grid (while snap
+      // is on), the playhead, 0, and `extra` (neighbour edges). `*dist` gets
+      // the distance, or a value past the threshold when nothing is in reach.
+      auto snapTick = [&](Arrange::Tick t, const std::vector<Arrange::Tick>& extra, Arrange::Tick* dist) -> Arrange::Tick
+      {
+         Arrange::Tick best = t;
+         Arrange::Tick bestDist = snapThresholdTicks + 1;
+         auto consider = [&](Arrange::Tick c)
          {
-            double best = candidate;
-            double bestDist = snapSec;
-            for (double t : targets)
-            {
-               if (t >= DBL_MAX) continue;
-               const double d = std::abs(candidate - t);
-               if (d < bestDist) { bestDist = d; best = t; }
-            }
-            return best;
+            const Arrange::Tick d = c > t ? c - t : t - c;
+            if (d < bestDist) { bestDist = d; best = c; }
          };
-         double candidate = gArrangeDragInitialStartSec + deltaSec;
-         const double upperStart = gArrangeDragUpperBound - gArrangeDragInitialLengthSec;
-         const double gridTarget = gArrangeSnapToGrid ? ArrangeNearestBeatSec(candidate, minorSec) : DBL_MAX;
-         const double gridTargetEnd = gArrangeSnapToGrid
-            ? ArrangeNearestBeatSec(candidate + gArrangeDragInitialLengthSec, minorSec) - gArrangeDragInitialLengthSec
-            : DBL_MAX;
-         candidate = snapToPreview(candidate, { gArrangeDragLowerBound, upperStart, curSec, curSec - gArrangeDragInitialLengthSec, 0.0, gridTarget, gridTargetEnd });
-         candidate = std::clamp(candidate, gArrangeDragLowerBound, std::max(gArrangeDragLowerBound, upperStart));
-         arrangeMovePreviewStartSec = std::max(0.0, candidate);
+         if (gArrangeSnapToGrid)
+            consider((Arrange::Tick)std::llround((double)t / (double)gridTicks) * gridTicks);
+         consider(playTick);
+         consider(0);
+         for (Arrange::Tick e : extra)
+            consider(e);
+         if (dist != nullptr)
+            *dist = bestDist;
+         return best;
+      };
+
+      // Both edges of every clip on `laneIdx` at gesture start, minus the
+      // clips being dragged - the neighbours a drag snaps to. Bounds come from
+      // the lane the clip is landing on, not the one it left.
+      auto laneEdges = [&](int laneIdx, const std::vector<uint64_t>& exclude)
+      {
+         std::vector<Arrange::Tick> e;
+         const Arrange::Model& src = gArrangeGestureOpen ? gArrangeGestureBefore : gArrange;
+         if (laneIdx < 0 || laneIdx >= (int)src.lanes.size())
+            return e;
+         for (const Arrange::Clip& c : src.lanes[laneIdx].clips)
+         {
+            if (std::find(exclude.begin(), exclude.end(), c.id) != exclude.end())
+               continue;
+            e.push_back(c.start);
+            e.push_back(c.End());
+         }
+         return e;
+      };
+
+      // ---- the live clip drag ----
+      // Every frame the mouse moves, gArrange is rebuilt as (gesture snapshot
+      // + this drag) through the same op the release commits, so the view is
+      // exactly the drop. Mouse-up ends the gesture: one undo entry, or none
+      // if nothing ended up different.
+      {
+         ArrangeDragState& drag = gArrangeDrag;
+         if (drag.mode != kArrangeDragNone)
+         {
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+               const bool wasClick = !drag.live && drag.collapseOnClick;
+               const uint64_t clicked = drag.clipId;
+               const bool single = drag.singleMember;
+               ArrangeDragEnd();
+               if (wasClick && Arrange::Find(gArrange, clicked).Valid())
+               {
+                  std::vector<uint64_t> ids{ clicked };
+                  if (!single)
+                     ids = Arrange::ExpandSelectionToGroups(gArrange, ids);
+                  gArrangeSel.clear();
+                  gArrangeSel.insert(ids.begin(), ids.end());
+                  gArrangeSelAnchor = clicked;
+               }
+            }
+            else
+            {
+               if (!drag.live && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3.0f))
+                  drag.live = true;
+               if (drag.live)
+               {
+                  const Arrange::Tick rawDelta = xToTick(mouse.x) - drag.grabTick;
+                  if (drag.mode == kArrangeDragMove)
+                  {
+                     const int laneCount = (int)gArrange.lanes.size();
+                     const int mouseLane = std::clamp(laneRowAt(mouse.y), 0, std::max(0, laneCount - 1));
+                     const int laneDelta = mouseLane - drag.grabLane;
+                     const Arrange::Tick len = drag.origEnd - drag.origStart;
+                     // Snap against the lane the grabbed clip would land on
+                     // (its own lane when the lane move is refused).
+                     int targetLane = drag.grabLane + laneDelta;
+                     if (targetLane < 0 || targetLane >= laneCount || drag.grabLane >= laneCount ||
+                         gArrange.lanes[targetLane].type != gArrange.lanes[drag.grabLane].type)
+                        targetLane = drag.grabLane;
+                     const std::vector<Arrange::Tick> edges = laneEdges(targetLane, drag.ids);
+                     const Arrange::Tick cand = drag.origStart + rawDelta;
+                     Arrange::Tick dStart = 0, dEnd = 0;
+                     const Arrange::Tick sStart = snapTick(cand, edges, &dStart);
+                     const Arrange::Tick sEnd = snapTick(cand + len, edges, &dEnd) - len;
+                     const Arrange::Tick chosen = dEnd < dStart ? sEnd : sStart;
+                     ArrangeDragUpdate(chosen - drag.origStart, laneDelta);
+                  }
+                  else
+                  {
+                     const Arrange::Tick origEdge = drag.edge == Arrange::kEdgeStart ? drag.origStart : drag.origEnd;
+                     std::vector<Arrange::Tick> edges;
+                     if (drag.mode == kArrangeDragTrimStart || drag.mode == kArrangeDragTrimEnd)
+                        edges = laneEdges(drag.grabLane, { drag.clipId });
+                     const Arrange::Tick snapped = snapTick(origEdge + rawDelta, edges, nullptr);
+                     ArrangeDragUpdate(std::max<Arrange::Tick>(0, snapped), 0);
+                  }
+               }
+            }
+         }
       }
-      const float arrangeMovePreviewLeft = rulerStartX + (float)((arrangeMovePreviewStartSec - startSec) * pps);
-      const float arrangeMovePreviewRight = rulerStartX + (float)((arrangeMovePreviewStartSec + gArrangeDragInitialLengthSec - startSec) * pps);
+
+      // Group bounds (tick span and lane rows), for the group-edge hit test
+      // and the selected-group outline.
+      struct ArrangeGroupSpan { Arrange::Tick start, end; int laneMin, laneMax; };
+      std::map<uint64_t, ArrangeGroupSpan> arrangeGroupSpans;
+      for (int li = 0; li < (int)gArrange.lanes.size(); li++)
+      {
+         for (const Arrange::Clip& c : gArrange.lanes[li].clips)
+         {
+            if (c.groupId == 0)
+               continue;
+            auto it = arrangeGroupSpans.find(c.groupId);
+            if (it == arrangeGroupSpans.end())
+               arrangeGroupSpans[c.groupId] = { c.start, c.End(), li, li };
+            else
+            {
+               it->second.start = std::min(it->second.start, c.start);
+               it->second.end = std::max(it->second.end, c.End());
+               it->second.laneMin = std::min(it->second.laneMin, li);
+               it->second.laneMax = std::max(it->second.laneMax, li);
+            }
+         }
+      }
 
       // Draw Lanes
-      float curY = scrollTL.y + kRulerHeight;
-      int streamToMoveSrc = -1;
-      int streamToMoveDst = -1;
-      int streamToDelete = -1;
-
-      // Pending action for clips
-      int clipToDeleteStream = -1;
-      int clipToDeleteIndex = -1;
-      // static: the right-click that opens "##addcliptolane" and the later
-      // frame where the user actually clicks its "Add Clip" item are two
-      // different frames - plain locals here reset to -1/0.0 at the top of
-      // every frame in between, so by the time the click landed, the popup
-      // was building a clip for stream -1 (silently doing nothing, since
-      // that's gArrangeStreams[-1]) instead of the lane that was clicked.
-      static int addClipToStreamIdx = -1;
-      static double addClipAtTimeSec = 0.0;
+      float curY = lanesTopY;
+      int laneToMoveSrc = -1;
+      int laneToMoveDst = -1;
+      uint64_t laneToDelete = 0;
+      bool openClipCtx = false;
+      bool openAddClip = false;
+      // static: the right-click that opens "##arrangeaddclip" and the frame
+      // its "Add Clip" is clicked are different frames.
+      static uint64_t addClipToLaneId = 0;
+      static Arrange::Tick addClipAtTick = 0;
 
       // Shared "insert a new track" popup body - opened either from the
       // empty-state prompt below (no tracks yet) or from a per-row "+" next
@@ -27717,17 +28271,21 @@ namespace
       // set beforehand to say where it lands (-1 = append at end).
       auto InsertArrangeTrack = [&](bool isVideo)
       {
-         PushArrangeUndo();
-         LegacyArrange::StreamRecord s;
-         s.type = isVideo ? Patch::kStreamVideo : Patch::kStreamAudio;
-         s.name = (isVideo ? "Video " : "Audio ") + std::to_string(gArrangeStreams.size() + 1);
-         if (gArrangeAddTrackInsertAfter < 0 || gArrangeAddTrackInsertAfter >= (int)gArrangeStreams.size())
-            gArrangeStreams.push_back(s);
-         else
-            gArrangeStreams.insert(gArrangeStreams.begin() + gArrangeAddTrackInsertAfter + 1, s);
+         const int type = isVideo ? Arrange::kLaneVideo : Arrange::kLaneAudio;
+         ArrangeEdit([&]()
+         {
+            int n = 1;
+            for (const Arrange::Lane& l : gArrange.lanes)
+               if (l.type == type) n++;
+            const int at = (gArrangeAddTrackInsertAfter < 0 || gArrangeAddTrackInsertAfter >= (int)gArrange.lanes.size())
+               ? -1 : gArrangeAddTrackInsertAfter + 1;
+            const uint64_t id = Arrange::AddLane(gArrange, type, at);
+            if (Arrange::Lane* l = Arrange::FindLane(gArrange, id))
+               l->name = (isVideo ? "Video " : "Audio ") + std::to_string(n);
+         });
       };
 
-      if (gArrangeStreams.empty())
+      if (gArrange.lanes.empty())
       {
          ImGui::SetCursorScreenPos(ImVec2(scrollTL.x + 4.0f, pinnedTopY + kRulerHeight + 10.0f));
          if (ImGui::Button("+ Add Track", ImVec2(120, 0)))
@@ -27752,21 +28310,17 @@ namespace
       dl->PushClipRect(ImVec2(scrollTL.x, pinnedTopY + kRulerHeight),
                         ImVec2(scrollTL.x + avail.x, pinnedTopY + std::max(avail.y, kRulerHeight)), true);
 
-      for (size_t i = 0; i < gArrangeStreams.size(); i++)
+      for (size_t i = 0; i < gArrange.lanes.size(); i++)
       {
-         LegacyArrange::StreamRecord& stream = gArrangeStreams[i];
-         ImGui::PushID((int)i * 1000);
-
-         // Cross-track drop target: a moved clip released over a lane of the
-         // same type (video-to-video, audio-to-audio) relocates there.
-         const bool laneIsLiveDropTarget = (arrangeClipMoveDraggingActive || arrangeClipMoveReleasedThisFrame) &&
-            stream.type == gArrangeStreams[gArrangeDraggingClipStream].type &&
-            (int)i != gArrangeDraggingClipStream &&
-            mouse.y >= curY && mouse.y < curY + kLaneHeight;
-         if (arrangeClipMoveReleasedThisFrame && laneIsLiveDropTarget)
-         {
-            arrangeCrossTrackDropStream = (int)i;
-         }
+         // Only the header's name field writes through this reference; every
+         // clip edit is deferred to an id-addressed op after the loop, so the
+         // lane vector never reshapes under it.
+         Arrange::Lane& lane = gArrange.lanes[i];
+         const uint64_t laneId = lane.id;
+         // Scoped by lane id, not row, so a reorder never hands one lane's
+         // active name field to another.
+         const int laneScope = (int)(laneId & 0x7fffffff);
+         ImGui::PushID(laneScope);
 
          // Lane background
          const ImU32 laneBg = (i % 2 == 0)
@@ -27796,25 +28350,17 @@ namespace
          // ---- Header content ----
          ImGui::SetCursorScreenPos(ImVec2(scrollTL.x + 4.0f, curY + 4.0f));
 
-         // Per-row "+ Add Track": inserts a new track right after this one,
-         // rather than only ever appending at the end from a single
-         // toolbar button - lets a track be added in place wherever the
-         // user is looking.
+         // Per-row "+ Add Track": inserts a new track right after this one.
          {
             const ImVec2 addBtnSize(20.0f, 18.0f);
             if (ImGui::Button("##rowaddtrack", addBtnSize))
             {
                gArrangeAddTrackInsertAfter = (int)i;
-               // "##arrangeaddtrackpopup" is opened here under this row's
-               // PushID((int)i*1000) scope, but BeginPopup for it (above,
-               // before the lanes loop) runs with no such scope - an
-               // OpenPopup ID computed under a different ID stack than
-               // BeginPopup's never matches, so the popup would silently
-               // never open. Pop out to the same (unscoped) stack depth
-               // for the call, then restore it.
+               // "##arrangeaddtrackpopup" is begun above with no lane scope;
+               // open it from the same ID-stack depth or the IDs never match.
                ImGui::PopID();
                ImGui::OpenPopup("##arrangeaddtrackpopup");
-               ImGui::PushID((int)i * 1000);
+               ImGui::PushID(laneScope);
             }
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
@@ -27825,13 +28371,9 @@ namespace
          }
          ImGui::SameLine(0.0f, 5.0f);
 
-         // Drag handle: a colored chip carrying an actual grip icon rather
-         // than a "V"/"A" letter, so its look matches what it does (grab to
-         // reorder tracks) instead of doubling as a type label. Track type
-         // is still unambiguous from the chip color alone (only two types
-         // exist): violet for video, emerald for audio - the same pairing
-         // most NLEs/DAWs use, so it reads correctly on sight.
-         const bool isVideo = stream.type == Patch::kStreamVideo;
+         // Drag handle: a colored chip carrying a grip icon (violet video,
+         // emerald audio), doubling as the reorder drag source/target.
+         const bool isVideo = lane.type == Arrange::kLaneVideo;
          const ImU32 badgeCol = isVideo ? IM_COL32(139, 92, 246, 255) : IM_COL32(16, 185, 129, 255);
          const ImVec2 badgePos = ImGui::GetCursorScreenPos();
          const ImVec2 badgeSize(22.0f, 18.0f);
@@ -27839,7 +28381,6 @@ namespace
          Tabler::DrawGripVertical(dl, ImVec2(badgePos.x + badgeSize.x * 0.5f, badgePos.y + badgeSize.y * 0.5f),
                                   12.0f, IM_COL32(255, 255, 255, 235));
 
-         // Invisible button over badge for Drag & Drop track reordering
          ImGui::SetCursorScreenPos(badgePos);
          ImGui::InvisibleButton("##trackdragbadge", badgeSize);
          if (ImGui::IsItemHovered())
@@ -27852,18 +28393,18 @@ namespace
          {
             int dragIdx = (int)i;
             ImGui::SetDragDropPayload("ARRANGE_TRACK_INDEX", &dragIdx, sizeof(int));
-            ImGui::Text("Move %s", stream.name.c_str());
+            ImGui::Text("Move %s", lane.name.c_str());
             ImGui::EndDragDropSource();
          }
          if (ImGui::BeginDragDropTarget())
          {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ARRANGE_TRACK_INDEX"))
             {
-               int srcIdx = *(const int*)payload->Data;
+               const int srcIdx = *(const int*)payload->Data;
                if (srcIdx != (int)i)
                {
-                  streamToMoveSrc = srcIdx;
-                  streamToMoveDst = (int)i;
+                  laneToMoveSrc = srcIdx;
+                  laneToMoveDst = (int)i;
                }
             }
             ImGui::EndDragDropTarget();
@@ -27871,22 +28412,38 @@ namespace
 
          ImGui::SameLine();
 
-         // Stream name
+         // Lane name. Typing edits the model live (so the header never lags
+         // the field); the whole edit is one undo entry, opened when the field
+         // activates and pushed when it deactivates, only if the name changed.
          ImGui::SetNextItemWidth(140.0f);
          char nameBuf[128];
-         snprintf(nameBuf, sizeof(nameBuf), "%s", stream.name.c_str());
-         if (ImGui::InputText("##streamname", nameBuf, sizeof(nameBuf)))
-            stream.name = nameBuf;
+         snprintf(nameBuf, sizeof(nameBuf), "%s", lane.name.c_str());
+         const bool nameEdited = ImGui::InputText("##streamname", nameBuf, sizeof(nameBuf));
+         if (ImGui::IsItemActivated())
+         {
+            ArrangeGestureBegin();
+            gArrangeRenamingLaneId = laneId;
+         }
+         if (nameEdited && lane.name != nameBuf)
+         {
+            if (!gArrangeGestureOpen)
+               ArrangeGestureBegin();
+            lane.name = nameBuf;
+            gArrange.revision++;
+         }
+         if (ImGui::IsItemDeactivated() && gArrangeRenamingLaneId == laneId)
+         {
+            ArrangeGestureEnd();
+            gArrangeRenamingLaneId = 0;
+         }
 
-         // Delete button - icon-only cross, same idle/hover treatment as the
-         // modulation matrix's unbind "x" (transparent at rest, red on
-         // hover) rather than a bare "x" glyph in a generic small button.
+         // Delete button - icon-only cross, transparent at rest, red on hover.
          ImGui::SameLine();
          {
             ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
             const float btnDim = ImGui::GetFrameHeight() * 0.8f;
             if (ImGui::Button("##deletestream", ImVec2(btnDim, btnDim)))
-               streamToDelete = (int)i;
+               laneToDelete = laneId;
             ImGui::PopStyleColor();
             ImDrawList* hdrDl = ImGui::GetWindowDrawList();
             const ImVec2 bmin = ImGui::GetItemRectMin();
@@ -27904,20 +28461,15 @@ namespace
             Tabler::DrawX(hdrDl, center, iconSize, xCol);
          }
 
-         // Per-stream mix controls (opacity/blend, gain/pan) are deferred -
-         // out of scope for this pass until there's a settled home for them
-         // (likely a per-clip or per-track mixer strip rather than inline
-         // in the header). stream.opacity/blendMode/gainDb/pan still exist
-         // in the data model and default to unity so nothing downstream
-         // breaks; only the header row is quieter for now.
-
-         // Draw Clips on this stream FIRST so clip buttons take priority over empty lane clicks
+         // Clips on this lane first, so clip buttons take priority over empty
+         // lane clicks. Each clip is a copy: nothing in this loop reshapes
+         // the model (drags were applied above, menu edits run after it).
          bool clipHoveredAny = false;
-         for (size_t ci = 0; ci < stream.clips.size(); ci++)
+         for (size_t ci = 0; ci < lane.clips.size(); ci++)
          {
-            LegacyArrange::ClipRecord& clip = stream.clips[ci];
-            const float clipX0 = rulerStartX + (float)((clip.startSeconds - startSec) * pps);
-            const float clipX1 = rulerStartX + (float)((clip.startSeconds + clip.lengthSeconds - startSec) * pps);
+            const Arrange::Clip clip = lane.clips[ci];
+            const float clipX0 = tickToX(clip.start);
+            const float clipX1 = tickToX(clip.End());
 
             // Cull offscreen clips
             if (clipX1 < rulerStartX || clipX0 > rulerStartX + rulerWidth)
@@ -27927,452 +28479,517 @@ namespace
             const float cRight = std::min(rulerStartX + rulerWidth, clipX1);
             const float cTop = curY + 3.0f;
             const float cBottom = curY + kLaneHeight - 3.0f;
-            const float cWidth = std::max(12.0f, cRight - cLeft);
+            const float cWidth = std::max(4.0f, cRight - cLeft);
 
-            ImGui::PushID((int)ci * 50);
+            ImGui::PushID((int)(clip.id & 0x7fffffff));
 
-            GraphNode* clipNode = FindNodeByIndex(clip.srcIndex);
-            std::string clipLabel = !clip.name.empty() ? clip.name
-               : (clipNode ? NodeTitle(*clipNode)
-                  : (clip.srcIndex < 0 ? std::string("(unassigned)") : ("Node #" + std::to_string(clip.srcIndex))));
+            GraphNode* clipNode = nodeForUid(clip.srcUid);
+            const bool offline = clipNode == nullptr;
+            const std::string clipLabel = !clip.name.empty() ? clip.name
+               : (clipNode != nullptr ? NodeTitle(*clipNode) : std::string("Unassigned"));
 
-            // Clip button for interaction
             ImGui::SetCursorScreenPos(ImVec2(cLeft, cTop));
             ImGui::InvisibleButton("##clipbtn", ImVec2(cWidth, cBottom - cTop));
             const bool clipActive = ImGui::IsItemActive();
             const bool clipHovered = ImGui::IsItemHovered();
+            const bool clipActivated = ImGui::IsItemActivated();
             if (clipHovered) clipHoveredAny = true;
 
-            const bool isSelected = (gArrangeSelectedStream == (int)i && gArrangeSelectedClip == (int)ci) ||
-                                     gArrangeMultiSelectedClips.count({ (int)i, (int)ci }) != 0;
+            const bool isSelected = gArrangeSel.count(clip.id) != 0;
+            const ImGuiIO& cio = ImGui::GetIO();
 
-            // Select on click. Shift-click toggles this clip into the
-            // multi-select set (keeping whatever else is already selected)
-            // instead of replacing the single anchor selection, so several
-            // clips can be copy/duplicate/deleted/dragged together - matches
-            // most DAWs/editors (Cmd/Ctrl is reserved for other canvas-wide
-            // shortcuts here, not clip multi-select).
-            if (clipHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            // Hit zones: a trim handle is at most a quarter of the clip on
+            // each side (2..6 px), so the middle half of any clip always moves.
+            const ImVec2 mPos = cio.MousePos;
+            const float handleW = std::clamp((clipX1 - clipX0) * 0.25f, 2.0f, 6.0f);
+            const bool onLeftEdge = clipHovered && clipX0 >= rulerStartX && (mPos.x - clipX0 <= handleW);
+            const bool onRightEdge = clipHovered && !onLeftEdge && clipX1 <= rulerStartX + rulerWidth &&
+                                     (clipX1 - mPos.x <= handleW);
+            const int edgeHit = onLeftEdge ? Arrange::kEdgeStart : (onRightEdge ? Arrange::kEdgeEnd : -1);
+            // A grouped clip's edge that is also the group's edge drives the
+            // group (trim the members on that edge; Shift scales). Alt works
+            // on the one clip.
+            bool groupEdge = false;
+            if (edgeHit >= 0 && clip.groupId != 0 && !cio.KeyAlt)
             {
-               const bool shiftClick = ImGui::GetIO().KeyShift;
-               if (shiftClick)
-               {
-                  // First shift-click on a fresh selection folds the anchor in too,
-                  // so the clip already selected isn't silently dropped from the group.
-                  if (gArrangeMultiSelectedClips.empty() && gArrangeSelectedStream >= 0 && gArrangeSelectedClip >= 0)
-                     gArrangeMultiSelectedClips.insert({ gArrangeSelectedStream, gArrangeSelectedClip });
+               auto gs = arrangeGroupSpans.find(clip.groupId);
+               if (gs != arrangeGroupSpans.end())
+                  groupEdge = edgeHit == Arrange::kEdgeStart ? clip.start == gs->second.start : clip.End() == gs->second.end;
+            }
 
-                  const auto ref = std::make_pair((int)i, (int)ci);
-                  if (gArrangeMultiSelectedClips.count(ref))
-                     gArrangeMultiSelectedClips.erase(ref);
-                  else
-                     gArrangeMultiSelectedClips.insert(ref);
-                  gArrangeSelectedStream = (int)i;
-                  gArrangeSelectedClip = (int)ci;
+            if (edgeHit >= 0)
+               ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+
+            // Click: Alt = this member only; Cmd/Ctrl or Shift = toggle into
+            // the selection (no drag) - except Shift on a group edge, which is
+            // the proportional scale. A plain click keeps an existing
+            // selection that contains the clip, so the drag moves all of it.
+            if (clipActivated && gArrangeDrag.mode == kArrangeDragNone)
+            {
+               const Arrange::Tick grabTick = xToTick(mPos.x);
+               const bool alt = cio.KeyAlt;
+               if (cio.KeyShift && groupEdge)
+               {
+                  ArrangeClickSelect(clip.id, false, false);
+                  ArrangeDragBegin(kArrangeDragGroupScale, clip.id, edgeHit, grabTick);
+               }
+               else if (cio.KeySuper || cio.KeyCtrl || cio.KeyShift)
+               {
+                  ArrangeClickSelect(clip.id, true, alt);
                }
                else
                {
-                  gArrangeMultiSelectedClips.clear();
-                  gArrangeSelectedStream = (int)i;
-                  gArrangeSelectedClip = (int)ci;
+                  const bool wasSelected = isSelected && !alt;
+                  ArrangeClickSelect(clip.id, false, alt);
+                  int mode = kArrangeDragMove;
+                  if (groupEdge)
+                     mode = kArrangeDragGroupEdge;
+                  else if (edgeHit == Arrange::kEdgeStart)
+                     mode = kArrangeDragTrimStart;
+                  else if (edgeHit == Arrange::kEdgeEnd)
+                     mode = kArrangeDragTrimEnd;
+                  ArrangeDragBegin(mode, clip.id, edgeHit >= 0 ? edgeHit : Arrange::kEdgeStart, grabTick);
+                  gArrangeDrag.collapseOnClick = wasSelected;
+                  gArrangeDrag.singleMember = alt;
                }
             }
 
-            // Trim handles vs move detection
-            const ImVec2 mPos = ImGui::GetIO().MousePos;
-            const float handleW = 8.0f;
-            const bool onLeftEdge = clipHovered && (mPos.x - cLeft <= handleW);
-            const bool onRightEdge = clipHovered && (cRight - mPos.x <= handleW);
-
-            if (onLeftEdge || onRightEdge)
-               ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-
-            if (ImGui::IsItemActivated())
-            {
-               gArrangeDraggingClipStream = (int)i;
-               gArrangeDraggingClipIndex = (int)ci;
-               gArrangeDragStartSec = startSec + (double)(mPos.x - rulerStartX) / pps;
-               gArrangeDragInitialStartSec = clip.startSeconds;
-               gArrangeDragInitialLengthSec = clip.lengthSeconds;
-               gArrangeDraggingClipMode = onLeftEdge ? 1 : (onRightEdge ? 2 : 0);
-               // Nearest same-stream neighbor on each side, at the position
-               // the drag started from - the window this clip may move or
-               // trim within without touching another clip.
-               gArrangeDragLowerBound = 0.0;
-               gArrangeDragUpperBound = DBL_MAX;
-               for (size_t k = 0; k < stream.clips.size(); k++)
-               {
-                  if (k == ci) continue;
-                  const auto& other = stream.clips[k];
-                  const double oEnd = other.startSeconds + other.lengthSeconds;
-                  if (oEnd <= gArrangeDragInitialStartSec && oEnd > gArrangeDragLowerBound)
-                     gArrangeDragLowerBound = oEnd;
-                  if (other.startSeconds >= gArrangeDragInitialStartSec + gArrangeDragInitialLengthSec &&
-                      other.startSeconds < gArrangeDragUpperBound)
-                     gArrangeDragUpperBound = other.startSeconds;
-               }
-               PushArrangeUndo();
-            }
-
-            if (clipActive && gArrangeDraggingClipStream == (int)i && gArrangeDraggingClipIndex == (int)ci)
-            {
-               const double currentMouseSec = startSec + (double)(mPos.x - rulerStartX) / pps;
-               const double deltaSec = currentMouseSec - gArrangeDragStartSec;
-               // Snap threshold in seconds so it stays a constant ~8px
-               // regardless of zoom - neighbor edges and the playhead are
-               // the snap targets, matching what a DAW timeline snaps to.
-               const double snapSec = 8.0 / pps;
-               auto snapTo = [&](double candidate, std::initializer_list<double> targets) -> double
-               {
-                  double best = candidate;
-                  double bestDist = snapSec;
-                  for (double t : targets)
-                  {
-                     if (t >= DBL_MAX) continue;
-                     const double d = std::abs(candidate - t);
-                     if (d < bestDist) { bestDist = d; best = t; }
-                  }
-                  return best;
-               };
-
-               if (gArrangeDraggingClipMode == 0) // Move
-               {
-                  double candidate = gArrangeDragInitialStartSec + deltaSec;
-                  const double upperStart = gArrangeDragUpperBound - gArrangeDragInitialLengthSec;
-                  const double gridTarget = gArrangeSnapToGrid ? ArrangeNearestBeatSec(candidate, minorSec) : DBL_MAX;
-                  const double gridTargetEnd = gArrangeSnapToGrid
-                     ? ArrangeNearestBeatSec(candidate + gArrangeDragInitialLengthSec, minorSec) - gArrangeDragInitialLengthSec
-                     : DBL_MAX;
-                  candidate = snapTo(candidate, { gArrangeDragLowerBound, upperStart, curSec, curSec - gArrangeDragInitialLengthSec, 0.0, gridTarget, gridTargetEnd });
-                  candidate = std::clamp(candidate, gArrangeDragLowerBound, std::max(gArrangeDragLowerBound, upperStart));
-                  clip.startSeconds = std::max(0.0, candidate);
-               }
-               else if (gArrangeDraggingClipMode == 1) // Trim left
-               {
-                  double newStart = gArrangeDragInitialStartSec + deltaSec;
-                  const double gridTarget = gArrangeSnapToGrid ? ArrangeNearestBeatSec(newStart, minorSec) : DBL_MAX;
-                  newStart = snapTo(newStart, { gArrangeDragLowerBound, curSec, gridTarget });
-                  newStart = std::clamp(newStart, std::max(0.0, gArrangeDragLowerBound),
-                                        gArrangeDragInitialStartSec + gArrangeDragInitialLengthSec - 0.2);
-                  clip.lengthSeconds = (gArrangeDragInitialStartSec + gArrangeDragInitialLengthSec) - newStart;
-                  clip.startSeconds = newStart;
-               }
-               else if (gArrangeDraggingClipMode == 2) // Trim right
-               {
-                  double newEnd = gArrangeDragInitialStartSec + gArrangeDragInitialLengthSec + deltaSec;
-                  const double gridTarget = gArrangeSnapToGrid ? ArrangeNearestBeatSec(newEnd, minorSec) : DBL_MAX;
-                  newEnd = snapTo(newEnd, { gArrangeDragUpperBound, curSec, gridTarget });
-                  if (gArrangeDragUpperBound < DBL_MAX)
-                     newEnd = std::min(newEnd, gArrangeDragUpperBound);
-                  clip.lengthSeconds = std::max(0.2, newEnd - gArrangeDragInitialStartSec);
-               }
-            }
-
-            // Right-click context menu on clip
+            // Right-click: the menu acts on the selection, so a clip outside
+            // it becomes the selection first.
             if (clipHovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
             {
-               gArrangeSelectedStream = (int)i;
-               gArrangeSelectedClip = (int)ci;
-               ImGui::OpenPopup("##clipctxitem");
+               if (!isSelected)
+                  ArrangeClickSelect(clip.id, false, cio.KeyAlt);
+               gArrangeCtxClipId = clip.id;
+               openClipCtx = true;
             }
 
-            if (ImGui::BeginPopup("##clipctxitem"))
-            {
-               ImGui::TextDisabled("Clip: %s", clipLabel.c_str());
-               ImGui::Separator();
+            if (clipHovered && offline && gArrangeDrag.mode == kArrangeDragNone)
+               ImGui::SetTooltip("Unassigned: this clip has no source node, so it plays nothing.\nRight-click > Assign Node... to link one.");
 
-               if (ImGui::MenuItem("Rename"))
-               {
-                  gArrangeRenamingClipStream = (int)i;
-                  gArrangeRenamingClipIndex = (int)ci;
-                  snprintf(gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer), "%s", clipLabel.c_str());
-               }
-
-               // Start/End as sliders rather than read-only text - dragging
-               // either one moves/trims the clip the same way dragging it on
-               // the timeline does, just with numeric precision. End can't be
-               // dragged below Start + 0.2s, matching the trim-drag minimum.
-               // Also clamp against the immediate neighbors in this lane so
-               // widening End (or narrowing Start) can't push into an
-               // adjacent clip - same neighbor-scan as the drag-handle path
-               // above, just evaluated fresh here since there's no drag in
-               // progress to have already computed gArrangeDrag*Bound.
-               double neighborLowerBound = 0.0;
-               double neighborUpperBound = DBL_MAX;
-               for (size_t k = 0; k < stream.clips.size(); k++)
-               {
-                  if (k == ci) continue;
-                  const auto& other = stream.clips[k];
-                  const double oEnd = other.startSeconds + other.lengthSeconds;
-                  if (oEnd <= clip.startSeconds && oEnd > neighborLowerBound)
-                     neighborLowerBound = oEnd;
-                  if (other.startSeconds >= clip.startSeconds + clip.lengthSeconds &&
-                      other.startSeconds < neighborUpperBound)
-                     neighborUpperBound = other.startSeconds;
-               }
-
-               float startF = (float)clip.startSeconds;
-               float endF = (float)(clip.startSeconds + clip.lengthSeconds);
-               ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::DragFloat("Start", &startF, 0.01f, (float)neighborLowerBound, endF - 0.2f, "%.2fs"))
-               {
-                  startF = std::max(startF, (float)neighborLowerBound);
-                  clip.lengthSeconds = std::max(0.2, (double)endF - (double)startF);
-                  clip.startSeconds = std::max(0.0, (double)startF);
-               }
-               ImGui::SetNextItemWidth(160.0f);
-               const float endMax = neighborUpperBound < DBL_MAX ? (float)neighborUpperBound : FLT_MAX;
-               if (ImGui::DragFloat("End", &endF, 0.01f, startF + 0.2f, endMax, "%.2fs"))
-               {
-                  endF = std::min(endF, endMax);
-                  clip.lengthSeconds = std::max(0.2, (double)endF - clip.startSeconds);
-               }
-
-               if (!isVideo)
-               {
-                  ImGui::Separator();
-                  ImGui::SetNextItemWidth(160.0f);
-                  ImGui::DragFloat("Fade In", &clip.fadeInSec, 0.01f, 0.0f, (float)clip.lengthSeconds, "%.2fs");
-                  ImGui::SetNextItemWidth(160.0f);
-                  ImGui::DragFloat("Fade Out", &clip.fadeOutSec, 0.01f, 0.0f, (float)clip.lengthSeconds, "%.2fs");
-                  if (ImGui::IsItemHovered())
-                     ImGui::SetTooltip("Ramps this clip's gain in/out over the given time so it doesn't click against its neighbor.");
-               }
-
-               ImGui::Separator();
-               if (ImGui::MenuItem("Assign Node..."))
-               {
-                  gArrangeAssigningClipStream = (int)i;
-                  gArrangeAssigningClipIndex = (int)ci;
-                  ImGui::CloseCurrentPopup();
-               }
-
-               ImGui::Separator();
-               if (ImGui::BeginMenu("Color Tint"))
-               {
-                  static const struct { const char* name; ImU32 col; } kPaletteColors[10] = {
-                     { "Default", IM_COL32(110, 120, 140, 255) },
-                     { "Crimson", IM_COL32(239, 68, 68, 255) },
-                     { "Orange",  IM_COL32(249, 115, 22, 255) },
-                     { "Amber",   IM_COL32(245, 158, 11, 255) },
-                     { "Emerald", IM_COL32(16, 185, 129, 255) },
-                     { "Cyan",    IM_COL32(6, 182, 212, 255) },
-                     { "Blue",    IM_COL32(59, 130, 246, 255) },
-                     { "Purple",  IM_COL32(139, 92, 246, 255) },
-                     { "Magenta", IM_COL32(217, 70, 239, 255) },
-                     { "Rose",    IM_COL32(244, 63, 94, 255) }
-                  };
-
-                  for (int ci2 = 0; ci2 < 10; ci2++)
-                  {
-                     if (ci2 % 5 != 0) ImGui::SameLine();
-                     ImGui::PushID(ci2 + 700);
-                     ImVec4 cVec = ImGui::ColorConvertU32ToFloat4(kPaletteColors[ci2].col);
-                     if (ImGui::ColorButton(kPaletteColors[ci2].name, cVec, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24)))
-                     {
-                        PushArrangeUndo();
-                        if (ci2 == 0)
-                        {
-                           clip.colorR = clip.colorG = clip.colorB = 0.0f;
-                        }
-                        else
-                        {
-                           clip.colorR = cVec.x; clip.colorG = cVec.y; clip.colorB = cVec.z;
-                        }
-                     }
-                     if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", kPaletteColors[ci2].name);
-                     ImGui::PopID();
-                  }
-                  ImGui::EndMenu();
-               }
-
-               ImGui::EndPopup();
-            }
-
-            // Clip styling - a user-assigned Color Tint overrides the
-            // type-default video/audio palette entirely (base = the tint at
-            // reduced alpha, active = the tint at full strength), same
-            // override relationship the performance matrix uses for its cards.
+            // Styling. A Color Tint overrides the type palette; a disabled or
+            // offline clip is drawn desaturated under a diagonal hatch - the
+            // "this will not play" mark.
             const bool hasTint = clip.colorR > 0.001f || clip.colorG > 0.001f || clip.colorB > 0.001f;
-            const ImU32 clipBaseCol = hasTint
+            ImU32 clipBaseCol = hasTint
                ? IM_COL32((int)(clip.colorR * 255.0f), (int)(clip.colorG * 255.0f), (int)(clip.colorB * 255.0f), 210)
                : (isVideo ? IM_COL32(109, 40, 217, 210) : IM_COL32(5, 150, 105, 210));
-            const ImU32 clipActiveCol = hasTint
+            ImU32 clipActiveCol = hasTint
                ? IM_COL32((int)(clip.colorR * 255.0f), (int)(clip.colorG * 255.0f), (int)(clip.colorB * 255.0f), 255)
                : (isVideo ? IM_COL32(139, 92, 246, 255) : IM_COL32(16, 185, 129, 255));
+            const bool muted = !clip.enabled || offline;
+            if (muted)
+            {
+               clipBaseCol = isLight ? IM_COL32(176, 178, 186, 220) : IM_COL32(72, 72, 80, 220);
+               clipActiveCol = isLight ? IM_COL32(160, 162, 170, 255) : IM_COL32(88, 88, 96, 255);
+            }
             const ImU32 clipBorderCol = isSelected
-               ? IM_COL32(250, 204, 21, 255) // Distinct gold highlight for selected clip
+               ? IM_COL32(250, 204, 21, 255) // gold for selected
                : (clipActive ? IM_COL32(255, 255, 255, 240) : (clipHovered ? IM_COL32(230, 230, 240, 220) : IM_COL32(20, 20, 24, 180)));
 
             dl->AddRectFilled(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom),
                               clipActive ? clipActiveCol : clipBaseCol, 4.0f);
+            if (muted)
+               DrawArrangeHatch(dl, ImVec2(cLeft, cTop), ImVec2(cRight, cBottom),
+                                isLight ? IM_COL32(0, 0, 0, 45) : IM_COL32(255, 255, 255, 38));
+            if (clip.groupId != 0)
+               dl->AddRectFilled(ImVec2(cLeft, cTop), ImVec2(cRight, cTop + 3.0f), ArrangeGroupColor(clip.groupId),
+                                 4.0f, ImDrawFlags_RoundCornersTop);
             dl->AddRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), clipBorderCol, 4.0f, 0, isSelected ? 2.5f : 1.2f);
 
-            // Trim handles visual highlight
+            // Trim handle marks
             if (cWidth > 20.0f)
             {
                const ImU32 handleCol = onLeftEdge ? IM_COL32(255, 255, 255, 220) : IM_COL32(255, 255, 255, 80);
                const ImU32 handleRCol = onRightEdge ? IM_COL32(255, 255, 255, 220) : IM_COL32(255, 255, 255, 80);
-               dl->AddLine(ImVec2(cLeft + 4.0f, cTop + 6.0f), ImVec2(cLeft + 4.0f, cBottom - 6.0f), handleCol, 2.0f);
-               dl->AddLine(ImVec2(cRight - 4.0f, cTop + 6.0f), ImVec2(cRight - 4.0f, cBottom - 6.0f), handleRCol, 2.0f);
+               dl->AddLine(ImVec2(cLeft + 3.0f, cTop + 6.0f), ImVec2(cLeft + 3.0f, cBottom - 6.0f), handleCol, 2.0f);
+               dl->AddLine(ImVec2(cRight - 3.0f, cTop + 6.0f), ImVec2(cRight - 3.0f, cBottom - 6.0f), handleRCol, 2.0f);
             }
 
-            // Text label - clipped to the clip's own rect so a long label
-            // (or a neighboring clip's) never bleeds past its boundary when
-            // several clips sit close together. Renaming swaps it for an
-            // inline text field instead, same pattern as the performance
-            // matrix's own inline rename.
-            if (gArrangeRenamingClipStream == (int)i && gArrangeRenamingClipIndex == (int)ci)
+            // Label, or the inline rename field. A rename is one undo entry,
+            // committed on Enter or focus loss if the name changed; Escape
+            // abandons it.
+            if (gArrangeRenamingClipId == clip.id)
             {
+               static uint64_t sArrangeRenameFocusedId = 0;
                ImGui::SetCursorScreenPos(ImVec2(cLeft + 4.0f, cTop + 2.0f));
                ImGui::SetNextItemWidth(std::max(20.0f, cWidth - 8.0f));
-               ImGui::SetKeyboardFocusHere();
-               if (ImGui::InputText("##renamingclipfield", gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer),
-                                    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll))
+               if (sArrangeRenameFocusedId != clip.id)
                {
-                  PushArrangeUndo();
-                  clip.name = gArrangeRenameClipBuffer;
-                  gArrangeRenamingClipStream = -1;
-                  gArrangeRenamingClipIndex = -1;
+                  ImGui::SetKeyboardFocusHere();
+                  sArrangeRenameFocusedId = clip.id;
                }
-               if (ImGui::IsItemDeactivated() && gArrangeRenamingClipStream == (int)i && gArrangeRenamingClipIndex == (int)ci)
+               const bool commit = ImGui::InputText("##renamingclipfield", gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer),
+                                                    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+               if (commit || ImGui::IsItemDeactivated())
                {
-                  clip.name = gArrangeRenameClipBuffer;
-                  gArrangeRenamingClipStream = -1;
-                  gArrangeRenamingClipIndex = -1;
+                  const std::string newName = gArrangeRenameClipBuffer;
+                  const uint64_t renameId = clip.id;
+                  if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false) && newName != clip.name)
+                  {
+                     ArrangeEdit([&]()
+                     {
+                        if (Arrange::Clip* c = Arrange::FindClip(gArrange, renameId))
+                        {
+                           c->name = newName;
+                           gArrange.revision++;
+                        }
+                     });
+                  }
+                  gArrangeRenamingClipId = 0;
+                  sArrangeRenameFocusedId = 0;
                }
             }
             else
             {
                char lenStr[32];
-               snprintf(lenStr, sizeof(lenStr), " [%.1fs]", clip.lengthSeconds);
-               std::string fullLabel = clipLabel + lenStr;
+               snprintf(lenStr, sizeof(lenStr), " [%.1fs]", Arrange::TicksToSeconds(clip.length, arrBpm));
+               const std::string fullLabel = clipLabel + lenStr;
+               const ImU32 labelCol = muted ? (isLight ? IM_COL32(60, 60, 70, 255) : IM_COL32(190, 190, 200, 255))
+                                            : IM_COL32(255, 255, 255, 255);
                dl->PushClipRect(ImVec2(cLeft + 2.0f, cTop), ImVec2(cRight - 2.0f, cBottom), true);
-               dl->AddText(ImVec2(cLeft + 8.0f, cTop + 8.0f), IM_COL32(255, 255, 255, 255), fullLabel.c_str());
+               dl->AddText(ImVec2(cLeft + 8.0f, cTop + 8.0f), labelCol, fullLabel.c_str());
                dl->PopClipRect();
             }
 
             ImGui::PopID();
          }
 
-         // Empty lane background right-click context (non-blocking for clip drags)
-         const ImVec2 laneBodyPos(rulerStartX, curY);
-         const ImVec2 laneBodySize(rulerWidth, kLaneHeight);
-         const bool mouseInLane = mouse.x >= laneBodyPos.x && mouse.x < laneBodyPos.x + laneBodySize.x &&
-                                  mouse.y >= laneBodyPos.y && mouse.y < laneBodyPos.y + laneBodySize.y;
-
-         if (mouseInLane && !clipHoveredAny && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+         // Empty lane body: left-click clears the selection, right-click
+         // offers "Add Clip" at that tick.
+         const bool mouseInLane = mouse.x >= rulerStartX && mouse.x < rulerStartX + rulerWidth &&
+                                  mouse.y >= curY && mouse.y < curY + kLaneHeight;
+         if (mouseInLane && !clipHoveredAny && ImGui::IsWindowHovered())
          {
-            addClipAtTimeSec = std::max(0.0, startSec + (double)(mouse.x - rulerStartX) / pps);
-            addClipToStreamIdx = (int)i;
-            ImGui::OpenPopup("##addcliptolane");
-         }
-
-         // Blank-lane right-click: just add an unassigned clip and hand the
-         // user straight to the same click-to-canvas-assign flow the clip's
-         // own context menu's "Assign Node..." uses, rather than making them
-         // pick from a node-name dropdown here too.
-         if (ImGui::BeginPopup("##addcliptolane"))
-         {
-            ImGui::TextDisabled("Add Clip at %.2fs", addClipAtTimeSec);
-            ImGui::Separator();
-            if (ImGui::MenuItem("Add Clip"))
+            const ImGuiIO& lio = ImGui::GetIO();
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
+                !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
             {
-               PushArrangeUndo();
-               LegacyArrange::ClipRecord newClip;
-               newClip.startSeconds = addClipAtTimeSec;
-               newClip.lengthSeconds = 4.0;
-               newClip.srcIndex = -1;
-               newClip.srcOutput = 0;
-               auto& targetClips = gArrangeStreams[addClipToStreamIdx].clips;
-               PlaceClipTrimmingOverlap(targetClips, newClip);
-               // PlaceClipTrimmingOverlap can drop/trim/reorder existing
-               // clips around the insert, so find the new clip back by its
-               // exact start time rather than assuming it landed last.
-               int newClipIdx = -1;
-               for (size_t k = 0; k < targetClips.size(); k++)
-                  if (targetClips[k].srcIndex == -1 && targetClips[k].startSeconds == addClipAtTimeSec)
-                     newClipIdx = (int)k;
-               gArrangeAssigningClipStream = addClipToStreamIdx;
-               gArrangeAssigningClipIndex = newClipIdx;
+               gArrangeSel.clear();
+               gArrangeSelAnchor = 0;
             }
-            ImGui::EndPopup();
-         }
-
-         // While still dragging, paint the lane under the cursor so the user
-         // can see where the clip will land before letting go. Drawn LAST in
-         // this lane's own draw sequence - after the background, grid lines,
-         // and any clips already sitting in this lane - since any of those
-         // being drawn after this would paint over it; a target lane that
-         // already holds a clip is exactly the case that needs the highlight
-         // most; the eventual drop still trims/relocates that existing clip
-         // via PlaceClipTrimmingOverlap regardless of the highlight - this is
-         // purely the preview. Matches Performance Matrix's own drag-to-grid
-         // highlight (a filled+bordered box drawn over the grid, not under it).
-         if (arrangeClipMoveDraggingActive && laneIsLiveDropTarget)
-         {
-            const float hlLeft = std::clamp(arrangeMovePreviewLeft, scrollTL.x, rulerStartX + rulerWidth);
-            const float hlRight = std::clamp(arrangeMovePreviewRight, scrollTL.x, rulerStartX + rulerWidth);
-            dl->AddRectFilled(ImVec2(hlLeft, curY), ImVec2(hlRight, curY + kLaneHeight),
-                               IM_COL32(250, 204, 21, 55), 4.0f);
-            dl->AddRect(ImVec2(hlLeft, curY), ImVec2(hlRight, curY + kLaneHeight),
-                        IM_COL32(250, 204, 21, 235), 4.0f, 0, 2.5f);
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+            {
+               Arrange::Tick at = std::max<Arrange::Tick>(0, xToTick(mouse.x));
+               if (gArrangeSnapToGrid)
+                  at = (Arrange::Tick)std::llround((double)at / (double)gridTicks) * gridTicks;
+               addClipAtTick = at;
+               addClipToLaneId = laneId;
+               openAddClip = true;
+            }
          }
 
          curY += kLaneHeight;
          ImGui::PopID();
       }
-      dl->PopClipRect();
 
-      // Handle stream mutations (after loop to avoid iterator invalidation)
-      if (streamToMoveSrc >= 0 && streamToMoveDst >= 0 &&
-          streamToMoveSrc < (int)gArrangeStreams.size() &&
-          streamToMoveDst < (int)gArrangeStreams.size())
+      // Overwrite preview: the parts of stationary clips the moving block is
+      // about to trim, in red over the target lane - read off the gesture
+      // snapshot, since the live model has already trimmed them.
+      if (gArrangeDrag.mode == kArrangeDragMove && gArrangeDrag.live && gArrangeGestureOpen)
       {
-         PushArrangeUndo();
-         LegacyArrange::StreamRecord moved = gArrangeStreams[streamToMoveSrc];
-         gArrangeStreams.erase(gArrangeStreams.begin() + streamToMoveSrc);
-         gArrangeStreams.insert(gArrangeStreams.begin() + streamToMoveDst, moved);
-      }
-      else if (streamToDelete >= 0 && streamToDelete < (int)gArrangeStreams.size())
-      {
-         PushArrangeUndo();
-         gArrangeStreams.erase(gArrangeStreams.begin() + streamToDelete);
-      }
-
-      // Handle clip deletions
-      if (clipToDeleteStream >= 0 && clipToDeleteStream < (int)gArrangeStreams.size())
-      {
-         auto& clips = gArrangeStreams[clipToDeleteStream].clips;
-         if (clipToDeleteIndex >= 0 && clipToDeleteIndex < (int)clips.size())
+         const std::vector<uint64_t>& movers = gArrangeDrag.ids;
+         for (uint64_t id : movers)
          {
-            PushArrangeUndo();
-            clips.erase(clips.begin() + clipToDeleteIndex);
+            const Arrange::Loc loc = Arrange::Find(gArrange, id);
+            if (!loc.Valid() || loc.lane >= (int)gArrangeGestureBefore.lanes.size())
+               continue;
+            const Arrange::Clip& mc = gArrange.lanes[loc.lane].clips[loc.index];
+            const float y = lanesTopY + (float)loc.lane * kLaneHeight;
+            for (const Arrange::Clip& sc : gArrangeGestureBefore.lanes[loc.lane].clips)
+            {
+               if (std::find(movers.begin(), movers.end(), sc.id) != movers.end())
+                  continue;
+               const Arrange::Tick a = std::max(sc.start, mc.start);
+               const Arrange::Tick b = std::min(sc.End(), mc.End());
+               if (a >= b)
+                  continue;
+               const float x0 = std::max(rulerStartX, tickToX(a));
+               const float x1 = std::min(rulerStartX + rulerWidth, tickToX(b));
+               if (x1 <= x0)
+                  continue;
+               dl->AddRectFilled(ImVec2(x0, y + 3.0f), ImVec2(x1, y + kLaneHeight - 3.0f), IM_COL32(239, 68, 68, 105), 3.0f);
+               dl->AddRect(ImVec2(x0, y + 3.0f), ImVec2(x1, y + kLaneHeight - 3.0f), IM_COL32(239, 68, 68, 235), 3.0f, 0, 1.5f);
+            }
          }
       }
 
-      // Cross-track clip relocation, resolved after the lane loop found
-      // which lane the mouse was actually over when the move-drag let go.
-      if (arrangeCrossTrackDropStream >= 0 && arrangeCrossTrackDropStream != gArrangeDraggingClipStream &&
-          gArrangeDraggingClipStream >= 0 && gArrangeDraggingClipStream < (int)gArrangeStreams.size() &&
-          gArrangeDraggingClipIndex >= 0 && gArrangeDraggingClipIndex < (int)gArrangeStreams[gArrangeDraggingClipStream].clips.size())
+      // Outline around every selected group's bounds, in the group colour.
       {
-         auto& srcClips = gArrangeStreams[gArrangeDraggingClipStream].clips;
-         LegacyArrange::ClipRecord moved = srcClips[gArrangeDraggingClipIndex];
-         srcClips.erase(srcClips.begin() + gArrangeDraggingClipIndex);
-         PlaceClipTrimmingOverlap(gArrangeStreams[arrangeCrossTrackDropStream].clips, moved);
-         gArrangeSelectedStream = arrangeCrossTrackDropStream;
-         gArrangeSelectedClip = (int)gArrangeStreams[arrangeCrossTrackDropStream].clips.size() - 1;
+         std::set<uint64_t> selectedGroups;
+         for (uint64_t id : gArrangeSel)
+            if (const Arrange::Clip* c = Arrange::FindClip(gArrange, id))
+               if (c->groupId != 0)
+                  selectedGroups.insert(c->groupId);
+         for (uint64_t gid : selectedGroups)
+         {
+            auto it = arrangeGroupSpans.find(gid);
+            if (it == arrangeGroupSpans.end())
+               continue;
+            const float x0 = std::max(rulerStartX, tickToX(it->second.start)) - 1.0f;
+            const float x1 = std::min(rulerStartX + rulerWidth, tickToX(it->second.end)) + 1.0f;
+            const float y0 = lanesTopY + (float)it->second.laneMin * kLaneHeight + 1.0f;
+            const float y1 = lanesTopY + (float)(it->second.laneMax + 1) * kLaneHeight - 1.0f;
+            if (x1 > x0)
+               dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), ArrangeGroupColor(gid, 230), 5.0f, 0, 1.5f);
+         }
+      }
+      dl->PopClipRect();
+
+      // ---- clip context menu (acts on the selection; ids only) ----
+      if (openClipCtx)
+         ImGui::OpenPopup("##arrangeclipctx");
+      if (ImGui::BeginPopup("##arrangeclipctx"))
+      {
+         Arrange::Clip* cp = Arrange::FindClip(gArrange, gArrangeCtxClipId);
+         if (cp == nullptr)
+         {
+            ImGui::CloseCurrentPopup();
+         }
+         else
+         {
+            const uint64_t cid = cp->id;
+            const Arrange::Loc cloc = Arrange::Find(gArrange, cid);
+            const int ctxLaneType = gArrange.lanes[cloc.lane].type;
+            GraphNode* ctxNode = nodeForUid(cp->srcUid);
+            const std::string ctxLabel = !cp->name.empty() ? cp->name
+               : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
+            ImGui::TextDisabled("Clip: %s", ctxLabel.c_str());
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Rename"))
+            {
+               gArrangeRenamingClipId = cid;
+               snprintf(gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer), "%s", ctxLabel.c_str());
+            }
+
+            // Numeric edits: live on the model, one undo entry per drag of a
+            // field (opened on the first change, pushed on deactivate, and
+            // only if something changed). Start/End go through TrimEdge, so
+            // they clamp to the neighbours exactly like a handle drag.
+            auto fieldGesture = [&](bool changed)
+            {
+               if (changed && !gArrangeGestureOpen)
+                  ArrangeGestureBegin();
+            };
+            auto fieldGestureEnd = [&]()
+            {
+               if (ImGui::IsItemDeactivated())
+                  ArrangeGestureEnd();
+            };
+            float startF = (float)Arrange::TicksToSeconds(cp->start, arrBpm);
+            float endF = (float)Arrange::TicksToSeconds(cp->End(), arrBpm);
+            ImGui::SetNextItemWidth(160.0f);
+            if (ImGui::DragFloat("Start", &startF, 0.01f, 0.0f, endF, "%.2fs"))
+            {
+               fieldGesture(true);
+               Arrange::TrimEdge(gArrange, cid, Arrange::kEdgeStart,
+                                 std::max<Arrange::Tick>(0, Arrange::SecondsToTicks(startF, arrBpm)));
+            }
+            fieldGestureEnd();
+            ImGui::SetNextItemWidth(160.0f);
+            if (ImGui::DragFloat("End", &endF, 0.01f, startF, FLT_MAX, "%.2fs"))
+            {
+               fieldGesture(true);
+               Arrange::TrimEdge(gArrange, cid, Arrange::kEdgeEnd, Arrange::SecondsToTicks(endF, arrBpm));
+            }
+            fieldGestureEnd();
+
+            if (ctxLaneType == Arrange::kLaneAudio)
+            {
+               ImGui::Separator();
+               cp = Arrange::FindClip(gArrange, cid);
+               const float lenSec = (float)Arrange::TicksToSeconds(cp->length, arrBpm);
+               float fadeInF = (float)Arrange::TicksToSeconds(cp->fadeIn, arrBpm);
+               float fadeOutF = (float)Arrange::TicksToSeconds(cp->fadeOut, arrBpm);
+               float gainF = cp->gainDb;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::DragFloat("Fade In", &fadeInF, 0.01f, 0.0f, lenSec, "%.2fs"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->fadeIn = std::clamp<Arrange::Tick>(Arrange::SecondsToTicks(fadeInF, arrBpm), 0, cp->length);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::DragFloat("Fade Out", &fadeOutF, 0.01f, 0.0f, lenSec, "%.2fs"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->fadeOut = std::clamp<Arrange::Tick>(Arrange::SecondsToTicks(fadeOutF, arrBpm), 0, cp->length);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("Ramps this clip's gain in/out over the given time so it doesn't click against its neighbor.");
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::DragFloat("Gain", &gainF, 0.1f, -60.0f, 12.0f, "%.1f dB"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->gainDb = std::clamp(gainF, -60.0f, 12.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+            }
+
+            ImGui::Separator();
+            cp = Arrange::FindClip(gArrange, cid);
+            const bool ctxGrouped = cp->groupId != 0;
+            if (ImGui::MenuItem("Enabled", "0", cp->enabled))
+               ArrangeToggleEnabledSelection();
+            if (ImGui::MenuItem("Split at Playhead", MODKEY "+E"))
+               ArrangeSplitSelectionAt(playTick);
+            if (ImGui::MenuItem("Copy", MODKEY "+C"))
+               ArrangeCopySelection();
+            if (ImGui::MenuItem("Duplicate", MODKEY "+D"))
+               ArrangeDuplicateSelection();
+            if (ImGui::MenuItem("Delete", "Backspace"))
+               ArrangeDeleteSelection();
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Group", MODKEY "+G", false, gArrangeSel.size() >= 2))
+               ArrangeGroupSelection();
+            if (ctxGrouped)
+            {
+               if (ImGui::MenuItem("Ungroup", MODKEY "+Shift+G"))
+                  ArrangeUngroupSelection();
+               if (ImGui::MenuItem("Remove from Group"))
+                  ArrangeEdit([&]() { Arrange::RemoveFromGroup(gArrange, { cid }); });
+            }
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Assign Node..."))
+            {
+               gArrangeAssigningClipId = cid;
+               ImGui::CloseCurrentPopup();
+            }
+
+            // Output: only for a source with more than one output of this
+            // lane's type (VideoSourceNode has one of each, so it gets none).
+            if (ctxNode != nullptr)
+            {
+               const std::vector<int> outs = ArrangeOutputsOfType(*ctxNode, ctxLaneType);
+               if (outs.size() > 1 && ImGui::BeginMenu("Output"))
+               {
+                  const int curOut = Arrange::FindClip(gArrange, cid)->srcOutput;
+                  for (int o : outs)
+                  {
+                     const char* outName = ctxNode->node->OutputLabel(o);
+                     char outItem[96];
+                     snprintf(outItem, sizeof(outItem), "%s##arrout%d", outName != nullptr ? outName : "out", o);
+                     if (ImGui::MenuItem(outItem, nullptr, curOut == o) && curOut != o)
+                     {
+                        ArrangeEdit([&]()
+                        {
+                           if (Arrange::Clip* c = Arrange::FindClip(gArrange, cid))
+                           {
+                              c->srcOutput = o;
+                              gArrange.revision++;
+                           }
+                        });
+                     }
+                  }
+                  ImGui::EndMenu();
+               }
+            }
+
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Color Tint"))
+            {
+               static const struct { const char* name; ImU32 col; } kPaletteColors[10] = {
+                  { "Default", IM_COL32(110, 120, 140, 255) },
+                  { "Crimson", IM_COL32(239, 68, 68, 255) },
+                  { "Orange",  IM_COL32(249, 115, 22, 255) },
+                  { "Amber",   IM_COL32(245, 158, 11, 255) },
+                  { "Emerald", IM_COL32(16, 185, 129, 255) },
+                  { "Cyan",    IM_COL32(6, 182, 212, 255) },
+                  { "Blue",    IM_COL32(59, 130, 246, 255) },
+                  { "Purple",  IM_COL32(139, 92, 246, 255) },
+                  { "Magenta", IM_COL32(217, 70, 239, 255) },
+                  { "Rose",    IM_COL32(244, 63, 94, 255) }
+               };
+
+               for (int ci2 = 0; ci2 < 10; ci2++)
+               {
+                  if (ci2 % 5 != 0) ImGui::SameLine();
+                  ImGui::PushID(ci2 + 700);
+                  const ImVec4 cVec = ImGui::ColorConvertU32ToFloat4(kPaletteColors[ci2].col);
+                  if (ImGui::ColorButton(kPaletteColors[ci2].name, cVec, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24)))
+                  {
+                     const float r = ci2 == 0 ? 0.0f : cVec.x;
+                     const float g = ci2 == 0 ? 0.0f : cVec.y;
+                     const float b = ci2 == 0 ? 0.0f : cVec.z;
+                     ArrangeEdit([&]()
+                     {
+                        for (uint64_t id : ArrangeSelectionIds())
+                        {
+                           Arrange::Clip* c = Arrange::FindClip(gArrange, id);
+                           if (c == nullptr || (c->colorR == r && c->colorG == g && c->colorB == b))
+                              continue;
+                           c->colorR = r;
+                           c->colorG = g;
+                           c->colorB = b;
+                           gArrange.revision++;
+                        }
+                     });
+                  }
+                  if (ImGui::IsItemHovered())
+                     ImGui::SetTooltip("%s", kPaletteColors[ci2].name);
+                  ImGui::PopID();
+               }
+               ImGui::EndMenu();
+            }
+         }
+         ImGui::EndPopup();
+      }
+      else if (gArrangeGestureOpen && gArrangeDrag.mode == kArrangeDragNone && gArrangeRenamingLaneId == 0)
+      {
+         // The popup closed with a field still mid-edit (click outside):
+         // its deactivate never ran, so close the gesture here.
+         ArrangeGestureEnd();
       }
 
-      // Now that any cross-track drop has been resolved, retire the drag
-      // state itself (deferred from the top of this function so the lane
-      // loop above could still see which stream/clip was being dragged).
-      if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+      // ---- "Add Clip" on an empty lane spot ----
+      // Adds a one-bar unassigned clip and hands straight to the canvas
+      // click-to-assign flow.
+      if (openAddClip)
+         ImGui::OpenPopup("##arrangeaddclip");
+      if (ImGui::BeginPopup("##arrangeaddclip"))
       {
-         gArrangeDraggingClipStream = -1;
-         gArrangeDraggingClipIndex = -1;
+         ImGui::TextDisabled("Add Clip at %.2fs", Arrange::TicksToSeconds(addClipAtTick, arrBpm));
+         ImGui::Separator();
+         if (ImGui::MenuItem("Add Clip"))
+         {
+            uint64_t made = 0;
+            ArrangeEdit([&]()
+            {
+               Arrange::Clip c;
+               c.start = addClipAtTick;
+               c.length = Arrange::kTicksPerBar;
+               Arrange::PlaceOverwrite(gArrange, addClipToLaneId, c, &made);
+            });
+            if (made != 0)
+            {
+               gArrangeSel = { made };
+               gArrangeSelAnchor = made;
+               gArrangeAssigningClipId = made;
+            }
+         }
+         ImGui::EndPopup();
+      }
+
+      // Lane reorder / delete, after the loop so no reference above dangles.
+      if (laneToMoveSrc >= 0 && laneToMoveDst >= 0 &&
+          laneToMoveSrc < (int)gArrange.lanes.size() && laneToMoveDst < (int)gArrange.lanes.size())
+      {
+         const uint64_t movedLane = gArrange.lanes[laneToMoveSrc].id;
+         ArrangeEdit([&]() { Arrange::ReorderLane(gArrange, movedLane, laneToMoveDst); });
+      }
+      else if (laneToDelete != 0)
+      {
+         ArrangeEdit([&]() { Arrange::RemoveLane(gArrange, laneToDelete); });
       }
 
       // Draw loop region band (armed or mid-Shift+drag) behind everything
@@ -28387,7 +29004,7 @@ namespace
          {
             const float bx0 = rulerStartX + (float)((std::max(bandStart, startSec) - startSec) * pps);
             const float bx1 = rulerStartX + (float)((std::min(bandEnd, endSec) - startSec) * pps);
-            const float totalLanesH = (float)gArrangeStreams.size() * kLaneHeight;
+            const float totalLanesH = (float)gArrange.lanes.size() * kLaneHeight;
             const float bandBottom = std::max(pinnedTopY + kRulerHeight + totalLanesH, pinnedTopY + avail.y);
             const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 60) : IM_COL32(250, 204, 21, 40);
             const ImU32 bandBorder = IM_COL32(250, 204, 21, 200);
@@ -28402,7 +29019,7 @@ namespace
       if (playheadSec >= startSec && playheadSec <= endSec)
       {
          const float playheadX = rulerStartX + (float)((playheadSec - startSec) * pps);
-         const float totalLanesH = (float)gArrangeStreams.size() * kLaneHeight;
+         const float totalLanesH = (float)gArrange.lanes.size() * kLaneHeight;
          const float lineBottom = std::max(pinnedTopY + kRulerHeight + totalLanesH, pinnedTopY + avail.y);
          const ImU32 playheadCol = IM_COL32(239, 68, 68, 255); // Vibrant red
 
@@ -28433,7 +29050,7 @@ namespace
       }
 
       // Expand dummy to define scroll area
-      const float totalH = kRulerHeight + (float)gArrangeStreams.size() * kLaneHeight + 20.0f;
+      const float totalH = kRulerHeight + (float)gArrange.lanes.size() * kLaneHeight + 20.0f;
       ImGui::SetCursorScreenPos(scrollTL);
       ImGui::Dummy(ImVec2(kHeaderWidth + rulerWidth, totalH));
 
@@ -28449,7 +29066,7 @@ namespace
    void DrawArrangePanelDocked(const char* id, const ImVec2& size)
    {
       const float kGrip = 6.0f;
-      const int dock = gArrangePanelDock;
+      const int dock = ArrangePanelDock();
       const bool vertical = (dock == 1 || dock == 2);
       const bool gripFirst = (dock == 0 || dock == 1);
 
@@ -31265,6 +31882,17 @@ namespace
          // Transport & Audio
          { "Transport & Audio", "Play / Pause", "Space", "Start / pause timeline and animations" },
          { "Transport & Audio", "Toggle Audio Engine", "Shift+K", "Start / stop audio device" },
+
+         // Arrangement Timeline - these fire only while the timeline panel
+         // owns the keyboard (click inside it) and no text field is active;
+         // the canvas's own Cmd+C/V/D/G and Delete stand down meanwhile.
+         { "Arrangement Timeline", "Copy / Paste Clips", MODKEY "+C / V", "Copy the selected clips; paste at the playhead on the last-clicked clip's lane" },
+         { "Arrangement Timeline", "Duplicate Clips", MODKEY "+D / Shift+D", "Copy the selected block right after itself" },
+         { "Arrangement Timeline", "Split at Playhead", MODKEY "+E", "Cut every selected clip the playhead passes through" },
+         { "Arrangement Timeline", "Enable / Disable Clips", "0 / Keypad 0", "Mute the selected clips (they draw hatched) or bring them back" },
+         { "Arrangement Timeline", "Group / Ungroup Clips", MODKEY "+G / " MODKEY "+Shift+G", "Group moves, copies and deletes as one; a click selects the whole group" },
+         { "Arrangement Timeline", "Delete Clips", "Delete / Backspace", "Delete the selected clips" },
+         { "Arrangement Timeline", "Zoom Timeline", MODKEY " + Scroll Wheel", "Zoom around the mouse (trackpad pinch works too)" },
       };
 
       const char* lastCat = nullptr;
@@ -32746,21 +33374,21 @@ namespace
       // driving an unrelated param.
       GestureRecorder::Instance().ClearForNode(index);
       // Fourth: a clip points at this node. The clip is NOT deleted - it goes
-      // offline (srcIndex -1), draws hatched, and is silent and invisible
-      // until something is assigned to it. Deleting it instead is what used
-      // to make "delete a node, undo" silently lose the arrangement around
-      // it, since the clip's own edits had no way back.
+      // offline (srcUid 0), draws "Unassigned" with a hatch, and is silent
+      // and invisible until something is assigned to it. Deleting it instead
+      // is what used to make "delete a node, undo" silently lose the
+      // arrangement around it, since the clip's own edits had no way back.
       //
-      // srcUid is deliberately kept. Index is a live-session handle and is
-      // reused, so it has to go; uid is permanent and never reused, so a clip
-      // that still remembers it re-binds by itself the moment the node comes
-      // back - undo, or a reload of a patch saved while the node was gone.
-      // Clearing it here would make the binding depend on the arrangement
-      // snapshot riding along in the undo entry, which a reload doesn't have.
-      for (LegacyArrange::StreamRecord& s : gArrangeStreams)
-         for (LegacyArrange::ClipRecord& c : s.clips)
-            if (c.srcIndex == index)
-               c.srcIndex = -1;
+      // The link comes back through the undo entry PushUndoCheckpoint pushed
+      // above: it snapshots gArrange with srcUid intact, and the node's uid
+      // is persisted, so undo restores both ends (WP5 owner decision).
+      if (Arrange::ClearSource(gArrange, victim->uid))
+         RefreshArrangeMirror();
+      // A timeline gesture in flight rebuilds gArrange from its snapshot;
+      // clear the source there too or the next drag frame re-links the clip
+      // to a node that no longer exists.
+      if (gArrangeGestureOpen)
+         Arrange::ClearSource(gArrangeGestureBefore, victim->uid);
       ForgetDiscreteSlots(index);
       gModHistory.erase(index);
       DisconnectAllTo(victim->node.get());
@@ -33464,10 +34092,9 @@ namespace
          data.globals.push_back({ g.name, g.expr });
       data.performance = gPerfElements;
       data.perfLayout = gPerfLayout;
-      // The UI's seconds/index view is folded into the model here and the
-      // model is what gets written - never gArrangeStreams directly. This is
-      // the only place the two can be out of step, and it closes the gap.
-      SyncArrangeFromLegacy();
+      // gArrange is the source of truth (WP5); gArrangeStreams is a derived
+      // mirror and is never folded back in here - doing so would let a stale
+      // mirror overwrite model edits the mirror has not caught up with yet.
       ArrangeModelToPatchData(gArrange, data);
       data.transport.bpm = Transport::Instance().Tempo();
       data.transport.timeSigNum = Transport::Instance().TimeSigNumerator();
@@ -33963,36 +34590,28 @@ namespace
    }
 
    // A brand new document (and a fresh app launch before any patch is
-   // recovered/opened) starts with three video and three audio tracks
+   // recovered/opened) starts with four video and four audio lanes
    // rather than an empty timeline - matches every DAW/NLE default and
    // saves the "+ Track" click most sessions would make anyway. Called
-   // only when gArrangeStreams is already empty so it never clobbers a
+   // only when gArrange has no lanes yet so it never clobbers a
    // loaded or in-progress arrangement (a genuine File > Open, or
-   // CheckAutosaveRecovery, replaces gArrangeStreams wholesale via
+   // CheckAutosaveRecovery, replaces gArrange wholesale via
    // ApplyPatchData right after this could run - same seed-then-overwrite
    // shape as LoadDefaultExprGlobals()).
    void SeedDefaultArrangeStreams()
    {
-      if (!gArrangeStreams.empty())
+      if (!gArrange.lanes.empty())
          return;
       for (int i = 0; i < 4; i++)
       {
-         LegacyArrange::StreamRecord v;
-         v.type = Patch::kStreamVideo;
-         v.name = "Video " + std::to_string(i + 1);
-         gArrangeStreams.push_back(v);
+         const uint64_t id = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+         Arrange::FindLane(gArrange, id)->name = "Video " + std::to_string(i + 1);
       }
       for (int i = 0; i < 4; i++)
       {
-         LegacyArrange::StreamRecord a;
-         a.type = Patch::kStreamAudio;
-         a.name = "Audio " + std::to_string(i + 1);
-         gArrangeStreams.push_back(a);
+         const uint64_t id = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+         Arrange::FindLane(gArrange, id)->name = "Audio " + std::to_string(i + 1);
       }
-      // The lanes exist in both views from the first frame, with the same ids
-      // on both sides - otherwise the first save would mint lane ids that the
-      // running UI had never seen.
-      SyncArrangeFromLegacy();
       SyncLegacyFromArrange();
    }
 
@@ -34029,7 +34648,18 @@ namespace
       // undo past the point it was made.
       GestureRecorder::Instance().Clear();
       gArrangeStreams.clear();
-      gArrange = Arrange::Model();
+      {
+         // nextId and revision are counters, not content: they carry across
+         // the reset (ApplyPatchData relies on nextId surviving this for its
+         // own clamp, and revision must only climb - see ApplyArrangeOnlyEntry).
+         const uint64_t keepNextId = gArrange.nextId;
+         const uint64_t keepRevision = gArrange.revision;
+         gArrange = Arrange::Model();
+         gArrange.nextId = keepNextId;
+         gArrange.revision = keepRevision + 1;
+      }
+      gArrangeGestureOpen = false;
+      gArrangeDrag = ArrangeDragState();
       ForgetAllDiscreteSlots();
       PaletteBinding::Instance().Clear();
       ExprGlobals::Clear();
@@ -34060,6 +34690,9 @@ namespace
          // this call (see ApplyPatchData) - only a genuine fresh document
          // seeds from the app-wide default set.
          LoadDefaultExprGlobals();
+         // A new document: the clip clipboard and selection belong to the
+         // old one (see gArrangePatchGeneration).
+         gArrangePatchGeneration++;
          SeedDefaultArrangeStreams();
          // Audio routing is a monitoring choice, not part of the document
          // (see gAudioMode): a fresh document always starts on the canvas.
@@ -35313,10 +35946,12 @@ namespace
          if (gn.uid >= gNextNodeUid)
             gNextNodeUid = gn.uid + 1;
       const uint64_t priorArrangeNextId = gArrange.nextId;
+      const uint64_t priorArrangeRevision = gArrange.revision;
       PatchDataToArrangeModel(data, gArrange, [&](int savedIndex) -> uint64_t {
          const GraphNode* src = resolve(savedIndex);
          return src ? src->uid : 0;
       });
+      gArrange.revision = priorArrangeRevision + 1;
       // ApplyPatchData is both "open a file" and "restore an undo entry". For
       // the undo case nextId must only ever climb (see ApplyArrangeOnlyEntry);
       // for the file case carrying the previous document's mark forward just
@@ -35353,6 +35988,8 @@ namespace
       }
 
       ApplyPatchData(data);
+      // New document: drop the old one's clip clipboard and selection.
+      gArrangePatchGeneration++;
 
       // Opening a file is a new-document boundary for the routing mode too.
       // ApplyPatchData runs NewPatch with undo checkpoints suppressed, so
@@ -35964,11 +36601,34 @@ namespace
    // the timeline. Cheap enough to call per gesture (no graph walk, no node
    // serialization) and, more to the point, undoing it cannot disturb the
    // running graph.
+   // Pushes `before` (the model as it was before the edit) as one
+   // timeline-only entry. Skipped when the revision has not moved: a click,
+   // a drag that ended where it started, a popup field left untouched - none
+   // of those may leave an undo step that does nothing.
+   void PushArrangeUndoSnapshot(const Arrange::Model& before)
+   {
+      if (gSuppressUndoCheckpoints)
+         return;
+      if (before.revision == gArrange.revision)
+         return;
+      UndoEntry e;
+      e.arrangeOnly = true;
+      e.arrange = before;
+      gUndoStack.push_back(std::move(e));
+      if (gUndoStack.size() > kMaxUndoDepth)
+         gUndoStack.pop_front();
+      gRedoStack.clear();
+      gPatchDirty = true;
+   }
+
+   // Unconditional form: snapshots the model as it is now, for a caller that
+   // is about to change it. Kept for callers outside the panel; the panel
+   // itself uses ArrangeEdit / ArrangeGestureBegin+End, which only push when
+   // something actually changed.
    void PushArrangeUndo()
    {
       if (gSuppressUndoCheckpoints)
          return;
-      SyncArrangeFromLegacy();
       UndoEntry e;
       e.arrangeOnly = true;
       e.arrange = gArrange;
@@ -35984,7 +36644,6 @@ namespace
    // about what a timeline-only entry means.
    void ApplyArrangeOnlyEntry(UndoEntry& e)
    {
-      SyncArrangeFromLegacy();
       Arrange::Model current = gArrange;
       gArrange = e.arrange;
       // nextId is a high-water mark, not part of the snapshot. Restoring the
@@ -35993,8 +36652,18 @@ namespace
       // different edit and a *different* clip gets id 10 - exactly the reuse
       // the persisted nextId exists to prevent. Same rule as gNextNodeUid.
       gArrange.nextId = std::max(gArrange.nextId, current.nextId);
+      // revision is a change counter, not content: it only ever climbs, so
+      // anything keyed on it (the legacy mirror, WP5b's audio rebuild) sees
+      // an undo as the change it is instead of a revision it already built.
+      gArrange.revision = current.revision + 1;
+      // Where the panel docks is a view choice, not an edit - undo leaves it.
+      gArrange.settings.dockSide = current.settings.dockSide;
       e.arrange = std::move(current);
       SyncLegacyFromArrange();
+      // A clip drag or popup edit that was mid-gesture is now describing a
+      // model that no longer exists.
+      gArrangeGestureOpen = false;
+      gArrangeDrag = ArrangeDragState();
    }
 
    void Undo()
@@ -36015,7 +36684,11 @@ namespace
       UndoEntry prev = std::move(gUndoStack.back());
       gUndoStack.pop_back();
       std::map<int, int> remap;
+      const int keepDock = gArrange.settings.dockSide; // view state - see ApplyArrangeOnlyEntry
       ApplyPatchData(prev.patch, &remap);
+      gArrange.settings.dockSide = keepDock;
+      gArrangeGestureOpen = false;
+      gArrangeDrag = ArrangeDragState();
       RemapViewportPanelNodes(remap);
       // After ApplyPatchData, never before: NewPatch (its first step) clears
       // the recorder, so restoring earlier would just be wiped.
@@ -36042,7 +36715,11 @@ namespace
       UndoEntry next = std::move(gRedoStack.back());
       gRedoStack.pop_back();
       std::map<int, int> remap;
+      const int keepDock = gArrange.settings.dockSide;
       ApplyPatchData(next.patch, &remap);
+      gArrange.settings.dockSide = keepDock;
+      gArrangeGestureOpen = false;
+      gArrangeDrag = ArrangeDragState();
       RemapViewportPanelNodes(remap);
       GestureRecorder::Instance().Restore(RemapGestures(next.gestures, remap), GestureClockNow());
       gPatchDirty = true;
@@ -55583,6 +56260,11 @@ int main(int argc, char** argv)
       // changed, so the stale single-clip window stayed), made onsets land a
       // UI frame late, and reset PDC at every boundary. One topology now
       // covers the whole arrangement, and clip boundaries never rebuild.
+      //
+      // The hash reads the legacy mirror, so bring it up to date first - a
+      // no-op unless gArrange's revision or the tempo moved (WP5a; WP5b keys
+      // this on gArrange.revision directly and drops the mirror).
+      RefreshArrangeMirror();
       if (!gOfflineRender.active &&
           (!gArrangeAudioScheduleEverBuilt || ArrangeAudioScheduleHash() != gArrangeAudioScheduleBuiltHash))
          RebuildAudioTopology();
@@ -56439,8 +57121,16 @@ int main(int argc, char** argv)
                ImGui::Checkbox("Show Arrangement Timeline", &gArrangePanelOpen);
                if (gArrangePanelOpen)
                {
-                  // Bottom-docked only - a timeline reads left-to-right, so a
+                  // Bottom or top only - a timeline reads left-to-right, so a
                   // side dock would fight the ruler's own horizontal axis.
+                  // Saved with the document (Settings.dockSide); not undoable.
+                  int dockSide = gArrange.settings.dockSide == 1 ? 1 : 0;
+                  ImGui::SetNextItemWidth(150);
+                  if (ImGui::Combo("Dock", &dockSide, "Bottom\0Top\0") && dockSide != gArrange.settings.dockSide)
+                  {
+                     gArrange.settings.dockSide = dockSide;
+                     gPatchDirty = true;
+                  }
                   ImGui::SetNextItemWidth(150);
                   ImGui::SliderFloat("Height", &gArrangePanelHeight,
                                      kArrangePanelMinHeight, 800.0f, "%.0f px");
@@ -56567,16 +57257,15 @@ int main(int argc, char** argv)
 
          TopBarSameLine(4.0f);
 
-         // Audio engine on/off - this is specifically the *canvas's* driver:
-         // "on" means the engine is running AND gAudioMode has the
-         // canvas (not the Arrangement Timeline) as the active source. The
-         // Arrangement panel's own Start/Stop Audio button is the mutually
-         // exclusive counterpart of this one (see DrawArrangePanelContent) -
-         // the two must never both read "on", since gAudioMode only
-         // ever names one driver at a time.
+         // Audio engine power, nothing else: Start starts the device, Stop
+         // stops it, and neither touches gAudioMode (which driver the engine
+         // plays - the canvas or the Arrangement Timeline - is the panel's
+         // "Enable Timeline Audio" toggle). While the timeline drives, a
+         // "Timeline" badge sits next to the button so an engine that is on
+         // but ignoring the canvas never looks broken.
          {
             const bool engineOn = AudioEngine::Instance().SampleRate() > 0.0;
-            const bool audioOn = engineOn && gAudioMode == AudioMode::Canvas;
+            const bool audioOn = engineOn;
             const bool audioIsLight = isLight;
             ImGui::PushStyleColor(ImGuiCol_Button, audioOn
                                                        ? (audioIsLight ? ImVec4(0.20f, 0.62f, 0.34f, 1.0f) : ImVec4(0.16f, 0.52f, 0.28f, 1.0f))
@@ -56587,24 +57276,38 @@ int main(int argc, char** argv)
             if (ImGui::Button(audioOn ? "Stop Audio" : "Start Audio"))
             {
                if (audioOn)
+               {
                   AudioEngine::Instance().Stop();
+               }
                else
                {
-                  // Claim the canvas as the active driver. If the Timeline
-                  // was driving (engine already running), this just flips
-                  // routing - no restart, so no DSP-state-wipe pop.
-                  gAudioMode = AudioMode::Canvas;
-                  if (!engineOn)
-                  {
-                     gAudioStartError.clear();
-                     if (!StartAudioEngine(gAudioStartError))
-                        fprintf(stderr, "audio device: %s\n", gAudioStartError.c_str());
-                  }
+                  gAudioStartError.clear();
+                  if (!StartAudioEngine(gAudioStartError))
+                     fprintf(stderr, "audio device: %s\n", gAudioStartError.c_str());
                }
             }
             ImGui::PopStyleColor(2);
             if (!audioOn && !gAudioStartError.empty() && ImGui::IsItemHovered())
                ImGui::SetTooltip("%s", gAudioStartError.c_str());
+
+            if (gAudioMode == AudioMode::Timeline)
+            {
+               TopBarSameLine(4.0f);
+               const char* badge = "Timeline";
+               const ImVec2 textSize = ImGui::CalcTextSize(badge);
+               const ImVec2 pad(6.0f, ImGui::GetStyle().FramePadding.y);
+               const ImVec2 bmin = ImGui::GetCursorScreenPos();
+               const ImVec2 bmax(bmin.x + textSize.x + pad.x * 2.0f, bmin.y + ImGui::GetFrameHeight());
+               ImGui::InvisibleButton("##timelineAudioBadge", ImVec2(bmax.x - bmin.x, bmax.y - bmin.y));
+               ImDrawList* dl = ImGui::GetWindowDrawList();
+               const ImU32 edge = audioIsLight ? IM_COL32(40, 130, 72, 255) : IM_COL32(96, 200, 132, 255);
+               dl->AddRect(bmin, bmax, edge, 3.0f, 0, 1.0f);
+               dl->AddText(ImVec2(bmin.x + pad.x, bmin.y + pad.y), edge, badge);
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip(engineOn
+                     ? "The Arrangement Timeline is driving audio. Hand it back to the canvas from the timeline panel."
+                     : "The Arrangement Timeline will drive audio once the engine is started.");
+            }
          }
 
          ImGui::Separator();
@@ -57158,10 +57861,10 @@ int main(int argc, char** argv)
       const bool perfRight = gPerfPanelOpen && gPerfPanelDock == 1;
       const bool perfLeft = gPerfPanelOpen && gPerfPanelDock == 2;
       const bool perfTop = gPerfPanelOpen && gPerfPanelDock == 3;
-      const bool arrangeBottom = gArrangePanelOpen && gArrangePanelDock == 0;
-      const bool arrangeRight = gArrangePanelOpen && gArrangePanelDock == 1;
-      const bool arrangeLeft = gArrangePanelOpen && gArrangePanelDock == 2;
-      const bool arrangeTop = gArrangePanelOpen && gArrangePanelDock == 3;
+      const bool arrangeBottom = gArrangePanelOpen && ArrangePanelDock() == 0;
+      const bool arrangeRight = gArrangePanelOpen && ArrangePanelDock() == 1;
+      const bool arrangeLeft = gArrangePanelOpen && ArrangePanelDock() == 2;
+      const bool arrangeTop = gArrangePanelOpen && ArrangePanelDock() == 3;
 
       // Drop the 3D render state of any node no longer in the panel. Done
       // here, at the top of the next frame, rather than at the moment its
@@ -57195,8 +57898,8 @@ int main(int argc, char** argv)
          const bool perfVertical = gPerfPanelOpen && (gPerfPanelDock == 0 || gPerfPanelDock == 3);
          const bool viewportHorizontal = viewportPanelOpen && (gViewportPanelDock == 1 || gViewportPanelDock == 2);
          const bool viewportVertical = viewportPanelOpen && (gViewportPanelDock == 0 || gViewportPanelDock == 3);
-         const bool arrangeHorizontal = gArrangePanelOpen && (gArrangePanelDock == 1 || gArrangePanelDock == 2);
-         const bool arrangeVertical = gArrangePanelOpen && (gArrangePanelDock == 0 || gArrangePanelDock == 3);
+         const bool arrangeHorizontal = gArrangePanelOpen && (ArrangePanelDock() == 1 || ArrangePanelDock() == 2);
+         const bool arrangeVertical = gArrangePanelOpen && (ArrangePanelDock() == 0 || ArrangePanelDock() == 3);
 
          const float maxHeight = std::max(kViewportPanelMinHeight,
                                           room.y - 150.0f - (matrixVertical ? gModMatrixHeight : 0.0f)
@@ -59263,12 +59966,11 @@ int main(int argc, char** argv)
                const size_t clipsBefore = gArrange.lanes[0].clips.size();
                PushUndoCheckpoint();
                RemoveNodeByIndex(cubeIndex);
-               SyncArrangeFromLegacy();
-               // Offline, but not forgetful: srcIndex is gone, srcUid is kept
-               // so the clip re-binds by itself when the node comes back.
+               // Offline (WP5): the clip stays, its source is cleared to 0
+               // so it draws "Unassigned"; the link lives in the undo entry.
                eOk = eOk && gArrange.lanes.size() == 1 &&
                      gArrange.lanes[0].clips.size() == clipsBefore &&
-                     gArrange.lanes[0].clips[0].srcUid == cubeUid &&
+                     gArrange.lanes[0].clips[0].srcUid == 0 &&
                      FindNodeByUid(cubeUid) == nullptr;
 
                Undo();
@@ -60123,6 +60825,332 @@ int main(int argc, char** argv)
 
          NewPatch();
          printf("arrange video test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Overhaul WP5a (docs/plans/arrangement/overhaul-prompt.md): the panel's
+      // editing layer, driven through the same helpers the keys, clicks and
+      // menus call (ArrangeClickSelect, ArrangeDrag*, ArrangeCopySelection,
+      // AddNodeToArrangeTimeline, ...) - never by UI scripting. Checks that
+      // selection is by id (survives a lane reorder, a node delete and its
+      // undo; a vanished id clears rather than landing on another clip), that
+      // group gestures keep the model valid, that `0` and every gesture leave
+      // exactly one undo entry (a no-move click none), that the clipboard
+      // belongs to its document, and where Add to Timeline puts a clip.
+      if (getenv("INFINITE_ARRANGEEDITTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         const Arrange::Tick kBar = Arrange::kTicksPerBar;
+         std::string why;
+
+         // A clean model with `video` video lanes then `audio` audio lanes.
+         auto freshModel = [&](int video, int audio)
+         {
+            ArrangeEdit([&]()
+            {
+               while (!gArrange.lanes.empty())
+                  Arrange::RemoveLane(gArrange, gArrange.lanes.front().id);
+               for (int i = 0; i < video; i++)
+                  Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+               for (int i = 0; i < audio; i++)
+                  Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            });
+            gArrangeSel.clear();
+            gArrangeSelAnchor = 0;
+         };
+         auto place = [&](int lane, Arrange::Tick start, Arrange::Tick len, uint64_t uid)
+         {
+            Arrange::Clip c;
+            c.start = start;
+            c.length = len;
+            c.srcUid = uid;
+            uint64_t id = 0;
+            ArrangeEdit([&]() { Arrange::PlaceOverwrite(gArrange, gArrange.lanes[lane].id, c, &id); });
+            return id;
+         };
+         auto selIs = [&](std::set<uint64_t> want)
+         {
+            const std::vector<uint64_t> ids = ArrangeSelectionIds();
+            return std::set<uint64_t>(ids.begin(), ids.end()) == want;
+         };
+
+         // --- A. Selection by id: lane reorder, node delete, undo -----------
+         {
+            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            const uint64_t cubeUid = cube ? cube->uid : 0;
+            const int cubeIndex = cube ? cube->index : -1;
+            GraphNode* sphere = SpawnNode("Sphere", "3D", 200.0f, 0.0f);
+            const uint64_t sphereUid = sphere ? sphere->uid : 0;
+            bool aOk = cubeUid != 0 && sphereUid != 0;
+            if (aOk)
+            {
+               freshModel(2, 0);
+               const uint64_t laneV1 = gArrange.lanes[0].id;
+               const uint64_t laneV2 = gArrange.lanes[1].id;
+               const uint64_t c1 = place(0, 0, kBar, cubeUid);
+               const uint64_t c2 = place(1, 0, kBar, sphereUid);
+               const uint64_t c3 = place(0, kBar * 2, kBar, sphereUid);
+               ArrangeClickSelect(c1, false, false);
+               ArrangeClickSelect(c2, true, false);
+               aOk = selIs({ c1, c2 }) && gArrangeSelAnchor == c2;
+
+               // Reorder: the ids follow their clips to the new lane indices.
+               ArrangeEdit([&]() { Arrange::ReorderLane(gArrange, laneV2, 0); });
+               aOk = aOk && gArrange.lanes[0].id == laneV2 && selIs({ c1, c2 }) &&
+                     Arrange::Find(gArrange, c1).lane == Arrange::LaneIndex(gArrange, laneV1) &&
+                     Arrange::Find(gArrange, c2).lane == Arrange::LaneIndex(gArrange, laneV2);
+
+               // Node delete: c1 goes offline (srcUid 0), stays selected.
+               RemoveNodeByIndex(cubeIndex);
+               aOk = aOk && selIs({ c1, c2 }) && Arrange::FindClip(gArrange, c1) != nullptr &&
+                     Arrange::FindClip(gArrange, c1)->srcUid == 0;
+
+               // Undo (a graph entry): the same clips, the link restored.
+               Undo();
+               aOk = aOk && selIs({ c1, c2 }) && Arrange::FindClip(gArrange, c1) != nullptr &&
+                     Arrange::FindClip(gArrange, c1)->srcUid == cubeUid && FindNodeByUid(cubeUid) != nullptr &&
+                     Arrange::Find(gArrange, c3).Valid();
+
+               // An id that stops resolving clears; it never retargets.
+               ArrangeClickSelect(c3, false, false);
+               ArrangeDuplicateSelection();
+               const std::vector<uint64_t> dup = ArrangeSelectionIds();
+               aOk = aOk && dup.size() == 1 && dup[0] != c3;
+               Undo();
+               aOk = aOk && ArrangeSelectionIds().empty() && gArrangeSelAnchor == 0;
+               aOk = aOk && Arrange::Validate(gArrange, &why);
+            }
+            printf("arrange edit select by id: %s\n", aOk ? "OK" : "FAIL");
+            allOk = allOk && aOk;
+         }
+
+         // --- B. Group move, duplicate, delete, edge trim keep Validate -----
+         {
+            freshModel(2, 1);
+            const uint64_t g1 = place(0, 0, kBar, 0);
+            const uint64_t g2 = place(1, kBar, kBar, 0);
+            const uint64_t x = place(0, kBar * 8, kBar, 0);
+            const uint64_t aud = place(2, 0, kBar, 0);
+            ArrangeClickSelect(g1, false, false);
+            ArrangeClickSelect(g2, true, false);
+            bool bOk = ArrangeGroupSelection();
+            const uint64_t gid = Arrange::FindClip(gArrange, g1)->groupId;
+            bOk = bOk && gid != 0 && Arrange::FindClip(gArrange, g2)->groupId == gid;
+
+            // A plain click on one member selects the whole group; Alt-click one.
+            ArrangeClickSelect(g2, false, true);
+            bOk = bOk && selIs({ g2 });
+            ArrangeClickSelect(g1, false, false);
+            bOk = bOk && selIs({ g1, g2 });
+
+            // Move: the whole group, one undo entry.
+            size_t undoBefore = gUndoStack.size();
+            ArrangeDragBegin(kArrangeDragMove, g1, Arrange::kEdgeStart, 0);
+            ArrangeDragUpdate(kBar, 0);
+            ArrangeDragUpdate(kBar * 3, 0);
+            const bool pushed = ArrangeDragEnd();
+            bOk = bOk && pushed && gUndoStack.size() == undoBefore + 1 &&
+                  Arrange::FindClip(gArrange, g1)->start == kBar * 3 &&
+                  Arrange::FindClip(gArrange, g2)->start == kBar * 4 && Arrange::Validate(gArrange, &why);
+
+            // A lane delta that would put a member on the audio lane (or off
+            // the end) is refused as a whole; the time delta still applies.
+            ArrangeDragBegin(kArrangeDragMove, g1, Arrange::kEdgeStart, 0);
+            ArrangeDragUpdate(kBar, 1);
+            ArrangeDragEnd();
+            bOk = bOk && Arrange::Find(gArrange, g1).lane == 0 && Arrange::Find(gArrange, g2).lane == 1 &&
+                  Arrange::FindClip(gArrange, g1)->start == kBar * 4 && Arrange::FindClip(gArrange, aud)->start == 0 &&
+                  Arrange::Validate(gArrange, &why);
+
+            // Group edge trim: only the member flush with the end moves.
+            ArrangeDragBegin(kArrangeDragGroupEdge, g2, Arrange::kEdgeEnd, 0);
+            ArrangeDragUpdate(kBar * 5 + kBar / 2, 0);
+            ArrangeDragEnd();
+            bOk = bOk && Arrange::FindClip(gArrange, g1)->length == kBar &&
+                  Arrange::FindClip(gArrange, g2)->End() == kBar * 5 + kBar / 2 && Arrange::Validate(gArrange, &why);
+
+            // Duplicate: a new block, its own new group.
+            ArrangeClickSelect(g1, false, false);
+            bOk = bOk && ArrangeDuplicateSelection();
+            const std::vector<uint64_t> copies = ArrangeSelectionIds();
+            bOk = bOk && copies.size() == 2 && Arrange::Validate(gArrange, &why);
+            if (copies.size() == 2)
+            {
+               const uint64_t ng = Arrange::FindClip(gArrange, copies[0])->groupId;
+               bOk = bOk && ng != 0 && ng != gid && Arrange::FindClip(gArrange, copies[1])->groupId == ng;
+            }
+
+            // Delete a group by clicking one member: both go.
+            if (!copies.empty())
+               ArrangeClickSelect(copies[0], false, false);
+            bOk = bOk && ArrangeDeleteSelection() && Arrange::Validate(gArrange, &why);
+            for (uint64_t id : copies)
+               bOk = bOk && !Arrange::Find(gArrange, id).Valid();
+            bOk = bOk && Arrange::Find(gArrange, g1).Valid() && Arrange::Find(gArrange, x).Valid();
+
+            // Ungroup.
+            ArrangeClickSelect(g1, false, false);
+            bOk = bOk && ArrangeUngroupSelection() && Arrange::FindClip(gArrange, g1)->groupId == 0 &&
+                  Arrange::FindClip(gArrange, g2)->groupId == 0 && Arrange::Validate(gArrange, &why);
+            printf("arrange edit group ops: %s\n", bOk ? "OK" : "FAIL");
+            allOk = allOk && bOk;
+         }
+
+         // --- C. `0` toggles enabled, undoably ------------------------------
+         {
+            freshModel(1, 0);
+            const uint64_t a = place(0, 0, kBar, 0);
+            const uint64_t b = place(0, kBar, kBar, 0);
+            ArrangeClickSelect(a, false, false);
+            ArrangeClickSelect(b, true, false);
+            const size_t undoBefore = gUndoStack.size();
+            bool cOk = ArrangeToggleEnabledSelection() && gUndoStack.size() == undoBefore + 1 &&
+                       !Arrange::FindClip(gArrange, a)->enabled && !Arrange::FindClip(gArrange, b)->enabled;
+            Undo();
+            cOk = cOk && Arrange::FindClip(gArrange, a)->enabled && Arrange::FindClip(gArrange, b)->enabled;
+            // Mixed selection: one press disables all of it.
+            ArrangeEdit([&]() { Arrange::SetEnabled(gArrange, { a }, Arrange::kDisable); });
+            cOk = cOk && ArrangeToggleEnabledSelection() && !Arrange::FindClip(gArrange, b)->enabled;
+            cOk = cOk && ArrangeToggleEnabledSelection() && Arrange::FindClip(gArrange, a)->enabled &&
+                  Arrange::FindClip(gArrange, b)->enabled && Arrange::Validate(gArrange, &why);
+            printf("arrange edit enable toggle: %s\n", cOk ? "OK" : "FAIL");
+            allOk = allOk && cOk;
+         }
+
+         // --- D. A gesture that changes nothing pushes nothing --------------
+         {
+            freshModel(1, 0);
+            const uint64_t a = place(0, 0, kBar, 0);
+            place(0, kBar * 2, kBar, 0);
+            ArrangeClickSelect(a, false, false);
+            const size_t undoBefore = gUndoStack.size();
+            const uint64_t revBefore = gArrange.revision;
+            // A click: begin, no mouse movement, release.
+            ArrangeDragBegin(kArrangeDragMove, a, Arrange::kEdgeStart, 0);
+            bool dOk = !ArrangeDragEnd();
+            // A drag that goes away and comes back.
+            ArrangeDragBegin(kArrangeDragMove, a, Arrange::kEdgeStart, 0);
+            ArrangeDragUpdate(kBar / 2, 0);
+            ArrangeDragUpdate(0, 0);
+            dOk = dOk && !ArrangeDragEnd();
+            // A trim that goes nowhere, and an empty popup-field gesture.
+            ArrangeDragBegin(kArrangeDragTrimEnd, a, Arrange::kEdgeEnd, kBar);
+            ArrangeDragUpdate(kBar + kBar / 4, 0);
+            ArrangeDragUpdate(kBar, 0);
+            dOk = dOk && !ArrangeDragEnd();
+            ArrangeGestureBegin();
+            dOk = dOk && !ArrangeGestureEnd();
+            dOk = dOk && gUndoStack.size() == undoBefore && Arrange::FindClip(gArrange, a)->start == 0 &&
+                  Arrange::FindClip(gArrange, a)->length == kBar && gArrange.revision >= revBefore;
+            printf("arrange edit no-move click: %s (undo %zu -> %zu)\n", dOk ? "OK" : "FAIL", undoBefore,
+                   gUndoStack.size());
+            allOk = allOk && dOk;
+         }
+
+         // --- E. Clipboard: paste at the playhead; cleared on New and Open --
+         {
+            freshModel(2, 0);
+            const uint64_t a = place(0, 0, kBar, 0);
+            const uint64_t b = place(1, kBar, kBar, 0);
+            ArrangeClickSelect(a, false, false);
+            ArrangeClickSelect(b, true, false);
+            ArrangeGroupSelection();
+            ArrangeClickSelect(a, false, false);
+            bool eOk = ArrangeCopySelection() && gArrangeClipboard.items.size() == 2;
+            eOk = eOk && ArrangePasteAt(kBar * 4);
+            const std::vector<uint64_t> pasted = ArrangeSelectionIds();
+            eOk = eOk && pasted.size() == 2 && Arrange::Validate(gArrange, &why);
+            if (pasted.size() == 2)
+            {
+               const Arrange::Clip* p0 = Arrange::FindClip(gArrange, pasted[0]);
+               const Arrange::Clip* p1 = Arrange::FindClip(gArrange, pasted[1]);
+               const Arrange::Tick lo = std::min(p0->start, p1->start);
+               eOk = eOk && lo == kBar * 4 && p0->groupId != 0 && p0->groupId == p1->groupId &&
+                     p0->groupId != Arrange::FindClip(gArrange, a)->groupId;
+            }
+            // An undo is not a new document: the clipboard stays.
+            Undo();
+            eOk = eOk && !gArrangeClipboard.items.empty();
+            // Open is: save, reload, and the clipboard is gone.
+            const std::string path = TmpPath("arrange_edittest_open.inf");
+            SavePatchTo(path);
+            LoadPatchFrom(path);
+            std::remove(path.c_str());
+            eOk = eOk && !ArrangePasteAt(0) && gArrangeClipboard.items.empty() && gArrangeSel.empty();
+            // New is too.
+            freshModel(1, 0);
+            place(0, 0, kBar, 0);
+            ArrangeClickSelect(gArrange.lanes[0].clips[0].id, false, false);
+            eOk = eOk && ArrangeCopySelection() && !gArrangeClipboard.items.empty();
+            NewPatch();
+            eOk = eOk && !ArrangePasteAt(0) && gArrangeClipboard.items.empty() && gArrangeSel.empty();
+            printf("arrange edit clipboard cleared on new: %s\n", eOk ? "OK" : "FAIL");
+            allOk = allOk && eOk;
+         }
+
+         // --- F. Add to Timeline picks the lane (and output) ----------------
+         {
+            NewPatch();
+            tr.Seek(0.0);
+            freshModel(0, 0);
+            GraphNode* video = SpawnNode("Video", "Source", 0.0f, 0.0f);
+            const int videoIndex = video ? video->index : -1;
+            const uint64_t videoUid = video ? video->uid : 0;
+            GraphNode* osc = SpawnNode("Oscillator", "Synthesizers", 300.0f, 0.0f);
+            const int oscIndex = osc ? osc->index : -1;
+            const uint64_t oscUid = osc ? osc->uid : 0;
+            GraphNode* cube = SpawnNode("Cube", "3D", 600.0f, 0.0f);
+            const uint64_t cubeUid = cube ? cube->uid : 0;
+            bool fOk = videoIndex >= 0 && oscIndex >= 0 && cubeUid != 0;
+            if (fOk)
+            {
+               GraphNode* vgn = FindNodeByIndex(videoIndex);
+               fOk = IsNodeVideoCompatible(*vgn) && IsNodeAudioCompatible(*vgn) &&
+                     ArrangeLaneTypeForNode(*vgn) == Arrange::kLaneVideo;
+
+               const uint64_t v = AddNodeToArrangeTimeline(videoIndex);                        // natural: video
+               const uint64_t va = AddNodeToArrangeTimeline(videoIndex, Arrange::kLaneAudio);  // submenu: audio
+               const uint64_t v2 = AddNodeToArrangeTimeline(videoIndex, Arrange::kLaneVideo);  // lands after v
+               const uint64_t o = AddNodeToArrangeTimeline(oscIndex);                          // audio only
+               const Arrange::Loc lv = Arrange::Find(gArrange, v);
+               const Arrange::Loc lva = Arrange::Find(gArrange, va);
+               const Arrange::Loc lo = Arrange::Find(gArrange, o);
+               fOk = fOk && lv.Valid() && lva.Valid() && lo.Valid() && Arrange::Find(gArrange, v2).Valid();
+               if (fOk)
+               {
+                  const Arrange::Clip* cv = Arrange::FindClip(gArrange, v);
+                  const Arrange::Clip* cva = Arrange::FindClip(gArrange, va);
+                  const Arrange::Clip* cv2 = Arrange::FindClip(gArrange, v2);
+                  const Arrange::Clip* co = Arrange::FindClip(gArrange, o);
+                  fOk = gArrange.lanes[lv.lane].type == Arrange::kLaneVideo && cv->srcOutput == 0 &&
+                        cv->srcUid == videoUid && cv->length == kBar && cv->start == 0 &&
+                        gArrange.lanes[lva.lane].type == Arrange::kLaneAudio && cva->srcOutput == 1 &&
+                        cva->srcUid == videoUid &&
+                        cv2->start == cv->End() && Arrange::Find(gArrange, v2).lane == lv.lane &&
+                        gArrange.lanes[lo.lane].type == Arrange::kLaneAudio && co->srcOutput == 0 &&
+                        co->srcUid == oscUid && co->start == cva->End();
+               }
+               // Canvas Assign picker: by uid, type-checked, no-op pushes nothing.
+               const size_t undoBefore = gUndoStack.size();
+               fOk = fOk && !ArrangeAssignClipSource(o, cubeUid);             // cube has no audio
+               fOk = fOk && !ArrangeAssignClipSource(o, oscUid);              // already that source
+               fOk = fOk && gUndoStack.size() == undoBefore;
+               fOk = fOk && ArrangeAssignClipSource(v, cubeUid) && gUndoStack.size() == undoBefore + 1 &&
+                     Arrange::FindClip(gArrange, v)->srcUid == cubeUid;
+               fOk = fOk && Arrange::Validate(gArrange, &why);
+            }
+            printf("arrange edit add to timeline lane pick: %s\n", fOk ? "OK" : "FAIL");
+            allOk = allOk && fOk;
+         }
+
+         if (!why.empty())
+            printf("arrange edit validate: %s\n", why.c_str());
+         gArrangePanelOpen = false;
+         NewPatch();
+         printf("arrange edit test: all  %s\n", allOk ? "OK" : "FAIL");
       }
 
       if (getenv("INFINITE_UNDOPERFTEST") != nullptr && frameId == 4)
@@ -71519,12 +72547,14 @@ int main(int argc, char** argv)
          }
       }
 
+      // !gArrangeFocused: Cmd+G / Cmd+Shift+G group timeline clips while the
+      // Arrangement panel has focus, and must not also group canvas nodes.
       const bool doGroup =
          gRequestGroup ||
-         (!typing && cmdOrCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false));
+         (!typing && !gArrangeFocused && cmdOrCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false));
       const bool doUngroup =
          gRequestUngroup ||
-         (!typing && cmdOrCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false));
+         (!typing && !gArrangeFocused && cmdOrCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false));
       gRequestGroup = false;
       gRequestUngroup = false;
 
@@ -72157,7 +73187,20 @@ int main(int argc, char** argv)
                if (ImGui::MenuItem("Show modulation matrix"))
                   gModMatrixOpen = true;
             }
-            if (IsNodeVideoCompatible(*gn) || IsNodeAudioCompatible(*gn))
+            if (IsNodeVideoCompatible(*gn) && IsNodeAudioCompatible(*gn))
+            {
+               // Picture and sound from one node (Video Source): the user
+               // picks the lane; the audio clip reads its audio output.
+               if (ImGui::BeginMenu("Add to Timeline"))
+               {
+                  if (ImGui::MenuItem("Video"))
+                     AddNodeToArrangeTimeline(gn->index, Arrange::kLaneVideo);
+                  if (ImGui::MenuItem("Audio"))
+                     AddNodeToArrangeTimeline(gn->index, Arrange::kLaneAudio);
+                  ImGui::EndMenu();
+               }
+            }
+            else if (IsNodeVideoCompatible(*gn) || IsNodeAudioCompatible(*gn))
             {
                if (ImGui::MenuItem("Add to Timeline"))
                   AddNodeToArrangeTimeline(gn->index);
@@ -73530,13 +74573,12 @@ int main(int argc, char** argv)
       // box (via ed::GetNodePosition/GetNodeSize, both canvas-space here
       // just like the param picker's mp above) and a click assigns it as the
       // clip's source.
-      if (gArrangeAssigningClipStream >= 0 &&
-          gArrangeAssigningClipStream < (int)gArrangeStreams.size() &&
-          gArrangeAssigningClipIndex >= 0 &&
-          gArrangeAssigningClipIndex < (int)gArrangeStreams[gArrangeAssigningClipStream].clips.size())
+      if (gArrangeAssigningClipId != 0 && !Arrange::Find(gArrange, gArrangeAssigningClipId).Valid())
+         gArrangeAssigningClipId = 0;
+      if (gArrangeAssigningClipId != 0)
       {
-         LegacyArrange::ClipRecord& assignClip = gArrangeStreams[gArrangeAssigningClipStream].clips[gArrangeAssigningClipIndex];
-         const bool assignIsVideo = gArrangeStreams[gArrangeAssigningClipStream].type == Patch::kStreamVideo;
+         const Arrange::Loc assignLoc = Arrange::Find(gArrange, gArrangeAssigningClipId);
+         const bool assignIsVideo = gArrange.lanes[assignLoc.lane].type == Arrange::kLaneVideo;
          const ImVec2 mp = ImGui::GetMousePos();
 
          GraphNode* hoveredCompatible = nullptr;
@@ -73572,19 +74614,14 @@ int main(int argc, char** argv)
 
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             {
-               PushUndoCheckpoint();
-               assignClip.srcIndex = hoveredCompatible->index;
-               assignClip.srcOutput = 0;
-               gArrangeAssigningClipStream = -1;
-               gArrangeAssigningClipIndex = -1;
+               // By uid, through the model: one timeline undo entry.
+               ArrangeAssignClipSource(gArrangeAssigningClipId, hoveredCompatible->uid);
+               gArrangeAssigningClipId = 0;
             }
          }
 
          if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-         {
-            gArrangeAssigningClipStream = -1;
-            gArrangeAssigningClipIndex = -1;
-         }
+            gArrangeAssigningClipId = 0;
       }
 
       // [edperf] BuildControl's per-frame hit-test walk is the one part of the
@@ -74756,6 +75793,7 @@ int main(int argc, char** argv)
          if (doRecover)
          {
             ApplyPatchData(gPendingRecoveryData);
+            gArrangePatchGeneration++; // a new document, same as File > Open
             gUndoStack.clear();
             gRedoStack.clear();
             gPatchPath.clear();          // it is not the user's file - force Save As

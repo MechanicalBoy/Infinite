@@ -33,6 +33,11 @@ def norm_key(tok):
         return KEY_ALIASES[t]
     if len(t) == 1 and t.isalpha():
         return t.upper()
+    if len(t) == 1 and t.isdigit():
+        return t                       # ImGuiKey_0 .. ImGuiKey_9
+    m = re.fullmatch(r"keypad\s*(\d)", t)
+    if m:
+        return "Keypad" + m.group(1)   # ImGuiKey_Keypad0 ..
     if len(t) == 1 and t == "/":
         return "Slash"
     return None

@@ -598,45 +598,75 @@ bool TrimGroupEdge(Model& m, uint64_t groupId, int edge, Tick tick)
 {
    // Only the members flush with the dragged edge move; interior clips keep
    // their own bounds (Ableton's group-edge behaviour, WP5).
-   const std::vector<uint64_t> members = ClipsInGroup(m, groupId);
-   if (members.empty()) return false;
+   //
+   // Runs under a live drag, once per frame, so it is one pass over the lanes
+   // with no per-member Find (the old version was O(members x clips)). The
+   // in-place trim is exact: a start-edge trim never moves any clip's end,
+   // and an end-edge trim never moves any clip's start, so the neighbour each
+   // member clamps against is the same whether or not it is itself a member.
+   if (groupId == 0) return false;
    Tick bound = 0;
    bool have = false;
-   for (uint64_t id : members)
-   {
-      const Clip* c = FindClip(m, id);
-      if (!c) continue;
-      const Tick v = (edge == kEdgeStart) ? c->start : c->End();
-      if (!have) { bound = v; have = true; }
-      else bound = (edge == kEdgeStart) ? std::min(bound, v) : std::max(bound, v);
-   }
+   for (const Lane& l : m.lanes)
+      for (const Clip& c : l.clips)
+      {
+         if (c.groupId != groupId) continue;
+         const Tick v = (edge == kEdgeStart) ? c.start : c.End();
+         if (!have) { bound = v; have = true; }
+         else bound = (edge == kEdgeStart) ? std::min(bound, v) : std::max(bound, v);
+      }
    if (!have) return false;
+
    bool changed = false;
-   for (uint64_t id : members)
+   for (Lane& lane : m.lanes)
    {
-      const Clip* c = FindClip(m, id);
-      if (!c) continue;
-      const Tick v = (edge == kEdgeStart) ? c->start : c->End();
-      if (v != bound) continue;
-      changed = TrimEdge(m, id, edge, tick) || changed;
+      for (size_t i = 0; i < lane.clips.size(); i++)
+      {
+         Clip& c = lane.clips[i];
+         if (c.groupId != groupId) continue;
+         if (edge == kEdgeStart)
+         {
+            if (c.start != bound) continue;
+            const Tick lo = (i > 0) ? lane.clips[i - 1].End() : 0;
+            const Tick hi = c.End() - 1;
+            const Tick t = std::clamp(tick, lo, hi);
+            if (t == c.start) continue;
+            const Tick end = c.End();
+            c.start = t;
+            c.length = end - t;
+         }
+         else
+         {
+            if (c.End() != bound) continue;
+            const Tick lo = c.start + 1;
+            const Tick hi = (i + 1 < lane.clips.size()) ? lane.clips[i + 1].start : kMaxTick;
+            const Tick t = std::clamp(tick, lo, hi);
+            if (t == c.End()) continue;
+            c.length = t - c.start;
+         }
+         ClampFades(c);
+         changed = true;
+      }
    }
+   // One bump per op, like every other op (it used to bump once per member).
+   if (changed) m.revision++;
    return changed;
 }
 
 bool ScaleGroup(Model& m, uint64_t groupId, int edge, Tick tick)
 {
-   const std::vector<uint64_t> members = ClipsInGroup(m, groupId);
-   if (members.size() < 2) return false;
+   if (groupId == 0) return false;
    Tick lo = 0, hi = 0;
-   bool have = false;
-   for (uint64_t id : members)
-   {
-      const Clip* c = FindClip(m, id);
-      if (!c) continue;
-      if (!have) { lo = c->start; hi = c->End(); have = true; }
-      else { lo = std::min(lo, c->start); hi = std::max(hi, c->End()); }
-   }
-   if (!have || hi <= lo) return false;
+   int count = 0;
+   for (const Lane& l : m.lanes)
+      for (const Clip& c : l.clips)
+      {
+         if (c.groupId != groupId) continue;
+         if (count == 0) { lo = c.start; hi = c.End(); }
+         else { lo = std::min(lo, c.start); hi = std::max(hi, c.End()); }
+         count++;
+      }
+   if (count < 2 || hi <= lo) return false;
 
    // Scale about the opposite edge; a factor <= 0 would invert the block.
    const Tick pivot = (edge == kEdgeStart) ? hi : lo;
@@ -645,35 +675,61 @@ bool ScaleGroup(Model& m, uint64_t groupId, int edge, Tick tick)
    if (!(newSpan > 0.0)) return false;
    const double f = newSpan / oldSpan;
 
-   std::vector<std::pair<uint64_t, Clip>> scaled;
-   for (uint64_t id : members)
+   auto scaledSpan = [&](const Clip& c, Tick& outStart, Tick& outLen)
    {
-      const Loc loc = Find(m, id);
-      if (!loc.Valid()) continue;
-      Clip c = m.lanes[loc.lane].clips[loc.index];
       const Tick s = pivot + (Tick)llround((double)(c.start - pivot) * f);
       const Tick e = pivot + (Tick)llround((double)(c.End() - pivot) * f);
-      c.start = std::min(s, e);
-      c.length = std::max<Tick>(1, std::llabs(e - s));
-      if (c.start < 0) c.start = 0;
-      ClampFades(c);
-      scaled.emplace_back(id, c);
-   }
-   if (scaled.empty()) return false;
+      outStart = std::max<Tick>(0, std::min(s, e));
+      outLen = std::max<Tick>(1, std::llabs(e - s));
+   };
 
-   std::unordered_map<uint64_t, Clip> byId(scaled.begin(), scaled.end());
-   Model trial = m;
-   for (Lane& l : trial.lanes)
+   // Check first, lane by lane, touching only lanes that hold a member: each
+   // lane's clips as (start, end) with members at their scaled span, sorted,
+   // must not overlap. Scaling can push a member into a non-member neighbour;
+   // rather than silently eating an untouched clip, refuse the gesture. (This
+   // used to copy the whole Model and Validate it - per frame, under a drag.)
+   bool any = false;
+   std::vector<std::pair<Tick, Tick>> spans;
+   for (const Lane& l : m.lanes)
+   {
+      bool laneHasMember = false;
+      for (const Clip& c : l.clips)
+         if (c.groupId == groupId) { laneHasMember = true; break; }
+      if (!laneHasMember) continue;
+      spans.clear();
+      for (const Clip& c : l.clips)
+      {
+         if (c.groupId == groupId)
+         {
+            Tick s = 0, len = 0;
+            scaledSpan(c, s, len);
+            if (s != c.start || len != c.length) any = true;
+            spans.emplace_back(s, s + len);
+         }
+         else
+            spans.emplace_back(c.start, c.End());
+      }
+      std::sort(spans.begin(), spans.end());
+      for (size_t i = 1; i < spans.size(); i++)
+         if (spans[i].first < spans[i - 1].second) return false;
+   }
+   if (!any) return false;
+
+   for (Lane& l : m.lanes)
+   {
+      bool touched = false;
       for (Clip& c : l.clips)
       {
-         auto it = byId.find(c.id);
-         if (it != byId.end()) c = it->second;
+         if (c.groupId != groupId) continue;
+         Tick s = 0, len = 0;
+         scaledSpan(c, s, len);
+         c.start = s;
+         c.length = len;
+         ClampFades(c);
+         touched = true;
       }
-   for (Lane& l : trial.lanes) SortLane(l);
-   // Scaling can push members into their neighbours; rather than silently
-   // eating an untouched clip, refuse the gesture.
-   if (!Validate(trial, nullptr)) return false;
-   m.lanes.swap(trial.lanes);
+      if (touched) SortLane(l);
+   }
    m.revision++;
    return true;
 }
