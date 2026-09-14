@@ -64785,7 +64785,9 @@ int main(int argc, char** argv)
                static float sR[kAudioMaxBlockFrames];
                static float* sCh[2] = { sL, sR };
                const int block = OfflineAudioBlockFrames();
-               const long long want = (long long)llround(1.0 * rate); // one second = the whole clip
+               // One second is the whole clip; render a tenth past it so the
+               // playhead crosses out of the clip and publishes its last bucket.
+               const long long want = (long long)llround(1.1 * rate);
                long long done = 0;
                while (done < want)
                {
@@ -64817,9 +64819,10 @@ int main(int argc, char** argv)
                         nonSilent++;
                   }
                }
-               // The last bucket is still in flight when the take stops (only
-               // complete buckets are published), so 31 of 32 is a pass.
-               const bool gOk = total == 32 && filled >= total - 1 && nonSilent >= total - 2 &&
+               // The playhead ran past the clip's end, so even the last bucket
+               // is published (a clip followed by a gap must not keep a flat
+               // notch at its right edge).
+               const bool gOk = total == 32 && filled == total && nonSilent >= total - 2 &&
                                 AudioEngine::Instance().ClipPeaks().DroppedCount() == droppedBefore;
                printf("arrange wave filled by playback: %s (%d/%d buckets, %d non-silent, %lld frames @ %.0f Hz)\n",
                       gOk ? "OK" : "FAIL", filled, total, nonSilent, done, rate);

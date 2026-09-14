@@ -364,6 +364,19 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             if (!playing || beat < w.startBeat || beat >= w.endBeat)
             {
                sEnvScratch[i] = 0.0f;
+               // A playing head that has left every window has also left the
+               // bucket in progress - flush it here, or a clip followed by a
+               // gap never publishes its last bucket and keeps a flat notch
+               // at its right edge. Not when stopped: a stopped playhead's
+               // bucket is half-measured (see below).
+               if (playing && terminal.peakClipId != 0)
+               {
+                  if (terminal.peakBucket >= 0)
+                     mClipPeaks.Write({ terminal.peakClipId, terminal.peakShape, terminal.peakBucket,
+                                        terminal.peakMin, terminal.peakMax });
+                  terminal.peakClipId = 0;
+                  terminal.peakBucket = -1;
+               }
                continue;
             }
             double env = (double)w.gain * (double)laneGain;
