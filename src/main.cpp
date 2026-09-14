@@ -27,7 +27,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include "stb_image.h"
-#include "platform/common/PathOpen.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -39856,7 +39855,17 @@ namespace
       // is compiled with STBI_NO_STDIO, so the path-based stbi_load does not
       // exist to link against - read the file and decode from memory, the same
       // way MediaDecodePortable does.
-      std::ifstream iconFile = OpenIfstreamUtf8(iconPath, std::ios::binary | std::ios::ate);
+      //
+      // Plain std::ifstream, not the house OpenIfstreamUtf8: this branch is
+      // Linux-only (Windows takes SetWindowIconFromResource above, macOS takes
+      // neither), and on Linux a path is already UTF-8 bytes so there is
+      // nothing to convert. Reaching for the portable helper here would mean
+      // including platform/common/PathOpen.h, which pulls WinCommon.h and so
+      // <windows.h> into main.cpp - and wingdi.h declares a FUNCTION named
+      // Polyline, which hides core/Mesh.h's global `struct Polyline` and breaks
+      // every MeshOps declaration that takes one. main.cpp includes no Windows
+      // headers at all today; keep it that way.
+      std::ifstream iconFile(iconPath, std::ios::binary | std::ios::ate);
       if (!iconFile) return;
       const std::streamoff iconSize = iconFile.tellg();
       if (iconSize <= 0) return;

@@ -186,7 +186,46 @@ The bundle difference also bites *tooling*: a screenshot fixture writing a
 relative path lands in the CWD on Linux and inside the `.app` on macOS.
 `tools/linux/shots.sh` makes `OUT_DIR` absolute for exactly this reason.
 
-### 3.6 `STBI_NO_STDIO` — `stbi_load` does not exist in this binary
+### 3.6 Never let a Windows header into `main.cpp`
+
+`src/main.cpp` includes **no** Windows headers, and that is load-bearing rather
+than incidental. `wingdi.h` declares a *function* called `Polyline`, which hides
+`core/Mesh.h`'s global `struct Polyline` — so every `MeshOps` declaration taking
+a `const Polyline&` stops naming a type, and MSVC emits a wall of
+`missing type specifier` errors pointing at Mesh.h, nowhere near the include
+that caused them.
+
+The way this happens is indirect and easy to miss in review: adding
+`#include "platform/common/PathOpen.h"` to `main.cpp` is enough, because on
+`_WIN32` that header includes `WinCommon.h`, which includes `<windows.h>`.
+`windows-parity` §1 notes that `WinCommon.h` is deliberately on no include
+path; a `common/` header that includes it inherits that restriction and must
+not be pulled into `main.cpp`.
+
+If you need a portable helper in `main.cpp`, check what it drags in on the other
+two platforms first. Often the branch you are writing is single-platform anyway
+— the window-icon path is Linux-only, where a UTF-8 path needs no conversion and
+a plain `std::ifstream` is both correct and free of the problem.
+
+### 3.7 x86_64 and arm64 do not agree on floating point
+
+The dev container is arm64 on Apple silicon; CI and every shipped AppImage are
+x86_64. The two contract floating-point arithmetic differently, so a value can
+land on opposite sides of a comparison.
+
+`PHASECTEST`'s metaball watertightness check found this the hard way: identical
+6096-triangle meshes, `0` open edges on arm64 and `8` on x86_64, because
+`MeshOps::BuildWeldMap` compares float positions against an epsilon rather than
+quantising them. It is baselined in `known-test-failures-linux.txt` with the
+full story.
+
+Two rules follow. Any geometry or DSP code that decides something by comparing
+floats should quantise to an integer grid before hashing or bucketing, not
+compare and hope. And **local green on arm64 is not green** — for anything
+numerical, either push and read x86_64 CI or run the container under
+`--platform linux/amd64`, which works on this machine.
+
+### 3.8 `STBI_NO_STDIO` — `stbi_load` does not exist in this binary
 
 The single `STB_IMAGE_IMPLEMENTATION` (in `src/nodes/EnvironmentNode.cpp`) is
 compiled with `STBI_NO_STDIO`, so only the `*_from_memory` loaders link. Calling
@@ -198,7 +237,7 @@ a Linux-only *link* failure introduced by code that looks correct in review.
 Read the bytes with `OpenIfstreamUtf8` and call `stbi_load_from_memory`. The
 window-icon path in `main.cpp` is the worked example.
 
-### 3.7 Audio: ALSA is the declared dependency, PipeWire is the reality
+### 3.9 Audio: ALSA is the declared dependency, PipeWire is the reality
 
 `deps-apt.sh` installs `libasound2-dev`, and `AudioDeviceLinux.cpp` is a P2 stub.
 Before implementing it, note that on any current desktop ALSA is a *compatibility
@@ -212,7 +251,7 @@ this area: **never gate `join()` on your own running flag** — `joinable()` is
 the only correct predicate, and a joinable thread nobody joins calls
 `std::terminate()` at destruction. See `windows-parity` §3.1.
 
-### 3.8 Packaging: the glibc floor is set by the oldest supported distro
+### 3.10 Packaging: the glibc floor is set by the oldest supported distro
 
 The target is an x86_64 AppImage. An AppImage bundles your libraries but **not
 glibc**, so the build host's glibc becomes the minimum version every user needs.

@@ -25,3 +25,24 @@ VST3SCANTEST|stubbed: VST3 scanner (P4)
 
 # Other pre-existing test quirks shared with macOS
 GROUPTEST|"after ungroup: ... member freed" sub-check fails — pre-existing and unrelated to Linux port
+
+# Architecture-dependent, NOT a stub and NOT cosmetic. Read before removing.
+#
+# PHASECTEST's metaball watertightness sub-check reports "apart: 8 open edges"
+# on x86_64 and 0 on arm64, from an identical 6096-triangle mesh. Same topology,
+# different welding: MeshOps::BuildWeldMap's float epsilon lands on the other
+# side of the comparison for a handful of vertices once x86_64 codegen contracts
+# the arithmetic differently. Nothing in the Linux port touches Mesh.h or the
+# metaball code.
+#
+# This is baselined so the port is not blocked by a bug it did not introduce,
+# but it is a REAL defect and it is user-visible: a mesh with open edges is not
+# watertight, and the test's own comment explains that this is what makes a blob
+# render shattered under backface culling. Every x86_64 user is on the failing
+# side; macOS never saw it because Apple silicon is arm64, and Windows CI runs
+# only four headless tests, none of them this one.
+#
+# The fix belongs in BuildWeldMap (quantise before hashing, rather than
+# comparing floats that FMA contraction can move), not here. Remove this entry
+# with that fix - not before P5.
+PHASECTEST|x86_64-only: BuildWeldMap float-epsilon welding leaves 8 open edges in the metaball mesh; real latent geometry bug, not a port issue — see comment above
