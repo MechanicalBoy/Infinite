@@ -20,43 +20,43 @@ each number.
 
 ## Status — start here
 
-**WP0-WP5 are built, verified and committed. Start at WP6** (time display,
-markers, playhead keys). The legacy bridge is gone: `gArrange` is the only
-arrangement state, and `gArrange.revision` is the only change signal.
+**WP0-WP6 are built, verified and committed. Start at WP7** (render + export
+queue). The legacy bridge is gone: `gArrange` is the only arrangement state,
+and `gArrange.revision` is the only change signal. The panel draws in ticks.
 
 ```
-WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► WP5a 4004259 ──► WP5b 81b9471 ──► [WP6] ──► [WP7] ──► [WP8] ──► verify-gate ──► owner merges
-  baseline      model core      transport      audio sched      video          UI on gArrange    bridge deleted     ▲ you are here
+WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► WP5a 4004259 ──► WP5b 81b9471 ──► WP6 bd19fcb ──► [WP7] ──► [WP8] ──► verify-gate ──► owner merges
+  baseline      model core      transport      audio sched      video          UI on gArrange    bridge deleted     time + markers   ▲ you are here
 ```
 
 ```bash
 cd /Users/namansoni/infinte
-git checkout feature/arrange-step-07-editing               # WP5 tip (81b9471)
-git checkout -b feature/arrange-step-08-time-markers       # WP6 stacks on it
+git checkout feature/arrange-step-08-time-markers          # WP6 tip (bd19fcb)
+git checkout -b feature/arrange-step-09-export-queue       # WP7 stacks on it
 cmake --build build -j"$(sysctl -n hw.ncpu)"               # must be clean before you touch anything
 ```
 
-Last known-good state on the WP5b tip (`81b9471`):
+Last known-good state on the WP6 tip (`bd19fcb`):
 
 | Check | Result |
 |---|---|
 | Build | clean |
-| `.claude/skills/run-infinite-hygiene/driver.sh --skip-build --full` | **74 passed, 0 failed, 3 xfail, exit 0** |
+| `.claude/skills/run-infinite-hygiene/driver.sh --skip-build --full` | **75 passed, 0 failed, 3 xfail, exit 0** (74 + `ARRANGEMARKERTEST`) |
+| `INFINITE_ARRANGEMARKERTEST` | 7/7 (new in WP6) |
 | `INFINITE_ARRANGEEDITTEST` | 6/6 |
 | `INFINITE_ARRANGEVIDEOTEST` | 8/8 (fixtures built on `gArrange`) |
 | `INFINITE_ARRANGEAUDIOTEST` | 8/8 (fixtures built on `gArrange`; section F asserts one edit = one revision bump = exactly one rebuild, and a no-op frame rebuilds nothing) |
 | `INFINITE_TRANSPORTTEST` | 6/6 |
 | `INFINITE_ARRANGETEST` | 9/9 (section F asserts the seeded default model directly) |
 | `panels-sweep` | 8/8 |
-| `audio-pipeline-sweep` | 13/15. `MOLDERTEST` is pre-existing. `AUDIOPARAMSWEEPTEST` is 423 baselined blind spots with 0 new; the sweep's driver has no baseline file, but hygiene grades it green |
-| `shortcuts-sweep` | 2 undocumented, both pre-existing (`KeypadEnter`, Shift+P); identical on `4004259` |
+| `audio-pipeline-sweep` | 13/15 on `81b9471` (not re-run in WP6; WP6 touches no audio code). `MOLDERTEST` is pre-existing. `AUDIOPARAMSWEEPTEST` is 423 baselined blind spots with 0 new |
+| `shortcuts-sweep` | **clean**: 41 rows, 32 handled keys, 0 unhandled, 0 undocumented |
 | Known xfails (pre-existing, not ours) | `GROUPTEST`, `DRAGTEST`, `PLUGINDRAGTEST` |
 | `MOLDERTEST` | fails, **unbaselined and unrelated**. It is handled on its own branch; don't fold it into this work |
 
-Before writing WP6 code, read **"As built (WP1-WP3)"**, **"As built (WP4)"**,
-**"As built (WP5a)"** and **"As built (WP5b)"** below. Several things landed
-differently from the plan text, and WP6-WP8 depend on the as-built shape, not on
-the original wording.
+Before writing WP7 code, read the **"As built"** sections below, WP6's last.
+Several things landed differently from the plan text, and WP7-WP8 depend on the
+as-built shape, not on the original wording.
 
 ## Owner's working rules (apply throughout)
 
@@ -90,7 +90,7 @@ end of every package:
 | 3 | `feature/arrange-step-05-audio-scheduling` | Audio-thread clip scheduling, Timeline/Canvas mode, persistent PDC | **Highest** | **done** `4bac3b2` |
 | 4 | `feature/arrange-step-06-video` | Lane order, FBO ownership, geometry cache, compose-after-cook | Medium | **done** `7220d09` |
 | 5 | `feature/arrange-step-07-editing` | ID-based selection, multi-drag, groups, enable key `0`, offline clips, lane pick, undo coverage, **deletes the legacy bridge** | **High — largest** | **done** `4004259` (5a: UI + features) + `81b9471` (5b: bridge deleted) |
-| 6 | `feature/arrange-step-08-time-markers` | Bars/Time display, markers, playhead keys, scrub fix | Low–Med | |
+| 6 | `feature/arrange-step-08-time-markers` | Bars/Time display, markers, playhead keys, scrub fix | Low–Med | **done** `bd19fcb` |
 | 7 | `feature/arrange-step-09-export-queue` | Render fixes + export queue + persisted settings | Medium | |
 | 8 | `feature/arrange-step-10-thumbs-waves` | Live audio waveforms, video thumbnails | Low–Med | |
 
@@ -488,6 +488,68 @@ below that mention the mirror describe the WP5a state and are superseded by
 - Markers: `Arrange::AddMarker/MoveMarker/...` bump revision, which triggers one audio rebuild per edit. That is harmless, and nothing else is needed.
 - Any new direct `gArrange` field write must bump `revision` (invariant 6).
 
+
+## As built (WP6) — read this before WP7
+
+`bd19fcb`. Line numbers are at that commit (`src/main.cpp` unless noted).
+
+### What landed
+
+| Symbol / area | What it is |
+|---|---|
+| `Arrange::SnapGridTicks/SnapToGrid/GridFloor/GridCeil` (`ArrangeModel.cpp` 849-882) | Grid step in ticks (0 = off; division 1 = one bar of `beatsPerBar`; triplet = ×2/3). `SnapToGrid` rounds half up, floor/ceil are exact on negatives |
+| `Arrange::PrevMarker/NextMarker` (`ArrangeModel.cpp` 884-905) | Strictly before/after a tick, with an optional tolerance. `AddMarker`/`MoveMarker` now clamp to `[0, kMaxTick]` |
+| `ArrangeSetTimeDisplay` / `ArrangeSetSnap` / `ArrangeSnapGridTicks` / `ArrangeNudgeStepTicks` (5751-5794) | View-setting writers: revision++ and dirty, **no** undo step. The grid follows the transport's live meter |
+| `ArrangeViewSettings` Keep/Restore (5724-5746) | `dockSide`, `timeDisplay`, `snapDivision`, `snapTriplet` survive undo, redo and the drag-restore |
+| `ArrangePlayTick` / `ArrangeSeekTick` (5798-5806) | The playhead in ticks, off `Transport::Beats()`, never `Seconds()` |
+| `ArrangeScrubBegin/Update/End/Cancel` (5810-5832) | Ruler scrub. Begin/Update move only `gArrangeScrubTick` (the ghost); End seeks once; Cancel (Escape) seeks nothing |
+| `ArrangeEndKeyTargetTick` (5834) | `Arrange::ArrangementEnd` |
+| `kArrangePalette` / `kArrangeGridChoices` (5855-5884) | Shared colour list (clip tint + marker menu); snap choices mapped from `MusicTime::RateDivision` |
+| `ArrangeAddMarkerAtPlayhead` / `ArrangeJumpToMarker` (5886-5916) | `M` (snapped, one `ArrangeEdit`); Alt+←/→. Prev treats a marker passed < ½ beat ago as "here" while playing |
+| `ArrangeNudge` (27237) | ←/→: `MoveClips` on the selection (one entry), else step the playhead to the previous/next grid point |
+| `ArrangeFormatBBT/…Length/TickSeconds/Pos/Length`, `ArrangeParsePos` (27489-27560) | Formatting in both units; `Pos`/`Length`/`Parse` follow `timeDisplay` |
+| Keys block (~27690) | M, Alt+←/→, ←/→ (repeat), Home, End. Gated on focus, no text input, no clip drag, no gesture, no scrub, no marker drag |
+| Ruler (~28330-28720) | 14 px marker strip above the tick strip (40 px total). Bars mode: bar labels + dim M:SS; Time mode: second labels + dim BBT. Flags: drag (one gesture), double-click rename, right-click colour/rename/delete. Shift-drag = loop (snapped). Plain drag = scrub. Hover tooltip shows both units |
+| Panel geometry | Beats/ticks throughout (`beatToX`, `tickToX`, `xToTick`). Lane grid = the snap grid (or beats when off), thinned to ≥ 6 px |
+| Clip popup `tickField` | Start/End/Fade In/Fade Out in the chosen unit. Bars mode is drag-only (BBT shown as the format, 1/16 quantized) |
+| Tempo button tooltip | States that clips keep bars/beats and their seconds change |
+| Fixture `INFINITE_ARRANGEMARKERTEST` (frame 4) | A marker ops/undo/flag-drag gesture/undo-mid-drag · B save/load incl. `timeDisplay` + snap · C BPM 120→240 keeps ticks, halves seconds · D grid math vs `MusicTime::BeatsFor`, setters push no undo · E scrub = one seek (epoch delta 1), Cancel seeks nothing · F Home/End/arrows/M/marker jumps · G view settings survive undo, parse/format both units. Registered in `driver.sh` (TIER1, GROUP_UI, FULL) |
+
+### Deviations and forced decisions
+
+| Brief said | Actually built | Why |
+|---|---|---|
+| Snap: bar … 1/16, triplets, off | Plus 1/2T; no 1 bar triplet | Taken from `RateDivision` (rhythmic-quantization-standard); a bar triplet isn't in that table |
+| ←/→ nudge by one grid step | Snap off → 1/16 | Keeps the keys alive with snap off |
+| Bar grid | Follows the live meter; `kTicksPerBar` stays 4/4 | Model storage is unchanged; only the display/snap uses `BeatsPerBar()` |
+| Clip popup in the chosen unit | Bars fields are drag-only (`NoInput`) | A DragFloat can't take BBT typing; seconds fields still take typing |
+| — | Loop band starts below the marker strip | Flags and band would overlap |
+| — | Keyboard node's musical typing stands down while the timeline has focus | Otherwise M/←/→ also play notes |
+| — | `timeDisplay`/snap writes bump revision → one harmless audio rebuild each | Invariant 6 |
+
+### Sweep findings (WP6)
+
+| Sweep / audit | Result |
+|---|---|
+| `shortcuts-sweep` | Clean (41 rows, 32 keys). **Fixed two pre-existing gaps:** Shift+P had no help row (added "Performance Matrix"); `KeypadEnter` allowlisted as dialog-local. The checker learned arrow/Home/End aliases |
+| `panels-sweep` | 8/8 |
+| `invariant-interaction-audit` ("markers stay sorted; every marker/loop edit bumps revision") | Every marker write is an `Arrange::` op (bump + stable sort); load ends in `Normalize` (stable sort); undo/redo/drag-restore copy whole snapshots; the panel iterates a copy while dragging. Loop writes: `ArrangeSetLoop` (bump), drag-restore (live+1), load (fresh model). `ArrangeContentEqual` covers markers + loop. **Fixed:** an undo/redo/New mid-flag-drag closed the gesture but left the drag alive, so the rest of the drag moved the marker with no undo entry (`gArrangeMarkerDragId = 0` at all 4 gesture resets; asserted in fixture A) |
+| `invariant-interaction-audit` ("seek fires once per scrub gesture") | Only `ArrangeScrubEnd` seeks during a ruler drag; the old per-frame `Seek` in the ruler and the playhead-cap button are gone. Scrub blocks the keys block; Escape cancels without seeking. Other `ArrangeSeekTick` callers are discrete (Home/End/nudge/marker jump) |
+
+### Debts carried forward
+
+| Debt | Note |
+|---|---|
+| Loop edits are still not undo steps, but undo restores the snapshot's loop | Pre-existing (WP5a). Undoing an earlier clip edit also reverts a later loop change |
+| `settings.zoom` / `settings.scroll` are persisted but unused | The panel's zoom/scroll are session globals |
+
+### Notes for WP7
+
+- The render range is still seconds (`ArrangeLoopStartSec/EndSec`, `renderRangeStart/End`). Everything else in the panel is ticks.
+- Marker A → B ranges: `gArrange.markers` is sorted by `pos`; use `PrevMarker`/`NextMarker` or index order.
+- Format/parse helpers (`ArrangeFormatPos`, `ArrangeParsePos`) already follow Bars | Time. Reuse them for the job range fields.
+- Any new keys must go through the panel keys block and its gates, and get a `kShortcuts` row (the sweep is clean now; keep it at 0/0).
+
 ---
 
 ## WP4 — Video
@@ -546,6 +608,8 @@ Exit:
 ---
 
 ## WP6 — Time display, markers, playhead keys
+
+> **DONE — `bd19fcb`.** Reference only; *As built (WP6)* above is authoritative.
 
 | Topic | Decision |
 |---|---|
@@ -638,7 +702,7 @@ cp -R build/Infinite.app ~/Desktop/Infinite.app
 | 3 | `audio-pipeline-sweep`, `audio-node-sweep` | done — both clean |
 | 4 | `compositing-pipeline-sweep` | done — static 0 problems, BYPASS/PALETTE/REMOVEBG pass; SELFTEST's 35 failures and CACHETEST's 0 idle streak are pre-existing (identical on `4bac3b2`) |
 | 5 | `shortcuts-sweep`, `panels-sweep` (+ `audio-pipeline-sweep` for 5b) | done — see *Sweep findings (WP5a)* / *(WP5b)* |
-| 6 | `shortcuts-sweep`, `panels-sweep` | |
+| 6 | `shortcuts-sweep`, `panels-sweep` | done — shortcuts clean (0/0, two pre-existing gaps fixed), panels 8/8; see *Sweep findings (WP6)* |
 | 7 | `av-sync-sweep` | |
 
 - Before each commit, run the `invariant-interaction-audit` skill on WP1 (no-overlap invariant) and WP3 (sample-accurate window invariant): check that no sibling path (paste, drop, render, undo) bypasses the model ops.
@@ -662,3 +726,5 @@ cp -R build/Infinite.app ~/Desktop/Infinite.app
   - the group-edge trim vs Shift-scale behaviour (WP5)
   - the Bottom/Top-only dock (WP5)
   - whether `Lane::pan` should be wired up or declared inert (see *Debts carried forward*)
+  - the ruler's two label rows, marker flags and ghost playhead (WP6)
+  - drag-only Bars fields in the clip popup, and the 1/16 nudge with snap off (WP6)
