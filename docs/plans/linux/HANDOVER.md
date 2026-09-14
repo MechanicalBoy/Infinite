@@ -86,9 +86,15 @@ step back to a bare `find` over the worktree.**
 
 ## Decisions that are the owner's, not mine
 
-- **FFmpeg licence for P3.** Bundling FFmpeg is the locked technical choice,
-  but the GPL/LGPL implication for a shipped binary is a licensing decision.
-  **P3 should not start before this is settled.**
+- ~~FFmpeg licence for P3.~~ **Settled 2026-09-14 — P3 is unblocked.** GPL
+  FFmpeg + libx264, gated behind `INFINITE_ENABLE_GPL_CODECS` (default ON on
+  Linux). Full reasoning and the three binding conditions are in
+  [phase-03-media.md](phase-03-media.md). Short version: copyright was never
+  the issue (the binary is already GPLv3 via the VST3 SDK); the real exposure
+  is H.264 *patents*, which is Linux-specific because macOS and Windows get
+  their encoder from the OS vendor. Accepted, because this is what every
+  comparable FOSS tool ships and option (b) would make Linux record a
+  different file than the other two platforms.
 - **Merging to `main`.** Owner merges. Do not merge, do not push `main`.
 - **FreeType: static FetchContent vs system-dynamic.** Currently
   system-dynamic via pkg-config. Fine for the AppImage either way; worth a
