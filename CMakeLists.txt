@@ -802,6 +802,9 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         COMMAND ${CMAKE_COMMAND} -E copy
                 "${CMAKE_CURRENT_SOURCE_DIR}/external/icons/Lucide/lucide.ttf"
                 "$<TARGET_FILE_DIR:Infinite>/Resources/icons/"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon_1024.png"
+                "$<TARGET_FILE_DIR:Infinite>/Resources/icons/icon_1024.png"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${ONNXRUNTIME_SO_FILES}
                 "$<TARGET_FILE_DIR:Infinite>/"
@@ -810,7 +813,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/u2netp.onnx"
                 "$<TARGET_FILE_DIR:Infinite>/assets/models/u2netp.onnx"
-        COMMENT "Copying bundled fonts, ONNX Runtime libraries and model next to Infinite")
+        COMMENT "Copying bundled fonts, icon, ONNX Runtime libraries and model next to Infinite")
 endif()
 
 # imgui-node-editor 0.9.1 ships its own GetKeyIndex() shim, which collides with
