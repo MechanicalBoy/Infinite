@@ -80,8 +80,24 @@ namespace Arrange
       float    opacity   = 1.0f;  // video only, 0..1
       float    gainDb    = 0.0f;  // audio only
       float    pan       = 0.0f;  // audio only, -1..1
+      bool     enabled   = true;  // track active/inactive
+      uint64_t groupId   = 0;     // 0 = not in a track group
       std::string name;           // empty = auto ("V1", "A2", ...)
       std::vector<Clip> clips;    // always sorted by start, never overlapping
+   };
+
+   // A track group: a named, colored, collapsible container for lanes. Unlike
+   // a clip group (Clip::groupId), a track group does NOT dissolve at 1 or 0
+   // members - Normalize prunes only fully-empty ones, never a singleton. A
+   // group with one track left in it is still a meaningful, user-named
+   // container the user may be about to add more tracks to.
+   struct TrackGroup
+   {
+      uint64_t    id        = 0;
+      std::string name;           // empty = auto ("Group 1", ...)
+      uint32_t    color     = 0xFF808080u; // RGBA8
+      bool        enabled   = true;
+      bool        collapsed = false;
    };
 
    struct Marker
@@ -130,9 +146,10 @@ namespace Arrange
 
    struct Model
    {
-      std::vector<Lane>   lanes;
-      std::vector<Marker> markers;   // sorted by pos
-      Settings            settings;
+      std::vector<Lane>       lanes;
+      std::vector<Marker>     markers;   // sorted by pos
+      std::vector<TrackGroup> trackGroups;
+      Settings                settings;
       uint64_t            nextId  = 1; // persisted; never recomputed as max+1
       uint64_t            revision = 0; // bumped by every op that changed data
 
@@ -212,9 +229,34 @@ namespace Arrange
    uint64_t AddLane(Model& m, int type, int atIndex = -1);
    bool RemoveLane(Model& m, uint64_t laneId);
    bool ReorderLane(Model& m, uint64_t laneId, int newIndex);
+   bool SetLaneEnabled(Model& m, uint64_t laneId, int mode); // EnableMode
    // Clears srcUid on every clip pointing at `uid` instead of deleting the
    // clip: deleting a node leaves its clips offline, not gone (WP5).
    bool ClearSource(Model& m, uint64_t uid);
+
+   // --- track groups -----------------------------------------------------
+   // A container for lanes, distinct from a clip Group above: it does not
+   // auto-dissolve at 1 or 0 members (Normalize prunes only 0-member groups).
+   uint64_t AddTrackGroup(Model& m, const std::vector<uint64_t>& laneIds, const std::string& name = std::string());
+   // Removes the group record. `deleteLanes` also deletes every member lane
+   // (and their clips); otherwise members are simply ungrouped, kept in place.
+   bool RemoveTrackGroup(Model& m, uint64_t groupId, bool deleteLanes);
+   bool SetLaneTrackGroup(Model& m, uint64_t laneId, uint64_t groupId); // 0 = ungroup
+   bool RenameTrackGroup(Model& m, uint64_t groupId, const std::string& name);
+   bool RecolorTrackGroup(Model& m, uint64_t groupId, uint32_t color);
+   bool SetTrackGroupEnabled(Model& m, uint64_t groupId, int mode); // EnableMode
+   bool SetTrackGroupCollapsed(Model& m, uint64_t groupId, bool collapsed);
+   const TrackGroup* FindTrackGroup(const Model& m, uint64_t groupId);
+   std::vector<uint64_t> LanesInTrackGroup(const Model& m, uint64_t groupId);
+   // Duplicates a track group: every member lane (with its clips, fresh ids),
+   // and a fresh group record. Clip-level groupIds inside duplicated clips are
+   // remapped to fresh ids too, so the duplicate never shares a clip group
+   // with its source. New group's id is returned through outGroupId.
+   bool DuplicateTrackGroup(Model& m, uint64_t groupId, uint64_t* outGroupId = nullptr);
+   // True if the lane should actually run: lane.enabled and (ungrouped, or its
+   // group is enabled). The one place both flags are read together - do not
+   // hand-check `lane.enabled && group->enabled` anywhere else.
+   bool LaneEffectivelyEnabled(const Model& m, const Lane& lane);
 
    // --- markers --------------------------------------------------------
    uint64_t AddMarker(Model& m, Tick pos, const std::string& name = std::string(), uint32_t color = 0xFFFFFFFFu);

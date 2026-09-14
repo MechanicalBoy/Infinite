@@ -293,8 +293,24 @@ namespace Patch
       float opacity   = 1.0f;   // video only, 0..1
       float gainDb    = 0.0f;   // audio only
       float pan       = 0.0f;   // audio only, -1..1
+      // Trailing fields (added after the original set): an older reader's
+      // `stream` line has fewer tokens, so extraction fails and these keep
+      // their in-struct defaults - `enabled` MUST default true here, not
+      // rely on stream-extraction's zero-init, or every pre-groups patch
+      // would load with every track silently disabled.
+      bool     enabled = true;
+      uint64_t groupId = 0;     // 0 = not in a track group
       std::string name;         // empty = auto ("V1", "A2", ...) - label derived by the UI
       std::vector<ClipRecord> clips;
+   };
+
+   struct TrackGroupRecord
+   {
+      uint64_t    id        = 0;
+      uint32_t    color     = 0xFF808080u;
+      bool        enabled   = true;
+      bool        collapsed = false;
+      std::string name;
    };
 
    struct MarkerRecord
@@ -343,6 +359,7 @@ namespace Patch
       std::vector<GestureRecord> gestures;
       std::vector<StreamRecord> streams; // arrangement timeline, clips nested
       std::vector<MarkerRecord> markers; // arrangement markers, sorted by pos
+      std::vector<TrackGroupRecord> trackGroups;
       ArrangeSettingsRecord arrangeSettings;
    };
 

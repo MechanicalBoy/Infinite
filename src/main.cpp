@@ -1297,6 +1297,17 @@ namespace
       bool singleMember = false;  // Alt held at mouse-down
    } gArrangeDrag;
 
+   // Shift+drag rectangle-select. Screen-space corners (updated live as the
+   // mouse moves) plus the selection captured at mouse-down, so a plain
+   // Shift-drag adds to what was already selected rather than replacing it.
+   struct ArrangeMarqueeState
+   {
+      bool active = false;
+      ImVec2 anchor{ 0, 0 };
+      ImVec2 current{ 0, 0 };
+      std::set<uint64_t> baseSel;
+   } gArrangeMarquee;
+
    // Rename, context-menu and Assign Node... targets, all by id.
    uint64_t gArrangeRenamingClipId = 0;
    char     gArrangeRenameClipBuffer[64] = "";
@@ -5730,14 +5741,16 @@ namespace
    // an undo entry behind.
    bool ArrangeContentEqual(const Arrange::Model& a, const Arrange::Model& b)
    {
-      if (a.lanes.size() != b.lanes.size() || a.markers.size() != b.markers.size())
+      if (a.lanes.size() != b.lanes.size() || a.markers.size() != b.markers.size() ||
+          a.trackGroups.size() != b.trackGroups.size())
          return false;
       for (size_t i = 0; i < a.lanes.size(); i++)
       {
          const Arrange::Lane& la = a.lanes[i];
          const Arrange::Lane& lb = b.lanes[i];
          if (la.id != lb.id || la.type != lb.type || la.blendMode != lb.blendMode || la.opacity != lb.opacity ||
-             la.gainDb != lb.gainDb || la.pan != lb.pan || la.name != lb.name || la.clips.size() != lb.clips.size())
+             la.gainDb != lb.gainDb || la.pan != lb.pan || la.enabled != lb.enabled || la.groupId != lb.groupId ||
+             la.name != lb.name || la.clips.size() != lb.clips.size())
             return false;
          for (size_t k = 0; k < la.clips.size(); k++)
          {
@@ -5754,6 +5767,14 @@ namespace
          if (a.markers[i].id != b.markers[i].id || a.markers[i].pos != b.markers[i].pos ||
              a.markers[i].name != b.markers[i].name || a.markers[i].color != b.markers[i].color)
             return false;
+      for (size_t i = 0; i < a.trackGroups.size(); i++)
+      {
+         const Arrange::TrackGroup& ga = a.trackGroups[i];
+         const Arrange::TrackGroup& gb = b.trackGroups[i];
+         if (ga.id != gb.id || ga.name != gb.name || ga.color != gb.color || ga.enabled != gb.enabled ||
+             ga.collapsed != gb.collapsed)
+            return false;
+      }
       return a.settings.loop.enabled == b.settings.loop.enabled && a.settings.loop.start == b.settings.loop.start &&
              a.settings.loop.end == b.settings.loop.end;
    }
@@ -6030,6 +6051,8 @@ namespace
          s.opacity = lane.opacity;
          s.gainDb = lane.gainDb;
          s.pan = lane.pan;
+         s.enabled = lane.enabled;
+         s.groupId = lane.groupId;
          s.name = lane.name;
          for (const Arrange::Clip& c : lane.clips)
          {
@@ -6062,6 +6085,18 @@ namespace
          r.color = mk.color;
          r.name = mk.name;
          data.markers.push_back(std::move(r));
+      }
+
+      data.trackGroups.clear();
+      for (const Arrange::TrackGroup& g : m.trackGroups)
+      {
+         Patch::TrackGroupRecord r;
+         r.id = g.id;
+         r.color = g.color;
+         r.enabled = g.enabled;
+         r.collapsed = g.collapsed;
+         r.name = g.name;
+         data.trackGroups.push_back(std::move(r));
       }
 
       Patch::ArrangeSettingsRecord& a = data.arrangeSettings;
@@ -6110,6 +6145,8 @@ namespace
          lane.opacity = s.opacity;
          lane.gainDb = s.gainDb;
          lane.pan = s.pan;
+         lane.enabled = s.enabled;
+         lane.groupId = s.groupId;
          lane.name = s.name;
          for (const Patch::ClipRecord& c : s.clips)
          {
@@ -6142,6 +6179,17 @@ namespace
          mk.color = r.color;
          mk.name = r.name;
          m.markers.push_back(std::move(mk));
+      }
+
+      for (const Patch::TrackGroupRecord& r : data.trackGroups)
+      {
+         Arrange::TrackGroup g;
+         g.id = r.id;
+         g.color = r.color;
+         g.enabled = r.enabled;
+         g.collapsed = r.collapsed;
+         g.name = r.name;
+         m.trackGroups.push_back(std::move(g));
       }
 
       const Patch::ArrangeSettingsRecord& a = data.arrangeSettings;
@@ -27063,7 +27111,7 @@ namespace
                continue;
             // Lanes never overlap, so this is the lane's only candidate
             // whether or not it turns out to be usable.
-            if (c.enabled && c.srcUid != 0)
+            if (c.enabled && c.srcUid != 0 && Arrange::LaneEffectivelyEnabled(gArrange, lane))
             {
                GraphNode* gn = FindNodeByUid(c.srcUid);
                if (gn != nullptr && gn->node != nullptr)
@@ -28312,7 +28360,15 @@ namespace
          const bool noMods = !cmd && !kio.KeyAlt && !kio.KeyShift;
          const Arrange::Tick playTick = ArrangePlayTick();
 
-         if (cmd && ImGui::IsKeyPressed(ImGuiKey_C, false))
+         if (!cmd && kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_A, false))
+         {
+            gArrangeSel.clear();
+            for (const Arrange::Lane& l : gArrange.lanes)
+               for (const Arrange::Clip& c : l.clips)
+                  gArrangeSel.insert(c.id);
+            gArrangeSelAnchor = 0;
+         }
+         else if (cmd && ImGui::IsKeyPressed(ImGuiKey_C, false))
             ArrangeCopySelection();
          else if (cmd && ImGui::IsKeyPressed(ImGuiKey_V, false))
             ArrangePasteAt(playTick);
@@ -29167,6 +29223,39 @@ namespace
       const float kViewportW = isWide ? std::clamp(panelSize.x * 0.28f, 180.0f, 320.0f) : panelSize.x;
       const float kViewportH = isWide ? std::max(120.0f, panelSize.y - 40.0f) : 140.0f;
 
+      const float kHeaderWidth = 246.0f; // wide enough for the per-row "+" add-track button ahead of the drag handle
+      const float kMarkerStripH = 14.0f; // marker flags (WP6), above the tick/label strip
+      const float kRulerHeight = 40.0f;  // marker strip + the 26 px tick/label strip
+      const float kLaneHeight = 30.0f; // one header row now that mix controls are deferred
+
+      // Per-lane row layout, in coordinates relative to the top of the lane
+      // area (not yet offset by any child's scrollTL). A lane inside a
+      // collapsed track group takes zero height; its group gets one header
+      // row the first time a member is seen.
+      std::vector<float> arrangeLaneRelTop(gArrange.lanes.size(), 0.0f);
+      std::vector<float> arrangeLaneRelH(gArrange.lanes.size(), kLaneHeight);
+      std::unordered_map<uint64_t, float> arrangeGroupHeaderRelTop;
+      float arrangeLanesRelBottom = 0.0f;
+      {
+         std::unordered_set<uint64_t> groupHeaderSeen;
+         float y = 0.0f;
+         for (size_t i = 0; i < gArrange.lanes.size(); i++)
+         {
+            const Arrange::Lane& lane = gArrange.lanes[i];
+            const Arrange::TrackGroup* grp =
+               lane.groupId != 0 ? Arrange::FindTrackGroup(gArrange, lane.groupId) : nullptr;
+            if (grp != nullptr && groupHeaderSeen.insert(lane.groupId).second)
+            {
+               arrangeGroupHeaderRelTop[lane.groupId] = y;
+               y += kLaneHeight;
+            }
+            arrangeLaneRelTop[i] = y;
+            arrangeLaneRelH[i] = (grp != nullptr && grp->collapsed) ? 0.0f : kLaneHeight;
+            y += arrangeLaneRelH[i];
+         }
+         arrangeLanesRelBottom = y;
+      }
+
       // Global viewport monitor - a self-contained child window, factored into
       // a lambda so it can be placed on either side of the timeline lanes
       // (gArrangeViewportOnRight, toggled via right-click on the monitor).
@@ -29256,10 +29345,8 @@ namespace
       }
 
       // ---- Timeline body (ruler + lanes) ----
-      const float kHeaderWidth = 246.0f; // wide enough for the per-row "+" add-track button ahead of the drag handle
-      const float kMarkerStripH = 14.0f; // marker flags (WP6), above the tick/label strip
-      const float kRulerHeight = 40.0f;  // marker strip + the 26 px tick/label strip
-      const float kLaneHeight = 30.0f; // one header row now that mix controls are deferred
+      // (kHeaderWidth/kMarkerStripH/kRulerHeight/kLaneHeight are declared above,
+      // shared with the row-layout prepass and the track-controls panel.)
 
       // When docked right, reserve kViewportW (+ spacing) up front so the
       // scroll child doesn't eat the full remaining width before the monitor
@@ -29690,7 +29777,40 @@ namespace
       }
 
       const float lanesTopY = scrollTL.y + kRulerHeight;
-      auto laneRowAt = [&](float y) { return (int)std::floor((y - lanesTopY) / kLaneHeight); };
+
+      // Per-lane row layout: the shared relative computation above, offset
+      // by this child's own top - every call site that needs a lane's
+      // on-screen Y (hit-testing, drag preview, selection highlight,
+      // drawing) reads this instead of `lanesTopY + index * kLaneHeight`.
+      std::vector<float> laneRowTop(gArrange.lanes.size(), lanesTopY);
+      for (size_t i = 0; i < gArrange.lanes.size(); i++)
+         laneRowTop[i] = lanesTopY + arrangeLaneRelTop[i];
+      const std::vector<float>& laneRowH = arrangeLaneRelH;
+      std::unordered_map<uint64_t, float> groupHeaderRowTop;
+      for (const auto& kv : arrangeGroupHeaderRelTop)
+         groupHeaderRowTop[kv.first] = lanesTopY + kv.second;
+      const float lanesContentBottom = lanesTopY + arrangeLanesRelBottom;
+      // Reverse lookup: which lane row (if any) a screen Y falls in. Returns
+      // -1 for a Y inside a collapsed lane's zero-height row or past the end,
+      // so callers must clamp/guard same as they did with the old formula.
+      auto laneRowAt = [&](float y) -> int
+      {
+         for (size_t i = 0; i < laneRowTop.size(); i++)
+         {
+            if (laneRowH[i] <= 0.0f)
+               continue;
+            if (y >= laneRowTop[i] && y < laneRowTop[i] + laneRowH[i])
+               return (int)i;
+         }
+         if (!laneRowTop.empty() && y < laneRowTop.front())
+            return -1;
+         // Past the last row (or only collapsed rows): fall back to nearest
+         // lane above so drag targeting still clamps sanely.
+         for (size_t i = laneRowTop.size(); i-- > 0; )
+            if (laneRowH[i] > 0.0f)
+               return (int)i;
+         return -1;
+      };
 
       // Clip-edge snap. With snap on the grid point is always taken (a hard
       // quantize); the playhead, 0 and `extra` (neighbour edges) are magnets
@@ -29829,7 +29949,6 @@ namespace
       }
 
       // Draw Lanes
-      float curY = lanesTopY;
       int laneToMoveSrc = -1;
       int laneToMoveDst = -1;
       uint64_t laneToDelete = 0;
@@ -29839,6 +29958,129 @@ namespace
       // its "Add Clip" is clicked are different frames.
       static uint64_t addClipToLaneId = 0;
       static Arrange::Tick addClipAtTick = 0;
+
+      // Right-click on a track's drag handle: group membership menu.
+      bool openLaneCtx = false;
+      static uint64_t ctxLaneId = 0;
+
+      // Right-click on a group header row: rename/recolor/duplicate/delete.
+      bool openGroupCtx = false;
+      static uint64_t ctxGroupId = 0;
+
+      auto ArrangeGroupDisplayName = [](const Arrange::TrackGroup& g)
+      {
+         return g.name.empty() ? ("Group " + std::to_string(g.id)) : g.name;
+      };
+
+      // One header row per track group, drawn the first time a member lane
+      // is reached in the main loop below (groupHeaderRowTop already has
+      // its Y). Collapse/expand, color swatch, editable name, enabled
+      // toggle and member count live here; rename/recolor/duplicate/delete
+      // are behind a right-click (openGroupCtx/ctxGroupId, handled after
+      // the loop like every other arrange context menu).
+      auto DrawArrangeGroupHeaderRow = [&](uint64_t groupId, float rowTop)
+      {
+         const Arrange::TrackGroup* grp = Arrange::FindTrackGroup(gArrange, groupId);
+         if (grp == nullptr)
+            return;
+         ImGui::PushID((int)(groupId & 0x7fffffff) | (1 << 30));
+
+         const ImU32 tint = ArrangeMarkerColU32(grp->color);
+         dl->AddRectFilled(ImVec2(scrollTL.x, rowTop), ImVec2(rulerStartX + rulerWidth, rowTop + kLaneHeight),
+                            (tint & 0x00FFFFFFu) | 0x28000000u);
+         dl->AddLine(ImVec2(scrollTL.x, rowTop + kLaneHeight), ImVec2(rulerStartX + rulerWidth, rowTop + kLaneHeight),
+                     tickCol, 1.0f);
+
+         ImGui::SetCursorScreenPos(ImVec2(scrollTL.x + 4.0f, rowTop + 4.0f));
+         if (ImGui::Button(grp->collapsed ? ">##expandgrp" : "v##collapsegrp", ImVec2(20.0f, 18.0f)))
+            ArrangeEdit([&]() { Arrange::SetTrackGroupCollapsed(gArrange, groupId, !grp->collapsed); });
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(grp->collapsed ? "Expand group" : "Collapse group");
+
+         ImGui::SameLine(0.0f, 5.0f);
+         const ImVec4 swatchCol = ImGui::ColorConvertU32ToFloat4(tint);
+         if (ImGui::ColorButton("##groupcolor", swatchCol, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
+                                 ImVec2(18.0f, 18.0f)))
+            ImGui::OpenPopup("##grpcolorpicker");
+         if (ImGui::BeginPopup("##grpcolorpicker"))
+         {
+            for (int pi = 0; pi < IM_ARRAYSIZE(kArrangePalette); pi++)
+            {
+               if (pi % 5 != 0) ImGui::SameLine();
+               const ImVec4 cVec = ImGui::ColorConvertU32ToFloat4(kArrangePalette[pi].col);
+               ImGui::PushID(pi);
+               if (ImGui::ColorButton(kArrangePalette[pi].name, cVec, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24)))
+               {
+                  ArrangeEdit([&]() { Arrange::RecolorTrackGroup(gArrange, groupId, ArrangeMarkerRGBA(kArrangePalette[pi].col)); });
+                  ImGui::CloseCurrentPopup();
+               }
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("%s", kArrangePalette[pi].name);
+               ImGui::PopID();
+            }
+            ImGui::EndPopup();
+         }
+
+         ImGui::SameLine(0.0f, 5.0f);
+         ImGui::SetNextItemWidth(140.0f);
+         char grpNameBuf[128];
+         snprintf(grpNameBuf, sizeof(grpNameBuf), "%s", grp->name.c_str());
+         const bool grpNameEdited = ImGui::InputText("##groupname", grpNameBuf, sizeof(grpNameBuf));
+         if (ImGui::IsItemActivated())
+            ArrangeGestureBegin();
+         if (grpNameEdited && grp->name != grpNameBuf)
+         {
+            if (!gArrangeGestureOpen)
+               ArrangeGestureBegin();
+            Arrange::RenameTrackGroup(gArrange, groupId, grpNameBuf);
+         }
+         if (ImGui::IsItemDeactivated())
+            ArrangeGestureEnd();
+
+         ImGui::SameLine();
+         bool grpEnabled = grp->enabled;
+         if (ImGui::Checkbox("##groupenabled", &grpEnabled))
+            ArrangeEdit([&]() { Arrange::SetTrackGroupEnabled(gArrange, groupId, grpEnabled ? 1 : 0); });
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Group active/inactive");
+
+         ImGui::SameLine();
+         const int memberCount = (int)Arrange::LanesInTrackGroup(gArrange, groupId).size();
+         ImGui::TextDisabled("(%d)", memberCount);
+
+         // Whole row (minus the widgets already handled above) right-clicks
+         // to the group's rename/recolor/duplicate/delete menu.
+         ImGui::SetCursorScreenPos(ImVec2(scrollTL.x, rowTop));
+         ImGui::InvisibleButton("##grprowctx", ImVec2(rulerStartX - scrollTL.x, kLaneHeight));
+         if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+         {
+            ctxGroupId = groupId;
+            openGroupCtx = true;
+         }
+
+         ImGui::PopID();
+      };
+
+      // Adds a one-bar unassigned clip and hands straight to the canvas
+      // click-to-assign flow. Shared by the "Add Clip" popup item and a
+      // double-click on empty lane space.
+      auto AddUnassignedClipAt = [&](uint64_t laneIdArg, Arrange::Tick atTick)
+      {
+         uint64_t made = 0;
+         ArrangeEdit([&]()
+         {
+            Arrange::Clip c;
+            c.start = atTick;
+            c.length = Arrange::kTicksPerBar;
+            Arrange::PlaceOverwrite(gArrange, laneIdArg, c, &made);
+         });
+         if (made != 0)
+         {
+            gArrangeSel = { made };
+            gArrangeSelAnchor = made;
+            gArrangeAssigningClipId = made;
+         }
+      };
 
       // Shared "insert a new track" popup body - opened either from the
       // empty-state prompt below (no tracks yet) or from a per-row "+" next
@@ -29885,6 +30127,21 @@ namespace
       dl->PushClipRect(ImVec2(scrollTL.x, pinnedTopY + kRulerHeight),
                         ImVec2(scrollTL.x + avail.x, pinnedTopY + std::max(avail.y, kRulerHeight)), true);
 
+      // Shift+drag marquee-select: tracks the live rectangle here; each
+      // clip below tests itself against it and lands in marqueeHits, then
+      // the whole thing is unioned onto the selection captured at
+      // mouse-down (baseSel) once the per-lane loop is done drawing.
+      bool marqueeFinalizeNow = false;
+      std::set<uint64_t> marqueeHits;
+      if (gArrangeMarquee.active)
+      {
+         if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            gArrangeMarquee.current = mouse;
+         else
+            marqueeFinalizeNow = true;
+      }
+
+      std::set<uint64_t> arrangeGroupHeaderDrawn;
       for (size_t i = 0; i < gArrange.lanes.size(); i++)
       {
          // Only the header's name field writes through this reference; every
@@ -29892,10 +30149,26 @@ namespace
          // lane vector never reshapes under it.
          Arrange::Lane& lane = gArrange.lanes[i];
          const uint64_t laneId = lane.id;
+
+         if (lane.groupId != 0 && arrangeGroupHeaderDrawn.insert(lane.groupId).second)
+         {
+            auto it = groupHeaderRowTop.find(lane.groupId);
+            if (it != groupHeaderRowTop.end())
+               DrawArrangeGroupHeaderRow(lane.groupId, it->second);
+         }
+
          // Scoped by lane id, not row, so a reorder never hands one lane's
          // active name field to another.
          const int laneScope = (int)(laneId & 0x7fffffff);
          ImGui::PushID(laneScope);
+
+         if (laneRowH[i] <= 0.0f)
+         {
+            ImGui::PopID();
+            continue;
+         }
+
+         const float curY = laneRowTop[i];
 
          // Lane background
          const ImU32 laneBg = (i % 2 == 0)
@@ -29961,7 +30234,12 @@ namespace
          if (ImGui::IsItemHovered())
          {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-            ImGui::SetTooltip("%s track - drag to reorder", isVideo ? "Video" : "Audio");
+            ImGui::SetTooltip("%s track - drag to reorder, right-click to group", isVideo ? "Video" : "Audio");
+         }
+         if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+         {
+            ctxLaneId = laneId;
+            openLaneCtx = true;
          }
 
          if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
@@ -30055,6 +30333,16 @@ namespace
             const float cTop = curY + 3.0f;
             const float cBottom = curY + kLaneHeight - 3.0f;
             const float cWidth = std::max(4.0f, cRight - cLeft);
+
+            if (gArrangeMarquee.active)
+            {
+               const float rMinX = std::min(gArrangeMarquee.anchor.x, gArrangeMarquee.current.x);
+               const float rMaxX = std::max(gArrangeMarquee.anchor.x, gArrangeMarquee.current.x);
+               const float rMinY = std::min(gArrangeMarquee.anchor.y, gArrangeMarquee.current.y);
+               const float rMaxY = std::max(gArrangeMarquee.anchor.y, gArrangeMarquee.current.y);
+               if (rMaxX >= cLeft && rMinX <= cRight && rMaxY >= cTop && rMinY <= cBottom)
+                  marqueeHits.insert(clip.id);
+            }
 
             ImGui::PushID((int)(clip.id & 0x7fffffff));
 
@@ -30344,6 +30632,18 @@ namespace
                gArrangeSel.clear();
                gArrangeSelAnchor = 0;
             }
+            else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+            {
+               AddUnassignedClipAt(laneId, gridSnap(xToTick(mouse.x)));
+            }
+            else if (lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl && !gArrangeMarquee.active &&
+                     ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+            {
+               gArrangeMarquee.active = true;
+               gArrangeMarquee.anchor = mouse;
+               gArrangeMarquee.current = mouse;
+               gArrangeMarquee.baseSel = gArrangeSel;
+            }
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
             {
                addClipAtTick = gridSnap(xToTick(mouse.x));
@@ -30352,8 +30652,28 @@ namespace
             }
          }
 
-         curY += kLaneHeight;
          ImGui::PopID();
+      }
+
+      // Commit the marquee-select union onto the real selection - every
+      // frame while dragging (so the highlight tracks live), and one last
+      // time on release before clearing `active`.
+      if (gArrangeMarquee.active)
+      {
+         gArrangeSel = gArrangeMarquee.baseSel;
+         gArrangeSel.insert(marqueeHits.begin(), marqueeHits.end());
+         gArrangeSelAnchor = 0;
+         if (marqueeFinalizeNow)
+            gArrangeMarquee.active = false;
+         else
+         {
+            const ImVec2 r0(std::min(gArrangeMarquee.anchor.x, gArrangeMarquee.current.x),
+                             std::min(gArrangeMarquee.anchor.y, gArrangeMarquee.current.y));
+            const ImVec2 r1(std::max(gArrangeMarquee.anchor.x, gArrangeMarquee.current.x),
+                             std::max(gArrangeMarquee.anchor.y, gArrangeMarquee.current.y));
+            dl->AddRectFilled(r0, r1, IM_COL32(90, 160, 250, 45));
+            dl->AddRect(r0, r1, IM_COL32(120, 180, 255, 200), 0.0f, 0, 1.0f);
+         }
       }
 
       // Overwrite preview: the parts of stationary clips the moving block is
@@ -30368,7 +30688,7 @@ namespace
             if (!loc.Valid() || loc.lane >= (int)gArrangeGestureBefore.lanes.size())
                continue;
             const Arrange::Clip& mc = gArrange.lanes[loc.lane].clips[loc.index];
-            const float y = lanesTopY + (float)loc.lane * kLaneHeight;
+            const float y = laneRowTop[loc.lane];
             for (const Arrange::Clip& sc : gArrangeGestureBefore.lanes[loc.lane].clips)
             {
                if (std::find(movers.begin(), movers.end(), sc.id) != movers.end())
@@ -30401,10 +30721,14 @@ namespace
                continue;
             const float x0 = std::max(rulerStartX, tickToX(it->second.start)) - 1.0f;
             const float x1 = std::min(rulerStartX + rulerWidth, tickToX(it->second.end)) + 1.0f;
-            const float y0 = lanesTopY + (float)it->second.laneMin * kLaneHeight + 1.0f;
-            const float y1 = lanesTopY + (float)(it->second.laneMax + 1) * kLaneHeight - 1.0f;
-            if (x1 > x0)
-               dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), ArrangeGroupColor(gid, 230), 5.0f, 0, 1.5f);
+            const int laneMin = std::clamp(it->second.laneMin, 0, (int)laneRowTop.size() - 1);
+            const int laneMax = std::clamp(it->second.laneMax, 0, (int)laneRowTop.size() - 1);
+            const float y0 = laneRowTop[laneMin] + 1.0f;
+            const float y1 = laneRowTop[laneMax] + laneRowH[laneMax] - 1.0f;
+            // Alpha and thickness toned down (was 230/1.5) - the highlight
+            // was reading louder than the selection itself needed.
+            if (x1 > x0 && y1 > y0)
+               dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), ArrangeGroupColor(gid, 130), 5.0f, 0, 1.0f);
          }
       }
       dl->PopClipRect();
@@ -30647,21 +30971,68 @@ namespace
          ImGui::TextDisabled("Add Clip at %s", ArrangeFormatPos(addClipAtTick).c_str());
          ImGui::Separator();
          if (ImGui::MenuItem("Add Clip"))
+            AddUnassignedClipAt(addClipToLaneId, addClipAtTick);
+         ImGui::EndPopup();
+      }
+
+      // ---- lane group-membership context menu (from the drag-handle) ----
+      if (openLaneCtx)
+         ImGui::OpenPopup("##arrangelanectx");
+      if (ImGui::BeginPopup("##arrangelanectx"))
+      {
+         Arrange::Lane* ctxLane = Arrange::FindLane(gArrange, ctxLaneId);
+         if (ctxLane == nullptr)
          {
-            uint64_t made = 0;
-            ArrangeEdit([&]()
+            ImGui::CloseCurrentPopup();
+         }
+         else
+         {
+            const uint64_t curGroupId = ctxLane->groupId;
+            if (curGroupId != 0 && ImGui::MenuItem("Remove from Group"))
+               ArrangeEdit([&]() { Arrange::SetLaneTrackGroup(gArrange, ctxLaneId, 0); });
+
+            if (ImGui::BeginMenu("Group With"))
             {
-               Arrange::Clip c;
-               c.start = addClipAtTick;
-               c.length = Arrange::kTicksPerBar;
-               Arrange::PlaceOverwrite(gArrange, addClipToLaneId, c, &made);
-            });
-            if (made != 0)
-            {
-               gArrangeSel = { made };
-               gArrangeSelAnchor = made;
-               gArrangeAssigningClipId = made;
+               if (ImGui::MenuItem("New Group"))
+                  ArrangeEdit([&]() { Arrange::AddTrackGroup(gArrange, { ctxLaneId }); });
+               if (!gArrange.trackGroups.empty())
+                  ImGui::Separator();
+               for (const Arrange::TrackGroup& g : gArrange.trackGroups)
+               {
+                  if (g.id == curGroupId)
+                     continue;
+                  const std::string label = ArrangeGroupDisplayName(g);
+                  if (ImGui::MenuItem(label.c_str()))
+                     ArrangeEdit([&]() { Arrange::SetLaneTrackGroup(gArrange, ctxLaneId, g.id); });
+               }
+               ImGui::EndMenu();
             }
+         }
+         ImGui::EndPopup();
+      }
+
+      // ---- track-group header context menu ----
+      if (openGroupCtx)
+         ImGui::OpenPopup("##arrangegroupctx");
+      if (ImGui::BeginPopup("##arrangegroupctx"))
+      {
+         const Arrange::TrackGroup* ctxGrp = Arrange::FindTrackGroup(gArrange, ctxGroupId);
+         if (ctxGrp == nullptr)
+         {
+            ImGui::CloseCurrentPopup();
+         }
+         else
+         {
+            const bool grpWasEnabled = ctxGrp->enabled;
+            if (ImGui::MenuItem("Duplicate Group"))
+               ArrangeEdit([&]() { Arrange::DuplicateTrackGroup(gArrange, ctxGroupId); });
+            if (ImGui::MenuItem("Toggle Enabled", nullptr, grpWasEnabled))
+               ArrangeEdit([&]() { Arrange::SetTrackGroupEnabled(gArrange, ctxGroupId, grpWasEnabled ? 0 : 1); });
+            ImGui::Separator();
+            if (ImGui::MenuItem("Ungroup (Keep Tracks)"))
+               ArrangeEdit([&]() { Arrange::RemoveTrackGroup(gArrange, ctxGroupId, /*deleteLanes=*/false); });
+            if (ImGui::MenuItem("Delete Group + Tracks"))
+               ArrangeEdit([&]() { Arrange::RemoveTrackGroup(gArrange, ctxGroupId, /*deleteLanes=*/true); });
          }
          ImGui::EndPopup();
       }
@@ -30690,8 +31061,8 @@ namespace
          {
             const float bx0 = std::max(rulerStartX, tickToX(bl.start));
             const float bx1 = std::min(rulerStartX + rulerWidth, tickToX(bl.end));
-            const float totalLanesH = (float)gArrange.lanes.size() * kLaneHeight;
-            const float bandBottom = std::max(pinnedTopY + kRulerHeight + totalLanesH, pinnedTopY + avail.y);
+            const float bandBottom =
+               std::max(lanesContentBottom + ImGui::GetScrollY(), pinnedTopY + avail.y);
             const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 60) : IM_COL32(250, 204, 21, 40);
             const ImU32 bandBorder = IM_COL32(250, 204, 21, 200);
             // From the tick strip down: the marker strip above stays clear.
@@ -30706,8 +31077,8 @@ namespace
       // the real playhead stays put and a ghost follows the mouse; the
       // transport seeks once, on release (WP6).
       {
-         const float totalLanesH = (float)gArrange.lanes.size() * kLaneHeight;
-         const float lineBottom = std::max(pinnedTopY + kRulerHeight + totalLanesH, pinnedTopY + avail.y);
+         const float lineBottom =
+            std::max(lanesContentBottom + ImGui::GetScrollY(), pinnedTopY + avail.y);
          const double playBeats = std::max(0.0, tr.Beats());
          if (playBeats >= startBeat && playBeats <= endBeat)
          {
@@ -30739,7 +31110,7 @@ namespace
       }
 
       // Expand dummy to define scroll area
-      const float totalH = kRulerHeight + (float)gArrange.lanes.size() * kLaneHeight + 20.0f;
+      const float totalH = lanesContentBottom - scrollTL.y + 20.0f;
       ImGui::SetCursorScreenPos(scrollTL);
       ImGui::Dummy(ImVec2(kHeaderWidth + rulerWidth, totalH));
 
@@ -34321,6 +34692,8 @@ namespace
          for (const Arrange::Lane& lane : gArrange.lanes)
          {
             if (lane.type != Arrange::kLaneAudio)
+               continue;
+            if (!Arrange::LaneEffectivelyEnabled(gArrange, lane))
                continue;
             const float laneLinear = std::pow(10.0f, lane.gainDb / 20.0f);
             for (const Arrange::Clip& c : lane.clips)
@@ -75746,8 +76119,11 @@ int main(int argc, char** argv)
                       (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false))))
          Redo();
 
-      // Shift+A selects every node on the canvas.
-      const bool doSelectAll = gRequestSelectAll || (!typing && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_A, false));
+      // Shift+A selects every node on the canvas. !gArrangeFocused: the
+      // timeline has its own Shift+A (select all clips) while it owns the
+      // keyboard, same as its sibling shortcuts below.
+      const bool doSelectAll = gRequestSelectAll ||
+         (!typing && !gArrangeFocused && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_A, false));
       gRequestSelectAll = false;
       if (doSelectAll)
       {

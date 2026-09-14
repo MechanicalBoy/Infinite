@@ -155,6 +155,9 @@ void Normalize(Model& m)
    for (Marker& mk : m.markers)
       if (mk.id == 0) mk.id = m.NewId();
 
+   for (TrackGroup& g : m.trackGroups)
+      if (g.id == 0) g.id = m.NewId();
+
    // Re-mint collisions. Ids arriving from outside an edit op are not
    // trustworthy: the legacy UI's copy/paste/duplicate/split paths clone a
    // whole clip record, id included, and a hand-edited patch can do the same.
@@ -175,9 +178,29 @@ void Normalize(Model& m)
          for (Clip& c : l.clips) claim(c.id);
       }
       for (Marker& mk : m.markers) claim(mk.id);
+      for (TrackGroup& g : m.trackGroups) claim(g.id);
    }
 
    DissolveSingletonGroups(m);
+
+   // Track groups do NOT dissolve at 1 member (unlike clip groups above) -
+   // only a group with zero remaining member lanes is dead weight in the
+   // registry, so only that case gets pruned here. A lane pointing at a
+   // group id that no longer exists (a hand-edited patch, a bug) is
+   // ungrouped rather than left dangling, since Validate rejects that.
+   {
+      std::unordered_set<uint64_t> liveGroups;
+      for (const TrackGroup& g : m.trackGroups) liveGroups.insert(g.id);
+      for (Lane& l : m.lanes)
+         if (l.groupId != 0 && !liveGroups.count(l.groupId)) l.groupId = 0;
+
+      std::unordered_map<uint64_t, int> memberCounts;
+      for (const Lane& l : m.lanes)
+         if (l.groupId != 0) memberCounts[l.groupId]++;
+      m.trackGroups.erase(std::remove_if(m.trackGroups.begin(), m.trackGroups.end(),
+                                         [&](const TrackGroup& g) { return memberCounts[g.id] == 0; }),
+                          m.trackGroups.end());
+   }
 
    // nextId must sit above everything already handed out. A patch whose saved
    // nextId was stale (hand-edited, or written by a build with the bug) would
@@ -186,9 +209,11 @@ void Normalize(Model& m)
    for (const Lane& l : m.lanes)
    {
       maxId = std::max(maxId, l.id);
+      maxId = std::max(maxId, l.groupId);
       for (const Clip& c : l.clips) { maxId = std::max(maxId, c.id); maxId = std::max(maxId, c.groupId); }
    }
    for (const Marker& mk : m.markers) maxId = std::max(maxId, mk.id);
+   for (const TrackGroup& g : m.trackGroups) maxId = std::max(maxId, g.id);
    if (m.nextId <= maxId) m.nextId = maxId + 1;
 
    // Normalize is the funnel every un-vetted model passes through, so this is
@@ -281,6 +306,17 @@ bool Validate(const Model& m, std::string* why)
    }
    for (const auto& g : groupCounts)
       if (g.second < 2) return fail("group " + std::to_string(g.first) + " has one member");
+
+   std::unordered_set<uint64_t> trackGroupIds;
+   for (const TrackGroup& g : m.trackGroups)
+   {
+      if (g.id == 0) return fail("track group with id 0");
+      if (!trackGroupIds.insert(g.id).second) return fail("duplicate track group id " + std::to_string(g.id));
+      if (g.id >= m.nextId) return fail("track group id " + std::to_string(g.id) + " >= nextId");
+   }
+   for (const Lane& l : m.lanes)
+      if (l.groupId != 0 && !trackGroupIds.count(l.groupId))
+         return fail("lane " + std::to_string(l.id) + " points at missing track group " + std::to_string(l.groupId));
 
    Tick prev = 0;
    bool firstMarker = true;
@@ -749,8 +785,22 @@ bool RemoveLane(Model& m, uint64_t laneId)
 {
    const int i = LaneIndex(m, laneId);
    if (i < 0) return false;
+   const uint64_t trackGroupId = m.lanes[i].groupId;
    m.lanes.erase(m.lanes.begin() + i);
    DissolveSingletonGroups(m);
+   // A track group left with zero member lanes is dead weight - prune it
+   // immediately rather than waiting for Normalize, since ops here don't
+   // rely on Normalize running after them (see ArrangeEdit in main.cpp).
+   if (trackGroupId != 0)
+   {
+      bool anyLeft = false;
+      for (const Lane& l : m.lanes)
+         if (l.groupId == trackGroupId) { anyLeft = true; break; }
+      if (!anyLeft)
+         m.trackGroups.erase(std::remove_if(m.trackGroups.begin(), m.trackGroups.end(),
+                                            [&](const TrackGroup& g) { return g.id == trackGroupId; }),
+                             m.trackGroups.end());
+   }
    m.revision++;
    return true;
 }
@@ -768,6 +818,17 @@ bool ReorderLane(Model& m, uint64_t laneId, int newIndex)
    return true;
 }
 
+bool SetLaneEnabled(Model& m, uint64_t laneId, int mode)
+{
+   Lane* l = FindLane(m, laneId);
+   if (!l) return false;
+   const bool next = (mode == kToggle) ? !l->enabled : (mode == kEnable);
+   if (next == l->enabled) return false;
+   l->enabled = next;
+   m.revision++;
+   return true;
+}
+
 bool ClearSource(Model& m, uint64_t uid)
 {
    if (uid == 0) return false;
@@ -777,6 +838,191 @@ bool ClearSource(Model& m, uint64_t uid)
          if (c.srcUid == uid) { c.srcUid = 0; changed = true; }
    if (changed) m.revision++;
    return changed;
+}
+
+// --- track groups --------------------------------------------------------
+
+uint64_t AddTrackGroup(Model& m, const std::vector<uint64_t>& laneIds, const std::string& name)
+{
+   TrackGroup g;
+   g.id = m.NewId();
+   g.name = name;
+   m.trackGroups.push_back(g);
+   for (uint64_t laneId : laneIds)
+      if (Lane* l = FindLane(m, laneId))
+         l->groupId = g.id;
+   m.revision++;
+   return g.id;
+}
+
+bool RemoveTrackGroup(Model& m, uint64_t groupId, bool deleteLanes)
+{
+   if (groupId == 0) return false;
+   auto it = std::find_if(m.trackGroups.begin(), m.trackGroups.end(),
+                          [&](const TrackGroup& g) { return g.id == groupId; });
+   if (it == m.trackGroups.end()) return false;
+
+   if (deleteLanes)
+   {
+      // Erase member lanes first so no lane is ever left pointing at a
+      // group record that no longer exists, even transiently within this
+      // op - Validate() checks that invariant and could run mid-frame.
+      m.lanes.erase(std::remove_if(m.lanes.begin(), m.lanes.end(),
+                                   [&](const Lane& l) { return l.groupId == groupId; }),
+                    m.lanes.end());
+      DissolveSingletonGroups(m);
+   }
+   else
+   {
+      for (Lane& l : m.lanes)
+         if (l.groupId == groupId) l.groupId = 0;
+   }
+   m.trackGroups.erase(it);
+   m.revision++;
+   return true;
+}
+
+bool SetLaneTrackGroup(Model& m, uint64_t laneId, uint64_t groupId)
+{
+   Lane* l = FindLane(m, laneId);
+   if (!l) return false;
+   if (groupId != 0 && !FindTrackGroup(m, groupId)) return false;
+   if (l->groupId == groupId) return false;
+   const uint64_t prevGroup = l->groupId;
+   l->groupId = groupId;
+   // Leaving a group empty behind is dead weight in the registry - prune it
+   // immediately (mirrors RemoveLane), never a singleton-vs-zero ambiguity
+   // since track groups (unlike clip groups) tolerate one member.
+   if (prevGroup != 0)
+   {
+      bool anyLeft = false;
+      for (const Lane& other : m.lanes)
+         if (other.groupId == prevGroup) { anyLeft = true; break; }
+      if (!anyLeft)
+         m.trackGroups.erase(std::remove_if(m.trackGroups.begin(), m.trackGroups.end(),
+                                            [&](const TrackGroup& g) { return g.id == prevGroup; }),
+                             m.trackGroups.end());
+   }
+   m.revision++;
+   return true;
+}
+
+bool RenameTrackGroup(Model& m, uint64_t groupId, const std::string& name)
+{
+   for (TrackGroup& g : m.trackGroups)
+      if (g.id == groupId)
+      {
+         if (g.name == name) return false;
+         g.name = name;
+         m.revision++;
+         return true;
+      }
+   return false;
+}
+
+bool RecolorTrackGroup(Model& m, uint64_t groupId, uint32_t color)
+{
+   for (TrackGroup& g : m.trackGroups)
+      if (g.id == groupId)
+      {
+         if (g.color == color) return false;
+         g.color = color;
+         m.revision++;
+         return true;
+      }
+   return false;
+}
+
+bool SetTrackGroupEnabled(Model& m, uint64_t groupId, int mode)
+{
+   for (TrackGroup& g : m.trackGroups)
+      if (g.id == groupId)
+      {
+         const bool next = (mode == kToggle) ? !g.enabled : (mode == kEnable);
+         if (next == g.enabled) return false;
+         g.enabled = next;
+         m.revision++;
+         return true;
+      }
+   return false;
+}
+
+bool SetTrackGroupCollapsed(Model& m, uint64_t groupId, bool collapsed)
+{
+   for (TrackGroup& g : m.trackGroups)
+      if (g.id == groupId)
+      {
+         if (g.collapsed == collapsed) return false;
+         g.collapsed = collapsed;
+         m.revision++;
+         return true;
+      }
+   return false;
+}
+
+const TrackGroup* FindTrackGroup(const Model& m, uint64_t groupId)
+{
+   if (groupId == 0) return nullptr;
+   for (const TrackGroup& g : m.trackGroups)
+      if (g.id == groupId) return &g;
+   return nullptr;
+}
+
+std::vector<uint64_t> LanesInTrackGroup(const Model& m, uint64_t groupId)
+{
+   std::vector<uint64_t> out;
+   if (groupId == 0) return out;
+   for (const Lane& l : m.lanes)
+      if (l.groupId == groupId) out.push_back(l.id);
+   return out;
+}
+
+bool DuplicateTrackGroup(Model& m, uint64_t groupId, uint64_t* outGroupId)
+{
+   const TrackGroup* src = FindTrackGroup(m, groupId);
+   if (!src) return false;
+   std::vector<uint64_t> memberIds = LanesInTrackGroup(m, groupId);
+   if (memberIds.empty()) return false;
+
+   TrackGroup ng = *src;
+   ng.id = m.NewId();
+
+   // Remap clip-level groupIds (Clip::groupId) so a duplicated track group
+   // never shares a clip group with its source - each clip group inside the
+   // duplicate becomes its own, fresh group, same convention DuplicateBlock
+   // already uses for a plain clip-selection duplicate.
+   std::unordered_map<uint64_t, uint64_t> clipGroupRemap;
+   for (uint64_t laneId : memberIds)
+   {
+      const Lane* src_lane = FindLane(m, laneId);
+      if (!src_lane) continue;
+      Lane nl = *src_lane;
+      nl.id = m.NewId();
+      nl.groupId = ng.id;
+      for (Clip& c : nl.clips)
+      {
+         c.id = m.NewId();
+         if (c.groupId != 0)
+         {
+            auto it = clipGroupRemap.find(c.groupId);
+            if (it == clipGroupRemap.end()) it = clipGroupRemap.emplace(c.groupId, m.NewId()).first;
+            c.groupId = it->second;
+         }
+      }
+      m.lanes.push_back(nl);
+   }
+   m.trackGroups.push_back(ng);
+   m.revision++;
+   if (outGroupId) *outGroupId = ng.id;
+   return true;
+}
+
+bool LaneEffectivelyEnabled(const Model& m, const Lane& lane)
+{
+   if (!lane.enabled) return false;
+   if (lane.groupId == 0) return true;
+   const TrackGroup* g = FindTrackGroup(m, lane.groupId);
+   return !g || g->enabled; // dangling groupId (shouldn't happen) reads as enabled
 }
 
 uint64_t AddMarker(Model& m, Tick pos, const std::string& name, uint32_t color)
