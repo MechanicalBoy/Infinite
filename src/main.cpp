@@ -27,6 +27,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include "stb_image.h"
+#include "platform/common/PathOpen.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -33502,8 +33503,22 @@ namespace
 #elif !defined(__APPLE__)
       const std::string iconPath = BundledResourcePath("icons/icon_1024.png");
       if (iconPath.empty()) return;
+
+      // The single STB_IMAGE_IMPLEMENTATION in this target (EnvironmentNode.cpp)
+      // is compiled with STBI_NO_STDIO, so the path-based stbi_load does not
+      // exist to link against - read the file and decode from memory, the same
+      // way MediaDecodePortable does.
+      std::ifstream iconFile = OpenIfstreamUtf8(iconPath, std::ios::binary | std::ios::ate);
+      if (!iconFile) return;
+      const std::streamoff iconSize = iconFile.tellg();
+      if (iconSize <= 0) return;
+      std::vector<unsigned char> iconBytes((size_t)iconSize);
+      iconFile.seekg(0, std::ios::beg);
+      if (!iconFile.read(reinterpret_cast<char*>(iconBytes.data()), iconSize)) return;
+
       int w = 0, h = 0, channels = 0;
-      unsigned char* pixels = stbi_load(iconPath.c_str(), &w, &h, &channels, 4);
+      unsigned char* pixels =
+         stbi_load_from_memory(iconBytes.data(), (int)iconBytes.size(), &w, &h, &channels, 4);
       if (pixels)
       {
          GLFWimage img;
