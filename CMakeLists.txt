@@ -712,6 +712,12 @@ if(WIN32)
             src/scanner_main_win.cpp
             src/platform/win/PluginVST3Win.cpp
             src/platform/win/PlatformWin.cpp
+            # PlatformWin.cpp's matting entry points forward to OrtMatting,
+            # which moved out of that file into common/ when Linux started
+            # sharing it. This target compiles PlatformWin.cpp too, so it needs
+            # the same partner file or it fails to link - and it is a separate
+            # executable from Infinite, so WIN32_SOURCES does not reach it.
+            src/platform/common/SubjectMaskOnnx.cpp
             ${NODE_EDITOR_DIR}/crude_json.cpp
             ${VST3_SDK_DIR}/pluginterfaces/base/coreiids.cpp
             ${VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp
