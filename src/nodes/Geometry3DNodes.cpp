@@ -1449,9 +1449,14 @@ void Render3DNode::CookIfNeeded(int frameId)
 
    // Nothing that could change a pixel has moved since the last cook -
    // mColorTex (and mSceneColorTex) already hold the right image, so skip
-   // the shadow/opaque/transmissive passes entirely and reuse them.
+   // the shadow/opaque/transmissive passes entirely and reuse them. Offline
+   // export can't trust this: some upstream sources' revisions don't tick on
+   // every export frame (e.g. a particle sim's fixed-step accumulator, or an
+   // albedo-only animated texture BuildSceneSignature doesn't track), which
+   // would silently recapture the prior frame's pixels under a new
+   // timestamp - so a take always redraws, matching NodeViewport's fix.
    SceneSignature sceneSig = BuildSceneSignature();
-   if (mHasSceneBuilt && sceneSig == mSceneBuilt)
+   if (mHasSceneBuilt && sceneSig == mSceneBuilt && !Transport::Instance().IsOfflineMode())
       return;
    mSceneBuilt = sceneSig;
    mHasSceneBuilt = true;

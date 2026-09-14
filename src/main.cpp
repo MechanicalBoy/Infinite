@@ -27341,7 +27341,13 @@ namespace
          {
             ArrangeGeomViewport& slot = gArrangeGeomViewports[{ gn->uid, target.slot }];
             slot.lastUsedFrame = gArrangeGeomFrame;
-            tex = slot.viewport.Render(geo, gNodeCameras[gn->index], targetW, targetH);
+            // Offline export must not trust NodeViewport's live-preview
+            // change-gate: it skips redraw whenever the node's own
+            // revisions haven't ticked between calls, which is fine for a
+            // UI glance but silently recaptures the prior frame's pixels
+            // under a correct-but-stale timestamp during a take.
+            tex = slot.viewport.Render(geo, gNodeCameras[gn->index], targetW, targetH,
+                                       Transport::Instance().IsOfflineMode());
             w = targetW;
             h = targetH;
          }
