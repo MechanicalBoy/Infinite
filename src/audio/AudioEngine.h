@@ -7,6 +7,7 @@
 
 #include "AudioBuffer.h"
 #include "AudioCaptureRing.h"
+#include "ClipPeakRing.h"
 #include "AudioNode.h"
 #include "CompensationDelay.h"
 #include "SamplePreviewPlayer.h"
@@ -67,6 +68,14 @@ static_assert(AudioNode::kMaxInputPins == kAudioMaxNodeInputs,
 // ProcessList through the existing mRetiring path.
 struct ClipWindow
 {
+   // Which clip this window belongs to, so the audio thread can label the
+   // waveform buckets it measures (WP8). Never dereferenced - it is an id,
+   // and the model it indexes lives on the main thread.
+   uint64_t clipId     = 0;
+   // Hash of the clip fields the waveform cache is keyed on (src, output,
+   // start, length), carried through to every ClipPeak this window produces
+   // so the main thread can reject buckets measured under a stale shape.
+   uint64_t shape      = 0;
    double startBeat    = 0.0;
    double endBeat      = 0.0;   // exclusive
    double fadeInBeats  = 0.0;
@@ -134,6 +143,16 @@ struct AudioTerminal
    // drops an entry once CompletedGeneration() has passed the generation that
    // stopped referencing it. Null for every canvas terminal.
    CompensationDelay* externalCompensation = nullptr;
+
+   // Audio-thread scratch for the live waveform (WP8), not configuration:
+   // the bucket currently being accumulated and its running min/max. Flushed
+   // into AudioEngine::ClipPeaks() when the playhead crosses into the next
+   // bucket, so a bucket is only ever published once it is complete.
+   mutable uint64_t peakClipId = 0;
+   mutable uint64_t peakShape  = 0;
+   mutable int      peakBucket = -1;
+   mutable float    peakMin    = 0.0f;
+   mutable float    peakMax    = 0.0f;
 };
 
 // A full audio-thread topology: nodes in a valid topological order (sources
@@ -229,6 +248,12 @@ public:
    // mixing it in after RunTopology.
    SamplePreviewPlayer& Preview() { return mPreviewPlayer; }
 
+   // Live arrangement-clip waveform buckets, written by the audio thread in
+   // RunTopology's timeline branch and drained on the main thread by the
+   // arrangement panel. Present whether or not a device is open: an offline
+   // take fills it through ProcessOffline exactly the same way.
+   ClipPeakRing& ClipPeaks() { return mClipPeaks; }
+
    // Main thread only. The generation number that will be attached to the
    // NEXT SetTopology() call - i.e. the generation of whatever topology is
    // mCurrent right now. A node being retired from the graph (main.cpp's
@@ -318,6 +343,7 @@ private:
    uint32_t mRequestedDeviceId = 0;
    double mRequestedSampleRate = 0.0;
    int mRequestedBufferFrames = 0;
+   ClipPeakRing mClipPeaks;
 
    SamplePreviewPlayer mPreviewPlayer;
 };

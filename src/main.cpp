@@ -26754,6 +26754,279 @@ namespace
       gArrangeGeomFrame++;
    }
 
+   // ---- Live clip waveforms (WP8) --------------------------------------
+   // One position-indexed peak cache per audio clip, filled by the audio
+   // thread as the clip plays (AudioEngine::ClipPeaks) and drained here.
+   // Position-indexed, not streamed: bucket k always means the same slice of
+   // the clip, so playing the same bar twice overwrites rather than appends,
+   // and scrubbing backwards fills in what was skipped.
+   //
+   // Never saved and never pre-decoded: a clip's source is a live node, not a
+   // file, so there is nothing to read ahead of the playhead. A clip that has
+   // not been played yet draws a flat centre line, which is the honest
+   // picture of "nothing has come out of this node here yet".
+   struct ArrangeClipWave
+   {
+      // The clip shape this cache was sized and measured for. Any change to
+      // these four means the buckets no longer describe what the clip holds,
+      // so the cache is cleared - they are exactly the fields WP8 names
+      // (src, output, start, length). `start` is in the list because a clip's
+      // source is a live node rather than a file: moved two beats later, the
+      // clip plays whatever the node emits two beats later, not the material
+      // that was measured. Gains and fades are deliberately NOT here - the
+      // audio thread measures pre-envelope, pre-gain, so they change how the
+      // clip sounds without changing what the buckets describe.
+      uint64_t srcUid = 0;
+      int      srcOutput = 0;
+      Arrange::Tick start = 0;
+      Arrange::Tick length = 0;
+      // The same four fields hashed, as ArrangeClipShape spells it. Carried
+      // into every ClipWindow so a bucket measured under the previous shape
+      // and still in flight when an edit lands is dropped on arrival rather
+      // than written into the reshaped array at a coincidentally valid index.
+      uint64_t shape = 0;
+      std::vector<float>   minv;
+      std::vector<float>   maxv;
+      std::vector<uint8_t> filled;
+   };
+   std::unordered_map<uint64_t, ArrangeClipWave> gArrangeClipWaves;
+   // Ticks per bucket, the main-thread spelling of kClipPeakBucketsPerBeat.
+   constexpr Arrange::Tick kArrangeWaveBucketTicks = Arrange::kPPQ / 16;
+   // A clip longer than this many buckets (~1 hour at 120 bpm) stops being
+   // cached rather than allocating without bound. Nothing in the model caps
+   // clip length, so this is a guard, not a policy.
+   constexpr int kArrangeWaveMaxBuckets = 128 * 1024;
+
+   // A clip's waveform identity: the fields that decide whether existing
+   // buckets still describe the clip. Not a security hash - a 64-bit FNV-1a
+   // mix, because the only thing on the other side of a collision is one
+   // stale display bucket that the next playback pass overwrites anyway.
+   uint64_t ArrangeClipShape(uint64_t srcUid, int srcOutput, Arrange::Tick start, Arrange::Tick length)
+   {
+      uint64_t h = 1469598103934665603ull;
+      const uint64_t parts[4] = { srcUid, (uint64_t)(int64_t)srcOutput,
+                                  (uint64_t)(int64_t)start, (uint64_t)(int64_t)length };
+      for (uint64_t v : parts)
+         for (int b = 0; b < 8; b++)
+         {
+            h ^= (v >> (b * 8)) & 0xffull;
+            h *= 1099511628211ull;
+         }
+      return h;
+   }
+
+   int ArrangeWaveBucketCount(Arrange::Tick length)
+   {
+      const long long n = ((long long)std::max<Arrange::Tick>(0, length) + kArrangeWaveBucketTicks - 1) /
+                          kArrangeWaveBucketTicks;
+      return (int)std::clamp<long long>(n, 0, kArrangeWaveMaxBuckets);
+   }
+
+   // ---- Clip thumbnails (WP8) ------------------------------------------
+   // One 96x54 FBO per *video* clip id, blitted from whatever texture the
+   // composite already resolved for that clip - so a thumbnail costs one
+   // small aspect-fit pass and never a second decode or a second render of
+   // the source. Refreshed at most once a second while the clip is active,
+   // and immediately after a reassign (lastCapture reset below).
+   struct ArrangeClipThumb
+   {
+      GLUtil::Fbo fbo;
+      double   lastCapture = -1.0; // glfwGetTime(); < 0 means "never captured"
+      uint64_t srcUid = 0;
+      int      srcOutput = 0;
+   };
+   // std::map for the same reason gArrangeGeomViewports is one: the value
+   // owns a GL resource, and a node-based map never relocates it.
+   std::map<uint64_t, ArrangeClipThumb> gArrangeClipThumbs;
+   constexpr int kArrangeThumbW = 96;
+   constexpr int kArrangeThumbH = 54;
+   constexpr double kArrangeThumbRefreshSeconds = 1.0;
+
+   // Aspect-fit copy, letterboxed to black - the same fit the composite uses,
+   // so a thumbnail frames its clip the way the monitor does.
+   struct ArrangeThumbProgram
+   {
+      unsigned int program = 0;
+      int uTex = -1, uFit = -1;
+   };
+   const ArrangeThumbProgram& ArrangeThumbShader()
+   {
+      static ArrangeThumbProgram sProg;
+      static bool sTried = false;
+      if (sTried)
+         return sProg;
+      sTried = true;
+      const char* src =
+         "#version 150\n"
+         "in vec2 vUv;\n"
+         "out vec4 fragColor;\n"
+         "uniform sampler2D uTex;\n"
+         "uniform vec4 uFit;\n"
+         "void main() {\n"
+         "   vec2 uv = (vUv - uFit.zw) / uFit.xy;\n"
+         "   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {\n"
+         "      fragColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
+         "      return;\n"
+         "   }\n"
+         "   fragColor = vec4(texture(uTex, uv).rgb, 1.0);\n"
+         "}\n";
+      sProg.program = GLUtil::CompileProgram(src);
+      if (sProg.program != 0)
+      {
+         sProg.uTex = glGetUniformLocation(sProg.program, "uTex");
+         sProg.uFit = glGetUniformLocation(sProg.program, "uFit");
+      }
+      return sProg;
+   }
+
+   // Called from inside the composite's resolve loop, which has not yet saved
+   // the caller's framebuffer binding - so this saves and restores its own.
+   void ArrangeCaptureClipThumb(uint64_t clipId, unsigned int tex, int srcW, int srcH)
+   {
+      if (clipId == 0 || tex == 0 || srcW <= 0 || srcH <= 0)
+         return;
+      auto it = gArrangeClipThumbs.find(clipId);
+      if (it == gArrangeClipThumbs.end())
+         return; // only clips the sync pass knows about get a thumbnail
+      ArrangeClipThumb& th = it->second;
+      const double now = glfwGetTime();
+      if (th.lastCapture >= 0.0 && now - th.lastCapture < kArrangeThumbRefreshSeconds)
+         return;
+      const ArrangeThumbProgram& prog = ArrangeThumbShader();
+      if (prog.program == 0 || !GLUtil::EnsureFbo(th.fbo, kArrangeThumbW, kArrangeThumbH))
+         return;
+
+      GLint prevFbo = 0;
+      glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+      GLint prevVp[4];
+      glGetIntegerv(GL_VIEWPORT, prevVp);
+
+      const float dstAspect = (float)kArrangeThumbW / (float)kArrangeThumbH;
+      const float srcAspect = (float)srcW / (float)srcH;
+      float scaleX = 1.0f, scaleY = 1.0f, offX = 0.0f, offY = 0.0f;
+      if (srcAspect > dstAspect)
+      {
+         scaleY = dstAspect / srcAspect;
+         offY = (1.0f - scaleY) * 0.5f;
+      }
+      else
+      {
+         scaleX = srcAspect / dstAspect;
+         offX = (1.0f - scaleX) * 0.5f;
+      }
+      GLUtil::RunShaderPass(th.fbo, prog.program, [&]()
+      {
+         glActiveTexture(GL_TEXTURE0);
+         glBindTexture(GL_TEXTURE_2D, tex);
+         glUniform1i(prog.uTex, 0);
+         glUniform4f(prog.uFit, scaleX, scaleY, offX, offY);
+      });
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
+      glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
+      th.lastCapture = now;
+   }
+
+   // Once per main-loop frame, whether or not the panel is open: the ring has
+   // to be drained even when nothing draws it, or it fills and starts
+   // dropping. Reshapes the cache only when gArrange.revision moved - the one
+   // change signal (invariant 6) - so an idle frame costs one ring drain.
+   void ArrangeSyncClipVisuals()
+   {
+      static uint64_t sShapedRevision = ~0ull;
+      if (sShapedRevision != gArrange.revision)
+      {
+         sShapedRevision = gArrange.revision;
+         std::unordered_set<uint64_t> live;
+         std::unordered_set<uint64_t> liveVideo;
+         for (const Arrange::Lane& lane : gArrange.lanes)
+         {
+            if (lane.type == Arrange::kLaneVideo)
+            {
+               // Thumbnails: one slot per video clip, kept across an edit
+               // that does not change what the clip shows. A reassign resets
+               // lastCapture so the next composite refreshes it at once
+               // rather than up to a second later.
+               for (const Arrange::Clip& c : lane.clips)
+               {
+                  liveVideo.insert(c.id);
+                  ArrangeClipThumb& th = gArrangeClipThumbs[c.id];
+                  if (th.srcUid != c.srcUid || th.srcOutput != c.srcOutput)
+                  {
+                     th.srcUid = c.srcUid;
+                     th.srcOutput = c.srcOutput;
+                     th.lastCapture = -1.0;
+                  }
+               }
+               continue;
+            }
+            if (lane.type != Arrange::kLaneAudio)
+               continue;
+            for (const Arrange::Clip& c : lane.clips)
+            {
+               const int buckets = ArrangeWaveBucketCount(c.length);
+               if (buckets <= 0)
+                  continue;
+               live.insert(c.id);
+               ArrangeClipWave& w = gArrangeClipWaves[c.id];
+               if (w.srcUid != c.srcUid || w.srcOutput != c.srcOutput || w.start != c.start ||
+                   w.length != c.length)
+               {
+                  w.srcUid = c.srcUid;
+                  w.srcOutput = c.srcOutput;
+                  w.start = c.start;
+                  w.length = c.length;
+                  w.shape = ArrangeClipShape(c.srcUid, c.srcOutput, c.start, c.length);
+                  w.minv.assign((size_t)buckets, 0.0f);
+                  w.maxv.assign((size_t)buckets, 0.0f);
+                  w.filled.assign((size_t)buckets, 0);
+               }
+            }
+         }
+         // A deleted clip frees its cache here rather than on a timer: the
+         // id is gone from the model, so nothing will ever fill it again.
+         for (auto it = gArrangeClipWaves.begin(); it != gArrangeClipWaves.end();)
+            it = live.count(it->first) == 0 ? gArrangeClipWaves.erase(it) : std::next(it);
+         // Same for a deleted video clip, plus its FBO. Safe to free here:
+         // the thumbnail is only ever sampled by ImGui's draw list for the
+         // frame that queued it, and a clip that is gone from the model
+         // queued nothing this frame.
+         for (auto it = gArrangeClipThumbs.begin(); it != gArrangeClipThumbs.end();)
+         {
+            if (liveVideo.count(it->first) != 0)
+            {
+               ++it;
+               continue;
+            }
+            GLUtil::DestroyFbo(it->second.fbo);
+            it = gArrangeClipThumbs.erase(it);
+         }
+      }
+
+      static ClipPeak sPeaks[256];
+      int n = 0;
+      while ((n = AudioEngine::Instance().ClipPeaks().Read(sPeaks, 256)) > 0)
+      {
+         for (int i = 0; i < n; i++)
+         {
+            auto it = gArrangeClipWaves.find(sPeaks[i].clipId);
+            if (it == gArrangeClipWaves.end())
+               continue; // clip deleted or resized while the bucket was in flight
+            ArrangeClipWave& w = it->second;
+            if (sPeaks[i].shape != w.shape)
+               continue; // measured before an edit reshaped this clip
+            const int b = sPeaks[i].bucket;
+            if (b < 0 || b >= (int)w.minv.size())
+               continue;
+            w.minv[(size_t)b] = sPeaks[i].minValue;
+            w.maxv[(size_t)b] = sPeaks[i].maxValue;
+            w.filled[(size_t)b] = 1;
+         }
+         if (n < 256)
+            break;
+      }
+   }
+
    // One lane's contribution at a given instant.
    struct ArrangeVideoLayer
    {
@@ -26761,6 +27034,7 @@ namespace
       int srcOutput = 0;
       int blendMode = 0;
       float opacity = 1.0f;
+      uint64_t clipId = 0; // whose thumbnail this layer's texture feeds (WP8)
    };
 
    // Every video lane's active clip at `beat`, in COMPOSITE order: bottom lane
@@ -26792,7 +27066,8 @@ namespace
             {
                GraphNode* gn = FindNodeByUid(c.srcUid);
                if (gn != nullptr && gn->node != nullptr)
-                  out.push_back({ gn, c.srcOutput, lane.blendMode, std::clamp(lane.opacity, 0.0f, 1.0f) });
+                  out.push_back({ gn, c.srcOutput, lane.blendMode, std::clamp(lane.opacity, 0.0f, 1.0f),
+                                  c.id });
             }
             break;
          }
@@ -26927,7 +27202,16 @@ namespace
             h = gn->node->GetOutputHeight();
          }
          if (tex != 0 && w > 0 && h > 0)
+         {
             sResolved.push_back({ tex, w, h, layer.blendMode, layer.opacity });
+            // The thumbnail rides on the composite's own resolve: the
+            // texture is already in hand, so a thumbnail never costs a
+            // second decode or a second geometry render. Skipped during an
+            // offline take - the timeline is locked and nothing would draw
+            // it, and a take must not spend its frame budget here.
+            if (!Transport::Instance().IsOfflineMode())
+               ArrangeCaptureClipThumb(layer.clipId, tex, w, h);
+         }
       }
 
       GLint prevFbo = 0;
@@ -29903,6 +30187,88 @@ namespace
             if (clip.groupId != 0)
                dl->AddRectFilled(ImVec2(cLeft, cTop), ImVec2(cRight, cTop + 3.0f), ArrangeGroupColor(clip.groupId),
                                  4.0f, ImDrawFlags_RoundCornersTop);
+
+            // Live waveform (WP8). Position-indexed, so a column shows what
+            // actually came out of the clip's node at that point in the clip
+            // - and a stretch that has never played stays on the centre
+            // line rather than guessing. Nothing is drawn during a take: the
+            // panel is locked anyway and the take owns the frame budget.
+            if (!isVideo && cWidth > 6.0f && !ArrangeRenderBusy())
+            {
+               const float midY = (cTop + cBottom) * 0.5f;
+               const float halfH = std::max(2.0f, (cBottom - cTop) * 0.5f - 5.0f);
+               const ImU32 waveCol = muted ? IM_COL32(255, 255, 255, 60) : IM_COL32(255, 255, 255, 115);
+               dl->PushClipRect(ImVec2(cLeft + 1.0f, cTop + 1.0f), ImVec2(cRight - 1.0f, cBottom - 1.0f), true);
+               dl->AddLine(ImVec2(cLeft + 1.0f, midY), ImVec2(cRight - 1.0f, midY),
+                           IM_COL32(255, 255, 255, 45), 1.0f);
+               auto waveIt = gArrangeClipWaves.find(clip.id);
+               if (waveIt != gArrangeClipWaves.end() && !waveIt->second.minv.empty() && clip.length > 0)
+               {
+                  const ArrangeClipWave& wv = waveIt->second;
+                  const int nb = (int)wv.minv.size();
+                  // x -> tick -> bucket, inverting the same tickToX the clip
+                  // rect came from, so the waveform cannot drift from it at
+                  // any zoom. One column may span many buckets when zoomed
+                  // out; take the envelope over all of them.
+                  const double ticksPerPx =
+                     (double)clip.length / std::max(1.0, (double)(clipX1 - clipX0));
+                  for (float x = cLeft; x < cRight; x += 1.0f)
+                  {
+                     const double tA = ((double)x - (double)clipX0) * ticksPerPx;
+                     const double tB = tA + ticksPerPx;
+                     int b0 = (int)std::floor(tA / (double)kArrangeWaveBucketTicks);
+                     int b1 = (int)std::floor((tB - 1.0) / (double)kArrangeWaveBucketTicks);
+                     b0 = std::clamp(b0, 0, nb - 1);
+                     b1 = std::clamp(std::max(b1, b0), 0, nb - 1);
+                     float lo = 0.0f, hi = 0.0f;
+                     bool any = false;
+                     for (int b = b0; b <= b1; b++)
+                     {
+                        if (wv.filled[(size_t)b] == 0)
+                           continue;
+                        lo = std::min(lo, wv.minv[(size_t)b]);
+                        hi = std::max(hi, wv.maxv[(size_t)b]);
+                        any = true;
+                     }
+                     if (!any)
+                        continue;
+                     const float yTop = midY - std::clamp(hi, -1.0f, 1.0f) * halfH;
+                     const float yBot = midY - std::clamp(lo, -1.0f, 1.0f) * halfH;
+                     dl->AddLine(ImVec2(x + 0.5f, yTop), ImVec2(x + 0.5f, std::max(yBot, yTop + 1.0f)),
+                                 waveCol, 1.0f);
+                  }
+               }
+               dl->PopClipRect();
+            }
+
+            // Thumbnail at the clip's left edge (WP8), only when the clip is
+            // wide enough that it does not crowd out the label. Drawn from
+            // the pooled FBO the composite filled; a clip that has never
+            // been under the playhead has none yet and just shows its
+            // colour.
+            float thumbRight = cLeft;
+            if (isVideo && cWidth > (float)kArrangeThumbW + 16.0f && !ArrangeRenderBusy())
+            {
+               auto thumbIt = gArrangeClipThumbs.find(clip.id);
+               if (thumbIt != gArrangeClipThumbs.end() && thumbIt->second.fbo.tex != 0 &&
+                   thumbIt->second.lastCapture >= 0.0)
+               {
+                  const float avail = (cBottom - cTop) - 8.0f;
+                  const float th = std::min((float)kArrangeThumbH, avail);
+                  const float tw = th * ((float)kArrangeThumbW / (float)kArrangeThumbH);
+                  const ImVec2 tl(cLeft + 4.0f, (cTop + cBottom) * 0.5f - th * 0.5f);
+                  const ImVec2 br(tl.x + tw, tl.y + th);
+                  dl->PushClipRect(ImVec2(cLeft + 1.0f, cTop + 1.0f), ImVec2(cRight - 1.0f, cBottom - 1.0f), true);
+                  // Flipped V: an FBO's texture is bottom-up, the same
+                  // convention every other AddImage of a node texture uses.
+                  dl->AddImage((ImTextureID)(intptr_t)thumbIt->second.fbo.tex, tl, br,
+                               ImVec2(0, 1), ImVec2(1, 0));
+                  dl->AddRect(tl, br, IM_COL32(0, 0, 0, 140), 2.0f);
+                  dl->PopClipRect();
+                  thumbRight = br.x;
+               }
+            }
+
             dl->AddRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), clipBorderCol, 4.0f, 0, isSelected ? 2.5f : 1.2f);
 
             // Trim handle marks
@@ -29953,8 +30319,11 @@ namespace
                const std::string fullLabel = clipLabel + " [" + ArrangeFormatLength(clip.length) + "]";
                const ImU32 labelCol = muted ? (isLight ? IM_COL32(60, 60, 70, 255) : IM_COL32(190, 190, 200, 255))
                                             : IM_COL32(255, 255, 255, 255);
+               // Starts after the thumbnail when there is one, so the two
+               // never overlap.
+               const float labelX = (thumbRight > cLeft ? thumbRight + 6.0f : cLeft + 8.0f);
                dl->PushClipRect(ImVec2(cLeft + 2.0f, cTop), ImVec2(cRight - 2.0f, cBottom), true);
-               dl->AddText(ImVec2(cLeft + 8.0f, cTop + 8.0f), labelCol, fullLabel.c_str());
+               dl->AddText(ImVec2(labelX, cTop + 8.0f), labelCol, fullLabel.c_str());
                dl->PopClipRect();
             }
 
@@ -33973,6 +34342,8 @@ namespace
                   scheduled.push_back({ lane.id, c.srcUid, c.srcOutput, laneLinear, {} });
                }
                ClipWindow w;
+               w.clipId = c.id; // labels the live waveform buckets (WP8)
+               w.shape = ArrangeClipShape(c.srcUid, c.srcOutput, c.start, c.length);
                w.startBeat = Arrange::TicksToBeats(c.start);
                w.endBeat = Arrange::TicksToBeats(c.End());
                w.fadeInBeats = Arrange::TicksToBeats(c.fadeIn);
@@ -64066,6 +64437,330 @@ int main(int argc, char** argv)
          printf("arrange render test: all  %s\n", allOk ? "OK" : "FAIL");
       }
 
+      // ---- WP8: live clip waveforms and video thumbnails ----------------
+      // What a frame-4 fixture can decide: the ring's SPSC discipline and its
+      // drop-rather-than-overwrite rule, the bucket maths, the cache's
+      // shaping / invalidation / eviction rules, and - where a device opens -
+      // a real take actually filling a clip's buckets through the audio
+      // thread. What it cannot: the drawing, which the owner eyeballs.
+      if (getenv("INFINITE_ARRANGEWAVETEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         const AudioMode modeBefore = gAudioMode;
+
+         // --- A. The ring is SPSC, never overwrites, and counts its drops --
+         {
+            static ClipPeakRing sRing; // static: kCapacity entries is not a stack object
+            ClipPeak out[8];
+            bool aOk = sRing.Read(out, 8) == 0 && sRing.DroppedCount() == 0;
+            sRing.Write({ 7, 0, 3, -0.5f, 0.25f });
+            sRing.Write({ 7, 0, 4, -1.0f, 1.0f });
+            aOk = aOk && sRing.Read(out, 8) == 2 && out[0].clipId == 7 && out[0].bucket == 3 &&
+                  out[0].minValue == -0.5f && out[1].bucket == 4 && out[1].maxValue == 1.0f;
+            // Order is preserved and a partial read leaves the rest queued.
+            for (int i = 0; i < 5; i++)
+               sRing.Write({ 9, 0, i, 0.0f, (float)i });
+            aOk = aOk && sRing.Read(out, 2) == 2 && out[0].bucket == 0 && out[1].bucket == 1;
+            aOk = aOk && sRing.Read(out, 8) == 3 && out[0].bucket == 2 && out[2].bucket == 4;
+            // Overfilling drops the NEW entries and says so; what was already
+            // queued is still readable. A waveform that lost buckets should
+            // lose the ones it missed, not the ones about to be drawn.
+            for (int i = 0; i < ClipPeakRing::kCapacity + 10; i++)
+               sRing.Write({ 11, 0, i, 0.0f, 1.0f });
+            const uint64_t dropped = sRing.DroppedCount();
+            aOk = aOk && dropped == 11; // capacity-1 usable slots
+            int drained = 0, n = 0;
+            while ((n = sRing.Read(out, 8)) > 0)
+               drained += n;
+            aOk = aOk && drained == ClipPeakRing::kCapacity - 1 && sRing.Read(out, 8) == 0;
+            printf("arrange wave ring spsc: %s (drained %d of %d, dropped %llu)\n", aOk ? "OK" : "FAIL",
+                   drained, ClipPeakRing::kCapacity, (unsigned long long)dropped);
+            allOk = allOk && aOk;
+         }
+
+         // --- B. Bucket maths: 1/16 beat, ceil, never unbounded ------------
+         {
+            const bool bOk = kArrangeWaveBucketTicks == Arrange::kPPQ / 16 &&
+                             (double)Arrange::kPPQ / (double)kArrangeWaveBucketTicks ==
+                                kClipPeakBucketsPerBeat &&
+                             ArrangeWaveBucketCount(0) == 0 &&
+                             ArrangeWaveBucketCount(1) == 1 &&  // a sliver still gets one bucket
+                             ArrangeWaveBucketCount(kArrangeWaveBucketTicks) == 1 &&
+                             ArrangeWaveBucketCount(kArrangeWaveBucketTicks + 1) == 2 &&
+                             ArrangeWaveBucketCount(Arrange::kPPQ) == 16 &&
+                             ArrangeWaveBucketCount(Arrange::kPPQ * 4) == 64 &&
+                             ArrangeWaveBucketCount((Arrange::Tick)Arrange::kPPQ * 1000000) ==
+                                kArrangeWaveMaxBuckets;
+            printf("arrange wave bucket math: %s (%d ticks/bucket, %d per beat)\n", bOk ? "OK" : "FAIL",
+                   (int)kArrangeWaveBucketTicks, ArrangeWaveBucketCount(Arrange::kPPQ));
+            allOk = allOk && bOk;
+         }
+
+         GraphNode* oscGn = SpawnNode("Oscillator", "Synthesizers", 200.0f, 0.0f);
+         GraphNode* rampGn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+         const bool spawned = oscGn != nullptr && rampGn != nullptr;
+         printf("arrange wave spawn: %s\n", spawned ? "OK" : "FAIL");
+         allOk = allOk && spawned;
+
+         if (spawned)
+         {
+            const uint64_t oscUid = oscGn->uid;
+            const uint64_t rampUid = rampGn->uid;
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            const uint64_t vLane = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+            const uint64_t aLane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            auto place = [&](uint64_t lane, uint64_t uid, double startBeat, double lenBeats) -> uint64_t {
+               Arrange::Clip c;
+               c.start = Arrange::BeatsToTicks(startBeat);
+               c.length = Arrange::BeatsToTicks(lenBeats);
+               c.srcUid = uid;
+               uint64_t id = 0;
+               Arrange::PlaceOverwrite(gArrange, lane, c, &id);
+               return id;
+            };
+
+            // --- C. The cache is shaped by the model, one entry per clip ---
+            const uint64_t audioClip = place(aLane, oscUid, 0.0, 8.0); // 4s at 120bpm
+            ArrangeSyncClipVisuals();
+            auto waveOf = [](uint64_t id) -> const ArrangeClipWave* {
+               auto it = gArrangeClipWaves.find(id);
+               return it == gArrangeClipWaves.end() ? nullptr : &it->second;
+            };
+            const ArrangeClipWave* w0 = waveOf(audioClip);
+            bool cOk = w0 != nullptr && (int)w0->minv.size() == 8 * 16 &&
+                       w0->maxv.size() == w0->minv.size() && w0->filled.size() == w0->minv.size() &&
+                       w0->srcUid == oscUid && w0->length == Arrange::BeatsToTicks(8.0);
+            // A video clip gets a thumbnail slot, never a waveform.
+            const uint64_t videoClip = place(vLane, rampUid, 0.0, 6.0);
+            ArrangeSyncClipVisuals();
+            cOk = cOk && waveOf(videoClip) == nullptr &&
+                  gArrangeClipThumbs.count(videoClip) == 1 && gArrangeClipThumbs.count(audioClip) == 0;
+            printf("arrange wave cache shaping: %s (%d buckets for 8 beats)\n", cOk ? "OK" : "FAIL",
+                   w0 != nullptr ? (int)w0->minv.size() : -1);
+            allOk = allOk && cOk;
+
+            // --- D. Only the four shape fields clear a filled cache --------
+            {
+               // Pretend the take already ran.
+               auto fill = [&](uint64_t id) {
+                  auto it = gArrangeClipWaves.find(id);
+                  if (it == gArrangeClipWaves.end())
+                     return;
+                  std::fill(it->second.filled.begin(), it->second.filled.end(), (uint8_t)1);
+                  std::fill(it->second.maxv.begin(), it->second.maxv.end(), 0.5f);
+               };
+               auto filledCount = [&](uint64_t id) {
+                  auto it = gArrangeClipWaves.find(id);
+                  if (it == gArrangeClipWaves.end())
+                     return -1;
+                  int n = 0;
+                  for (uint8_t f : it->second.filled)
+                     n += f != 0 ? 1 : 0;
+                  return n;
+               };
+               fill(audioClip);
+               const int filled0 = filledCount(audioClip);
+
+               // Gain and fade are measured around, not into, the buckets -
+               // the audio thread reads pre-envelope - so they must NOT clear.
+               if (Arrange::Clip* c = Arrange::FindClip(gArrange, audioClip))
+               {
+                  c->gainDb = -6.0f;
+                  c->fadeIn = Arrange::BeatsToTicks(0.5);
+                  gArrange.revision++;
+               }
+               ArrangeSyncClipVisuals();
+               bool dOk = filledCount(audioClip) == filled0 && filled0 == 8 * 16;
+
+               // Length does: the buckets no longer describe the clip.
+               Arrange::TrimEdge(gArrange, audioClip, Arrange::kEdgeEnd, Arrange::BeatsToTicks(4.0));
+               ArrangeSyncClipVisuals();
+               dOk = dOk && filledCount(audioClip) == 0 &&
+                     (int)gArrangeClipWaves[audioClip].minv.size() == 4 * 16;
+
+               // So does a reassign.
+               fill(audioClip);
+               if (Arrange::Clip* c = Arrange::FindClip(gArrange, audioClip))
+               {
+                  c->srcUid = rampUid;
+                  gArrange.revision++;
+               }
+               ArrangeSyncClipVisuals();
+               dOk = dOk && filledCount(audioClip) == 0;
+               if (Arrange::Clip* c = Arrange::FindClip(gArrange, audioClip))
+               {
+                  c->srcUid = oscUid;
+                  gArrange.revision++;
+               }
+               ArrangeSyncClipVisuals();
+
+               // So does a move. A clip's source is a LIVE NODE, not a file:
+               // the same clip two beats later plays whatever the node emits
+               // two beats later, which is not what was measured. This is the
+               // one place the waveform differs from a file-backed DAW's.
+               fill(audioClip);
+               std::vector<uint64_t> one{ audioClip };
+               Arrange::MoveClips(gArrange, one, Arrange::BeatsToTicks(2.0), 0);
+               ArrangeSyncClipVisuals();
+               dOk = dOk && filledCount(audioClip) == 0 &&
+                     (int)gArrangeClipWaves[audioClip].minv.size() == 4 * 16;
+               printf("arrange wave cache invalidation: %s\n", dOk ? "OK" : "FAIL");
+               allOk = allOk && dOk;
+            }
+
+            // --- E. A bucket in flight for a deleted clip is dropped -------
+            {
+               const uint64_t ghost = 0xDEADBEEFull;
+               const uint64_t shape = gArrangeClipWaves[audioClip].shape;
+               AudioEngine::Instance().ClipPeaks().Write({ ghost, 0, 0, -1.0f, 1.0f });
+               AudioEngine::Instance().ClipPeaks().Write({ audioClip, shape, 2, -0.25f, 0.75f });
+               ArrangeSyncClipVisuals();
+               const ArrangeClipWave* w = waveOf(audioClip);
+               const bool eOk = gArrangeClipWaves.count(ghost) == 0 && w != nullptr &&
+                                w->filled[2] != 0 && w->minv[2] == -0.25f && w->maxv[2] == 0.75f;
+               printf("arrange wave drain ignores unknown clips: %s\n", eOk ? "OK" : "FAIL");
+               allOk = allOk && eOk;
+            }
+
+            // --- E2. A bucket measured under the PREVIOUS shape is dropped --
+            // The race the shape stamp exists for: the audio thread can still
+            // be mid-block on the old topology when an edit resizes a clip,
+            // so a finished bucket arrives after the cache has been zeroed.
+            // Its index can be perfectly valid in the new array - only the
+            // shape says it describes material the clip no longer holds.
+            {
+               const uint64_t staleShape = gArrangeClipWaves[audioClip].shape;
+               // Clip currently spans beats 2..6 (section D moved it); drag
+               // the right edge out to 8 so it is longer, not shorter - the
+               // stale bucket's index then still fits the new array.
+               Arrange::TrimEdge(gArrange, audioClip, Arrange::kEdgeEnd, Arrange::BeatsToTicks(8.0));
+               ArrangeSyncClipVisuals();
+               const uint64_t freshShape = gArrangeClipWaves[audioClip].shape;
+               AudioEngine::Instance().ClipPeaks().Write({ audioClip, staleShape, 1, -0.9f, 0.9f });
+               AudioEngine::Instance().ClipPeaks().Write({ audioClip, freshShape, 3, -0.1f, 0.2f });
+               ArrangeSyncClipVisuals();
+               const ArrangeClipWave* w = waveOf(audioClip);
+               const bool e2Ok = staleShape != freshShape && w != nullptr &&
+                                 w->filled.size() > 3 && w->filled[1] == 0 && w->filled[3] != 0 &&
+                                 w->maxv[3] == 0.2f;
+               printf("arrange wave drops stale-shape buckets: %s\n", e2Ok ? "OK" : "FAIL");
+               allOk = allOk && e2Ok;
+            }
+
+            // --- F. 50 video clips in, 50 thumbnail slots; deleted, none ---
+            // The exit criterion WP8 names. Slots, not FBOs: an FBO is only
+            // allocated on the first real composite, which a frame-4 fixture
+            // has not run - so this asserts the pool's bookkeeping and
+            // GLUtil's allocation counter asserts nothing leaked.
+            {
+               const size_t thumbsBefore = gArrangeClipThumbs.size();
+               const unsigned long long fbo0 = GLUtil::FboAllocationCount();
+               std::vector<uint64_t> made;
+               for (int i = 0; i < 50; i++)
+                  made.push_back(place(vLane, rampUid, 10.0 + (double)i * 2.0, 2.0));
+               ArrangeSyncClipVisuals();
+               const size_t thumbsAfter = gArrangeClipThumbs.size();
+               Arrange::Delete(gArrange, made);
+               ArrangeSyncClipVisuals();
+               const bool fOk = thumbsAfter == thumbsBefore + 50 &&
+                                gArrangeClipThumbs.size() == thumbsBefore &&
+                                GLUtil::FboAllocationCount() == fbo0;
+               printf("arrange thumb pool returns to baseline: %s (%zu -> %zu -> %zu)\n", fOk ? "OK" : "FAIL",
+                      thumbsBefore, thumbsAfter, gArrangeClipThumbs.size());
+               allOk = allOk && fOk;
+            }
+
+            // --- G. Playing through a clip fills its waveform --------------
+            // The other WP8 exit criterion, end to end: the audio thread's
+            // accumulation, the ring, the drain and the cache. Driven through
+            // ProcessOffline rather than a device callback so it is
+            // deterministic, but it is the same RunTopology path.
+            if (AudioEngine::Instance().SampleRate() > 0.0 || StartAudioEngine(gAudioStartError))
+            {
+               const double rate = AudioEngine::Instance().SampleRate();
+               // One 2-beat (1s) clip at the origin, Timeline-Strict so the
+               // clip's own terminal is what feeds the device.
+               gArrange = Arrange::Model();
+               gArrange.revision++;
+               const uint64_t lane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+               const uint64_t clip = place(lane, oscUid, 0.0, 2.0);
+               gAudioMode = AudioMode::Timeline;
+               ArrangeSyncClipVisuals();
+               RebuildAudioTopology();
+
+               const uint64_t droppedBefore = AudioEngine::Instance().ClipPeaks().DroppedCount();
+               tr.Seek(0.0);
+               tr.SetOfflineMode(true, rate);
+               tr.SetPlaying(true);
+               static float sL[kAudioMaxBlockFrames];
+               static float sR[kAudioMaxBlockFrames];
+               static float* sCh[2] = { sL, sR };
+               const int block = OfflineAudioBlockFrames();
+               const long long want = (long long)llround(1.0 * rate); // one second = the whole clip
+               long long done = 0;
+               while (done < want)
+               {
+                  const int nFrames = (int)std::min<long long>(block, want - done);
+                  AudioBuffer buf;
+                  buf.channels = sCh;
+                  buf.numChannels = 2;
+                  buf.numFrames = nFrames;
+                  AudioEngine::Instance().ProcessOffline(buf);
+                  done += nFrames;
+                  // Drain as we go, the way the main loop does - the ring is
+                  // sized for a frame's worth of buckets, not a whole take.
+                  ArrangeSyncClipVisuals();
+               }
+               tr.SetOfflineMode(false);
+               tr.SetPlaying(false);
+               ArrangeSyncClipVisuals();
+
+               int filled = 0, total = 0, nonSilent = 0;
+               if (const ArrangeClipWave* w = waveOf(clip))
+               {
+                  total = (int)w->filled.size();
+                  for (int i = 0; i < total; i++)
+                  {
+                     if (w->filled[(size_t)i] == 0)
+                        continue;
+                     filled++;
+                     if (w->maxv[(size_t)i] > 1e-4f || w->minv[(size_t)i] < -1e-4f)
+                        nonSilent++;
+                  }
+               }
+               // The last bucket is still in flight when the take stops (only
+               // complete buckets are published), so 31 of 32 is a pass.
+               const bool gOk = total == 32 && filled >= total - 1 && nonSilent >= total - 2 &&
+                                AudioEngine::Instance().ClipPeaks().DroppedCount() == droppedBefore;
+               printf("arrange wave filled by playback: %s (%d/%d buckets, %d non-silent, %lld frames @ %.0f Hz)\n",
+                      gOk ? "OK" : "FAIL", filled, total, nonSilent, done, rate);
+               allOk = allOk && gOk;
+            }
+            else
+            {
+               printf("arrange wave filled by playback: SKIP (no audio device: %s)\n", gAudioStartError.c_str());
+            }
+         }
+
+         gAudioMode = modeBefore;
+         tr.SetOfflineMode(false);
+         tr.SetPlaying(false);
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         NewPatch();
+         ArrangeSyncClipVisuals();
+         const bool cleared = gArrangeClipWaves.empty() && gArrangeClipThumbs.empty();
+         printf("arrange wave cleared on new patch: %s\n", cleared ? "OK" : "FAIL");
+         allOk = allOk && cleared;
+         printf("arrange wave test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
       if (getenv("INFINITE_UNDOPERFTEST") != nullptr && frameId == 4)
       {
          NewPatch();
@@ -79376,6 +80071,10 @@ int main(int argc, char** argv)
       // selects and the textures it reads belong to the same frame.
       CompositeArrangeMonitorIfRequested();
       ReapArrangeGeomViewports();
+      // Unconditional, panel open or not: the audio thread's peak ring has
+      // to be drained every frame or it fills and starts dropping buckets
+      // the waveform would never get back (WP8).
+      ArrangeSyncClipVisuals();
 
       // The node cook loop above is the longest single stretch of the frame,
       // and it runs after glfwPollEvents() with the run loop otherwise

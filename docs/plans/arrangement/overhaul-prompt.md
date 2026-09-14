@@ -26,8 +26,8 @@ arrangement state, and `gArrange.revision` is the only change signal. The
 panel draws in ticks, and every export goes through the render queue.
 
 ```
-WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► WP5a 4004259 ──► WP5b 81b9471 ──► WP6 bd19fcb ──► WP7 ──► [WP8] ──► verify-gate ──► owner merges
-  baseline      model core      transport      audio sched      video          UI on gArrange    bridge deleted     time + markers   export   ▲ you are here
+WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► WP5a 4004259 ──► WP5b 81b9471 ──► WP6 bd19fcb ──► WP7 357a757 ──► WP8 ──► verify-gate ──► owner merges
+  baseline      model core      transport      audio sched      video          UI on gArrange    bridge deleted     time + markers   export   thumbs+waves   ▲ all done
 ```
 
 ```bash
@@ -93,8 +93,8 @@ end of every package:
 | 4 | `feature/arrange-step-06-video` | Lane order, FBO ownership, geometry cache, compose-after-cook | Medium | **done** `7220d09` |
 | 5 | `feature/arrange-step-07-editing` | ID-based selection, multi-drag, groups, enable key `0`, offline clips, lane pick, undo coverage, **deletes the legacy bridge** | **High — largest** | **done** `4004259` (5a: UI + features) + `81b9471` (5b: bridge deleted) |
 | 6 | `feature/arrange-step-08-time-markers` | Bars/Time display, markers, playhead keys, scrub fix | Low–Med | **done** `bd19fcb` |
-| 7 | `feature/arrange-step-09-export-queue` | Render fixes + export queue + persisted settings | Medium | **done** (`87305de` WP7a + WP7b) |
-| 8 | `feature/arrange-step-10-thumbs-waves` | Live audio waveforms, video thumbnails | Low–Med | |
+| 7 | `feature/arrange-step-09-export-queue` | Render fixes + export queue + persisted settings | Medium | **done** (`87305de` WP7a + `2ebe2f1` WP7b + `357a757` WP7c) |
+| 8 | `feature/arrange-step-10-thumbs-waves` | Live audio waveforms, video thumbnails | Low–Med | **done** — see *As built (WP8)* |
 
 Each remaining branch stacks on the previous one's tip.
 
@@ -625,6 +625,60 @@ lock, fixture, reveal helper). `src/main.cpp` unless noted.
 - Clip rects come from `tickToX`; the lane body loop is around 29700-30000 and already has the per-clip clip rect a waveform would draw into.
 - Any new panel state must survive undo the way `ArrangeViewSettings` Keep/Restore does, or it will be reset by the drag-restore.
 
+## As built (WP8) — the last work package
+
+Branch `feature/arrange-step-10-thumbs-waves`, stacked on WP7c `357a757`.
+`src/main.cpp` unless noted.
+
+### What landed
+
+| Symbol / area | What it is |
+|---|---|
+| `ClipPeak` + `ClipPeakRing` (`src/audio/ClipPeakRing.h`, **new**) | `{clipId, shape, bucket, min, max}` over a 2048-entry lock-free SPSC ring. `kClipPeakBucketsPerBeat = 16`. Fixed array, no allocation, no lock; a full ring **drops the new entry and counts it** rather than overwriting — a main thread that stalled should lose the buckets it missed, not the ones it is about to draw |
+| `ClipWindow::clipId` / `::shape` (`AudioEngine.h`) | The clip id the audio thread labels its buckets with, and a hash of the four fields the cache is keyed on. Never dereferenced — the model they index lives on the main thread |
+| `AudioTerminal::peakClipId / peakShape / peakBucket / peakMin / peakMax` (`AudioEngine.h`) | Audio-thread scratch: the bucket in progress. `mutable`, because `RunTopology` takes the terminal by const reference the way `windowCursor` already did |
+| `RunTopology` accumulation (`AudioEngine.cpp:384-410`) | Folded into the per-sample envelope loop that already walks the windows — no second pass. A bucket is published only when the playhead crosses **out** of it, so a stopped playhead leaves its last bucket unfilled rather than half-measured |
+| `ArrangeClipShape(srcUid, srcOutput, start, length)` | 64-bit FNV-1a over exactly the four fields that decide whether existing buckets still describe the clip. Stamped into every `ClipWindow` and into the cache entry |
+| `struct ArrangeClipWave` + `gArrangeClipWaves` | Per clip id: the shape it was measured under, plus `minv` / `maxv` / `filled` sized to `ArrangeWaveBucketCount(length)`. Position-indexed, so playing the same bar twice overwrites rather than appends and scrubbing backwards fills in what was skipped |
+| `ArrangeWaveBucketCount(length)` | `ceil(length / (kPPQ/16))`, clamped to `kArrangeWaveMaxBuckets` (128 k ≈ 1 h at 120 bpm). A guard, not a policy — nothing in the model caps clip length |
+| `struct ArrangeClipThumb` + `gArrangeClipThumbs` | One 96×54 FBO per **video** clip id, plus `lastCapture` and the source it was captured from |
+| `ArrangeThumbShader()` / `ArrangeCaptureClipThumb(clipId, tex, w, h)` | A `uTex` + `uFit` aspect-fit copy pass, letterboxed black. Saves and restores `GL_FRAMEBUFFER_BINDING` and the viewport **itself**, because it runs inside the composite's resolve loop before the composite saves them |
+| `ArrangeSyncClipVisuals()` (main loop, right after `ReapArrangeGeomViewports()`) | Reshapes on a `gArrange.revision` change — audio lanes get wave slots, video lanes get thumb slots, entries for deleted clips are erased (`GLUtil::DestroyFbo` for thumbs) — then drains the ring in batches of 256. Called **unconditionally**, panel open or not: the ring has to be drained or it fills and starts dropping |
+| Lane-body drawing (~30195-30270) | Waveform when `!isVideo && cWidth > 6 && !ArrangeRenderBusy()`: a centre line at alpha 45, then one column per pixel taking the envelope over every bucket that pixel spans (`ticksPerPx` inverts the same `tickToX` the clip rect came from, so the waveform cannot drift from the rect at any zoom). Thumbnail when `isVideo && cWidth > 96 + 16`, drawn `AddImage(..., (0,1), (1,0))` for the FBO's bottom-up texture; `thumbRight` then shifts the label |
+| `ArrangeVideoLayer::clipId` + the composite's resolve loop | Captures a thumbnail per resolved layer, guarded by `!Transport::IsOfflineMode()` |
+| Fixture `INFINITE_ARRANGEWAVETEST` (frame 4) | A ring SPSC / order / drop accounting · B bucket maths · C cache shaping · D invalidation (gain and fade do **not** clear; length, reassign and move do) · E a bucket for an unknown clip id is dropped · E2 a bucket measured under the previous shape is dropped · F 50 video clips → 50 thumb slots → 0, with `GLUtil::FboAllocationCount()` unchanged · G real playback fills the waveform through `ProcessOffline` (SKIPs without a device). Registered in `driver.sh` (TIER1, GROUP_UI, FULL) |
+
+### Deviations and forced decisions
+
+| Brief said | Actually built | Why |
+|---|---|---|
+| `(clipId, bucket, min, max)` | `(clipId, **shape**, bucket, min, max)` | Found by `invariant-interaction-audit`, not by a test. The audio thread can still be mid-block on the old topology when an edit resizes a clip, so a finished bucket arrives **after** the cache has been zeroed — and its index can be perfectly valid in the new array. Without the stamp it lights a pixel with material the clip no longer holds, and if playback stopped right after the edit it stays lit. The stamp is the only thing that can tell those apart |
+| "Clear the cache when src, output, start or length changes" | Built exactly so — and `start` is the one that looks wrong and is not | A clip's source is a **live node**, not a file. Moved two beats later, the clip plays whatever the node emits two beats later, which is not what was measured. This is the one place the waveform differs from a file-backed DAW's, and the fixture asserts it deliberately |
+| — | Peaks are measured **pre-envelope and pre-gain** | So editing a fade, a clip gain or a lane gain does not invalidate what is already drawn. The waveform shows what the clip holds, not what the mix currently does to it |
+| "Offline renders fill it too" | Offline renders fill the **waveform**; thumbnails are skipped while `IsOfflineMode()` | The waveform costs the audio path nothing extra (same loop). A thumbnail is a GL pass, and a take owns the frame budget — the same rule WP7 wrote down |
+| "a small texture pool per clip id" | One FBO per clip id, allocated lazily on first capture | A pool with reuse would need an eviction policy nothing asks for; a video clip already owns a `gArrangeGeomViewports` entry of the same shape |
+| — | Nothing is pre-decoded or read ahead | There is nothing to read ahead **of**: the source is a node, not a file. A clip that has not played yet draws a flat centre line, which is the honest picture |
+
+### Sweep findings (WP8)
+
+| Sweep / audit | Result |
+|---|---|
+| `run-infinite-hygiene --fast` | 29/29 |
+| `run-infinite-hygiene --full` | **75 passed, 2 failed, 3 xfail** — identical to the WP6/WP7 baseline. The two are `AUDIOLIFECYCLETEST` / `AUDIORECOVERYTEST` at `AudioEngine::Start succeeds`: this machine cannot open an audio device (CoreAudio `-10875`), environmental |
+| `panels-sweep` | 8/8 |
+| `audio-pipeline-sweep` | 11/15. Four failures, **zero new**: `MOLDERTEST` (pre-existing, handled on its own branch), `AUDIOPARAMSWEEPTEST` (423 baselined blind spots — the same 423, counted), and the two CoreAudio `-10875` fixtures above |
+| `invariant-interaction-audit` ("a clip's peak cache always matches the clip's shape") | Pass A found the in-flight-bucket race above and it is fixed, not filed. The other post-invariant writers are clean: the drain bounds-checks `b` against the post-reshape `minv.size()`; the draw path clamps `b0`/`b1` into `[0, nb-1]` and skips `filled == 0`; the thumbnail path is synchronous on the main thread inside the composite, so it has no in-flight window at all. Pass B: `MeterRing` is the same SPSC shape but drains into a local drawn the same frame, never into a model-keyed cache, so it cannot hold a stale entry; `gArrangeGeomViewports` has no async producer |
+| `invariant-interaction-audit` (WP1 no-overlap, WP3 sample-accurate windows) | WP8 adds no model op and no edit path — every mutation in its fixture goes through `Arrange::MoveClips` / `TrimEdge` / `Delete`. `RunTopology`'s window walk is untouched: the two new `ClipWindow` fields are copied through, never read by the scheduling maths |
+
+### Debts carried forward
+
+| Debt | Note |
+|---|---|
+| The end-to-end "playback fills the waveform" assertion is unrun here | `SKIP` without an audio device, same as WP7's WAV take. Re-run `INFINITE_ARRANGEWAVETEST` anywhere a device opens |
+| A shape hash collision would let one stale bucket through | 64-bit FNV-1a over four fields; the cost on the other side is one display pixel that the next playback pass overwrites |
+| The thumbnail refresh is time-based (1 s), not content-based | Per the brief. A clip whose source changes appearance faster than that shows the older frame until the next refresh |
+| `settings.zoom` / `settings.scroll` still persisted but unused | Carried from WP6 |
+
 ---
 
 ## WP4 — Video
@@ -749,6 +803,8 @@ Exit:
 
 ## WP8 — Live waveforms + video thumbnails
 
+> **DONE.** Reference only; *As built (WP8)* above is authoritative.
+
 | Clip type | Decision |
 |---|---|
 | Audio | **Position-indexed live peak cache.** For each clip window, the audio thread accumulates min/max per bucket of `kPPQ/16` ticks and pushes `(clipId, bucket, min, max)` into a fixed-size lock-free SPSC ring (drop when full; never allocate or lock). The main thread drains it into `unordered_map<clipId, vector<MinMax>>`, sized to the clip's bucket count. Draw inside the clip body: filled buckets as a waveform, unfilled as a flat centre line. Clear a clip's cache when its src, output, start or length changes. Not saved. Offline renders fill it too |
@@ -781,6 +837,7 @@ cp -R build/Infinite.app ~/Desktop/Infinite.app
 | 5 | `shortcuts-sweep`, `panels-sweep` (+ `audio-pipeline-sweep` for 5b) | done — see *Sweep findings (WP5a)* / *(WP5b)* |
 | 6 | `shortcuts-sweep`, `panels-sweep` | done — shortcuts clean (0/0, two pre-existing gaps fixed), panels 8/8; see *Sweep findings (WP6)* |
 | 7 | `av-sync-sweep` | done — 17/18, the one failure a different `RECEXPORTTEST` variant each run and passing standalone (encoder wedge under load). Also `shortcuts-sweep` 41/32 clean and `panels-sweep` 8/8; see *Sweep findings (WP7)* |
+| 8 | `panels-sweep`, `audio-pipeline-sweep` | done — panels 8/8, audio-pipeline 11/15 with **0 new** failures, hygiene `--full` 75/2/3 at baseline; see *Sweep findings (WP8)* |
 
 - Before each commit, run the `invariant-interaction-audit` skill on WP1 (no-overlap invariant) and WP3 (sample-accurate window invariant): check that no sibling path (paste, drop, render, undo) bypasses the model ops.
 - Finish with the `verify-gate` agent on the final branch.

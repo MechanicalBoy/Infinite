@@ -381,6 +381,33 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
                   env *= untilEnd / declickBeats;
             }
             sEnvScratch[i] = (float)(env < 0.0 ? 0.0 : env);
+
+            // Live waveform bucket (WP8). Measured on the clip's own
+            // material BEFORE the envelope and both gains, so editing a
+            // fade, a clip gain or a lane gain does not invalidate what has
+            // already been drawn - only the four fields that change what
+            // material the clip holds do (the panel clears on those).
+            const int bucket = (int)((beat - w.startBeat) * kClipPeakBucketsPerBeat);
+            if (bucket != terminal.peakBucket || w.clipId != terminal.peakClipId)
+            {
+               // Only complete buckets are published: the one in progress is
+               // flushed when the playhead crosses out of it, which is also
+               // why a stopped playhead leaves its last bucket unfilled.
+               if (terminal.peakBucket >= 0 && terminal.peakClipId != 0)
+                  mClipPeaks.Write({ terminal.peakClipId, terminal.peakShape, terminal.peakBucket,
+                                     terminal.peakMin, terminal.peakMax });
+               terminal.peakClipId = w.clipId;
+               terminal.peakShape = w.shape;
+               terminal.peakBucket = bucket;
+               terminal.peakMin = 0.0f;
+               terminal.peakMax = 0.0f;
+            }
+            for (int ch = 0; ch < numChannels; ch++)
+            {
+               const float v = src.channels[ch][i];
+               if (v < terminal.peakMin) terminal.peakMin = v;
+               if (v > terminal.peakMax) terminal.peakMax = v;
+            }
          }
          terminal.windowCursor = cursor;
 
