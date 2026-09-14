@@ -189,6 +189,22 @@ namespace Tabler
       dl->PathStroke(col, 0, stroke);
    }
 
+   // Tabler: chevron-right
+   inline void DrawChevronRight(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.3f, 1.8f * s);
+      const float w = 3.2f * s;
+      const float h = 5.2f * s;
+
+      dl->PathClear();
+      dl->PathLineTo(ImVec2(center.x - w * 0.5f, center.y - h));
+      dl->PathLineTo(ImVec2(center.x + w * 0.5f, center.y));
+      dl->PathLineTo(ImVec2(center.x - w * 0.5f, center.y + h));
+      dl->PathStroke(col, 0, stroke);
+   }
+
    // Tabler: search (magnifying glass)
    inline void DrawSearch(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
    {
@@ -436,6 +452,60 @@ namespace Tabler
       dl->PathLineTo(P(19.0f, 14.0f));
       dl->PathBezierCubicCurveTo(P(11.0f, 16.5f), P(8.0f, 11.5f), P(5.0f, 14.0f), 10);
       dl->PathStroke(col, ImDrawFlags_Closed, stroke);
+   }
+
+   // Tabler: folder (a track-group row's icon - never drawn for a leaf track)
+   inline void DrawFolder(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.3f, 1.8f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      dl->PathClear();
+      dl->PathLineTo(P(3.0f, 6.0f));
+      dl->PathLineTo(P(3.0f, 18.0f));
+      dl->PathLineTo(P(21.0f, 18.0f));
+      dl->PathLineTo(P(21.0f, 8.0f));
+      dl->PathLineTo(P(11.0f, 8.0f));
+      dl->PathLineTo(P(9.0f, 6.0f));
+      dl->PathStroke(col, ImDrawFlags_Closed, stroke);
+   }
+
+   // Tabler: adjustments-horizontal / sliders
+   inline void DrawSliders(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.2f, 1.6f * s);
+      const float y0 = center.y - 5.5f * s;
+      const float y1 = center.y;
+      const float y2 = center.y + 5.5f * s;
+      const float xLeft = center.x - 8.0f * s;
+      const float xRight = center.x + 8.0f * s;
+
+      dl->AddLine(ImVec2(xLeft, y0), ImVec2(xRight, y0), col, stroke);
+      dl->AddCircleFilled(ImVec2(center.x - 2.0f * s, y0), 2.5f * s, col);
+
+      dl->AddLine(ImVec2(xLeft, y1), ImVec2(xRight, y1), col, stroke);
+      dl->AddCircleFilled(ImVec2(center.x + 3.0f * s, y1), 2.5f * s, col);
+
+      dl->AddLine(ImVec2(xLeft, y2), ImVec2(xRight, y2), col, stroke);
+      dl->AddCircleFilled(ImVec2(center.x - 4.0f * s, y2), 2.5f * s, col);
+   }
+
+   // Tabler: screen / monitor (for mini viewport toggle)
+   inline void DrawMonitor(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.2f, 1.6f * s);
+      const ImVec2 screenMin(center.x - 8.0f * s, center.y - 7.0f * s);
+      const ImVec2 screenMax(center.x + 8.0f * s, center.y + 3.5f * s);
+      dl->AddRect(screenMin, screenMax, col, 2.0f * s, 0, stroke);
+      // stand
+      dl->AddLine(ImVec2(center.x, center.y + 3.5f * s), ImVec2(center.x, center.y + 7.0f * s), col, stroke);
+      dl->AddLine(ImVec2(center.x - 4.5f * s, center.y + 7.0f * s), ImVec2(center.x + 4.5f * s, center.y + 7.0f * s), col, stroke);
    }
 
    // Blank-icon-slot fallback: a crisp rounded rect with a subtle inner square

@@ -351,9 +351,14 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
    // Track groups: a new tag line, one per group, same shape as `marker` -
    // an older reader that doesn't know this tag simply skips the line
    // (see the "anything else is from a newer version" catch-all below).
+   // The 4th token used to be `collapsed`, now unused (nested groups never
+   // collapse) - written as a literal 0 placeholder so the token positions
+   // stay append-only and an older reader (which still parses that slot as
+   // collapsed, harmlessly) doesn't shift. `parentGroupId` is the new 5th
+   // token, added after it for the same reason.
    for (const TrackGroupRecord& g : data.trackGroups)
       file << "trackgroup " << g.id << " " << g.color << " " << (g.enabled ? 1 : 0) << " "
-           << (g.collapsed ? 1 : 0) << " " << EscapeLine(g.name) << "\n";
+           << (g.collapsed ? 1 : 0) << " " << g.parentGroupId << " " << EscapeLine(g.name) << "\n";
    {
       const ArrangeSettingsRecord& a = data.arrangeSettings;
       file << "arrange " << a.nextId << " " << a.timeDisplay << " " << a.snapDivision << " "
@@ -863,11 +868,14 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
       else if (tag == "trackgroup")
       {
          TrackGroupRecord g;
-         int enabled = 1, collapsed = 0;
-         if (in >> g.id >> g.color >> enabled >> collapsed && g.id != 0)
+         int enabled = 1;
+         if (in >> g.id >> g.color >> enabled && g.id != 0)
          {
             g.enabled = enabled != 0;
-            g.collapsed = collapsed != 0;
+            int collapsed = 0;
+            in >> collapsed;
+            g.collapsed = (collapsed != 0);
+            in >> g.parentGroupId;
             std::string raw;
             std::getline(in, raw);
             if (!raw.empty() && raw[0] == ' ')

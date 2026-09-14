@@ -13,6 +13,12 @@
 // since the image branch is typically the fallback/"everything else" case.
 namespace MediaExtensions
 {
+   inline const std::vector<std::string>& Audio()
+   {
+      static const std::vector<std::string> kExts = { "wav", "aif", "aiff", "mp3", "m4a", "aac", "caf", "flac", "ogg" };
+      return kExts;
+   }
+
    inline const std::vector<std::string>& Video()
    {
       static const std::vector<std::string> kExts = { "mov", "mp4", "m4v", "avi", "mkv",

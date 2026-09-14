@@ -81,6 +81,8 @@ struct ClipWindow
    double fadeInBeats  = 0.0;
    double fadeOutBeats = 0.0;
    float  gain         = 1.0f;  // clip gain, linear (lane gain is on the terminal)
+   float  panL         = 1.0f;  // clip pan, equal-power, sqrt(2)-normalized so
+   float  panR         = 1.0f;  // center (the default) is unity on both channels
    // True when the previous / next window on the same terminal abuts this one
    // exactly. An abutting edge is not a discontinuity - the same node's output
    // runs straight through it - so the declick ramp is skipped there, which is

@@ -284,11 +284,16 @@ namespace Patch
       int64_t  fadeInTick  = 0;
       int64_t  fadeOutTick = 0;
       float    gainDb    = 0.0f;
+      float    pan       = 0.0f;
       bool     enabled   = true;
       uint64_t groupId   = 0;    // 0 = not grouped
       std::string name;          // empty = auto (source node's own title)
       float  colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = no tint
       int    blendMode = -1;     // -1 = not in the file: inherit the stream's legacy blendMode
+      float  opacity   = 1.0f;
+      float  brightness = 0.0f;
+      float  contrast   = 1.0f;
+      float  saturation = 1.0f;
    };
 
    struct StreamRecord
@@ -309,15 +314,17 @@ namespace Patch
       bool  mute      = false;  // audio only; saved on its own `streammix` line
       bool  solo      = false;  // audio only
       std::string name;         // empty = auto ("V1", "A2", ...) - label derived by the UI
+      float colorR = 0.0f, colorG = 0.0f, colorB = 0.0f;
       std::vector<ClipRecord> clips;
    };
 
    struct TrackGroupRecord
    {
-      uint64_t    id        = 0;
-      uint32_t    color     = 0xFF808080u;
-      bool        enabled   = true;
-      bool        collapsed = false;
+      uint64_t    id            = 0;
+      uint32_t    color         = 0xFF808080u;
+      bool        enabled       = true;
+      bool        collapsed     = false;
+      uint64_t    parentGroupId = 0; // 0 = top-level; new field, appended after the old collapsed slot
       std::string name;
    };
 

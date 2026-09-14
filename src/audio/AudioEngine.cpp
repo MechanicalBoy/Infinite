@@ -311,6 +311,12 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
       // the same callback, so Beats() is already the position at the END of
       // this block and the block started numFrames earlier.
       static thread_local float sEnvScratch[kAudioMaxBlockFrames];
+      // Per-channel envelope including the clip's own pan (the mono
+      // sEnvScratch above only carries gain/fades - clip pan varies
+      // window-to-window within one block, so it can't be folded into the
+      // flat per-terminal lanePanL/R applied after this loop).
+      static thread_local float sEnvScratchL[kAudioMaxBlockFrames];
+      static thread_local float sEnvScratchR[kAudioMaxBlockFrames];
       double runSampleRate = mSampleRate.load(std::memory_order_relaxed);
       if (runSampleRate <= 0.0 && Transport::Instance().IsOfflineMode())
          runSampleRate = Transport::Instance().AudioSampleRate();
@@ -364,6 +370,8 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             if (!playing || beat < w.startBeat || beat >= w.endBeat)
             {
                sEnvScratch[i] = 0.0f;
+               sEnvScratchL[i] = 0.0f;
+               sEnvScratchR[i] = 0.0f;
                // A playing head that has left every window has also left the
                // bucket in progress - flush it here, or a clip followed by a
                // gap never publishes its last bucket and keeps a flat notch
@@ -393,7 +401,10 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
                if (!w.abutsNext && untilEnd < declickBeats)
                   env *= untilEnd / declickBeats;
             }
-            sEnvScratch[i] = (float)(env < 0.0 ? 0.0 : env);
+            const float envF = (float)(env < 0.0 ? 0.0 : env);
+            sEnvScratch[i] = envF;
+            sEnvScratchL[i] = envF * w.panL;
+            sEnvScratchR[i] = envF * w.panR;
 
             // Live waveform bucket (WP8). Measured on the clip's own
             // material BEFORE the envelope and both gains, so editing a
@@ -426,10 +437,15 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
 
          for (int ch = 0; ch < numChannels; ch++)
          {
-            const float chGain =
-               gain * (numChannels < 2 ? 1.0f : ch == 0 ? terminal.lanePanL : ch == 1 ? terminal.lanePanR : 1.0f);
+            // Channels beyond stereo have no clip/lane pan concept and use
+            // the flat mono envelope; L/R fold in both the clip's own pan
+            // (per-window, varies within the block) and the lane's pan
+            // (flat per-terminal).
+            const float* chEnv = (numChannels < 2) ? sEnvScratch : (ch == 0 ? sEnvScratchL : ch == 1 ? sEnvScratchR : sEnvScratch);
+            const float chLanePan = (numChannels < 2) ? 1.0f : (ch == 0 ? terminal.lanePanL : ch == 1 ? terminal.lanePanR : 1.0f);
+            const float chGain = gain * chLanePan;
             for (int i = 0; i < numFrames; i++)
-               deviceBuffer.channels[ch][i] += src.channels[ch][i] * chGain * sEnvScratch[i];
+               deviceBuffer.channels[ch][i] += src.channels[ch][i] * chGain * chEnv[i];
          }
       }
       else if (terminal.numWindows > 0)

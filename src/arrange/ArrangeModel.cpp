@@ -92,6 +92,30 @@ namespace
             if (c.groupId != 0 && counts[c.groupId] < 2) { c.groupId = 0; changed = true; }
       return changed;
    }
+
+   // Prunes `groupId` if it has no direct lanes and no child groups, then
+   // repeats for its (former) parent, since removing the last child can make
+   // the parent newly empty too. Track groups (unlike clip groups) don't get
+   // a Normalize pass after every op that can empty one, so this has to
+   // happen right at the point of removal - see RemoveLane's comment on why.
+   void PruneEmptyTrackGroupChain(Model& m, uint64_t groupId)
+   {
+      while (groupId != 0)
+      {
+         auto it = std::find_if(m.trackGroups.begin(), m.trackGroups.end(),
+                                [&](const TrackGroup& g) { return g.id == groupId; });
+         if (it == m.trackGroups.end()) return;
+         bool anyLane = false;
+         for (const Lane& l : m.lanes) if (l.groupId == groupId) { anyLane = true; break; }
+         bool anyChild = false;
+         if (!anyLane)
+            for (const TrackGroup& g : m.trackGroups) if (g.parentGroupId == groupId) { anyChild = true; break; }
+         if (anyLane || anyChild) return;
+         const uint64_t parent = it->parentGroupId;
+         m.trackGroups.erase(it);
+         groupId = parent;
+      }
+   }
 }
 
 namespace
@@ -185,22 +209,55 @@ void Normalize(Model& m)
    DissolveSingletonGroups(m);
 
    // Track groups do NOT dissolve at 1 member (unlike clip groups above) -
-   // only a group with zero remaining member lanes is dead weight in the
-   // registry, so only that case gets pruned here. A lane pointing at a
-   // group id that no longer exists (a hand-edited patch, a bug) is
-   // ungrouped rather than left dangling, since Validate rejects that.
+   // only a group with nothing left anywhere in its subtree (no direct lane,
+   // no live child group) is dead weight in the registry, so only that case
+   // gets pruned here, from the leaves up. A lane or group pointing at a
+   // group id that no longer exists (a hand-edited patch, a bug) is promoted
+   // to root rather than left dangling, since Validate rejects that. A
+   // group whose parent chain cycles back to itself (also only reachable via
+   // a hand-edited patch) is likewise reset to root, so nothing that walks
+   // parentGroupId - the row-layout tree walk, GroupAncestors - can loop.
    {
       std::unordered_set<uint64_t> liveGroups;
       for (const TrackGroup& g : m.trackGroups) liveGroups.insert(g.id);
       for (Lane& l : m.lanes)
          if (l.groupId != 0 && !liveGroups.count(l.groupId)) l.groupId = 0;
+      for (TrackGroup& g : m.trackGroups)
+         if (g.parentGroupId != 0 && !liveGroups.count(g.parentGroupId)) g.parentGroupId = 0;
 
-      std::unordered_map<uint64_t, int> memberCounts;
-      for (const Lane& l : m.lanes)
-         if (l.groupId != 0) memberCounts[l.groupId]++;
-      m.trackGroups.erase(std::remove_if(m.trackGroups.begin(), m.trackGroups.end(),
-                                         [&](const TrackGroup& g) { return memberCounts[g.id] == 0; }),
-                          m.trackGroups.end());
+      for (TrackGroup& g : m.trackGroups)
+      {
+         uint64_t cur = g.parentGroupId;
+         size_t hops = 0;
+         bool ok = true;
+         while (cur != 0)
+         {
+            if (cur == g.id || hops++ > m.trackGroups.size()) { ok = false; break; }
+            const TrackGroup* p = nullptr;
+            for (const TrackGroup& gg : m.trackGroups) if (gg.id == cur) { p = &gg; break; }
+            if (!p) break;
+            cur = p->parentGroupId;
+         }
+         if (!ok) g.parentGroupId = 0;
+      }
+
+      // Prune bottom-up: a group with zero direct lanes and zero child
+      // groups is dead weight. Repeat until a pass removes nothing, since
+      // pruning a now-childless leaf can make its parent prunable too.
+      bool prunedAny = true;
+      while (prunedAny)
+      {
+         std::unordered_map<uint64_t, int> laneCounts, childCounts;
+         for (const Lane& l : m.lanes)
+            if (l.groupId != 0) laneCounts[l.groupId]++;
+         for (const TrackGroup& g : m.trackGroups)
+            if (g.parentGroupId != 0) childCounts[g.parentGroupId]++;
+         const size_t before = m.trackGroups.size();
+         m.trackGroups.erase(std::remove_if(m.trackGroups.begin(), m.trackGroups.end(),
+                                            [&](const TrackGroup& g) { return laneCounts[g.id] == 0 && childCounts[g.id] == 0; }),
+                             m.trackGroups.end());
+         prunedAny = m.trackGroups.size() != before;
+      }
    }
 
    // nextId must sit above everything already handed out. A patch whose saved
@@ -318,6 +375,23 @@ bool Validate(const Model& m, std::string* why)
    for (const Lane& l : m.lanes)
       if (l.groupId != 0 && !trackGroupIds.count(l.groupId))
          return fail("lane " + std::to_string(l.id) + " points at missing track group " + std::to_string(l.groupId));
+   for (const TrackGroup& g : m.trackGroups)
+      if (g.parentGroupId != 0 && !trackGroupIds.count(g.parentGroupId))
+         return fail("track group " + std::to_string(g.id) + " points at missing parent " + std::to_string(g.parentGroupId));
+   for (const TrackGroup& g : m.trackGroups)
+   {
+      uint64_t cur = g.parentGroupId;
+      size_t hops = 0;
+      while (cur != 0)
+      {
+         if (cur == g.id) return fail("track group " + std::to_string(g.id) + " is its own ancestor");
+         if (hops++ > m.trackGroups.size()) return fail("track group " + std::to_string(g.id) + " has a cyclic or too-deep parent chain");
+         const TrackGroup* p = nullptr;
+         for (const TrackGroup& gg : m.trackGroups) if (gg.id == cur) { p = &gg; break; }
+         if (!p) break; // already reported as a dangling parent above
+         cur = p->parentGroupId;
+      }
+   }
 
    Tick prev = 0;
    bool firstMarker = true;
@@ -794,6 +868,7 @@ uint64_t AddLane(Model& m, int type, int atIndex)
    Lane l;
    l.id = m.NewId();
    l.type = (type == kLaneAudio) ? kLaneAudio : kLaneVideo;
+   l.name = UniqueLaneName(m, l.type == kLaneAudio ? "Audio" : "Video", l.type);
    const int at = (atIndex < 0 || atIndex > (int)m.lanes.size()) ? (int)m.lanes.size() : atIndex;
    m.lanes.insert(m.lanes.begin() + at, l);
    m.revision++;
@@ -807,20 +882,149 @@ bool RemoveLane(Model& m, uint64_t laneId)
    const uint64_t trackGroupId = m.lanes[i].groupId;
    m.lanes.erase(m.lanes.begin() + i);
    DissolveSingletonGroups(m);
-   // A track group left with zero member lanes is dead weight - prune it
-   // immediately rather than waiting for Normalize, since ops here don't
-   // rely on Normalize running after them (see ArrangeEdit in main.cpp).
-   if (trackGroupId != 0)
-   {
-      bool anyLeft = false;
-      for (const Lane& l : m.lanes)
-         if (l.groupId == trackGroupId) { anyLeft = true; break; }
-      if (!anyLeft)
-         m.trackGroups.erase(std::remove_if(m.trackGroups.begin(), m.trackGroups.end(),
-                                            [&](const TrackGroup& g) { return g.id == trackGroupId; }),
-                             m.trackGroups.end());
-   }
+   // A track group left with nothing in its subtree is dead weight - prune
+   // it (and cascade up through now-empty ancestors) immediately rather than
+   // waiting for Normalize, since ops here don't rely on Normalize running
+   // after them (see ArrangeEdit in main.cpp).
+   if (trackGroupId != 0) PruneEmptyTrackGroupChain(m, trackGroupId);
    m.revision++;
+   return true;
+}
+
+std::string UniqueLaneName(const Model& m, const std::string& baseName, int type)
+{
+   std::string stem = baseName;
+   int startNum = 1;
+   if (stem.empty())
+   {
+      stem = (type == kLaneVideo ? "Video" : "Audio");
+      startNum = 1;
+   }
+   else
+   {
+      size_t lastSpace = stem.find_last_of(' ');
+      if (lastSpace != std::string::npos && lastSpace + 1 < stem.size())
+      {
+         bool allDigits = true;
+         for (size_t i = lastSpace + 1; i < stem.size(); i++)
+         {
+            if (!std::isdigit(static_cast<unsigned char>(stem[i]))) { allDigits = false; break; }
+         }
+         if (allDigits)
+         {
+            try {
+               int num = std::stoi(stem.substr(lastSpace + 1));
+               startNum = num + 1;
+               stem = stem.substr(0, lastSpace);
+            } catch (...) {
+               startNum = 2;
+            }
+         }
+         else
+         {
+            startNum = 2;
+         }
+      }
+      else
+      {
+         startNum = 2;
+      }
+   }
+
+   auto exists = [&](const std::string& cand) {
+      for (const Lane& l : m.lanes)
+         if (l.name == cand) return true;
+      return false;
+   };
+
+   int num = startNum;
+   std::string cand = stem + " " + std::to_string(num);
+   while (exists(cand))
+   {
+      num++;
+      cand = stem + " " + std::to_string(num);
+   }
+   return cand;
+}
+
+std::string UniqueTrackGroupName(const Model& m, const std::string& baseName)
+{
+   std::string stem = baseName;
+   int startNum = 1;
+   if (stem.empty())
+   {
+      stem = "Group";
+      startNum = 1;
+   }
+   else
+   {
+      size_t lastSpace = stem.find_last_of(' ');
+      if (lastSpace != std::string::npos && lastSpace + 1 < stem.size())
+      {
+         bool allDigits = true;
+         for (size_t i = lastSpace + 1; i < stem.size(); i++)
+         {
+            if (!std::isdigit(static_cast<unsigned char>(stem[i]))) { allDigits = false; break; }
+         }
+         if (allDigits)
+         {
+            try {
+               int num = std::stoi(stem.substr(lastSpace + 1));
+               startNum = num + 1;
+               stem = stem.substr(0, lastSpace);
+            } catch (...) {
+               startNum = 2;
+            }
+         }
+         else
+         {
+            startNum = 2;
+         }
+      }
+      else
+      {
+         startNum = 2;
+      }
+   }
+
+   auto exists = [&](const std::string& cand) {
+      for (const TrackGroup& g : m.trackGroups)
+         if (g.name == cand) return true;
+      return false;
+   };
+
+   int num = startNum;
+   std::string cand = stem + " " + std::to_string(num);
+   while (exists(cand))
+   {
+      num++;
+      cand = stem + " " + std::to_string(num);
+   }
+   return cand;
+}
+
+bool DuplicateLane(Model& m, uint64_t laneId, uint64_t* outLaneId)
+{
+   const int i = LaneIndex(m, laneId);
+   if (i < 0) return false;
+
+   Lane nl = m.lanes[i];
+   nl.id = m.NewId();
+   nl.name = UniqueLaneName(m, nl.name.empty() ? (nl.type == kLaneVideo ? "Video" : "Audio") : nl.name, nl.type);
+   std::unordered_map<uint64_t, uint64_t> clipGroupRemap;
+   for (Clip& c : nl.clips)
+   {
+      c.id = m.NewId();
+      if (c.groupId != 0)
+      {
+         auto it = clipGroupRemap.find(c.groupId);
+         if (it == clipGroupRemap.end()) it = clipGroupRemap.emplace(c.groupId, m.NewId()).first;
+         c.groupId = it->second;
+      }
+   }
+   m.lanes.insert(m.lanes.begin() + i + 1, nl);
+   m.revision++;
+   if (outLaneId) *outLaneId = nl.id;
    return true;
 }
 
@@ -835,6 +1039,34 @@ bool ReorderLane(Model& m, uint64_t laneId, int newIndex)
    m.lanes.insert(m.lanes.begin() + newIndex, l);
    m.revision++;
    return true;
+}
+
+void MoveLanesBefore(Model& m, const std::vector<uint64_t>& laneIds, size_t beforeLaneIndex)
+{
+   if (laneIds.empty()) return;
+   const std::unordered_set<uint64_t> moveSet(laneIds.begin(), laneIds.end());
+
+   // Once the moved lanes are pulled out, every index at or after
+   // beforeLaneIndex shifts left by however many of them sat before it.
+   size_t shift = 0;
+   for (size_t i = 0; i < m.lanes.size() && i < beforeLaneIndex; i++)
+      if (moveSet.count(m.lanes[i].id))
+         shift++;
+
+   std::vector<Lane> moved, rest;
+   moved.reserve(laneIds.size());
+   rest.reserve(m.lanes.size());
+   for (Lane& l : m.lanes)
+   {
+      if (moveSet.count(l.id)) moved.push_back(std::move(l));
+      else rest.push_back(std::move(l));
+   }
+   if (moved.empty()) return; // none of laneIds matched a real lane
+
+   const size_t insertAt = std::min(beforeLaneIndex - std::min(beforeLaneIndex, shift), rest.size());
+   rest.insert(rest.begin() + (std::ptrdiff_t)insertAt, moved.begin(), moved.end());
+   m.lanes = std::move(rest);
+   m.revision++;
 }
 
 bool SetLaneEnabled(Model& m, uint64_t laneId, int mode)
@@ -861,11 +1093,12 @@ bool ClearSource(Model& m, uint64_t uid)
 
 // --- track groups --------------------------------------------------------
 
-uint64_t AddTrackGroup(Model& m, const std::vector<uint64_t>& laneIds, const std::string& name)
+uint64_t AddTrackGroup(Model& m, const std::vector<uint64_t>& laneIds, const std::string& name, uint64_t parentGroupId)
 {
    TrackGroup g;
    g.id = m.NewId();
-   g.name = name;
+   g.name = UniqueTrackGroupName(m, name.empty() ? "Group" : name);
+   g.parentGroupId = (parentGroupId != 0 && FindTrackGroup(m, parentGroupId)) ? parentGroupId : 0;
    m.trackGroups.push_back(g);
    for (uint64_t laneId : laneIds)
       if (Lane* l = FindLane(m, laneId))
@@ -883,20 +1116,45 @@ bool RemoveTrackGroup(Model& m, uint64_t groupId, bool deleteLanes)
 
    if (deleteLanes)
    {
-      // Erase member lanes first so no lane is ever left pointing at a
-      // group record that no longer exists, even transiently within this
-      // op - Validate() checks that invariant and could run mid-frame.
+      // Delete the whole subtree: every lane nested at any depth, and every
+      // nested child group record. Erase lanes first so no lane is ever
+      // left pointing at a group record that no longer exists, even
+      // transiently within this op - Validate() checks that invariant and
+      // could run mid-frame.
+      const std::vector<uint64_t> subtreeLanes = LanesInTrackGroupRecursive(m, groupId);
+      const std::unordered_set<uint64_t> killLanes(subtreeLanes.begin(), subtreeLanes.end());
       m.lanes.erase(std::remove_if(m.lanes.begin(), m.lanes.end(),
-                                   [&](const Lane& l) { return l.groupId == groupId; }),
+                                   [&](const Lane& l) { return killLanes.count(l.id) != 0; }),
                     m.lanes.end());
       DissolveSingletonGroups(m);
+
+      std::unordered_set<uint64_t> killGroups;
+      killGroups.insert(groupId);
+      bool grew = true;
+      while (grew)
+      {
+         grew = false;
+         for (const TrackGroup& g : m.trackGroups)
+            if (killGroups.count(g.parentGroupId) && !killGroups.count(g.id)) { killGroups.insert(g.id); grew = true; }
+      }
+      m.trackGroups.erase(std::remove_if(m.trackGroups.begin(), m.trackGroups.end(),
+                                         [&](const TrackGroup& g) { return killGroups.count(g.id) != 0; }),
+                          m.trackGroups.end());
    }
    else
    {
+      // Ungroup: promote every direct member - lanes and child groups alike
+      // - to this group's own parent, then remove just this one record. One
+      // level of promotion, not a jump straight to the top, so ungrouping a
+      // nested group leaves its contents nested exactly where the group was.
+      const uint64_t newParent = it->parentGroupId;
       for (Lane& l : m.lanes)
-         if (l.groupId == groupId) l.groupId = 0;
+         if (l.groupId == groupId) l.groupId = newParent;
+      for (TrackGroup& g : m.trackGroups)
+         if (g.parentGroupId == groupId) g.parentGroupId = newParent;
+      m.trackGroups.erase(std::find_if(m.trackGroups.begin(), m.trackGroups.end(),
+                                       [&](const TrackGroup& g) { return g.id == groupId; }));
    }
-   m.trackGroups.erase(it);
    m.revision++;
    return true;
 }
@@ -909,21 +1167,39 @@ bool SetLaneTrackGroup(Model& m, uint64_t laneId, uint64_t groupId)
    if (l->groupId == groupId) return false;
    const uint64_t prevGroup = l->groupId;
    l->groupId = groupId;
-   // Leaving a group empty behind is dead weight in the registry - prune it
-   // immediately (mirrors RemoveLane), never a singleton-vs-zero ambiguity
-   // since track groups (unlike clip groups) tolerate one member.
-   if (prevGroup != 0)
-   {
-      bool anyLeft = false;
-      for (const Lane& other : m.lanes)
-         if (other.groupId == prevGroup) { anyLeft = true; break; }
-      if (!anyLeft)
-         m.trackGroups.erase(std::remove_if(m.trackGroups.begin(), m.trackGroups.end(),
-                                            [&](const TrackGroup& g) { return g.id == prevGroup; }),
-                             m.trackGroups.end());
-   }
+   if (prevGroup != 0) PruneEmptyTrackGroupChain(m, prevGroup);
    m.revision++;
    return true;
+}
+
+bool SetTrackGroupParent(Model& m, uint64_t groupId, uint64_t newParentGroupId)
+{
+   if (groupId == 0) return false;
+   TrackGroup* g = nullptr;
+   for (TrackGroup& gg : m.trackGroups) if (gg.id == groupId) { g = &gg; break; }
+   if (!g) return false;
+   if (newParentGroupId == groupId) return false;
+   if (newParentGroupId == g->parentGroupId) return false;
+   if (newParentGroupId != 0)
+   {
+      if (!FindTrackGroup(m, newParentGroupId)) return false;
+      // Reject moving groupId under its own descendant: if groupId appears
+      // in newParentGroupId's own ancestor chain, newParentGroupId is
+      // already nested inside groupId, and reparenting would create a loop.
+      for (uint64_t a : GroupAncestors(m, newParentGroupId))
+         if (a == groupId) return false;
+   }
+   const uint64_t oldParent = g->parentGroupId;
+   g->parentGroupId = newParentGroupId;
+   if (oldParent != 0) PruneEmptyTrackGroupChain(m, oldParent);
+   m.revision++;
+   return true;
+}
+
+uint64_t GroupSelectedLanes(Model& m, const std::vector<uint64_t>& laneIds, uint64_t parentGroupId)
+{
+   if (laneIds.empty()) return 0;
+   return AddTrackGroup(m, laneIds, std::string(), parentGroupId);
 }
 
 bool RenameTrackGroup(Model& m, uint64_t groupId, const std::string& name)
@@ -996,28 +1272,112 @@ std::vector<uint64_t> LanesInTrackGroup(const Model& m, uint64_t groupId)
    return out;
 }
 
+std::vector<uint64_t> LanesInTrackGroupRecursive(const Model& m, uint64_t groupId)
+{
+   std::vector<uint64_t> out;
+   if (groupId == 0) return out;
+   std::unordered_set<uint64_t> subtreeGroups;
+   subtreeGroups.insert(groupId);
+   bool grew = true;
+   while (grew)
+   {
+      grew = false;
+      for (const TrackGroup& g : m.trackGroups)
+         if (subtreeGroups.count(g.parentGroupId) && !subtreeGroups.count(g.id)) { subtreeGroups.insert(g.id); grew = true; }
+   }
+   for (const Lane& l : m.lanes)
+      if (l.groupId != 0 && subtreeGroups.count(l.groupId)) out.push_back(l.id);
+   return out;
+}
+
+std::vector<uint64_t> GroupAncestors(const Model& m, uint64_t groupId)
+{
+   std::vector<uint64_t> out;
+   const TrackGroup* g = FindTrackGroup(m, groupId);
+   uint64_t cur = g ? g->parentGroupId : 0;
+   size_t hops = 0;
+   while (cur != 0 && hops++ <= m.trackGroups.size())
+   {
+      out.push_back(cur);
+      const TrackGroup* p = FindTrackGroup(m, cur);
+      if (!p) break;
+      cur = p->parentGroupId;
+   }
+   return out;
+}
+
+int GroupDepth(const Model& m, uint64_t groupId)
+{
+   return (int)GroupAncestors(m, groupId).size();
+}
+
 bool DuplicateTrackGroup(Model& m, uint64_t groupId, uint64_t* outGroupId)
 {
    const TrackGroup* src = FindTrackGroup(m, groupId);
    if (!src) return false;
-   std::vector<uint64_t> memberIds = LanesInTrackGroup(m, groupId);
-   if (memberIds.empty()) return false;
+   if (LanesInTrackGroupRecursive(m, groupId).empty()) return false;
 
-   TrackGroup ng = *src;
-   ng.id = m.NewId();
-
-   // Remap clip-level groupIds (Clip::groupId) so a duplicated track group
-   // never shares a clip group with its source - each clip group inside the
-   // duplicate becomes its own, fresh group, same convention DuplicateBlock
-   // already uses for a plain clip-selection duplicate.
-   std::unordered_map<uint64_t, uint64_t> clipGroupRemap;
-   for (uint64_t laneId : memberIds)
+   // Collect the whole subtree of group ids (groupId plus every descendant).
+   std::vector<uint64_t> subtreeGroups;
+   subtreeGroups.push_back(groupId);
+   for (size_t i = 0; i < subtreeGroups.size(); i++)
    {
-      const Lane* src_lane = FindLane(m, laneId);
-      if (!src_lane) continue;
-      Lane nl = *src_lane;
+      const uint64_t gid = subtreeGroups[i];
+      for (const TrackGroup& g : m.trackGroups)
+         if (g.parentGroupId == gid) subtreeGroups.push_back(g.id);
+   }
+
+   // Fresh id for every group in the subtree up front, so lane and
+   // child-group parent links can be rewritten to point at the duplicates
+   // in a single pass below.
+   std::unordered_map<uint64_t, uint64_t> groupRemap;
+   for (uint64_t gid : subtreeGroups) groupRemap[gid] = m.NewId();
+
+   // New records, parent links rewired to point at the new duplicates - the
+   // root of the subtree keeps the SOURCE's original parent, so the
+   // duplicate lands as a sibling of the source, not nested inside it.
+   std::vector<TrackGroup> newGroups;
+   newGroups.reserve(subtreeGroups.size());
+   for (uint64_t gid : subtreeGroups)
+   {
+      const TrackGroup* g = FindTrackGroup(m, gid);
+      if (!g) continue;
+      TrackGroup ng = *g;
+      ng.id = groupRemap[gid];
+      ng.parentGroupId = (gid == groupId) ? g->parentGroupId : groupRemap[g->parentGroupId];
+      ng.name = UniqueTrackGroupName(m, ng.name.empty() ? "Group" : ng.name);
+      newGroups.push_back(ng);
+   }
+
+   // Where the duplicated lanes land in m.lanes: TrackGroupChildren orders
+   // sibling rows by their lanes' position in this vector, so appending at
+   // the very end (the old behaviour) made every duplicate render as the
+   // LAST group in the whole arrangement instead of right below its
+   // source. Insert directly after the source subtree's own last lane
+   // instead, so the duplicate comes out as an immediate sibling.
+   size_t insertAt = m.lanes.size();
+   {
+      std::unordered_set<uint64_t> subtreeGroupSet(subtreeGroups.begin(), subtreeGroups.end());
+      for (size_t i = 0; i < m.lanes.size(); i++)
+         if (subtreeGroupSet.count(m.lanes[i].groupId))
+            insertAt = i + 1;
+   }
+
+   // Every lane anywhere in the subtree, with fresh ids and clip-groupId
+   // remapping so a duplicated subtree never shares a clip group with its
+   // source - same convention DuplicateBlock uses for a plain clip
+   // duplicate. Snapshot m.lanes first: inserting into m.lanes below would
+   // invalidate a live range-based iteration over it.
+   const std::vector<Lane> lanesSnapshot = m.lanes;
+   std::unordered_map<uint64_t, uint64_t> clipGroupRemap;
+   std::vector<Lane> newLanes;
+   for (const Lane& srcLane : lanesSnapshot)
+   {
+      if (srcLane.groupId == 0 || !groupRemap.count(srcLane.groupId)) continue;
+      Lane nl = srcLane;
       nl.id = m.NewId();
-      nl.groupId = ng.id;
+      nl.groupId = groupRemap[srcLane.groupId];
+      nl.name = UniqueLaneName(m, nl.name.empty() ? (nl.type == kLaneVideo ? "Video" : "Audio") : nl.name, nl.type);
       for (Clip& c : nl.clips)
       {
          c.id = m.NewId();
@@ -1028,20 +1388,63 @@ bool DuplicateTrackGroup(Model& m, uint64_t groupId, uint64_t* outGroupId)
             c.groupId = it->second;
          }
       }
-      m.lanes.push_back(nl);
+      newLanes.push_back(std::move(nl));
    }
-   m.trackGroups.push_back(ng);
+   m.lanes.insert(m.lanes.begin() + (std::ptrdiff_t)insertAt, newLanes.begin(), newLanes.end());
+
+   for (TrackGroup& ng : newGroups) m.trackGroups.push_back(ng);
    m.revision++;
-   if (outGroupId) *outGroupId = ng.id;
+   if (outGroupId) *outGroupId = groupRemap[groupId];
    return true;
 }
 
 bool LaneEffectivelyEnabled(const Model& m, const Lane& lane)
 {
    if (!lane.enabled) return false;
-   if (lane.groupId == 0) return true;
-   const TrackGroup* g = FindTrackGroup(m, lane.groupId);
-   return !g || g->enabled; // dangling groupId (shouldn't happen) reads as enabled
+   uint64_t g = lane.groupId;
+   size_t hops = 0;
+   while (g != 0 && hops++ <= m.trackGroups.size())
+   {
+      const TrackGroup* grp = FindTrackGroup(m, g);
+      if (!grp) return true; // dangling groupId (shouldn't happen) reads as enabled
+      if (!grp->enabled) return false;
+      g = grp->parentGroupId;
+   }
+   return true;
+}
+
+std::vector<RowSlot> TrackGroupChildren(const Model& m, uint64_t parentGroupId)
+{
+   std::vector<RowSlot> out;
+   std::unordered_set<uint64_t> emitted;
+   for (const Lane& l : m.lanes)
+   {
+      if (l.groupId == parentGroupId) { out.push_back(RowSlot{false, l.id}); continue; }
+      // Walk this lane's group chain up to find the ancestor that is a
+      // direct child of parentGroupId - that's this lane's slot at this
+      // level (the lane itself might be several levels deeper). A lane
+      // whose chain never reaches parentGroupId lives under a different
+      // branch and contributes nothing here.
+      uint64_t g = l.groupId;
+      uint64_t slot = 0;
+      size_t hops = 0;
+      while (g != 0 && hops++ <= m.trackGroups.size())
+      {
+         const TrackGroup* grp = FindTrackGroup(m, g);
+         if (!grp) break;
+         if (grp->parentGroupId == parentGroupId) { slot = g; break; }
+         g = grp->parentGroupId;
+      }
+      if (slot != 0 && emitted.insert(slot).second)
+         out.push_back(RowSlot{true, slot});
+   }
+   // Child groups with nothing under them anywhere (no lane's chain reaches
+   // them by the walk above) still need to draw - append in trackGroups
+   // storage order, same fallback the old flat model used implicitly.
+   for (const TrackGroup& g : m.trackGroups)
+      if (g.parentGroupId == parentGroupId && emitted.insert(g.id).second)
+         out.push_back(RowSlot{true, g.id});
+   return out;
 }
 
 uint64_t AddMarker(Model& m, Tick pos, const std::string& name, uint32_t color)
