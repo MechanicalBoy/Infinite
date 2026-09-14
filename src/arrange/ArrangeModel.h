@@ -70,6 +70,34 @@ namespace Arrange
       float    colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = no tint
       int      blendMode = 0;  // video only, index into BlendModes::Names()
 
+      // --- sample-dropped media clips (audio drop / video-image drop) ----
+      float    pan     = 0.0f;  // audio only, -1..1, independent of the lane's own pan
+      float    pitch   = 0.0f;  // audio only, semitones, +/-24 - mirrors SamplerNode::pitch
+      // Audio only. true (default): the clip's timeline length is the file's
+      // natural duration converted to ticks at the tempo in effect when it
+      // was dropped, so it lands on the beat grid; the source itself is not
+      // time-stretched, just cut off/looped to fit. false: length is still
+      // computed once at drop time the same way, but the clip is understood
+      // to represent the file's own untouched duration rather than something
+      // that should read as "on tempo" - a UI/authoring distinction only,
+      // there is no different playback behavior to it beyond that one-time
+      // length calculation. Never revisited on a later tempo change: ticks
+      // are already tempo-invariant everywhere else in this model.
+      bool     syncToTempo = true;
+      // Video/image only. Basic color grade, consumed by the compositor as a
+      // per-clip shader pass. Defaults are a no-op so every clip that
+      // predates this field renders identically.
+      float    colorBrightness = 0.0f;  // -1..1, 0 = no change
+      float    colorContrast   = 0.0f;  // -1..1, 0 = no change
+      float    colorSaturation = 1.0f;  // 0..2, 1 = no change
+
+      // Runtime-only: true while a dropped media file's async decode
+      // (ArrangeMediaImport.h) hasn't landed yet. Deliberately not read or
+      // written by Patch.cpp/PatchJson.cpp - a save always sees this false
+      // (imports resolve in well under a save's timeframe), so it never
+      // round-trips and needs no persistence format of its own.
+      bool     importPending = false;
+
       Tick End() const { return start + length; }
    };
 

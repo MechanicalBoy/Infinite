@@ -274,6 +274,7 @@ set(COMMON_SOURCES
     src/core/Palette.cpp
     src/core/Patch.cpp
     src/arrange/ArrangeModel.cpp
+    src/arrange/ArrangeMediaImport.cpp
     src/core/RemoteControl.cpp
     src/core/PatchJson.cpp
     src/core/OscMessage.cpp

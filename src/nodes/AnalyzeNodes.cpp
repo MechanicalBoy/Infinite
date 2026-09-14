@@ -631,6 +631,7 @@ namespace
 {
    constexpr int kFileVolumeParam = 0;
    constexpr int kFileGainParam = 1;
+   constexpr int kFilePitchParam = 2; // semitones - see AudioFileNode::pitch
 
    constexpr int kAnalysisFftLog2 = 10; // 1024-point FFT, same size Platform.mm's live analyser used
    constexpr int kAnalysisFftSize = 1 << kAnalysisFftLog2;
@@ -845,6 +846,7 @@ public:
       mMailbox.PrepareToPlay(sampleRate);
       mMailbox.SetImmediate(kFileVolumeParam, mVolume.load(std::memory_order_relaxed));
       mMailbox.SetImmediate(kFileGainParam, mGain.load(std::memory_order_relaxed));
+      mMailbox.SetImmediate(kFilePitchParam, mPitchSemitones.load(std::memory_order_relaxed));
    }
 
    // Main thread only. Hands over ownership of a freshly decoded buffer.
@@ -853,12 +855,14 @@ public:
    // Main thread only, once per frame from CookIfNeeded.
    void DrainRetired() { mSampleSlot.DrainRetired(); }
 
-   void PushParams(float volume, float gain, float attack, float release, bool loop, bool monitor)
+   void PushParams(float volume, float gain, float attack, float release, bool loop, bool monitor, float pitchSemitones = 0.0f)
    {
       mVolume.store(volume, std::memory_order_relaxed);
       mGain.store(gain, std::memory_order_relaxed);
+      mPitchSemitones.store(pitchSemitones, std::memory_order_relaxed);
       mMailbox.Push(kFileVolumeParam, volume);
       mMailbox.Push(kFileGainParam, gain);
+      mMailbox.Push(kFilePitchParam, pitchSemitones);
       mAnalyser.SetSmoothing(attack, release);
       mLoop.store(loop, std::memory_order_relaxed);
       mMonitor.store(monitor, std::memory_order_relaxed);
@@ -906,6 +910,9 @@ public:
             ? mActiveBuffer->sampleRate : mSampleRate;
          mPlaybackRate = (fileRate > 0.0 && mSampleRate > 0.0) ? fileRate / mSampleRate : 1.0;
          mActiveFileSampleRate.store(fileRate, std::memory_order_relaxed);
+         // PositionSeconds() divides mFramePos by mActiveFileSampleRate, so
+         // deliberately excludes the pitch ratio below - a pitched-up clip's
+         // reported position still reads in the file's own real time.
       }
 
       for (int ch = 0; ch < buffer.numChannels; ch++)
@@ -925,12 +932,19 @@ public:
       {
          const float volume = mMailbox.SmoothedValue(kFileVolumeParam);
          const float gain = mMailbox.SmoothedValue(kFileGainParam);
+         // Varispeed: same "shift the read rate" pitch model SamplerNode's
+         // NoteToRate uses, layered on top of the file/engine sample-rate
+         // ratio above rather than replacing it - a pitched-up file still
+         // reads faster relative to its OWN rate, whatever the engine runs
+         // at. Smoothed like volume/gain so a live pitch edit from the
+         // Arrange clip settings panel doesn't zipper.
+         const float pitchRatio = powf(2.0f, mMailbox.SmoothedValue(kFilePitchParam) / 12.0f);
 
          float raw = 0.0f;
          if (hasBuffer && mPlaying.load(std::memory_order_relaxed))
          {
             raw = ReadSample(*mActiveBuffer, mPos);
-            mPos += mPlaybackRate;
+            mPos += mPlaybackRate * pitchRatio;
             if (mPos >= mActiveBuffer->numFrames)
             {
                if (loop)
@@ -982,6 +996,7 @@ private:
 
    std::atomic<float> mVolume { 0.8f };
    std::atomic<float> mGain { 1.0f };
+   std::atomic<float> mPitchSemitones { 0.0f };
    std::atomic<bool> mLoop { true };
    std::atomic<bool> mMonitor { true };
 
@@ -1141,12 +1156,17 @@ bool AudioFileNode::Open(const std::string& path)
       return false;
    }
 
+   return OpenFromDecoded(path, decoded);
+}
+
+bool AudioFileNode::OpenFromDecoded(const std::string& path, Platform::SampleBuffer* decoded)
+{
    if (!mAudioNode)
       mAudioNode = std::make_unique<AudioFilePlayerAudioNode>();
 
    mDuration = decoded->sampleRate > 0.0 ? (double)decoded->numFrames / decoded->sampleRate : 0.0;
    mAudioNode->PushBuffer(decoded);
-   mAudioNode->PushParams(volume, gain, attack, release, loop, monitor);
+   mAudioNode->PushParams(volume, gain, attack, release, loop, monitor, pitch);
    mAudioNode->RequestRestart();
 
    const size_t slash = path.find_last_of('/');
@@ -1208,7 +1228,7 @@ void AudioFileNode::CookIfNeeded(int frameId)
    if (!mAudioNode)
       mAudioNode = std::make_unique<AudioFilePlayerAudioNode>();
 
-   mAudioNode->PushParams(volume, gain, attack, release, loop, monitor);
+   mAudioNode->PushParams(volume, gain, attack, release, loop, monitor, pitch);
    mAudioNode->DrainRetired();
 
    // Following the transport keeps the track locked to the same play/pause the
