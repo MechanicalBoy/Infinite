@@ -105,8 +105,8 @@ namespace Arrange
    struct Settings
    {
       int   timeDisplay  = 0;     // 0 = Bars, 1 = Time
-      int   snapDivision = 4;     // grid denominator: 1 = bar, 4 = 1/4, ...
-      bool  snapTriplet  = false;
+      int   snapDivision = 4;     // grid denominator: 0 = off, 1 = bar, 4 = 1/4, ... (WP6)
+      bool  snapTriplet  = false; // x2/3 on divisions >= 2; ignored for bar/off
       float zoom         = 1.0f;  // pixels per beat multiplier
       float scroll       = 0.0f;  // leftmost visible beat
       LoopRange loop;
@@ -219,6 +219,23 @@ namespace Arrange
    bool RenameMarker(Model& m, uint64_t id, const std::string& name);
    bool RecolorMarker(Model& m, uint64_t id, uint32_t color);
    bool DeleteMarker(Model& m, uint64_t id);
+
+   // --- grid and marker navigation (WP6) -------------------------------
+   // The snap grid's step in ticks. `division` is Settings::snapDivision:
+   // 0 = off (returns 0), 1 = one bar of `beatsPerBar` quarter notes (triplet
+   // ignored), d >= 2 = 1/d of a whole note, x2/3 when `triplet`. At kPPQ 960
+   // every power-of-two division down to 1/256 and its triplet is exact.
+   Tick SnapGridTicks(int division, bool triplet, double beatsPerBar = 4.0);
+   // Nearest / floor / ceiling multiple of `grid`; grid <= 0 returns t.
+   Tick SnapToGrid(Tick t, Tick grid);
+   Tick GridFloor(Tick t, Tick grid);
+   Tick GridCeil(Tick t, Tick grid);
+   // Last marker with pos < t - tolerance / first with pos > t + tolerance,
+   // nullptr when there is none. Markers are sorted, so these are the
+   // Alt+Left / Alt+Right jump targets. The tolerance lets a playing
+   // playhead that has just passed a marker still jump to the one before it.
+   const Marker* PrevMarker(const Model& m, Tick t, Tick tolerance = 0);
+   const Marker* NextMarker(const Model& m, Tick t, Tick tolerance = 0);
 
    // Re-sorts, clamps and dissolves singleton groups. Called at the end of
    // every op and after deserialization; safe to call on anything.

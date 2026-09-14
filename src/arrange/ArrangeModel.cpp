@@ -783,7 +783,7 @@ uint64_t AddMarker(Model& m, Tick pos, const std::string& name, uint32_t color)
 {
    Marker mk;
    mk.id = m.NewId();
-   mk.pos = std::max<Tick>(0, pos);
+   mk.pos = std::clamp<Tick>(pos, 0, kMaxTick);
    mk.name = name;
    mk.color = color;
    m.markers.push_back(mk);
@@ -795,7 +795,7 @@ uint64_t AddMarker(Model& m, Tick pos, const std::string& name, uint32_t color)
 
 bool MoveMarker(Model& m, uint64_t id, Tick pos)
 {
-   pos = std::max<Tick>(0, pos);
+   pos = std::clamp<Tick>(pos, 0, kMaxTick);
    for (Marker& mk : m.markers)
       if (mk.id == id)
       {
@@ -844,5 +844,58 @@ bool DeleteMarker(Model& m, uint64_t id)
    if (m.markers.size() == before) return false;
    m.revision++;
    return true;
+}
+
+Tick SnapGridTicks(int division, bool triplet, double beatsPerBar)
+{
+   if (division <= 0) return 0;
+   if (division == 1)
+   {
+      if (!(beatsPerBar > 0.0)) beatsPerBar = 4.0;
+      return std::max<Tick>(1, BeatsToTicks(beatsPerBar));
+   }
+   const double whole = (double)(kPPQ * 4);
+   const double step = whole / (double)division * (triplet ? 2.0 / 3.0 : 1.0);
+   return std::max<Tick>(1, (Tick)llround(step));
+}
+
+Tick GridFloor(Tick t, Tick grid)
+{
+   if (grid <= 0) return t;
+   Tick q = t / grid;
+   if (t < 0 && q * grid != t) --q;
+   return q * grid;
+}
+
+Tick GridCeil(Tick t, Tick grid)
+{
+   if (grid <= 0) return t;
+   const Tick f = GridFloor(t, grid);
+   return f == t ? t : f + grid;
+}
+
+Tick SnapToGrid(Tick t, Tick grid)
+{
+   if (grid <= 0) return t;
+   const Tick f = GridFloor(t, grid);
+   return (t - f) * 2 >= grid ? f + grid : f;
+}
+
+const Marker* PrevMarker(const Model& m, Tick t, Tick tolerance)
+{
+   const Marker* best = nullptr;
+   for (const Marker& mk : m.markers)
+   {
+      if (mk.pos < t - tolerance) best = &mk;
+      else break;
+   }
+   return best;
+}
+
+const Marker* NextMarker(const Model& m, Tick t, Tick tolerance)
+{
+   for (const Marker& mk : m.markers)
+      if (mk.pos > t + tolerance) return &mk;
+   return nullptr;
 }
 }

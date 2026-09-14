@@ -311,7 +311,7 @@ namespace Patch
    {
       uint64_t nextId = 1;     // persisted, not recomputed - see Arrange::Model
       int   timeDisplay = 0;
-      int   snapDivision = 4;
+      int   snapDivision = 4;     // 0 = off, 1 = bar, d = 1/d (WP6)
       bool  snapTriplet = false;
       float zoom = 1.0f;
       float scroll = 0.0f;

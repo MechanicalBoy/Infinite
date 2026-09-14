@@ -882,7 +882,7 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
    {
       ArrangeSettingsRecord& a = outData.arrangeSettings;
       if (a.timeDisplay != 0 && a.timeDisplay != 1) a.timeDisplay = 0;
-      if (a.snapDivision < 1 || a.snapDivision > 64) a.snapDivision = 4;
+      if (a.snapDivision < 0 || a.snapDivision > 64) a.snapDivision = 4; // 0 = snap off (WP6)
       if (!std::isfinite(a.zoom) || a.zoom <= 0.0f) a.zoom = 1.0f;
       if (!std::isfinite(a.scroll) || a.scroll < 0.0f) a.scroll = 0.0f;
       if (a.loopStart < 0) a.loopStart = 0;

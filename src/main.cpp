@@ -1013,16 +1013,35 @@ namespace
    float gArrangePanelHeight = 240.0f;
    const float kArrangePanelMinWidth = 300.0f;
    const float kArrangePanelMinHeight = 140.0f;
-   float gArrangePixelsPerSecond = 80.0f;    // zoom level
-   double gArrangeScrollSeconds = 0.0;       // horizontal scroll offset
+   // The view axis is musical (WP6): pixels per quarter-note beat and the
+   // leftmost visible beat, so clips (stored in ticks) hold still on screen
+   // when the tempo changes. 40 px/beat is the old 80 px/s default at 120 bpm.
+   // View state only - deliberately not written into Settings::zoom/scroll,
+   // since every model write bumps revision and wakes the audio rebuild.
+   float gArrangePixelsPerBeat = 40.0f;
+   double gArrangeScrollBeats = 0.0;
+   const float kArrangeMinPixelsPerBeat = 5.0f;
+   const float kArrangeMaxPixelsPerBeat = 500.0f;
    // Which side of the timeline lanes the global viewport monitor docks to -
    // toggled via right-click on the monitor itself.
    bool  gArrangeViewportOnRight = false;
-   // Global on/off for snapping clip drags, trims, and playhead/ruler
-   // scrubbing to the tempo-derived beat grid (see the ruler's bar.beat
-   // ticks) - separate from gSnapToGrid, which is the node canvas's grid.
-   bool  gArrangeSnapToGrid = true;
-   bool  gArrangeDraggingPlayhead = false;
+   // The snap grid itself is model state (Settings::snapDivision, 0 = off,
+   // and snapTriplet - WP6). The magnet button toggles off <-> the last
+   // division that was on, remembered here (view state, not saved).
+   int   gArrangeLastSnapDivision = 4;
+   // Ruler scrub (WP6): a drag on the ruler moves a ghost playhead only, and
+   // the transport seeks once, on release (ArrangeScrubEnd). Seeking every
+   // drag frame bumped Transport's reset epoch every frame, which reset every
+   // Field/stateful node's history for the whole drag.
+   bool  gArrangeScrubbing = false;
+   int64_t gArrangeScrubTick = 0;
+   // Marker flag being dragged on the ruler (0 = none), and the inline rename.
+   uint64_t gArrangeMarkerDragId = 0;
+   int64_t gArrangeMarkerDragGrabTick = 0;
+   int64_t gArrangeMarkerDragOrigPos = 0;
+   uint64_t gArrangeRenamingMarkerId = 0;
+   char gArrangeRenameMarkerBuffer[64] = {};
+   uint64_t gArrangeCtxMarkerId = 0;
    // Loop region: Shift+drag on the ruler sets [start,end) and arms it;
    // right-clicking the ruler while armed disarms it. The loop itself is
    // gArrange.settings.loop, in ticks (WP5b) - these are only the drag's
@@ -5696,6 +5715,204 @@ namespace
    double ArrangeLoopEndSec()
    {
       return Arrange::TicksToSeconds(gArrange.settings.loop.end, (double)Transport::Instance().Tempo());
+   }
+
+   // View settings that live in the model (so they save with the patch) but
+   // are not edits: undo, redo and a drag's snapshot restore all carry the
+   // live values across instead of rewinding them (WP5 dockSide, WP6 the
+   // display unit and the snap grid).
+   struct ArrangeViewSettings
+   {
+      int  dockSide = 0;
+      int  timeDisplay = 0;
+      int  snapDivision = 4;
+      bool snapTriplet = false;
+   };
+   ArrangeViewSettings ArrangeKeepViewSettings(const Arrange::Model& m)
+   {
+      ArrangeViewSettings v;
+      v.dockSide = m.settings.dockSide;
+      v.timeDisplay = m.settings.timeDisplay;
+      v.snapDivision = m.settings.snapDivision;
+      v.snapTriplet = m.settings.snapTriplet;
+      return v;
+   }
+   void ArrangeRestoreViewSettings(Arrange::Model& m, const ArrangeViewSettings& v)
+   {
+      m.settings.dockSide = v.dockSide;
+      m.settings.timeDisplay = v.timeDisplay;
+      m.settings.snapDivision = v.snapDivision;
+      m.settings.snapTriplet = v.snapTriplet;
+   }
+
+   // Bars | Time (Settings::timeDisplay). A view change only - every
+   // position stays in ticks. Saved with the patch, so a direct model write:
+   // revision++ (invariant 6) and dirty, never an undo step.
+   void ArrangeSetTimeDisplay(int mode)
+   {
+      mode = mode == 1 ? 1 : 0;
+      if (gArrange.settings.timeDisplay == mode)
+         return;
+      gArrange.settings.timeDisplay = mode;
+      gArrange.revision++;
+      gPatchDirty = true;
+   }
+
+   // Snap grid (Settings::snapDivision / snapTriplet, 0 = off). Same shape
+   // as ArrangeSetTimeDisplay.
+   void ArrangeSetSnap(int division, bool triplet)
+   {
+      division = std::clamp(division, 0, 64);
+      if (division <= 1)
+         triplet = false; // no bar or off triplet
+      if (division > 0)
+         gArrangeLastSnapDivision = division;
+      Arrange::Settings& st = gArrange.settings;
+      if (st.snapDivision == division && st.snapTriplet == triplet)
+         return;
+      st.snapDivision = division;
+      st.snapTriplet = triplet;
+      gArrange.revision++;
+      gPatchDirty = true;
+   }
+
+   // The live snap step in ticks, 0 when snap is off. A bar follows the
+   // transport's meter, same as the ruler's bar lines.
+   Arrange::Tick ArrangeSnapGridTicks()
+   {
+      return Arrange::SnapGridTicks(gArrange.settings.snapDivision, gArrange.settings.snapTriplet,
+                                    std::max(1.0, Transport::Instance().BeatsPerBar()));
+   }
+
+   // The step the arrow keys nudge by: the snap grid, or a sixteenth when
+   // snap is off (so the keys never go dead).
+   Arrange::Tick ArrangeNudgeStepTicks()
+   {
+      const Arrange::Tick g = ArrangeSnapGridTicks();
+      return g > 0 ? g : Arrange::kPPQ / 4;
+   }
+
+   // The playhead in ticks - off Transport::Beats(), never Seconds(): the
+   // beat clock is what the clips are laid out on, and seconds-to-ticks at
+   // the live tempo drifts from it the moment a tempo change is staged.
+   Arrange::Tick ArrangePlayTick()
+   {
+      return std::clamp<Arrange::Tick>(Arrange::BeatsToTicks(Transport::Instance().Beats()), 0, Arrange::kMaxTick);
+   }
+
+   void ArrangeSeekTick(Arrange::Tick t)
+   {
+      Transport::Instance().SeekBeats(Arrange::TicksToBeats(std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick)));
+   }
+
+   // Ruler scrub (WP6). Begin/Update only move the ghost; End seeks exactly
+   // once. Cancel drops the ghost without seeking.
+   void ArrangeScrubBegin(Arrange::Tick t)
+   {
+      gArrangeScrubbing = true;
+      gArrangeScrubTick = std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+   }
+   void ArrangeScrubUpdate(Arrange::Tick t)
+   {
+      if (gArrangeScrubbing)
+         gArrangeScrubTick = std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+   }
+   bool ArrangeScrubEnd()
+   {
+      if (!gArrangeScrubbing)
+         return false;
+      gArrangeScrubbing = false;
+      ArrangeSeekTick(gArrangeScrubTick);
+      return true;
+   }
+   void ArrangeScrubCancel()
+   {
+      gArrangeScrubbing = false;
+   }
+
+   // Where End sends the playhead: the end of the last clip on any lane.
+   Arrange::Tick ArrangeEndKeyTargetTick()
+   {
+      return Arrange::ArrangementEnd(gArrange);
+   }
+
+   // Marker colours are RGBA8 packed 0xRRGGBBAA (Arrange::Marker::color).
+   ImU32 ArrangeMarkerColU32(uint32_t rgba)
+   {
+      return IM_COL32((rgba >> 24) & 0xFF, (rgba >> 16) & 0xFF, (rgba >> 8) & 0xFF, rgba & 0xFF);
+   }
+   uint32_t ArrangeMarkerRGBA(ImU32 col)
+   {
+      const uint32_t r = (col >> IM_COL32_R_SHIFT) & 0xFF;
+      const uint32_t g = (col >> IM_COL32_G_SHIFT) & 0xFF;
+      const uint32_t b = (col >> IM_COL32_B_SHIFT) & 0xFF;
+      const uint32_t a = (col >> IM_COL32_A_SHIFT) & 0xFF;
+      return (r << 24) | (g << 16) | (b << 8) | a;
+   }
+   constexpr uint32_t kArrangeDefaultMarkerRGBA = 0xF59E0BFFu; // amber
+
+   // The one colour list the timeline's Color Tint menu and the marker menu
+   // both offer. Entry 0 is "no tint" for clips and the default for markers.
+   struct ArrangePaletteEntry { const char* name; ImU32 col; };
+   const ArrangePaletteEntry kArrangePalette[10] = {
+      { "Default", IM_COL32(110, 120, 140, 255) },
+      { "Crimson", IM_COL32(239, 68, 68, 255) },
+      { "Orange",  IM_COL32(249, 115, 22, 255) },
+      { "Amber",   IM_COL32(245, 158, 11, 255) },
+      { "Emerald", IM_COL32(16, 185, 129, 255) },
+      { "Cyan",    IM_COL32(6, 182, 212, 255) },
+      { "Blue",    IM_COL32(59, 130, 246, 255) },
+      { "Purple",  IM_COL32(139, 92, 246, 255) },
+      { "Magenta", IM_COL32(217, 70, 239, 255) },
+      { "Rose",    IM_COL32(244, 63, 94, 255) }
+   };
+
+   // The snap grids the timeline offers: MusicTime RateDivision entries
+   // (names and lengths come from that one table - rhythmic-quantization-
+   // standard) mapped onto Settings::snapDivision / snapTriplet. rd -1 = Off.
+   // INFINITE_ARRANGEMARKERTEST checks every row against MusicTime::BeatsFor.
+   struct ArrangeGridChoice { int rd; int division; bool triplet; };
+   const ArrangeGridChoice kArrangeGridChoices[10] = {
+      { -1, 0, false },
+      { MusicTime::k1Bar, 1, false },
+      { MusicTime::kHalf, 2, false },          { MusicTime::kHalfTrip, 2, true },
+      { MusicTime::kQuarter, 4, false },       { MusicTime::kQuarterTrip, 4, true },
+      { MusicTime::kEighth, 8, false },        { MusicTime::kEighthTrip, 8, true },
+      { MusicTime::kSixteenth, 16, false },    { MusicTime::kSixteenthTrip, 16, true },
+   };
+
+   // `M`: a marker at the playhead, on the snap grid when snap is on. One
+   // undo entry. Returns the new id.
+   uint64_t ArrangeAddMarkerAtPlayhead()
+   {
+      Arrange::Tick at = ArrangePlayTick();
+      const Arrange::Tick g = ArrangeSnapGridTicks();
+      if (g > 0)
+         at = Arrange::SnapToGrid(at, g);
+      uint64_t made = 0;
+      ArrangeEdit([&]()
+      {
+         made = Arrange::AddMarker(gArrange, at, "Marker " + std::to_string(gArrange.markers.size() + 1),
+                                   kArrangeDefaultMarkerRGBA);
+      });
+      return made;
+   }
+
+   // Alt+Left / Alt+Right. While playing, a marker the playhead passed less
+   // than half a beat ago counts as "here", so a Prev press still steps back
+   // past it instead of landing on it again. Returns whether it seeked.
+   bool ArrangeJumpToMarker(int dir)
+   {
+      const Arrange::Tick play = ArrangePlayTick();
+      const Arrange::Marker* mk = nullptr;
+      if (dir < 0)
+         mk = Arrange::PrevMarker(gArrange, play, Transport::Instance().IsPlaying() ? Arrange::kPPQ / 2 : 0);
+      else
+         mk = Arrange::NextMarker(gArrange, play, 0);
+      if (mk == nullptr)
+         return false;
+      ArrangeSeekTick(mk->pos);
+      return true;
    }
 
    // Arrange::Model <-> Patch::Data. Straight field copies in both directions:
@@ -16777,7 +16994,9 @@ namespace
          // elsewhere in the app.
          if (ImGui::IsKeyReleased(tk.key))
             n->SetKeyState(note, false);
-         else if (n->computerKeyboardEnabled && isHovered && !ImGui::GetIO().WantTextInput
+         // !gArrangeFocused: the timeline owns the keyboard (its M marker
+         // key would otherwise also play a note here).
+         else if (n->computerKeyboardEnabled && isHovered && !ImGui::GetIO().WantTextInput && !gArrangeFocused
                   && ImGui::IsKeyPressed(tk.key, false))
             n->SetKeyState(note, true);
       }
@@ -26369,29 +26588,6 @@ namespace
       return dynamic_cast<IAudioSource*>(gn.node.get()) != nullptr;
    }
 
-   // Seconds-per-beat/bar derived from the live global transport, so the
-   // Arrangement Timeline's ruler and grid-snap always track BPM/time
-   // signature changes rather than caching a value that can go stale.
-   double ArrangeSecPerBeat()
-   {
-      return 60.0 / (double)std::max(1.0f, Transport::Instance().Tempo());
-   }
-   double ArrangeSecPerBar()
-   {
-      return ArrangeSecPerBeat() * std::max(1.0, Transport::Instance().BeatsPerBar());
-   }
-   // Nearest grid line to `t`, in seconds - the shared snap target for clip
-   // move/trim, playhead scrubbing, and loop-region dragging. `snapUnitSec`
-   // lets callers snap to whatever grid spacing is actually drawn on screen
-   // (the zoom-adaptive minor tick, e.g. 2 or 4 beats at low zoom) rather
-   // than always the raw per-beat spacing, which used to let a clip land on
-   // a beat with no visible line through it.
-   double ArrangeNearestBeatSec(double t, double snapUnitSec = -1.0)
-   {
-      const double unit = snapUnitSec > 0.0 ? snapUnitSec : ArrangeSecPerBeat();
-      return std::round(t / unit) * unit;
-   }
-
    // ---- arrangement video compositing (overhaul WP4) ---------------------
    //
    // One pass per active video lane, bottom lane first, so the lane drawn at
@@ -26794,8 +26990,24 @@ namespace
          gArrangeRenamingClipId = 0;
          gArrangeCtxClipId = 0;
          gArrangeAssigningClipId = 0;
+         gArrangeRenamingMarkerId = 0;
+         gArrangeCtxMarkerId = 0;
+         gArrangeMarkerDragId = 0;
          gArrangeSelGeneration = gArrangePatchGeneration;
       }
+      // Marker ids the panel holds, same rule as the clip ids below.
+      auto markerLive = [](uint64_t id)
+      {
+         for (const Arrange::Marker& mk : gArrange.markers)
+            if (mk.id == id) return true;
+         return false;
+      };
+      if (gArrangeRenamingMarkerId != 0 && !markerLive(gArrangeRenamingMarkerId))
+         gArrangeRenamingMarkerId = 0;
+      if (gArrangeCtxMarkerId != 0 && !markerLive(gArrangeCtxMarkerId))
+         gArrangeCtxMarkerId = 0;
+      if (gArrangeMarkerDragId != 0 && !markerLive(gArrangeMarkerDragId))
+         gArrangeMarkerDragId = 0;
       if (gArrangeClipboard.generation != gArrangePatchGeneration)
          gArrangeClipboard.items.clear();
       for (auto it = gArrangeSel.begin(); it != gArrangeSel.end();)
@@ -27018,6 +27230,26 @@ namespace
       return ArrangeEdit([&]() { Arrange::Ungroup(gArrange, groups); });
    }
 
+   // Left / Right (WP6): with clips selected, nudge the selection one grid
+   // step through MoveClips (one undo entry; the block stops at 0 as a
+   // whole). With nothing selected, step the playhead to the previous / next
+   // grid point. Returns whether anything moved.
+   bool ArrangeNudge(int dir)
+   {
+      const Arrange::Tick step = ArrangeNudgeStepTicks();
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      if (!ids.empty())
+         return ArrangeEdit([&]() { Arrange::MoveClips(gArrange, ids, dir < 0 ? -step : step, 0); });
+      const Arrange::Tick play = ArrangePlayTick();
+      const Arrange::Tick target = dir < 0 ? Arrange::GridCeil(play, step) - step
+                                           : Arrange::GridFloor(play, step) + step;
+      const Arrange::Tick clamped = std::clamp<Arrange::Tick>(target, 0, Arrange::kMaxTick);
+      if (clamped == play)
+         return false;
+      ArrangeSeekTick(clamped);
+      return true;
+   }
+
    // ---- live clip drag ------------------------------------------------------
 
    // Starts a drag gesture on `clipId`. `mode` is an ArrangeDragMode; for a
@@ -27090,9 +27322,11 @@ namespace
       const uint64_t liveRevision = gArrange.revision;
       const uint64_t liveNextId = gArrange.nextId;
       const Arrange::LoopRange liveLoop = gArrange.settings.loop;
+      const ArrangeViewSettings liveView = ArrangeKeepViewSettings(gArrange);
       gArrange = gArrangeGestureBefore;
       gArrange.nextId = std::max(gArrange.nextId, liveNextId);
       gArrange.settings.loop = liveLoop;
+      ArrangeRestoreViewSettings(gArrange, liveView);
       // Restoring the snapshot is itself a change of what is on screen, and
       // revision must only climb (the audio rebuild keys on it).
       gArrange.revision = liveRevision + 1;
@@ -27172,8 +27406,7 @@ namespace
             lane = Arrange::LaneIndex(gArrange, laneId);
             gArrange.lanes[lane].name = (laneType == Arrange::kLaneAudio ? "Audio " : "Video ") + std::to_string(n);
          }
-         const double bpm = (double)Transport::Instance().Tempo();
-         Arrange::Tick start = std::max<Arrange::Tick>(0, Arrange::SecondsToTicks(Transport::Instance().Seconds(), bpm));
+         Arrange::Tick start = ArrangePlayTick();
          if (!gArrange.lanes[lane].clips.empty())
             start = std::max(start, gArrange.lanes[lane].clips.back().End());
          Arrange::Clip c;
@@ -27239,6 +27472,100 @@ namespace
       dl->PopClipRect();
    }
 
+   // ---- time formatting (WP6) ----------------------------------------------
+   // Positions are 1-indexed bar.beat.sixteenth ("5.1.1" is the downbeat of
+   // bar 5), durations 0-indexed bars.beats.sixteenths ("1.0.0" is one bar),
+   // both at the transport's live meter. Time is M:SS.cc at the live tempo.
+   void ArrangeSplitBBT(Arrange::Tick t, long long& bar, long long& beat, long long& six)
+   {
+      const Arrange::Tick perBar =
+         std::max<Arrange::Tick>(1, Arrange::BeatsToTicks(std::max(1.0, Transport::Instance().BeatsPerBar())));
+      t = std::max<Arrange::Tick>(0, t);
+      bar = (long long)(t / perBar);
+      const Arrange::Tick inBar = t - (Arrange::Tick)bar * perBar;
+      beat = (long long)(inBar / Arrange::kPPQ);
+      six = (long long)((inBar % Arrange::kPPQ) / (Arrange::kPPQ / 4));
+   }
+   std::string ArrangeFormatBBT(Arrange::Tick t)
+   {
+      long long bar, beat, six;
+      ArrangeSplitBBT(t, bar, beat, six);
+      char buf[48];
+      snprintf(buf, sizeof(buf), "%lld.%lld.%lld", bar + 1, beat + 1, six + 1);
+      return buf;
+   }
+   std::string ArrangeFormatBBTLength(Arrange::Tick t)
+   {
+      long long bar, beat, six;
+      ArrangeSplitBBT(t, bar, beat, six);
+      char buf[48];
+      snprintf(buf, sizeof(buf), "%lld.%lld.%lld", bar, beat, six);
+      return buf;
+   }
+   std::string ArrangeFormatSeconds(double sec, bool centis = true)
+   {
+      sec = std::max(0.0, sec);
+      if (centis)
+         sec = std::round(sec * 100.0) / 100.0; // so 59.999 reads 1:00.00, not 0:60.00
+      const int mm = (int)(sec / 60.0);
+      const double ss = sec - (double)mm * 60.0;
+      char buf[32];
+      if (centis)
+         snprintf(buf, sizeof(buf), "%d:%05.2f", mm, ss);
+      else
+         snprintf(buf, sizeof(buf), "%d:%02d", mm, (int)std::floor(ss + 1e-6));
+      return buf;
+   }
+   std::string ArrangeFormatTickSeconds(Arrange::Tick t)
+   {
+      return ArrangeFormatSeconds(Arrange::TicksToSeconds(t, std::max(1.0, (double)Transport::Instance().Tempo())));
+   }
+   // A position in the chosen unit (Settings::timeDisplay).
+   std::string ArrangeFormatPos(Arrange::Tick t)
+   {
+      return gArrange.settings.timeDisplay == 1 ? ArrangeFormatTickSeconds(t) : ArrangeFormatBBT(t);
+   }
+   std::string ArrangeFormatLength(Arrange::Tick t)
+   {
+      if (gArrange.settings.timeDisplay == 1)
+      {
+         char buf[32];
+         snprintf(buf, sizeof(buf), "%.2fs", Arrange::TicksToSeconds(t, std::max(1.0, (double)Transport::Instance().Tempo())));
+         return buf;
+      }
+      return ArrangeFormatBBTLength(t);
+   }
+   // Parses a position typed in the chosen unit: Bars takes "5", "5.2" or
+   // "5.2.3" (1-indexed); Time takes "M:SS(.cc)" or bare seconds. -1 when
+   // it does not parse.
+   Arrange::Tick ArrangeParsePos(const char* buf)
+   {
+      if (gArrange.settings.timeDisplay == 1)
+      {
+         int mm = 0;
+         double ss = 0.0;
+         double sec = -1.0;
+         if (sscanf(buf, "%d:%lf", &mm, &ss) == 2)
+            sec = (double)mm * 60.0 + ss;
+         else
+         {
+            char* end = nullptr;
+            const double v = strtod(buf, &end);
+            if (end != buf) sec = v;
+         }
+         if (sec < 0.0) return -1;
+         return Arrange::SecondsToTicks(sec, std::max(1.0, (double)Transport::Instance().Tempo()));
+      }
+      long long bar = 0, beat = 1, six = 1;
+      const int n = sscanf(buf, "%lld.%lld.%lld", &bar, &beat, &six);
+      if (n < 1 || bar < 1 || beat < 1 || six < 1) return -1;
+      const Arrange::Tick perBar =
+         std::max<Arrange::Tick>(1, Arrange::BeatsToTicks(std::max(1.0, Transport::Instance().BeatsPerBar())));
+      const Arrange::Tick t = (Arrange::Tick)(bar - 1) * perBar + (Arrange::Tick)(beat - 1) * Arrange::kPPQ +
+                              (Arrange::Tick)(six - 1) * (Arrange::kPPQ / 4);
+      return std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+   }
+
    void DrawArrangePanelContent()
    {
       // Every id this panel holds (selection, anchor, rename/context/assign
@@ -27293,15 +27620,15 @@ namespace
       const bool arrangeWheelZoomMod = overPanel && (ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper);
       auto zoomAroundMouse = [&](float factor)
       {
-         const float oldPps = gArrangePixelsPerSecond;
-         const float newPps = std::clamp(oldPps * factor, 10.0f, 1000.0f);
+         const float oldPpb = gArrangePixelsPerBeat;
+         const float newPpb = std::clamp(oldPpb * factor, kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
          const float mx = mouse.x - sArrangeLastRulerStartX;
          if (mx > 0.0f)
          {
-            const double mouseSec = gArrangeScrollSeconds + (double)mx / oldPps;
-            gArrangeScrollSeconds = std::max(0.0, mouseSec - (double)mx / newPps);
+            const double mouseBeat = gArrangeScrollBeats + (double)mx / oldPpb;
+            gArrangeScrollBeats = std::max(0.0, mouseBeat - (double)mx / newPpb);
          }
-         gArrangePixelsPerSecond = newPps;
+         gArrangePixelsPerBeat = newPpb;
       };
 
       if (overPanel)
@@ -27318,11 +27645,11 @@ namespace
          }
          else if (std::abs(wheelH) > 0.001f)
          {
-            gArrangeScrollSeconds = std::max(0.0, gArrangeScrollSeconds - (double)(wheelH * 40.0f / gArrangePixelsPerSecond));
+            gArrangeScrollBeats = std::max(0.0, gArrangeScrollBeats - (double)(wheelH * 40.0f / gArrangePixelsPerBeat));
          }
          else if (ImGui::GetIO().KeyShift && std::abs(wheel) > 0.001f)
          {
-            gArrangeScrollSeconds = std::max(0.0, gArrangeScrollSeconds - (double)(wheel * 40.0f / gArrangePixelsPerSecond));
+            gArrangeScrollBeats = std::max(0.0, gArrangeScrollBeats - (double)(wheel * 40.0f / gArrangePixelsPerBeat));
          }
       }
 
@@ -27335,7 +27662,6 @@ namespace
       gArrangeFocused = gArrangeClaimedKeys;
 
       Transport& tr = Transport::Instance();
-      const double curSec = tr.Seconds();
 
       // Strict loop: once armed, playback never runs past the region end -
       // it snaps back to the region start instead, same as the loop toggle
@@ -27360,13 +27686,18 @@ namespace
       // clip drag or an active popup field either: those rebuild gArrange
       // from their gesture snapshot every frame, which would silently undo
       // (and double-push) an edit made mid-gesture.
-      if (gArrangeFocused && !ImGui::GetIO().WantTextInput &&
-          gArrangeDrag.mode == kArrangeDragNone && !gArrangeGestureOpen)
+      // Escape abandons a ruler scrub without seeking.
+      const bool scrubEscaped = gArrangeScrubbing && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+      if (scrubEscaped)
+         ArrangeScrubCancel();
+      if (gArrangeFocused && !ImGui::GetIO().WantTextInput && !scrubEscaped &&
+          gArrangeDrag.mode == kArrangeDragNone && !gArrangeGestureOpen && !gArrangeScrubbing &&
+          gArrangeMarkerDragId == 0)
       {
          const ImGuiIO& kio = ImGui::GetIO();
          const bool cmd = kio.KeySuper || kio.KeyCtrl;
-         const Arrange::Tick playTick =
-            std::max<Arrange::Tick>(0, Arrange::SecondsToTicks(tr.Seconds(), std::max(1.0, (double)tr.Tempo())));
+         const bool noMods = !cmd && !kio.KeyAlt && !kio.KeyShift;
+         const Arrange::Tick playTick = ArrangePlayTick();
 
          if (cmd && ImGui::IsKeyPressed(ImGuiKey_C, false))
             ArrangeCopySelection();
@@ -27385,6 +27716,22 @@ namespace
             ArrangeToggleEnabledSelection();
          else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false))
             ArrangeDeleteSelection();
+         // Markers and the playhead (WP6). The canvas binds none of these
+         // keys (Shift+M is the mod matrix, hence noMods on M).
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_M, false))
+            ArrangeAddMarkerAtPlayhead();
+         else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
+            ArrangeJumpToMarker(-1);
+         else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
+            ArrangeJumpToMarker(1);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true))
+            ArrangeNudge(-1);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_RightArrow, true))
+            ArrangeNudge(1);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_Home, false))
+            ArrangeSeekTick(0);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_End, false))
+            ArrangeSeekTick(ArrangeEndKeyTargetTick());
          else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && gArrangeDrag.mode == kArrangeDragNone)
          {
             gArrangeSel.clear();
@@ -27663,7 +28010,9 @@ namespace
          // below) rather than once here in the toolbar - see the "+" button
          // drawn alongside "##trackdragbadge" further down.
          ImGui::SetNextItemWidth(110.0f);
-         ImGui::SliderFloat("Zoom", &gArrangePixelsPerSecond, 10.0f, 500.0f, "%.0f px/s");
+         ImGui::SliderFloat("Zoom", &gArrangePixelsPerBeat, kArrangeMinPixelsPerBeat, 250.0f, "%.0f px/beat",
+                            ImGuiSliderFlags_Logarithmic);
+         gArrangePixelsPerBeat = std::clamp(gArrangePixelsPerBeat, kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
 
          // Play/Pause and Rewind as icon buttons, matching the main
          // Infinite toolbar's own transport controls (see the top toolbar's
@@ -27699,40 +28048,109 @@ namespace
          if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Rewind");
 
-         // Global snap toggle for the tempo-derived beat/bar grid - covers
-         // clip move/trim, playhead scrubbing, and the loop region drag.
-         // Snaps to whatever grid line is actually drawn (minorSec, the
-         // zoom-adaptive tick spacing) via ArrangeNearestBeatSec's snapUnit
-         // argument, not always a raw single beat. Magnet icon reads as
-         // "snap/attract" rather than the generic dot-grid glyph.
+         // Bars | Time: which unit the ruler, the clip popup and the loop
+         // fields speak (Settings::timeDisplay, saved with the patch). A view
+         // change only - every position stays in ticks. The selected half
+         // takes the shared "selected" accent tint; the other stays quiet.
+         ImGui::SameLine(0.0f, 14.0f);
+         {
+            const int shownUnit = gArrange.settings.timeDisplay; // pre-click, for the push/pop pairs
+            const char* kUnitLabels[2] = { "Bars##arrunitbars", "Time##arrunittime" };
+            const char* kUnitTips[2] = {
+               "Show positions as bar.beat.sixteenth (the ruler adds the time in seconds beside each label).",
+               "Show positions as minutes:seconds (the ruler adds bar.beat beside each label)."
+            };
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, ImGui::GetStyle().ItemSpacing.y));
+            for (int u = 0; u < 2; u++)
+            {
+               if (u == 1)
+                  ImGui::SameLine();
+               const bool on = shownUnit == u;
+               if (on)
+                  ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+               if (ImGui::Button(kUnitLabels[u], ImVec2(44.0f, 0.0f)))
+                  ArrangeSetTimeDisplay(u);
+               if (on)
+                  ImGui::PopStyleColor();
+               if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+                  ImGui::SetTooltip("%s", kUnitTips[u]);
+            }
+            ImGui::PopStyleVar();
+         }
+
+         // Snap: the magnet toggles the grid off <-> the last division that
+         // was on; the dropdown beside it picks the division. The grid is
+         // Settings::snapDivision / snapTriplet (0 = off), in ticks, so it is
+         // the same musical grid at any zoom and any tempo. It covers clip
+         // move/trim, marker drags, the ruler scrub, the loop drag and the
+         // arrow-key nudge.
          ImGui::SameLine(0.0f, 14.0f);
          // Snapshot the pre-click state for the push/pop pair: the Button()
-         // call below can flip gArrangeSnapToGrid mid-block, and popping
-         // based on the POST-click value would pop colors that were never
-         // pushed (toggling off->on this frame) or leak a push that's never
-         // popped (toggling on->off), corrupting the style stack for every
-         // widget drawn after it - which is what made the "+" buttons flash
-         // green on a loop/snap click.
-         const bool snapWasOn = gArrangeSnapToGrid;
+         // call below can flip the snap mid-block, and popping based on the
+         // POST-click value would pop colors that were never pushed (toggling
+         // off->on this frame) or leak a push that's never popped (toggling
+         // on->off), corrupting the style stack for every widget drawn after
+         // it - which is what made the "+" buttons flash green on a loop/snap
+         // click.
+         const bool snapWasOn = gArrange.settings.snapDivision > 0;
          if (snapWasOn)
          {
             ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(16, 185, 129, 255));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(5, 150, 105, 255));
          }
          if (ImGui::Button("##arrangesnapbtn", ImVec2(30, 0)))
-            gArrangeSnapToGrid = !gArrangeSnapToGrid;
+         {
+            if (snapWasOn)
+               ArrangeSetSnap(0, false);
+            else
+               ArrangeSetSnap(std::max(1, gArrangeLastSnapDivision), gArrange.settings.snapTriplet);
+         }
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             const float iconSize = (bmax.y - bmin.y) * 0.62f;
             Tabler::DrawMagnet(ImGui::GetWindowDrawList(), center, iconSize,
-               gArrangeSnapToGrid ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+               snapWasOn ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
          }
          if (snapWasOn)
             ImGui::PopStyleColor(2);
          if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Snap clip dragging, trimming, and the playhead to the visible beat grid (follows global BPM and zoom).");
+            ImGui::SetTooltip("Snap clips, markers, the playhead and the loop to the grid.\nClick to turn snapping on or off; pick the grid on the right.");
+
+         // Grid division dropdown. The divisions are MusicTime's own
+         // RateDivision entries (names and lengths from that one table -
+         // rhythmic-quantization-standard); this list only says which of
+         // them a timeline grid offers, mapped onto snapDivision/snapTriplet.
+         ImGui::SameLine(0.0f, 4.0f);
+         {
+            using GridChoice = ArrangeGridChoice;
+            const auto& kGridChoices = kArrangeGridChoices;
+            auto choiceName = [](const GridChoice& c) { return c.rd < 0 ? "Off" : MusicTime::RateDivisionName(c.rd); };
+            const Arrange::Settings& st = gArrange.settings;
+            const char* curName = "Custom";
+            for (const GridChoice& c : kGridChoices)
+               if (c.division == st.snapDivision && (c.division <= 1 || c.triplet == st.snapTriplet))
+                  curName = choiceName(c);
+            char gridBtn[48];
+            snprintf(gridBtn, sizeof(gridBtn), "%s##arrgriddiv", curName);
+            PushDropdownStyle();
+            if (ImGui::Button(gridBtn, ImVec2(58.0f, 0.0f)))
+               ImGui::OpenPopup("##arrgridpopup");
+            PopDropdownStyle();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+               ImGui::SetTooltip("Snap grid");
+            if (ImGui::BeginPopup("##arrgridpopup"))
+            {
+               for (const GridChoice& c : kGridChoices)
+               {
+                  const bool sel = c.division == st.snapDivision && (c.division <= 1 || c.triplet == st.snapTriplet);
+                  if (ImGui::Selectable(choiceName(c), sel))
+                     ArrangeSetSnap(c.division, c.triplet);
+               }
+               ImGui::EndPopup();
+            }
+         }
 
          // Loop region toggle + manual start/end entry. The same region a
          // Shift+drag on the ruler sets - these fields just set it directly
@@ -27760,41 +28178,22 @@ namespace
          if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Loop playback within the region below.\nShift+drag the ruler to set a region, or type start/end.");
 
-         // The fields show and take M:SS at the live tempo; the loop itself
-         // stays in ticks, so it keeps its bars across a tempo change.
-         const double loopBpm = (double)tr.Tempo();
-         // Parses "M:SS" or a bare seconds value, same accepted formats
-         // either field has always taken - shared so the two fields can't
-         // drift into different parsing rules.
-         auto parseTimeField = [](const char* buf) -> double
-         {
-            int mm = 0;
-            double ss = 0.0;
-            if (sscanf(buf, "%d:%lf", &mm, &ss) == 2)
-               return (double)mm * 60.0 + ss;
-            char* end = nullptr;
-            const double v = strtod(buf, &end);
-            return (end != buf) ? v : -1.0;
-         };
-
+         // The fields show and take the chosen unit (bar.beat.sixteenth or
+         // M:SS); the loop itself stays in ticks, so it keeps its bars
+         // across a tempo change. Re-formatted whenever the field is idle,
+         // so flipping Bars | Time updates them at once.
          ImGui::SameLine();
          {
-            static char loopStartBuf[16] = "0:00.00";
+            static char loopStartBuf[24] = "";
             static bool loopStartEditing = false;
             if (!loopStartEditing)
-            {
-               const double startSec = ArrangeLoopStartSec();
-               const int mm = (int)(startSec / 60.0);
-               const double ss = startSec - (double)mm * 60.0;
-               snprintf(loopStartBuf, sizeof(loopStartBuf), "%d:%05.2f", mm, ss);
-            }
+               snprintf(loopStartBuf, sizeof(loopStartBuf), "%s", ArrangeFormatPos(gArrange.settings.loop.start).c_str());
             ImGui::SetNextItemWidth(70.0f);
             if (ImGui::InputText("##loopstart", loopStartBuf, sizeof(loopStartBuf), ImGuiInputTextFlags_EnterReturnsTrue))
             {
-               const double parsedSec = parseTimeField(loopStartBuf);
+               const Arrange::Tick parsedTick = ArrangeParsePos(loopStartBuf);
                const Arrange::LoopRange& loop = gArrange.settings.loop;
-               const Arrange::Tick parsedTick = Arrange::SecondsToTicks(parsedSec, loopBpm);
-               if (parsedSec >= 0.0 && parsedTick < loop.end)
+               if (parsedTick >= 0 && parsedTick < loop.end)
                   ArrangeSetLoop(true, parsedTick, loop.end);
                loopStartEditing = false;
             }
@@ -27803,40 +28202,34 @@ namespace
                loopStartEditing = ImGui::IsItemActive();
             }
             if (ImGui::IsItemHovered())
-               ImGui::SetTooltip("Loop start (M:SS)");
+               ImGui::SetTooltip(gArrange.settings.timeDisplay == 1 ? "Loop start (M:SS)" : "Loop start (bar.beat.sixteenth)");
          }
          ImGui::SameLine();
          ImGui::TextUnformatted("-");
          ImGui::SameLine();
          {
-            static char loopDurBuf[16] = "0:00.00";
-            static bool loopBufEditing = false;
-            if (!loopBufEditing)
-            {
-               const double endSec = ArrangeLoopEndSec();
-               const int mm = (int)(endSec / 60.0);
-               const double ss = endSec - (double)mm * 60.0;
-               snprintf(loopDurBuf, sizeof(loopDurBuf), "%d:%05.2f", mm, ss);
-            }
+            static char loopEndBuf[24] = "";
+            static bool loopEndEditing = false;
+            if (!loopEndEditing)
+               snprintf(loopEndBuf, sizeof(loopEndBuf), "%s", ArrangeFormatPos(gArrange.settings.loop.end).c_str());
             ImGui::SetNextItemWidth(70.0f);
-            if (ImGui::InputText("##loopend", loopDurBuf, sizeof(loopDurBuf), ImGuiInputTextFlags_EnterReturnsTrue))
+            if (ImGui::InputText("##loopend", loopEndBuf, sizeof(loopEndBuf), ImGuiInputTextFlags_EnterReturnsTrue))
             {
-               const double parsedSec = parseTimeField(loopDurBuf);
+               const Arrange::Tick parsedTick = ArrangeParsePos(loopEndBuf);
                const Arrange::LoopRange& loop = gArrange.settings.loop;
-               const Arrange::Tick parsedTick = Arrange::SecondsToTicks(parsedSec, loopBpm);
-               if (parsedSec >= 0.0 && parsedTick > loop.start)
+               if (parsedTick >= 0 && parsedTick > loop.start)
                {
                   ArrangeSetLoop(true, loop.start, parsedTick);
                   gArrangeFitViewToLoopPending = true;
                }
-               loopBufEditing = false;
+               loopEndEditing = false;
             }
             else
             {
-               loopBufEditing = ImGui::IsItemActive();
+               loopEndEditing = ImGui::IsItemActive();
             }
             if (ImGui::IsItemHovered())
-               ImGui::SetTooltip("Loop end (M:SS)");
+               ImGui::SetTooltip(gArrange.settings.timeDisplay == 1 ? "Loop end (M:SS)" : "Loop end (bar.beat.sixteenth)");
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
@@ -27846,9 +28239,6 @@ namespace
       }
 
       ImGui::Separator();
-
-      if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-         gArrangeDraggingPlayhead = false;
 
       // Layout: Global Viewport Monitor alongside / above timeline lanes
       const bool isWide = panelSize.x >= 720.0f;
@@ -27945,7 +28335,8 @@ namespace
 
       // ---- Timeline body (ruler + lanes) ----
       const float kHeaderWidth = 246.0f; // wide enough for the per-row "+" add-track button ahead of the drag handle
-      const float kRulerHeight = 26.0f;
+      const float kMarkerStripH = 14.0f; // marker flags (WP6), above the tick/label strip
+      const float kRulerHeight = 40.0f;  // marker strip + the 26 px tick/label strip
       const float kLaneHeight = 30.0f; // one header row now that mix controls are deferred
 
       // When docked right, reserve kViewportW (+ spacing) up front so the
@@ -27981,199 +28372,423 @@ namespace
       if (gArrangeFitViewToLoopPending)
       {
          gArrangeFitViewToLoopPending = false;
-         const double loopEndSec = ArrangeLoopEndSec();
-         if (loopEndSec > 0.05)
-            gArrangePixelsPerSecond = std::clamp((float)(rulerWidth * 0.92 / loopEndSec), 10.0f, 1000.0f);
+         const double loopEndBeats = Arrange::TicksToBeats(gArrange.settings.loop.end);
+         if (loopEndBeats > 0.01)
+            gArrangePixelsPerBeat = std::clamp((float)(rulerWidth * 0.92 / loopEndBeats),
+                                               kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
       }
-      const float pps = gArrangePixelsPerSecond;
 
-      // The ruler is denominated in bars.beats (like a real DAW transport)
-      // rather than raw seconds, derived from the global BPM/time signature
-      // so it stays in sync with the transport automatically - see
-      // ArrangeSecPerBeat()/ArrangeSecPerBar() below, shared with snapping.
-      const double secPerBeat = ArrangeSecPerBeat();
-      const double beatsPerBar = std::max(1.0, Transport::Instance().BeatsPerBar());
-      const double secPerBar = secPerBeat * beatsPerBar;
+      // ---- view geometry (WP6: beats, not seconds) ----
+      // The axis is laid out in quarter-note beats off Transport::Beats(), the
+      // same clock the clips are scheduled on. A tempo change rescales what a
+      // beat means in seconds and nothing on screen moves.
+      const float ppb = gArrangePixelsPerBeat;
+      const double arrBpm = std::max(1.0, (double)tr.Tempo());
+      const double beatsPerBar = std::max(1.0, tr.BeatsPerBar());
+      const Arrange::Tick barTicks = std::max<Arrange::Tick>(1, Arrange::BeatsToTicks(beatsPerBar));
+      const double startBeat = gArrangeScrollBeats;
+      const double endBeat = startBeat + (double)rulerWidth / ppb;
+      const bool showTime = gArrange.settings.timeDisplay == 1;
+      auto beatToX = [&](double b) { return rulerStartX + (float)((b - startBeat) * ppb); };
+      auto tickToX = [&](Arrange::Tick t) { return beatToX(Arrange::TicksToBeats(t)); };
+      auto xToTick = [&](float x) { return Arrange::BeatsToTicks(startBeat + (double)(x - rulerStartX) / ppb); };
+      const double pxPerTick = (double)ppb / (double)Arrange::kPPQ;
+      const Arrange::Tick startTick = std::max<Arrange::Tick>(0, Arrange::BeatsToTicks(startBeat));
+      const Arrange::Tick endTick = Arrange::BeatsToTicks(endBeat);
+      const Arrange::Tick snapThresholdTicks = std::max<Arrange::Tick>(1, (Arrange::Tick)(8.0 / std::max(1e-9, pxPerTick)));
+      const Arrange::Tick gridTicks = ArrangeSnapGridTicks(); // 0 = snap off
+      const Arrange::Tick playTick = ArrangePlayTick();
+      // A lone point (scrub, marker, loop edge, Add Clip) lands on the grid
+      // when snap is on, nothing else to weigh.
+      auto gridSnap = [&](Arrange::Tick t)
+      {
+         t = std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+         return gridTicks > 0 ? Arrange::SnapToGrid(t, gridTicks) : t;
+      };
 
-      // Choose how many beats separate minor ticks, and how many bars
-      // separate labeled major ticks, so each stays legibly spaced
-      // regardless of zoom (mirrors the old fixed-seconds breakpoints, just
-      // beat-quantized now).
-      static const double kStepMultiples[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0 };
+      // Ruler tick spacing in beats (minor) and bars (labelled major), each
+      // kept legibly apart at any zoom. Bars mode labels the bars; Time mode
+      // labels round seconds. The lane grid below reuses beatStep when snap
+      // is off.
+      static const double kStepMultiples[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0, 1024.0 };
       double beatStep = kStepMultiples[0];
-      for (double s : kStepMultiples)
+      for (double st : kStepMultiples)
       {
-         beatStep = s;
-         if (pps * secPerBeat * s >= 10.0) break;
+         beatStep = st;
+         if (ppb * st >= 10.0) break;
       }
-      double barStep = kStepMultiples[2]; // starts at 1.0
-      for (double s : kStepMultiples)
+      double barStep = 1.0;
+      for (double st : kStepMultiples)
       {
-         if (s < 1.0) continue;
-         barStep = s;
-         if (pps * secPerBar * s >= 60.0) break;
+         if (st < 1.0) continue;
+         barStep = st;
+         if (ppb * beatsPerBar * st >= 64.0) break;
       }
-      const double minorSec = secPerBeat * beatStep;
-      const double majorSec = secPerBar * barStep;
 
-      // Ruler invisible button for click & drag scrubbing
+      // The ruler: a marker strip on top, the tick/label strip under it.
+      const float kTickStripTop = pinnedTopY + kMarkerStripH;
       const ImVec2 rulerPos(rulerStartX, pinnedTopY);
       const ImVec2 rulerSize(rulerWidth, kRulerHeight);
+      const bool isLight = IsThemeLight();
+      const ImU32 rulerBg = isLight ? IM_COL32(238, 238, 242, 255) : IM_COL32(32, 32, 36, 255);
+      const ImU32 markerStripBg = isLight ? IM_COL32(229, 229, 235, 255) : IM_COL32(26, 26, 30, 255);
+      const ImU32 tickCol = isLight ? IM_COL32(140, 140, 150, 255) : IM_COL32(100, 100, 110, 255);
+      const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text, 0.80f);
+      const ImU32 subTextCol = ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.80f);
+
+      dl->AddRectFilled(rulerPos, ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), markerStripBg);
+      dl->AddRectFilled(ImVec2(rulerPos.x, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y), rulerBg);
+      dl->AddLine(ImVec2(rulerPos.x, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), tickCol, 0.5f);
+      dl->AddLine(ImVec2(rulerPos.x, rulerPos.y + rulerSize.y), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
+                  tickCol, 1.0f);
+
+      // ---- ruler ticks and labels ----
+      // Primary label in the chosen unit; the other unit follows it, dimmer,
+      // only where it fits before the next label.
+      {
+         const float rulerBottom = rulerPos.y + rulerSize.y;
+         const float labelY = kTickStripTop + 2.0f;
+         dl->PushClipRect(rulerPos, ImVec2(rulerPos.x + rulerSize.x, rulerBottom), true);
+         auto drawLabelPair = [&](float x, float nextX, const std::string& primary, const std::string& secondary)
+         {
+            dl->AddText(ImVec2(x + 3.0f, labelY), textCol, primary.c_str());
+            const float pw = ImGui::CalcTextSize(primary.c_str()).x;
+            const float sw = ImGui::CalcTextSize(secondary.c_str()).x;
+            if (x + 3.0f + pw + 6.0f + sw + 4.0f < nextX)
+               dl->AddText(ImVec2(x + 3.0f + pw + 6.0f, labelY), subTextCol, secondary.c_str());
+         };
+         if (!showTime)
+         {
+            // Minor ticks on every beatStep, skipping the bar lines.
+            const double firstMinor = std::floor(startBeat / beatStep) * beatStep;
+            for (double b = firstMinor; b <= endBeat + beatStep; b += beatStep)
+            {
+               if (b < 0.0) continue;
+               const double inBar = std::fmod(b, beatsPerBar);
+               if (inBar < 1e-6 || beatsPerBar - inBar < 1e-6) continue;
+               const float x = beatToX(b);
+               dl->AddLine(ImVec2(x, rulerBottom - 6.0f), ImVec2(x, rulerBottom), tickCol, 0.8f);
+            }
+            // Bars: every bar gets a mid tick, every barStep-th a label.
+            const double barPx = ppb * beatsPerBar;
+            const long long firstBar = std::max(0LL, (long long)std::floor(startBeat / beatsPerBar));
+            const long long lastBar = (long long)std::ceil(endBeat / beatsPerBar) + 1;
+            const long long labelEvery = std::max(1LL, (long long)barStep);
+            for (long long bar = firstBar; bar <= lastBar; bar++)
+            {
+               const float x = beatToX((double)bar * beatsPerBar);
+               const bool labelled = bar % labelEvery == 0;
+               if (!labelled && barPx < 4.0)
+                  continue;
+               dl->AddLine(ImVec2(x, rulerBottom - (labelled ? 12.0f : 8.0f)), ImVec2(x, rulerBottom), tickCol, labelled ? 1.2f : 1.0f);
+               if (labelled)
+               {
+                  const Arrange::Tick t = (Arrange::Tick)bar * barTicks;
+                  drawLabelPair(x, x + (float)(barPx * (double)labelEvery), std::to_string(bar + 1),
+                                ArrangeFormatTickSeconds(t));
+               }
+            }
+         }
+         else
+         {
+            // Round-second steps; the minor ticks subdivide a major.
+            static const double kSecSteps[] = { 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0, 3600.0 };
+            const double pxPerSec = (double)ppb * arrBpm / 60.0;
+            double majorSec = kSecSteps[0];
+            for (double st : kSecSteps)
+            {
+               majorSec = st;
+               if (pxPerSec * st >= 72.0) break;
+            }
+            static const int kSubdivs[] = { 10, 5, 4, 2, 1 };
+            double minorSec = majorSec;
+            for (int sd : kSubdivs)
+               if (pxPerSec * majorSec / sd >= 8.0) { minorSec = majorSec / sd; break; }
+            const double startSecV = startBeat * 60.0 / arrBpm;
+            const double endSecV = endBeat * 60.0 / arrBpm;
+            const long long firstIdx = std::max(0LL, (long long)std::floor(startSecV / minorSec));
+            const long long lastIdx = (long long)std::ceil(endSecV / minorSec) + 1;
+            const long long perMajor = std::max(1LL, (long long)std::llround(majorSec / minorSec));
+            for (long long k = firstIdx; k <= lastIdx; k++)
+            {
+               const double sec = (double)k * minorSec;
+               const float x = beatToX(sec * arrBpm / 60.0);
+               if (k % perMajor == 0)
+               {
+                  dl->AddLine(ImVec2(x, rulerBottom - 12.0f), ImVec2(x, rulerBottom), tickCol, 1.2f);
+                  drawLabelPair(x, x + (float)(pxPerSec * majorSec), ArrangeFormatSeconds(sec, majorSec < 1.0),
+                                ArrangeFormatBBT(Arrange::SecondsToTicks(sec, arrBpm)));
+               }
+               else
+               {
+                  dl->AddLine(ImVec2(x, rulerBottom - 6.0f), ImVec2(x, rulerBottom), tickCol, 0.8f);
+               }
+            }
+         }
+         dl->PopClipRect();
+      }
+
+      // ---- marker flags (WP6) ----
+      // Submitted before the ruler's own button: the first item submitted
+      // under the mouse claims hover, so a flag always wins over the scrub.
+      // Drag moves (one undo entry per drag, snapped), double-click renames,
+      // right-click opens colour / delete. A copy is iterated: a drag re-sorts
+      // gArrange.markers.
+      bool markerHoveredAny = false;
+      bool openMarkerCtx = false;
+      {
+         const std::vector<Arrange::Marker> markersNow = gArrange.markers;
+         dl->PushClipRect(rulerPos, ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y), true);
+         for (const Arrange::Marker& mk : markersNow)
+         {
+            const float fx = tickToX(mk.pos);
+            const char* nm = mk.name.empty() ? "Marker" : mk.name.c_str();
+            const float flagW = std::clamp(ImGui::CalcTextSize(nm).x + 10.0f, 12.0f, 120.0f);
+            if (fx + flagW < rulerStartX || fx > rulerStartX + rulerWidth)
+               continue;
+            const ImVec2 f0(fx, pinnedTopY + 1.0f);
+            const ImVec2 f1(fx + flagW, kTickStripTop - 1.0f);
+            const ImU32 fcol = ArrangeMarkerColU32(mk.color);
+            const float lum = 0.299f * (float)((mk.color >> 24) & 0xFF) + 0.587f * (float)((mk.color >> 16) & 0xFF) +
+                              0.114f * (float)((mk.color >> 8) & 0xFF);
+            const bool dragged = gArrangeMarkerDragId == mk.id;
+            dl->AddRectFilled(f0, f1, fcol, 3.0f, ImDrawFlags_RoundCornersRight);
+            // A hairline edge so a pale flag still reads on the light ruler.
+            dl->AddRect(f0, f1, dragged ? IM_COL32(255, 255, 255, 230) : IM_COL32(0, 0, 0, isLight ? 110 : 150),
+                        3.0f, ImDrawFlags_RoundCornersRight, dragged ? 1.5f : 1.0f);
+            dl->AddLine(ImVec2(fx, pinnedTopY), ImVec2(fx, rulerPos.y + rulerSize.y), fcol, 1.5f);
+
+            ImGui::PushID((int)(mk.id & 0x7fffffff));
+            if (gArrangeRenamingMarkerId == mk.id)
+            {
+               static uint64_t sMarkerRenameFocusedId = 0;
+               ImGui::SetCursorScreenPos(ImVec2(std::max(rulerStartX, fx), pinnedTopY - 2.0f));
+               ImGui::SetNextItemWidth(120.0f);
+               if (sMarkerRenameFocusedId != mk.id)
+               {
+                  ImGui::SetKeyboardFocusHere();
+                  sMarkerRenameFocusedId = mk.id;
+               }
+               const bool commit = ImGui::InputText("##renamingmarker", gArrangeRenameMarkerBuffer,
+                                                    sizeof(gArrangeRenameMarkerBuffer),
+                                                    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+               if (commit || ImGui::IsItemDeactivated())
+               {
+                  const std::string newName = gArrangeRenameMarkerBuffer;
+                  const uint64_t mid = mk.id;
+                  if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+                     ArrangeEdit([&]() { Arrange::RenameMarker(gArrange, mid, newName); });
+                  gArrangeRenamingMarkerId = 0;
+                  sMarkerRenameFocusedId = 0;
+               }
+            }
+            else
+            {
+               dl->AddText(ImVec2(fx + 5.0f, pinnedTopY + (kMarkerStripH - ImGui::GetFontSize()) * 0.5f),
+                           lum > 150.0f ? IM_COL32(20, 20, 24, 255) : IM_COL32(255, 255, 255, 255), nm);
+            }
+
+            const float hitX0 = std::max(rulerStartX, fx - 3.0f);
+            const float hitX1 = std::min(rulerStartX + rulerWidth, fx + flagW);
+            if (hitX1 - hitX0 >= 1.0f && gArrangeRenamingMarkerId != mk.id)
+            {
+               ImGui::SetCursorScreenPos(ImVec2(hitX0, pinnedTopY));
+               ImGui::InvisibleButton("##markerflag", ImVec2(hitX1 - hitX0, kMarkerStripH));
+               const bool hovered = ImGui::IsItemHovered();
+               if (hovered)
+               {
+                  markerHoveredAny = true;
+                  ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+               }
+               if (ImGui::IsItemActivated() && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  ArrangeGestureBegin();
+                  gArrangeMarkerDragId = mk.id;
+                  gArrangeMarkerDragGrabTick = xToTick(mouse.x);
+                  gArrangeMarkerDragOrigPos = mk.pos;
+               }
+               if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+               {
+                  gArrangeRenamingMarkerId = mk.id;
+                  snprintf(gArrangeRenameMarkerBuffer, sizeof(gArrangeRenameMarkerBuffer), "%s", mk.name.c_str());
+               }
+               if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+               {
+                  gArrangeCtxMarkerId = mk.id;
+                  openMarkerCtx = true;
+               }
+               if (hovered && gArrangeMarkerDragId == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+                  ImGui::SetTooltip("%s\n%s  |  %s\nDrag to move, double-click to rename, right-click for colour or delete.",
+                                    nm, ArrangeFormatBBT(mk.pos).c_str(), ArrangeFormatTickSeconds(mk.pos).c_str());
+            }
+            ImGui::PopID();
+         }
+         dl->PopClipRect();
+
+         // The drag itself, outside the loop so it survives the flag
+         // scrolling out from under the mouse. MoveMarker is a no-op while
+         // the target holds still; the release closes the gesture (one undo
+         // entry, none if it landed where it started).
+         if (gArrangeMarkerDragId != 0)
+         {
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+               gArrangeMarkerDragId = 0;
+               ArrangeGestureEnd();
+            }
+            else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f))
+            {
+               const Arrange::Tick target =
+                  gridSnap(gArrangeMarkerDragOrigPos + (xToTick(mouse.x) - gArrangeMarkerDragGrabTick));
+               Arrange::MoveMarker(gArrange, gArrangeMarkerDragId, target);
+            }
+         }
+      }
+
+      // The ruler's own button: click-drag scrubs a ghost playhead (the
+      // transport seeks once, on release - WP6), Shift+drag carves the loop.
       ImGui::SetCursorScreenPos(rulerPos);
       ImGui::InvisibleButton("##arrangerulerbtn", rulerSize);
       const bool rulerShiftHeld = ImGui::GetIO().KeyShift;
       if (ImGui::IsItemActivated())
       {
+         const Arrange::Tick at = gridSnap(xToTick(ImGui::GetIO().MousePos.x));
          if (rulerShiftHeld)
          {
             gArrangeShiftDraggingLoop = true;
-            const float ax = ImGui::GetIO().MousePos.x;
-            double anchorSec = std::max(0.0, gArrangeScrollSeconds + (double)(ax - rulerStartX) / pps);
-            if (gArrangeSnapToGrid)
-               anchorSec = ArrangeNearestBeatSec(anchorSec, minorSec);
-            gArrangeLoopDragAnchorTick = Arrange::SecondsToTicks(anchorSec, (double)Transport::Instance().Tempo());
+            gArrangeLoopDragAnchorTick = at;
          }
          else
          {
-            gArrangeDraggingPlayhead = true;
+            ArrangeScrubBegin(at);
          }
       }
       if (gArrangeShiftDraggingLoop && ImGui::IsItemActive())
       {
          // Shift+drag on the ruler carves out [start,end) - dragging left of
          // the anchor extends the region backward instead of collapsing it.
-         const float mx = ImGui::GetIO().MousePos.x;
-         double cur = std::max(0.0, gArrangeScrollSeconds + (double)(mx - rulerStartX) / pps);
-         if (gArrangeSnapToGrid)
-            cur = ArrangeNearestBeatSec(cur, minorSec);
          // Armed state is left alone mid-drag and settled on release below.
          // ArrangeSetLoop is a no-op while the mouse holds still.
-         const Arrange::Tick curTick = Arrange::SecondsToTicks(cur, (double)Transport::Instance().Tempo());
+         const Arrange::Tick curTick = gridSnap(xToTick(ImGui::GetIO().MousePos.x));
          ArrangeSetLoop(gArrange.settings.loop.enabled, std::min(gArrangeLoopDragAnchorTick, curTick),
                         std::max(gArrangeLoopDragAnchorTick, curTick));
       }
-      else if (gArrangeDraggingPlayhead || ImGui::IsItemActive())
+      else if (gArrangeScrubbing && ImGui::IsItemActive())
       {
-         const float mx = ImGui::GetIO().MousePos.x;
-         double clickedSec = std::max(0.0, gArrangeScrollSeconds + (double)(mx - rulerStartX) / pps);
-         if (gArrangeSnapToGrid)
-            clickedSec = ArrangeNearestBeatSec(clickedSec, minorSec);
-         Transport::Instance().Seek(clickedSec);
+         ArrangeScrubUpdate(gridSnap(xToTick(ImGui::GetIO().MousePos.x)));
       }
+      // Released anywhere (or the button lost its active state): the one seek.
+      if (gArrangeScrubbing && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+         ArrangeScrubEnd();
       if (gArrangeShiftDraggingLoop && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
       {
          gArrangeShiftDraggingLoop = false;
          const Arrange::LoopRange& loop = gArrange.settings.loop;
-         ArrangeSetLoop((ArrangeLoopEndSec() - ArrangeLoopStartSec()) > 0.05, loop.start, loop.end);
+         ArrangeSetLoop(loop.end - loop.start > Arrange::kPPQ / 16, loop.start, loop.end);
       }
-      // Right-click the ruler while a loop region is armed to drop it.
+      if (ImGui::IsItemHovered() && !gArrangeScrubbing && !gArrangeShiftDraggingLoop &&
+          ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+      {
+         const Arrange::Tick ht = std::max<Arrange::Tick>(0, xToTick(mouse.x));
+         ImGui::SetTooltip("%s  |  %s\nClick or drag to move the playhead; Shift+drag sets the loop.",
+                           ArrangeFormatBBT(ht).c_str(), ArrangeFormatTickSeconds(ht).c_str());
+      }
+      // Right-click the ruler while a loop region is armed to drop it (a
+      // marker flag's own right-click opens its menu instead).
       const bool mouseInRuler = mouse.x >= rulerPos.x && mouse.x < rulerPos.x + rulerSize.x &&
                                 mouse.y >= rulerPos.y && mouse.y < rulerPos.y + rulerSize.y;
-      if (mouseInRuler && gArrange.settings.loop.enabled && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+      if (mouseInRuler && !markerHoveredAny && gArrange.settings.loop.enabled && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
          ArrangeSetLoop(false, gArrange.settings.loop.start, gArrange.settings.loop.end);
 
-      // Draw ruler background and tick marks
-      const bool isLight = IsThemeLight();
-      const ImU32 rulerBg = isLight ? IM_COL32(238, 238, 242, 255) : IM_COL32(32, 32, 36, 255);
-      const ImU32 tickCol = isLight ? IM_COL32(140, 140, 150, 255) : IM_COL32(100, 100, 110, 255);
-      const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-
-      dl->AddRectFilled(rulerPos, ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y), rulerBg);
-      dl->AddLine(ImVec2(rulerPos.x, rulerPos.y + rulerSize.y),
-                  ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
-                  tickCol, 1.0f);
-
-      const double startSec = gArrangeScrollSeconds;
-      const double endSec = startSec + (double)rulerWidth / pps;
-      const double firstMinor = std::floor(startSec / minorSec) * minorSec;
-
-      for (double sec = firstMinor; sec <= endSec + minorSec; sec += minorSec)
+      if (openMarkerCtx)
+         ImGui::OpenPopup("##arrangemarkerctx");
+      if (ImGui::BeginPopup("##arrangemarkerctx"))
       {
-         if (sec < 0.0) continue;
-         const float x = rulerStartX + (float)((sec - startSec) * pps);
-         if (x < rulerStartX || x > rulerStartX + rulerWidth) continue;
-
-         const double frac = std::abs(sec / majorSec - std::round(sec / majorSec));
-         const bool isMajor = frac < 1e-4;
-
-         if (isMajor)
+         const Arrange::Marker* cm = nullptr;
+         for (const Arrange::Marker& mk : gArrange.markers)
+            if (mk.id == gArrangeCtxMarkerId) cm = &mk;
+         if (cm == nullptr)
          {
-            dl->AddLine(ImVec2(x, rulerPos.y + rulerSize.y - 12.0f),
-                        ImVec2(x, rulerPos.y + rulerSize.y), tickCol, 1.2f);
-            char label[32];
-            // bar.beat, 1-indexed like every DAW transport readout - "5.1" is
-            // the first beat of bar 5. Sub-beat major ticks (barStep < 1 beat
-            // worth, only possible when beatStep itself is fractional) fall
-            // back to a beat-fraction suffix so the label still means something.
-            const double beatIndexF = sec / secPerBeat;
-            const long long beatIndex = (long long)std::llround(beatIndexF);
-            const long long beatsPerBarInt = std::max(1LL, (long long)std::llround(beatsPerBar));
-            long long barIndex = beatIndex / beatsPerBarInt;
-            long long beatInBar = beatIndex % beatsPerBarInt;
-            if (beatInBar < 0) { beatInBar += beatsPerBarInt; barIndex -= 1; }
-            if (beatStep < 1.0)
-               snprintf(label, sizeof(label), "%lld.%lld.%02d", barIndex + 1, beatInBar + 1,
-                        (int)std::round(std::fmod(beatIndexF, 1.0) * 100.0));
-            else
-               snprintf(label, sizeof(label), "%lld.%lld", barIndex + 1, beatInBar + 1);
-            dl->AddText(ImVec2(x + 3.0f, rulerPos.y + 2.0f), textCol, label);
+            ImGui::CloseCurrentPopup();
          }
          else
          {
-            dl->AddLine(ImVec2(x, rulerPos.y + rulerSize.y - 6.0f),
-                        ImVec2(x, rulerPos.y + rulerSize.y), tickCol, 0.8f);
+            const uint64_t mid = cm->id;
+            const uint32_t curColor = cm->color;
+            ImGui::TextDisabled("Marker: %s", cm->name.c_str());
+            ImGui::TextDisabled("%s  |  %s", ArrangeFormatBBT(cm->pos).c_str(), ArrangeFormatTickSeconds(cm->pos).c_str());
+            ImGui::Separator();
+            if (ImGui::MenuItem("Rename"))
+            {
+               gArrangeRenamingMarkerId = mid;
+               snprintf(gArrangeRenameMarkerBuffer, sizeof(gArrangeRenameMarkerBuffer), "%s", cm->name.c_str());
+            }
+            ImGui::Separator();
+            ImGui::TextDisabled("Colour");
+            for (int pi = 0; pi < 10; pi++)
+            {
+               if (pi % 5 != 0) ImGui::SameLine();
+               ImGui::PushID(pi + 900);
+               const uint32_t rgba = ArrangeMarkerRGBA(kArrangePalette[pi].col);
+               const ImVec4 cVec = ImGui::ColorConvertU32ToFloat4(kArrangePalette[pi].col);
+               if (rgba == curColor)
+                  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+               if (ImGui::ColorButton(kArrangePalette[pi].name, cVec, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24)))
+                  ArrangeEdit([&]() { Arrange::RecolorMarker(gArrange, mid, rgba); });
+               if (rgba == curColor)
+                  ImGui::PopStyleVar();
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("%s", kArrangePalette[pi].name);
+               ImGui::PopID();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Delete Marker"))
+               ArrangeEdit([&]() { Arrange::DeleteMarker(gArrange, mid); });
          }
+         ImGui::EndPopup();
       }
 
-      // Precompute grid-line x positions once (every tick the ruler drew,
-      // not just the bar boundaries) so every lane below can stripe its
-      // background with them - previously only the ruler itself carried
-      // beat-level ticks, so a lane with several beats between bar lines had
-      // nothing to align a clip against but the two bar lines at its edges.
+      // Lane grid lines (every lane stripes its body with these): the snap
+      // grid when snap is on, the ruler's beat ticks when it is off, doubled
+      // until they sit at least 6 px apart; bar lines drawn stronger.
       struct ArrangeGridLine { float x; bool isMajor; };
       std::vector<ArrangeGridLine> arrangeGridLines;
-      for (double sec = firstMinor; sec <= endSec + minorSec; sec += minorSec)
       {
-         if (sec < 0.0) continue;
-         const float x = rulerStartX + (float)((sec - startSec) * pps);
-         if (x < rulerStartX || x > rulerStartX + rulerWidth) continue;
-         const double frac = std::abs(sec / majorSec - std::round(sec / majorSec));
-         arrangeGridLines.push_back({ x, frac < 1e-4 });
+         Arrange::Tick g = gridTicks > 0 ? gridTicks : std::max<Arrange::Tick>(1, Arrange::BeatsToTicks(beatStep));
+         while ((double)g * pxPerTick < 6.0 && g < Arrange::kMaxTick)
+            g *= 2;
+         for (Arrange::Tick t = Arrange::GridCeil(startTick, g); t <= endTick; t += g)
+            if (t % barTicks != 0)
+               arrangeGridLines.push_back({ tickToX(t), false });
+         Arrange::Tick bg = barTicks;
+         while ((double)bg * pxPerTick < 6.0 && bg < Arrange::kMaxTick)
+            bg *= 2;
+         for (Arrange::Tick t = Arrange::GridCeil(startTick, bg); t <= endTick; t += bg)
+            arrangeGridLines.push_back({ tickToX(t), true });
       }
 
-      // ---- clip geometry and snapping, in ticks ----
-      // Clips live in ticks; the view is still laid out in seconds (pps,
-      // gArrangeScrollSeconds), so these convert at the live tempo.
-      const double arrBpm = std::max(1.0, (double)tr.Tempo());
-      auto tickToX = [&](Arrange::Tick t)
-      {
-         return rulerStartX + (float)((Arrange::TicksToSeconds(t, arrBpm) - startSec) * pps);
-      };
-      auto xToTick = [&](float x)
-      {
-         return Arrange::SecondsToTicks(startSec + (double)(x - rulerStartX) / pps, arrBpm);
-      };
-      const double pxPerTick = (double)pps * 60.0 / (arrBpm * (double)Arrange::kPPQ);
-      const Arrange::Tick snapThresholdTicks = std::max<Arrange::Tick>(1, (Arrange::Tick)(8.0 / std::max(1e-9, pxPerTick)));
-      const Arrange::Tick gridTicks = std::max<Arrange::Tick>(1, (Arrange::Tick)std::llround(beatStep * (double)Arrange::kPPQ));
-      const Arrange::Tick playTick = std::max<Arrange::Tick>(0, Arrange::SecondsToTicks(curSec, arrBpm));
       const float lanesTopY = scrollTL.y + kRulerHeight;
       auto laneRowAt = [&](float y) { return (int)std::floor((y - lanesTopY) / kLaneHeight); };
 
-      // Nearest snap target within ~8 px of `t`: the visible grid (while snap
-      // is on), the playhead, 0, and `extra` (neighbour edges). `*dist` gets
-      // the distance, or a value past the threshold when nothing is in reach.
+      // Clip-edge snap. With snap on the grid point is always taken (a hard
+      // quantize); the playhead, 0 and `extra` (neighbour edges) are magnets
+      // that win when within ~8 px and nearer than the grid point. With snap
+      // off only the magnets apply. `*dist` gets the winning distance, or a
+      // value past the threshold when nothing is in reach.
       auto snapTick = [&](Arrange::Tick t, const std::vector<Arrange::Tick>& extra, Arrange::Tick* dist) -> Arrange::Tick
       {
          Arrange::Tick best = t;
          Arrange::Tick bestDist = snapThresholdTicks + 1;
+         if (gridTicks > 0)
+         {
+            best = Arrange::SnapToGrid(t, gridTicks);
+            bestDist = best > t ? best - t : t - best;
+         }
          auto consider = [&](Arrange::Tick c)
          {
             const Arrange::Tick d = c > t ? c - t : t - c;
-            if (d < bestDist) { bestDist = d; best = c; }
+            if (d <= snapThresholdTicks && d < bestDist) { bestDist = d; best = c; }
          };
-         if (gArrangeSnapToGrid)
-            consider((Arrange::Tick)std::llround((double)t / (double)gridTicks) * gridTicks);
          consider(playTick);
          consider(0);
          for (Arrange::Tick e : extra)
@@ -28602,8 +29217,26 @@ namespace
                openClipCtx = true;
             }
 
-            if (clipHovered && offline && gArrangeDrag.mode == kArrangeDragNone)
-               ImGui::SetTooltip("Unassigned: this clip has no source node, so it plays nothing.\nRight-click > Assign Node... to link one.");
+            // Hover: where the clip sits in both units (WP6), plus the
+            // unassigned note for an offline clip.
+            if (clipHovered && gArrangeDrag.mode == kArrangeDragNone && gArrangeRenamingClipId != clip.id &&
+                ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+            {
+               ImGui::BeginTooltip();
+               ImGui::TextUnformatted(clipLabel.c_str());
+               ImGui::TextDisabled("Start   %s  |  %s", ArrangeFormatBBT(clip.start).c_str(),
+                                   ArrangeFormatTickSeconds(clip.start).c_str());
+               ImGui::TextDisabled("End     %s  |  %s", ArrangeFormatBBT(clip.End()).c_str(),
+                                   ArrangeFormatTickSeconds(clip.End()).c_str());
+               ImGui::TextDisabled("Length  %s  |  %.2fs", ArrangeFormatBBTLength(clip.length).c_str(),
+                                   Arrange::TicksToSeconds(clip.length, arrBpm));
+               if (offline)
+               {
+                  ImGui::Separator();
+                  ImGui::TextUnformatted("Unassigned: this clip has no source node, so it plays nothing.\nRight-click > Assign Node... to link one.");
+               }
+               ImGui::EndTooltip();
+            }
 
             // Styling. A Color Tint overrides the type palette; a disabled or
             // offline clip is drawn desaturated under a diagonal hatch - the
@@ -28680,9 +29313,7 @@ namespace
             }
             else
             {
-               char lenStr[32];
-               snprintf(lenStr, sizeof(lenStr), " [%.1fs]", Arrange::TicksToSeconds(clip.length, arrBpm));
-               const std::string fullLabel = clipLabel + lenStr;
+               const std::string fullLabel = clipLabel + " [" + ArrangeFormatLength(clip.length) + "]";
                const ImU32 labelCol = muted ? (isLight ? IM_COL32(60, 60, 70, 255) : IM_COL32(190, 190, 200, 255))
                                             : IM_COL32(255, 255, 255, 255);
                dl->PushClipRect(ImVec2(cLeft + 2.0f, cTop), ImVec2(cRight - 2.0f, cBottom), true);
@@ -28708,10 +29339,7 @@ namespace
             }
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
             {
-               Arrange::Tick at = std::max<Arrange::Tick>(0, xToTick(mouse.x));
-               if (gArrangeSnapToGrid)
-                  at = (Arrange::Tick)std::llround((double)at / (double)gridTicks) * gridTicks;
-               addClipAtTick = at;
+               addClipAtTick = gridSnap(xToTick(mouse.x));
                addClipToLaneId = laneId;
                openAddClip = true;
             }
@@ -28815,47 +29443,71 @@ namespace
                if (ImGui::IsItemDeactivated())
                   ArrangeGestureEnd();
             };
-            float startF = (float)Arrange::TicksToSeconds(cp->start, arrBpm);
-            float endF = (float)Arrange::TicksToSeconds(cp->End(), arrBpm);
-            ImGui::SetNextItemWidth(160.0f);
-            if (ImGui::DragFloat("Start", &startF, 0.01f, 0.0f, endF, "%.2fs"))
+            // A tick field in the chosen unit (WP6). Bars: dragged in beats,
+            // shown as bar.beat.sixteenth, stepping by sixteenths (the text is
+            // a literal, so typing is off - drag only). Time: seconds, as
+            // before, typing allowed. Storage stays ticks either way.
+            auto tickField = [&](const char* label, Arrange::Tick cur, Arrange::Tick lo, Arrange::Tick hi,
+                                 bool isLength, Arrange::Tick* out) -> bool
             {
-               fieldGesture(true);
-               Arrange::TrimEdge(gArrange, cid, Arrange::kEdgeStart,
-                                 std::max<Arrange::Tick>(0, Arrange::SecondsToTicks(startF, arrBpm)));
-            }
-            fieldGestureEnd();
-            ImGui::SetNextItemWidth(160.0f);
-            if (ImGui::DragFloat("End", &endF, 0.01f, startF, FLT_MAX, "%.2fs"))
+               ImGui::SetNextItemWidth(160.0f);
+               if (gArrange.settings.timeDisplay == 1)
+               {
+                  float v = (float)Arrange::TicksToSeconds(cur, arrBpm);
+                  const float vlo = (float)Arrange::TicksToSeconds(lo, arrBpm);
+                  const float vhi = hi >= Arrange::kMaxTick ? FLT_MAX : (float)Arrange::TicksToSeconds(hi, arrBpm);
+                  if (!ImGui::DragFloat(label, &v, 0.01f, vlo, vhi, "%.2fs"))
+                     return false;
+                  *out = std::clamp<Arrange::Tick>(Arrange::SecondsToTicks(v, arrBpm), lo, hi);
+                  return true;
+               }
+               float v = (float)Arrange::TicksToBeats(cur);
+               const float vlo = (float)Arrange::TicksToBeats(lo);
+               const float vhi = hi >= Arrange::kMaxTick ? FLT_MAX : (float)Arrange::TicksToBeats(hi);
+               const std::string shown = isLength ? ArrangeFormatBBTLength(cur) : ArrangeFormatBBT(cur);
+               if (!ImGui::DragFloat(label, &v, 0.0625f, vlo, vhi, shown.c_str(), ImGuiSliderFlags_NoInput))
+                  return false;
+               const Arrange::Tick q = Arrange::kPPQ / 4;
+               *out = std::clamp<Arrange::Tick>(Arrange::SnapToGrid(Arrange::BeatsToTicks(v), q), lo, hi);
+               return *out != cur;
+            };
             {
-               fieldGesture(true);
-               Arrange::TrimEdge(gArrange, cid, Arrange::kEdgeEnd, Arrange::SecondsToTicks(endF, arrBpm));
+               Arrange::Tick nt = 0;
+               if (tickField("Start", cp->start, 0, cp->End(), false, &nt))
+               {
+                  fieldGesture(true);
+                  Arrange::TrimEdge(gArrange, cid, Arrange::kEdgeStart, nt);
+               }
+               fieldGestureEnd();
+               cp = Arrange::FindClip(gArrange, cid);
+               if (tickField("End", cp->End(), cp->start, Arrange::kMaxTick, false, &nt))
+               {
+                  fieldGesture(true);
+                  Arrange::TrimEdge(gArrange, cid, Arrange::kEdgeEnd, nt);
+               }
+               fieldGestureEnd();
             }
-            fieldGestureEnd();
 
             if (ctxLaneType == Arrange::kLaneAudio)
             {
                ImGui::Separator();
                cp = Arrange::FindClip(gArrange, cid);
-               const float lenSec = (float)Arrange::TicksToSeconds(cp->length, arrBpm);
-               float fadeInF = (float)Arrange::TicksToSeconds(cp->fadeIn, arrBpm);
-               float fadeOutF = (float)Arrange::TicksToSeconds(cp->fadeOut, arrBpm);
                float gainF = cp->gainDb;
-               ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::DragFloat("Fade In", &fadeInF, 0.01f, 0.0f, lenSec, "%.2fs"))
+               Arrange::Tick nt = 0;
+               if (tickField("Fade In", cp->fadeIn, 0, cp->length, true, &nt))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
-                  cp->fadeIn = std::clamp<Arrange::Tick>(Arrange::SecondsToTicks(fadeInF, arrBpm), 0, cp->length);
+                  cp->fadeIn = std::clamp<Arrange::Tick>(nt, 0, cp->length);
                   gArrange.revision++;
                }
                fieldGestureEnd();
-               ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::DragFloat("Fade Out", &fadeOutF, 0.01f, 0.0f, lenSec, "%.2fs"))
+               cp = Arrange::FindClip(gArrange, cid);
+               if (tickField("Fade Out", cp->fadeOut, 0, cp->length, true, &nt))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
-                  cp->fadeOut = std::clamp<Arrange::Tick>(Arrange::SecondsToTicks(fadeOutF, arrBpm), 0, cp->length);
+                  cp->fadeOut = std::clamp<Arrange::Tick>(nt, 0, cp->length);
                   gArrange.revision++;
                }
                fieldGestureEnd();
@@ -28936,19 +29588,7 @@ namespace
             ImGui::Separator();
             if (ImGui::BeginMenu("Color Tint"))
             {
-               static const struct { const char* name; ImU32 col; } kPaletteColors[10] = {
-                  { "Default", IM_COL32(110, 120, 140, 255) },
-                  { "Crimson", IM_COL32(239, 68, 68, 255) },
-                  { "Orange",  IM_COL32(249, 115, 22, 255) },
-                  { "Amber",   IM_COL32(245, 158, 11, 255) },
-                  { "Emerald", IM_COL32(16, 185, 129, 255) },
-                  { "Cyan",    IM_COL32(6, 182, 212, 255) },
-                  { "Blue",    IM_COL32(59, 130, 246, 255) },
-                  { "Purple",  IM_COL32(139, 92, 246, 255) },
-                  { "Magenta", IM_COL32(217, 70, 239, 255) },
-                  { "Rose",    IM_COL32(244, 63, 94, 255) }
-               };
-
+               const auto& kPaletteColors = kArrangePalette; // shared with the marker colours
                for (int ci2 = 0; ci2 < 10; ci2++)
                {
                   if (ci2 % 5 != 0) ImGui::SameLine();
@@ -28982,7 +29622,8 @@ namespace
          }
          ImGui::EndPopup();
       }
-      else if (gArrangeGestureOpen && gArrangeDrag.mode == kArrangeDragNone && gArrangeRenamingLaneId == 0)
+      else if (gArrangeGestureOpen && gArrangeDrag.mode == kArrangeDragNone && gArrangeRenamingLaneId == 0 &&
+               gArrangeMarkerDragId == 0)
       {
          // The popup closed with a field still mid-edit (click outside):
          // its deactivate never ran, so close the gesture here.
@@ -28996,7 +29637,7 @@ namespace
          ImGui::OpenPopup("##arrangeaddclip");
       if (ImGui::BeginPopup("##arrangeaddclip"))
       {
-         ImGui::TextDisabled("Add Clip at %.2fs", Arrange::TicksToSeconds(addClipAtTick, arrBpm));
+         ImGui::TextDisabled("Add Clip at %s", ArrangeFormatPos(addClipAtTick).c_str());
          ImGui::Separator();
          if (ImGui::MenuItem("Add Clip"))
          {
@@ -29037,54 +29678,56 @@ namespace
       // ticks -> seconds step the panel geometry needs.
       if (gArrange.settings.loop.enabled || gArrangeShiftDraggingLoop)
       {
-         const double bandStart = ArrangeLoopStartSec();
-         const double bandEnd = ArrangeLoopEndSec();
-         if (bandEnd > startSec && bandStart < endSec)
+         const Arrange::LoopRange& bl = gArrange.settings.loop;
+         if (bl.end > startTick && bl.start < endTick)
          {
-            const float bx0 = rulerStartX + (float)((std::max(bandStart, startSec) - startSec) * pps);
-            const float bx1 = rulerStartX + (float)((std::min(bandEnd, endSec) - startSec) * pps);
+            const float bx0 = std::max(rulerStartX, tickToX(bl.start));
+            const float bx1 = std::min(rulerStartX + rulerWidth, tickToX(bl.end));
             const float totalLanesH = (float)gArrange.lanes.size() * kLaneHeight;
             const float bandBottom = std::max(pinnedTopY + kRulerHeight + totalLanesH, pinnedTopY + avail.y);
             const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 60) : IM_COL32(250, 204, 21, 40);
             const ImU32 bandBorder = IM_COL32(250, 204, 21, 200);
-            dl->AddRectFilled(ImVec2(bx0, pinnedTopY), ImVec2(bx1, bandBottom), bandCol);
-            dl->AddLine(ImVec2(bx0, pinnedTopY), ImVec2(bx0, bandBottom), bandBorder, 1.5f);
-            dl->AddLine(ImVec2(bx1, pinnedTopY), ImVec2(bx1, bandBottom), bandBorder, 1.5f);
+            // From the tick strip down: the marker strip above stays clear.
+            dl->AddRectFilled(ImVec2(bx0, kTickStripTop), ImVec2(bx1, bandBottom), bandCol);
+            dl->AddLine(ImVec2(bx0, kTickStripTop), ImVec2(bx0, bandBottom), bandBorder, 1.5f);
+            dl->AddLine(ImVec2(bx1, kTickStripTop), ImVec2(bx1, bandBottom), bandBorder, 1.5f);
          }
       }
 
-      // Draw Playhead line across ruler and all lanes
-      const double playheadSec = Transport::Instance().Seconds();
-      if (playheadSec >= startSec && playheadSec <= endSec)
+      // Playhead, drawn off Transport::Beats() - the clock clips are
+      // scheduled on - so it sits exactly where they sound. While scrubbing
+      // the real playhead stays put and a ghost follows the mouse; the
+      // transport seeks once, on release (WP6).
       {
-         const float playheadX = rulerStartX + (float)((playheadSec - startSec) * pps);
          const float totalLanesH = (float)gArrange.lanes.size() * kLaneHeight;
          const float lineBottom = std::max(pinnedTopY + kRulerHeight + totalLanesH, pinnedTopY + avail.y);
-         const ImU32 playheadCol = IM_COL32(239, 68, 68, 255); // Vibrant red
-
-         // Vertical line
-         dl->AddLine(ImVec2(playheadX, pinnedTopY), ImVec2(playheadX, lineBottom), playheadCol, 1.5f);
-
-         // Triangle cap on ruler
-         const float triSize = 7.0f;
-         dl->AddTriangleFilled(ImVec2(playheadX - triSize, pinnedTopY),
-                               ImVec2(playheadX + triSize, pinnedTopY),
-                               ImVec2(playheadX, pinnedTopY + triSize * 1.6f),
-                               playheadCol);
-
-         // Invisible button on playhead cap to allow direct cap dragging
-         ImGui::SetCursorScreenPos(ImVec2(playheadX - triSize - 2.0f, pinnedTopY));
-         ImGui::InvisibleButton("##playheadcapbtn", ImVec2(triSize * 2.0f + 4.0f, kRulerHeight));
-         if (ImGui::IsItemHovered())
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-         if (ImGui::IsItemActive())
+         const double playBeats = std::max(0.0, tr.Beats());
+         if (playBeats >= startBeat && playBeats <= endBeat)
          {
-            gArrangeDraggingPlayhead = true;
-            const float mx = ImGui::GetIO().MousePos.x;
-            double clickedSec = std::max(0.0, gArrangeScrollSeconds + (double)(mx - rulerStartX) / pps);
-            if (gArrangeSnapToGrid)
-               clickedSec = ArrangeNearestBeatSec(clickedSec, minorSec);
-            Transport::Instance().Seek(clickedSec);
+            const float playheadX = beatToX(playBeats);
+            const ImU32 playheadCol = IM_COL32(239, 68, 68, 255);
+            dl->AddLine(ImVec2(playheadX, kTickStripTop), ImVec2(playheadX, lineBottom), playheadCol, 1.5f);
+            const float triSize = 7.0f;
+            dl->AddTriangleFilled(ImVec2(playheadX - triSize, kTickStripTop), ImVec2(playheadX + triSize, kTickStripTop),
+                                  ImVec2(playheadX, kTickStripTop + triSize * 1.6f), playheadCol);
+         }
+         if (gArrangeScrubbing && gArrangeScrubTick >= startTick && gArrangeScrubTick <= endTick)
+         {
+            const float gx = tickToX(gArrangeScrubTick);
+            const ImU32 ghostCol = IM_COL32(239, 68, 68, 120);
+            dl->AddLine(ImVec2(gx, kTickStripTop), ImVec2(gx, lineBottom), ghostCol, 1.5f);
+            const float triSize = 7.0f;
+            dl->AddTriangleFilled(ImVec2(gx - triSize, kTickStripTop), ImVec2(gx + triSize, kTickStripTop),
+                                  ImVec2(gx, kTickStripTop + triSize * 1.6f), ghostCol);
+            const std::string ghostLabel = ArrangeFormatBBT(gArrangeScrubTick) + "  |  " + ArrangeFormatTickSeconds(gArrangeScrubTick);
+            const ImVec2 ts = ImGui::CalcTextSize(ghostLabel.c_str());
+            float lx = gx + 6.0f;
+            if (lx + ts.x + 6.0f > rulerStartX + rulerWidth)
+               lx = gx - 6.0f - ts.x;
+            const ImVec2 l0(lx - 3.0f, kTickStripTop + kRulerHeight - kMarkerStripH + 2.0f);
+            dl->AddRectFilled(l0, ImVec2(l0.x + ts.x + 6.0f, l0.y + ts.y + 2.0f),
+                              isLight ? IM_COL32(255, 255, 255, 230) : IM_COL32(20, 20, 24, 230), 3.0f);
+            dl->AddText(ImVec2(lx, l0.y + 1.0f), ImGui::GetColorU32(ImGuiCol_Text), ghostLabel.c_str());
          }
       }
 
@@ -31915,6 +32558,7 @@ namespace
          { "Canvas & View", "Toggle Params", "Shift+H", "Show / hide parameter knobs & sliders" },
          { "Canvas & View", "Viewport Panel", "Shift+V", "Toggle viewport panel (or dock selected nodes)" },
          { "Canvas & View", "Modulation Matrix", "Shift+M", "Toggle docked modulation matrix" },
+         { "Canvas & View", "Performance Matrix", "Shift+P", "Toggle docked performance matrix" },
          { "Canvas & View", "Arrangement Timeline", "Shift+T", "Toggle docked arrangement timeline" },
          { "Canvas & View", "Fit View to Content", "Shift+Y", "Frame the whole patch in the canvas view" },
 
@@ -31931,6 +32575,11 @@ namespace
          { "Arrangement Timeline", "Enable / Disable Clips", "0 / Keypad 0", "Mute the selected clips (they draw hatched) or bring them back" },
          { "Arrangement Timeline", "Group / Ungroup Clips", MODKEY "+G / " MODKEY "+Shift+G", "Group moves, copies and deletes as one; a click selects the whole group" },
          { "Arrangement Timeline", "Delete Clips", "Delete / Backspace", "Delete the selected clips" },
+         { "Arrangement Timeline", "Add Marker", "M", "Drop a marker at the playhead, on the snap grid" },
+         { "Arrangement Timeline", "Previous / Next Marker", "Alt+Left / Right", "Jump the playhead to the previous or next marker" },
+         { "Arrangement Timeline", "Nudge Clips / Step Playhead", "Left / Right", "Move the selected clips one grid step; with nothing selected, step the playhead" },
+         { "Arrangement Timeline", "Playhead to Start", "Home", "Move the playhead to the start of the timeline" },
+         { "Arrangement Timeline", "Playhead to End", "End", "Move the playhead to the end of the last clip" },
          { "Arrangement Timeline", "Zoom Timeline", MODKEY " + Scroll Wheel", "Zoom around the mouse (trackpad pinch works too)" },
       };
 
@@ -34691,6 +35340,7 @@ namespace
       }
       gArrangeGestureOpen = false;
       gArrangeDrag = ArrangeDragState();
+      gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
       ForgetAllDiscreteSlots();
       PaletteBinding::Instance().Clear();
       ExprGlobals::Clear();
@@ -36696,14 +37346,16 @@ namespace
       // anything keyed on it (the audio rebuild, WP5b) sees
       // an undo as the change it is instead of a revision it already built.
       gArrange.revision = current.revision + 1;
-      // Where the panel docks is a view choice, not an edit - undo leaves it.
-      gArrange.settings.dockSide = current.settings.dockSide;
+      // Where the panel docks, the display unit and the snap grid are view
+      // choices, not edits - undo leaves them (WP5, WP6).
+      ArrangeRestoreViewSettings(gArrange, ArrangeKeepViewSettings(current));
       e.arrange = std::move(current);
       PublishArrangeLoop();
       // A clip drag or popup edit that was mid-gesture is now describing a
       // model that no longer exists.
       gArrangeGestureOpen = false;
       gArrangeDrag = ArrangeDragState();
+      gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
    }
 
    void Undo()
@@ -36724,11 +37376,12 @@ namespace
       UndoEntry prev = std::move(gUndoStack.back());
       gUndoStack.pop_back();
       std::map<int, int> remap;
-      const int keepDock = gArrange.settings.dockSide; // view state - see ApplyArrangeOnlyEntry
+      const ArrangeViewSettings keepView = ArrangeKeepViewSettings(gArrange); // see ApplyArrangeOnlyEntry
       ApplyPatchData(prev.patch, &remap);
-      gArrange.settings.dockSide = keepDock;
+      ArrangeRestoreViewSettings(gArrange, keepView);
       gArrangeGestureOpen = false;
       gArrangeDrag = ArrangeDragState();
+      gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
       RemapViewportPanelNodes(remap);
       // After ApplyPatchData, never before: NewPatch (its first step) clears
       // the recorder, so restoring earlier would just be wiped.
@@ -36755,11 +37408,12 @@ namespace
       UndoEntry next = std::move(gRedoStack.back());
       gRedoStack.pop_back();
       std::map<int, int> remap;
-      const int keepDock = gArrange.settings.dockSide;
+      const ArrangeViewSettings keepView = ArrangeKeepViewSettings(gArrange);
       ApplyPatchData(next.patch, &remap);
-      gArrange.settings.dockSide = keepDock;
+      ArrangeRestoreViewSettings(gArrange, keepView);
       gArrangeGestureOpen = false;
       gArrangeDrag = ArrangeDragState();
+      gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
       RemapViewportPanelNodes(remap);
       GestureRecorder::Instance().Restore(RemapGestures(next.gestures, remap), GestureClockNow());
       gPatchDirty = true;
@@ -57403,6 +58057,10 @@ int main(int argc, char** argv)
                char bpmBuf[32];
                snprintf(bpmBuf, sizeof(bpmBuf), "%.1f###bpmBtn", bpm);
                ImGui::Button(bpmBuf);
+               if (!ImGui::IsItemActive() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+                  ImGui::SetTooltip("Tempo - drag, double-click or type to change.\n"
+                                    "Arrangement Timeline clips keep their bar/beat positions:\n"
+                                    "a tempo change moves their times in seconds, not their bars.");
                if (ImGui::IsItemHovered())
                {
                   ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
@@ -61227,6 +61885,364 @@ int main(int argc, char** argv)
          gArrangePanelOpen = false;
          NewPatch();
          printf("arrange edit test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // WP6: time display, snap grid, markers, playhead keys, scrub-on-release.
+      // Drives the same functions the panel's keys and gestures call.
+      if (getenv("INFINITE_ARRANGEMARKERTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetPlaying(false);
+         tr.SetTempo(120.0f);
+         tr.SeekBeats(0.0);
+         const Arrange::Tick kBar = Arrange::kTicksPerBar;
+         const Arrange::Tick kQ = Arrange::kPPQ;
+         std::string why;
+         auto sorted = [&]()
+         {
+            for (size_t i = 1; i < gArrange.markers.size(); i++)
+               if (gArrange.markers[i - 1].pos > gArrange.markers[i].pos)
+                  return false;
+            return true;
+         };
+         auto findMk = [&](uint64_t id) -> const Arrange::Marker*
+         {
+            for (const Arrange::Marker& m : gArrange.markers)
+               if (m.id == id) return &m;
+            return nullptr;
+         };
+         auto freshModel = [&](int audio)
+         {
+            ArrangeEdit([&]()
+            {
+               while (!gArrange.lanes.empty())
+                  Arrange::RemoveLane(gArrange, gArrange.lanes.front().id);
+               while (!gArrange.markers.empty())
+                  Arrange::DeleteMarker(gArrange, gArrange.markers.front().id);
+               for (int i = 0; i < audio; i++)
+                  Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            });
+            gArrangeSel.clear();
+            gArrangeSelAnchor = 0;
+         };
+         auto place = [&](int lane, Arrange::Tick start, Arrange::Tick len)
+         {
+            Arrange::Clip c;
+            c.start = start;
+            c.length = len;
+            uint64_t id = 0;
+            ArrangeEdit([&]() { Arrange::PlaceOverwrite(gArrange, gArrange.lanes[lane].id, c, &id); });
+            return id;
+         };
+
+         // --- A. Marker add / move / rename / recolor / delete; sorted; every
+         //        op bumps revision and is one undo entry --------------------
+         {
+            freshModel(1);
+            bool aOk = true;
+            size_t undo0 = gUndoStack.size();
+            uint64_t rev = gArrange.revision;
+            uint64_t m1 = 0, m2 = 0, m3 = 0;
+            ArrangeEdit([&]() { m1 = Arrange::AddMarker(gArrange, kBar * 4, "Chorus", 0xEF4444FFu); });
+            aOk = aOk && gArrange.revision > rev; rev = gArrange.revision;
+            ArrangeEdit([&]() { m2 = Arrange::AddMarker(gArrange, kBar, "Verse", kArrangeDefaultMarkerRGBA); });
+            aOk = aOk && gArrange.revision > rev; rev = gArrange.revision;
+            ArrangeEdit([&]() { m3 = Arrange::AddMarker(gArrange, -50, "Intro", kArrangeDefaultMarkerRGBA); });
+            aOk = aOk && gArrange.revision > rev; rev = gArrange.revision;
+            aOk = aOk && m1 && m2 && m3 && gUndoStack.size() == undo0 + 3 && sorted() &&
+                  gArrange.markers.size() == 3 && gArrange.markers[0].id == m3 && gArrange.markers[0].pos == 0 &&
+                  gArrange.markers[1].id == m2 && gArrange.markers[2].id == m1;
+            // Move past a neighbour: re-sorted.
+            aOk = aOk && ArrangeEdit([&]() { Arrange::MoveMarker(gArrange, m3, kBar * 8); });
+            aOk = aOk && gArrange.revision > rev && sorted() && gArrange.markers.back().id == m3; rev = gArrange.revision;
+            aOk = aOk && ArrangeEdit([&]() { Arrange::RenameMarker(gArrange, m2, "Verse 1"); });
+            aOk = aOk && gArrange.revision > rev && findMk(m2)->name == "Verse 1"; rev = gArrange.revision;
+            const uint32_t blue = ArrangeMarkerRGBA(kArrangePalette[6].col);
+            aOk = aOk && blue == 0x3B82F6FFu && ArrangeEdit([&]() { Arrange::RecolorMarker(gArrange, m2, blue); });
+            aOk = aOk && gArrange.revision > rev && findMk(m2)->color == blue; rev = gArrange.revision;
+            // A no-op edit pushes nothing and leaves revision alone.
+            const size_t undoNoop = gUndoStack.size();
+            aOk = aOk && !ArrangeEdit([&]() { Arrange::RenameMarker(gArrange, m2, "Verse 1"); }) &&
+                  !ArrangeEdit([&]() { Arrange::MoveMarker(gArrange, m2, kBar); }) &&
+                  gUndoStack.size() == undoNoop && gArrange.revision == rev;
+            aOk = aOk && ArrangeEdit([&]() { Arrange::DeleteMarker(gArrange, m1); });
+            aOk = aOk && gArrange.revision > rev && findMk(m1) == nullptr && gArrange.markers.size() == 2;
+            aOk = aOk && gUndoStack.size() == undo0 + 7 && Arrange::Validate(gArrange, &why);
+
+            // Undo / redo walk the same entries back and forth.
+            Undo();
+            aOk = aOk && findMk(m1) != nullptr && findMk(m1)->pos == kBar * 4 && sorted();
+            Undo();
+            aOk = aOk && findMk(m2)->color == kArrangeDefaultMarkerRGBA;
+            Undo();
+            aOk = aOk && findMk(m2)->name == "Verse";
+            Undo();
+            aOk = aOk && findMk(m3)->pos == 0 && gArrange.markers.front().id == m3 && sorted();
+            Redo();
+            Redo();
+            Redo();
+            Redo();
+            aOk = aOk && findMk(m1) == nullptr && findMk(m2)->name == "Verse 1" && findMk(m2)->color == blue &&
+                  findMk(m3)->pos == kBar * 8 && sorted() && Arrange::Validate(gArrange, &why);
+
+            // A flag drag: many MoveMarker calls, one gesture, one entry;
+            // a drag that comes back where it started pushes nothing.
+            size_t undoD = gUndoStack.size();
+            ArrangeGestureBegin();
+            for (int k = 1; k <= 6; k++)
+               Arrange::MoveMarker(gArrange, m2, kBar + kQ * k);
+            ArrangeGestureEnd();
+            aOk = aOk && gUndoStack.size() == undoD + 1 && findMk(m2)->pos == kBar + kQ * 6 && sorted();
+            ArrangeGestureBegin();
+            Arrange::MoveMarker(gArrange, m2, kBar * 20);
+            aOk = aOk && sorted() && gArrange.markers.back().id == m2;
+            Arrange::MoveMarker(gArrange, m2, kBar + kQ * 6);
+            ArrangeGestureEnd();
+            aOk = aOk && gUndoStack.size() == undoD + 1 && sorted();
+            Undo();
+            aOk = aOk && findMk(m2)->pos == kBar;
+            // Undo mid-drag closes the gesture, so it must end the flag drag
+            // too - else the rest of the drag moves the marker unrecorded.
+            ArrangeGestureBegin();
+            gArrangeMarkerDragId = m2;
+            Arrange::MoveMarker(gArrange, m2, kBar * 3);
+            Undo();
+            aOk = aOk && gArrangeMarkerDragId == 0 && !gArrangeGestureOpen;
+            Redo();
+            printf("arrange marker ops + undo/redo: %s\n", aOk ? "OK" : "FAIL");
+            allOk = allOk && aOk;
+         }
+
+         // --- B. Save / load round trip: markers + time display + snap -------
+         {
+            freshModel(1);
+            SpawnNode("Cube", "3D", 0.0f, 0.0f); // Patch::Read refuses a file with no nodes
+            place(0, kBar, kBar * 2);
+            uint64_t ma = 0, mb = 0;
+            ArrangeEdit([&]()
+            {
+               ma = Arrange::AddMarker(gArrange, kBar * 3 + kQ, "Drop  here", 0x10B981FFu);
+               mb = Arrange::AddMarker(gArrange, kQ, "Top", kArrangeDefaultMarkerRGBA);
+            });
+            ArrangeSetTimeDisplay(1);
+            ArrangeSetSnap(8, true);
+            const std::vector<Arrange::Marker> before = gArrange.markers;
+            const std::string path = TmpPath("arrange_markertest.inf");
+            bool bOk = SavePatchTo(path);
+            NewPatch();
+            bOk = bOk && gArrange.markers.empty() && gArrange.settings.timeDisplay == 0;
+            bOk = bOk && LoadPatchFrom(path);
+            bOk = bOk && gArrange.markers.size() == before.size() && sorted();
+            for (size_t i = 0; bOk && i < before.size(); i++)
+               bOk = gArrange.markers[i].id == before[i].id && gArrange.markers[i].pos == before[i].pos &&
+                     gArrange.markers[i].name == before[i].name && gArrange.markers[i].color == before[i].color;
+            bOk = bOk && gArrange.settings.timeDisplay == 1 && gArrange.settings.snapDivision == 8 &&
+                  gArrange.settings.snapTriplet && ArrangeSnapGridTicks() == 320;
+            // Snap off survives too (0 used to be clamped back to 1/4).
+            ArrangeSetSnap(0, false);
+            bOk = bOk && SavePatchTo(path) && LoadPatchFrom(path) && gArrange.settings.snapDivision == 0 &&
+                  ArrangeSnapGridTicks() == 0;
+            // A marker added after the reload gets a fresh id.
+            uint64_t mc = 0;
+            ArrangeEdit([&]() { mc = Arrange::AddMarker(gArrange, 0, "New", kArrangeDefaultMarkerRGBA); });
+            bOk = bOk && mc != 0 && mc != ma && mc != mb && Arrange::Validate(gArrange, &why);
+            std::remove(path.c_str());
+            printf("arrange marker save/load round trip: %s\n", bOk ? "OK" : "FAIL");
+            allOk = allOk && bOk;
+         }
+
+         // --- C. BPM change: ticks stay, seconds rescale ---------------------
+         {
+            NewPatch();
+            tr.SetTempo(120.0f);
+            freshModel(1);
+            const uint64_t c = place(0, kBar * 2, kBar);
+            uint64_t mk = 0;
+            ArrangeEdit([&]() { mk = Arrange::AddMarker(gArrange, kBar * 4, "M", kArrangeDefaultMarkerRGBA); });
+            const double s120 = Arrange::TicksToSeconds(Arrange::FindClip(gArrange, c)->start, tr.Tempo());
+            const double l120 = Arrange::TicksToSeconds(Arrange::FindClip(gArrange, c)->length, tr.Tempo());
+            const uint64_t rev = gArrange.revision;
+            tr.SetTempo(240.0f);
+            const Arrange::Clip* cp = Arrange::FindClip(gArrange, c);
+            const double s240 = Arrange::TicksToSeconds(cp->start, tr.Tempo());
+            const double l240 = Arrange::TicksToSeconds(cp->length, tr.Tempo());
+            const bool cOk = cp->start == kBar * 2 && cp->length == kBar && findMk(mk)->pos == kBar * 4 &&
+                             gArrange.revision == rev && std::abs(s120 - 4.0) < 1e-9 && std::abs(l120 - 2.0) < 1e-9 &&
+                             std::abs(s240 - 2.0) < 1e-9 && std::abs(l240 - 1.0) < 1e-9 &&
+                             ArrangeFormatBBT(cp->start) == "3.1.1" && ArrangeFormatTickSeconds(cp->start) == "0:02.00";
+            tr.SetTempo(120.0f);
+            printf("arrange bpm change keeps ticks, rescales seconds: %s (%.2fs -> %.2fs)\n", cOk ? "OK" : "FAIL",
+                   s120, s240);
+            allOk = allOk && cOk;
+         }
+
+         // --- D. Snap grid tick math, triplets included ----------------------
+         {
+            bool dOk = Arrange::SnapGridTicks(0, false) == 0 && Arrange::SnapGridTicks(1, false) == 3840 &&
+                       Arrange::SnapGridTicks(1, true) == 3840 && Arrange::SnapGridTicks(1, false, 3.0) == 2880 &&
+                       Arrange::SnapGridTicks(2, false) == 1920 && Arrange::SnapGridTicks(4, false) == 960 &&
+                       Arrange::SnapGridTicks(8, false) == 480 && Arrange::SnapGridTicks(16, false) == 240 &&
+                       Arrange::SnapGridTicks(2, true) == 1280 && Arrange::SnapGridTicks(4, true) == 640 &&
+                       Arrange::SnapGridTicks(8, true) == 320 && Arrange::SnapGridTicks(16, true) == 160;
+            // Every grid the dropdown offers is exactly MusicTime's length.
+            for (const ArrangeGridChoice& g : kArrangeGridChoices)
+            {
+               if (g.rd < 0)
+                  dOk = dOk && Arrange::SnapGridTicks(g.division, g.triplet) == 0;
+               else
+                  dOk = dOk && Arrange::SnapGridTicks(g.division, g.triplet, 4.0) ==
+                                  Arrange::BeatsToTicks(MusicTime::BeatsFor((MusicTime::RateDivision)g.rd));
+            }
+            dOk = dOk && Arrange::SnapToGrid(479, 960) == 0 && Arrange::SnapToGrid(480, 960) == 960 &&
+                  Arrange::SnapToGrid(1500, 640) == 1280 && Arrange::SnapToGrid(1700, 640) == 1920 &&
+                  Arrange::SnapToGrid(1234, 0) == 1234 &&
+                  Arrange::GridFloor(959, 960) == 0 && Arrange::GridFloor(960, 960) == 960 &&
+                  Arrange::GridFloor(-1, 960) == -960 && Arrange::GridCeil(1, 960) == 960 &&
+                  Arrange::GridCeil(960, 960) == 960 && Arrange::GridCeil(-1, 960) == 0;
+            // Settings setters: view changes bump revision, never push undo.
+            const size_t undo0 = gUndoStack.size();
+            uint64_t rev = gArrange.revision;
+            ArrangeSetSnap(16, true);
+            dOk = dOk && gArrange.revision > rev && ArrangeSnapGridTicks() == 160; rev = gArrange.revision;
+            ArrangeSetSnap(1, true); // a bar has no triplet
+            dOk = dOk && !gArrange.settings.snapTriplet && ArrangeSnapGridTicks() == 3840; rev = gArrange.revision;
+            ArrangeSetSnap(1, false);
+            dOk = dOk && gArrange.revision == rev; // unchanged: no bump
+            ArrangeSetTimeDisplay(1);
+            dOk = dOk && gArrange.revision > rev && gUndoStack.size() == undo0;
+            ArrangeSetTimeDisplay(0);
+            printf("arrange snap grid tick math: %s\n", dOk ? "OK" : "FAIL");
+            allOk = allOk && dOk;
+         }
+
+         // --- E. Scrub: the ghost moves, the transport seeks once on release -
+         {
+            NewPatch();
+            tr.SetPlaying(false);
+            ArrangeSetLoop(false, gArrange.settings.loop.start, gArrange.settings.loop.end);
+            ArrangeSeekTick(kBar);
+            const double beats0 = tr.Beats();
+            const unsigned long long e0 = tr.ResetEpoch();
+            ArrangeScrubBegin(kBar * 2);
+            for (int k = 0; k < 20; k++)
+               ArrangeScrubUpdate(kBar * 2 + kQ * k);
+            const bool stillBefore = tr.ResetEpoch() == e0 && tr.Beats() == beats0 && gArrangeScrubbing;
+            const bool ended = ArrangeScrubEnd();
+            const unsigned long long e1 = tr.ResetEpoch();
+            const bool endedTwice = ArrangeScrubEnd(); // a second release is a no-op
+            bool eOk = stillBefore && ended && !endedTwice && e1 - e0 == 1 && tr.ResetEpoch() == e1 &&
+                       ArrangePlayTick() == kBar * 2 + kQ * 19 && !gArrangeScrubbing;
+            // Escape: no seek at all.
+            const unsigned long long e2 = tr.ResetEpoch();
+            ArrangeScrubBegin(0);
+            ArrangeScrubUpdate(kBar * 9);
+            ArrangeScrubCancel();
+            eOk = eOk && !ArrangeScrubEnd() && tr.ResetEpoch() == e2 && ArrangePlayTick() == kBar * 2 + kQ * 19;
+            printf("arrange scrub seeks once on release: %s (epoch delta %llu)\n", eOk ? "OK" : "FAIL", e1 - e0);
+            allOk = allOk && eOk;
+         }
+
+         // --- F. Playhead keys: Home, End, arrows, markers -------------------
+         {
+            freshModel(2);
+            place(0, 0, kBar * 2);
+            const uint64_t late = place(1, kBar * 5, kBar + kQ);
+            ArrangeSetSnap(4, false);
+            bool fOk = ArrangeEndKeyTargetTick() == Arrange::ArrangementEnd(gArrange) &&
+                       ArrangeEndKeyTargetTick() == kBar * 6 + kQ;
+            ArrangeSeekTick(ArrangeEndKeyTargetTick()); // End
+            fOk = fOk && ArrangePlayTick() == Arrange::ArrangementEnd(gArrange);
+            ArrangeSeekTick(0);                         // Home
+            fOk = fOk && ArrangePlayTick() == 0;
+
+            // Arrows with nothing selected step the playhead on the grid.
+            ArrangeSeekTick(1000);
+            fOk = fOk && ArrangeNudge(1) && ArrangePlayTick() == 1920;
+            ArrangeSeekTick(1000);
+            fOk = fOk && ArrangeNudge(-1) && ArrangePlayTick() == 960;
+            fOk = fOk && ArrangeNudge(-1) && ArrangePlayTick() == 0;
+            fOk = fOk && !ArrangeNudge(-1) && ArrangePlayTick() == 0;
+            ArrangeSetSnap(0, false); // off: a sixteenth
+            fOk = fOk && ArrangeNudge(1) && ArrangePlayTick() == kQ / 4;
+            ArrangeSetSnap(8, true);
+            fOk = fOk && ArrangeNudge(1) && ArrangePlayTick() == 320;
+
+            // Arrows with a selection move it through MoveClips, one entry each.
+            ArrangeSetSnap(4, false);
+            ArrangeClickSelect(late, false, false);
+            const size_t undo0 = gUndoStack.size();
+            const Arrange::Tick play0 = ArrangePlayTick();
+            fOk = fOk && ArrangeNudge(1) && Arrange::FindClip(gArrange, late)->start == kBar * 5 + kQ &&
+                  gUndoStack.size() == undo0 + 1 && ArrangePlayTick() == play0;
+            fOk = fOk && ArrangeNudge(-1) && ArrangeNudge(-1) && Arrange::FindClip(gArrange, late)->start == kBar * 5 - kQ &&
+                  gUndoStack.size() == undo0 + 3;
+            Undo();
+            fOk = fOk && Arrange::FindClip(gArrange, late)->start == kBar * 5 && Arrange::Validate(gArrange, &why);
+            gArrangeSel.clear();
+            gArrangeSelAnchor = 0;
+
+            // M: a marker at the playhead, snapped.
+            ArrangeSeekTick(1000);
+            const uint64_t mA = ArrangeAddMarkerAtPlayhead();
+            fOk = fOk && mA != 0 && findMk(mA)->pos == 960 && findMk(mA)->color == kArrangeDefaultMarkerRGBA;
+            ArrangeSetSnap(0, false);
+            const uint64_t mB = ArrangeAddMarkerAtPlayhead();
+            fOk = fOk && mB != 0 && findMk(mB)->pos == 1000 && sorted();
+            ArrangeSetSnap(4, false);
+            ArrangeEdit([&]() { Arrange::AddMarker(gArrange, kBar * 3, "C", kArrangeDefaultMarkerRGBA); });
+
+            // Alt+Left / Alt+Right, stopped: 960, 1000, 11520.
+            ArrangeSeekTick(kBar * 2);
+            fOk = fOk && ArrangeJumpToMarker(-1) && ArrangePlayTick() == 1000;
+            fOk = fOk && ArrangeJumpToMarker(-1) && ArrangePlayTick() == 960;
+            fOk = fOk && !ArrangeJumpToMarker(-1) && ArrangePlayTick() == 960;
+            fOk = fOk && ArrangeJumpToMarker(1) && ArrangePlayTick() == 1000;
+            fOk = fOk && ArrangeJumpToMarker(1) && ArrangePlayTick() == kBar * 3;
+            fOk = fOk && !ArrangeJumpToMarker(1) && ArrangePlayTick() == kBar * 3;
+            // Tolerance only while playing.
+            fOk = fOk && Arrange::PrevMarker(gArrange, kBar * 3 + 100, kQ / 2)->pos == 1000 &&
+                  Arrange::PrevMarker(gArrange, kBar * 3 + 100, 0)->pos == kBar * 3 &&
+                  Arrange::NextMarker(gArrange, 960, 0)->pos == 1000 && Arrange::NextMarker(gArrange, kBar * 3) == nullptr;
+            printf("arrange playhead keys (home/end/arrows/markers): %s (end %lld)\n", fOk ? "OK" : "FAIL",
+                   (long long)ArrangeEndKeyTargetTick());
+            allOk = allOk && fOk;
+         }
+
+         // --- G. View settings are not undo state ----------------------------
+         {
+            freshModel(1);
+            ArrangeSetTimeDisplay(0);
+            ArrangeSetSnap(4, false);
+            const uint64_t c = place(0, 0, kBar);
+            ArrangeSetTimeDisplay(1);
+            ArrangeSetSnap(16, true);
+            Undo(); // takes the clip back, not the view
+            bool gOk = !Arrange::Find(gArrange, c).Valid() && gArrange.settings.timeDisplay == 1 &&
+                       gArrange.settings.snapDivision == 16 && gArrange.settings.snapTriplet;
+            Redo();
+            gOk = gOk && Arrange::Find(gArrange, c).Valid() && gArrange.settings.timeDisplay == 1 &&
+                  gArrange.settings.snapDivision == 16;
+            // Parse / format in both units.
+            ArrangeSetTimeDisplay(0);
+            gOk = gOk && ArrangeParsePos("3.2.1") == kBar * 2 + kQ && ArrangeParsePos("1") == 0 &&
+                  ArrangeParsePos("x") == -1 && ArrangeFormatPos(kBar * 2 + kQ) == "3.2.1" &&
+                  ArrangeFormatLength(kBar + kQ / 4) == "1.0.1";
+            ArrangeSetTimeDisplay(1);
+            gOk = gOk && ArrangeParsePos("0:04") == kBar * 2 && ArrangeParsePos("1.5") == kQ * 3 &&
+                  ArrangeFormatPos(kBar * 2) == "0:04.00";
+            printf("arrange view settings survive undo: %s\n", gOk ? "OK" : "FAIL");
+            allOk = allOk && gOk;
+         }
+
+         if (!why.empty())
+            printf("arrange marker validate: %s\n", why.c_str());
+         tr.SetTempo(120.0f);
+         tr.SeekBeats(0.0);
+         gArrangePanelOpen = false;
+         NewPatch();
+         printf("arrange marker test: all  %s\n", allOk ? "OK" : "FAIL");
       }
 
       if (getenv("INFINITE_UNDOPERFTEST") != nullptr && frameId == 4)
