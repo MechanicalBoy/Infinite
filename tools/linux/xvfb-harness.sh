@@ -43,10 +43,35 @@ export INFINITE_BIN="$BIN_PATH"
 EXIT_CODE=0
 ./.claude/skills/run-infinite-hygiene/driver.sh --skip-build "$@" || EXIT_CODE=$?
 
-echo "==> Collecting artifacts into ${ARTIFACTS_DIR}..."
-find . -maxdepth 2 -name "*.png" -exec cp {} "$ARTIFACTS_DIR/" \; 2>/dev/null || true
-if [ -d "$HOME/.config/Infinite" ]; then
-  cp -r "$HOME/.config/Infinite"/* "$ARTIFACTS_DIR/" 2>/dev/null || true
+echo "==> Per-category shots..."
+# Soft-fail: a missing shot is reported in the artifact but must not mask the
+# driver's own verdict, which is what EXIT_CODE carries.
+BIN="$BIN_PATH" OUT_DIR="$ARTIFACTS_DIR/shots" ./tools/linux/shots.sh || true
+if [ -d tools/linux/reference-shots ]; then
+  # Shipped alongside so the owner can compare Linux vs macOS side by side in
+  # the one downloaded artifact, without checking out the repo.
+  cp -r tools/linux/reference-shots "$ARTIFACTS_DIR/" 2>/dev/null || true
 fi
+
+echo "==> Collecting artifacts into ${ARTIFACTS_DIR}..."
+# ONLY files this run produced. The previous version of this step was
+#   find . -maxdepth 2 -name "*.png" -exec cp {} "$ARTIFACTS_DIR/" \;
+# which swept up PNGs COMMITTED to the repo - docs/screenshot.png,
+# website/full_page_capture.png, assets/Infinite*.png - all of them captured on
+# macOS. The artifact then looked like proof that Linux rendered correctly
+# while containing no Linux pixels at all. Never widen this back to a bare
+# find over the worktree.
+if [ -f /tmp/infinite_hygiene_shot.png ]; then
+  cp /tmp/infinite_hygiene_shot.png "$ARTIFACTS_DIR/hygiene-visual-smoke.png"
+fi
+for log in /tmp/infinite_shot.log /tmp/infinite_build.log; do
+  [ -f "$log" ] && cp "$log" "$ARTIFACTS_DIR/" 2>/dev/null || true
+done
+if [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/Infinite" ]; then
+  cp -r "${XDG_CONFIG_HOME:-$HOME/.config}/Infinite" "$ARTIFACTS_DIR/app-support" 2>/dev/null || true
+fi
+
+echo "==> Artifact contents:"
+ls -R "$ARTIFACTS_DIR" || true
 
 exit $EXIT_CODE

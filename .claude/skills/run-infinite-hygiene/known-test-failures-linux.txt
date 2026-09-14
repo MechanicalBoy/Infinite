@@ -7,21 +7,16 @@
 
 # Phase 2: Audio / MIDI
 AUDIOUITEST|stubbed: audio device and UI (P2)
-AUDIOGRAPHTEST|stubbed: audio device and graph (P2)
 AUDIOPARAMSWEEPTEST|stubbed: audio engine / param delivery (P2)
-AUDIOTEARDOWNSWEEPTEST|stubbed: audio engine / teardown (P2)
 AUDIOLIFECYCLETEST|stubbed: audio device lifecycle (P2)
 AUDIORECOVERYTEST|stubbed: audio device recovery (P2)
 AUDIORINGTEST|stubbed: audio ring buffer / engine (P2)
 MIDINOTESTREAMTEST|stubbed: ALSA MIDI sequencer (P2)
-METALLICDECAYTEST|stubbed: audio DSP / engine (P2)
 
 # Phase 3: Media / Video / Camera
 VIDEOAUDIOTEST|stubbed: video decoder and media audio (P3)
 VIDEOSPEEDTEST|stubbed: video playback speed (P3)
 RECEXPORTTEST|stubbed: platform video/audio recorder (P3)
-SAMPLERDRAGTEST|stubbed: media / sample folder loading (P3)
-MEDIADRAGTEST|stubbed: media dragging / decoder (P3)
 
 # Phase 4: VST3 / Plugins
 PLUGINDRAGTEST|stubbed: plugin host / VST3 (P4)
@@ -30,5 +25,3 @@ VST3SCANTEST|stubbed: VST3 scanner (P4)
 
 # Other pre-existing test quirks shared with macOS
 GROUPTEST|"after ungroup: ... member freed" sub-check fails — pre-existing and unrelated to Linux port
-DRAGTEST|"after canvas drag: node pos=(66,66) viewAnchor=(168,149) -> node MOVED, view panned : BUG" — pre-existing canvas-vs-node drag issue
-DSPTEST|stubbed: audio file decode / sampler in DSP fixtures (P1/P2)

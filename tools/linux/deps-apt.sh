@@ -26,6 +26,7 @@ apt-get install -y --no-install-recommends \
   mesa-utils \
   libgl1-mesa-dri \
   libfontconfig-dev \
+  libfreetype-dev \
   libasound2-dev \
   xvfb \
   xauth \
@@ -37,6 +38,7 @@ apt-get install -y --no-install-recommends \
   kmod \
   file \
   imagemagick \
-  ca-certificates
+  ca-certificates \
+  fonts-dejavu-core
 
 rm -rf /var/lib/apt/lists/*

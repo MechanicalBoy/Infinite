@@ -54,6 +54,7 @@ Severity, briefly:
 | 1.9 | Capture-thread races | data race, and a use-after-free on the audio thread (fixed) |
 | 1.10 | Assorted smaller items | see the block |
 | 1.11 | Exe imported the VC++ redist CRT | wouldn't launch on a clean Windows install (fixed) |
+| 1.12 | Hand-rolled parsers used byte paths for UTF-8 files | 3D/audio load fails on non-ASCII Windows paths (fixed) |
 
 ### 1.1 `PortableFft::Inverse` is broken (blocker)
 
@@ -483,6 +484,13 @@ event handle.
    movie from inside a file-dialog callback. Either commit the process to one
    apartment and give the dialogs their own STA thread, or treat
    RPC_E_CHANGED_MODE as usable-but-do-not-uninitialise and log it.
+
+8. Hand-rolled 3D and audio parsers (OBJ/PLY/STL/AIFF) in MediaDecodeWin.cpp
+   opened files with bare `std::ifstream(path)` byte strings, mangling
+   non-ASCII UTF-8 paths on Windows. Fixed in Phase 1 by extracting shared
+   decoding to `src/platform/common/MediaDecodePortable.cpp` and routing all
+   file streams through `src/platform/common/PathOpen.h` (`OpenIfstreamUtf8` /
+   `OpenFileUtf8`).
 ```
 
 ### 1.11 The build was not actually self-contained (fixed)

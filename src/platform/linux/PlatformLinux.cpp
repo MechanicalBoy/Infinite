@@ -1,5 +1,7 @@
 #include "platform/Platform.h"
 #include "platform/AppPaths.h"
+#include "platform/common/SubjectMaskOnnx.h"
+#include "tinyfiledialogs.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -7,12 +9,99 @@
 #include <string>
 #include <vector>
 #include <climits>
+#include <cstdint>
+#include <algorithm>
+#include <dlfcn.h>
 #include <unistd.h>
+#include <spawn.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+
+extern char** environ;
+
+namespace
+{
+   bool IsHeadlessOrExitAfter()
+   {
+      if (std::getenv("INFINITE_EXITAFTER") != nullptr)
+         return true;
+      const char* disp = std::getenv("DISPLAY");
+      const char* wayland = std::getenv("WAYLAND_DISPLAY");
+      if ((!disp || disp[0] == '\0') && (!wayland || wayland[0] == '\0'))
+         return true;
+      return false;
+   }
+
+   bool CheckExecutableOnPath(const char* exe)
+   {
+      const char* pathEnv = std::getenv("PATH");
+      if (!pathEnv) return false;
+      std::string pathStr = pathEnv;
+      size_t start = 0;
+      while (start < pathStr.size())
+      {
+         size_t colon = pathStr.find(':', start);
+         std::string dir = (colon == std::string::npos) ? pathStr.substr(start) : pathStr.substr(start, colon - start);
+         if (!dir.empty())
+         {
+            std::string full = dir + "/" + exe;
+            if (access(full.c_str(), X_OK) == 0)
+               return true;
+         }
+         if (colon == std::string::npos) break;
+         start = colon + 1;
+      }
+      return false;
+   }
+
+   bool sDialogBackendChecked = false;
+   bool sDialogBackendPresent = false;
+
+   void EnsureDialogBackendChecked()
+   {
+      if (sDialogBackendChecked) return;
+      sDialogBackendChecked = true;
+      const char* const candidates[] = {
+         "zenity", "kdialog", "yad", "qarma", "matedialog"
+      };
+      for (const char* c : candidates)
+      {
+         if (CheckExecutableOnPath(c))
+         {
+            sDialogBackendPresent = true;
+            break;
+         }
+      }
+      if (!sDialogBackendPresent)
+      {
+         Platform::AppendLogLine("[WARNING] No GUI dialog helper (zenity, kdialog, yad, qarma, matedialog) found on PATH. Native file dialogs may fail silently.");
+      }
+   }
+
+   std::string AppendExtensionIfMissing(const std::string& path, const char* ext)
+   {
+      if (path.empty() || !ext || ext[0] == '\0')
+         return path;
+      std::string dotExt = (ext[0] == '.') ? std::string(ext) : (std::string(".") + ext);
+      if (path.size() >= dotExt.size())
+      {
+         const std::string end = path.substr(path.size() - dotExt.size());
+         if (strcasecmp(end.c_str(), dotExt.c_str()) == 0)
+            return path;
+      }
+      return path + dotExt;
+   }
+}
 
 namespace Platform
 {
+   bool HasGuiDialogHelper()
+   {
+      EnsureDialogBackendChecked();
+      return sDialogBackendPresent;
+   }
+
    void PreventAppNap()
    {
       // No App Nap mechanism on Linux that affects GLFW.
@@ -22,11 +111,6 @@ namespace Platform
    {
       // GLFW does not expose trackpad magnification gestures on X11/Wayland.
       return 0.0;
-   }
-
-   void InstallCrashHandler()
-   {
-      // Real sigaction crash handler lands in Phase 1.
    }
 
    void AppendLogLine(const std::string& line)
@@ -49,94 +133,385 @@ namespace Platform
    {
       std::fprintf(stderr, "[FATAL] %s: %s\n", title.c_str(), message.c_str());
       AppendLogLine(std::string("[FATAL] ") + title + ": " + message);
-      // tinyfiledialogs message box arrives in Phase 1.
+
+      if (!IsHeadlessOrExitAfter())
+      {
+         tinyfd_messageBox(title.c_str(), message.c_str(), "ok", "error", 1);
+      }
    }
 
    std::string OpenImageDialog()
    {
-      return "";
-   }
-
-   bool LoadImageRGBA(const std::string& /*path*/, std::vector<unsigned char>& /*outPixels*/,
-                      int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
-   }
-
-   bool LoadImageRGBAFromMemory(const std::vector<unsigned char>& /*bytes*/,
-                                std::vector<unsigned char>& /*outPixels*/,
-                                int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.tif", "*.tiff",
+         "*.tga", "*.webp", "*.hdr", "*.pic", "*.ppm", "*.pgm"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Choose Image",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "Image files",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
    std::string OpenHdrDialog()
    {
-      return "";
-   }
-
-   bool LoadImageFloatRGB(const std::string& /*path*/, std::vector<float>& /*outPixels*/,
-                          int& /*outWidth*/, int& /*outHeight*/, std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.hdr", "*.exr"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Choose HDR Environment",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "HDR images (*.hdr, *.exr)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
    std::string OpenModelDialog()
    {
-      return "";
-   }
-
-   bool LoadModel(const std::string& /*path*/, std::vector<ModelVertex>& /*outVertices*/,
-                  std::vector<unsigned int>& /*outIndices*/, std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.obj", "*.ply", "*.stl"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Choose Model",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "3D models (*.obj, *.ply, *.stl)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
    std::string OpenPatchDialog()
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.infinite", "*.inf"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Open Patch",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "Infinite patches (*.infinite, *.inf)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
-   std::string SavePatchDialog(const std::string& /*suggestedName*/)
+   std::string SavePatchDialog(const std::string& suggestedName)
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.infinite"
+      };
+      std::string defaultPath = suggestedName.empty() ? "Untitled.infinite" : suggestedName;
+      defaultPath = AppendExtensionIfMissing(defaultPath, ".infinite");
+
+      const char* res = tinyfd_saveFileDialog(
+         "Save Patch",
+         defaultPath.c_str(),
+         1,
+         filterPatterns,
+         "Infinite patch (*.infinite)"
+      );
+      if (!res) return "";
+      return AppendExtensionIfMissing(std::string(res), ".infinite");
    }
 
    std::string OpenDeviceDialog()
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.field", "*.infdev"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Open Device",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "Field device (*.field, *.infdev)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
-   std::string SaveDeviceDialog(const std::string& /*suggestedName*/)
+   std::string SaveDeviceDialog(const std::string& suggestedName)
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = {
+         "*.field"
+      };
+      std::string defaultPath = suggestedName.empty() ? "Untitled.field" : suggestedName;
+      defaultPath = AppendExtensionIfMissing(defaultPath, ".field");
+
+      const char* res = tinyfd_saveFileDialog(
+         "Save Device",
+         defaultPath.c_str(),
+         1,
+         filterPatterns,
+         "Field device (*.field)"
+      );
+      if (!res) return "";
+      return AppendExtensionIfMissing(std::string(res), ".field");
    }
 
-   std::string OpenFolderDialog(const char* /*title*/, const std::string& /*initialDir*/)
+   std::string OpenFolderDialog(const char* title, const std::string& initialDir)
    {
-      return "";
+      if (IsHeadlessOrExitAfter()) return "";
+      EnsureDialogBackendChecked();
+      const char* res = tinyfd_selectFolderDialog(
+         title ? title : "Select Folder",
+         initialDir.empty() ? nullptr : initialDir.c_str()
+      );
+      return res ? std::string(res) : std::string();
    }
 
-   void OpenExternalUrl(const std::string& /*url*/)
+   void OpenExternalUrl(const std::string& url)
    {
+      if (url.rfind("https://", 0) != 0 && url.rfind("http://", 0) != 0)
+         return;
+
+      pid_t pid;
+      char* argv[] = {
+         const_cast<char*>("xdg-open"),
+         const_cast<char*>(url.c_str()),
+         nullptr
+      };
+      if (posix_spawnp(&pid, "xdg-open", nullptr, nullptr, argv, environ) == 0)
+      {
+         int status = 0;
+         waitpid(pid, &status, WNOHANG);
+      }
    }
 
-   void RevealInFileManager(const std::string& /*path*/)
+   std::string UriEncodePath(const std::string& path)
    {
-      // Real org.freedesktop.FileManager1.ShowItems / xdg-open reveal lands
-      // with the desktop-integration step, alongside OpenExternalUrl.
+      static const char* hex = "0123456789ABCDEF";
+      std::string out;
+      out.reserve(path.size());
+      for (unsigned char c : path)
+      {
+         if (isalnum(c) || c == '/' || c == '-' || c == '_' || c == '.' || c == '~')
+            out += (char)c;
+         else
+         {
+            out += '%';
+            out += hex[(c >> 4) & 0xF];
+            out += hex[c & 0xF];
+         }
+      }
+      return out;
    }
 
-   bool HttpGet(const std::string& /*url*/, const std::string& /*userAgent*/,
-                std::string& /*outBody*/, std::string& outError,
-                int /*timeoutSeconds*/)
+   void RevealInFileManager(const std::string& path)
    {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
+      if (path.empty())
+         return;
+      struct stat st;
+      if (stat(path.c_str(), &st) != 0)
+         return;
+
+      const std::string uri = "file://" + UriEncodePath(path);
+
+      // org.freedesktop.FileManager1.ShowItems is the D-Bus method GNOME
+      // Files, Nautilus, Dolphin and most other Linux file managers
+      // implement to select a file in its folder - the equivalent of
+      // macOS's activateFileViewerSelectingURLs and Windows's
+      // "explorer /select,". Spawn gdbus (ships with GLib, present on any
+      // GNOME/KDE desktop) rather than linking libdbus directly.
+      bool revealed = false;
+      if (CheckExecutableOnPath("gdbus"))
+      {
+         const std::string uriArray = "['" + uri + "']";
+         pid_t pid;
+         char* argv[] = {
+            const_cast<char*>("gdbus"),
+            const_cast<char*>("call"),
+            const_cast<char*>("--session"),
+            const_cast<char*>("--dest"),
+            const_cast<char*>("org.freedesktop.FileManager1"),
+            const_cast<char*>("--object-path"),
+            const_cast<char*>("/org/freedesktop/FileManager1"),
+            const_cast<char*>("--method"),
+            const_cast<char*>("org.freedesktop.FileManager1.ShowItems"),
+            const_cast<char*>(uriArray.c_str()),
+            const_cast<char*>(""),
+            nullptr
+         };
+         if (posix_spawnp(&pid, "gdbus", nullptr, nullptr, argv, environ) == 0)
+         {
+            int status = 0;
+            revealed = (waitpid(pid, &status, 0) == pid) && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+         }
+      }
+
+      if (revealed)
+         return;
+
+      // Fall back to opening the containing folder with xdg-open, the same
+      // helper OpenExternalUrl uses - no selection, but the file is at
+      // least visible rather than never opened at all. Never hand the file
+      // itself to xdg-open here: a reveal must not open or execute it.
+      const size_t slash = path.find_last_of('/');
+      const std::string parentDir = (slash == std::string::npos) ? "." : path.substr(0, slash);
+      pid_t pid;
+      char* argv[] = {
+         const_cast<char*>("xdg-open"),
+         const_cast<char*>(parentDir.c_str()),
+         nullptr
+      };
+      if (posix_spawnp(&pid, "xdg-open", nullptr, nullptr, argv, environ) == 0)
+      {
+         int status = 0;
+         waitpid(pid, &status, WNOHANG);
+      }
+   }
+
+   // libcurl C API subset needed for HttpGet
+   typedef void CURL;
+   typedef int CURLcode;
+   typedef int CURLoption;
+   typedef int CURLINFO;
+
+   constexpr CURLcode CURLE_OK = 0;
+   constexpr CURLoption CURLOPT_URL = 10002;
+   constexpr CURLoption CURLOPT_USERAGENT = 10018;
+   constexpr CURLoption CURLOPT_WRITEFUNCTION = 20011;
+   constexpr CURLoption CURLOPT_WRITEDATA = 10001;
+   constexpr CURLoption CURLOPT_TIMEOUT = 13;
+   constexpr CURLoption CURLOPT_FOLLOWLOCATION = 52;
+   constexpr CURLoption CURLOPT_FAILONERROR = 45;
+   constexpr CURLoption CURLOPT_NOSIGNAL = 99;
+   constexpr CURLINFO CURLINFO_RESPONSE_CODE = 0x200000 + 2;
+
+   struct CurlApi
+   {
+      void* handle = nullptr;
+      CURL* (*easy_init)(void) = nullptr;
+      CURLcode (*easy_setopt)(CURL*, CURLoption, ...) = nullptr;
+      CURLcode (*easy_perform)(CURL*) = nullptr;
+      void (*easy_cleanup)(CURL*) = nullptr;
+      CURLcode (*easy_getinfo)(CURL*, CURLINFO, ...) = nullptr;
+      const char* (*easy_strerror)(CURLcode) = nullptr;
+
+      bool Load()
+      {
+         if (handle) return true;
+         const char* const libs[] = { "libcurl.so.4", "libcurl.so.3", "libcurl.so" };
+         for (const char* lib : libs)
+         {
+            handle = dlopen(lib, RTLD_LAZY | RTLD_LOCAL);
+            if (handle) break;
+         }
+         if (!handle) return false;
+
+         easy_init = (CURL* (*)(void))dlsym(handle, "curl_easy_init");
+         easy_setopt = (CURLcode (*)(CURL*, CURLoption, ...))dlsym(handle, "curl_easy_setopt");
+         easy_perform = (CURLcode (*)(CURL*))dlsym(handle, "curl_easy_perform");
+         easy_cleanup = (void (*)(CURL*))dlsym(handle, "curl_easy_cleanup");
+         easy_getinfo = (CURLcode (*)(CURL*, CURLINFO, ...))dlsym(handle, "curl_easy_getinfo");
+         easy_strerror = (const char* (*)(CURLcode))dlsym(handle, "curl_easy_strerror");
+
+         if (!easy_init || !easy_setopt || !easy_perform || !easy_cleanup || !easy_getinfo)
+         {
+            dlclose(handle);
+            handle = nullptr;
+            return false;
+         }
+         return true;
+      }
+   };
+
+   static size_t CurlWriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata)
+   {
+      auto* body = static_cast<std::string*>(userdata);
+      constexpr size_t kMaxBodyBytes = 1 * 1024 * 1024;
+      size_t total = size * nmemb;
+      if (body->size() + total > kMaxBodyBytes)
+      {
+         size_t canTake = (body->size() < kMaxBodyBytes) ? (kMaxBodyBytes - body->size()) : 0;
+         body->append(ptr, canTake);
+         return 0; // abort transfer by returning different size
+      }
+      body->append(ptr, total);
+      return total;
+   }
+
+   bool HttpGet(const std::string& url, const std::string& userAgent,
+                std::string& outBody, std::string& outError,
+                int timeoutSeconds)
+   {
+      outBody.clear();
+      outError.clear();
+
+      if (url.rfind("https://", 0) != 0 && url.rfind("http://", 0) != 0)
+      {
+         outError = "url must be http(s)";
+         return false;
+      }
+
+      static CurlApi curl;
+      if (!curl.Load())
+      {
+         outError = "libcurl could not be loaded via dlopen";
+         return false;
+      }
+
+      CURL* ch = curl.easy_init();
+      if (!ch)
+      {
+         outError = "curl_easy_init failed";
+         return false;
+      }
+
+      curl.easy_setopt(ch, CURLOPT_URL, url.c_str());
+      curl.easy_setopt(ch, CURLOPT_USERAGENT, userAgent.c_str());
+      curl.easy_setopt(ch, CURLOPT_WRITEFUNCTION, CurlWriteCallback);
+      curl.easy_setopt(ch, CURLOPT_WRITEDATA, &outBody);
+      curl.easy_setopt(ch, CURLOPT_TIMEOUT, (long)timeoutSeconds);
+      curl.easy_setopt(ch, CURLOPT_FOLLOWLOCATION, 1L);
+      curl.easy_setopt(ch, CURLOPT_NOSIGNAL, 1L);
+
+      CURLcode res = curl.easy_perform(ch);
+
+      long statusCode = 0;
+      curl.easy_getinfo(ch, CURLINFO_RESPONSE_CODE, &statusCode);
+      curl.easy_cleanup(ch);
+
+      if (res != CURLE_OK)
+      {
+         outBody.clear();
+         const char* errStr = curl.easy_strerror ? curl.easy_strerror(res) : nullptr;
+         outError = errStr ? errStr : ("curl error " + std::to_string(res));
+         return false;
+      }
+
+      if (statusCode < 200 || statusCode >= 300)
+      {
+         outBody.clear();
+         outError = "http status " + std::to_string(statusCode);
+         return false;
+      }
+
+      return true;
    }
 
    void InitDocumentHandlingPreGlfw()
@@ -176,29 +551,29 @@ namespace Platform
    {
    }
 
-   bool SubjectMask(const std::vector<unsigned char>& /*inputRgba*/, int /*width*/, int /*height*/,
-                    MattingMode /*mode*/, std::vector<unsigned char>& /*outAlpha*/,
+   std::string MattingModelPath()
+   {
+      std::string exe = ExecutablePath();
+      size_t slash = exe.find_last_of('/');
+      if (slash == std::string::npos)
+         return {};
+      return exe.substr(0, slash + 1) + "assets/models/u2netp.onnx";
+   }
+
+   bool SubjectMask(const std::vector<unsigned char>& inputRgba, int width, int height,
+                    MattingMode mode, std::vector<unsigned char>& outAlpha,
                     std::string& outError)
    {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
+      return OrtMatting::SubjectMask(MattingModelPath(), inputRgba, width, height, mode, outAlpha, outError);
    }
 
    std::string MattingBackend()
    {
-      return "None (Linux P1)";
+      return OrtMatting::MattingBackend();
    }
 
    const std::vector<std::string>& MattingModeNames()
    {
-      static const std::vector<std::string> kNames = { "Default" };
-      return kNames;
-   }
-
-   bool DecodeAudioFileToBuffer(const std::string& /*path*/, SampleBuffer& /*outBuffer*/,
-                                std::string& outError)
-   {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
+      return OrtMatting::MattingModeNames();
    }
 }

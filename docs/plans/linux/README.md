@@ -41,7 +41,7 @@ Mac (Apple Silicon, 8 GB RAM). So:
 | GL | Same GLSL 150 core shaders, loaded via the existing `glad` path (`src/core/gl3.h` non-Apple branch). | Already works on Windows; Mesa is strict like Intel/AMD on Windows. |
 | Audio out/in | **miniaudio** (vendored single header), runtime backends ALSA / PulseAudio / PipeWire (via Pulse) / JACK, plus its **null** backend for CI. | One implementation covers every Linux audio stack. It uses `dlopen` for backends, so there are no hard `.so` dependencies. |
 | MIDI | **ALSA sequencer** (`libasound`, `snd_seq_*`). | Works under PipeWire and JACK too. It's what every Linux MIDI app uses. |
-| Video decode/encode, video audio, InspectMovie | **FFmpeg** (libavformat/avcodec/swscale/swresample), a pinned shared build **bundled inside the AppImage**. | System FFmpeg ABI differs per distro. The binary is already GPLv3 (VST3), so a GPL FFmpeg build with libx264 is licence-compatible. **Owner sign-off required before P3 lands.** See phase-03. |
+| Video decode/encode, video audio, InspectMovie | **FFmpeg** (libavformat/avcodec/swscale/swresample), a pinned shared build **bundled inside the AppImage**. **GPL build + libx264, gated behind `INFINITE_ENABLE_GPL_CODECS` (default ON on Linux).** | System FFmpeg ABI differs per distro. Copyright is settled: the binary is already GPLv3 via the VST3 SDK, and FFmpeg/x264 are GPLv2-or-later, so they flow into v3. The gate exists because `LICENSE` promises an MIT binary at `INFINITE_ENABLE_VST3=OFF`, and because Fedora/Flathub cannot ship H.264. Patent exposure is real but Linux-specific and accepted — macOS/Windows get H.264 from the OS vendor, Linux does not. **Settled 2026-09-14**; see phase-03. |
 | Camera | V4L2 ioctls for enumeration, and V4L2 mmap capture (YUYV + MJPEG; MJPEG decoded with the already-vendored `stb_image`). | No extra dependency. |
 | Fonts / text | **FreeType** (FetchContent, static) + **fontconfig** (system, stable ABI `libfontconfig.so.1`). | Standard on every desktop. |
 | File dialogs + fatal message box | **tinyfiledialogs** (vendored, zlib licence): zenity/kdialog/yad under the hood. | Blocking, synchronous, same contract as the macOS panels. |
@@ -147,9 +147,9 @@ phase is merged. The owner merges; you never merge to `main` without asking.
 
 | Phase | State | Tip commit | Verified (CI/local) | Unverified (needs hardware/humans) |
 |---|---|---|---|---|
-| 0 | not started | | | |
-| 1 | not started | | | |
-| 2 | not started | | | |
-| 3 | not started | | | |
-| 4 | not started | | | |
-| 5 | not started | | | |
+| 0 | **COMPLETE** | `b25b5bd` | [Run 34769650449](https://github.com/n1m21n/Infinite/actions/runs/34769650449): x86_64 Clang **and** GCC build green, headless self-tests pass, Xvfb screenshot artifact produced | — |
+| 1 | **COMPLETE** | `feature/linux-step-01-followups` | Local arm64 container (Clang): build green; `ldd` shows no direct libGL/libGLX/libEGL and no direct libX11; `--fast` 30/30; `--group ui,3d,compositing` 45 pass / 0 fail / 1 known xfail; headless suite green incl. a real SIGSEGV→backtrace, a real TLS request, and `SYPHONPATCHTEST`; six per-category shots with a blank-render gate. macOS `--fast` 29 pass / 1 fail — `ARRANGEWAVETEST`, which fails identically when run from `main`'s own binary (`101c874`) and belongs to the in-flight arrangement audio work, not to the port. It passes on Linux, so whatever is unfinished there is macOS-side; re-check it once arrangement audio lands rather than treating this row as a port regression | Real GPU drivers (only llvmpipe is exercised), real X11/Wayland desktops, HiDPI scaling, window-manager behaviour, the window icon actually appearing in a taskbar, real font sets via fontconfig, complex-script text (no HarfBuzz — see `TextLinux.cpp`) |
+| 2 | not started | | | Real audio interfaces, JACK/PipeWire servers, real MIDI hardware |
+| 3 | not started | | | Real webcams and UVC quirks, hardware decode paths, long recordings |
+| 4 | not started | | | VST3 editors on a real desktop, commercial plugins |
+| 5 | not started | | | Multi-distro install, beta testers |
