@@ -61,6 +61,7 @@ namespace SysInfo
       std::printf("GL Vendor:    %s\n", vendor ? (const char*)vendor : "null");
       std::printf("GL Renderer:  %s\n", renderer ? (const char*)renderer : "null");
       std::printf("GL Version:   %s\n", version ? (const char*)version : "null");
+      std::printf("GLSL Version: %s\n", glslVersion ? (const char*)glslVersion : "null");
 #if defined(__linux__)
       std::printf("Dialog helper: %s\n", Platform::HasGuiDialogHelper() ? "yes" : "no (zenity/kdialog missing)");
 #endif

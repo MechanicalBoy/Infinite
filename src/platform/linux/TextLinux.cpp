@@ -601,6 +601,12 @@ namespace Platform
          FT_Stroker_Set(stroker, strokeRadius, FT_STROKER_LINECAP_ROUND, FT_STROKER_LINEJOIN_ROUND, 0);
       }
 
+      // outPixelsRGBA is PREMULTIPLIED alpha by contract - Platform.mm fills the
+      // same buffer through a CGBitmapContext with kCGImageAlphaPremultipliedLast,
+      // and every consumer downstream assumes that. So source-over here is
+      // dst*(1-a) + src*a on the colour channels, with no divide by alpha. It
+      // reads like the straight-alpha bug this codebase has hit before; it isn't.
+      // Don't "fix" it without changing Platform.mm's CG flags to match.
       auto blendPixel = [&](int px, int py, uint8_t r, uint8_t g, uint8_t b, uint8_t alpha)
       {
          if (px < 0 || px >= width || py < 0 || py >= height || alpha == 0) return;
