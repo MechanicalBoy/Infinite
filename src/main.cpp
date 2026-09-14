@@ -48920,6 +48920,31 @@ int RunRemoveBgTest()
    return 0;
 }
 
+// ======================================================= INFINITE_NETWORKTEST
+int RunNetworkTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+   std::string body;
+   std::string error;
+   const std::string url = "https://api.github.com/repos/n1m21n/Infinite/releases/latest";
+   const std::string ua = "Infinite-CI-SelfTest/0.3.5";
+   printf("Testing HttpGet against %s...\n", url.c_str());
+   bool ok = Platform::HttpGet(url, ua, body, error, /*timeoutSeconds=*/15);
+   if (!ok)
+   {
+      printf("NETWORKTEST FAIL: %s\n", error.c_str());
+      return 1;
+   }
+   if (body.empty())
+   {
+      printf("NETWORKTEST FAIL: empty body received\n");
+      return 1;
+   }
+   printf("Received %zu bytes. Status: OK\n", body.size());
+   printf("NETWORKTEST OK\n");
+   return 0;
+}
+
 // A destination parameter's declared min/max is a hard contract - no cable,
 // expression, or typed value can push it outside that range, because
 // everything downstream (mesh generation, buffer sizing, ...) trusts the
@@ -49636,6 +49661,9 @@ int main(int argc, char** argv)
 
    if (getenv("INFINITE_REMOVEBGTEST") != nullptr)
       return RunRemoveBgTest();
+
+   if (getenv("INFINITE_NETWORKTEST") != nullptr)
+      return RunNetworkTest();
 
    if (getenv("INFINITE_RESONATORTEST") != nullptr)
       return RunResonatorFixture() ? 0 : 1;

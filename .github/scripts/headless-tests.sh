@@ -168,6 +168,19 @@ if [ "$UNAME_S" = "Linux" ]; then
          status=1
       fi
    fi
+
+   echo "== INFINITE_NETWORKTEST"
+   if ! out="$(INFINITE_NETWORKTEST=1 "$BIN" 2>&1)"; then
+      echo "   FAIL (crashed or failed, exit $?)"
+      printf '%s\n' "$out" | tail -20
+      status=1
+   elif printf '%s\n' "$out" | grep -q "NETWORKTEST OK"; then
+      echo "   pass (HTTP GET and TLS verified via libcurl)"
+   else
+      echo "   FAIL (no OK verdict)"
+      printf '%s\n' "$out" | tail -20
+      status=1
+   fi
 fi
 
 echo

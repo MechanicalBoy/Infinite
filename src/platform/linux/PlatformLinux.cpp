@@ -9,6 +9,9 @@
 #include <string>
 #include <vector>
 #include <climits>
+#include <cstdint>
+#include <algorithm>
+#include <dlfcn.h>
 #include <unistd.h>
 #include <spawn.h>
 #include <sys/types.h>
@@ -299,12 +302,133 @@ namespace Platform
       }
    }
 
-   bool HttpGet(const std::string& /*url*/, const std::string& /*userAgent*/,
-                std::string& /*outBody*/, std::string& outError,
-                int /*timeoutSeconds*/)
+   // libcurl C API subset needed for HttpGet
+   typedef void CURL;
+   typedef int CURLcode;
+   typedef int CURLoption;
+   typedef int CURLINFO;
+
+   constexpr CURLcode CURLE_OK = 0;
+   constexpr CURLoption CURLOPT_URL = 10002;
+   constexpr CURLoption CURLOPT_USERAGENT = 10018;
+   constexpr CURLoption CURLOPT_WRITEFUNCTION = 20011;
+   constexpr CURLoption CURLOPT_WRITEDATA = 10001;
+   constexpr CURLoption CURLOPT_TIMEOUT = 13;
+   constexpr CURLoption CURLOPT_FOLLOWLOCATION = 52;
+   constexpr CURLoption CURLOPT_FAILONERROR = 45;
+   constexpr CURLoption CURLOPT_NOSIGNAL = 99;
+   constexpr CURLINFO CURLINFO_RESPONSE_CODE = 0x200000 + 2;
+
+   struct CurlApi
    {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
+      void* handle = nullptr;
+      CURL* (*easy_init)(void) = nullptr;
+      CURLcode (*easy_setopt)(CURL*, CURLoption, ...) = nullptr;
+      CURLcode (*easy_perform)(CURL*) = nullptr;
+      void (*easy_cleanup)(CURL*) = nullptr;
+      CURLcode (*easy_getinfo)(CURL*, CURLINFO, ...) = nullptr;
+      const char* (*easy_strerror)(CURLcode) = nullptr;
+
+      bool Load()
+      {
+         if (handle) return true;
+         const char* const libs[] = { "libcurl.so.4", "libcurl.so.3", "libcurl.so" };
+         for (const char* lib : libs)
+         {
+            handle = dlopen(lib, RTLD_LAZY | RTLD_LOCAL);
+            if (handle) break;
+         }
+         if (!handle) return false;
+
+         easy_init = (CURL* (*)(void))dlsym(handle, "curl_easy_init");
+         easy_setopt = (CURLcode (*)(CURL*, CURLoption, ...))dlsym(handle, "curl_easy_setopt");
+         easy_perform = (CURLcode (*)(CURL*))dlsym(handle, "curl_easy_perform");
+         easy_cleanup = (void (*)(CURL*))dlsym(handle, "curl_easy_cleanup");
+         easy_getinfo = (CURLcode (*)(CURL*, CURLINFO, ...))dlsym(handle, "curl_easy_getinfo");
+         easy_strerror = (const char* (*)(CURLcode))dlsym(handle, "curl_easy_strerror");
+
+         if (!easy_init || !easy_setopt || !easy_perform || !easy_cleanup || !easy_getinfo)
+         {
+            dlclose(handle);
+            handle = nullptr;
+            return false;
+         }
+         return true;
+      }
+   };
+
+   static size_t CurlWriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata)
+   {
+      auto* body = static_cast<std::string*>(userdata);
+      constexpr size_t kMaxBodyBytes = 1 * 1024 * 1024;
+      size_t total = size * nmemb;
+      if (body->size() + total > kMaxBodyBytes)
+      {
+         size_t canTake = (body->size() < kMaxBodyBytes) ? (kMaxBodyBytes - body->size()) : 0;
+         body->append(ptr, canTake);
+         return 0; // abort transfer by returning different size
+      }
+      body->append(ptr, total);
+      return total;
+   }
+
+   bool HttpGet(const std::string& url, const std::string& userAgent,
+                std::string& outBody, std::string& outError,
+                int timeoutSeconds)
+   {
+      outBody.clear();
+      outError.clear();
+
+      if (url.rfind("https://", 0) != 0 && url.rfind("http://", 0) != 0)
+      {
+         outError = "url must be http(s)";
+         return false;
+      }
+
+      static CurlApi curl;
+      if (!curl.Load())
+      {
+         outError = "libcurl could not be loaded via dlopen";
+         return false;
+      }
+
+      CURL* ch = curl.easy_init();
+      if (!ch)
+      {
+         outError = "curl_easy_init failed";
+         return false;
+      }
+
+      curl.easy_setopt(ch, CURLOPT_URL, url.c_str());
+      curl.easy_setopt(ch, CURLOPT_USERAGENT, userAgent.c_str());
+      curl.easy_setopt(ch, CURLOPT_WRITEFUNCTION, CurlWriteCallback);
+      curl.easy_setopt(ch, CURLOPT_WRITEDATA, &outBody);
+      curl.easy_setopt(ch, CURLOPT_TIMEOUT, (long)timeoutSeconds);
+      curl.easy_setopt(ch, CURLOPT_FOLLOWLOCATION, 1L);
+      curl.easy_setopt(ch, CURLOPT_NOSIGNAL, 1L);
+
+      CURLcode res = curl.easy_perform(ch);
+
+      long statusCode = 0;
+      curl.easy_getinfo(ch, CURLINFO_RESPONSE_CODE, &statusCode);
+      curl.easy_cleanup(ch);
+
+      if (res != CURLE_OK)
+      {
+         outBody.clear();
+         const char* errStr = curl.easy_strerror ? curl.easy_strerror(res) : nullptr;
+         outError = errStr ? errStr : ("curl error " + std::to_string(res));
+         return false;
+      }
+
+      if (statusCode < 200 || statusCode >= 300)
+      {
+         outBody.clear();
+         outError = "http status " + std::to_string(statusCode);
+         return false;
+      }
+
+      return true;
    }
 
    void InitDocumentHandlingPreGlfw()
