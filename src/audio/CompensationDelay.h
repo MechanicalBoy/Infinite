@@ -23,16 +23,27 @@
 class CompensationDelay
 {
 public:
-   // Main thread only, called once when the topology is (re)built.
-   // `delaySamples` is this branch's compensation amount; `numChannels` is
-   // the channel count to allocate for - callers pass the same fixed
-   // capacity the rest of the engine's pooled buffers use, so a topology is
-   // never under-allocated if the device's actual channel count varies
-   // within one topology generation's lifetime.
+   // Main thread only, called every time the topology is (re)built - which,
+   // for a persistent CompensationDelay living on a long-lived owner (an
+   // AudioNode's own input pins, or an AudioCaptureRing's terminal), can be
+   // far more often than "this branch's latency actually changed". Idempotent
+   // on purpose: a call that requests the exact same (delaySamples,
+   // numChannels) this instance already has is a no-op that leaves `mBuf`
+   // (and its in-flight ring position) untouched, rather than reallocating
+   // and zeroing a delay line that a live signal is currently passing
+   // through - reallocating unconditionally here on every rebuild produced
+   // an audible click on any patch with an active merge-point/terminal delay
+   // (see the callers in main.cpp's RebuildAudioTopology). Only an actual
+   // change in delay amount or channel count re-Prepares (and necessarily
+   // resets - the old ring's contents don't apply to a different length).
    void Prepare(int delaySamples, int numChannels)
    {
-      mDelay = std::max(0, delaySamples);
-      mChannels = std::max(0, numChannels);
+      delaySamples = std::max(0, delaySamples);
+      numChannels = std::max(0, numChannels);
+      if (delaySamples == mDelay && numChannels == mChannels)
+         return;
+      mDelay = delaySamples;
+      mChannels = numChannels;
       mWritePos = 0;
       if (mDelay == 0 || mChannels == 0)
       {

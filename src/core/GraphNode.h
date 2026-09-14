@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <memory>
 #include <string>
 
@@ -40,6 +42,12 @@ struct GraphNode
    std::string typeName;
    std::string category;
    int index = 0;
+   // Stable identity. `index` is reused by RemoveNodeByIndex, so anything that
+   // must survive a delete + undo (arrangement clips reference srcUid) keys on
+   // this instead. Assigned once at spawn from gNextNodeUid and never reused;
+   // paste/duplicate always mint a fresh one. Other systems (modulation,
+   // gestures, viewport panel) still key on index - deliberately out of scope.
+   uint64_t uid = 0;
    bool showParams = false; // params start collapsed so the preview leads
    // Per-node mini 3D viewport (geometry-producing nodes only). On by default
    // for a new node - seeing what a node actually produced is worth more than

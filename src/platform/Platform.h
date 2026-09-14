@@ -21,6 +21,16 @@ namespace Platform
    // Call once at startup and keep the app running for the token to matter.
    void PreventAppNap();
 
+   // Trackpad pinch (macOS "magnify" gesture), drained as an incremental
+   // delta since the last call - e.g. +0.02 for a small pinch-open, negative
+   // for pinch-close. GLFW's Cocoa backend only forwards scrollWheel: (see
+   // cocoa_window.m), never magnifyWithEvent:, so without this a trackpad
+   // pinch produces no GLFW/ImGui event at all - not merely a wrong one.
+   // Lazily attaches an NSMagnificationGestureRecognizer to the app's key
+   // window the first time this is called from within a frame where one
+   // exists yet. Always returns 0.0 on Windows (no equivalent gesture).
+   double PollTrackpadMagnificationDelta();
+
    // Native open panel filtered to image types. Returns "" if cancelled.
    std::string OpenImageDialog();
 
@@ -1025,6 +1035,13 @@ namespace Platform
    // than passed through, so this can never be used to launch a local
    // executable by way of a file:// or shell URL.
    void OpenExternalUrl(const std::string& url);
+
+   // Shows `path` selected in the OS file manager (Finder / Explorer). Used by
+   // the render queue's "Reveal" - the one thing a finished export wants that
+   // the app itself can't show. Fire-and-forget and deliberately narrow: it
+   // only ever selects an existing file in its own folder, it never opens or
+   // executes it, and a path that does not exist is dropped.
+   void RevealInFileManager(const std::string& path);
 
    // Blocking HTTPS GET. Call from a worker thread, never the render or audio
    // thread. Returns false on any transport, TLS, or non-2xx failure and fills

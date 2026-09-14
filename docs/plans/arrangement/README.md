@@ -1,5 +1,11 @@
 # Arrangement Timeline — build plan
 
+> **Superseded in part.** `overhaul-prompt.md` in this folder replaces phases
+> 3, 4, 5, 7 and 8 of the build order below and is the **live plan** — it
+> carries the current WP status (WP0-WP3 done, WP4 next) and an *As built*
+> section describing what actually landed. Read it first; use this file for the
+> spec, the UX decisions and the codebase survey.
+
 A DAW/video-editor style arrangement panel for Infinite. This document is the
 spec plus the phased build order. Each phase is one branch, one commit, one
 fresh session (same convention as `docs/plans/field/`). It lives in the repo at

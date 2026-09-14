@@ -255,6 +255,57 @@ namespace Tabler
             dl->AddCircleFilled(P(xs[xi], ys[yi]), r, col);
    }
 
+   // Tabler-style magnet - a solid filled horseshoe body (a thick stroked
+   // arch, which ImGui renders as filled quad geometry rather than a thin
+   // outline) with two square filled feet at the leg ends, matching a
+   // solid block glyph rather than a thin decorative polyline+stripes.
+   inline void DrawMagnet(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float thick = customStroke > 0.0f ? customStroke : ImMax(2.6f, 4.3f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      // Arch: a thick stroked path (left leg up, arc over the top, right
+      // leg down) - stroking with a large thickness fills the band solidly,
+      // and the arc's tangent at each spring point matches the vertical
+      // legs so the leg/arc joint reads as one continuous solid shape.
+      const ImVec2 archCenter = P(12.0f, 10.6f);
+      const float radiusPx = 6.6f * s;
+      const ImVec2 legBottomL = P(5.4f, 18.2f);
+      const ImVec2 legBottomR = P(18.6f, 18.2f);
+
+      dl->PathClear();
+      dl->PathLineTo(legBottomL);
+      dl->PathArcTo(archCenter, radiusPx, IM_PI, 2.0f * IM_PI, 16);
+      dl->PathLineTo(legBottomR);
+      dl->PathStroke(col, ImDrawFlags_None, thick);
+
+      // Square feet, flared a touch wider than the leg thickness, so each
+      // pole end reads as a distinct block rather than a rounded tip.
+      const float footHalf = thick * 0.62f;
+      dl->AddRectFilled(ImVec2(legBottomL.x - footHalf, legBottomL.y - footHalf * 0.7f),
+                         ImVec2(legBottomL.x + footHalf, legBottomL.y + footHalf * 1.3f), col);
+      dl->AddRectFilled(ImVec2(legBottomR.x - footHalf, legBottomR.y - footHalf * 0.7f),
+                         ImVec2(legBottomR.x + footHalf, legBottomR.y + footHalf * 1.3f), col);
+   }
+
+   // Drag handle: two columns of three dots (Tabler grip-vertical) - the
+   // conventional "grab to reorder/drag" affordance used by DAWs, table
+   // rows, and list editors, so it reads as draggable without a tooltip.
+   inline void DrawGripVertical(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      const float s = size / 24.0f;
+      const float r = ImMax(0.9f, 1.15f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      const float xs[2] = { 9.0f, 15.0f };
+      const float ys[3] = { 6.0f, 12.0f, 18.0f };
+      for (int xi = 0; xi < 2; ++xi)
+         for (int yi = 0; yi < 3; ++yi)
+            dl->AddCircleFilled(P(xs[xi], ys[yi]), r, col);
+   }
+
    inline void DrawGauge(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
    {
       const float s = size / 24.0f;
@@ -308,6 +359,52 @@ namespace Tabler
          dl->PathArcTo(c, r * s, IM_PI * 0.02f, IM_PI * 0.30f, 10);
          dl->PathStroke(col, 0, grooveStroke);
       }
+   }
+
+   inline void DrawTimeline(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.1f, 1.4f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      dl->AddLine(P(3.0f, 6.0f), P(21.0f, 6.0f), col, stroke);
+      dl->AddLine(P(6.0f, 6.0f), P(6.0f, 9.0f), col, stroke);
+      dl->AddLine(P(12.0f, 6.0f), P(12.0f, 9.0f), col, stroke);
+      dl->AddLine(P(18.0f, 6.0f), P(18.0f, 9.0f), col, stroke);
+
+      const float r = 1.2f * s;
+      dl->AddRect(P(3.0f, 11.0f), P(13.0f, 15.0f), col, r, 0, stroke);
+      dl->AddRect(P(15.0f, 11.0f), P(21.0f, 15.0f), col, r, 0, stroke);
+      dl->AddRect(P(5.0f, 17.0f), P(18.0f, 21.0f), col, r, 0, stroke);
+   }
+
+   // Tabler-style "cube": an isometric hexagon split into three facets by
+   // lines from center to alternating vertices - reads as a single building
+   // block/module, distinct from the timeline-strip glyph it replaces for
+   // the Arrangement Timeline panel toggle (that glyph looked too close to
+   // the panel's own ruler+lane content to work as a top-bar icon).
+   inline void DrawBox3D(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.1f, 1.4f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      const ImVec2 top(P(12.0f, 4.0f));
+      const ImVec2 upperRight(P(19.5f, 8.2f));
+      const ImVec2 lowerRight(P(19.5f, 16.2f));
+      const ImVec2 bottom(P(12.0f, 20.4f));
+      const ImVec2 lowerLeft(P(4.5f, 16.2f));
+      const ImVec2 upperLeft(P(4.5f, 8.2f));
+      const ImVec2 c(P(12.0f, 12.2f));
+
+      const ImVec2 hexPts[7] = { top, upperRight, lowerRight, bottom, lowerLeft, upperLeft, top };
+      dl->AddPolyline(hexPts, 7, col, ImDrawFlags_None, stroke);
+
+      dl->AddLine(c, top, col, stroke);
+      dl->AddLine(c, lowerRight, col, stroke);
+      dl->AddLine(c, lowerLeft, col, stroke);
    }
 
    // Blank-icon-slot fallback: a crisp rounded rect with a subtle inner square

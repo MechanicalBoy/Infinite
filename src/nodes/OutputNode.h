@@ -27,6 +27,7 @@ public:
    unsigned int GetOutputTexture() override { return GLUtil::FboTexture(mOut); }
    int GetOutputWidth() const override { return mOut.w; }
    int GetOutputHeight() const override { return mOut.h; }
+   GLUtil::Fbo& GetFbo() { return mOut; }
    void CookIfNeeded(int frameId) override;
 
    ImageCable& Input() { return mInput; }
@@ -127,7 +128,8 @@ public:
    // 44100. Everything downstream - the per-frame sample budget and the
    // muxer's declared audio rate - is derived from this one number; a
    // mismatch here is heard directly as the take playing back off-speed.
-   bool StartOfflineRender(const std::string& path, double audioSampleRate);
+   bool StartOfflineRender(const std::string& path, double audioSampleRate,
+                           int width = 0, int height = 0, bool forceGraphAudio = false);
    bool IsOfflineRendering() const { return mOfflineActive; }
    // True from the moment CancelOfflineRender()/the frame-count target hands
    // the handle to the background finalize thread until PollOfflineFinalize()
@@ -213,6 +215,13 @@ public:
    int offlineFps = 30;
    int offlineDurationSeconds = 10;
    int offlinePrerollFrames = 0;
+   // Exact frame budget for this take, when the caller knows it better than
+   // whole seconds x fps can express. The Arrangement Timeline's render range
+   // is an arbitrary tick span, so ceil(durationSec) rounded a 2.4s range up
+   // to a 3s file (WP7 #2); it sets this to ceil(durationSec * fps) instead.
+   // Transient - set per take by the caller, never serialized, and ignored
+   // (0) by the ordinary per-node Render button, which is still whole seconds.
+   int offlineTotalFramesOverride = 0;
 
    void VisitParams(ParamVisitor& v) override
    {

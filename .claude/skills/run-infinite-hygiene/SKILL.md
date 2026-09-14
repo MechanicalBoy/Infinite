@@ -47,7 +47,7 @@ The checks were picked to cover, category by category:
 
 | Area | Checks |
 |---|---|
-| Core engine (undo, patch format) | UNDOTEST, ARRANGETEST, PATCHTEST, ROUNDTRIPTEST (all registered node types, copy/paste + save/load), PINDUPTEST (every node type drawn expanded, no duplicate pin ids) |
+| Core engine (undo, patch format) | UNDOTEST, ARRANGETEST, TRANSPORTTEST (tempo continuity, beat seek, loop wrap), ARRANGEAUDIOTEST (timeline clip scheduling: abutting clips, onset accuracy, disabled/paused silence, seek across clips, mid-clip rebuild, mode reset), PATCHTEST, ROUNDTRIPTEST (all registered node types, copy/paste + save/load), PINDUPTEST (every node type drawn expanded, no duplicate pin ids) |
 | Editor UI | GROUPTEST, COMMENTTEST, HIDETEST, SELECTTEST, DRAGTEST |
 | Per-node mini viewport | MINIVIEWPORTTEST (NodeViewport solo-renders a Select node's own mesh + selection overlay, independent of a plain untouched sibling) |
 | Params / modulation / color | COLORTEST, MACROTEST, PALETTETEST, BYPASSTEST |

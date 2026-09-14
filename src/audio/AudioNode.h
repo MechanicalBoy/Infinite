@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioBuffer.h"
+#include "CompensationDelay.h"
 #include "NoteEventQueue.h"
 
 // Audio-thread interface. ProcessBlock runs on the real-time render thread
@@ -24,6 +25,45 @@ class AudioNode
 public:
    virtual ~AudioNode() {}
    virtual void PrepareToPlay(double sampleRate, int maxBlockSize) {}
+
+   // Main thread only. Sample rate this node was last PrepareToPlay'd at, or
+   // -1.0 if never. Owned and updated entirely by the RebuildAudioTopology
+   // call site (main.cpp) - not touched by PrepareToPlay itself or by any
+   // subclass - so it survives exactly as long as this AudioNode instance
+   // does and needs no separate lifetime bookkeeping (no global map keyed by
+   // pointer that could alias a freed-and-reused address).
+   //
+   // Exists so a topology rebuild that simply re-includes an already-running
+   // node (same sample rate) can skip calling PrepareToPlay on it again.
+   // RebuildAudioTopology fires on every cable connect/disconnect and every
+   // Arrangement Timeline active-clip change - far more often than "this
+   // node just started running" - and nearly every DSP kernel's
+   // PrepareToPlay unconditionally calls Reset(), zeroing filter/delay/
+   // reverb/compressor state. Doing that to a node that is already live and
+   // reachable to an Audio Out produced an audible click/pop on every one of
+   // those triggers (cable connect while already routed, spacebar play/
+   // pause, timeline scrub) - silent only when nothing was actually wired to
+   // an Audio Out, since then the reset state had nowhere audible to reach.
+   // A genuine sample-rate change (device switch) still compares unequal and
+   // forces a real PrepareToPlay/Reset, which is correct - buffers sized for
+   // the old rate are invalid at the new one.
+   double preparedForSampleRate = -1.0;
+
+   // Must match kAudioMaxNodeInputs (AudioEngine.h) - a static_assert there
+   // checks it. Can't reference that constant directly: AudioEngine.h is the
+   // one that includes AudioNode.h, not the other way around.
+   static constexpr int kMaxInputPins = 12;
+
+   // Main thread only (RebuildAudioTopology, main.cpp). Plugin/effect delay
+   // compensation (PDC) state for each of this node's input pins, one
+   // CompensationDelay per pin - see CompensationDelay's own comment for why
+   // this has to live here, on the persistent AudioNode, rather than inside
+   // the AudioTopologyEntry that main.cpp rebuilds from scratch every
+   // generation: a fresh, empty CompensationDelay has no "previous state" for
+   // Prepare()'s now-idempotent check to compare against, so persistence only
+   // works if the SAME object is reused rebuild to rebuild. Same ownership
+   // rationale as preparedForSampleRate just above.
+   CompensationDelay inputCompensation[kMaxInputPins];
    virtual int AudioOutputCount() const { return 1; }
    virtual void ProcessBlock(const AudioBuffer* const* inputs, int numInputs, AudioBuffer& output) = 0;
    virtual void ProcessBlockMulti(const AudioBuffer* const* inputs, int numInputs,

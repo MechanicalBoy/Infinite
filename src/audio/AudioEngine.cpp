@@ -220,14 +220,14 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          {
             inputPtrs[i] = nullptr;
          }
-         else if (entry.inputCompensation[i].IsActive())
+         else if (entry.node->inputCompensation[i].IsActive())
          {
             AudioBuffer src = list->buffers[idx].View(numFrames, numChannels);
             AudioBuffer delayed;
             delayed.channels = sCompScratchChannels[i];
             delayed.numChannels = numChannels;
             delayed.numFrames = numFrames;
-            entry.inputCompensation[i].ProcessBlock(src, delayed);
+            entry.node->inputCompensation[i].ProcessBlock(src, delayed);
             inputViews[i] = delayed;
             inputPtrs[i] = &inputViews[i];
          }
@@ -280,18 +280,169 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
    for (AudioTerminal& terminal : list->topology.terminalBufferIndices)
    {
       AudioBuffer src = list->buffers[terminal.bufferIndex].View(numFrames, numChannels);
-      if (terminal.compensation.IsActive())
+      // Prefer the capture ring's own persistent compensation (survives
+      // across topology rebuilds) over the terminal's own value, which is
+      // rebuilt from scratch every generation - see AudioCaptureRing's and
+      // AudioTerminal's comments. A Timeline Strict clip terminal has no
+      // ring at all, so it falls back to its own (rebuild-transient) one.
+      CompensationDelay& terminalComp = terminal.capture != nullptr
+                                           ? terminal.capture->compensation
+                                           : (terminal.externalCompensation != nullptr ? *terminal.externalCompensation
+                                                                                       : terminal.compensation);
+      if (terminalComp.IsActive())
       {
          AudioBuffer delayed;
          delayed.channels = sTerminalScratchChannels;
          delayed.numChannels = numChannels;
          delayed.numFrames = numFrames;
-         terminal.compensation.ProcessBlock(src, delayed);
+         terminalComp.ProcessBlock(src, delayed);
          src = delayed;
       }
-      for (int ch = 0; ch < numChannels; ch++)
+      const float gain = terminal.gain;
+
+      // Arrangement Timeline clip scheduling: a per-sample envelope in BEATS
+      // on top of the flat gain above. The terminal carries every window of
+      // its lane, so nothing here depends on which clip happens to be under
+      // the playhead when the topology was built - that dependency is exactly
+      // what made a second clip of the same node silent.
+      //
+      // The beat axis is derived from the block's own start rather than read
+      // per sample: AdvanceAudioClock(numFrames) runs before RunTopology in
+      // the same callback, so Beats() is already the position at the END of
+      // this block and the block started numFrames earlier.
+      static thread_local float sEnvScratch[kAudioMaxBlockFrames];
+      double runSampleRate = mSampleRate.load(std::memory_order_relaxed);
+      if (runSampleRate <= 0.0 && Transport::Instance().IsOfflineMode())
+         runSampleRate = Transport::Instance().AudioSampleRate();
+
+      const bool isTimelineClip = terminal.numWindows > 0 && terminal.windowOffset >= 0;
+      if (isTimelineClip && runSampleRate > 0.0)
+      {
+         const ClipWindow* windows = list->topology.clipWindows.data() + terminal.windowOffset;
+         const int numWindows = terminal.numWindows;
+         const float laneGain = terminal.laneGain;
+
+         // Paused in Timeline mode is silence, DAW-style: the nodes keep
+         // processing (they are seeds in `order` either way), but nothing
+         // reaches the device. Without this a paused playhead sitting inside
+         // a clip would drone. An offline render is never paused - the take
+         // forces the transport to play for its whole duration - so this
+         // needs no offline carve-out.
+         const bool playing = Transport::Instance().IsPlaying();
+
+         const double bpm = (double)Transport::Instance().Tempo();
+         const double beatsPerSample = bpm / (60.0 * runSampleRate);
+         // Not Beats() - numFrames*rate: on the block that crosses a loop end
+         // the wrap has already moved Beats() back to the loop start, and that
+         // subtraction would put the whole block on the new lap's axis - the
+         // last few ms before the loop point would be zeroed out instead of
+         // played. Transport captures the real start before advancing.
+         const double blockStartBeat = Transport::Instance().BlockStartBeats();
+
+         // 2 ms, expressed in beats at the current tempo. Applied at every
+         // window edge that is NOT abutted by the neighbouring window, on top
+         // of whatever user fade the clip carries. A hard edge on a running
+         // oscillator is a step discontinuity and clicks; 2 ms is short
+         // enough to still read as an instant onset.
+         const double declickBeats = 0.002 * bpm / 60.0;
+
+         int cursor = terminal.windowCursor;
+         if (cursor < 0 || cursor >= numWindows)
+            cursor = 0;
+         // A seek or a loop wrap moves the position backwards; walk the
+         // cursor back rather than searching, since the common case is
+         // "still in the same window as last block".
+         while (cursor > 0 && blockStartBeat < windows[cursor].startBeat)
+            cursor--;
+
          for (int i = 0; i < numFrames; i++)
-            deviceBuffer.channels[ch][i] += src.channels[ch][i];
+         {
+            const double beat = blockStartBeat + (double)i * beatsPerSample;
+            while (cursor + 1 < numWindows && beat >= windows[cursor].endBeat)
+               cursor++;
+            const ClipWindow& w = windows[cursor];
+            if (!playing || beat < w.startBeat || beat >= w.endBeat)
+            {
+               sEnvScratch[i] = 0.0f;
+               // A playing head that has left every window has also left the
+               // bucket in progress - flush it here, or a clip followed by a
+               // gap never publishes its last bucket and keeps a flat notch
+               // at its right edge. Not when stopped: a stopped playhead's
+               // bucket is half-measured (see below).
+               if (playing && terminal.peakClipId != 0)
+               {
+                  if (terminal.peakBucket >= 0)
+                     mClipPeaks.Write({ terminal.peakClipId, terminal.peakShape, terminal.peakBucket,
+                                        terminal.peakMin, terminal.peakMax });
+                  terminal.peakClipId = 0;
+                  terminal.peakBucket = -1;
+               }
+               continue;
+            }
+            double env = (double)w.gain * (double)laneGain;
+            const double sinceStart = beat - w.startBeat;
+            const double untilEnd = w.endBeat - beat;
+            if (w.fadeInBeats > 0.0 && sinceStart < w.fadeInBeats)
+               env *= sinceStart / w.fadeInBeats;
+            if (w.fadeOutBeats > 0.0 && untilEnd < w.fadeOutBeats)
+               env *= untilEnd / w.fadeOutBeats;
+            if (declickBeats > 0.0)
+            {
+               if (!w.abutsPrev && sinceStart < declickBeats)
+                  env *= sinceStart / declickBeats;
+               if (!w.abutsNext && untilEnd < declickBeats)
+                  env *= untilEnd / declickBeats;
+            }
+            sEnvScratch[i] = (float)(env < 0.0 ? 0.0 : env);
+
+            // Live waveform bucket (WP8). Measured on the clip's own
+            // material BEFORE the envelope and both gains, so editing a
+            // fade, a clip gain or a lane gain does not invalidate what has
+            // already been drawn - only the four fields that change what
+            // material the clip holds do (the panel clears on those).
+            const int bucket = (int)((beat - w.startBeat) * kClipPeakBucketsPerBeat);
+            if (bucket != terminal.peakBucket || w.clipId != terminal.peakClipId)
+            {
+               // Only complete buckets are published: the one in progress is
+               // flushed when the playhead crosses out of it, which is also
+               // why a stopped playhead leaves its last bucket unfilled.
+               if (terminal.peakBucket >= 0 && terminal.peakClipId != 0)
+                  mClipPeaks.Write({ terminal.peakClipId, terminal.peakShape, terminal.peakBucket,
+                                     terminal.peakMin, terminal.peakMax });
+               terminal.peakClipId = w.clipId;
+               terminal.peakShape = w.shape;
+               terminal.peakBucket = bucket;
+               terminal.peakMin = 0.0f;
+               terminal.peakMax = 0.0f;
+            }
+            for (int ch = 0; ch < numChannels; ch++)
+            {
+               const float v = src.channels[ch][i];
+               if (v < terminal.peakMin) terminal.peakMin = v;
+               if (v > terminal.peakMax) terminal.peakMax = v;
+            }
+         }
+         terminal.windowCursor = cursor;
+
+         for (int ch = 0; ch < numChannels; ch++)
+            for (int i = 0; i < numFrames; i++)
+               deviceBuffer.channels[ch][i] += src.channels[ch][i] * gain * sEnvScratch[i];
+      }
+      else if (terminal.numWindows > 0)
+      {
+         // A timeline terminal with no usable sample rate cannot place its
+         // windows, and a terminal whose entire purpose is being gated must
+         // fail to silence, not to unity gain - the flat-gain path below
+         // would ignore the schedule, the disabled flag and the pause.
+         // Unreachable today (a device callback always has a rate, and
+         // ProcessOffline has Transport::AudioSampleRate()).
+      }
+      else
+      {
+         for (int ch = 0; ch < numChannels; ch++)
+            for (int i = 0; i < numFrames; i++)
+               deviceBuffer.channels[ch][i] += src.channels[ch][i] * gain;
+      }
 
       if (terminal.capture != nullptr && terminal.capture->enabled.load(std::memory_order_relaxed))
       {
@@ -301,8 +452,9 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          sInterleaveScratch.resize((size_t)numFrames * 2);
          for (int i = 0; i < numFrames; i++)
          {
-            const float l = src.channels[0][i];
-            const float r = numChannels > 1 ? src.channels[1][i] : l;
+            const float env = isTimelineClip ? sEnvScratch[i] : 1.0f;
+            const float l = src.channels[0][i] * gain * env;
+            const float r = numChannels > 1 ? src.channels[1][i] * gain * env : l;
             sInterleaveScratch[(size_t)i * 2 + 0] = l;
             sInterleaveScratch[(size_t)i * 2 + 1] = r;
          }

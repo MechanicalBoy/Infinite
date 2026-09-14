@@ -110,6 +110,7 @@ namespace
 #include "core/ExprGlobals.h"
 #include "core/Palette.h"
 #include "core/Patch.h"
+#include "arrange/ArrangeModel.h"
 #include "core/NodeViewport.h"
 #include "core/AudioCable.h"
 #include "core/NoteCable.h"
@@ -595,6 +596,13 @@ namespace
    // ModSlider and friends (the widgets that call it) are among the first
    // functions in the file.
    void PushUndoCheckpoint();
+   // Timeline-only undo entry: see UndoEntry::arrangeOnly. Declared here
+   // because the arrangement panel (far above the undo machinery in file
+   // order) is its only caller.
+   void PushArrangeUndo();
+   // Pushes a timeline-only entry holding `before`, the model as it was
+   // before the edit - but only if gArrange's revision has moved past it.
+   void PushArrangeUndoSnapshot(const Arrange::Model& before);
    GraphNode* FindNodeByIndex(int index);
 
    // Field 'graph' domain (build step 10): forward-declared for the same
@@ -609,8 +617,14 @@ namespace
    // (among the first drawing code in the file) and the main loop's pump
    // (near the very end) both need to call into it.
    INode* FindHardwareDrivenNode();
-   void StartOfflineRenderSession(OutputNode* n);
+   void StartOfflineRenderSession(OutputNode* n, int width = 0, int height = 0, bool isArrange = false);
    void DrawOfflineRenderProgressWindow();
+   void DrawArrangeWavRenderProgressWindow();
+   void DrawArrangeRenderQueueWindow();
+   void ArrangeRenderQueuePosition(int& outIndex, int& outTotal);
+   void ArrangeRenderCancelAll();
+   extern bool gArrangeShowRenderQueue;
+   bool StartAudioEngine(std::string& outError);
 
    std::vector<GraphNode> gNodes;
 
@@ -880,8 +894,118 @@ namespace
       bool waitingOnEncoder = false;
       double lastProgressTime = 0.0; // when OfflineFramesDone last changed
       int lastFramesDone = -1;
+
+      // Set only for a render started from the Arrangement Timeline's own
+      // Render button - switches on two behaviors that would be wrong for
+      // an ordinary manually-wired OutputNode take: (1) each frame, every
+      // video lane's active clip is composited onto the node's FBO after
+      // the cook (CompositeArrangeTimelineVideo - bottom lane first, so the
+      // top lane is frontmost, each lane's blend mode and opacity applied),
+      // replacing whatever the node's own Input produced; (2) RebuildAudioTopology's Timeline Strict terminals also
+      // write into this node's capture ring (see arrangeAudioCapture
+      // below), so the take's audio is the live sum of every active
+      // timeline audio clip rather than whatever's cabled into AudioInput.
+      bool arrangeDriven = false;
+      // WP7 #6b splits arrangeDriven's two behaviours apart, because a job
+      // can now take its picture from one place and its sound from another
+      // ("video-only timeline over live canvas music" is a first-class job).
+      // Both are only read while arrangeDriven.
+      //   timelineVideo - composite the video lanes onto the take's FBO,
+      //                   replacing whatever its own Input produced.
+      //   timelineAudio - RebuildAudioTopology builds the Timeline Strict
+      //                   terminals rather than the canvas Audio Outs
+      //                   (ArrangeTimelineRoutingActive).
+      // Audio always reaches the file through the take node's capture ring
+      // either way: the timeline's export node has nothing cabled into its
+      // AudioInput, so both sources are the master sum, and only the
+      // terminals feeding that sum differ.
+      bool timelineVideo = false;
+      bool timelineAudio = false;
+      // The job's range in ticks. StartOfflineRenderSession scopes its
+      // hardware-source refusal (WP7 #4) to the clips that actually play
+      // inside it, so it has to be set before the take is armed - same
+      // discipline as arrangeDriven and endSeconds.
+      int64_t rangeStartTick = 0;
+      int64_t rangeEndTick = 0;
+      // Only meaningful when arrangeDriven: the timeline second the render
+      // should end on, so the render-finish cleanup can park the playhead
+      // there instead of leaving it wherever Transport::SetOfflineMode(false)
+      // happens to revert to (whatever mSeconds was before the take started).
+      double endSeconds = 0.0;
    };
    OfflineRenderState gOfflineRender;
+
+   // ---- Arrangement render jobs (WP7) --------------------------------------
+   // One job = one file. The timeline's Render popup fills one in, and either
+   // runs it immediately or parks it in the queue; both paths go through
+   // ArrangeRenderBeginJob, so the hardware-source refusal, the overwrite
+   // check and the source routing can't be skipped by one of them.
+   enum ArrangeRenderAudioSource { kArrangeAudioTimeline = 0, kArrangeAudioCanvas = 1, kArrangeAudioNone = 2 };
+   enum ArrangeRenderVideoSource { kArrangeVideoTimeline = 0, kArrangeVideoCanvas = 1, kArrangeVideoNone = 2 };
+   enum ArrangeRenderRangeKind { kArrangeRangeWhole = 0, kArrangeRangeLoop = 1, kArrangeRangeMarkers = 2, kArrangeRangeCustom = 3 };
+   enum ArrangeRenderStatus
+   {
+      kArrangeJobQueued = 0,
+      kArrangeJobRendering,
+      kArrangeJobFinalizing,
+      kArrangeJobDone,
+      kArrangeJobFailed,
+      kArrangeJobCancelled
+   };
+
+   struct ArrangeRenderJob
+   {
+      uint64_t id = 0;
+      int rangeKind = kArrangeRangeWhole;
+      int64_t startTick = 0;
+      int64_t endTick = 0;
+      int audioSource = kArrangeAudioTimeline;
+      int videoSource = kArrangeVideoTimeline;
+      uint64_t canvasVideoUid = 0; // only when videoSource == kArrangeVideoCanvas
+      int width = 1920, height = 1080, fps = 60;
+      int sampleRate = 48000;
+      int format = 0;              // 0 = mp4, 1 = mov, 2 = wav
+      std::string path;
+      int status = kArrangeJobQueued;
+      std::string message;         // failure reason, or a note about the take
+      int framesDone = 0, framesTotal = 0;
+      double startedTime = 0.0;    // glfwGetTime() when it began, for the ETA
+   };
+
+   // The timeline's own render target. Never a canvas node: an arrangement
+   // take composites its lanes onto this node's FBO and nothing else, so it
+   // stays off the graph, out of the patch and out of every node list.
+   std::unique_ptr<OutputNode> gArrangeTimelineExportNode;
+
+   std::vector<ArrangeRenderJob> gArrangeRenderQueue;
+   uint64_t gArrangeRenderNextJobId = 1;
+   uint64_t gArrangeRenderActiveJobId = 0; // 0 = nothing in flight
+   bool gArrangeRenderQueueRunning = false;
+
+   // An audio-only take (Video source = None). It has no OutputNode, no
+   // encoder and no frames - just AudioEngine::ProcessOffline block by block
+   // into a WAV file - so it can't ride on gOfflineRender, which is built
+   // around a node's video take. Only one of the two ever runs at a time.
+   struct ArrangeWavRenderState
+   {
+      bool active = false;
+      bool timelineAudio = true;   // same meaning as gOfflineRender.timelineAudio
+      bool cancelRequested = false;
+      AudioFileWriter writer;
+      long long framesTotal = 0, framesDone = 0;
+      double sampleRate = 0.0;
+      double startSeconds = 0.0, endSeconds = 0.0;
+      bool deviceWasRunning = false, wasPlaying = true, vsyncWasOn = true;
+      double startedTime = 0.0;
+   };
+   ArrangeWavRenderState gArrangeWavRender;
+
+   // Defined next to StartOfflineRenderSession; called from the timeline panel
+   // (far above it in file order) and from the main loop's pump (far below).
+   bool ArrangeRenderBeginJob(ArrangeRenderJob& job);
+   void ArrangeRenderQueueTick();
+   void ArrangeRenderCancelActive();
+   bool ArrangeRenderBusy();
 
    // ---- device-change / sleep-wake recovery state (PollAudioRecovery) ----
    // docs/plans/optimization/prompts/02-device-change-and-wake-recovery.md.
@@ -994,6 +1118,74 @@ namespace
    float gPerfPanelHeight = 280.0f;
    const float kPerfPanelMinWidth = 240.0f;
    const float kPerfPanelMinHeight = 160.0f;
+   // The dockable arrangement timeline panel: DAW/video-editor style lanes and clips.
+   bool  gArrangePanelOpen = false;
+   float gArrangePanelWidth = 480.0f;
+   float gArrangePanelHeight = 240.0f;
+   const float kArrangePanelMinWidth = 300.0f;
+   const float kArrangePanelMinHeight = 140.0f;
+   // The view axis is musical (WP6): pixels per quarter-note beat and the
+   // leftmost visible beat, so clips (stored in ticks) hold still on screen
+   // when the tempo changes. 40 px/beat is the old 80 px/s default at 120 bpm.
+   // View state only - deliberately not written into Settings::zoom/scroll,
+   // since every model write bumps revision and wakes the audio rebuild.
+   float gArrangePixelsPerBeat = 40.0f;
+   double gArrangeScrollBeats = 0.0;
+   const float kArrangeMinPixelsPerBeat = 5.0f;
+   const float kArrangeMaxPixelsPerBeat = 500.0f;
+   // Which side of the timeline lanes the global viewport monitor docks to -
+   // toggled via right-click on the monitor itself.
+   bool  gArrangeViewportOnRight = false;
+   // The snap grid itself is model state (Settings::snapDivision, 0 = off,
+   // and snapTriplet - WP6). The magnet button toggles off <-> the last
+   // division that was on, remembered here (view state, not saved).
+   int   gArrangeLastSnapDivision = 4;
+   // Ruler scrub (WP6): a drag on the ruler moves a ghost playhead only, and
+   // the transport seeks once, on release (ArrangeScrubEnd). Seeking every
+   // drag frame bumped Transport's reset epoch every frame, which reset every
+   // Field/stateful node's history for the whole drag.
+   bool  gArrangeScrubbing = false;
+   int64_t gArrangeScrubTick = 0;
+   // Marker flag being dragged on the ruler (0 = none), and the inline rename.
+   uint64_t gArrangeMarkerDragId = 0;
+   int64_t gArrangeMarkerDragGrabTick = 0;
+   int64_t gArrangeMarkerDragOrigPos = 0;
+   uint64_t gArrangeRenamingMarkerId = 0;
+   char gArrangeRenameMarkerBuffer[64] = {};
+   uint64_t gArrangeCtxMarkerId = 0;
+   // Loop region: Shift+drag on the ruler sets [start,end) and arms it;
+   // right-clicking the ruler while armed disarms it. The loop itself is
+   // gArrange.settings.loop, in ticks (WP5b) - these are only the drag's
+   // transient state. The anchor is a tick so the band does not slide when
+   // the tempo changes mid-drag.
+   bool   gArrangeShiftDraggingLoop = false;
+   int64_t gArrangeLoopDragAnchorTick = 0;
+   bool   gArrangeFitViewToLoopPending = false; // set by the manual duration field; consumed once rulerWidth is known
+   bool  gArrangeClaimedKeys = false;
+   bool  gArrangeFocused = false;
+   // Which of the two mutually exclusive audio routings is live (overhaul
+   // WP3). Canvas = the node graph's own Audio Out nodes feed the device, the
+   // arrangement is silent. Timeline = the arrangement's audio clips feed the
+   // device directly and every canvas Audio Out is bypassed.
+   //
+   // Deliberately NOT persisted and NOT part of a patch: it is a monitoring
+   // choice, not a property of the work, and a patch that silently reopened
+   // in Timeline mode would play nothing until the user found the button.
+   // Reset to Canvas on launch (this initialiser), File > New and File > Open.
+   //
+   // Routing depends on this and nothing else. It used to also require the
+   // arrangement panel to be open and the transport to be playing, which made
+   // hiding the panel or hitting pause change what the topology contained -
+   // a rebuild-driven mode leak rather than a routing rule.
+   enum class AudioMode { Canvas, Timeline };
+   AudioMode gAudioMode = AudioMode::Canvas;
+   // Where the per-row "+" (or the empty-state one when there are no
+   // tracks yet) should insert a new track: -1 appends at the end,
+   // otherwise inserts right after that stream index. Set when the "+" is
+   // clicked, read back when the popup it opens is actually filled in.
+   int   gArrangeAddTrackInsertAfter = -1;
+   ImVec2 gArrangePanelRectMin(0.0f, 0.0f);
+   ImVec2 gArrangePanelRectMax(0.0f, 0.0f);
    bool  gPerfEditMode = true;            // true = Edit (rearrange/customize/cable drag), false = Perform (live perform)
    int   gPerfActivePage = 0;
    int   gPerfRenamingPage = -1;
@@ -1035,11 +1227,100 @@ namespace
    char  gPerfRenameElementBuffer[64] = "";
    Patch::PerfLayoutRecord gPerfLayout;
    std::vector<Patch::PerfRecord> gPerfElements;
-   // Arrangement timeline (docs/plans/arrangement/README.md). Same record
-   // type the patch stores - no separate runtime class. Clip srcIndex is a
-   // live node index: rewritten by ApplyPatchData, pruned by
-   // RemoveNodeByIndex, cleared by NewPatch.
-   std::vector<Patch::StreamRecord> gArrangeStreams;
+   // Arrangement timeline (docs/plans/arrangement/overhaul-prompt.md).
+   //
+   // gArrange is the source of truth: ticks, stable clip ids, markers and
+   // settings, and the only thing that is saved, loaded, undone or edited -
+   // every panel edit goes through an Arrange:: op (WP5a). The audio
+   // schedule, the video layer walk and the panel all read it directly
+   // (WP5b deleted the seconds mirror), and gArrange.revision is the one
+   // change signal: every op and every direct field edit bumps it, and the
+   // audio topology rebuilds when it moves (ArrangeAudioRebuildIfStale).
+   Arrange::Model gArrange;
+   // Bumped on every new-document boundary (File > New, File > Open) and never
+   // by undo. Anything that must not outlive the document it was made in -
+   // the clip clipboard, the selection - carries the generation it was made
+   // under and is dropped when it no longer matches.
+   uint64_t gArrangePatchGeneration = 1;
+
+   // The panel dock is model state (Settings::dockSide, 0 = bottom, 1 = top),
+   // mapped onto the shared docked-panel slots (0 = bottom, 3 = top). The
+   // side slots (1, 2) are never produced: a timeline's own horizontal axis
+   // fights a side dock.
+   inline int ArrangePanelDock() { return gArrange.settings.dockSide == 1 ? 3 : 0; }
+
+   // Selection is by clip id, never by (lane, index): an index is only valid
+   // until the next edit, an id for the life of the clip. Ids that stop
+   // resolving (deleted, undone away) are pruned every frame, so a stale id
+   // clears rather than landing on a different clip.
+   std::set<uint64_t> gArrangeSel;
+   uint64_t gArrangeSelAnchor = 0;          // last plain-clicked clip; paste lands on its lane
+   uint64_t gArrangeSelGeneration = 1;      // gArrangePatchGeneration the selection belongs to
+
+   // Copy/paste clipboard: clips by value, with each clip's lane and tick
+   // offset relative to the copied block's first lane / earliest start.
+   struct ArrangeClipboardItem
+   {
+      Arrange::Clip clip;
+      int laneOffset = 0;
+      int laneType = Arrange::kLaneVideo;
+      Arrange::Tick tickOffset = 0;
+   };
+   struct ArrangeClipboardData
+   {
+      std::vector<ArrangeClipboardItem> items;
+      uint64_t generation = 0;
+   } gArrangeClipboard;
+
+   // One gesture's pre-edit snapshot (a clip drag, a popup DragFloat, a
+   // rename). Pushed as a single undo entry at the gesture's end, and only if
+   // the model's revision moved - a click that changed nothing pushes nothing.
+   Arrange::Model gArrangeGestureBefore;
+   bool gArrangeGestureOpen = false;
+
+   // Live clip drag. Every frame the model is rebuilt from the gesture
+   // snapshot plus the current (delta, laneDelta) through the same op the
+   // release would run, so what is drawn is exactly what the drop will do.
+   enum ArrangeDragMode
+   {
+      kArrangeDragNone = 0,
+      kArrangeDragMove,
+      kArrangeDragTrimStart,
+      kArrangeDragTrimEnd,
+      kArrangeDragGroupEdge,   // TrimGroupEdge: only members flush with the edge
+      kArrangeDragGroupScale,  // ScaleGroup: Shift-drag on a group edge
+   };
+   struct ArrangeDragState
+   {
+      int mode = kArrangeDragNone;
+      uint64_t clipId = 0;      // the clip under the mouse at mouse-down
+      uint64_t groupId = 0;     // group edge / scale modes
+      int edge = Arrange::kEdgeStart;
+      std::vector<uint64_t> ids; // move mode: every clip that moves
+      Arrange::Tick grabTick = 0; // mouse tick at mouse-down
+      Arrange::Tick origStart = 0, origEnd = 0; // the grabbed clip (or group) at mouse-down
+      int grabLane = 0;
+      Arrange::Tick appliedDelta = 0; // what the model currently reflects
+      int appliedLaneDelta = 0;
+      Arrange::Tick appliedTick = -1;
+      bool live = false;          // past the drag threshold; until then nothing moves
+      bool collapseOnClick = false; // plain click on an already-selected clip: a
+                                    // release without a drag narrows the selection to it
+      bool singleMember = false;  // Alt held at mouse-down
+   } gArrangeDrag;
+
+   // Rename, context-menu and Assign Node... targets, all by id.
+   uint64_t gArrangeRenamingClipId = 0;
+   char     gArrangeRenameClipBuffer[64] = "";
+   uint64_t gArrangeRenamingLaneId = 0;     // lane name field currently being edited
+   uint64_t gArrangeCtxClipId = 0;
+   uint64_t gArrangeAssigningClipId = 0;
+   // Stable node identity, handed out at spawn and never reused, unlike
+   // GraphNode::index. Arrangement clips reference it, so a clip survives its
+   // node being deleted and undone back. Persisted per node in the patch;
+   // ApplyPatchData clamps this above every restored uid so a reload can never
+   // mint a duplicate.
+   uint64_t gNextNodeUid = 1;
    // Edit-mode selection, by index into gPerfElements. Indices move when the
    // vector is mutated, so every operation that erases or appends clears or
    // rebuilds the selection rather than trying to patch it up.
@@ -5331,6 +5612,579 @@ namespace
       return nullptr;
    }
 
+   // uid -> GraphNode*, backing FindNodeByUid (WP5b). The arrangement asks for
+   // a node by uid per clip per frame (panel draw, video layer walk, audio
+   // schedule), so the linear scan it replaced was O(clips x nodes) a frame.
+   //
+   // Kept honest three ways, so a mutation site that forgets to report in
+   // costs a rebuild, never a wrong answer:
+   //  - SpawnNode appends in place (NoteNodeAppended); erase, clear and a
+   //    uid restore on load invalidate or patch it (InvalidateNodeByUid,
+   //    NoteNodeUidChanged).
+   //  - A lookup rebuilds whenever gNodes' storage or size moved since the
+   //    map was built - a reallocation dangles every pointer in it.
+   //  - The main loop invalidates it once a frame, and a hit is re-checked
+   //    (uid still matches) before it is returned.
+   // First uid wins on a duplicate, which is what the linear scan did.
+   std::unordered_map<uint64_t, GraphNode*> gNodeByUid;
+   bool gNodeByUidDirty = true;
+   const GraphNode* gNodeByUidData = nullptr;
+   size_t gNodeByUidSize = 0;
+
+   void InvalidateNodeByUid()
+   {
+      gNodeByUidDirty = true;
+   }
+
+   void RebuildNodeByUid()
+   {
+      gNodeByUid.clear();
+      gNodeByUid.reserve(gNodes.size());
+      for (GraphNode& gn : gNodes)
+         if (gn.uid != 0)
+            gNodeByUid.emplace(gn.uid, &gn);
+      gNodeByUidData = gNodes.data();
+      gNodeByUidSize = gNodes.size();
+      gNodeByUidDirty = false;
+   }
+
+   // After gNodes.push_back: one emplace when nothing else moved, otherwise
+   // leave it to the next lookup's rebuild (a reallocating push moved every
+   // node).
+   void NoteNodeAppended()
+   {
+      if (!gNodeByUidDirty && gNodes.data() == gNodeByUidData && gNodes.size() == gNodeByUidSize + 1)
+      {
+         GraphNode& gn = gNodes.back();
+         if (gn.uid != 0)
+            gNodeByUid.emplace(gn.uid, &gn);
+         gNodeByUidSize = gNodes.size();
+      }
+      else
+      {
+         gNodeByUidDirty = true;
+      }
+   }
+
+   void NoteNodeUidChanged(uint64_t oldUid, GraphNode* gn)
+   {
+      if (gNodeByUidDirty)
+         return;
+      auto it = gNodeByUid.find(oldUid);
+      if (it != gNodeByUid.end() && it->second == gn)
+         gNodeByUid.erase(it);
+      if (gn->uid != 0)
+         gNodeByUid.emplace(gn->uid, gn);
+   }
+
+   GraphNode* FindNodeByUid(uint64_t uid)
+   {
+      if (uid == 0)
+         return nullptr;
+      if (gNodeByUidDirty || gNodes.data() != gNodeByUidData || gNodes.size() != gNodeByUidSize)
+         RebuildNodeByUid();
+      auto it = gNodeByUid.find(uid);
+      if (it == gNodeByUid.end())
+         return nullptr;
+      if (it->second->uid != uid)
+      {
+         // Something rewrote a uid in place without reporting it. Rebuild once
+         // rather than hand back the wrong node.
+         RebuildNodeByUid();
+         it = gNodeByUid.find(uid);
+         return it == gNodeByUid.end() ? nullptr : it->second;
+      }
+      return it->second;
+   }
+
+   // Every panel edit ends here: mark the document dirty. The undo push is the
+   // caller's (see ArrangeEdit below). Nothing is republished - the audio
+   // schedule, video layers and panel all read gArrange directly, and the
+   // audio side notices the edit through gArrange.revision (WP5b).
+   void ArrangeCommitEdit()
+   {
+      gPatchDirty = true;
+   }
+
+   // Runs `op` against gArrange and, if it changed anything (the revision
+   // moved), pushes one timeline undo entry holding the pre-edit model.
+   // Returns whether anything changed. The one shape every discrete timeline
+   // edit (key, menu item, button) goes through.
+   template <class Op>
+   bool ArrangeEdit(Op&& op)
+   {
+      Arrange::Model before = gArrange;
+      op();
+      if (gArrange.revision == before.revision)
+         return false;
+      PushArrangeUndoSnapshot(before);
+      ArrangeCommitEdit();
+      return true;
+   }
+
+   // Continuous-gesture undo (drag, popup DragFloat, rename): snapshot at the
+   // gesture's start, push at its end only if the revision moved.
+   bool ArrangeGestureEnd();
+
+   void ArrangeGestureBegin()
+   {
+      // Two gestures never overlap (a lost deactivate would otherwise leave
+      // the older snapshot open and fold the next edit into it).
+      if (gArrangeGestureOpen)
+         ArrangeGestureEnd();
+      gArrangeGestureBefore = gArrange;
+      gArrangeGestureOpen = true;
+   }
+
+   // Whether two models hold the same document content (lanes, clips,
+   // markers, loop) - revision and nextId aside. A gesture that went away and
+   // came back bumps revision without changing anything, and must not leave
+   // an undo entry behind.
+   bool ArrangeContentEqual(const Arrange::Model& a, const Arrange::Model& b)
+   {
+      if (a.lanes.size() != b.lanes.size() || a.markers.size() != b.markers.size())
+         return false;
+      for (size_t i = 0; i < a.lanes.size(); i++)
+      {
+         const Arrange::Lane& la = a.lanes[i];
+         const Arrange::Lane& lb = b.lanes[i];
+         if (la.id != lb.id || la.type != lb.type || la.blendMode != lb.blendMode || la.opacity != lb.opacity ||
+             la.gainDb != lb.gainDb || la.pan != lb.pan || la.name != lb.name || la.clips.size() != lb.clips.size())
+            return false;
+         for (size_t k = 0; k < la.clips.size(); k++)
+         {
+            const Arrange::Clip& ca = la.clips[k];
+            const Arrange::Clip& cb = lb.clips[k];
+            if (ca.id != cb.id || ca.start != cb.start || ca.length != cb.length || ca.srcUid != cb.srcUid ||
+                ca.srcOutput != cb.srcOutput || ca.fadeIn != cb.fadeIn || ca.fadeOut != cb.fadeOut ||
+                ca.gainDb != cb.gainDb || ca.enabled != cb.enabled || ca.groupId != cb.groupId || ca.name != cb.name ||
+                ca.colorR != cb.colorR || ca.colorG != cb.colorG || ca.colorB != cb.colorB)
+               return false;
+         }
+      }
+      for (size_t i = 0; i < a.markers.size(); i++)
+         if (a.markers[i].id != b.markers[i].id || a.markers[i].pos != b.markers[i].pos ||
+             a.markers[i].name != b.markers[i].name || a.markers[i].color != b.markers[i].color)
+            return false;
+      return a.settings.loop.enabled == b.settings.loop.enabled && a.settings.loop.start == b.settings.loop.start &&
+             a.settings.loop.end == b.settings.loop.end;
+   }
+
+   // Returns whether an undo entry was pushed.
+   bool ArrangeGestureEnd()
+   {
+      if (!gArrangeGestureOpen)
+         return false;
+      gArrangeGestureOpen = false;
+      if (gArrangeGestureBefore.revision == gArrange.revision)
+         return false;
+      if (ArrangeContentEqual(gArrangeGestureBefore, gArrange))
+         return false;
+      PushArrangeUndoSnapshot(gArrangeGestureBefore);
+      ArrangeCommitEdit();
+      return true;
+   }
+
+   // Transport's loop <- gArrange.settings.loop. The model holds the loop in
+   // ticks and the panel edits it there; Transport runs in beats, so this is
+   // the one place the two meet. Called after every loop edit and after
+   // anything replaces the model wholesale (load, undo, New) - otherwise the
+   // loop the user saved comes back as a band on screen playback ignores.
+   void PublishArrangeLoop()
+   {
+      const Arrange::LoopRange& loop = gArrange.settings.loop;
+      Transport::Instance().SetLoop(loop.enabled, Arrange::TicksToBeats(loop.start),
+                                    Arrange::TicksToBeats(loop.end));
+   }
+
+   // Every loop edit (toggle, the toolbar fields, ruler Shift-drag, ruler
+   // right-click). The loop is model state, so a change bumps revision like
+   // any other direct field edit - revision is the one change signal - and
+   // dirties the document; then Transport hears about it. Not an undo step,
+   // same as before WP5b.
+   void ArrangeSetLoop(bool enabled, Arrange::Tick start, Arrange::Tick end)
+   {
+      start = std::max<Arrange::Tick>(0, start);
+      end = std::max(end, start);
+      Arrange::LoopRange& loop = gArrange.settings.loop;
+      if (loop.enabled == enabled && loop.start == start && loop.end == end)
+         return;
+      loop.enabled = enabled;
+      loop.start = start;
+      loop.end = end;
+      gArrange.revision++;
+      gPatchDirty = true;
+      PublishArrangeLoop();
+   }
+
+   // The loop in seconds at the live tempo - for the seconds-native panel
+   // geometry and the render range, which stays in seconds until WP7.
+   double ArrangeLoopStartSec()
+   {
+      return Arrange::TicksToSeconds(gArrange.settings.loop.start, (double)Transport::Instance().Tempo());
+   }
+   double ArrangeLoopEndSec()
+   {
+      return Arrange::TicksToSeconds(gArrange.settings.loop.end, (double)Transport::Instance().Tempo());
+   }
+
+   // View settings that live in the model (so they save with the patch) but
+   // are not edits: undo, redo and a drag's snapshot restore all carry the
+   // live values across instead of rewinding them (WP5 dockSide, WP6 the
+   // display unit and the snap grid).
+   struct ArrangeViewSettings
+   {
+      int  dockSide = 0;
+      int  timeDisplay = 0;
+      int  snapDivision = 4;
+      bool snapTriplet = false;
+   };
+   ArrangeViewSettings ArrangeKeepViewSettings(const Arrange::Model& m)
+   {
+      ArrangeViewSettings v;
+      v.dockSide = m.settings.dockSide;
+      v.timeDisplay = m.settings.timeDisplay;
+      v.snapDivision = m.settings.snapDivision;
+      v.snapTriplet = m.settings.snapTriplet;
+      return v;
+   }
+   void ArrangeRestoreViewSettings(Arrange::Model& m, const ArrangeViewSettings& v)
+   {
+      m.settings.dockSide = v.dockSide;
+      m.settings.timeDisplay = v.timeDisplay;
+      m.settings.snapDivision = v.snapDivision;
+      m.settings.snapTriplet = v.snapTriplet;
+   }
+
+   // Bars | Time (Settings::timeDisplay). A view change only - every
+   // position stays in ticks. Saved with the patch, so a direct model write:
+   // revision++ (invariant 6) and dirty, never an undo step.
+   void ArrangeSetTimeDisplay(int mode)
+   {
+      mode = mode == 1 ? 1 : 0;
+      if (gArrange.settings.timeDisplay == mode)
+         return;
+      gArrange.settings.timeDisplay = mode;
+      gArrange.revision++;
+      gPatchDirty = true;
+   }
+
+   // Snap grid (Settings::snapDivision / snapTriplet, 0 = off). Same shape
+   // as ArrangeSetTimeDisplay.
+   void ArrangeSetSnap(int division, bool triplet)
+   {
+      division = std::clamp(division, 0, 64);
+      if (division <= 1)
+         triplet = false; // no bar or off triplet
+      if (division > 0)
+         gArrangeLastSnapDivision = division;
+      Arrange::Settings& st = gArrange.settings;
+      if (st.snapDivision == division && st.snapTriplet == triplet)
+         return;
+      st.snapDivision = division;
+      st.snapTriplet = triplet;
+      gArrange.revision++;
+      gPatchDirty = true;
+   }
+
+   // The live snap step in ticks, 0 when snap is off. A bar follows the
+   // transport's meter, same as the ruler's bar lines.
+   Arrange::Tick ArrangeSnapGridTicks()
+   {
+      return Arrange::SnapGridTicks(gArrange.settings.snapDivision, gArrange.settings.snapTriplet,
+                                    std::max(1.0, Transport::Instance().BeatsPerBar()));
+   }
+
+   // The step the arrow keys nudge by: the snap grid, or a sixteenth when
+   // snap is off (so the keys never go dead).
+   Arrange::Tick ArrangeNudgeStepTicks()
+   {
+      const Arrange::Tick g = ArrangeSnapGridTicks();
+      return g > 0 ? g : Arrange::kPPQ / 4;
+   }
+
+   // The playhead in ticks - off Transport::Beats(), never Seconds(): the
+   // beat clock is what the clips are laid out on, and seconds-to-ticks at
+   // the live tempo drifts from it the moment a tempo change is staged.
+   Arrange::Tick ArrangePlayTick()
+   {
+      return std::clamp<Arrange::Tick>(Arrange::BeatsToTicks(Transport::Instance().Beats()), 0, Arrange::kMaxTick);
+   }
+
+   void ArrangeSeekTick(Arrange::Tick t)
+   {
+      Transport::Instance().SeekBeats(Arrange::TicksToBeats(std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick)));
+   }
+
+   // Ruler scrub (WP6). Begin/Update only move the ghost; End seeks exactly
+   // once. Cancel drops the ghost without seeking.
+   void ArrangeScrubBegin(Arrange::Tick t)
+   {
+      gArrangeScrubbing = true;
+      gArrangeScrubTick = std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+   }
+   void ArrangeScrubUpdate(Arrange::Tick t)
+   {
+      if (gArrangeScrubbing)
+         gArrangeScrubTick = std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+   }
+   bool ArrangeScrubEnd()
+   {
+      if (!gArrangeScrubbing)
+         return false;
+      gArrangeScrubbing = false;
+      ArrangeSeekTick(gArrangeScrubTick);
+      return true;
+   }
+   void ArrangeScrubCancel()
+   {
+      gArrangeScrubbing = false;
+   }
+
+   // Where End sends the playhead: the end of the last clip on any lane.
+   Arrange::Tick ArrangeEndKeyTargetTick()
+   {
+      return Arrange::ArrangementEnd(gArrange);
+   }
+
+   // Marker colours are RGBA8 packed 0xRRGGBBAA (Arrange::Marker::color).
+   ImU32 ArrangeMarkerColU32(uint32_t rgba)
+   {
+      return IM_COL32((rgba >> 24) & 0xFF, (rgba >> 16) & 0xFF, (rgba >> 8) & 0xFF, rgba & 0xFF);
+   }
+   uint32_t ArrangeMarkerRGBA(ImU32 col)
+   {
+      const uint32_t r = (col >> IM_COL32_R_SHIFT) & 0xFF;
+      const uint32_t g = (col >> IM_COL32_G_SHIFT) & 0xFF;
+      const uint32_t b = (col >> IM_COL32_B_SHIFT) & 0xFF;
+      const uint32_t a = (col >> IM_COL32_A_SHIFT) & 0xFF;
+      return (r << 24) | (g << 16) | (b << 8) | a;
+   }
+   constexpr uint32_t kArrangeDefaultMarkerRGBA = 0xF59E0BFFu; // amber
+
+   // The one colour list the timeline's Color Tint menu and the marker menu
+   // both offer. Entry 0 is "no tint" for clips and the default for markers.
+   struct ArrangePaletteEntry { const char* name; ImU32 col; };
+   const ArrangePaletteEntry kArrangePalette[10] = {
+      { "Default", IM_COL32(110, 120, 140, 255) },
+      { "Crimson", IM_COL32(239, 68, 68, 255) },
+      { "Orange",  IM_COL32(249, 115, 22, 255) },
+      { "Amber",   IM_COL32(245, 158, 11, 255) },
+      { "Emerald", IM_COL32(16, 185, 129, 255) },
+      { "Cyan",    IM_COL32(6, 182, 212, 255) },
+      { "Blue",    IM_COL32(59, 130, 246, 255) },
+      { "Purple",  IM_COL32(139, 92, 246, 255) },
+      { "Magenta", IM_COL32(217, 70, 239, 255) },
+      { "Rose",    IM_COL32(244, 63, 94, 255) }
+   };
+
+   // The snap grids the timeline offers: MusicTime RateDivision entries
+   // (names and lengths come from that one table - rhythmic-quantization-
+   // standard) mapped onto Settings::snapDivision / snapTriplet. rd -1 = Off.
+   // INFINITE_ARRANGEMARKERTEST checks every row against MusicTime::BeatsFor.
+   struct ArrangeGridChoice { int rd; int division; bool triplet; };
+   const ArrangeGridChoice kArrangeGridChoices[10] = {
+      { -1, 0, false },
+      { MusicTime::k1Bar, 1, false },
+      { MusicTime::kHalf, 2, false },          { MusicTime::kHalfTrip, 2, true },
+      { MusicTime::kQuarter, 4, false },       { MusicTime::kQuarterTrip, 4, true },
+      { MusicTime::kEighth, 8, false },        { MusicTime::kEighthTrip, 8, true },
+      { MusicTime::kSixteenth, 16, false },    { MusicTime::kSixteenthTrip, 16, true },
+   };
+
+   // `M`: a marker at the playhead, on the snap grid when snap is on. One
+   // undo entry. Returns the new id.
+   uint64_t ArrangeAddMarkerAtPlayhead()
+   {
+      Arrange::Tick at = ArrangePlayTick();
+      const Arrange::Tick g = ArrangeSnapGridTicks();
+      if (g > 0)
+         at = Arrange::SnapToGrid(at, g);
+      uint64_t made = 0;
+      ArrangeEdit([&]()
+      {
+         made = Arrange::AddMarker(gArrange, at, "Marker " + std::to_string(gArrange.markers.size() + 1),
+                                   kArrangeDefaultMarkerRGBA);
+      });
+      return made;
+   }
+
+   // Alt+Left / Alt+Right. While playing, a marker the playhead passed less
+   // than half a beat ago counts as "here", so a Prev press still steps back
+   // past it instead of landing on it again. Returns whether it seeked.
+   bool ArrangeJumpToMarker(int dir)
+   {
+      const Arrange::Tick play = ArrangePlayTick();
+      const Arrange::Marker* mk = nullptr;
+      if (dir < 0)
+         mk = Arrange::PrevMarker(gArrange, play, Transport::Instance().IsPlaying() ? Arrange::kPPQ / 2 : 0);
+      else
+         mk = Arrange::NextMarker(gArrange, play, 0);
+      if (mk == nullptr)
+         return false;
+      ArrangeSeekTick(mk->pos);
+      return true;
+   }
+
+   // Arrange::Model <-> Patch::Data. Straight field copies in both directions:
+   // both sides are already ticks, so nothing here is lossy and nothing here
+   // needs the transport.
+   void ArrangeModelToPatchData(const Arrange::Model& m, Patch::Data& data)
+   {
+      data.streams.clear();
+      data.streams.reserve(m.lanes.size());
+      for (const Arrange::Lane& lane : m.lanes)
+      {
+         Patch::StreamRecord s;
+         s.id = lane.id;
+         s.type = lane.type;
+         s.blendMode = lane.blendMode;
+         s.opacity = lane.opacity;
+         s.gainDb = lane.gainDb;
+         s.pan = lane.pan;
+         s.name = lane.name;
+         for (const Arrange::Clip& c : lane.clips)
+         {
+            Patch::ClipRecord r;
+            r.id = c.id;
+            r.startTick = c.start;
+            r.lengthTick = c.length;
+            r.srcUid = c.srcUid;
+            r.srcOutput = c.srcOutput;
+            r.fadeInTick = c.fadeIn;
+            r.fadeOutTick = c.fadeOut;
+            r.gainDb = c.gainDb;
+            r.enabled = c.enabled;
+            r.groupId = c.groupId;
+            r.name = c.name;
+            r.colorR = c.colorR;
+            r.colorG = c.colorG;
+            r.colorB = c.colorB;
+            s.clips.push_back(std::move(r));
+         }
+         data.streams.push_back(std::move(s));
+      }
+
+      data.markers.clear();
+      for (const Arrange::Marker& mk : m.markers)
+      {
+         Patch::MarkerRecord r;
+         r.id = mk.id;
+         r.posTick = mk.pos;
+         r.color = mk.color;
+         r.name = mk.name;
+         data.markers.push_back(std::move(r));
+      }
+
+      Patch::ArrangeSettingsRecord& a = data.arrangeSettings;
+      // Saved, not recomputed as max-id + 1: a clip deleted after taking a
+      // high id would otherwise let the next session hand that id out again,
+      // and every cache keyed on clip id (selection, waveform, thumbnail)
+      // would silently attach to the wrong clip.
+      a.nextId = m.nextId;
+      a.timeDisplay = m.settings.timeDisplay;
+      a.snapDivision = m.settings.snapDivision;
+      a.snapTriplet = m.settings.snapTriplet;
+      a.zoom = m.settings.zoom;
+      a.scroll = m.settings.scroll;
+      a.loopEnabled = m.settings.loop.enabled;
+      a.loopStart = m.settings.loop.start;
+      a.loopEnd = m.settings.loop.end;
+      a.dockSide = m.settings.dockSide;
+      a.renderWidth = m.settings.renderWidth;
+      a.renderHeight = m.settings.renderHeight;
+      a.renderFps = m.settings.renderFps;
+      a.renderSampleRate = m.settings.renderSampleRate;
+      a.renderFormat = m.settings.renderFormat;
+      a.renderRangeKind = m.settings.renderRangeKind;
+      a.renderRangeStart = m.settings.renderRangeStart;
+      a.renderRangeEnd = m.settings.renderRangeEnd;
+      a.renderAudioSource = m.settings.renderAudioSource;
+      a.renderVideoSource = m.settings.renderVideoSource;
+      a.renderFolder = m.settings.renderFolder;
+   }
+
+   // `resolveLegacy` maps a pre-uid patch's saved node index to the uid of the
+   // node ApplyPatchData just spawned for it. Null when there is no graph to
+   // resolve against (the headless fixtures), in which case a legacy clip
+   // simply comes back offline.
+   void PatchDataToArrangeModel(const Patch::Data& data, Arrange::Model& m,
+                                const std::function<uint64_t(int)>& resolveLegacy = {})
+   {
+      m = Arrange::Model();
+      m.nextId = std::max<uint64_t>(1, data.arrangeSettings.nextId);
+      for (const Patch::StreamRecord& s : data.streams)
+      {
+         Arrange::Lane lane;
+         lane.id = s.id;
+         lane.type = (s.type == Patch::kStreamAudio) ? Arrange::kLaneAudio : Arrange::kLaneVideo;
+         lane.blendMode = s.blendMode;
+         lane.opacity = s.opacity;
+         lane.gainDb = s.gainDb;
+         lane.pan = s.pan;
+         lane.name = s.name;
+         for (const Patch::ClipRecord& c : s.clips)
+         {
+            Arrange::Clip clip;
+            clip.id = c.id;
+            clip.start = c.startTick;
+            clip.length = c.lengthTick;
+            clip.srcUid = c.srcUid;
+            if (clip.srcUid == 0 && c.legacySrcIndex >= 0 && resolveLegacy)
+               clip.srcUid = resolveLegacy(c.legacySrcIndex);
+            clip.srcOutput = c.srcOutput;
+            clip.fadeIn = c.fadeInTick;
+            clip.fadeOut = c.fadeOutTick;
+            clip.gainDb = c.gainDb;
+            clip.enabled = c.enabled;
+            clip.groupId = c.groupId;
+            clip.name = c.name;
+            clip.colorR = c.colorR;
+            clip.colorG = c.colorG;
+            clip.colorB = c.colorB;
+            lane.clips.push_back(std::move(clip));
+         }
+         m.lanes.push_back(std::move(lane));
+      }
+      for (const Patch::MarkerRecord& r : data.markers)
+      {
+         Arrange::Marker mk;
+         mk.id = r.id;
+         mk.pos = r.posTick;
+         mk.color = r.color;
+         mk.name = r.name;
+         m.markers.push_back(std::move(mk));
+      }
+
+      const Patch::ArrangeSettingsRecord& a = data.arrangeSettings;
+      m.settings.timeDisplay = a.timeDisplay;
+      m.settings.snapDivision = a.snapDivision;
+      m.settings.snapTriplet = a.snapTriplet;
+      m.settings.zoom = a.zoom;
+      m.settings.scroll = a.scroll;
+      m.settings.loop.enabled = a.loopEnabled;
+      m.settings.loop.start = a.loopStart;
+      m.settings.loop.end = a.loopEnd;
+      m.settings.dockSide = a.dockSide;
+      m.settings.renderWidth = a.renderWidth;
+      m.settings.renderHeight = a.renderHeight;
+      m.settings.renderFps = a.renderFps;
+      m.settings.renderSampleRate = a.renderSampleRate;
+      m.settings.renderFormat = a.renderFormat;
+      m.settings.renderRangeKind = a.renderRangeKind;
+      m.settings.renderRangeStart = a.renderRangeStart;
+      m.settings.renderRangeEnd = a.renderRangeEnd;
+      m.settings.renderAudioSource = a.renderAudioSource;
+      m.settings.renderVideoSource = a.renderVideoSource;
+      m.settings.renderFolder = a.renderFolder;
+
+      // Legacy patches carry no ids at all; Normalize mints them and, either
+      // way, re-seats nextId above everything present. Without that clamp a
+      // file whose saved nextId was stale would hand out a duplicate id on
+      // the very first edit after loading.
+      Arrange::Normalize(m);
+   }
+
    IPaletteSource* PaletteSourceByIndex(int nodeIndex)
    {
       GraphNode* gn = FindNodeByIndex(nodeIndex);
@@ -6298,9 +7152,14 @@ namespace
       gn.typeName = typeName;
       gn.category = category;
       gn.index = gNextIndex++;
+      // Every node gets one, not just the ones an arrangement clip happens to
+      // point at: a node can be added to the timeline at any later moment, and
+      // a uid minted then would not be the one an older patch recorded.
+      gn.uid = gNextNodeUid++;
       gn.spawnX = x;
       gn.spawnY = y;
       gNodes.push_back(std::move(gn));
+      NoteNodeAppended();
       return &gNodes.back();
    }
 
@@ -16260,7 +17119,9 @@ namespace
          // elsewhere in the app.
          if (ImGui::IsKeyReleased(tk.key))
             n->SetKeyState(note, false);
-         else if (n->computerKeyboardEnabled && isHovered && !ImGui::GetIO().WantTextInput
+         // !gArrangeFocused: the timeline owns the keyboard (its M marker
+         // key would otherwise also play a note here).
+         else if (n->computerKeyboardEnabled && isHovered && !ImGui::GetIO().WantTextInput && !gArrangeFocused
                   && ImGui::IsKeyPressed(tk.key, false))
             n->SetKeyState(note, true);
       }
@@ -25822,6 +26683,4192 @@ namespace
       // the line added no information. Removed rather than re-tuned.
    }
 
+   // ---- Arrangement Timeline ----
+   bool IsNodeVideoCompatible(const GraphNode& gn)
+   {
+      if (gn.node == nullptr) return false;
+      // OutputCount() > 0 used to stand in for "produces an image", but its
+      // default is 1 for every INode regardless of what that output actually
+      // is - an audio node with no image output at all (Oscillator, Reverb -
+      // AudioEffectNode never overrides it) passed this check same as a real
+      // image source, the same shape of bug item 3 reported for audio.
+      // CanShowInViewportPanel already carries the real "does this node emit
+      // pixels" gate (it excludes audio/note sources, modulators, analyzers,
+      // camera/light, comment/group), kept in sync deliberately whenever a
+      // new audio node lands - reuse it here instead of duplicating it.
+      return dynamic_cast<IGeometrySource*>(gn.node.get()) != nullptr ||
+             dynamic_cast<IPaletteSource*>(gn.node.get()) != nullptr ||
+             CanShowInViewportPanel(gn);
+   }
+
+   bool IsNodeAudioCompatible(const GraphNode& gn)
+   {
+      if (gn.node == nullptr) return false;
+      // Strictly "this node has an audio buffer a clip terminal can read" -
+      // IAudioSource, and nothing looser. INoteSource (Note Sequencer, MIDI
+      // Notes...) produces note events, not audio, and IsAudioBodyNode is a
+      // UI-drawing category (which nodes get the audio-node body panel) that
+      // includes those same note-only nodes - either one previously let a
+      // clip get "assigned" to a node with no audio to actually play.
+      return dynamic_cast<IAudioSource*>(gn.node.get()) != nullptr;
+   }
+
+   // ---- arrangement video compositing (overhaul WP4) ---------------------
+   //
+   // One pass per active video lane, bottom lane first, so the lane drawn at
+   // the TOP of the panel lands in front - the NLE convention (spec §1). Each
+   // caller owns an ArrangeCompositeTarget: the live monitor has one, the
+   // offline render another. They used to share a single static scratch FBO,
+   // which the two resized against each other every frame a render ran with
+   // the panel open.
+
+   // A render target's private GL state. `scratch` is the ping-pong pair the
+   // lane passes alternate between; `result` is the stable output for a
+   // caller that has no FBO of its own to land in (the monitor). `slot` keys
+   // this target's own geometry viewports (gArrangeGeomViewports), so two
+   // targets at different sizes never share - and thrash - one NodeViewport.
+   struct ArrangeCompositeTarget
+   {
+      int slot = 0;
+      GLUtil::Fbo scratch[2];
+      GLUtil::Fbo result;
+      // `result` from before its last resize. The monitor's texture id goes
+      // into the ImGui draw list during the UI pass, and the composite runs
+      // after the cook loop but before ImGui::Render - so a resize there
+      // would leave the draw list sampling a deleted texture for one frame.
+      // Kept one composite longer, then freed.
+      GLUtil::Fbo retiredResult;
+      // Set by the monitor during the UI pass; consumed by the post-cook
+      // composite. 0 = the panel did not draw the monitor this frame.
+      int requestW = 0;
+      int requestH = 0;
+   };
+   ArrangeCompositeTarget gArrangeMonitorTarget{ 0 };
+   ArrangeCompositeTarget gArrangeRenderTarget{ 1 };
+
+   // Geometry clips' solo renders. A geometry node has no image of its own
+   // (GeometryNode::GetOutputTexture), so a clip of one needs a NodeViewport
+   // sized to the composite. These used to borrow gPanelViewports, which the
+   // Viewport Panel erases every frame for any node it is not showing - so a
+   // geometry clip allocated and freed a full-size FBO every frame (4K per
+   // frame during a render). Keyed by (node uid, target slot); an entry
+   // unused for kArrangeGeomEvictFrames main-loop frames is dropped by
+   // ReapArrangeGeomViewports(). std::map, not unordered: NodeViewport is
+   // neither copyable nor movable, and a node-based map never relocates it.
+   struct ArrangeGeomViewport
+   {
+      NodeViewport viewport;
+      uint64_t lastUsedFrame = 0;
+   };
+   std::map<std::pair<uint64_t, int>, ArrangeGeomViewport> gArrangeGeomViewports;
+   uint64_t gArrangeGeomFrame = 0;
+   constexpr uint64_t kArrangeGeomEvictFrames = 120;
+
+   // Called once per main-loop frame, after that frame's composites. Safe to
+   // free immediately: a geometry viewport's texture is only ever sampled by
+   // the composite pass, never queued into an ImGui draw list.
+   // An entry survives kArrangeGeomEvictFrames consecutive frames without a
+   // composite and is dropped on the next one.
+   void ReapArrangeGeomViewports()
+   {
+      for (auto it = gArrangeGeomViewports.begin(); it != gArrangeGeomViewports.end();)
+      {
+         if (gArrangeGeomFrame - it->second.lastUsedFrame > kArrangeGeomEvictFrames)
+            it = gArrangeGeomViewports.erase(it);
+         else
+            ++it;
+      }
+      gArrangeGeomFrame++;
+   }
+
+   // ---- Live clip waveforms (WP8) --------------------------------------
+   // One position-indexed peak cache per audio clip, filled by the audio
+   // thread as the clip plays (AudioEngine::ClipPeaks) and drained here.
+   // Position-indexed, not streamed: bucket k always means the same slice of
+   // the clip, so playing the same bar twice overwrites rather than appends,
+   // and scrubbing backwards fills in what was skipped.
+   //
+   // Never saved and never pre-decoded: a clip's source is a live node, not a
+   // file, so there is nothing to read ahead of the playhead. A clip that has
+   // not been played yet draws a flat centre line, which is the honest
+   // picture of "nothing has come out of this node here yet".
+   struct ArrangeClipWave
+   {
+      // The clip shape this cache was sized and measured for. Any change to
+      // these four means the buckets no longer describe what the clip holds,
+      // so the cache is cleared - they are exactly the fields WP8 names
+      // (src, output, start, length). `start` is in the list because a clip's
+      // source is a live node rather than a file: moved two beats later, the
+      // clip plays whatever the node emits two beats later, not the material
+      // that was measured. Gains and fades are deliberately NOT here - the
+      // audio thread measures pre-envelope, pre-gain, so they change how the
+      // clip sounds without changing what the buckets describe.
+      uint64_t srcUid = 0;
+      int      srcOutput = 0;
+      Arrange::Tick start = 0;
+      Arrange::Tick length = 0;
+      // The same four fields hashed, as ArrangeClipShape spells it. Carried
+      // into every ClipWindow so a bucket measured under the previous shape
+      // and still in flight when an edit lands is dropped on arrival rather
+      // than written into the reshaped array at a coincidentally valid index.
+      uint64_t shape = 0;
+      std::vector<float>   minv;
+      std::vector<float>   maxv;
+      std::vector<uint8_t> filled;
+   };
+   std::unordered_map<uint64_t, ArrangeClipWave> gArrangeClipWaves;
+   // Ticks per bucket, the main-thread spelling of kClipPeakBucketsPerBeat.
+   constexpr Arrange::Tick kArrangeWaveBucketTicks = Arrange::kPPQ / 16;
+   // A clip longer than this many buckets (~1 hour at 120 bpm) stops being
+   // cached rather than allocating without bound. Nothing in the model caps
+   // clip length, so this is a guard, not a policy.
+   constexpr int kArrangeWaveMaxBuckets = 128 * 1024;
+
+   // A clip's waveform identity: the fields that decide whether existing
+   // buckets still describe the clip. Not a security hash - a 64-bit FNV-1a
+   // mix, because the only thing on the other side of a collision is one
+   // stale display bucket that the next playback pass overwrites anyway.
+   uint64_t ArrangeClipShape(uint64_t srcUid, int srcOutput, Arrange::Tick start, Arrange::Tick length)
+   {
+      uint64_t h = 1469598103934665603ull;
+      const uint64_t parts[4] = { srcUid, (uint64_t)(int64_t)srcOutput,
+                                  (uint64_t)(int64_t)start, (uint64_t)(int64_t)length };
+      for (uint64_t v : parts)
+         for (int b = 0; b < 8; b++)
+         {
+            h ^= (v >> (b * 8)) & 0xffull;
+            h *= 1099511628211ull;
+         }
+      return h;
+   }
+
+   int ArrangeWaveBucketCount(Arrange::Tick length)
+   {
+      const long long n = ((long long)std::max<Arrange::Tick>(0, length) + kArrangeWaveBucketTicks - 1) /
+                          kArrangeWaveBucketTicks;
+      return (int)std::clamp<long long>(n, 0, kArrangeWaveMaxBuckets);
+   }
+
+   // ---- Clip thumbnails (WP8) ------------------------------------------
+   // One 96x54 FBO per *video* clip id, blitted from whatever texture the
+   // composite already resolved for that clip - so a thumbnail costs one
+   // small aspect-fit pass and never a second decode or a second render of
+   // the source. Refreshed at most once a second while the clip is active,
+   // and immediately after a reassign (lastCapture reset below).
+   struct ArrangeClipThumb
+   {
+      GLUtil::Fbo fbo;
+      double   lastCapture = -1.0; // glfwGetTime(); < 0 means "never captured"
+      uint64_t srcUid = 0;
+      int      srcOutput = 0;
+   };
+   // std::map for the same reason gArrangeGeomViewports is one: the value
+   // owns a GL resource, and a node-based map never relocates it.
+   std::map<uint64_t, ArrangeClipThumb> gArrangeClipThumbs;
+   constexpr int kArrangeThumbW = 96;
+   constexpr int kArrangeThumbH = 54;
+   constexpr double kArrangeThumbRefreshSeconds = 1.0;
+
+   // Aspect-fit copy, letterboxed to black - the same fit the composite uses,
+   // so a thumbnail frames its clip the way the monitor does.
+   struct ArrangeThumbProgram
+   {
+      unsigned int program = 0;
+      int uTex = -1, uFit = -1;
+   };
+   const ArrangeThumbProgram& ArrangeThumbShader()
+   {
+      static ArrangeThumbProgram sProg;
+      static bool sTried = false;
+      if (sTried)
+         return sProg;
+      sTried = true;
+      const char* src =
+         "#version 150\n"
+         "in vec2 vUv;\n"
+         "out vec4 fragColor;\n"
+         "uniform sampler2D uTex;\n"
+         "uniform vec4 uFit;\n"
+         "void main() {\n"
+         "   vec2 uv = (vUv - uFit.zw) / uFit.xy;\n"
+         "   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {\n"
+         "      fragColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
+         "      return;\n"
+         "   }\n"
+         "   fragColor = vec4(texture(uTex, uv).rgb, 1.0);\n"
+         "}\n";
+      sProg.program = GLUtil::CompileProgram(src);
+      if (sProg.program != 0)
+      {
+         sProg.uTex = glGetUniformLocation(sProg.program, "uTex");
+         sProg.uFit = glGetUniformLocation(sProg.program, "uFit");
+      }
+      return sProg;
+   }
+
+   // Called from inside the composite's resolve loop, which has not yet saved
+   // the caller's framebuffer binding - so this saves and restores its own.
+   void ArrangeCaptureClipThumb(uint64_t clipId, unsigned int tex, int srcW, int srcH)
+   {
+      if (clipId == 0 || tex == 0 || srcW <= 0 || srcH <= 0)
+         return;
+      auto it = gArrangeClipThumbs.find(clipId);
+      if (it == gArrangeClipThumbs.end())
+         return; // only clips the sync pass knows about get a thumbnail
+      ArrangeClipThumb& th = it->second;
+      const double now = glfwGetTime();
+      if (th.lastCapture >= 0.0 && now - th.lastCapture < kArrangeThumbRefreshSeconds)
+         return;
+      const ArrangeThumbProgram& prog = ArrangeThumbShader();
+      if (prog.program == 0 || !GLUtil::EnsureFbo(th.fbo, kArrangeThumbW, kArrangeThumbH))
+         return;
+
+      GLint prevFbo = 0;
+      glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+      GLint prevVp[4];
+      glGetIntegerv(GL_VIEWPORT, prevVp);
+
+      const float dstAspect = (float)kArrangeThumbW / (float)kArrangeThumbH;
+      const float srcAspect = (float)srcW / (float)srcH;
+      float scaleX = 1.0f, scaleY = 1.0f, offX = 0.0f, offY = 0.0f;
+      if (srcAspect > dstAspect)
+      {
+         scaleY = dstAspect / srcAspect;
+         offY = (1.0f - scaleY) * 0.5f;
+      }
+      else
+      {
+         scaleX = srcAspect / dstAspect;
+         offX = (1.0f - scaleX) * 0.5f;
+      }
+      GLUtil::RunShaderPass(th.fbo, prog.program, [&]()
+      {
+         glActiveTexture(GL_TEXTURE0);
+         glBindTexture(GL_TEXTURE_2D, tex);
+         glUniform1i(prog.uTex, 0);
+         glUniform4f(prog.uFit, scaleX, scaleY, offX, offY);
+      });
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
+      glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
+      th.lastCapture = now;
+   }
+
+   // Once per main-loop frame, whether or not the panel is open: the ring has
+   // to be drained even when nothing draws it, or it fills and starts
+   // dropping. Reshapes the cache only when gArrange.revision moved - the one
+   // change signal (invariant 6) - so an idle frame costs one ring drain.
+   void ArrangeSyncClipVisuals()
+   {
+      static uint64_t sShapedRevision = ~0ull;
+      if (sShapedRevision != gArrange.revision)
+      {
+         sShapedRevision = gArrange.revision;
+         std::unordered_set<uint64_t> live;
+         std::unordered_set<uint64_t> liveVideo;
+         for (const Arrange::Lane& lane : gArrange.lanes)
+         {
+            if (lane.type == Arrange::kLaneVideo)
+            {
+               // Thumbnails: one slot per video clip, kept across an edit
+               // that does not change what the clip shows. A reassign resets
+               // lastCapture so the next composite refreshes it at once
+               // rather than up to a second later.
+               for (const Arrange::Clip& c : lane.clips)
+               {
+                  liveVideo.insert(c.id);
+                  ArrangeClipThumb& th = gArrangeClipThumbs[c.id];
+                  if (th.srcUid != c.srcUid || th.srcOutput != c.srcOutput)
+                  {
+                     th.srcUid = c.srcUid;
+                     th.srcOutput = c.srcOutput;
+                     th.lastCapture = -1.0;
+                  }
+               }
+               continue;
+            }
+            if (lane.type != Arrange::kLaneAudio)
+               continue;
+            for (const Arrange::Clip& c : lane.clips)
+            {
+               const int buckets = ArrangeWaveBucketCount(c.length);
+               if (buckets <= 0)
+                  continue;
+               live.insert(c.id);
+               ArrangeClipWave& w = gArrangeClipWaves[c.id];
+               if (w.srcUid != c.srcUid || w.srcOutput != c.srcOutput || w.start != c.start ||
+                   w.length != c.length)
+               {
+                  w.srcUid = c.srcUid;
+                  w.srcOutput = c.srcOutput;
+                  w.start = c.start;
+                  w.length = c.length;
+                  w.shape = ArrangeClipShape(c.srcUid, c.srcOutput, c.start, c.length);
+                  w.minv.assign((size_t)buckets, 0.0f);
+                  w.maxv.assign((size_t)buckets, 0.0f);
+                  w.filled.assign((size_t)buckets, 0);
+               }
+            }
+         }
+         // A deleted clip frees its cache here rather than on a timer: the
+         // id is gone from the model, so nothing will ever fill it again.
+         for (auto it = gArrangeClipWaves.begin(); it != gArrangeClipWaves.end();)
+            it = live.count(it->first) == 0 ? gArrangeClipWaves.erase(it) : std::next(it);
+         // Same for a deleted video clip, plus its FBO. Safe to free here:
+         // the thumbnail is only ever sampled by ImGui's draw list for the
+         // frame that queued it, and a clip that is gone from the model
+         // queued nothing this frame.
+         for (auto it = gArrangeClipThumbs.begin(); it != gArrangeClipThumbs.end();)
+         {
+            if (liveVideo.count(it->first) != 0)
+            {
+               ++it;
+               continue;
+            }
+            GLUtil::DestroyFbo(it->second.fbo);
+            it = gArrangeClipThumbs.erase(it);
+         }
+      }
+
+      static ClipPeak sPeaks[256];
+      int n = 0;
+      while ((n = AudioEngine::Instance().ClipPeaks().Read(sPeaks, 256)) > 0)
+      {
+         for (int i = 0; i < n; i++)
+         {
+            auto it = gArrangeClipWaves.find(sPeaks[i].clipId);
+            if (it == gArrangeClipWaves.end())
+               continue; // clip deleted or resized while the bucket was in flight
+            ArrangeClipWave& w = it->second;
+            if (sPeaks[i].shape != w.shape)
+               continue; // measured before an edit reshaped this clip
+            const int b = sPeaks[i].bucket;
+            if (b < 0 || b >= (int)w.minv.size())
+               continue;
+            w.minv[(size_t)b] = sPeaks[i].minValue;
+            w.maxv[(size_t)b] = sPeaks[i].maxValue;
+            w.filled[(size_t)b] = 1;
+         }
+         if (n < 256)
+            break;
+      }
+   }
+
+   // One lane's contribution at a given instant.
+   struct ArrangeVideoLayer
+   {
+      GraphNode* gn = nullptr;
+      int srcOutput = 0;
+      int blendMode = 0;
+      float opacity = 1.0f;
+      uint64_t clipId = 0; // whose thumbnail this layer's texture feeds (WP8)
+   };
+
+   // Every video lane's active clip at `beat`, in COMPOSITE order: bottom lane
+   // first, top lane last (frontmost). Disabled clips and unassigned/offline
+   // clips (no live source node) contribute nothing - the same rule the audio
+   // scheduler applies (RebuildAudioTopology's `scheduled` loop).
+   //
+   // Reads gArrange directly (WP5b). Clip ticks convert to beats with no
+   // tempo, so the playhead is Transport::Beats() - the axis the audio
+   // envelope uses - and a tempo change moves nothing.
+   void CollectArrangeVideoLayers(double beat, std::vector<ArrangeVideoLayer>& out)
+   {
+      out.clear();
+      for (size_t li = gArrange.lanes.size(); li-- > 0;)
+      {
+         const Arrange::Lane& lane = gArrange.lanes[li];
+         if (lane.type != Arrange::kLaneVideo)
+            continue;
+         for (const Arrange::Clip& c : lane.clips)
+         {
+            const double startBeat = Arrange::TicksToBeats(c.start);
+            if (startBeat > beat)
+               break; // clips are sorted by start; nothing later can cover `beat`
+            if (!(beat < Arrange::TicksToBeats(c.End())))
+               continue;
+            // Lanes never overlap, so this is the lane's only candidate
+            // whether or not it turns out to be usable.
+            if (c.enabled && c.srcUid != 0)
+            {
+               GraphNode* gn = FindNodeByUid(c.srcUid);
+               if (gn != nullptr && gn->node != nullptr)
+                  out.push_back({ gn, c.srcOutput, lane.blendMode, std::clamp(lane.opacity, 0.0f, 1.0f),
+                                  c.id });
+            }
+            break;
+         }
+      }
+   }
+
+   int CountActiveArrangeVideoClips(double beat, std::string* outFrontTitle = nullptr)
+   {
+      static std::vector<ArrangeVideoLayer> sLayers;
+      CollectArrangeVideoLayers(beat, sLayers);
+      if (outFrontTitle != nullptr && !sLayers.empty())
+         *outFrontTitle = NodeTitle(*sLayers.back().gn);
+      return (int)sLayers.size();
+   }
+
+   // The lane blend program, compiled once with its uniform locations.
+   struct ArrangeComposeProgram
+   {
+      unsigned int program = 0;
+      int uTexBase = -1, uTexTop = -1, uMode = -1, uOpacity = -1, uTopFit = -1;
+   };
+   const ArrangeComposeProgram& ArrangeComposeShader()
+   {
+      static ArrangeComposeProgram sProg;
+      static bool sTried = false;
+      if (sTried)
+         return sProg;
+      sTried = true;
+      const std::string src =
+         std::string(
+            "#version 150\n"
+            "in vec2 vUv;\n"
+            "out vec4 fragColor;\n"
+            "uniform sampler2D uTexBase;\n"
+            "uniform sampler2D uTexTop;\n"
+            "uniform int uMode;\n"
+            "uniform float uOpacity;\n"
+            "uniform vec4 uTopFit;\n")
+         + BlendModes::kBlendGLSL
+         + "void main() {\n"
+           "   vec2 topUv = (vUv - uTopFit.zw) / uTopFit.xy;\n"
+           "   vec4 top = vec4(0.0);\n"
+           "   if (topUv.x >= 0.0 && topUv.x <= 1.0 && topUv.y >= 0.0 && topUv.y <= 1.0) {\n"
+           "      top = texture(uTexTop, topUv);\n"
+           "   }\n"
+           "   vec4 base = texture(uTexBase, vUv);\n"
+           "   float as = top.a * uOpacity;\n"
+           "   if (as <= 1e-6) {\n"
+           "      fragColor = base;\n"
+           "      return;\n"
+           "   }\n"
+           "   if (uMode == 30) { fragColor = vec4(base.rgb, base.a * (1.0 - as)); return; }\n"
+           "   if (uMode == 31) { fragColor = vec4(base.rgb, base.a * (1.0 - (1.0 - top.a) * uOpacity)); return; }\n"
+           "   vec3 blended = blendMode(uMode, base.rgb, top.rgb);\n"
+           "   vec3 cs = mix(top.rgb, blended, base.a);\n"
+           "   float ar = as + base.a * (1.0 - as);\n"
+           "   vec3 cr = (ar > 1e-5) ? (cs * as + base.rgb * base.a * (1.0 - as)) / ar : vec3(0.0);\n"
+           "   fragColor = vec4(cr, ar);\n"
+           "}\n";
+      sProg.program = GLUtil::CompileProgram(src.c_str());
+      if (sProg.program != 0)
+      {
+         sProg.uTexBase = glGetUniformLocation(sProg.program, "uTexBase");
+         sProg.uTexTop = glGetUniformLocation(sProg.program, "uTexTop");
+         sProg.uMode = glGetUniformLocation(sProg.program, "uMode");
+         sProg.uOpacity = glGetUniformLocation(sProg.program, "uOpacity");
+         sProg.uTopFit = glGetUniformLocation(sProg.program, "uTopFit");
+      }
+      return sProg;
+   }
+
+   // Composites every active video lane at `beat` into `dest` (targetW x
+   // targetH), or into target.result when `dest` is null. Each lane uses its
+   // own blend mode and opacity from the model (no UI for them yet - owner
+   // decision) and is aspect-fit with letterboxing. No active clip clears
+   // the destination to opaque black. Returns the destination texture.
+   //
+   // Sources are read as they stand: the caller cooks the graph first (the
+   // main loop's cook, or the offline pump's), so every clip's texture
+   // belongs to the same frame as the clip state that selected it.
+   unsigned int CompositeArrangeTimelineVideo(ArrangeCompositeTarget& target, GLUtil::Fbo* dest,
+                                              double beat, int targetW, int targetH)
+   {
+      if (targetW <= 1 || targetH <= 1)
+         return 0;
+      if (dest == nullptr)
+      {
+         // The resize survives one more composite (see retiredResult).
+         GLUtil::DestroyFbo(target.retiredResult);
+         if (target.result.fbo != 0 && (target.result.w != targetW || target.result.h != targetH))
+         {
+            target.retiredResult = target.result;
+            target.result = GLUtil::Fbo();
+         }
+         dest = &target.result;
+      }
+      if (!GLUtil::EnsureFbo(*dest, targetW, targetH))
+         return 0;
+
+      static std::vector<ArrangeVideoLayer> sLayers;
+      CollectArrangeVideoLayers(beat, sLayers);
+
+      struct ResolvedLayer
+      {
+         unsigned int tex;
+         int srcW, srcH;
+         int blendMode;
+         float opacity;
+      };
+      static std::vector<ResolvedLayer> sResolved;
+      sResolved.clear();
+      for (const ArrangeVideoLayer& layer : sLayers)
+      {
+         GraphNode* gn = layer.gn;
+         unsigned int tex = 0;
+         int w = 0, h = 0;
+         if (auto* geo = dynamic_cast<IGeometrySource*>(gn->node.get()))
+         {
+            ArrangeGeomViewport& slot = gArrangeGeomViewports[{ gn->uid, target.slot }];
+            slot.lastUsedFrame = gArrangeGeomFrame;
+            tex = slot.viewport.Render(geo, gNodeCameras[gn->index], targetW, targetH);
+            w = targetW;
+            h = targetH;
+         }
+         else
+         {
+            // The clip's chosen output, as a cable would pull it (index 0 is
+            // the ordinary image; FieldPixel's aux texture is index 1).
+            // Every multi-output node sizes its outputs alike.
+            tex = gn->node->GetOutputTexture(layer.srcOutput);
+            w = gn->node->GetOutputWidth();
+            h = gn->node->GetOutputHeight();
+         }
+         if (tex != 0 && w > 0 && h > 0)
+         {
+            sResolved.push_back({ tex, w, h, layer.blendMode, layer.opacity });
+            // The thumbnail rides on the composite's own resolve: the
+            // texture is already in hand, so a thumbnail never costs a
+            // second decode or a second geometry render. Skipped during an
+            // offline take - the timeline is locked and nothing would draw
+            // it, and a take must not spend its frame budget here.
+            if (!Transport::Instance().IsOfflineMode())
+               ArrangeCaptureClipThumb(layer.clipId, tex, w, h);
+         }
+      }
+
+      GLint prevFbo = 0;
+      glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+      GLint prevVp[4];
+      glGetIntegerv(GL_VIEWPORT, prevVp);
+      auto clearToBlack = [&](const GLUtil::Fbo& f)
+      {
+         glBindFramebuffer(GL_FRAMEBUFFER, f.fbo);
+         glViewport(0, 0, targetW, targetH);
+         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+         glClear(GL_COLOR_BUFFER_BIT);
+      };
+      auto restore = [&]()
+      {
+         glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
+         glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
+      };
+
+      const ArrangeComposeProgram& prog = ArrangeComposeShader();
+      if (sResolved.empty() || prog.program == 0)
+      {
+         clearToBlack(*dest);
+         restore();
+         return dest->tex;
+      }
+
+      // Pass k reads `base` and writes the other scratch buffer, except the
+      // last pass, which writes `dest` directly - so the result never needs a
+      // copy back, and `dest` is never read and written by the same pass.
+      // The second scratch buffer is only needed from two layers up.
+      const size_t n = sResolved.size();
+      if (!GLUtil::EnsureFbo(target.scratch[0], targetW, targetH) ||
+          (n >= 2 && !GLUtil::EnsureFbo(target.scratch[1], targetW, targetH)))
+      {
+         clearToBlack(*dest);
+         restore();
+         return dest->tex;
+      }
+      clearToBlack(target.scratch[0]);
+      int baseIdx = 0;
+      const float targetAspect = (float)targetW / (float)targetH;
+      for (size_t k = 0; k < n; k++)
+      {
+         const ResolvedLayer& layer = sResolved[k];
+         const float srcAspect = (float)layer.srcW / (float)layer.srcH;
+         float scaleX = 1.0f, scaleY = 1.0f, offX = 0.0f, offY = 0.0f;
+         if (srcAspect > targetAspect)
+         {
+            scaleY = targetAspect / srcAspect;
+            offY = (1.0f - scaleY) * 0.5f;
+         }
+         else
+         {
+            scaleX = srcAspect / targetAspect;
+            offX = (1.0f - scaleX) * 0.5f;
+         }
+
+         const bool last = (k + 1 == n);
+         const GLUtil::Fbo& out = last ? *dest : target.scratch[1 - baseIdx];
+         const unsigned int baseTex = target.scratch[baseIdx].tex;
+         GLUtil::RunShaderPass(out, prog.program, [&]()
+         {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, baseTex);
+            glUniform1i(prog.uTexBase, 0);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, layer.tex);
+            glUniform1i(prog.uTexTop, 1);
+            glUniform1i(prog.uMode, layer.blendMode);
+            glUniform1f(prog.uOpacity, layer.opacity);
+            glUniform4f(prog.uTopFit, scaleX, scaleY, offX, offY);
+         });
+         baseIdx = 1 - baseIdx;
+      }
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, 0);
+
+      restore();
+      return dest->tex;
+   }
+
+   // The monitor's composite, run once per main-loop frame right after the
+   // cook loop so it sees this frame's textures (it used to run inside the
+   // panel draw, before the cook, and showed last frame's). The panel only
+   // records a request and draws target.result; ImGui renders after this.
+   void CompositeArrangeMonitorIfRequested()
+   {
+      ArrangeCompositeTarget& t = gArrangeMonitorTarget;
+      if (t.requestW > 1 && t.requestH > 1)
+         CompositeArrangeTimelineVideo(t, nullptr, Transport::Instance().Beats(), t.requestW, t.requestH);
+      t.requestW = 0;
+      t.requestH = 0;
+   }
+
+   // ---- arrangement editing on gArrange (overhaul WP5a) -------------------
+   //
+   // Everything below edits gArrange through Arrange:: ops only, so the two
+   // model invariants (lanes sorted and non-overlapping, ids unique) hold by
+   // construction, and every discrete edit is exactly one undo entry
+   // (ArrangeEdit). They are free functions rather than panel code so
+   // INFINITE_ARRANGEEDITTEST can drive the same paths a key press does.
+
+   // Which outputs of `gn` carry the given lane type. Audio: the outputs its
+   // IAudioSource says are audio (VideoSourceNode: only 1). Video: every
+   // other output that is not a modulator (FieldPixelNode: 0 = out, 1 = the
+   // aux "state" texture when exposed, plus declared image outputs).
+   std::vector<int> ArrangeOutputsOfType(const GraphNode& gn, int laneType)
+   {
+      std::vector<int> out;
+      if (gn.node == nullptr)
+         return out;
+      IAudioSource* audio = dynamic_cast<IAudioSource*>(gn.node.get());
+      const int count = std::max(1, gn.node->OutputCount());
+      for (int i = 0; i < count; i++)
+      {
+         const bool isAudio = audio != nullptr && audio->IsAudioOutputIndex(i);
+         if (laneType == Arrange::kLaneAudio)
+         {
+            if (isAudio)
+               out.push_back(i);
+         }
+         else if (!isAudio && gn.node->ModulatorOutput(i) == nullptr)
+         {
+            out.push_back(i);
+         }
+      }
+      return out;
+   }
+
+   int ArrangeDefaultOutput(const GraphNode& gn, int laneType)
+   {
+      const std::vector<int> outs = ArrangeOutputsOfType(gn, laneType);
+      return outs.empty() ? 0 : outs.front();
+   }
+
+   // A lane type's natural home for a node: anything that produces an image
+   // goes on a video lane (including VideoSourceNode, whose audio half is
+   // offered separately); audio-only nodes go on an audio lane.
+   int ArrangeLaneTypeForNode(const GraphNode& gn)
+   {
+      return IsNodeVideoCompatible(gn) ? Arrange::kLaneVideo : Arrange::kLaneAudio;
+   }
+
+   // Drops everything that must not outlive its document or its clips: on a
+   // new-document boundary the selection, rename/assign/context targets and
+   // clipboard go; otherwise only the ids that no longer resolve. A stale id
+   // therefore clears - it can never land on a different clip, because ids
+   // are never reused.
+   void ArrangePruneSelection()
+   {
+      if (gArrangeSelGeneration != gArrangePatchGeneration)
+      {
+         gArrangeSel.clear();
+         gArrangeSelAnchor = 0;
+         gArrangeRenamingClipId = 0;
+         gArrangeCtxClipId = 0;
+         gArrangeAssigningClipId = 0;
+         gArrangeRenamingMarkerId = 0;
+         gArrangeCtxMarkerId = 0;
+         gArrangeMarkerDragId = 0;
+         gArrangeSelGeneration = gArrangePatchGeneration;
+      }
+      // Marker ids the panel holds, same rule as the clip ids below.
+      auto markerLive = [](uint64_t id)
+      {
+         for (const Arrange::Marker& mk : gArrange.markers)
+            if (mk.id == id) return true;
+         return false;
+      };
+      if (gArrangeRenamingMarkerId != 0 && !markerLive(gArrangeRenamingMarkerId))
+         gArrangeRenamingMarkerId = 0;
+      if (gArrangeCtxMarkerId != 0 && !markerLive(gArrangeCtxMarkerId))
+         gArrangeCtxMarkerId = 0;
+      if (gArrangeMarkerDragId != 0 && !markerLive(gArrangeMarkerDragId))
+         gArrangeMarkerDragId = 0;
+      if (gArrangeClipboard.generation != gArrangePatchGeneration)
+         gArrangeClipboard.items.clear();
+      for (auto it = gArrangeSel.begin(); it != gArrangeSel.end();)
+         it = Arrange::Find(gArrange, *it).Valid() ? std::next(it) : gArrangeSel.erase(it);
+      if (gArrangeSelAnchor != 0 && !Arrange::Find(gArrange, gArrangeSelAnchor).Valid())
+         gArrangeSelAnchor = 0;
+      if (gArrangeRenamingClipId != 0 && !Arrange::Find(gArrange, gArrangeRenamingClipId).Valid())
+         gArrangeRenamingClipId = 0;
+      if (gArrangeCtxClipId != 0 && !Arrange::Find(gArrange, gArrangeCtxClipId).Valid())
+         gArrangeCtxClipId = 0;
+      if (gArrangeAssigningClipId != 0 && !Arrange::Find(gArrange, gArrangeAssigningClipId).Valid())
+         gArrangeAssigningClipId = 0;
+   }
+
+   std::vector<uint64_t> ArrangeSelectionIds()
+   {
+      ArrangePruneSelection();
+      return std::vector<uint64_t>(gArrangeSel.begin(), gArrangeSel.end());
+   }
+
+   // Click semantics. A grouped clip selects its whole group unless
+   // `singleMember` (Alt-click). `toggle` (Cmd/Shift-click) adds or removes
+   // without disturbing the rest of the selection.
+   void ArrangeClickSelect(uint64_t clipId, bool toggle, bool singleMember)
+   {
+      ArrangePruneSelection();
+      std::vector<uint64_t> ids{ clipId };
+      if (!singleMember)
+         ids = Arrange::ExpandSelectionToGroups(gArrange, ids);
+      if (toggle)
+      {
+         const bool wasSelected = gArrangeSel.count(clipId) != 0;
+         for (uint64_t id : ids)
+         {
+            if (wasSelected)
+               gArrangeSel.erase(id);
+            else
+               gArrangeSel.insert(id);
+         }
+      }
+      else
+      {
+         // Clicking a clip that is already part of a multi-selection keeps
+         // the selection, so the drag that follows moves all of it.
+         if (gArrangeSel.count(clipId) == 0 || singleMember)
+         {
+            gArrangeSel.clear();
+            gArrangeSel.insert(ids.begin(), ids.end());
+         }
+      }
+      gArrangeSelAnchor = gArrangeSel.count(clipId) ? clipId : 0;
+   }
+
+   bool ArrangeCopySelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      if (ids.empty())
+         return false;
+      int minLane = INT_MAX;
+      Arrange::Tick minStart = Arrange::kMaxTick;
+      for (uint64_t id : ids)
+      {
+         const Arrange::Loc loc = Arrange::Find(gArrange, id);
+         minLane = std::min(minLane, loc.lane);
+         minStart = std::min(minStart, gArrange.lanes[loc.lane].clips[loc.index].start);
+      }
+      gArrangeClipboard.items.clear();
+      gArrangeClipboard.generation = gArrangePatchGeneration;
+      for (uint64_t id : ids)
+      {
+         const Arrange::Loc loc = Arrange::Find(gArrange, id);
+         ArrangeClipboardItem item;
+         item.clip = gArrange.lanes[loc.lane].clips[loc.index];
+         item.laneOffset = loc.lane - minLane;
+         item.laneType = gArrange.lanes[loc.lane].type;
+         item.tickOffset = item.clip.start - minStart;
+         gArrangeClipboard.items.push_back(item);
+      }
+      return true;
+   }
+
+   // Paste at `atTick` (the playhead) with the copied block's top lane on the
+   // anchor clip's lane. A clipboard item whose relative lane is missing or of
+   // the wrong type falls to the nearest lane of its type below that, then
+   // any lane of its type, then a new one. Groups come back as new groups.
+   bool ArrangePasteAt(Arrange::Tick atTick)
+   {
+      ArrangePruneSelection();
+      if (gArrangeClipboard.items.empty())
+         return false;
+      std::vector<uint64_t> made;
+      const bool changed = ArrangeEdit([&]()
+      {
+         int baseLane = -1;
+         if (gArrangeSelAnchor != 0)
+            baseLane = Arrange::Find(gArrange, gArrangeSelAnchor).lane;
+         if (baseLane < 0)
+         {
+            for (int i = 0; i < (int)gArrange.lanes.size(); i++)
+               if (gArrange.lanes[i].type == gArrangeClipboard.items.front().laneType) { baseLane = i; break; }
+         }
+         if (baseLane < 0)
+            baseLane = 0;
+
+         std::map<uint64_t, std::vector<uint64_t>> newGroups;
+         for (const ArrangeClipboardItem& item : gArrangeClipboard.items)
+         {
+            int lane = baseLane + item.laneOffset;
+            auto fits = [&](int i) { return i >= 0 && i < (int)gArrange.lanes.size() && gArrange.lanes[i].type == item.laneType; };
+            if (!fits(lane))
+            {
+               int found = -1;
+               for (int i = std::max(0, lane); i < (int)gArrange.lanes.size() && found < 0; i++)
+                  if (fits(i)) found = i;
+               for (int i = 0; i < (int)gArrange.lanes.size() && found < 0; i++)
+                  if (fits(i)) found = i;
+               if (found < 0)
+               {
+                  const uint64_t laneId = Arrange::AddLane(gArrange, item.laneType);
+                  found = Arrange::LaneIndex(gArrange, laneId);
+               }
+               lane = found;
+            }
+            Arrange::Clip c = item.clip;
+            c.id = 0;          // a paste is a new clip
+            c.groupId = 0;     // regrouped below, all members at once
+            c.start = std::max<Arrange::Tick>(0, atTick + item.tickOffset);
+            uint64_t newId = 0;
+            if (Arrange::PlaceOverwrite(gArrange, gArrange.lanes[lane].id, c, &newId))
+            {
+               made.push_back(newId);
+               if (item.clip.groupId != 0)
+                  newGroups[item.clip.groupId].push_back(newId);
+            }
+         }
+         // PlaceOverwrite dissolves singleton groups, so a group is only
+         // re-created once every member is back.
+         for (auto& kv : newGroups)
+            Arrange::Group(gArrange, kv.second);
+      });
+      if (!changed)
+         return false;
+      gArrangeSel.clear();
+      for (uint64_t id : made)
+         if (Arrange::Find(gArrange, id).Valid())
+            gArrangeSel.insert(id);
+      gArrangeSelAnchor = made.empty() ? 0 : made.front();
+      return true;
+   }
+
+   bool ArrangeDuplicateSelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      std::vector<uint64_t> made;
+      if (!ArrangeEdit([&]() { Arrange::DuplicateBlock(gArrange, ids, &made); }))
+         return false;
+      gArrangeSel.clear();
+      gArrangeSel.insert(made.begin(), made.end());
+      gArrangeSelAnchor = made.empty() ? 0 : made.front();
+      return true;
+   }
+
+   bool ArrangeDeleteSelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      if (!ArrangeEdit([&]() { Arrange::Delete(gArrange, ids); }))
+         return false;
+      gArrangeSel.clear();
+      gArrangeSelAnchor = 0;
+      return true;
+   }
+
+   // Cmd+E: cuts every selected clip the tick passes through; both halves
+   // stay selected.
+   bool ArrangeSplitSelectionAt(Arrange::Tick tick)
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      std::vector<uint64_t> rights;
+      if (!ArrangeEdit([&]()
+          {
+             for (uint64_t id : ids)
+             {
+                uint64_t right = 0;
+                if (Arrange::Split(gArrange, id, tick, &right))
+                   rights.push_back(right);
+             }
+          }))
+         return false;
+      gArrangeSel.insert(rights.begin(), rights.end());
+      return true;
+   }
+
+   // `0`: a mixed selection is disabled first (any enabled clip wins), so one
+   // press always leaves the whole selection in one state.
+   bool ArrangeToggleEnabledSelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      bool anyEnabled = false;
+      for (uint64_t id : ids)
+         if (const Arrange::Clip* c = Arrange::FindClip(gArrange, id))
+            anyEnabled = anyEnabled || c->enabled;
+      return ArrangeEdit([&]() { Arrange::SetEnabled(gArrange, ids, anyEnabled ? Arrange::kDisable : Arrange::kEnable); });
+   }
+
+   bool ArrangeGroupSelection()
+   {
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      if (ids.size() < 2)
+         return false;
+      return ArrangeEdit([&]() { Arrange::Group(gArrange, ids); });
+   }
+
+   bool ArrangeUngroupSelection()
+   {
+      std::vector<uint64_t> groups;
+      for (uint64_t id : ArrangeSelectionIds())
+         if (const Arrange::Clip* c = Arrange::FindClip(gArrange, id))
+            if (c->groupId != 0)
+               groups.push_back(c->groupId);
+      return ArrangeEdit([&]() { Arrange::Ungroup(gArrange, groups); });
+   }
+
+   // Left / Right (WP6): with clips selected, nudge the selection one grid
+   // step through MoveClips (one undo entry; the block stops at 0 as a
+   // whole). With nothing selected, step the playhead to the previous / next
+   // grid point. Returns whether anything moved.
+   bool ArrangeNudge(int dir)
+   {
+      const Arrange::Tick step = ArrangeNudgeStepTicks();
+      const std::vector<uint64_t> ids = ArrangeSelectionIds();
+      if (!ids.empty())
+         return ArrangeEdit([&]() { Arrange::MoveClips(gArrange, ids, dir < 0 ? -step : step, 0); });
+      const Arrange::Tick play = ArrangePlayTick();
+      const Arrange::Tick target = dir < 0 ? Arrange::GridCeil(play, step) - step
+                                           : Arrange::GridFloor(play, step) + step;
+      const Arrange::Tick clamped = std::clamp<Arrange::Tick>(target, 0, Arrange::kMaxTick);
+      if (clamped == play)
+         return false;
+      ArrangeSeekTick(clamped);
+      return true;
+   }
+
+   // ---- live clip drag ------------------------------------------------------
+
+   // Starts a drag gesture on `clipId`. `mode` is an ArrangeDragMode; for a
+   // move, the current selection is what moves.
+   void ArrangeDragBegin(int mode, uint64_t clipId, int edge, Arrange::Tick grabTick)
+   {
+      ArrangeGestureBegin();
+      ArrangeDragState d;
+      d.mode = mode;
+      d.clipId = clipId;
+      d.edge = edge;
+      d.grabTick = grabTick;
+      const Arrange::Loc loc = Arrange::Find(gArrange, clipId);
+      if (!loc.Valid())
+      {
+         gArrangeDrag = ArrangeDragState();
+         return;
+      }
+      const Arrange::Clip& c = gArrange.lanes[loc.lane].clips[loc.index];
+      d.grabLane = loc.lane;
+      d.groupId = c.groupId;
+      d.origStart = c.start;
+      d.origEnd = c.End();
+      if (mode == kArrangeDragGroupEdge || mode == kArrangeDragGroupScale)
+      {
+         bool first = true;
+         for (const Arrange::Lane& l : gArrange.lanes)
+            for (const Arrange::Clip& m : l.clips)
+               if (m.groupId == c.groupId)
+               {
+                  d.origStart = first ? m.start : std::min(d.origStart, m.start);
+                  d.origEnd = first ? m.End() : std::max(d.origEnd, m.End());
+                  first = false;
+               }
+      }
+      if (mode == kArrangeDragMove)
+      {
+         d.ids = ArrangeSelectionIds();
+         if (std::find(d.ids.begin(), d.ids.end(), clipId) == d.ids.end())
+            d.ids = { clipId };
+         d.appliedDelta = 0;
+      }
+      else
+      {
+         d.appliedTick = (edge == Arrange::kEdgeStart) ? d.origStart : d.origEnd;
+      }
+      d.appliedLaneDelta = 0;
+      gArrangeDrag = d;
+   }
+
+   // Rebuilds gArrange as (gesture snapshot + this drag). `value` is the tick
+   // delta for a move and the absolute edge tick for every edge mode.
+   // Returns whether the model changed this call. The same op the release
+   // would run, so the live view is exactly the drop.
+   bool ArrangeDragUpdate(Arrange::Tick value, int laneDelta)
+   {
+      ArrangeDragState& d = gArrangeDrag;
+      if (d.mode == kArrangeDragNone || !gArrangeGestureOpen)
+         return false;
+      if (d.mode == kArrangeDragMove)
+      {
+         if (value == d.appliedDelta && laneDelta == d.appliedLaneDelta)
+            return false;
+      }
+      else if (value == d.appliedTick)
+      {
+         return false;
+      }
+
+      const uint64_t liveRevision = gArrange.revision;
+      const uint64_t liveNextId = gArrange.nextId;
+      const Arrange::LoopRange liveLoop = gArrange.settings.loop;
+      const ArrangeViewSettings liveView = ArrangeKeepViewSettings(gArrange);
+      gArrange = gArrangeGestureBefore;
+      gArrange.nextId = std::max(gArrange.nextId, liveNextId);
+      gArrange.settings.loop = liveLoop;
+      ArrangeRestoreViewSettings(gArrange, liveView);
+      // Restoring the snapshot is itself a change of what is on screen, and
+      // revision must only climb (the audio rebuild keys on it).
+      gArrange.revision = liveRevision + 1;
+
+      switch (d.mode)
+      {
+         case kArrangeDragMove:
+            // The lane delta applies only if every clip lands on a lane of its
+            // own type; otherwise the block still moves in time on its lanes.
+            if (!Arrange::MoveClips(gArrange, d.ids, value, laneDelta) && laneDelta != 0)
+               Arrange::MoveClips(gArrange, d.ids, value, 0);
+            // Keyed on what was asked for, so the next frame with the same
+            // mouse position is a no-op.
+            d.appliedDelta = value;
+            d.appliedLaneDelta = laneDelta;
+            break;
+         case kArrangeDragTrimStart:
+         case kArrangeDragTrimEnd:
+            Arrange::TrimEdge(gArrange, d.clipId, d.edge, value);
+            d.appliedTick = value;
+            break;
+         case kArrangeDragGroupEdge:
+            Arrange::TrimGroupEdge(gArrange, d.groupId, d.edge, value);
+            d.appliedTick = value;
+            break;
+         case kArrangeDragGroupScale:
+            Arrange::ScaleGroup(gArrange, d.groupId, d.edge, value);
+            d.appliedTick = value;
+            break;
+         default:
+            break;
+      }
+      return true;
+   }
+
+   // Mouse up. One undo entry for the whole drag, and none at all if it ended
+   // where it started (ArrangeGestureEnd compares content, not revision).
+   // Returns whether an entry was pushed.
+   bool ArrangeDragEnd()
+   {
+      if (gArrangeDrag.mode == kArrangeDragNone)
+         return false;
+      gArrangeDrag = ArrangeDragState();
+      return ArrangeGestureEnd();
+   }
+
+   // Adds `nodeIndex` to the timeline as a one-bar clip. `laneType` -1 picks
+   // the node's natural lane (ArrangeLaneTypeForNode); `srcOutput` -1 picks
+   // that lane type's first matching output (VideoSourceNode audio: 1). Lands
+   // on the first lane of that type (a new one if there is none), at the
+   // later of the playhead and that lane's last clip end. Returns the new
+   // clip's id, 0 if nothing was added.
+   uint64_t AddNodeToArrangeTimeline(int nodeIndex, int laneType = -1, int srcOutput = -1)
+   {
+      GraphNode* gn = FindNodeByIndex(nodeIndex);
+      if (gn == nullptr || gn->node == nullptr)
+         return 0;
+      if (laneType < 0)
+         laneType = ArrangeLaneTypeForNode(*gn);
+      if (laneType == Arrange::kLaneAudio ? !IsNodeAudioCompatible(*gn) : !IsNodeVideoCompatible(*gn))
+         return 0;
+      if (srcOutput < 0)
+         srcOutput = ArrangeDefaultOutput(*gn, laneType);
+
+      uint64_t made = 0;
+      ArrangeEdit([&]()
+      {
+         int lane = -1;
+         for (int i = 0; i < (int)gArrange.lanes.size(); i++)
+            if (gArrange.lanes[i].type == laneType) { lane = i; break; }
+         if (lane < 0)
+         {
+            int n = 1;
+            for (const Arrange::Lane& l : gArrange.lanes)
+               if (l.type == laneType) n++;
+            const uint64_t laneId = Arrange::AddLane(gArrange, laneType);
+            lane = Arrange::LaneIndex(gArrange, laneId);
+            gArrange.lanes[lane].name = (laneType == Arrange::kLaneAudio ? "Audio " : "Video ") + std::to_string(n);
+         }
+         Arrange::Tick start = ArrangePlayTick();
+         if (!gArrange.lanes[lane].clips.empty())
+            start = std::max(start, gArrange.lanes[lane].clips.back().End());
+         Arrange::Clip c;
+         c.start = start;
+         c.length = Arrange::kTicksPerBar;
+         c.srcUid = gn->uid;
+         c.srcOutput = srcOutput;
+         Arrange::PlaceOverwrite(gArrange, gArrange.lanes[lane].id, c, &made);
+      });
+      if (made != 0)
+      {
+         gArrangePanelOpen = true;
+         gArrangeSel = { made };
+         gArrangeSelAnchor = made;
+      }
+      return made;
+   }
+
+   // Points clip `clipId` at node `uid` (the canvas "Assign Node..." picker
+   // and the fixtures). The node must fit the clip's lane type; the output
+   // is that lane type's first matching one. One undo entry, none if the
+   // clip already had exactly this source.
+   bool ArrangeAssignClipSource(uint64_t clipId, uint64_t uid)
+   {
+      const Arrange::Loc loc = Arrange::Find(gArrange, clipId);
+      GraphNode* gn = FindNodeByUid(uid);
+      if (!loc.Valid() || gn == nullptr || gn->node == nullptr)
+         return false;
+      const int laneType = gArrange.lanes[loc.lane].type;
+      if (laneType == Arrange::kLaneAudio ? !IsNodeAudioCompatible(*gn) : !IsNodeVideoCompatible(*gn))
+         return false;
+      const int out = ArrangeDefaultOutput(*gn, laneType);
+      return ArrangeEdit([&]()
+      {
+         Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+         if (c == nullptr || (c->srcUid == uid && c->srcOutput == out))
+            return;
+         c->srcUid = uid;
+         c->srcOutput = out;
+         gArrange.revision++;
+      });
+   }
+
+   // A stable per-group colour, so a group reads as one thing on every lane.
+   ImU32 ArrangeGroupColor(uint64_t groupId, int alpha = 255)
+   {
+      uint64_t h = groupId * 0x9E3779B97F4A7C15ull;
+      h ^= h >> 29;
+      const float hue = (float)(h % 360ull) / 360.0f;
+      float r, g, b;
+      ImGui::ColorConvertHSVtoRGB(hue, 0.65f, 0.95f, r, g, b);
+      return IM_COL32((int)(r * 255.0f), (int)(g * 255.0f), (int)(b * 255.0f), alpha);
+   }
+
+   // Diagonal hatch over a rect - the shared "this clip will not play" mark
+   // for disabled and unassigned (offline) clips.
+   void DrawArrangeHatch(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col, float spacing = 7.0f)
+   {
+      dl->PushClipRect(a, b, true);
+      const float h = b.y - a.y;
+      for (float x = a.x - h; x < b.x; x += spacing)
+         dl->AddLine(ImVec2(x, b.y), ImVec2(x + h, a.y), col, 1.0f);
+      dl->PopClipRect();
+   }
+
+   // ---- time formatting (WP6) ----------------------------------------------
+   // Positions are 1-indexed bar.beat.sixteenth ("5.1.1" is the downbeat of
+   // bar 5), durations 0-indexed bars.beats.sixteenths ("1.0.0" is one bar),
+   // both at the transport's live meter. Time is M:SS.cc at the live tempo.
+   void ArrangeSplitBBT(Arrange::Tick t, long long& bar, long long& beat, long long& six)
+   {
+      const Arrange::Tick perBar =
+         std::max<Arrange::Tick>(1, Arrange::BeatsToTicks(std::max(1.0, Transport::Instance().BeatsPerBar())));
+      t = std::max<Arrange::Tick>(0, t);
+      bar = (long long)(t / perBar);
+      const Arrange::Tick inBar = t - (Arrange::Tick)bar * perBar;
+      beat = (long long)(inBar / Arrange::kPPQ);
+      six = (long long)((inBar % Arrange::kPPQ) / (Arrange::kPPQ / 4));
+   }
+   std::string ArrangeFormatBBT(Arrange::Tick t)
+   {
+      long long bar, beat, six;
+      ArrangeSplitBBT(t, bar, beat, six);
+      char buf[48];
+      snprintf(buf, sizeof(buf), "%lld.%lld.%lld", bar + 1, beat + 1, six + 1);
+      return buf;
+   }
+   std::string ArrangeFormatBBTLength(Arrange::Tick t)
+   {
+      long long bar, beat, six;
+      ArrangeSplitBBT(t, bar, beat, six);
+      char buf[48];
+      snprintf(buf, sizeof(buf), "%lld.%lld.%lld", bar, beat, six);
+      return buf;
+   }
+   std::string ArrangeFormatSeconds(double sec, bool centis = true)
+   {
+      sec = std::max(0.0, sec);
+      if (centis)
+         sec = std::round(sec * 100.0) / 100.0; // so 59.999 reads 1:00.00, not 0:60.00
+      const int mm = (int)(sec / 60.0);
+      const double ss = sec - (double)mm * 60.0;
+      char buf[32];
+      if (centis)
+         snprintf(buf, sizeof(buf), "%d:%05.2f", mm, ss);
+      else
+         snprintf(buf, sizeof(buf), "%d:%02d", mm, (int)std::floor(ss + 1e-6));
+      return buf;
+   }
+   std::string ArrangeFormatTickSeconds(Arrange::Tick t)
+   {
+      return ArrangeFormatSeconds(Arrange::TicksToSeconds(t, std::max(1.0, (double)Transport::Instance().Tempo())));
+   }
+   // A position in the chosen unit (Settings::timeDisplay).
+   std::string ArrangeFormatPos(Arrange::Tick t)
+   {
+      return gArrange.settings.timeDisplay == 1 ? ArrangeFormatTickSeconds(t) : ArrangeFormatBBT(t);
+   }
+   std::string ArrangeFormatLength(Arrange::Tick t)
+   {
+      if (gArrange.settings.timeDisplay == 1)
+      {
+         char buf[32];
+         snprintf(buf, sizeof(buf), "%.2fs", Arrange::TicksToSeconds(t, std::max(1.0, (double)Transport::Instance().Tempo())));
+         return buf;
+      }
+      return ArrangeFormatBBTLength(t);
+   }
+   // Parses a position typed in the chosen unit: Bars takes "5", "5.2" or
+   // "5.2.3" (1-indexed); Time takes "M:SS(.cc)" or bare seconds. -1 when
+   // it does not parse.
+   Arrange::Tick ArrangeParsePos(const char* buf)
+   {
+      if (gArrange.settings.timeDisplay == 1)
+      {
+         int mm = 0;
+         double ss = 0.0;
+         double sec = -1.0;
+         if (sscanf(buf, "%d:%lf", &mm, &ss) == 2)
+            sec = (double)mm * 60.0 + ss;
+         else
+         {
+            char* end = nullptr;
+            const double v = strtod(buf, &end);
+            if (end != buf) sec = v;
+         }
+         if (sec < 0.0) return -1;
+         return Arrange::SecondsToTicks(sec, std::max(1.0, (double)Transport::Instance().Tempo()));
+      }
+      long long bar = 0, beat = 1, six = 1;
+      const int n = sscanf(buf, "%lld.%lld.%lld", &bar, &beat, &six);
+      if (n < 1 || bar < 1 || beat < 1 || six < 1) return -1;
+      const Arrange::Tick perBar =
+         std::max<Arrange::Tick>(1, Arrange::BeatsToTicks(std::max(1.0, Transport::Instance().BeatsPerBar())));
+      const Arrange::Tick t = (Arrange::Tick)(bar - 1) * perBar + (Arrange::Tick)(beat - 1) * Arrange::kPPQ +
+                              (Arrange::Tick)(six - 1) * (Arrange::kPPQ / 4);
+      return std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+   }
+
+   // ---- render-range and render-target helpers (WP7) ------------------------
+
+   // The end of the arrangement as the *render* sees it: disabled clips and
+   // clips whose source is gone contribute nothing to a take, so counting
+   // them padded every "Whole arrangement" job with silence and black
+   // (WP7 #5). Arrange::ArrangementEnd stays as it is - the End key and the
+   // ruler deliberately still jump to the last clip, enabled or not.
+   Arrange::Tick ArrangeRenderableEndTick()
+   {
+      Arrange::Tick end = 0;
+      for (const Arrange::Lane& l : gArrange.lanes)
+         for (const Arrange::Clip& c : l.clips)
+         {
+            if (!c.enabled || c.srcUid == 0 || FindNodeByUid(c.srcUid) == nullptr)
+               continue;
+            end = std::max(end, c.End());
+         }
+      return end;
+   }
+
+   // "Match Clips": the first *renderable* video clip that actually reports a
+   // size, else the patch's own Output node, else 1080p. A geometry clip has
+   // no texture size of its own, and a disabled or unassigned one isn't in
+   // the picture at all - either used to hand the job a 0x0 or a stale size.
+   void ArrangeRenderDetectClipSize(int& outW, int& outH)
+   {
+      outW = 0;
+      outH = 0;
+      for (const Arrange::Lane& l : gArrange.lanes)
+      {
+         if (l.type != Arrange::kLaneVideo)
+            continue;
+         for (const Arrange::Clip& c : l.clips)
+         {
+            if (!c.enabled || c.srcUid == 0)
+               continue;
+            GraphNode* gn = FindNodeByUid(c.srcUid);
+            if (gn == nullptr || gn->node == nullptr)
+               continue;
+            if (gn->node->GetOutputWidth() > 0 && gn->node->GetOutputHeight() > 0)
+            {
+               outW = gn->node->GetOutputWidth();
+               outH = gn->node->GetOutputHeight();
+               return;
+            }
+         }
+      }
+      for (GraphNode& gn : gNodes)
+      {
+         if (auto* on = dynamic_cast<OutputNode*>(gn.node.get()))
+         {
+            if (on->GetOutputWidth() > 0 && on->GetOutputHeight() > 0)
+            {
+               outW = on->GetOutputWidth();
+               outH = on->GetOutputHeight();
+               return;
+            }
+         }
+      }
+      outW = 1920;
+      outH = 1080;
+   }
+
+   // Every Output node on the canvas, in index order, for the video-source
+   // picker. uid, not index: a job outlives an undo that renumbers indices.
+   void ArrangeRenderCollectOutputNodes(std::vector<std::pair<uint64_t, std::string>>& out)
+   {
+      out.clear();
+      for (GraphNode& gn : gNodes)
+      {
+         if (dynamic_cast<OutputNode*>(gn.node.get()) != nullptr)
+            out.emplace_back(gn.uid, NodeTitle(gn));
+      }
+   }
+
+   // "name.mp4" -> "name (2).mp4", counting up past anything already on disk
+   // or already queued (WP7 #8's Auto-rename).
+   // Does an unfinished job already own this path? Two queued jobs writing
+   // the same file is the same collision as one overwriting an existing file,
+   // and is easier to miss - the second one only clobbers the first once the
+   // queue gets there.
+   bool ArrangeRenderPathQueued(const std::string& path, uint64_t exceptJobId)
+   {
+      for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+      {
+         if (j.id == exceptJobId)
+            continue;
+         if (j.status != kArrangeJobQueued && j.status != kArrangeJobRendering &&
+             j.status != kArrangeJobFinalizing)
+            continue;
+         if (j.path == path)
+            return true;
+      }
+      return false;
+   }
+
+   // The tick span a range kind resolves to against the model as it stands
+   // right now. Extracted from the render popup so INFINITE_ARRANGERENDERTEST
+   // checks the code the popup runs rather than a copy of it. `markerA/B` are
+   // indices into gArrange.markers and are ignored by the other kinds.
+   void ArrangeRenderResolveRange(int kind, int markerA, int markerB, Arrange::Tick customStart,
+                                  Arrange::Tick customEnd, Arrange::Tick& outA, Arrange::Tick& outB)
+   {
+      switch (kind)
+      {
+      case kArrangeRangeLoop:
+         outA = gArrange.settings.loop.start;
+         outB = gArrange.settings.loop.end;
+         break;
+      case kArrangeRangeMarkers:
+      {
+         const int n = (int)gArrange.markers.size();
+         const int ia = std::clamp(markerA, 0, std::max(0, n - 1));
+         const int ib = std::clamp(markerB, 0, std::max(0, n - 1));
+         outA = n > 0 ? gArrange.markers[ia].pos : 0;
+         outB = n > 0 ? gArrange.markers[ib].pos : 0;
+         if (outB < outA)
+            std::swap(outA, outB);
+         break;
+      }
+      case kArrangeRangeCustom:
+         outA = customStart;
+         outB = customEnd;
+         break;
+      case kArrangeRangeWhole:
+      default:
+         outA = 0;
+         outB = ArrangeRenderableEndTick();
+         break;
+      }
+      if (outB <= outA) // never hand the runner an empty job
+         outB = outA + Arrange::kPPQ;
+   }
+
+   // Frames a take of `durSec` writes at `fps`. ceil, not round or truncate:
+   // a 2.4s range at 30fps is 72 frames, and dropping the partial one would
+   // end the file short of the range the user asked for (WP7 #2). The clamp's
+   // upper bound is 240 hours at 1fps / 1 hour at 240fps - a guard against a
+   // nonsense tick range, not a policy.
+   int ArrangeRenderFrameBudget(double durSec, int fps)
+   {
+      return std::clamp((int)std::ceil(durSec * (double)std::max(1, fps)), 1, 240 * 3600);
+   }
+
+   // Sample frames an audio-only take of `durSec` writes at `rate`. Round, not
+   // ceil: unlike a video frame a sample is not a container for a slice of
+   // time, so the nearest whole sample is the closest the file can get.
+   long long ArrangeRenderSampleBudget(double durSec, double rate)
+   {
+      return std::max<long long>(1, llround(durSec * rate));
+   }
+
+   // The sample rate an offline take will actually be written at. Every
+   // AudioNode is PrepareToPlay'd at the rate the device negotiated, so the
+   // engine's rate is not a preference the render can override - it is the
+   // only rate the graph knows how to generate. Before the device has ever
+   // opened, the global setting is the best prediction of what it will be
+   // (0 there means "device default", and 48k is what every supported
+   // backend defaults to).
+   double ArrangeRenderActiveSampleRate()
+   {
+      const double engine = AudioEngine::Instance().SampleRate();
+      if (engine > 0.0)
+         return engine;
+      if (gAudioSampleRate > 0.0)
+         return gAudioSampleRate;
+      return 48000.0;
+   }
+
+   // The block size an offline take should pump in. Node behaviour is
+   // block-granular - MixerNode latches pan/mute/solo once per block before
+   // its per-sample loop, for one - so a take pumped in kAudioMaxBlockFrames
+   // slabs does not sound like what the user heard through their configured
+   // buffer size. Follow the device's real period where the platform reports
+   // one, the Settings -> Audio value otherwise, and never exceed the
+   // capacity every node was prepared with.
+   int OfflineAudioBlockFrames()
+   {
+      int frames = (int)Platform::AudioDeviceBufferFrames(gAudioOutputDeviceId);
+      if (frames <= 0)
+         frames = gAudioBufferFrames;
+      if (frames <= 0)
+         frames = 512;
+      return std::clamp(frames, 1, kAudioMaxBlockFrames);
+   }
+
+   std::string ArrangeRenderUniquePath(const std::string& path)
+   {
+      const size_t dot = path.rfind('.');
+      const size_t slash = path.find_last_of("/\\");
+      const bool dotInName = dot != std::string::npos && (slash == std::string::npos || dot > slash);
+      const std::string stem = dotInName ? path.substr(0, dot) : path;
+      const std::string ext = dotInName ? path.substr(dot) : std::string();
+      std::error_code ec;
+      for (int n = 2; n < 1000; n++)
+      {
+         const std::string candidate = stem + " (" + std::to_string(n) + ")" + ext;
+         if (!std::filesystem::exists(candidate, ec) && !ArrangeRenderPathQueued(candidate, 0))
+            return candidate;
+      }
+      return path;
+   }
+
+   void DrawArrangePanelContent()
+   {
+      // Every id this panel holds (selection, anchor, rename/context/assign
+      // targets) is re-resolved here; one that no longer exists clears.
+      ArrangePruneSelection();
+
+      // Clip labels, the offline test and the render popup's resolution probe
+      // all look nodes up by uid - through the global per-frame map (WP5b),
+      // which this panel used to build its own private copy of every draw.
+      auto nodeForUid = [](uint64_t uid) -> GraphNode* { return FindNodeByUid(uid); };
+
+      // Assign Node picker alert banner - mirrors the performance matrix's
+      // own "Assigning to '...'" banner (gPerfAssigningElemIdx) for the same
+      // click-to-canvas-assign flow, just for a clip's source node instead
+      // of a control's parameter.
+      if (gArrangeAssigningClipId != 0)
+      {
+         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 230, 255, 255));
+         ImGui::Text("Assigning clip source: Click any compatible node on the canvas (Esc to cancel)...");
+         ImGui::SameLine();
+         if (ImGui::SmallButton("Cancel"))
+            gArrangeAssigningClipId = 0;
+         ImGui::PopStyleColor();
+         ImGui::Spacing();
+      }
+
+      const ImVec2 panelOrigin = ImGui::GetCursorScreenPos();
+      const ImVec2 panelSize = ImGui::GetContentRegionAvail();
+
+      // Track panel rect for keyboard shortcut focus routing
+      gArrangePanelRectMin = panelOrigin;
+      gArrangePanelRectMax = ImVec2(panelOrigin.x + panelSize.x, panelOrigin.y + panelSize.y);
+
+      // The timeline is read-only for the duration of a take (WP7): the
+      // compositor and the audio scheduler both read gArrange frame by frame
+      // while a job runs, and an edit landing mid-render would change the
+      // thing being rendered halfway through the file.
+      //
+      // Three layers, because no one of them covers everything: the progress
+      // dialog's full-screen click-catcher stops hover-guarded clicks, the
+      // shortcut block below is gated on ArrangeRenderBusy(), and this drops
+      // any gesture that was somehow still in flight - a drag can only have
+      // started before the take (the Render button needs a click of its own),
+      // but a queue that starts its next job the frame after the previous one
+      // finished reopens that window once per job.
+      if (ArrangeRenderBusy())
+      {
+         if (gArrangeGestureOpen)
+            ArrangeGestureEnd();
+         gArrangeDrag.mode = kArrangeDragNone;
+         gArrangeMarkerDragId = 0;
+         if (gArrangeScrubbing)
+            ArrangeScrubCancel();
+      }
+
+      // Mouse wheel horizontal zoom / pan across the timeline area
+      const ImVec2 mouse = ImGui::GetIO().MousePos;
+      const bool overPanel = mouse.x >= panelOrigin.x && mouse.x < panelOrigin.x + panelSize.x &&
+                             mouse.y >= panelOrigin.y && mouse.y < panelOrigin.y + panelSize.y;
+
+      // Trackpad pinch: GLFW's Cocoa backend never forwards magnifyWithEvent:
+      // (only scrollWheel:), so a real two-finger pinch produces no ImGui
+      // wheel event at all - Platform::PollTrackpadMagnificationDelta() is a
+      // side-channel reading it straight from a gesture recognizer. Drained
+      // every frame (not just while overPanel) so a gesture that starts
+      // outside the panel doesn't dump its whole backlog as one jump the
+      // moment the mouse crosses in.
+      const double pinchDelta = Platform::PollTrackpadMagnificationDelta();
+
+      // Zoom keeps the time under the mouse fixed (pinch and Cmd/Ctrl+wheel
+      // alike). The ruler's left edge is only known further down, so the
+      // previous frame's is used - it moves only when the panel does.
+      static float sArrangeLastRulerStartX = 0.0f;
+      const bool arrangeWheelZoomMod = overPanel && (ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper);
+      auto zoomAroundMouse = [&](float factor)
+      {
+         const float oldPpb = gArrangePixelsPerBeat;
+         const float newPpb = std::clamp(oldPpb * factor, kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
+         const float mx = mouse.x - sArrangeLastRulerStartX;
+         if (mx > 0.0f)
+         {
+            const double mouseBeat = gArrangeScrollBeats + (double)mx / oldPpb;
+            gArrangeScrollBeats = std::max(0.0, mouseBeat - (double)mx / newPpb);
+         }
+         gArrangePixelsPerBeat = newPpb;
+      };
+
+      if (overPanel)
+      {
+         const float wheel = ImGui::GetIO().MouseWheel;
+         const float wheelH = ImGui::GetIO().MouseWheelH;
+         if (std::abs(pinchDelta) > 0.0005)
+         {
+            zoomAroundMouse((float)(1.0 + pinchDelta));
+         }
+         else if (arrangeWheelZoomMod && std::abs(wheel) > 0.001f)
+         {
+            zoomAroundMouse(wheel > 0.0f ? 1.15f : 0.87f);
+         }
+         else if (std::abs(wheelH) > 0.001f)
+         {
+            gArrangeScrollBeats = std::max(0.0, gArrangeScrollBeats - (double)(wheelH * 40.0f / gArrangePixelsPerBeat));
+         }
+         else if (ImGui::GetIO().KeyShift && std::abs(wheel) > 0.001f)
+         {
+            gArrangeScrollBeats = std::max(0.0, gArrangeScrollBeats - (double)(wheel * 40.0f / gArrangePixelsPerBeat));
+         }
+      }
+
+      // Keyboard focus claim
+      if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+          (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)))
+      {
+         gArrangeClaimedKeys = true;
+      }
+      gArrangeFocused = gArrangeClaimedKeys;
+
+      Transport& tr = Transport::Instance();
+
+      // Strict loop: once armed, playback never runs past the region end -
+      // it snaps back to the region start instead, same as the loop toggle
+      // on any DAW transport.
+      //
+      // The wrap itself lives in Transport (WP2). Doing it here meant it only
+      // ran once per UI frame, so the playhead sailed past the loop end by a
+      // whole frame - tens of ms of audio that shouldn't have been heard, and
+      // unbounded during a stall. This block now only *publishes* the loop;
+      // Transport wraps at its own block boundary, within one audio block.
+      //
+      // The panel edits gArrange.settings.loop in ticks (WP5b) and every edit
+      // publishes through ArrangeSetLoop; this re-publish is an idempotent
+      // backstop, never a model write.
+      PublishArrangeLoop();
+
+      // Timeline shortcuts, only while the panel owns the keyboard and no
+      // text field is taking input. Each acts on gArrangeSel (ids; a grouped
+      // clip's whole group is selected with it) through one Arrange:: op and
+      // leaves one undo entry. The canvas's own Cmd+C/V/D/G and Delete are
+      // gated off while gArrangeFocused, so nothing fires twice. Not during a
+      // clip drag or an active popup field either: those rebuild gArrange
+      // from their gesture snapshot every frame, which would silently undo
+      // (and double-push) an edit made mid-gesture.
+      // Escape abandons a ruler scrub without seeking.
+      const bool scrubEscaped = gArrangeScrubbing && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+      if (scrubEscaped)
+         ArrangeScrubCancel();
+      // !ArrangeRenderBusy(): the timeline is read-only for the duration of a
+      // take (WP7). The mouse is already blocked by the progress dialog's
+      // click-catcher, but keys reach here regardless of what floats on top,
+      // and an edit landing mid-render would change the model the compositor
+      // is reading frame by frame.
+      if (gArrangeFocused && !ImGui::GetIO().WantTextInput && !scrubEscaped && !ArrangeRenderBusy() &&
+          gArrangeDrag.mode == kArrangeDragNone && !gArrangeGestureOpen && !gArrangeScrubbing &&
+          gArrangeMarkerDragId == 0)
+      {
+         const ImGuiIO& kio = ImGui::GetIO();
+         const bool cmd = kio.KeySuper || kio.KeyCtrl;
+         const bool noMods = !cmd && !kio.KeyAlt && !kio.KeyShift;
+         const Arrange::Tick playTick = ArrangePlayTick();
+
+         if (cmd && ImGui::IsKeyPressed(ImGuiKey_C, false))
+            ArrangeCopySelection();
+         else if (cmd && ImGui::IsKeyPressed(ImGuiKey_V, false))
+            ArrangePasteAt(playTick);
+         else if ((cmd || kio.KeyShift) && ImGui::IsKeyPressed(ImGuiKey_D, false))
+            ArrangeDuplicateSelection();
+         else if (cmd && ImGui::IsKeyPressed(ImGuiKey_E, false))
+            ArrangeSplitSelectionAt(playTick);
+         else if (cmd && kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false))
+            ArrangeUngroupSelection();
+         else if (cmd && ImGui::IsKeyPressed(ImGuiKey_G, false))
+            ArrangeGroupSelection();
+         else if (!cmd && !kio.KeyAlt &&
+                  (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)))
+            ArrangeToggleEnabledSelection();
+         else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false))
+            ArrangeDeleteSelection();
+         // Markers and the playhead (WP6). The canvas binds none of these
+         // keys (Shift+M is the mod matrix, hence noMods on M).
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_M, false))
+            ArrangeAddMarkerAtPlayhead();
+         else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
+            ArrangeJumpToMarker(-1);
+         else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
+            ArrangeJumpToMarker(1);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true))
+            ArrangeNudge(-1);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_RightArrow, true))
+            ArrangeNudge(1);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_Home, false))
+            ArrangeSeekTick(0);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_End, false))
+            ArrangeSeekTick(ArrangeEndKeyTargetTick());
+         else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && gArrangeDrag.mode == kArrangeDragNone)
+         {
+            gArrangeSel.clear();
+            gArrangeSelAnchor = 0;
+            gArrangeAssigningClipId = 0;
+         }
+      }
+
+      // ---- Toolbar ----
+      {
+         const bool arrangeToolbarLight = IsThemeLight();
+         const ImU32 arrangeIconCol = ImGui::GetColorU32(ImGuiCol_Text);
+
+         // Timeline audio mode toggle, pinned top-right of the panel. It owns
+         // the routing mode only (gAudioMode); the top bar's Start/Stop Audio
+         // owns engine power. Turning the mode on also starts the engine if it
+         // is off (asking for timeline audio with no engine would be silent);
+         // turning it off hands audio back to the canvas and leaves the engine
+         // running.
+         {
+            const bool engineOn = AudioEngine::Instance().SampleRate() > 0.0;
+            const bool timelineMode = gAudioMode == AudioMode::Timeline;
+            const char* audioLabel = timelineMode ? "Timeline Audio On" : "Enable Timeline Audio";
+            const float audioBtnW = ImGui::CalcTextSize(audioLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
+            const ImVec2 audioBtnPos(panelOrigin.x + panelSize.x - audioBtnW - 6.0f, panelOrigin.y + 2.0f);
+            const ImVec2 savedCursor = ImGui::GetCursorScreenPos();
+            ImGui::SetCursorScreenPos(audioBtnPos);
+            ImGui::PushStyleColor(ImGuiCol_Button, timelineMode
+               ? (arrangeToolbarLight ? ImVec4(0.20f, 0.62f, 0.34f, 1.0f) : ImVec4(0.16f, 0.52f, 0.28f, 1.0f))
+               : (arrangeToolbarLight ? ImVec4(0.80f, 0.82f, 0.87f, 1.0f) : ImVec4(0.30f, 0.30f, 0.34f, 1.0f)));
+            ImGui::PushStyleColor(ImGuiCol_Text, timelineMode
+               ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+               : (arrangeToolbarLight ? ImVec4(0.12f, 0.14f, 0.20f, 1.0f) : ImVec4(0.92f, 0.94f, 0.98f, 1.0f)));
+            if (ImGui::Button(audioLabel, ImVec2(audioBtnW, 0.0f)))
+            {
+               if (timelineMode)
+               {
+                  gAudioMode = AudioMode::Canvas;
+               }
+               else
+               {
+                  gAudioMode = AudioMode::Timeline;
+                  if (!engineOn)
+                  {
+                     gAudioStartError.clear();
+                     if (!StartAudioEngine(gAudioStartError))
+                        fprintf(stderr, "audio device: %s\n", gAudioStartError.c_str());
+                  }
+               }
+            }
+            ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered())
+            {
+               if (!gAudioStartError.empty() && !engineOn)
+                  ImGui::SetTooltip("%s", gAudioStartError.c_str());
+               else if (timelineMode)
+                  ImGui::SetTooltip("The timeline's clips drive audio. Click to hand audio back to the canvas (the engine keeps running).");
+               else
+                  ImGui::SetTooltip("Play the timeline's audio clips instead of the canvas (starts the audio engine if it is off).");
+            }
+            ImGui::SetCursorScreenPos(savedCursor);
+
+            // Render, pinned just left of Start/Stop Audio - exports the
+            // arrangement's own timeline (every track's clips, composited
+            // and stacked, over a selected time range) to a movie file.
+            // Operates as an internal timeline renderer (never spawns an Output
+            // node on the canvas). Video tracks are composited bottom lane first
+            // (top lane frontmost) with aspect-ratio preservation and blend modes/opacity; audio is
+            // the live sum of every active audio clip.
+            // ---- Render / export (WP7) ----
+            // The settings themselves are patch state (Arrange::Settings,
+            // persisted in the `arrange` line) rather than the statics they
+            // used to be, so a patch reopens with the same output size, fps,
+            // format, range kind, sources and folder it was last rendered at
+            // (WP7 #7). Only the file's name and the marker picks are
+            // session-local: a filename belongs to a take, not to a document.
+            Arrange::Settings& rset = gArrange.settings;
+            static std::string sArrangeRenderFileName = "infinite_timeline";
+            static int sArrangeRenderMarkerA = 0;
+            static int sArrangeRenderMarkerB = 1;
+            static uint64_t sArrangeRenderCanvasUid = 0;
+            static ArrangeRenderJob sArrangePendingJob;
+            static bool sArrangePendingStartNow = false;
+            static bool sArrangeOpenOverwrite = false;
+
+            const double renderBpm = std::max(1.0, (double)tr.Tempo());
+            const Arrange::Tick renderableEnd = ArrangeRenderableEndTick();
+
+            std::vector<std::pair<uint64_t, std::string>> renderOutputNodes;
+            ArrangeRenderCollectOutputNodes(renderOutputNodes);
+
+            // Is there anything for a timeline *video* source to draw in a
+            // given range? Decides the video source's default and whether
+            // "Timeline clips" is offered at all.
+            auto rangeHasVideoClips = [&](Arrange::Tick a, Arrange::Tick b) -> int {
+               int n = 0;
+               for (const Arrange::Lane& l : gArrange.lanes)
+               {
+                  if (l.type != Arrange::kLaneVideo)
+                     continue;
+                  for (const Arrange::Clip& c : l.clips)
+                     if (c.enabled && c.srcUid != 0 && c.End() > a && c.start < b && FindNodeByUid(c.srcUid) != nullptr)
+                        n++;
+               }
+               return n;
+            };
+
+            // The range the current settings describe, in ticks.
+            auto currentRange = [&](Arrange::Tick& outA, Arrange::Tick& outB) {
+               ArrangeRenderResolveRange(rset.renderRangeKind, sArrangeRenderMarkerA, sArrangeRenderMarkerB,
+                                         rset.renderRangeStart, rset.renderRangeEnd, outA, outB);
+            };
+
+            Arrange::Tick rangeA = 0, rangeB = 0;
+            currentRange(rangeA, rangeB);
+
+            // -1 means "decide at draw time", which is what makes the default
+            // track the monitoring mode instead of freezing whatever it was
+            // when the patch was saved ("render what you hear", WP7 #6b).
+            auto effectiveAudioSource = [&]() -> int {
+               if (rset.renderAudioSource >= 0)
+                  return std::clamp(rset.renderAudioSource, 0, 2);
+               return gAudioMode == AudioMode::Timeline ? kArrangeAudioTimeline : kArrangeAudioCanvas;
+            };
+            auto effectiveVideoSource = [&]() -> int {
+               if (rset.renderVideoSource >= 0)
+                  return std::clamp(rset.renderVideoSource, 0, 2);
+               if (rangeHasVideoClips(rangeA, rangeB) > 0)
+                  return kArrangeVideoTimeline;
+               return renderOutputNodes.empty() ? kArrangeVideoNone : kArrangeVideoCanvas;
+            };
+
+            auto renderExtension = [&]() -> const char* {
+               if (effectiveVideoSource() == kArrangeVideoNone)
+                  return ".wav";
+               return rset.renderFormat == 1 ? ".mov" : ".mp4";
+            };
+            auto renderFullPath = [&]() -> std::string {
+               std::string folder = rset.renderFolder;
+               if (folder.empty())
+               {
+                  const std::string home = AppPaths::HomeDir();
+                  folder = home.empty() ? std::string(".") : home + "/Desktop";
+               }
+               while (!folder.empty() && (folder.back() == '/' || folder.back() == '\\'))
+                  folder.pop_back();
+               return folder + "/" + sArrangeRenderFileName + renderExtension();
+            };
+
+            const char* renderLabel = ArrangeRenderBusy() ? "Rendering..." : "Render";
+            const float renderBtnW = ImGui::CalcTextSize(renderLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
+            const ImVec2 renderBtnPos(audioBtnPos.x - renderBtnW - 8.0f, panelOrigin.y + 2.0f);
+            ImGui::SetCursorScreenPos(renderBtnPos);
+            ImGui::BeginDisabled(ArrangeRenderBusy());
+            if (ImGui::Button(renderLabel, ImVec2(renderBtnW, 0.0f)))
+            {
+               if (rset.renderRangeKind == kArrangeRangeCustom && rset.renderRangeEnd <= rset.renderRangeStart)
+               {
+                  rset.renderRangeStart = 0;
+                  rset.renderRangeEnd = std::max<Arrange::Tick>(renderableEnd, Arrange::kPPQ);
+               }
+               if (rset.renderFolder.empty())
+               {
+                  const std::string home = AppPaths::HomeDir();
+                  rset.renderFolder = home.empty() ? std::string(".") : home + "/Desktop";
+               }
+               ImGui::OpenPopup("##arrangeRenderPopup");
+            }
+            ImGui::EndDisabled();
+
+            // Queue button, immediately left of Render. Carries the count of
+            // jobs still to run so the queue is discoverable without opening
+            // the window - a background render is otherwise invisible once
+            // the progress dialog for a WAV-only take has closed.
+            {
+               int pending = 0;
+               for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+                  if (j.status == kArrangeJobQueued || j.status == kArrangeJobRendering ||
+                      j.status == kArrangeJobFinalizing)
+                     pending++;
+               char queueLabel[32];
+               if (pending > 0)
+                  snprintf(queueLabel, sizeof(queueLabel), "Queue (%d)", pending);
+               else
+                  snprintf(queueLabel, sizeof(queueLabel), "Queue");
+               const float queueBtnW =
+                  ImGui::CalcTextSize(queueLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
+               ImGui::SetCursorScreenPos(ImVec2(renderBtnPos.x - queueBtnW - 6.0f, renderBtnPos.y));
+               if (ImGui::Button(queueLabel, ImVec2(queueBtnW, 0.0f)))
+                  gArrangeShowRenderQueue = !gArrangeShowRenderQueue;
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("Export queue (%d job%s)", (int)gArrangeRenderQueue.size(),
+                                    gArrangeRenderQueue.size() == 1 ? "" : "s");
+            }
+            ImGui::SetCursorScreenPos(savedCursor);
+
+            if (ImGui::BeginPopup("##arrangeRenderPopup"))
+            {
+               ImGui::Text("Timeline Render Settings");
+               ImGui::Separator();
+
+               // ---- Time range ----
+               ImGui::TextDisabled("Range:");
+               ImGui::SetNextItemWidth(150.0f);
+               int rangeKind = std::clamp(rset.renderRangeKind, 0, 3);
+               if (ImGui::Combo("##arrRangeKind", &rangeKind, "Whole arrangement\0Loop\0Marker A -> B\0Custom\0"))
+               {
+                  rset.renderRangeKind = rangeKind;
+                  gPatchDirty = true;
+               }
+
+               if (rset.renderRangeKind == kArrangeRangeMarkers)
+               {
+                  const int markerCount = (int)gArrange.markers.size();
+                  if (markerCount < 2)
+                  {
+                     ImGui::TextDisabled("(needs two markers)");
+                  }
+                  else
+                  {
+                     std::string markerItems;
+                     for (const Arrange::Marker& mk : gArrange.markers)
+                     {
+                        markerItems += mk.name.empty() ? ArrangeFormatPos(mk.pos) : mk.name;
+                        markerItems.push_back('\0');
+                     }
+                     markerItems.push_back('\0');
+                     sArrangeRenderMarkerA = std::clamp(sArrangeRenderMarkerA, 0, markerCount - 1);
+                     sArrangeRenderMarkerB = std::clamp(sArrangeRenderMarkerB, 0, markerCount - 1);
+                     ImGui::SetNextItemWidth(110.0f);
+                     ImGui::Combo("##arrMarkA", &sArrangeRenderMarkerA, markerItems.c_str());
+                     ImGui::SameLine(0.0f, 6.0f);
+                     ImGui::TextDisabled("->");
+                     ImGui::SameLine(0.0f, 6.0f);
+                     ImGui::SetNextItemWidth(110.0f);
+                     ImGui::Combo("##arrMarkB", &sArrangeRenderMarkerB, markerItems.c_str());
+                  }
+               }
+               else if (rset.renderRangeKind == kArrangeRangeCustom)
+               {
+                  // Typed in whichever unit the timeline is showing (WP6's
+                  // ArrangeParsePos/ArrangeFormatPos), so a range reads the
+                  // same way as every other position in the panel.
+                  auto tickField = [&](const char* id, Arrange::Tick& t) {
+                     char buf[48];
+                     snprintf(buf, sizeof(buf), "%s", ArrangeFormatPos(t).c_str());
+                     ImGui::SetNextItemWidth(90.0f);
+                     if (ImGui::InputText(id, buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue))
+                     {
+                        const Arrange::Tick parsed = ArrangeParsePos(buf);
+                        if (parsed >= 0)
+                        {
+                           t = parsed;
+                           gPatchDirty = true;
+                        }
+                     }
+                  };
+                  tickField("##arrRangeStart", rset.renderRangeStart);
+                  ImGui::SameLine(0.0f, 6.0f);
+                  ImGui::TextDisabled("->");
+                  ImGui::SameLine(0.0f, 6.0f);
+                  tickField("##arrRangeEnd", rset.renderRangeEnd);
+               }
+               currentRange(rangeA, rangeB);
+               const double rangeSec = Arrange::TicksToSeconds(rangeB - rangeA, renderBpm);
+               ImGui::TextDisabled("%s -> %s  (%.2fs)", ArrangeFormatPos(rangeA).c_str(),
+                                   ArrangeFormatPos(rangeB).c_str(), rangeSec);
+
+               ImGui::Separator();
+
+               // ---- Sources (WP7 #1 / #6b) ----
+               ImGui::TextDisabled("Audio source:");
+               ImGui::SetNextItemWidth(150.0f);
+               int audioSrcUi = rset.renderAudioSource < 0 ? effectiveAudioSource() : rset.renderAudioSource;
+               if (ImGui::Combo("##arrAudioSrc", &audioSrcUi, "Timeline clips\0Canvas output\0None\0"))
+               {
+                  rset.renderAudioSource = audioSrcUi;
+                  gPatchDirty = true;
+               }
+               if (rset.renderAudioSource < 0)
+               {
+                  ImGui::SameLine();
+                  ImGui::TextDisabled("(follows monitoring)");
+               }
+
+               ImGui::TextDisabled("Video source:");
+               ImGui::SetNextItemWidth(150.0f);
+               int videoSrcUi = rset.renderVideoSource < 0 ? effectiveVideoSource() : rset.renderVideoSource;
+               if (ImGui::Combo("##arrVideoSrc", &videoSrcUi, "Timeline clips\0Canvas Output node\0None (audio only)\0"))
+               {
+                  rset.renderVideoSource = videoSrcUi;
+                  gPatchDirty = true;
+               }
+               if (effectiveVideoSource() == kArrangeVideoCanvas)
+               {
+                  if (renderOutputNodes.empty())
+                  {
+                     ImGui::TextDisabled("(no Output node on the canvas)");
+                  }
+                  else if (renderOutputNodes.size() > 1)
+                  {
+                     int pick = 0;
+                     for (int i = 0; i < (int)renderOutputNodes.size(); i++)
+                        if (renderOutputNodes[(size_t)i].first == sArrangeRenderCanvasUid)
+                           pick = i;
+                     std::string items;
+                     for (const auto& o : renderOutputNodes)
+                     {
+                        items += o.second;
+                        items.push_back('\0');
+                     }
+                     items.push_back('\0');
+                     ImGui::SetNextItemWidth(150.0f);
+                     if (ImGui::Combo("##arrCanvasOut", &pick, items.c_str()))
+                        sArrangeRenderCanvasUid = renderOutputNodes[(size_t)pick].first;
+                  }
+                  if (sArrangeRenderCanvasUid == 0 && !renderOutputNodes.empty())
+                     sArrangeRenderCanvasUid = renderOutputNodes.front().first;
+               }
+
+               // One line saying what this job will actually contain, so the
+               // two pickers don't have to be read together every time.
+               {
+                  const int aSrc = effectiveAudioSource();
+                  const int vSrc = effectiveVideoSource();
+                  const int clipCount = rangeHasVideoClips(rangeA, rangeB);
+                  char summary[192];
+                  const char* aTxt = aSrc == kArrangeAudioTimeline ? "Timeline clips"
+                                     : aSrc == kArrangeAudioCanvas ? "Canvas output"
+                                                                   : "None";
+                  char vTxt[96];
+                  if (vSrc == kArrangeVideoTimeline)
+                     snprintf(vTxt, sizeof(vTxt), "Timeline (%d clip%s)", clipCount, clipCount == 1 ? "" : "s");
+                  else if (vSrc == kArrangeVideoCanvas)
+                     snprintf(vTxt, sizeof(vTxt), "Canvas output");
+                  else
+                     snprintf(vTxt, sizeof(vTxt), "None");
+                  snprintf(summary, sizeof(summary), "Audio: %s  -  Video: %s", aTxt, vTxt);
+                  ImGui::TextUnformatted(summary);
+               }
+
+               ImGui::Separator();
+
+               const bool audioOnly = effectiveVideoSource() == kArrangeVideoNone;
+
+               // ---- Resolution / fps (video jobs only) ----
+               ImGui::BeginDisabled(audioOnly);
+               ImGui::TextDisabled("Resolution:");
+               static int sArrangeRenderResPreset = 0; // 0=Match Clips, 1..4 fixed, 5=Custom
+               int detectedClipW = 0, detectedClipH = 0;
+               ArrangeRenderDetectClipSize(detectedClipW, detectedClipH);
+               const char* kResPresets[] = { "Match Clips", "1080p", "4K", "720p", "Vertical", "Custom" };
+               ImGui::SetNextItemWidth(120.0f);
+               if (ImGui::Combo("##arrResPreset", &sArrangeRenderResPreset, kResPresets, IM_ARRAYSIZE(kResPresets)))
+               {
+                  if (sArrangeRenderResPreset == 0) { rset.renderWidth = detectedClipW; rset.renderHeight = detectedClipH; }
+                  else if (sArrangeRenderResPreset == 1) { rset.renderWidth = 1920; rset.renderHeight = 1080; }
+                  else if (sArrangeRenderResPreset == 2) { rset.renderWidth = 3840; rset.renderHeight = 2160; }
+                  else if (sArrangeRenderResPreset == 3) { rset.renderWidth = 1280; rset.renderHeight = 720; }
+                  else if (sArrangeRenderResPreset == 4) { rset.renderWidth = 1080; rset.renderHeight = 1920; }
+                  gPatchDirty = true;
+               }
+               ImGui::SameLine();
+               ImGui::SetNextItemWidth(60.0f);
+               if (ImGui::InputInt("##arrResW", &rset.renderWidth, 0, 0))
+                  gPatchDirty = true;
+               ImGui::SameLine(0.0f, 4.0f);
+               ImGui::TextDisabled("x");
+               ImGui::SameLine(0.0f, 4.0f);
+               ImGui::SetNextItemWidth(60.0f);
+               if (ImGui::InputInt("##arrResH", &rset.renderHeight, 0, 0))
+                  gPatchDirty = true;
+               rset.renderWidth = std::clamp(rset.renderWidth, 16, 7680);
+               rset.renderHeight = std::clamp(rset.renderHeight, 16, 4320);
+
+               ImGui::SetNextItemWidth(90.0f);
+               if (ImGui::InputInt("fps##arrRenderFps", &rset.renderFps))
+                  gPatchDirty = true;
+               rset.renderFps = std::clamp(rset.renderFps, 1, 240);
+               ImGui::EndDisabled();
+
+               // Read-out, not a control: both render paths write at the rate
+               // and block size the live audio graph runs at, so the only
+               // honest thing the popup can do is say what those are and
+               // where to change them.
+               ImGui::TextDisabled("Audio: %d Hz, %d-frame blocks",
+                                   (int)llround(ArrangeRenderActiveSampleRate()),
+                                   OfflineAudioBlockFrames());
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("Renders follow the global audio settings.\n"
+                                    "Change them in Menu > Settings > Audio.");
+
+               ImGui::Separator();
+
+               // ---- Output file ----
+               ImGui::TextDisabled("Output File:");
+               char renderNameBuf[256];
+               snprintf(renderNameBuf, sizeof(renderNameBuf), "%s", sArrangeRenderFileName.c_str());
+               ImGui::SetNextItemWidth(200.0f);
+               if (ImGui::InputText("##arrangeRenderName", renderNameBuf, sizeof(renderNameBuf)))
+                  sArrangeRenderFileName = renderNameBuf;
+               ImGui::SameLine();
+               ImGui::TextDisabled("%s", renderExtension());
+
+               char renderFolderBuf[512];
+               snprintf(renderFolderBuf, sizeof(renderFolderBuf), "%s", rset.renderFolder.c_str());
+               ImGui::SetNextItemWidth(260.0f);
+               if (ImGui::InputText("##arrangeRenderFolder", renderFolderBuf, sizeof(renderFolderBuf)))
+               {
+                  rset.renderFolder = renderFolderBuf;
+                  gPatchDirty = true;
+               }
+
+               // Format follows the video source: an audio-only job is a WAV
+               // by definition, so the container buttons stand down rather
+               // than offering a choice that cannot apply (WP7 #1).
+               if (audioOnly)
+               {
+                  ImGui::TextDisabled("Audio-only job - writes a .wav");
+               }
+               else
+               {
+                  const int fmtActive = rset.renderFormat == 1 ? 1 : 0;
+                  if (fmtActive == 0) ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+                  if (ImGui::Button(".mp4##arrRenderMp4", ImVec2(56, 0)))
+                  {
+                     rset.renderFormat = 0;
+                     gPatchDirty = true;
+                  }
+                  if (fmtActive == 0) ImGui::PopStyleColor();
+                  ImGui::SameLine();
+                  if (fmtActive == 1) ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+                  if (ImGui::Button(".mov##arrRenderMov", ImVec2(56, 0)))
+                  {
+                     rset.renderFormat = 1;
+                     gPatchDirty = true;
+                  }
+                  if (fmtActive == 1) ImGui::PopStyleColor();
+               }
+               ImGui::TextDisabled("%s", renderFullPath().c_str());
+
+               ImGui::Separator();
+
+               // Builds the job the two submit buttons share, so "Render Now"
+               // and "Add to Queue" can never disagree about what was asked
+               // for - they differ only in where the job is put.
+               auto buildJob = [&]() -> ArrangeRenderJob {
+                  ArrangeRenderJob job;
+                  job.rangeKind = rset.renderRangeKind;
+                  job.startTick = rangeA;
+                  job.endTick = rangeB;
+                  job.audioSource = effectiveAudioSource();
+                  job.videoSource = effectiveVideoSource();
+                  job.canvasVideoUid = sArrangeRenderCanvasUid;
+                  job.width = rset.renderWidth;
+                  job.height = rset.renderHeight;
+                  job.fps = rset.renderFps;
+                  // Follows Settings -> Audio, not rset.renderSampleRate: the
+                  // graph only knows how to generate at the rate its nodes
+                  // were prepared at, so a per-arrangement rate would be a
+                  // choice nothing downstream could honour.
+                  job.sampleRate = (int)llround(ArrangeRenderActiveSampleRate());
+                  job.format = job.videoSource == kArrangeVideoNone ? 2 : (rset.renderFormat == 1 ? 1 : 0);
+                  job.path = renderFullPath();
+                  return job;
+               };
+               auto commitJob = [](ArrangeRenderJob job, bool startNow) {
+                  job.id = gArrangeRenderNextJobId++;
+                  job.status = kArrangeJobQueued;
+                  if (startNow)
+                  {
+                     // Ahead of anything already parked, so "Render Now"
+                     // means this job, not "whatever is first in the queue".
+                     gArrangeRenderQueue.insert(gArrangeRenderQueue.begin(), job);
+                     gArrangeRenderQueueRunning = true;
+                  }
+                  else
+                  {
+                     gArrangeRenderQueue.push_back(job);
+                  }
+               };
+               auto submitJob = [&](bool startNow) {
+                  ArrangeRenderJob job = buildJob();
+                  std::error_code ec;
+                  const bool collides =
+                     std::filesystem::exists(job.path, ec) || ArrangeRenderPathQueued(job.path, 0);
+                  if (collides)
+                  {
+                     // Asking before the queue gets there, not while it runs:
+                     // a job that silently overwrote yesterday's export is
+                     // only noticed once it is already gone (WP7 #8).
+                     sArrangePendingJob = job;
+                     sArrangePendingStartNow = startNow;
+                     sArrangeOpenOverwrite = true;
+                  }
+                  else
+                  {
+                     commitJob(job, startNow);
+                  }
+               };
+
+               const bool canRender = !(effectiveAudioSource() == kArrangeAudioNone &&
+                                        effectiveVideoSource() == kArrangeVideoNone) &&
+                                      !sArrangeRenderFileName.empty() &&
+                                      !(effectiveVideoSource() == kArrangeVideoCanvas && renderOutputNodes.empty());
+               ImGui::BeginDisabled(!canRender || ArrangeRenderBusy());
+               if (ImGui::Button("Render Now", ImVec2(110, 0)))
+               {
+                  submitJob(true);
+                  ImGui::CloseCurrentPopup();
+               }
+               ImGui::EndDisabled();
+               ImGui::SameLine();
+               ImGui::BeginDisabled(!canRender);
+               if (ImGui::Button("Add to Queue", ImVec2(110, 0)))
+               {
+                  submitJob(false);
+                  ImGui::CloseCurrentPopup();
+               }
+               ImGui::EndDisabled();
+               ImGui::SameLine();
+               if (ImGui::Button("Cancel", ImVec2(70, 0)))
+                  ImGui::CloseCurrentPopup();
+               ImGui::EndPopup();
+            }
+
+            // ---- overwrite / duplicate-path prompt (WP7 #8) ----
+            // Drawn at toolbar level rather than inside the render popup: the
+            // popup closes on submit, and a modal owned by a closed popup
+            // never opens.
+            if (sArrangeOpenOverwrite)
+            {
+               ImGui::OpenPopup("Overwrite file?##arrangeOverwrite");
+               sArrangeOpenOverwrite = false;
+            }
+            if (ImGui::BeginPopupModal("Overwrite file?##arrangeOverwrite", nullptr,
+                                       ImGuiWindowFlags_AlwaysAutoResize))
+            {
+               const bool queuedClash = ArrangeRenderPathQueued(sArrangePendingJob.path, 0);
+               ImGui::TextUnformatted(queuedClash ? "Another queued job already writes:" : "This file already exists:");
+               ImGui::TextDisabled("%s", sArrangePendingJob.path.c_str());
+               ImGui::Dummy(ImVec2(0, 4));
+               if (ImGui::Button("Overwrite", ImVec2(100, 0)))
+               {
+                  ArrangeRenderJob job = sArrangePendingJob;
+                  job.id = gArrangeRenderNextJobId++;
+                  job.status = kArrangeJobQueued;
+                  if (sArrangePendingStartNow)
+                  {
+                     gArrangeRenderQueue.insert(gArrangeRenderQueue.begin(), job);
+                     gArrangeRenderQueueRunning = true;
+                  }
+                  else
+                  {
+                     gArrangeRenderQueue.push_back(job);
+                  }
+                  ImGui::CloseCurrentPopup();
+               }
+               ImGui::SameLine();
+               if (ImGui::Button("Auto-rename", ImVec2(100, 0)))
+               {
+                  ArrangeRenderJob job = sArrangePendingJob;
+                  job.path = ArrangeRenderUniquePath(job.path);
+                  job.id = gArrangeRenderNextJobId++;
+                  job.status = kArrangeJobQueued;
+                  if (sArrangePendingStartNow)
+                  {
+                     gArrangeRenderQueue.insert(gArrangeRenderQueue.begin(), job);
+                     gArrangeRenderQueueRunning = true;
+                  }
+                  else
+                  {
+                     gArrangeRenderQueue.push_back(job);
+                  }
+                  ImGui::CloseCurrentPopup();
+               }
+               ImGui::SameLine();
+               if (ImGui::Button("Cancel", ImVec2(80, 0)))
+                  ImGui::CloseCurrentPopup();
+               ImGui::EndPopup();
+            }
+         }
+
+         // Add Track now lives per-row (left of each track's drag handle,
+         // below) rather than once here in the toolbar - see the "+" button
+         // drawn alongside "##trackdragbadge" further down.
+         ImGui::SetNextItemWidth(110.0f);
+         ImGui::SliderFloat("Zoom", &gArrangePixelsPerBeat, kArrangeMinPixelsPerBeat, 250.0f, "%.0f px/beat",
+                            ImGuiSliderFlags_Logarithmic);
+         gArrangePixelsPerBeat = std::clamp(gArrangePixelsPerBeat, kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
+
+         // Play/Pause and Rewind as icon buttons, matching the main
+         // Infinite toolbar's own transport controls (see the top toolbar's
+         // "##transportrewind" a bit further down in this file) rather than
+         // plain text labels.
+         ImGui::SameLine(0.0f, 14.0f);
+         const bool arrangeIsPlaying = tr.IsPlaying();
+         if (ImGui::Button("##arrangeplaybtn", ImVec2(30, 0)))
+            tr.TogglePlay();
+         {
+            const ImVec2 bmin = ImGui::GetItemRectMin();
+            const ImVec2 bmax = ImGui::GetItemRectMax();
+            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            const float iconSize = (bmax.y - bmin.y) * 0.6f;
+            if (arrangeIsPlaying)
+               Tabler::DrawPlayerPause(ImGui::GetWindowDrawList(), center, iconSize, arrangeIconCol);
+            else
+               Tabler::DrawPlayerPlay(ImGui::GetWindowDrawList(), center, iconSize, arrangeIconCol);
+         }
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(arrangeIsPlaying ? "Pause" : "Play");
+
+         ImGui::SameLine();
+         if (ImGui::Button("##arrangerewindbtn", ImVec2(30, 0)))
+            tr.Rewind();
+         {
+            const ImVec2 bmin = ImGui::GetItemRectMin();
+            const ImVec2 bmax = ImGui::GetItemRectMax();
+            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            const float iconSize = (bmax.y - bmin.y) * 0.72f;
+            Tabler::DrawPlayerRewind(ImGui::GetWindowDrawList(), center, iconSize, arrangeIconCol);
+         }
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Rewind");
+
+         // Bars | Time: which unit the ruler, the clip popup and the loop
+         // fields speak (Settings::timeDisplay, saved with the patch). A view
+         // change only - every position stays in ticks. The selected half
+         // takes the shared "selected" accent tint; the other stays quiet.
+         ImGui::SameLine(0.0f, 14.0f);
+         {
+            const int shownUnit = gArrange.settings.timeDisplay; // pre-click, for the push/pop pairs
+            const char* kUnitLabels[2] = { "Bars##arrunitbars", "Time##arrunittime" };
+            const char* kUnitTips[2] = {
+               "Show positions as bar.beat.sixteenth (the ruler adds the time in seconds beside each label).",
+               "Show positions as minutes:seconds (the ruler adds bar.beat beside each label)."
+            };
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, ImGui::GetStyle().ItemSpacing.y));
+            for (int u = 0; u < 2; u++)
+            {
+               if (u == 1)
+                  ImGui::SameLine();
+               const bool on = shownUnit == u;
+               if (on)
+                  ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+               if (ImGui::Button(kUnitLabels[u], ImVec2(44.0f, 0.0f)))
+                  ArrangeSetTimeDisplay(u);
+               if (on)
+                  ImGui::PopStyleColor();
+               if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+                  ImGui::SetTooltip("%s", kUnitTips[u]);
+            }
+            ImGui::PopStyleVar();
+         }
+
+         // Snap: the magnet toggles the grid off <-> the last division that
+         // was on; the dropdown beside it picks the division. The grid is
+         // Settings::snapDivision / snapTriplet (0 = off), in ticks, so it is
+         // the same musical grid at any zoom and any tempo. It covers clip
+         // move/trim, marker drags, the ruler scrub, the loop drag and the
+         // arrow-key nudge.
+         ImGui::SameLine(0.0f, 14.0f);
+         // Snapshot the pre-click state for the push/pop pair: the Button()
+         // call below can flip the snap mid-block, and popping based on the
+         // POST-click value would pop colors that were never pushed (toggling
+         // off->on this frame) or leak a push that's never popped (toggling
+         // on->off), corrupting the style stack for every widget drawn after
+         // it - which is what made the "+" buttons flash green on a loop/snap
+         // click.
+         const bool snapWasOn = gArrange.settings.snapDivision > 0;
+         if (snapWasOn)
+         {
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(16, 185, 129, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(5, 150, 105, 255));
+         }
+         if (ImGui::Button("##arrangesnapbtn", ImVec2(30, 0)))
+         {
+            if (snapWasOn)
+               ArrangeSetSnap(0, false);
+            else
+               ArrangeSetSnap(std::max(1, gArrangeLastSnapDivision), gArrange.settings.snapTriplet);
+         }
+         {
+            const ImVec2 bmin = ImGui::GetItemRectMin();
+            const ImVec2 bmax = ImGui::GetItemRectMax();
+            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            const float iconSize = (bmax.y - bmin.y) * 0.62f;
+            Tabler::DrawMagnet(ImGui::GetWindowDrawList(), center, iconSize,
+               snapWasOn ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+         }
+         if (snapWasOn)
+            ImGui::PopStyleColor(2);
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Snap clips, markers, the playhead and the loop to the grid.\nClick to turn snapping on or off; pick the grid on the right.");
+
+         // Grid division dropdown. The divisions are MusicTime's own
+         // RateDivision entries (names and lengths from that one table -
+         // rhythmic-quantization-standard); this list only says which of
+         // them a timeline grid offers, mapped onto snapDivision/snapTriplet.
+         ImGui::SameLine(0.0f, 4.0f);
+         {
+            using GridChoice = ArrangeGridChoice;
+            const auto& kGridChoices = kArrangeGridChoices;
+            auto choiceName = [](const GridChoice& c) { return c.rd < 0 ? "Off" : MusicTime::RateDivisionName(c.rd); };
+            const Arrange::Settings& st = gArrange.settings;
+            const char* curName = "Custom";
+            for (const GridChoice& c : kGridChoices)
+               if (c.division == st.snapDivision && (c.division <= 1 || c.triplet == st.snapTriplet))
+                  curName = choiceName(c);
+            char gridBtn[48];
+            snprintf(gridBtn, sizeof(gridBtn), "%s##arrgriddiv", curName);
+            PushDropdownStyle();
+            if (ImGui::Button(gridBtn, ImVec2(58.0f, 0.0f)))
+               ImGui::OpenPopup("##arrgridpopup");
+            PopDropdownStyle();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+               ImGui::SetTooltip("Snap grid");
+            if (ImGui::BeginPopup("##arrgridpopup"))
+            {
+               for (const GridChoice& c : kGridChoices)
+               {
+                  const bool sel = c.division == st.snapDivision && (c.division <= 1 || c.triplet == st.snapTriplet);
+                  if (ImGui::Selectable(choiceName(c), sel))
+                     ArrangeSetSnap(c.division, c.triplet);
+               }
+               ImGui::EndPopup();
+            }
+         }
+
+         // Loop region toggle + manual start/end entry. The same region a
+         // Shift+drag on the ruler sets - these fields just set it directly
+         // instead of dragging it out by hand.
+         ImGui::SameLine();
+         const Arrange::LoopRange loopNow = gArrange.settings.loop; // the loop as of this frame
+         const bool loopWasOn = loopNow.enabled; // see snapWasOn above
+         if (loopWasOn)
+         {
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(16, 185, 129, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(5, 150, 105, 255));
+         }
+         if (ImGui::Button("##arrangeloopbtn", ImVec2(30, 0)))
+            ArrangeSetLoop(!loopNow.enabled, loopNow.start, loopNow.end);
+         {
+            const ImVec2 bmin = ImGui::GetItemRectMin();
+            const ImVec2 bmax = ImGui::GetItemRectMax();
+            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            const float iconSize = (bmax.y - bmin.y) * 0.55f;
+            Tabler::DrawRefresh(ImGui::GetWindowDrawList(), center, iconSize,
+               gArrange.settings.loop.enabled ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+         }
+         if (loopWasOn)
+            ImGui::PopStyleColor(2);
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Loop playback within the region below.\nShift+drag the ruler to set a region, or type start/end.");
+
+         // The fields show and take the chosen unit (bar.beat.sixteenth or
+         // M:SS); the loop itself stays in ticks, so it keeps its bars
+         // across a tempo change. Re-formatted whenever the field is idle,
+         // so flipping Bars | Time updates them at once.
+         ImGui::SameLine();
+         {
+            static char loopStartBuf[24] = "";
+            static bool loopStartEditing = false;
+            if (!loopStartEditing)
+               snprintf(loopStartBuf, sizeof(loopStartBuf), "%s", ArrangeFormatPos(gArrange.settings.loop.start).c_str());
+            ImGui::SetNextItemWidth(70.0f);
+            if (ImGui::InputText("##loopstart", loopStartBuf, sizeof(loopStartBuf), ImGuiInputTextFlags_EnterReturnsTrue))
+            {
+               const Arrange::Tick parsedTick = ArrangeParsePos(loopStartBuf);
+               const Arrange::LoopRange& loop = gArrange.settings.loop;
+               if (parsedTick >= 0 && parsedTick < loop.end)
+                  ArrangeSetLoop(true, parsedTick, loop.end);
+               loopStartEditing = false;
+            }
+            else
+            {
+               loopStartEditing = ImGui::IsItemActive();
+            }
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip(gArrange.settings.timeDisplay == 1 ? "Loop start (M:SS)" : "Loop start (bar.beat.sixteenth)");
+         }
+         ImGui::SameLine();
+         ImGui::TextUnformatted("-");
+         ImGui::SameLine();
+         {
+            static char loopEndBuf[24] = "";
+            static bool loopEndEditing = false;
+            if (!loopEndEditing)
+               snprintf(loopEndBuf, sizeof(loopEndBuf), "%s", ArrangeFormatPos(gArrange.settings.loop.end).c_str());
+            ImGui::SetNextItemWidth(70.0f);
+            if (ImGui::InputText("##loopend", loopEndBuf, sizeof(loopEndBuf), ImGuiInputTextFlags_EnterReturnsTrue))
+            {
+               const Arrange::Tick parsedTick = ArrangeParsePos(loopEndBuf);
+               const Arrange::LoopRange& loop = gArrange.settings.loop;
+               if (parsedTick >= 0 && parsedTick > loop.start)
+               {
+                  ArrangeSetLoop(true, loop.start, parsedTick);
+                  gArrangeFitViewToLoopPending = true;
+               }
+               loopEndEditing = false;
+            }
+            else
+            {
+               loopEndEditing = ImGui::IsItemActive();
+            }
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip(gArrange.settings.timeDisplay == 1 ? "Loop end (M:SS)" : "Loop end (bar.beat.sixteenth)");
+         }
+
+         // The routing mode (gAudioMode) is owned by the "Enable Timeline
+         // Audio" toggle pinned top-right above; engine power is the top
+         // bar's Start/Stop Audio. Neither changes the other's state, except
+         // that enabling timeline audio starts a stopped engine.
+      }
+
+      ImGui::Separator();
+
+      // Layout: Global Viewport Monitor alongside / above timeline lanes
+      const bool isWide = panelSize.x >= 720.0f;
+      const float kViewportW = isWide ? std::clamp(panelSize.x * 0.28f, 180.0f, 320.0f) : panelSize.x;
+      const float kViewportH = isWide ? std::max(120.0f, panelSize.y - 40.0f) : 140.0f;
+
+      // Global viewport monitor - a self-contained child window, factored into
+      // a lambda so it can be placed on either side of the timeline lanes
+      // (gArrangeViewportOnRight, toggled via right-click on the monitor).
+      auto drawViewportMonitor = [&]()
+      {
+         PushDockedPanelStyle(/*isChild=*/true);
+         ImGui::BeginChild("##arrangeglobalmonitor", ImVec2(kViewportW, 0), true,
+                           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+         PopDockedPanelStyle();
+
+         const ImVec2 monAvail = ImGui::GetContentRegionAvail();
+         const int monW = std::max(16, (int)monAvail.x);
+         const int monH = std::max(16, (int)monAvail.y);
+
+         // Same clock and same skip rules as the composite itself, so the
+         // label names exactly what is on screen (the frontmost lane's node).
+         const double monBeat = tr.Beats();
+         std::string activeClipTitle;
+         const int activeClipCount = CountActiveArrangeVideoClips(monBeat, &activeClipTitle);
+         if (activeClipCount == 0)
+            ImGui::TextDisabled("Viewport: No Active Clip");
+         else if (activeClipCount == 1)
+            ImGui::TextDisabled("Viewport: %s", activeClipTitle.c_str());
+         else
+            ImGui::TextDisabled("Viewport: %d Tracks Composited", activeClipCount);
+
+         const ImVec2 monOrigin = ImGui::GetCursorScreenPos();
+         const ImVec2 monBR(monOrigin.x + monAvail.x, monOrigin.y + monAvail.y);
+         ImDrawList* monDl = ImGui::GetWindowDrawList();
+         DrawCheckerboardBackdrop(monDl, monOrigin, monBR);
+
+         if (activeClipCount > 0)
+         {
+            // Only a request here: the composite runs after the cook loop
+            // (CompositeArrangeMonitorIfRequested) into this same stable
+            // texture, before ImGui renders the draw list recorded now.
+            gArrangeMonitorTarget.requestW = monW;
+            gArrangeMonitorTarget.requestH = monH;
+            const unsigned int tex = gArrangeMonitorTarget.result.tex;
+            if (tex != 0)
+               monDl->AddImage((ImTextureID)(intptr_t)tex, monOrigin, monBR, ImVec2(0, 1), ImVec2(1, 0));
+         }
+         else
+         {
+            monDl->AddText(ImVec2(monOrigin.x + 8.0f, monOrigin.y + monAvail.y * 0.5f - 8.0f),
+                           IM_COL32(140, 140, 150, 255), "No Active Video Clip");
+         }
+
+         ImGui::Dummy(monAvail);
+
+         // Right-click anywhere on the monitor to move it to the other side.
+         if (ImGui::IsWindowHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+            ImGui::OpenPopup("##viewportdockctx");
+         if (ImGui::BeginPopup("##viewportdockctx"))
+         {
+            if (ImGui::MenuItem("Dock Left", nullptr, !gArrangeViewportOnRight))
+               gArrangeViewportOnRight = false;
+            if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
+               gArrangeViewportOnRight = true;
+            // The whole timeline panel: bottom or top of the window (saved
+            // with the document, not undoable - same as View > Arrangement
+            // Timeline > Dock).
+            ImGui::Separator();
+            const bool panelTop = gArrange.settings.dockSide == 1;
+            if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
+            {
+               gArrange.settings.dockSide = 0;
+               gArrange.revision++; // a model field like any other (WP5b)
+               gPatchDirty = true;
+            }
+            if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
+            {
+               gArrange.settings.dockSide = 1;
+               gArrange.revision++;
+               gPatchDirty = true;
+            }
+            ImGui::EndPopup();
+         }
+
+         ImGui::EndChild();
+      };
+
+      if (isWide && !gArrangeViewportOnRight)
+      {
+         drawViewportMonitor();
+         ImGui::SameLine();
+      }
+
+      // ---- Timeline body (ruler + lanes) ----
+      const float kHeaderWidth = 246.0f; // wide enough for the per-row "+" add-track button ahead of the drag handle
+      const float kMarkerStripH = 14.0f; // marker flags (WP6), above the tick/label strip
+      const float kRulerHeight = 40.0f;  // marker strip + the 26 px tick/label strip
+      const float kLaneHeight = 30.0f; // one header row now that mix controls are deferred
+
+      // When docked right, reserve kViewportW (+ spacing) up front so the
+      // scroll child doesn't eat the full remaining width before the monitor
+      // gets a chance to claim its share via SameLine() below - that greedy
+      // 0-width child was why docking right made the monitor vanish. A
+      // negative size.x tells ImGui "avail - this many pixels", which is
+      // exactly the reservation we want; docked left keeps taking everything.
+      const float timelineChildWidth = (isWide && gArrangeViewportOnRight)
+         ? -(kViewportW + ImGui::GetStyle().ItemSpacing.x)
+         : 0.0f;
+      PushDockedPanelStyle(/*isChild=*/true);
+      // Cmd/Ctrl+wheel zooms (above); it must not also scroll the lanes.
+      ImGui::BeginChild("##arrangetimelinescroll", ImVec2(timelineChildWidth, 0), false,
+                        ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysUseWindowPadding |
+                        (arrangeWheelZoomMod ? ImGuiWindowFlags_NoScrollWithMouse : 0));
+      PopDockedPanelStyle();
+
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const ImVec2 scrollTL = ImGui::GetCursorScreenPos();
+      const ImVec2 avail = ImGui::GetContentRegionAvail();
+      const float rulerStartX = scrollTL.x + kHeaderWidth;
+      sArrangeLastRulerStartX = rulerStartX;
+      const float rulerWidth = std::max(avail.x - kHeaderWidth, 800.0f);
+      // scrollTL.y already has the child's current vertical scroll baked in
+      // (it moves up off-screen as the user scrolls down through many
+      // tracks), which is exactly right for the lanes below but was also
+      // being used for the ruler - pulling the ruler up out of view along
+      // with them. pinnedTopY adds the scroll back out, giving the fixed
+      // "top of the visible child" the ruler should stay glued to
+      // regardless of how far down the track list is scrolled.
+      const float pinnedTopY = scrollTL.y + ImGui::GetScrollY();
+      if (gArrangeFitViewToLoopPending)
+      {
+         gArrangeFitViewToLoopPending = false;
+         const double loopEndBeats = Arrange::TicksToBeats(gArrange.settings.loop.end);
+         if (loopEndBeats > 0.01)
+            gArrangePixelsPerBeat = std::clamp((float)(rulerWidth * 0.92 / loopEndBeats),
+                                               kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
+      }
+
+      // ---- view geometry (WP6: beats, not seconds) ----
+      // The axis is laid out in quarter-note beats off Transport::Beats(), the
+      // same clock the clips are scheduled on. A tempo change rescales what a
+      // beat means in seconds and nothing on screen moves.
+      const float ppb = gArrangePixelsPerBeat;
+      const double arrBpm = std::max(1.0, (double)tr.Tempo());
+      const double beatsPerBar = std::max(1.0, tr.BeatsPerBar());
+      const Arrange::Tick barTicks = std::max<Arrange::Tick>(1, Arrange::BeatsToTicks(beatsPerBar));
+      const double startBeat = gArrangeScrollBeats;
+      const double endBeat = startBeat + (double)rulerWidth / ppb;
+      const bool showTime = gArrange.settings.timeDisplay == 1;
+      auto beatToX = [&](double b) { return rulerStartX + (float)((b - startBeat) * ppb); };
+      auto tickToX = [&](Arrange::Tick t) { return beatToX(Arrange::TicksToBeats(t)); };
+      auto xToTick = [&](float x) { return Arrange::BeatsToTicks(startBeat + (double)(x - rulerStartX) / ppb); };
+      const double pxPerTick = (double)ppb / (double)Arrange::kPPQ;
+      const Arrange::Tick startTick = std::max<Arrange::Tick>(0, Arrange::BeatsToTicks(startBeat));
+      const Arrange::Tick endTick = Arrange::BeatsToTicks(endBeat);
+      const Arrange::Tick snapThresholdTicks = std::max<Arrange::Tick>(1, (Arrange::Tick)(8.0 / std::max(1e-9, pxPerTick)));
+      const Arrange::Tick gridTicks = ArrangeSnapGridTicks(); // 0 = snap off
+      const Arrange::Tick playTick = ArrangePlayTick();
+      // A lone point (scrub, marker, loop edge, Add Clip) lands on the grid
+      // when snap is on, nothing else to weigh.
+      auto gridSnap = [&](Arrange::Tick t)
+      {
+         t = std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+         return gridTicks > 0 ? Arrange::SnapToGrid(t, gridTicks) : t;
+      };
+
+      // Ruler tick spacing in beats (minor) and bars (labelled major), each
+      // kept legibly apart at any zoom. Bars mode labels the bars; Time mode
+      // labels round seconds. The lane grid below reuses beatStep when snap
+      // is off.
+      static const double kStepMultiples[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0, 1024.0 };
+      double beatStep = kStepMultiples[0];
+      for (double st : kStepMultiples)
+      {
+         beatStep = st;
+         if (ppb * st >= 10.0) break;
+      }
+      double barStep = 1.0;
+      for (double st : kStepMultiples)
+      {
+         if (st < 1.0) continue;
+         barStep = st;
+         if (ppb * beatsPerBar * st >= 64.0) break;
+      }
+
+      // The ruler: a marker strip on top, the tick/label strip under it.
+      const float kTickStripTop = pinnedTopY + kMarkerStripH;
+      const ImVec2 rulerPos(rulerStartX, pinnedTopY);
+      const ImVec2 rulerSize(rulerWidth, kRulerHeight);
+      const bool isLight = IsThemeLight();
+      const ImU32 rulerBg = isLight ? IM_COL32(238, 238, 242, 255) : IM_COL32(32, 32, 36, 255);
+      const ImU32 markerStripBg = isLight ? IM_COL32(229, 229, 235, 255) : IM_COL32(26, 26, 30, 255);
+      const ImU32 tickCol = isLight ? IM_COL32(140, 140, 150, 255) : IM_COL32(100, 100, 110, 255);
+      const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text, 0.80f);
+      const ImU32 subTextCol = ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.80f);
+
+      dl->AddRectFilled(rulerPos, ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), markerStripBg);
+      dl->AddRectFilled(ImVec2(rulerPos.x, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y), rulerBg);
+      dl->AddLine(ImVec2(rulerPos.x, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), tickCol, 0.5f);
+      dl->AddLine(ImVec2(rulerPos.x, rulerPos.y + rulerSize.y), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
+                  tickCol, 1.0f);
+
+      // ---- ruler ticks and labels ----
+      // Primary label in the chosen unit; the other unit follows it, dimmer,
+      // only where it fits before the next label.
+      {
+         const float rulerBottom = rulerPos.y + rulerSize.y;
+         const float labelY = kTickStripTop + 2.0f;
+         dl->PushClipRect(rulerPos, ImVec2(rulerPos.x + rulerSize.x, rulerBottom), true);
+         auto drawLabelPair = [&](float x, float nextX, const std::string& primary, const std::string& secondary)
+         {
+            dl->AddText(ImVec2(x + 3.0f, labelY), textCol, primary.c_str());
+            const float pw = ImGui::CalcTextSize(primary.c_str()).x;
+            const float sw = ImGui::CalcTextSize(secondary.c_str()).x;
+            if (x + 3.0f + pw + 6.0f + sw + 4.0f < nextX)
+               dl->AddText(ImVec2(x + 3.0f + pw + 6.0f, labelY), subTextCol, secondary.c_str());
+         };
+         if (!showTime)
+         {
+            // Minor ticks on every beatStep, skipping the bar lines.
+            const double firstMinor = std::floor(startBeat / beatStep) * beatStep;
+            for (double b = firstMinor; b <= endBeat + beatStep; b += beatStep)
+            {
+               if (b < 0.0) continue;
+               const double inBar = std::fmod(b, beatsPerBar);
+               if (inBar < 1e-6 || beatsPerBar - inBar < 1e-6) continue;
+               const float x = beatToX(b);
+               dl->AddLine(ImVec2(x, rulerBottom - 6.0f), ImVec2(x, rulerBottom), tickCol, 0.8f);
+            }
+            // Bars: every bar gets a mid tick, every barStep-th a label.
+            const double barPx = ppb * beatsPerBar;
+            const long long firstBar = std::max(0LL, (long long)std::floor(startBeat / beatsPerBar));
+            const long long lastBar = (long long)std::ceil(endBeat / beatsPerBar) + 1;
+            const long long labelEvery = std::max(1LL, (long long)barStep);
+            for (long long bar = firstBar; bar <= lastBar; bar++)
+            {
+               const float x = beatToX((double)bar * beatsPerBar);
+               const bool labelled = bar % labelEvery == 0;
+               if (!labelled && barPx < 4.0)
+                  continue;
+               dl->AddLine(ImVec2(x, rulerBottom - (labelled ? 12.0f : 8.0f)), ImVec2(x, rulerBottom), tickCol, labelled ? 1.2f : 1.0f);
+               if (labelled)
+               {
+                  const Arrange::Tick t = (Arrange::Tick)bar * barTicks;
+                  drawLabelPair(x, x + (float)(barPx * (double)labelEvery), std::to_string(bar + 1),
+                                ArrangeFormatTickSeconds(t));
+               }
+            }
+         }
+         else
+         {
+            // Round-second steps; the minor ticks subdivide a major.
+            static const double kSecSteps[] = { 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0, 3600.0 };
+            const double pxPerSec = (double)ppb * arrBpm / 60.0;
+            double majorSec = kSecSteps[0];
+            for (double st : kSecSteps)
+            {
+               majorSec = st;
+               if (pxPerSec * st >= 72.0) break;
+            }
+            static const int kSubdivs[] = { 10, 5, 4, 2, 1 };
+            double minorSec = majorSec;
+            for (int sd : kSubdivs)
+               if (pxPerSec * majorSec / sd >= 8.0) { minorSec = majorSec / sd; break; }
+            const double startSecV = startBeat * 60.0 / arrBpm;
+            const double endSecV = endBeat * 60.0 / arrBpm;
+            const long long firstIdx = std::max(0LL, (long long)std::floor(startSecV / minorSec));
+            const long long lastIdx = (long long)std::ceil(endSecV / minorSec) + 1;
+            const long long perMajor = std::max(1LL, (long long)std::llround(majorSec / minorSec));
+            for (long long k = firstIdx; k <= lastIdx; k++)
+            {
+               const double sec = (double)k * minorSec;
+               const float x = beatToX(sec * arrBpm / 60.0);
+               if (k % perMajor == 0)
+               {
+                  dl->AddLine(ImVec2(x, rulerBottom - 12.0f), ImVec2(x, rulerBottom), tickCol, 1.2f);
+                  drawLabelPair(x, x + (float)(pxPerSec * majorSec), ArrangeFormatSeconds(sec, majorSec < 1.0),
+                                ArrangeFormatBBT(Arrange::SecondsToTicks(sec, arrBpm)));
+               }
+               else
+               {
+                  dl->AddLine(ImVec2(x, rulerBottom - 6.0f), ImVec2(x, rulerBottom), tickCol, 0.8f);
+               }
+            }
+         }
+         dl->PopClipRect();
+      }
+
+      // ---- marker flags (WP6) ----
+      // Submitted before the ruler's own button: the first item submitted
+      // under the mouse claims hover, so a flag always wins over the scrub.
+      // Drag moves (one undo entry per drag, snapped), double-click renames,
+      // right-click opens colour / delete. A copy is iterated: a drag re-sorts
+      // gArrange.markers.
+      bool markerHoveredAny = false;
+      bool openMarkerCtx = false;
+      {
+         const std::vector<Arrange::Marker> markersNow = gArrange.markers;
+         dl->PushClipRect(rulerPos, ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y), true);
+         for (const Arrange::Marker& mk : markersNow)
+         {
+            const float fx = tickToX(mk.pos);
+            const char* nm = mk.name.empty() ? "Marker" : mk.name.c_str();
+            const float flagW = std::clamp(ImGui::CalcTextSize(nm).x + 10.0f, 12.0f, 120.0f);
+            if (fx + flagW < rulerStartX || fx > rulerStartX + rulerWidth)
+               continue;
+            const ImVec2 f0(fx, pinnedTopY + 1.0f);
+            const ImVec2 f1(fx + flagW, kTickStripTop - 1.0f);
+            const ImU32 fcol = ArrangeMarkerColU32(mk.color);
+            const float lum = 0.299f * (float)((mk.color >> 24) & 0xFF) + 0.587f * (float)((mk.color >> 16) & 0xFF) +
+                              0.114f * (float)((mk.color >> 8) & 0xFF);
+            const bool dragged = gArrangeMarkerDragId == mk.id;
+            dl->AddRectFilled(f0, f1, fcol, 3.0f, ImDrawFlags_RoundCornersRight);
+            // A hairline edge so a pale flag still reads on the light ruler.
+            dl->AddRect(f0, f1, dragged ? IM_COL32(255, 255, 255, 230) : IM_COL32(0, 0, 0, isLight ? 110 : 150),
+                        3.0f, ImDrawFlags_RoundCornersRight, dragged ? 1.5f : 1.0f);
+            dl->AddLine(ImVec2(fx, pinnedTopY), ImVec2(fx, rulerPos.y + rulerSize.y), fcol, 1.5f);
+
+            ImGui::PushID((int)(mk.id & 0x7fffffff));
+            if (gArrangeRenamingMarkerId == mk.id)
+            {
+               static uint64_t sMarkerRenameFocusedId = 0;
+               ImGui::SetCursorScreenPos(ImVec2(std::max(rulerStartX, fx), pinnedTopY - 2.0f));
+               ImGui::SetNextItemWidth(120.0f);
+               if (sMarkerRenameFocusedId != mk.id)
+               {
+                  ImGui::SetKeyboardFocusHere();
+                  sMarkerRenameFocusedId = mk.id;
+               }
+               const bool commit = ImGui::InputText("##renamingmarker", gArrangeRenameMarkerBuffer,
+                                                    sizeof(gArrangeRenameMarkerBuffer),
+                                                    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+               if (commit || ImGui::IsItemDeactivated())
+               {
+                  const std::string newName = gArrangeRenameMarkerBuffer;
+                  const uint64_t mid = mk.id;
+                  if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+                     ArrangeEdit([&]() { Arrange::RenameMarker(gArrange, mid, newName); });
+                  gArrangeRenamingMarkerId = 0;
+                  sMarkerRenameFocusedId = 0;
+               }
+            }
+            else
+            {
+               dl->AddText(ImVec2(fx + 5.0f, pinnedTopY + (kMarkerStripH - ImGui::GetFontSize()) * 0.5f),
+                           lum > 150.0f ? IM_COL32(20, 20, 24, 255) : IM_COL32(255, 255, 255, 255), nm);
+            }
+
+            const float hitX0 = std::max(rulerStartX, fx - 3.0f);
+            const float hitX1 = std::min(rulerStartX + rulerWidth, fx + flagW);
+            if (hitX1 - hitX0 >= 1.0f && gArrangeRenamingMarkerId != mk.id)
+            {
+               ImGui::SetCursorScreenPos(ImVec2(hitX0, pinnedTopY));
+               ImGui::InvisibleButton("##markerflag", ImVec2(hitX1 - hitX0, kMarkerStripH));
+               const bool hovered = ImGui::IsItemHovered();
+               if (hovered)
+               {
+                  markerHoveredAny = true;
+                  ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+               }
+               if (ImGui::IsItemActivated() && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  ArrangeGestureBegin();
+                  gArrangeMarkerDragId = mk.id;
+                  gArrangeMarkerDragGrabTick = xToTick(mouse.x);
+                  gArrangeMarkerDragOrigPos = mk.pos;
+               }
+               if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+               {
+                  gArrangeRenamingMarkerId = mk.id;
+                  snprintf(gArrangeRenameMarkerBuffer, sizeof(gArrangeRenameMarkerBuffer), "%s", mk.name.c_str());
+               }
+               if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+               {
+                  gArrangeCtxMarkerId = mk.id;
+                  openMarkerCtx = true;
+               }
+               if (hovered && gArrangeMarkerDragId == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+                  ImGui::SetTooltip("%s\n%s  |  %s\nDrag to move, double-click to rename, right-click for colour or delete.",
+                                    nm, ArrangeFormatBBT(mk.pos).c_str(), ArrangeFormatTickSeconds(mk.pos).c_str());
+            }
+            ImGui::PopID();
+         }
+         dl->PopClipRect();
+
+         // The drag itself, outside the loop so it survives the flag
+         // scrolling out from under the mouse. MoveMarker is a no-op while
+         // the target holds still; the release closes the gesture (one undo
+         // entry, none if it landed where it started).
+         if (gArrangeMarkerDragId != 0)
+         {
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+               gArrangeMarkerDragId = 0;
+               ArrangeGestureEnd();
+            }
+            else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f))
+            {
+               const Arrange::Tick target =
+                  gridSnap(gArrangeMarkerDragOrigPos + (xToTick(mouse.x) - gArrangeMarkerDragGrabTick));
+               Arrange::MoveMarker(gArrange, gArrangeMarkerDragId, target);
+            }
+         }
+      }
+
+      // The ruler's own button: click-drag scrubs a ghost playhead (the
+      // transport seeks once, on release - WP6), Shift+drag carves the loop.
+      ImGui::SetCursorScreenPos(rulerPos);
+      ImGui::InvisibleButton("##arrangerulerbtn", rulerSize);
+      const bool rulerShiftHeld = ImGui::GetIO().KeyShift;
+      if (ImGui::IsItemActivated())
+      {
+         const Arrange::Tick at = gridSnap(xToTick(ImGui::GetIO().MousePos.x));
+         if (rulerShiftHeld)
+         {
+            gArrangeShiftDraggingLoop = true;
+            gArrangeLoopDragAnchorTick = at;
+         }
+         else
+         {
+            ArrangeScrubBegin(at);
+         }
+      }
+      if (gArrangeShiftDraggingLoop && ImGui::IsItemActive())
+      {
+         // Shift+drag on the ruler carves out [start,end) - dragging left of
+         // the anchor extends the region backward instead of collapsing it.
+         // Armed state is left alone mid-drag and settled on release below.
+         // ArrangeSetLoop is a no-op while the mouse holds still.
+         const Arrange::Tick curTick = gridSnap(xToTick(ImGui::GetIO().MousePos.x));
+         ArrangeSetLoop(gArrange.settings.loop.enabled, std::min(gArrangeLoopDragAnchorTick, curTick),
+                        std::max(gArrangeLoopDragAnchorTick, curTick));
+      }
+      else if (gArrangeScrubbing && ImGui::IsItemActive())
+      {
+         ArrangeScrubUpdate(gridSnap(xToTick(ImGui::GetIO().MousePos.x)));
+      }
+      // Released anywhere (or the button lost its active state): the one seek.
+      if (gArrangeScrubbing && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+         ArrangeScrubEnd();
+      if (gArrangeShiftDraggingLoop && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+      {
+         gArrangeShiftDraggingLoop = false;
+         const Arrange::LoopRange& loop = gArrange.settings.loop;
+         ArrangeSetLoop(loop.end - loop.start > Arrange::kPPQ / 16, loop.start, loop.end);
+      }
+      if (ImGui::IsItemHovered() && !gArrangeScrubbing && !gArrangeShiftDraggingLoop &&
+          ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+      {
+         const Arrange::Tick ht = std::max<Arrange::Tick>(0, xToTick(mouse.x));
+         ImGui::SetTooltip("%s  |  %s\nClick or drag to move the playhead; Shift+drag sets the loop.",
+                           ArrangeFormatBBT(ht).c_str(), ArrangeFormatTickSeconds(ht).c_str());
+      }
+      // Right-click the ruler while a loop region is armed to drop it (a
+      // marker flag's own right-click opens its menu instead).
+      const bool mouseInRuler = mouse.x >= rulerPos.x && mouse.x < rulerPos.x + rulerSize.x &&
+                                mouse.y >= rulerPos.y && mouse.y < rulerPos.y + rulerSize.y;
+      if (mouseInRuler && !markerHoveredAny && gArrange.settings.loop.enabled && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+         ArrangeSetLoop(false, gArrange.settings.loop.start, gArrange.settings.loop.end);
+
+      if (openMarkerCtx)
+         ImGui::OpenPopup("##arrangemarkerctx");
+      if (ImGui::BeginPopup("##arrangemarkerctx"))
+      {
+         const Arrange::Marker* cm = nullptr;
+         for (const Arrange::Marker& mk : gArrange.markers)
+            if (mk.id == gArrangeCtxMarkerId) cm = &mk;
+         if (cm == nullptr)
+         {
+            ImGui::CloseCurrentPopup();
+         }
+         else
+         {
+            const uint64_t mid = cm->id;
+            const uint32_t curColor = cm->color;
+            ImGui::TextDisabled("Marker: %s", cm->name.c_str());
+            ImGui::TextDisabled("%s  |  %s", ArrangeFormatBBT(cm->pos).c_str(), ArrangeFormatTickSeconds(cm->pos).c_str());
+            ImGui::Separator();
+            if (ImGui::MenuItem("Rename"))
+            {
+               gArrangeRenamingMarkerId = mid;
+               snprintf(gArrangeRenameMarkerBuffer, sizeof(gArrangeRenameMarkerBuffer), "%s", cm->name.c_str());
+            }
+            ImGui::Separator();
+            ImGui::TextDisabled("Colour");
+            for (int pi = 0; pi < 10; pi++)
+            {
+               if (pi % 5 != 0) ImGui::SameLine();
+               ImGui::PushID(pi + 900);
+               const uint32_t rgba = ArrangeMarkerRGBA(kArrangePalette[pi].col);
+               const ImVec4 cVec = ImGui::ColorConvertU32ToFloat4(kArrangePalette[pi].col);
+               if (rgba == curColor)
+                  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+               if (ImGui::ColorButton(kArrangePalette[pi].name, cVec, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24)))
+                  ArrangeEdit([&]() { Arrange::RecolorMarker(gArrange, mid, rgba); });
+               if (rgba == curColor)
+                  ImGui::PopStyleVar();
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("%s", kArrangePalette[pi].name);
+               ImGui::PopID();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Delete Marker"))
+               ArrangeEdit([&]() { Arrange::DeleteMarker(gArrange, mid); });
+         }
+         ImGui::EndPopup();
+      }
+
+      // Lane grid lines (every lane stripes its body with these): the snap
+      // grid when snap is on, the ruler's beat ticks when it is off, doubled
+      // until they sit at least 6 px apart; bar lines drawn stronger.
+      struct ArrangeGridLine { float x; bool isMajor; };
+      std::vector<ArrangeGridLine> arrangeGridLines;
+      {
+         Arrange::Tick g = gridTicks > 0 ? gridTicks : std::max<Arrange::Tick>(1, Arrange::BeatsToTicks(beatStep));
+         while ((double)g * pxPerTick < 6.0 && g < Arrange::kMaxTick)
+            g *= 2;
+         for (Arrange::Tick t = Arrange::GridCeil(startTick, g); t <= endTick; t += g)
+            if (t % barTicks != 0)
+               arrangeGridLines.push_back({ tickToX(t), false });
+         Arrange::Tick bg = barTicks;
+         while ((double)bg * pxPerTick < 6.0 && bg < Arrange::kMaxTick)
+            bg *= 2;
+         for (Arrange::Tick t = Arrange::GridCeil(startTick, bg); t <= endTick; t += bg)
+            arrangeGridLines.push_back({ tickToX(t), true });
+      }
+
+      const float lanesTopY = scrollTL.y + kRulerHeight;
+      auto laneRowAt = [&](float y) { return (int)std::floor((y - lanesTopY) / kLaneHeight); };
+
+      // Clip-edge snap. With snap on the grid point is always taken (a hard
+      // quantize); the playhead, 0 and `extra` (neighbour edges) are magnets
+      // that win when within ~8 px and nearer than the grid point. With snap
+      // off only the magnets apply. `*dist` gets the winning distance, or a
+      // value past the threshold when nothing is in reach.
+      auto snapTick = [&](Arrange::Tick t, const std::vector<Arrange::Tick>& extra, Arrange::Tick* dist) -> Arrange::Tick
+      {
+         Arrange::Tick best = t;
+         Arrange::Tick bestDist = snapThresholdTicks + 1;
+         if (gridTicks > 0)
+         {
+            best = Arrange::SnapToGrid(t, gridTicks);
+            bestDist = best > t ? best - t : t - best;
+         }
+         auto consider = [&](Arrange::Tick c)
+         {
+            const Arrange::Tick d = c > t ? c - t : t - c;
+            if (d <= snapThresholdTicks && d < bestDist) { bestDist = d; best = c; }
+         };
+         consider(playTick);
+         consider(0);
+         for (Arrange::Tick e : extra)
+            consider(e);
+         if (dist != nullptr)
+            *dist = bestDist;
+         return best;
+      };
+
+      // Both edges of every clip on `laneIdx` at gesture start, minus the
+      // clips being dragged - the neighbours a drag snaps to. Bounds come from
+      // the lane the clip is landing on, not the one it left.
+      auto laneEdges = [&](int laneIdx, const std::vector<uint64_t>& exclude)
+      {
+         std::vector<Arrange::Tick> e;
+         const Arrange::Model& src = gArrangeGestureOpen ? gArrangeGestureBefore : gArrange;
+         if (laneIdx < 0 || laneIdx >= (int)src.lanes.size())
+            return e;
+         for (const Arrange::Clip& c : src.lanes[laneIdx].clips)
+         {
+            if (std::find(exclude.begin(), exclude.end(), c.id) != exclude.end())
+               continue;
+            e.push_back(c.start);
+            e.push_back(c.End());
+         }
+         return e;
+      };
+
+      // ---- the live clip drag ----
+      // Every frame the mouse moves, gArrange is rebuilt as (gesture snapshot
+      // + this drag) through the same op the release commits, so the view is
+      // exactly the drop. Mouse-up ends the gesture: one undo entry, or none
+      // if nothing ended up different.
+      {
+         ArrangeDragState& drag = gArrangeDrag;
+         if (drag.mode != kArrangeDragNone)
+         {
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+               const bool wasClick = !drag.live && drag.collapseOnClick;
+               const uint64_t clicked = drag.clipId;
+               const bool single = drag.singleMember;
+               ArrangeDragEnd();
+               if (wasClick && Arrange::Find(gArrange, clicked).Valid())
+               {
+                  std::vector<uint64_t> ids{ clicked };
+                  if (!single)
+                     ids = Arrange::ExpandSelectionToGroups(gArrange, ids);
+                  gArrangeSel.clear();
+                  gArrangeSel.insert(ids.begin(), ids.end());
+                  gArrangeSelAnchor = clicked;
+               }
+            }
+            else
+            {
+               if (!drag.live && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3.0f))
+                  drag.live = true;
+               if (drag.live)
+               {
+                  const Arrange::Tick rawDelta = xToTick(mouse.x) - drag.grabTick;
+                  if (drag.mode == kArrangeDragMove)
+                  {
+                     const int laneCount = (int)gArrange.lanes.size();
+                     const int mouseLane = std::clamp(laneRowAt(mouse.y), 0, std::max(0, laneCount - 1));
+                     const int laneDelta = mouseLane - drag.grabLane;
+                     const Arrange::Tick len = drag.origEnd - drag.origStart;
+                     // Snap against the lane the grabbed clip would land on
+                     // (its own lane when the lane move is refused).
+                     int targetLane = drag.grabLane + laneDelta;
+                     if (targetLane < 0 || targetLane >= laneCount || drag.grabLane >= laneCount ||
+                         gArrange.lanes[targetLane].type != gArrange.lanes[drag.grabLane].type)
+                        targetLane = drag.grabLane;
+                     const std::vector<Arrange::Tick> edges = laneEdges(targetLane, drag.ids);
+                     const Arrange::Tick cand = drag.origStart + rawDelta;
+                     Arrange::Tick dStart = 0, dEnd = 0;
+                     const Arrange::Tick sStart = snapTick(cand, edges, &dStart);
+                     const Arrange::Tick sEnd = snapTick(cand + len, edges, &dEnd) - len;
+                     const Arrange::Tick chosen = dEnd < dStart ? sEnd : sStart;
+                     ArrangeDragUpdate(chosen - drag.origStart, laneDelta);
+                  }
+                  else
+                  {
+                     const Arrange::Tick origEdge = drag.edge == Arrange::kEdgeStart ? drag.origStart : drag.origEnd;
+                     std::vector<Arrange::Tick> edges;
+                     if (drag.mode == kArrangeDragTrimStart || drag.mode == kArrangeDragTrimEnd)
+                        edges = laneEdges(drag.grabLane, { drag.clipId });
+                     const Arrange::Tick snapped = snapTick(origEdge + rawDelta, edges, nullptr);
+                     ArrangeDragUpdate(std::max<Arrange::Tick>(0, snapped), 0);
+                  }
+               }
+            }
+         }
+      }
+
+      // Group bounds (tick span and lane rows), for the group-edge hit test
+      // and the selected-group outline.
+      struct ArrangeGroupSpan { Arrange::Tick start, end; int laneMin, laneMax; };
+      std::map<uint64_t, ArrangeGroupSpan> arrangeGroupSpans;
+      for (int li = 0; li < (int)gArrange.lanes.size(); li++)
+      {
+         for (const Arrange::Clip& c : gArrange.lanes[li].clips)
+         {
+            if (c.groupId == 0)
+               continue;
+            auto it = arrangeGroupSpans.find(c.groupId);
+            if (it == arrangeGroupSpans.end())
+               arrangeGroupSpans[c.groupId] = { c.start, c.End(), li, li };
+            else
+            {
+               it->second.start = std::min(it->second.start, c.start);
+               it->second.end = std::max(it->second.end, c.End());
+               it->second.laneMin = std::min(it->second.laneMin, li);
+               it->second.laneMax = std::max(it->second.laneMax, li);
+            }
+         }
+      }
+
+      // Draw Lanes
+      float curY = lanesTopY;
+      int laneToMoveSrc = -1;
+      int laneToMoveDst = -1;
+      uint64_t laneToDelete = 0;
+      bool openClipCtx = false;
+      bool openAddClip = false;
+      // static: the right-click that opens "##arrangeaddclip" and the frame
+      // its "Add Clip" is clicked are different frames.
+      static uint64_t addClipToLaneId = 0;
+      static Arrange::Tick addClipAtTick = 0;
+
+      // Shared "insert a new track" popup body - opened either from the
+      // empty-state prompt below (no tracks yet) or from a per-row "+" next
+      // to a track's drag handle further down, with gArrangeAddTrackInsertAfter
+      // set beforehand to say where it lands (-1 = append at end).
+      auto InsertArrangeTrack = [&](bool isVideo)
+      {
+         const int type = isVideo ? Arrange::kLaneVideo : Arrange::kLaneAudio;
+         ArrangeEdit([&]()
+         {
+            int n = 1;
+            for (const Arrange::Lane& l : gArrange.lanes)
+               if (l.type == type) n++;
+            const int at = (gArrangeAddTrackInsertAfter < 0 || gArrangeAddTrackInsertAfter >= (int)gArrange.lanes.size())
+               ? -1 : gArrangeAddTrackInsertAfter + 1;
+            const uint64_t id = Arrange::AddLane(gArrange, type, at);
+            if (Arrange::Lane* l = Arrange::FindLane(gArrange, id))
+               l->name = (isVideo ? "Video " : "Audio ") + std::to_string(n);
+         });
+      };
+
+      if (gArrange.lanes.empty())
+      {
+         ImGui::SetCursorScreenPos(ImVec2(scrollTL.x + 4.0f, pinnedTopY + kRulerHeight + 10.0f));
+         if (ImGui::Button("+ Add Track", ImVec2(120, 0)))
+         {
+            gArrangeAddTrackInsertAfter = -1;
+            ImGui::OpenPopup("##arrangeaddtrackpopup");
+         }
+      }
+      if (ImGui::BeginPopup("##arrangeaddtrackpopup"))
+      {
+         if (ImGui::MenuItem("Video Track"))
+            InsertArrangeTrack(true);
+         if (ImGui::MenuItem("Audio Track"))
+            InsertArrangeTrack(false);
+         ImGui::EndPopup();
+      }
+
+      // Clip lane drawing to below the (now pinned) ruler strip, so a track
+      // scrolled up under it is cut off cleanly instead of painting over the
+      // ruler - the ruler itself is drawn unclipped further up, at a fixed
+      // pinnedTopY, so it always stays on top of/above whatever scrolled.
+      dl->PushClipRect(ImVec2(scrollTL.x, pinnedTopY + kRulerHeight),
+                        ImVec2(scrollTL.x + avail.x, pinnedTopY + std::max(avail.y, kRulerHeight)), true);
+
+      for (size_t i = 0; i < gArrange.lanes.size(); i++)
+      {
+         // Only the header's name field writes through this reference; every
+         // clip edit is deferred to an id-addressed op after the loop, so the
+         // lane vector never reshapes under it.
+         Arrange::Lane& lane = gArrange.lanes[i];
+         const uint64_t laneId = lane.id;
+         // Scoped by lane id, not row, so a reorder never hands one lane's
+         // active name field to another.
+         const int laneScope = (int)(laneId & 0x7fffffff);
+         ImGui::PushID(laneScope);
+
+         // Lane background
+         const ImU32 laneBg = (i % 2 == 0)
+            ? (isLight ? IM_COL32(245, 245, 248, 255) : IM_COL32(24, 24, 28, 255))
+            : (isLight ? IM_COL32(250, 250, 252, 255) : IM_COL32(28, 28, 32, 255));
+         dl->AddRectFilled(ImVec2(scrollTL.x, curY),
+                           ImVec2(rulerStartX + rulerWidth, curY + kLaneHeight), laneBg);
+         dl->AddLine(ImVec2(scrollTL.x, curY + kLaneHeight),
+                     ImVec2(rulerStartX + rulerWidth, curY + kLaneHeight),
+                     tickCol, 0.5f);
+
+         // Beat/bar grid lines through the lane body - opacity graded by how
+         // prominent that timestamp is (bar >> beat) so a busy grid at high
+         // zoom doesn't visually compete with the bar lines that actually
+         // matter for orientation.
+         for (const ArrangeGridLine& gl : arrangeGridLines)
+         {
+            const ImU32 gridCol = isLight
+               ? IM_COL32(0, 0, 0, gl.isMajor ? 60 : 22)
+               : IM_COL32(255, 255, 255, gl.isMajor ? 55 : 18);
+            dl->AddLine(ImVec2(gl.x, curY), ImVec2(gl.x, curY + kLaneHeight), gridCol, 1.0f);
+         }
+
+         // Header separator vertical line
+         dl->AddLine(ImVec2(rulerStartX, curY), ImVec2(rulerStartX, curY + kLaneHeight), tickCol, 1.0f);
+
+         // ---- Header content ----
+         ImGui::SetCursorScreenPos(ImVec2(scrollTL.x + 4.0f, curY + 4.0f));
+
+         // Per-row "+ Add Track": inserts a new track right after this one.
+         {
+            const ImVec2 addBtnSize(20.0f, 18.0f);
+            if (ImGui::Button("##rowaddtrack", addBtnSize))
+            {
+               gArrangeAddTrackInsertAfter = (int)i;
+               // "##arrangeaddtrackpopup" is begun above with no lane scope;
+               // open it from the same ID-stack depth or the IDs never match.
+               ImGui::PopID();
+               ImGui::OpenPopup("##arrangeaddtrackpopup");
+               ImGui::PushID(laneScope);
+            }
+            const ImVec2 bmin = ImGui::GetItemRectMin();
+            const ImVec2 bmax = ImGui::GetItemRectMax();
+            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            Tabler::DrawPlus(dl, center, (bmax.y - bmin.y) * 0.55f, ImGui::GetColorU32(ImGuiCol_Text));
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip("Add Track");
+         }
+         ImGui::SameLine(0.0f, 5.0f);
+
+         // Drag handle: a colored chip carrying a grip icon (violet video,
+         // emerald audio), doubling as the reorder drag source/target.
+         const bool isVideo = lane.type == Arrange::kLaneVideo;
+         const ImU32 badgeCol = isVideo ? IM_COL32(139, 92, 246, 255) : IM_COL32(16, 185, 129, 255);
+         const ImVec2 badgePos = ImGui::GetCursorScreenPos();
+         const ImVec2 badgeSize(22.0f, 18.0f);
+         dl->AddRectFilled(badgePos, ImVec2(badgePos.x + badgeSize.x, badgePos.y + badgeSize.y), badgeCol, 3.0f);
+         Tabler::DrawGripVertical(dl, ImVec2(badgePos.x + badgeSize.x * 0.5f, badgePos.y + badgeSize.y * 0.5f),
+                                  12.0f, IM_COL32(255, 255, 255, 235));
+
+         ImGui::SetCursorScreenPos(badgePos);
+         ImGui::InvisibleButton("##trackdragbadge", badgeSize);
+         if (ImGui::IsItemHovered())
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            ImGui::SetTooltip("%s track - drag to reorder", isVideo ? "Video" : "Audio");
+         }
+
+         if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+         {
+            int dragIdx = (int)i;
+            ImGui::SetDragDropPayload("ARRANGE_TRACK_INDEX", &dragIdx, sizeof(int));
+            ImGui::Text("Move %s", lane.name.c_str());
+            ImGui::EndDragDropSource();
+         }
+         if (ImGui::BeginDragDropTarget())
+         {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ARRANGE_TRACK_INDEX"))
+            {
+               const int srcIdx = *(const int*)payload->Data;
+               if (srcIdx != (int)i)
+               {
+                  laneToMoveSrc = srcIdx;
+                  laneToMoveDst = (int)i;
+               }
+            }
+            ImGui::EndDragDropTarget();
+         }
+
+         ImGui::SameLine();
+
+         // Lane name. Typing edits the model live (so the header never lags
+         // the field); the whole edit is one undo entry, opened when the field
+         // activates and pushed when it deactivates, only if the name changed.
+         ImGui::SetNextItemWidth(140.0f);
+         char nameBuf[128];
+         snprintf(nameBuf, sizeof(nameBuf), "%s", lane.name.c_str());
+         const bool nameEdited = ImGui::InputText("##streamname", nameBuf, sizeof(nameBuf));
+         if (ImGui::IsItemActivated())
+         {
+            ArrangeGestureBegin();
+            gArrangeRenamingLaneId = laneId;
+         }
+         if (nameEdited && lane.name != nameBuf)
+         {
+            if (!gArrangeGestureOpen)
+               ArrangeGestureBegin();
+            lane.name = nameBuf;
+            gArrange.revision++;
+         }
+         if (ImGui::IsItemDeactivated() && gArrangeRenamingLaneId == laneId)
+         {
+            ArrangeGestureEnd();
+            gArrangeRenamingLaneId = 0;
+         }
+
+         // Delete button - icon-only cross, transparent at rest, red on hover.
+         ImGui::SameLine();
+         {
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+            const float btnDim = ImGui::GetFrameHeight() * 0.8f;
+            if (ImGui::Button("##deletestream", ImVec2(btnDim, btnDim)))
+               laneToDelete = laneId;
+            ImGui::PopStyleColor();
+            ImDrawList* hdrDl = ImGui::GetWindowDrawList();
+            const ImVec2 bmin = ImGui::GetItemRectMin();
+            const ImVec2 bmax = ImGui::GetItemRectMax();
+            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            const float iconSize = (bmax.y - bmin.y) * 0.6f;
+            const ImVec4 disabled4 = ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
+            const ImVec4 text4 = ImGui::GetStyle().Colors[ImGuiCol_Text];
+            const ImU32 idleCol = IM_COL32(
+               (int)((disabled4.x * 0.6f + text4.x * 0.4f) * 255.0f),
+               (int)((disabled4.y * 0.6f + text4.y * 0.4f) * 255.0f),
+               (int)((disabled4.z * 0.6f + text4.z * 0.4f) * 255.0f),
+               255);
+            const ImU32 xCol = ImGui::IsItemHovered() ? IM_COL32(230, 60, 60, 255) : idleCol;
+            Tabler::DrawX(hdrDl, center, iconSize, xCol);
+         }
+
+         // Clips on this lane first, so clip buttons take priority over empty
+         // lane clicks. Each clip is a copy: nothing in this loop reshapes
+         // the model (drags were applied above, menu edits run after it).
+         bool clipHoveredAny = false;
+         for (size_t ci = 0; ci < lane.clips.size(); ci++)
+         {
+            const Arrange::Clip clip = lane.clips[ci];
+            const float clipX0 = tickToX(clip.start);
+            const float clipX1 = tickToX(clip.End());
+
+            // Cull offscreen clips
+            if (clipX1 < rulerStartX || clipX0 > rulerStartX + rulerWidth)
+               continue;
+
+            const float cLeft = std::max(rulerStartX, clipX0);
+            const float cRight = std::min(rulerStartX + rulerWidth, clipX1);
+            const float cTop = curY + 3.0f;
+            const float cBottom = curY + kLaneHeight - 3.0f;
+            const float cWidth = std::max(4.0f, cRight - cLeft);
+
+            ImGui::PushID((int)(clip.id & 0x7fffffff));
+
+            GraphNode* clipNode = nodeForUid(clip.srcUid);
+            const bool offline = clipNode == nullptr;
+            const std::string clipLabel = !clip.name.empty() ? clip.name
+               : (clipNode != nullptr ? NodeTitle(*clipNode) : std::string("Unassigned"));
+
+            ImGui::SetCursorScreenPos(ImVec2(cLeft, cTop));
+            ImGui::InvisibleButton("##clipbtn", ImVec2(cWidth, cBottom - cTop));
+            const bool clipActive = ImGui::IsItemActive();
+            const bool clipHovered = ImGui::IsItemHovered();
+            const bool clipActivated = ImGui::IsItemActivated();
+            if (clipHovered) clipHoveredAny = true;
+
+            const bool isSelected = gArrangeSel.count(clip.id) != 0;
+            const ImGuiIO& cio = ImGui::GetIO();
+
+            // Hit zones: a trim handle is at most a quarter of the clip on
+            // each side (2..6 px), so the middle half of any clip always moves.
+            const ImVec2 mPos = cio.MousePos;
+            const float handleW = std::clamp((clipX1 - clipX0) * 0.25f, 2.0f, 6.0f);
+            const bool onLeftEdge = clipHovered && clipX0 >= rulerStartX && (mPos.x - clipX0 <= handleW);
+            const bool onRightEdge = clipHovered && !onLeftEdge && clipX1 <= rulerStartX + rulerWidth &&
+                                     (clipX1 - mPos.x <= handleW);
+            const int edgeHit = onLeftEdge ? Arrange::kEdgeStart : (onRightEdge ? Arrange::kEdgeEnd : -1);
+            // A grouped clip's edge that is also the group's edge drives the
+            // group (trim the members on that edge; Shift scales). Alt works
+            // on the one clip.
+            bool groupEdge = false;
+            if (edgeHit >= 0 && clip.groupId != 0 && !cio.KeyAlt)
+            {
+               auto gs = arrangeGroupSpans.find(clip.groupId);
+               if (gs != arrangeGroupSpans.end())
+                  groupEdge = edgeHit == Arrange::kEdgeStart ? clip.start == gs->second.start : clip.End() == gs->second.end;
+            }
+
+            if (edgeHit >= 0)
+               ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+
+            // Click: Alt = this member only; Cmd/Ctrl or Shift = toggle into
+            // the selection (no drag) - except Shift on a group edge, which is
+            // the proportional scale. A plain click keeps an existing
+            // selection that contains the clip, so the drag moves all of it.
+            if (clipActivated && gArrangeDrag.mode == kArrangeDragNone)
+            {
+               const Arrange::Tick grabTick = xToTick(mPos.x);
+               const bool alt = cio.KeyAlt;
+               if (cio.KeyShift && groupEdge)
+               {
+                  ArrangeClickSelect(clip.id, false, false);
+                  ArrangeDragBegin(kArrangeDragGroupScale, clip.id, edgeHit, grabTick);
+               }
+               else if (cio.KeySuper || cio.KeyCtrl || cio.KeyShift)
+               {
+                  ArrangeClickSelect(clip.id, true, alt);
+               }
+               else
+               {
+                  const bool wasSelected = isSelected && !alt;
+                  ArrangeClickSelect(clip.id, false, alt);
+                  int mode = kArrangeDragMove;
+                  if (groupEdge)
+                     mode = kArrangeDragGroupEdge;
+                  else if (edgeHit == Arrange::kEdgeStart)
+                     mode = kArrangeDragTrimStart;
+                  else if (edgeHit == Arrange::kEdgeEnd)
+                     mode = kArrangeDragTrimEnd;
+                  ArrangeDragBegin(mode, clip.id, edgeHit >= 0 ? edgeHit : Arrange::kEdgeStart, grabTick);
+                  gArrangeDrag.collapseOnClick = wasSelected;
+                  gArrangeDrag.singleMember = alt;
+               }
+            }
+
+            // Right-click: the menu acts on the selection, so a clip outside
+            // it becomes the selection first.
+            if (clipHovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+            {
+               if (!isSelected)
+                  ArrangeClickSelect(clip.id, false, cio.KeyAlt);
+               gArrangeCtxClipId = clip.id;
+               openClipCtx = true;
+            }
+
+            // Hover: where the clip sits in both units (WP6), plus the
+            // unassigned note for an offline clip.
+            if (clipHovered && gArrangeDrag.mode == kArrangeDragNone && gArrangeRenamingClipId != clip.id &&
+                ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+            {
+               ImGui::BeginTooltip();
+               ImGui::TextUnformatted(clipLabel.c_str());
+               ImGui::TextDisabled("Start   %s  |  %s", ArrangeFormatBBT(clip.start).c_str(),
+                                   ArrangeFormatTickSeconds(clip.start).c_str());
+               ImGui::TextDisabled("End     %s  |  %s", ArrangeFormatBBT(clip.End()).c_str(),
+                                   ArrangeFormatTickSeconds(clip.End()).c_str());
+               ImGui::TextDisabled("Length  %s  |  %.2fs", ArrangeFormatBBTLength(clip.length).c_str(),
+                                   Arrange::TicksToSeconds(clip.length, arrBpm));
+               if (offline)
+               {
+                  ImGui::Separator();
+                  ImGui::TextUnformatted("Unassigned: this clip has no source node, so it plays nothing.\nRight-click > Assign Node... to link one.");
+               }
+               ImGui::EndTooltip();
+            }
+
+            // Styling. A Color Tint overrides the type palette; a disabled or
+            // offline clip is drawn desaturated under a diagonal hatch - the
+            // "this will not play" mark.
+            const bool hasTint = clip.colorR > 0.001f || clip.colorG > 0.001f || clip.colorB > 0.001f;
+            ImU32 clipBaseCol = hasTint
+               ? IM_COL32((int)(clip.colorR * 255.0f), (int)(clip.colorG * 255.0f), (int)(clip.colorB * 255.0f), 210)
+               : (isVideo ? IM_COL32(109, 40, 217, 210) : IM_COL32(5, 150, 105, 210));
+            ImU32 clipActiveCol = hasTint
+               ? IM_COL32((int)(clip.colorR * 255.0f), (int)(clip.colorG * 255.0f), (int)(clip.colorB * 255.0f), 255)
+               : (isVideo ? IM_COL32(139, 92, 246, 255) : IM_COL32(16, 185, 129, 255));
+            const bool muted = !clip.enabled || offline;
+            if (muted)
+            {
+               clipBaseCol = isLight ? IM_COL32(176, 178, 186, 220) : IM_COL32(72, 72, 80, 220);
+               clipActiveCol = isLight ? IM_COL32(160, 162, 170, 255) : IM_COL32(88, 88, 96, 255);
+            }
+            const ImU32 clipBorderCol = isSelected
+               ? IM_COL32(250, 204, 21, 255) // gold for selected
+               : (clipActive ? IM_COL32(255, 255, 255, 240) : (clipHovered ? IM_COL32(230, 230, 240, 220) : IM_COL32(20, 20, 24, 180)));
+
+            dl->AddRectFilled(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom),
+                              clipActive ? clipActiveCol : clipBaseCol, 4.0f);
+            if (muted)
+               DrawArrangeHatch(dl, ImVec2(cLeft, cTop), ImVec2(cRight, cBottom),
+                                isLight ? IM_COL32(0, 0, 0, 45) : IM_COL32(255, 255, 255, 38));
+            if (clip.groupId != 0)
+               dl->AddRectFilled(ImVec2(cLeft, cTop), ImVec2(cRight, cTop + 3.0f), ArrangeGroupColor(clip.groupId),
+                                 4.0f, ImDrawFlags_RoundCornersTop);
+
+            // Live waveform (WP8). Position-indexed, so a column shows what
+            // actually came out of the clip's node at that point in the clip
+            // - and a stretch that has never played stays on the centre
+            // line rather than guessing. Nothing is drawn during a take: the
+            // panel is locked anyway and the take owns the frame budget.
+            if (!isVideo && cWidth > 6.0f && !ArrangeRenderBusy())
+            {
+               const float midY = (cTop + cBottom) * 0.5f;
+               const float halfH = std::max(2.0f, (cBottom - cTop) * 0.5f - 5.0f);
+               const ImU32 waveCol = muted ? IM_COL32(255, 255, 255, 60) : IM_COL32(255, 255, 255, 115);
+               dl->PushClipRect(ImVec2(cLeft + 1.0f, cTop + 1.0f), ImVec2(cRight - 1.0f, cBottom - 1.0f), true);
+               dl->AddLine(ImVec2(cLeft + 1.0f, midY), ImVec2(cRight - 1.0f, midY),
+                           IM_COL32(255, 255, 255, 45), 1.0f);
+               auto waveIt = gArrangeClipWaves.find(clip.id);
+               if (waveIt != gArrangeClipWaves.end() && !waveIt->second.minv.empty() && clip.length > 0)
+               {
+                  const ArrangeClipWave& wv = waveIt->second;
+                  const int nb = (int)wv.minv.size();
+                  // x -> tick -> bucket, inverting the same tickToX the clip
+                  // rect came from, so the waveform cannot drift from it at
+                  // any zoom. One column may span many buckets when zoomed
+                  // out; take the envelope over all of them.
+                  const double ticksPerPx =
+                     (double)clip.length / std::max(1.0, (double)(clipX1 - clipX0));
+                  for (float x = cLeft; x < cRight; x += 1.0f)
+                  {
+                     const double tA = ((double)x - (double)clipX0) * ticksPerPx;
+                     const double tB = tA + ticksPerPx;
+                     int b0 = (int)std::floor(tA / (double)kArrangeWaveBucketTicks);
+                     int b1 = (int)std::floor((tB - 1.0) / (double)kArrangeWaveBucketTicks);
+                     b0 = std::clamp(b0, 0, nb - 1);
+                     b1 = std::clamp(std::max(b1, b0), 0, nb - 1);
+                     float lo = 0.0f, hi = 0.0f;
+                     bool any = false;
+                     for (int b = b0; b <= b1; b++)
+                     {
+                        if (wv.filled[(size_t)b] == 0)
+                           continue;
+                        lo = std::min(lo, wv.minv[(size_t)b]);
+                        hi = std::max(hi, wv.maxv[(size_t)b]);
+                        any = true;
+                     }
+                     if (!any)
+                        continue;
+                     const float yTop = midY - std::clamp(hi, -1.0f, 1.0f) * halfH;
+                     const float yBot = midY - std::clamp(lo, -1.0f, 1.0f) * halfH;
+                     dl->AddLine(ImVec2(x + 0.5f, yTop), ImVec2(x + 0.5f, std::max(yBot, yTop + 1.0f)),
+                                 waveCol, 1.0f);
+                  }
+               }
+               dl->PopClipRect();
+            }
+
+            // Thumbnail at the clip's left edge (WP8), only when the clip is
+            // wide enough that it does not crowd out the label. Drawn from
+            // the pooled FBO the composite filled; a clip that has never
+            // been under the playhead has none yet and just shows its
+            // colour.
+            float thumbRight = cLeft;
+            if (isVideo && cWidth > (float)kArrangeThumbW + 16.0f && !ArrangeRenderBusy())
+            {
+               auto thumbIt = gArrangeClipThumbs.find(clip.id);
+               if (thumbIt != gArrangeClipThumbs.end() && thumbIt->second.fbo.tex != 0 &&
+                   thumbIt->second.lastCapture >= 0.0)
+               {
+                  const float avail = (cBottom - cTop) - 8.0f;
+                  const float th = std::min((float)kArrangeThumbH, avail);
+                  const float tw = th * ((float)kArrangeThumbW / (float)kArrangeThumbH);
+                  const ImVec2 tl(cLeft + 4.0f, (cTop + cBottom) * 0.5f - th * 0.5f);
+                  const ImVec2 br(tl.x + tw, tl.y + th);
+                  dl->PushClipRect(ImVec2(cLeft + 1.0f, cTop + 1.0f), ImVec2(cRight - 1.0f, cBottom - 1.0f), true);
+                  // Flipped V: an FBO's texture is bottom-up, the same
+                  // convention every other AddImage of a node texture uses.
+                  dl->AddImage((ImTextureID)(intptr_t)thumbIt->second.fbo.tex, tl, br,
+                               ImVec2(0, 1), ImVec2(1, 0));
+                  dl->AddRect(tl, br, IM_COL32(0, 0, 0, 140), 2.0f);
+                  dl->PopClipRect();
+                  thumbRight = br.x;
+               }
+            }
+
+            dl->AddRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), clipBorderCol, 4.0f, 0, isSelected ? 2.5f : 1.2f);
+
+            // Trim handle marks
+            if (cWidth > 20.0f)
+            {
+               const ImU32 handleCol = onLeftEdge ? IM_COL32(255, 255, 255, 220) : IM_COL32(255, 255, 255, 80);
+               const ImU32 handleRCol = onRightEdge ? IM_COL32(255, 255, 255, 220) : IM_COL32(255, 255, 255, 80);
+               dl->AddLine(ImVec2(cLeft + 3.0f, cTop + 6.0f), ImVec2(cLeft + 3.0f, cBottom - 6.0f), handleCol, 2.0f);
+               dl->AddLine(ImVec2(cRight - 3.0f, cTop + 6.0f), ImVec2(cRight - 3.0f, cBottom - 6.0f), handleRCol, 2.0f);
+            }
+
+            // Label, or the inline rename field. A rename is one undo entry,
+            // committed on Enter or focus loss if the name changed; Escape
+            // abandons it.
+            if (gArrangeRenamingClipId == clip.id)
+            {
+               static uint64_t sArrangeRenameFocusedId = 0;
+               ImGui::SetCursorScreenPos(ImVec2(cLeft + 4.0f, cTop + 2.0f));
+               ImGui::SetNextItemWidth(std::max(20.0f, cWidth - 8.0f));
+               if (sArrangeRenameFocusedId != clip.id)
+               {
+                  ImGui::SetKeyboardFocusHere();
+                  sArrangeRenameFocusedId = clip.id;
+               }
+               const bool commit = ImGui::InputText("##renamingclipfield", gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer),
+                                                    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+               if (commit || ImGui::IsItemDeactivated())
+               {
+                  const std::string newName = gArrangeRenameClipBuffer;
+                  const uint64_t renameId = clip.id;
+                  if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false) && newName != clip.name)
+                  {
+                     ArrangeEdit([&]()
+                     {
+                        if (Arrange::Clip* c = Arrange::FindClip(gArrange, renameId))
+                        {
+                           c->name = newName;
+                           gArrange.revision++;
+                        }
+                     });
+                  }
+                  gArrangeRenamingClipId = 0;
+                  sArrangeRenameFocusedId = 0;
+               }
+            }
+            else
+            {
+               const std::string fullLabel = clipLabel + " [" + ArrangeFormatLength(clip.length) + "]";
+               const ImU32 labelCol = muted ? (isLight ? IM_COL32(60, 60, 70, 255) : IM_COL32(190, 190, 200, 255))
+                                            : IM_COL32(255, 255, 255, 255);
+               // Starts after the thumbnail when there is one, so the two
+               // never overlap.
+               const float labelX = (thumbRight > cLeft ? thumbRight + 6.0f : cLeft + 8.0f);
+               dl->PushClipRect(ImVec2(cLeft + 2.0f, cTop), ImVec2(cRight - 2.0f, cBottom), true);
+               dl->AddText(ImVec2(labelX, cTop + 8.0f), labelCol, fullLabel.c_str());
+               dl->PopClipRect();
+            }
+
+            ImGui::PopID();
+         }
+
+         // Empty lane body: left-click clears the selection, right-click
+         // offers "Add Clip" at that tick.
+         const bool mouseInLane = mouse.x >= rulerStartX && mouse.x < rulerStartX + rulerWidth &&
+                                  mouse.y >= curY && mouse.y < curY + kLaneHeight;
+         if (mouseInLane && !clipHoveredAny && ImGui::IsWindowHovered())
+         {
+            const ImGuiIO& lio = ImGui::GetIO();
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
+                !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
+            {
+               gArrangeSel.clear();
+               gArrangeSelAnchor = 0;
+            }
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+            {
+               addClipAtTick = gridSnap(xToTick(mouse.x));
+               addClipToLaneId = laneId;
+               openAddClip = true;
+            }
+         }
+
+         curY += kLaneHeight;
+         ImGui::PopID();
+      }
+
+      // Overwrite preview: the parts of stationary clips the moving block is
+      // about to trim, in red over the target lane - read off the gesture
+      // snapshot, since the live model has already trimmed them.
+      if (gArrangeDrag.mode == kArrangeDragMove && gArrangeDrag.live && gArrangeGestureOpen)
+      {
+         const std::vector<uint64_t>& movers = gArrangeDrag.ids;
+         for (uint64_t id : movers)
+         {
+            const Arrange::Loc loc = Arrange::Find(gArrange, id);
+            if (!loc.Valid() || loc.lane >= (int)gArrangeGestureBefore.lanes.size())
+               continue;
+            const Arrange::Clip& mc = gArrange.lanes[loc.lane].clips[loc.index];
+            const float y = lanesTopY + (float)loc.lane * kLaneHeight;
+            for (const Arrange::Clip& sc : gArrangeGestureBefore.lanes[loc.lane].clips)
+            {
+               if (std::find(movers.begin(), movers.end(), sc.id) != movers.end())
+                  continue;
+               const Arrange::Tick a = std::max(sc.start, mc.start);
+               const Arrange::Tick b = std::min(sc.End(), mc.End());
+               if (a >= b)
+                  continue;
+               const float x0 = std::max(rulerStartX, tickToX(a));
+               const float x1 = std::min(rulerStartX + rulerWidth, tickToX(b));
+               if (x1 <= x0)
+                  continue;
+               dl->AddRectFilled(ImVec2(x0, y + 3.0f), ImVec2(x1, y + kLaneHeight - 3.0f), IM_COL32(239, 68, 68, 105), 3.0f);
+               dl->AddRect(ImVec2(x0, y + 3.0f), ImVec2(x1, y + kLaneHeight - 3.0f), IM_COL32(239, 68, 68, 235), 3.0f, 0, 1.5f);
+            }
+         }
+      }
+
+      // Outline around every selected group's bounds, in the group colour.
+      {
+         std::set<uint64_t> selectedGroups;
+         for (uint64_t id : gArrangeSel)
+            if (const Arrange::Clip* c = Arrange::FindClip(gArrange, id))
+               if (c->groupId != 0)
+                  selectedGroups.insert(c->groupId);
+         for (uint64_t gid : selectedGroups)
+         {
+            auto it = arrangeGroupSpans.find(gid);
+            if (it == arrangeGroupSpans.end())
+               continue;
+            const float x0 = std::max(rulerStartX, tickToX(it->second.start)) - 1.0f;
+            const float x1 = std::min(rulerStartX + rulerWidth, tickToX(it->second.end)) + 1.0f;
+            const float y0 = lanesTopY + (float)it->second.laneMin * kLaneHeight + 1.0f;
+            const float y1 = lanesTopY + (float)(it->second.laneMax + 1) * kLaneHeight - 1.0f;
+            if (x1 > x0)
+               dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), ArrangeGroupColor(gid, 230), 5.0f, 0, 1.5f);
+         }
+      }
+      dl->PopClipRect();
+
+      // ---- clip context menu (acts on the selection; ids only) ----
+      if (openClipCtx)
+         ImGui::OpenPopup("##arrangeclipctx");
+      if (ImGui::BeginPopup("##arrangeclipctx"))
+      {
+         Arrange::Clip* cp = Arrange::FindClip(gArrange, gArrangeCtxClipId);
+         if (cp == nullptr)
+         {
+            ImGui::CloseCurrentPopup();
+         }
+         else
+         {
+            const uint64_t cid = cp->id;
+            const Arrange::Loc cloc = Arrange::Find(gArrange, cid);
+            const int ctxLaneType = gArrange.lanes[cloc.lane].type;
+            GraphNode* ctxNode = nodeForUid(cp->srcUid);
+            const std::string ctxLabel = !cp->name.empty() ? cp->name
+               : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
+            ImGui::TextDisabled("Clip: %s", ctxLabel.c_str());
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Rename"))
+            {
+               gArrangeRenamingClipId = cid;
+               snprintf(gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer), "%s", ctxLabel.c_str());
+            }
+
+            // Numeric edits: live on the model, one undo entry per drag of a
+            // field (opened on the first change, pushed on deactivate, and
+            // only if something changed). Start/End go through TrimEdge, so
+            // they clamp to the neighbours exactly like a handle drag.
+            auto fieldGesture = [&](bool changed)
+            {
+               if (changed && !gArrangeGestureOpen)
+                  ArrangeGestureBegin();
+            };
+            auto fieldGestureEnd = [&]()
+            {
+               if (ImGui::IsItemDeactivated())
+                  ArrangeGestureEnd();
+            };
+            // A tick field in the chosen unit (WP6). Bars: dragged in beats,
+            // shown as bar.beat.sixteenth, stepping by sixteenths (the text is
+            // a literal, so typing is off - drag only). Time: seconds, as
+            // before, typing allowed. Storage stays ticks either way.
+            auto tickField = [&](const char* label, Arrange::Tick cur, Arrange::Tick lo, Arrange::Tick hi,
+                                 bool isLength, Arrange::Tick* out) -> bool
+            {
+               ImGui::SetNextItemWidth(160.0f);
+               if (gArrange.settings.timeDisplay == 1)
+               {
+                  float v = (float)Arrange::TicksToSeconds(cur, arrBpm);
+                  const float vlo = (float)Arrange::TicksToSeconds(lo, arrBpm);
+                  const float vhi = hi >= Arrange::kMaxTick ? FLT_MAX : (float)Arrange::TicksToSeconds(hi, arrBpm);
+                  if (!ImGui::DragFloat(label, &v, 0.01f, vlo, vhi, "%.2fs"))
+                     return false;
+                  *out = std::clamp<Arrange::Tick>(Arrange::SecondsToTicks(v, arrBpm), lo, hi);
+                  return true;
+               }
+               float v = (float)Arrange::TicksToBeats(cur);
+               const float vlo = (float)Arrange::TicksToBeats(lo);
+               const float vhi = hi >= Arrange::kMaxTick ? FLT_MAX : (float)Arrange::TicksToBeats(hi);
+               const std::string shown = isLength ? ArrangeFormatBBTLength(cur) : ArrangeFormatBBT(cur);
+               if (!ImGui::DragFloat(label, &v, 0.0625f, vlo, vhi, shown.c_str(), ImGuiSliderFlags_NoInput))
+                  return false;
+               const Arrange::Tick q = Arrange::kPPQ / 4;
+               *out = std::clamp<Arrange::Tick>(Arrange::SnapToGrid(Arrange::BeatsToTicks(v), q), lo, hi);
+               return *out != cur;
+            };
+            {
+               Arrange::Tick nt = 0;
+               if (tickField("Start", cp->start, 0, cp->End(), false, &nt))
+               {
+                  fieldGesture(true);
+                  Arrange::TrimEdge(gArrange, cid, Arrange::kEdgeStart, nt);
+               }
+               fieldGestureEnd();
+               cp = Arrange::FindClip(gArrange, cid);
+               if (tickField("End", cp->End(), cp->start, Arrange::kMaxTick, false, &nt))
+               {
+                  fieldGesture(true);
+                  Arrange::TrimEdge(gArrange, cid, Arrange::kEdgeEnd, nt);
+               }
+               fieldGestureEnd();
+            }
+
+            if (ctxLaneType == Arrange::kLaneAudio)
+            {
+               ImGui::Separator();
+               cp = Arrange::FindClip(gArrange, cid);
+               float gainF = cp->gainDb;
+               Arrange::Tick nt = 0;
+               if (tickField("Fade In", cp->fadeIn, 0, cp->length, true, &nt))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->fadeIn = std::clamp<Arrange::Tick>(nt, 0, cp->length);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+               cp = Arrange::FindClip(gArrange, cid);
+               if (tickField("Fade Out", cp->fadeOut, 0, cp->length, true, &nt))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->fadeOut = std::clamp<Arrange::Tick>(nt, 0, cp->length);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("Ramps this clip's gain in/out over the given time so it doesn't click against its neighbor.");
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::DragFloat("Gain", &gainF, 0.1f, -60.0f, 12.0f, "%.1f dB"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->gainDb = std::clamp(gainF, -60.0f, 12.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+            }
+
+            ImGui::Separator();
+            cp = Arrange::FindClip(gArrange, cid);
+            const bool ctxGrouped = cp->groupId != 0;
+            if (ImGui::MenuItem("Enabled", "0", cp->enabled))
+               ArrangeToggleEnabledSelection();
+            if (ImGui::MenuItem("Split at Playhead", MODKEY "+E"))
+               ArrangeSplitSelectionAt(playTick);
+            if (ImGui::MenuItem("Copy", MODKEY "+C"))
+               ArrangeCopySelection();
+            if (ImGui::MenuItem("Duplicate", MODKEY "+D"))
+               ArrangeDuplicateSelection();
+            if (ImGui::MenuItem("Delete", "Backspace"))
+               ArrangeDeleteSelection();
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Group", MODKEY "+G", false, gArrangeSel.size() >= 2))
+               ArrangeGroupSelection();
+            if (ctxGrouped)
+            {
+               if (ImGui::MenuItem("Ungroup", MODKEY "+Shift+G"))
+                  ArrangeUngroupSelection();
+               if (ImGui::MenuItem("Remove from Group"))
+                  ArrangeEdit([&]() { Arrange::RemoveFromGroup(gArrange, { cid }); });
+            }
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Assign Node..."))
+            {
+               gArrangeAssigningClipId = cid;
+               ImGui::CloseCurrentPopup();
+            }
+
+            // Output: only for a source with more than one output of this
+            // lane's type (VideoSourceNode has one of each, so it gets none).
+            if (ctxNode != nullptr)
+            {
+               const std::vector<int> outs = ArrangeOutputsOfType(*ctxNode, ctxLaneType);
+               if (outs.size() > 1 && ImGui::BeginMenu("Output"))
+               {
+                  const int curOut = Arrange::FindClip(gArrange, cid)->srcOutput;
+                  for (int o : outs)
+                  {
+                     const char* outName = ctxNode->node->OutputLabel(o);
+                     char outItem[96];
+                     snprintf(outItem, sizeof(outItem), "%s##arrout%d", outName != nullptr ? outName : "out", o);
+                     if (ImGui::MenuItem(outItem, nullptr, curOut == o) && curOut != o)
+                     {
+                        ArrangeEdit([&]()
+                        {
+                           if (Arrange::Clip* c = Arrange::FindClip(gArrange, cid))
+                           {
+                              c->srcOutput = o;
+                              gArrange.revision++;
+                           }
+                        });
+                     }
+                  }
+                  ImGui::EndMenu();
+               }
+            }
+
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Color Tint"))
+            {
+               const auto& kPaletteColors = kArrangePalette; // shared with the marker colours
+               for (int ci2 = 0; ci2 < 10; ci2++)
+               {
+                  if (ci2 % 5 != 0) ImGui::SameLine();
+                  ImGui::PushID(ci2 + 700);
+                  const ImVec4 cVec = ImGui::ColorConvertU32ToFloat4(kPaletteColors[ci2].col);
+                  if (ImGui::ColorButton(kPaletteColors[ci2].name, cVec, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24)))
+                  {
+                     const float r = ci2 == 0 ? 0.0f : cVec.x;
+                     const float g = ci2 == 0 ? 0.0f : cVec.y;
+                     const float b = ci2 == 0 ? 0.0f : cVec.z;
+                     ArrangeEdit([&]()
+                     {
+                        for (uint64_t id : ArrangeSelectionIds())
+                        {
+                           Arrange::Clip* c = Arrange::FindClip(gArrange, id);
+                           if (c == nullptr || (c->colorR == r && c->colorG == g && c->colorB == b))
+                              continue;
+                           c->colorR = r;
+                           c->colorG = g;
+                           c->colorB = b;
+                           gArrange.revision++;
+                        }
+                     });
+                  }
+                  if (ImGui::IsItemHovered())
+                     ImGui::SetTooltip("%s", kPaletteColors[ci2].name);
+                  ImGui::PopID();
+               }
+               ImGui::EndMenu();
+            }
+         }
+         ImGui::EndPopup();
+      }
+      else if (gArrangeGestureOpen && gArrangeDrag.mode == kArrangeDragNone && gArrangeRenamingLaneId == 0 &&
+               gArrangeMarkerDragId == 0)
+      {
+         // The popup closed with a field still mid-edit (click outside):
+         // its deactivate never ran, so close the gesture here.
+         ArrangeGestureEnd();
+      }
+
+      // ---- "Add Clip" on an empty lane spot ----
+      // Adds a one-bar unassigned clip and hands straight to the canvas
+      // click-to-assign flow.
+      if (openAddClip)
+         ImGui::OpenPopup("##arrangeaddclip");
+      if (ImGui::BeginPopup("##arrangeaddclip"))
+      {
+         ImGui::TextDisabled("Add Clip at %s", ArrangeFormatPos(addClipAtTick).c_str());
+         ImGui::Separator();
+         if (ImGui::MenuItem("Add Clip"))
+         {
+            uint64_t made = 0;
+            ArrangeEdit([&]()
+            {
+               Arrange::Clip c;
+               c.start = addClipAtTick;
+               c.length = Arrange::kTicksPerBar;
+               Arrange::PlaceOverwrite(gArrange, addClipToLaneId, c, &made);
+            });
+            if (made != 0)
+            {
+               gArrangeSel = { made };
+               gArrangeSelAnchor = made;
+               gArrangeAssigningClipId = made;
+            }
+         }
+         ImGui::EndPopup();
+      }
+
+      // Lane reorder / delete, after the loop so no reference above dangles.
+      if (laneToMoveSrc >= 0 && laneToMoveDst >= 0 &&
+          laneToMoveSrc < (int)gArrange.lanes.size() && laneToMoveDst < (int)gArrange.lanes.size())
+      {
+         const uint64_t movedLane = gArrange.lanes[laneToMoveSrc].id;
+         ArrangeEdit([&]() { Arrange::ReorderLane(gArrange, movedLane, laneToMoveDst); });
+      }
+      else if (laneToDelete != 0)
+      {
+         ArrangeEdit([&]() { Arrange::RemoveLane(gArrange, laneToDelete); });
+      }
+
+      // Draw loop region band (armed or mid-Shift+drag) behind everything
+      // else. gArrange.settings.loop already holds the live preview range
+      // while gArrangeShiftDraggingLoop is true (set above, in the ruler-drag
+      // handling), so there is nothing extra to compute here beyond the
+      // ticks -> seconds step the panel geometry needs.
+      if (gArrange.settings.loop.enabled || gArrangeShiftDraggingLoop)
+      {
+         const Arrange::LoopRange& bl = gArrange.settings.loop;
+         if (bl.end > startTick && bl.start < endTick)
+         {
+            const float bx0 = std::max(rulerStartX, tickToX(bl.start));
+            const float bx1 = std::min(rulerStartX + rulerWidth, tickToX(bl.end));
+            const float totalLanesH = (float)gArrange.lanes.size() * kLaneHeight;
+            const float bandBottom = std::max(pinnedTopY + kRulerHeight + totalLanesH, pinnedTopY + avail.y);
+            const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 60) : IM_COL32(250, 204, 21, 40);
+            const ImU32 bandBorder = IM_COL32(250, 204, 21, 200);
+            // From the tick strip down: the marker strip above stays clear.
+            dl->AddRectFilled(ImVec2(bx0, kTickStripTop), ImVec2(bx1, bandBottom), bandCol);
+            dl->AddLine(ImVec2(bx0, kTickStripTop), ImVec2(bx0, bandBottom), bandBorder, 1.5f);
+            dl->AddLine(ImVec2(bx1, kTickStripTop), ImVec2(bx1, bandBottom), bandBorder, 1.5f);
+         }
+      }
+
+      // Playhead, drawn off Transport::Beats() - the clock clips are
+      // scheduled on - so it sits exactly where they sound. While scrubbing
+      // the real playhead stays put and a ghost follows the mouse; the
+      // transport seeks once, on release (WP6).
+      {
+         const float totalLanesH = (float)gArrange.lanes.size() * kLaneHeight;
+         const float lineBottom = std::max(pinnedTopY + kRulerHeight + totalLanesH, pinnedTopY + avail.y);
+         const double playBeats = std::max(0.0, tr.Beats());
+         if (playBeats >= startBeat && playBeats <= endBeat)
+         {
+            const float playheadX = beatToX(playBeats);
+            const ImU32 playheadCol = IM_COL32(239, 68, 68, 255);
+            dl->AddLine(ImVec2(playheadX, kTickStripTop), ImVec2(playheadX, lineBottom), playheadCol, 1.5f);
+            const float triSize = 7.0f;
+            dl->AddTriangleFilled(ImVec2(playheadX - triSize, kTickStripTop), ImVec2(playheadX + triSize, kTickStripTop),
+                                  ImVec2(playheadX, kTickStripTop + triSize * 1.6f), playheadCol);
+         }
+         if (gArrangeScrubbing && gArrangeScrubTick >= startTick && gArrangeScrubTick <= endTick)
+         {
+            const float gx = tickToX(gArrangeScrubTick);
+            const ImU32 ghostCol = IM_COL32(239, 68, 68, 120);
+            dl->AddLine(ImVec2(gx, kTickStripTop), ImVec2(gx, lineBottom), ghostCol, 1.5f);
+            const float triSize = 7.0f;
+            dl->AddTriangleFilled(ImVec2(gx - triSize, kTickStripTop), ImVec2(gx + triSize, kTickStripTop),
+                                  ImVec2(gx, kTickStripTop + triSize * 1.6f), ghostCol);
+            const std::string ghostLabel = ArrangeFormatBBT(gArrangeScrubTick) + "  |  " + ArrangeFormatTickSeconds(gArrangeScrubTick);
+            const ImVec2 ts = ImGui::CalcTextSize(ghostLabel.c_str());
+            float lx = gx + 6.0f;
+            if (lx + ts.x + 6.0f > rulerStartX + rulerWidth)
+               lx = gx - 6.0f - ts.x;
+            const ImVec2 l0(lx - 3.0f, kTickStripTop + kRulerHeight - kMarkerStripH + 2.0f);
+            dl->AddRectFilled(l0, ImVec2(l0.x + ts.x + 6.0f, l0.y + ts.y + 2.0f),
+                              isLight ? IM_COL32(255, 255, 255, 230) : IM_COL32(20, 20, 24, 230), 3.0f);
+            dl->AddText(ImVec2(lx, l0.y + 1.0f), ImGui::GetColorU32(ImGuiCol_Text), ghostLabel.c_str());
+         }
+      }
+
+      // Expand dummy to define scroll area
+      const float totalH = kRulerHeight + (float)gArrange.lanes.size() * kLaneHeight + 20.0f;
+      ImGui::SetCursorScreenPos(scrollTL);
+      ImGui::Dummy(ImVec2(kHeaderWidth + rulerWidth, totalH));
+
+      ImGui::EndChild();
+
+      // "Rendering - timeline locked" (WP7). The click-catcher the progress
+      // dialog puts across the viewport already stops every mouse gesture in
+      // here, and the shortcut block up top is gated on ArrangeRenderBusy();
+      // this is the reason-why, so an inert timeline reads as locked rather
+      // than as hung. On the panel's own draw list and clipped to the panel,
+      // so it can never paint over the progress dialog.
+      if (ArrangeRenderBusy())
+      {
+         ImDrawList* odl = ImGui::GetWindowDrawList();
+         const ImVec2 a = gArrangePanelRectMin, b = gArrangePanelRectMax;
+         odl->PushClipRect(a, b, true);
+         odl->AddRectFilled(a, b, IM_COL32(0, 0, 0, 110));
+         const char* lockText = "Rendering - timeline locked";
+         const ImVec2 ts = ImGui::CalcTextSize(lockText);
+         const ImVec2 c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
+         const ImVec2 t0(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f);
+         odl->AddRectFilled(ImVec2(t0.x - 12.0f, t0.y - 7.0f), ImVec2(t0.x + ts.x + 12.0f, t0.y + ts.y + 7.0f),
+                            IM_COL32(18, 18, 22, 225), 5.0f);
+         odl->AddText(t0, IM_COL32(235, 235, 240, 255), lockText);
+         odl->PopClipRect();
+      }
+
+      if (isWide && gArrangeViewportOnRight)
+      {
+         ImGui::SameLine();
+         drawViewportMonitor();
+      }
+   }
+
+   void DrawArrangePanelDocked(const char* id, const ImVec2& size)
+   {
+      const float kGrip = 6.0f;
+      const int dock = ArrangePanelDock();
+      const bool vertical = (dock == 1 || dock == 2);
+      const bool gripFirst = (dock == 0 || dock == 1);
+
+      PushDockedPanelStyle(/*isChild=*/true);
+      ImGui::BeginChild(id, size, false);
+      PopDockedPanelStyle();
+
+      gArrangePanelRectMin = ImGui::GetWindowPos();
+      gArrangePanelRectMax = ImVec2(gArrangePanelRectMin.x + ImGui::GetWindowSize().x,
+                                 gArrangePanelRectMin.y + ImGui::GetWindowSize().y);
+
+      const ImVec2 inner = ImGui::GetContentRegionAvail();
+
+      auto grip = [&]()
+      {
+         ImGui::InvisibleButton("##arrangepanelgrip",
+                                vertical ? ImVec2(kGrip, std::max(1.0f, inner.y))
+                                         : ImVec2(std::max(1.0f, inner.x), kGrip));
+         DrawPanelSeam(vertical, gripFirst);
+         if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+            ImGui::SetMouseCursor(vertical ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS);
+         if (ImGui::IsItemActive())
+         {
+            const ImVec2 d = ImGui::GetIO().MouseDelta;
+            switch (dock)
+            {
+               case 0: gArrangePanelHeight -= d.y; break;
+               case 1: gArrangePanelWidth -= d.x; break;
+               case 2: gArrangePanelWidth += d.x; break;
+               default: gArrangePanelHeight += d.y; break;
+            }
+            gArrangePanelWidth = std::max(kArrangePanelMinWidth, gArrangePanelWidth);
+            gArrangePanelHeight = std::max(kArrangePanelMinHeight, gArrangePanelHeight);
+         }
+      };
+
+      if (gripFirst)
+      {
+         grip();
+         if (vertical)
+            ImGui::SameLine();
+      }
+
+      const ImVec2 gap = ImGui::GetStyle().ItemSpacing;
+      PushDockedPanelStyle(/*isChild=*/true);
+      ImGui::BeginChild("##arrangepanelinnercontent",
+                        vertical ? ImVec2(std::max(1.0f, inner.x - kGrip - gap.x), inner.y)
+                                 : ImVec2(0, std::max(1.0f, inner.y - kGrip - gap.y)),
+                        ImGuiChildFlags_Border | ImGuiChildFlags_AlwaysUseWindowPadding);
+      DrawArrangePanelContent();
+      ImGui::EndChild();
+      PopDockedPanelStyle();
+
+      if (!gripFirst)
+      {
+         if (vertical)
+            ImGui::SameLine();
+         grip();
+      }
+
+      ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+      ImGui::EndChild();
+      ImGui::PopStyleVar();
+   }
+
    // ---- Performance Matrix ----
    void PerfPanelDockCombo()
    {
@@ -25884,7 +30931,17 @@ namespace
    {
       if (gn == nullptr || gn->node == nullptr) return;
       PushUndoCheckpoint();
-      if (boolName == "bypassed") { gn->node->bypassed = newVal; return; }
+      if (boolName == "bypassed")
+      {
+         gn->node->bypassed = newVal;
+         // ResolvedAudioSource follows `bypassed`, so this changes what an
+         // Audio Out cable - and every arrangement clip terminal - actually
+         // resolves to. The two ImGui bypass toggles already rebuild; this
+         // one (Performance panel bindings, RPC) did not, which made it the
+         // one path that could change the audio graph invisibly.
+         RebuildAudioTopology();
+         return;
+      }
       if (auto* mixer = dynamic_cast<MixerNode*>(gn->node.get()))
       {
          if (boolName == "mute" && channelIdx >= 0 && channelIdx < MixerNode::kMaxSlots)
@@ -28558,11 +33615,29 @@ namespace
          { "Canvas & View", "Toggle Params", "Shift+H", "Show / hide parameter knobs & sliders" },
          { "Canvas & View", "Viewport Panel", "Shift+V", "Toggle viewport panel (or dock selected nodes)" },
          { "Canvas & View", "Modulation Matrix", "Shift+M", "Toggle docked modulation matrix" },
+         { "Canvas & View", "Performance Matrix", "Shift+P", "Toggle docked performance matrix" },
+         { "Canvas & View", "Arrangement Timeline", "Shift+T", "Toggle docked arrangement timeline" },
          { "Canvas & View", "Fit View to Content", "Shift+Y", "Frame the whole patch in the canvas view" },
 
          // Transport & Audio
          { "Transport & Audio", "Play / Pause", "Space", "Start / pause timeline and animations" },
          { "Transport & Audio", "Toggle Audio Engine", "Shift+K", "Start / stop audio device" },
+
+         // Arrangement Timeline - these fire only while the timeline panel
+         // owns the keyboard (click inside it) and no text field is active;
+         // the canvas's own Cmd+C/V/D/G and Delete stand down meanwhile.
+         { "Arrangement Timeline", "Copy / Paste Clips", MODKEY "+C / V", "Copy the selected clips; paste at the playhead on the last-clicked clip's lane" },
+         { "Arrangement Timeline", "Duplicate Clips", MODKEY "+D / Shift+D", "Copy the selected block right after itself" },
+         { "Arrangement Timeline", "Split at Playhead", MODKEY "+E", "Cut every selected clip the playhead passes through" },
+         { "Arrangement Timeline", "Enable / Disable Clips", "0 / Keypad 0", "Mute the selected clips (they draw hatched) or bring them back" },
+         { "Arrangement Timeline", "Group / Ungroup Clips", MODKEY "+G / " MODKEY "+Shift+G", "Group moves, copies and deletes as one; a click selects the whole group" },
+         { "Arrangement Timeline", "Delete Clips", "Delete / Backspace", "Delete the selected clips" },
+         { "Arrangement Timeline", "Add Marker", "M", "Drop a marker at the playhead, on the snap grid" },
+         { "Arrangement Timeline", "Previous / Next Marker", "Alt+Left / Right", "Jump the playhead to the previous or next marker" },
+         { "Arrangement Timeline", "Nudge Clips / Step Playhead", "Left / Right", "Move the selected clips one grid step; with nothing selected, step the playhead" },
+         { "Arrangement Timeline", "Playhead to Start", "Home", "Move the playhead to the start of the timeline" },
+         { "Arrangement Timeline", "Playhead to End", "End", "Move the playhead to the end of the last clip" },
+         { "Arrangement Timeline", "Zoom Timeline", MODKEY " + Scroll Wheel", "Zoom around the mouse (trackpad pinch works too)" },
       };
 
       const char* lastCat = nullptr;
@@ -29152,6 +34227,90 @@ namespace
       }
    };
 
+   // ---- timeline terminal PDC (overhaul WP3) -----------------------------
+   //
+   // A timeline clip terminal has no AudioCaptureRing to hang its delay-
+   // compensation state on, and a value living in the disposable terminal
+   // vector is rebuilt from zero every generation - which clicked on every
+   // rebuild, and rebuilds used to happen at every clip boundary. So the
+   // state lives here instead, keyed by the same (laneId, srcUid, srcOutput)
+   // that identifies the terminal, and survives any number of rebuilds.
+   //
+   // unique_ptr, not a value: the audio thread holds a raw pointer to the
+   // CompensationDelay for the life of a generation, so it must not move when
+   // the map rehashes. Entries are dropped only once CompletedGeneration()
+   // confirms the audio thread has finished with the last topology that
+   // referenced them - the same rule gRetiredNodes uses.
+   struct ArrangeTerminalComp
+   {
+      std::unique_ptr<CompensationDelay> delay;
+      uint64_t lastUsedGeneration = 0;
+      bool usedThisRebuild = false;
+   };
+   std::unordered_map<uint64_t, ArrangeTerminalComp> gArrangeTerminalComp;
+   // What the currently published topology was built from (WP5b). The audio
+   // schedule is a pure function of gArrange (lanes, clips - in ticks, so
+   // tempo is not an input: windows are in beats and the audio thread turns
+   // beats into samples at the live bpm) and of whether timeline routing is
+   // on. RebuildAudioTopology records both every time it runs, whoever calls
+   // it; ArrangeAudioRebuildIfStale compares them once a frame.
+   //
+   // UINT64_MAX is "never built": revision starts at 0 and only climbs, so
+   // it can never equal the sentinel and the first frame always builds.
+   uint64_t gArrangeAudioBuiltRevision = UINT64_MAX;
+   bool gArrangeAudioBuiltRouting = false;
+   // Every RebuildAudioTopology that got past gDeferAudioRebuild. Fixtures
+   // read it to prove an edit costs exactly one rebuild and an idle frame none.
+   unsigned long long gAudioTopologyRebuildCount = 0;
+
+   CompensationDelay& ArrangeTerminalCompensation(uint64_t laneId, uint64_t srcUid, int srcOutput)
+   {
+      uint64_t key = laneId * 0x9E3779B97F4A7C15ull;
+      key ^= srcUid + 0x9E3779B97F4A7C15ull + (key << 6) + (key >> 2);
+      key ^= (uint64_t)(uint32_t)srcOutput + 0x9E3779B97F4A7C15ull + (key << 6) + (key >> 2);
+      ArrangeTerminalComp& slot = gArrangeTerminalComp[key];
+      if (slot.delay == nullptr)
+         slot.delay = std::make_unique<CompensationDelay>();
+      slot.usedThisRebuild = true;
+      return *slot.delay;
+   }
+
+   // Called once, immediately after SetTopology, so CurrentGeneration() is
+   // the generation that just started referencing the surviving entries.
+   void ReapArrangeTerminalCompensation()
+   {
+      const uint64_t current = AudioEngine::Instance().CurrentGeneration();
+      const uint64_t completed = AudioEngine::Instance().CompletedGeneration();
+      const bool audioRaceable = AudioEngine::Instance().SampleRate() > 0.0 && AudioEngine::Instance().IsAlive();
+      for (auto it = gArrangeTerminalComp.begin(); it != gArrangeTerminalComp.end();)
+      {
+         if (it->second.usedThisRebuild)
+         {
+            it->second.usedThisRebuild = false;
+            it->second.lastUsedGeneration = current;
+            ++it;
+         }
+         else if (!audioRaceable || completed > it->second.lastUsedGeneration)
+         {
+            it = gArrangeTerminalComp.erase(it);
+         }
+         else
+         {
+            ++it;
+         }
+      }
+   }
+
+   // Timeline routing: the arrangement's audio clips feed the device and
+   // every canvas Audio Out is bypassed. The mode, plus an arrangement-driven
+   // offline render, which is Timeline by definition.
+   bool ArrangeTimelineRoutingActive()
+   {
+      return gAudioMode == AudioMode::Timeline ||
+             (gOfflineRender.active && gOfflineRender.arrangeDriven && gOfflineRender.timelineAudio) ||
+             (gArrangeWavRender.active && gArrangeWavRender.timelineAudio);
+   }
+
    void RebuildAudioTopology()
    {
       if (gDeferAudioRebuild)
@@ -29162,6 +34321,103 @@ namespace
       std::unordered_map<AudioNode*, int> bufferIndexOf;
       std::vector<AudioTerminal> terminals;
       int nextBufferIndex = 0;
+
+      // Timeline routing: the arrangement's audio clips feed the device and
+      // every canvas Audio Out is bypassed. Depends on the mode alone (plus
+      // an arrangement-driven offline render, which is Timeline by
+      // definition) - not on the panel being open and not on the transport
+      // playing. Pausing silences the sum in RunTopology instead, which
+      // leaves the topology, the PDC state and the node graph untouched.
+      const bool timelineRouting = ArrangeTimelineRoutingActive();
+
+      // Every enabled, assigned clip on every audio lane - the WHOLE
+      // arrangement, not the ones under the playhead. Grouped into one
+      // terminal per (laneId, srcUid, srcOutput) carrying all of that
+      // combination's windows, so a node used by five clips on one lane is
+      // scheduled once and its five onsets are sample-accurate.
+      struct ScheduledTerminal
+      {
+         uint64_t laneId; uint64_t srcUid; int srcOutput;
+         float laneGain;
+         std::vector<ClipWindow> windows;
+      };
+      std::vector<ScheduledTerminal> scheduled;
+      std::vector<ClipWindow> clipWindows;
+      if (timelineRouting)
+      {
+         // Straight off the model (WP5b): ticks convert to beats with no
+         // tempo, so a tempo change does not touch the schedule at all.
+         std::unordered_map<std::string, size_t> indexOfKey;
+         for (const Arrange::Lane& lane : gArrange.lanes)
+         {
+            if (lane.type != Arrange::kLaneAudio)
+               continue;
+            const float laneLinear = std::pow(10.0f, lane.gainDb / 20.0f);
+            for (const Arrange::Clip& c : lane.clips)
+            {
+               // An offline clip (srcUid 0: node deleted, or never assigned)
+               // and a disabled clip are both silent. `enabled` was not read
+               // at all before WP3, so disabling an audio clip changed nothing
+               // you could hear. A uid that no longer resolves is dropped at
+               // terminal creation below.
+               if (c.srcUid == 0 || !c.enabled || c.length <= 0)
+                  continue;
+               char keyBuf[80];
+               snprintf(keyBuf, sizeof(keyBuf), "%llu/%llu/%d",
+                        (unsigned long long)lane.id, (unsigned long long)c.srcUid, c.srcOutput);
+               const std::string key(keyBuf);
+               auto it = indexOfKey.find(key);
+               if (it == indexOfKey.end())
+               {
+                  it = indexOfKey.emplace(key, scheduled.size()).first;
+                  scheduled.push_back({ lane.id, c.srcUid, c.srcOutput, laneLinear, {} });
+               }
+               ClipWindow w;
+               w.clipId = c.id; // labels the live waveform buckets (WP8)
+               w.shape = ArrangeClipShape(c.srcUid, c.srcOutput, c.start, c.length);
+               w.startBeat = Arrange::TicksToBeats(c.start);
+               w.endBeat = Arrange::TicksToBeats(c.End());
+               w.fadeInBeats = Arrange::TicksToBeats(c.fadeIn);
+               w.fadeOutBeats = Arrange::TicksToBeats(c.fadeOut);
+               w.gain = std::pow(10.0f, c.gainDb / 20.0f);
+               scheduled[it->second].windows.push_back(w);
+            }
+         }
+         // Sort each terminal's windows and mark the abutting edges. The
+         // model forbids overlap on a lane and keeps it sorted, so this is a
+         // no-op on a valid model - kept because RunTopology's cursor walk
+         // stalls on an unsorted array, and one malformed load should not be
+         // able to silence a lane.
+         for (ScheduledTerminal& st : scheduled)
+         {
+            std::sort(st.windows.begin(), st.windows.end(),
+                      [](const ClipWindow& x, const ClipWindow& y) { return x.startBeat < y.startBeat; });
+            // Clamping startBeat alone would invert a window fully contained
+            // in its predecessor (start pushed past its own end), leaving the
+            // array unsorted - and RunTopology's cursor walk assumes sorted,
+            // so it would stall there and silence every later window on the
+            // lane. Clamp the end up too, then drop what is left empty.
+            for (size_t i = 1; i < st.windows.size(); i++)
+            {
+               st.windows[i].startBeat = std::max(st.windows[i].startBeat, st.windows[i - 1].endBeat);
+               st.windows[i].endBeat = std::max(st.windows[i].endBeat, st.windows[i].startBeat);
+            }
+            st.windows.erase(std::remove_if(st.windows.begin(), st.windows.end(),
+                                            [](const ClipWindow& w) { return !(w.endBeat > w.startBeat); }),
+                             st.windows.end());
+            // An edge shared with the neighbouring window to within half a
+            // tick is one continuous run of the same node, so no declick.
+            const double kAbutEpsilonBeats = 0.5 / (double)Arrange::kPPQ;
+            for (size_t i = 0; i + 1 < st.windows.size(); i++)
+            {
+               if (std::abs(st.windows[i].endBeat - st.windows[i + 1].startBeat) <= kAbutEpsilonBeats)
+               {
+                  st.windows[i].abutsNext = true;
+                  st.windows[i + 1].abutsPrev = true;
+               }
+            }
+         }
+      }
 
       for (GraphNode& gn : gNodes)
       {
@@ -29185,12 +34441,59 @@ namespace
                const int idx = AudioBufferIndexOf(resolved, outputSlot, bufferIndexOf);
                if (idx >= 0)
                {
-                  // Capture is set unconditionally, gated at write-time on the
-                  // ring's own `enabled` flag - see AudioTerminal's comment.
-                  terminals.push_back({ idx, ring });
+                  // Timeline routing replaces canvas routing outright (see the
+                  // `scheduled` loop below), rather than gating
+                  // this terminal per-cable. Gating by reachability let a
+                  // shared mixer downstream of the active clip leak whatever
+                  // else it was also summing in - it answered "is the active
+                  // clip somewhere upstream of this terminal", not "is this
+                  // terminal's whole signal just the active clip's own
+                  // audio", which is what "Strict" is supposed to mean.
+                  // resolved's own node is still walked into `order` above,
+                  // so if it happens to BE (or feed) an active clip's node,
+                  // that clip's own terminal below still finds it processed.
+                  if (!timelineRouting)
+                  {
+                     // Capture is set unconditionally, gated at write-time on
+                     // the ring's own `enabled` flag - see AudioTerminal's comment.
+                     terminals.push_back({ idx, ring });
+                  }
                }
             }
          }
+      }
+
+      // Route each scheduled (lane, node, output) straight to the device, one
+      // terminal carrying all of its windows, bypassing every canvas Audio
+      // Out and any mixer downstream of it. A clip's node does not need to be
+      // wired to an Audio Out on canvas at all - the timeline is its own
+      // routing. In an offline arrangement render these terminals are summed
+      // into the master offline buffer in RunTopology and written in one pass
+      // into OutputNode's CaptureRing by pumpOfflineAudio.
+      for (ScheduledTerminal& st : scheduled)
+      {
+         // By uid only. Node indices restart at 1 on NewPatch and are reused;
+         // a uid never is, so an unresolvable uid is silence, never a
+         // fallback to whatever node now holds a recycled index.
+         GraphNode* activeGn = FindNodeByUid(st.srcUid);
+         if (activeGn == nullptr || activeGn->node == nullptr)
+            continue;
+         INode* resolved = ResolvedAudioSource(activeGn->node.get());
+         if (resolved == nullptr)
+            continue;
+         CollectAudioChain(resolved, visited, order, bufferIndexOf, nextBufferIndex);
+         const int idx = AudioBufferIndexOf(resolved, st.srcOutput, bufferIndexOf);
+         if (idx < 0)
+            continue;
+         AudioTerminal term;
+         term.bufferIndex = idx;
+         term.gain = 1.0f; // clip gain rides on the window, lane gain on laneGain
+         term.laneGain = st.laneGain;
+         term.windowOffset = (int)clipWindows.size();
+         term.numWindows = (int)st.windows.size();
+         term.externalCompensation = &ArrangeTerminalCompensation(st.laneId, st.srcUid, st.srcOutput);
+         clipWindows.insert(clipWindows.end(), st.windows.begin(), st.windows.end());
+         terminals.push_back(term);
       }
 
       // Note-only chains that never reach an Audio Out at all - an Envelope
@@ -29304,11 +34607,30 @@ namespace
          }
       }
 
-      const double sampleRate = AudioEngine::Instance().SampleRate();
+      const double sampleRate = AudioEngine::Instance().SampleRate() > 0.0
+         ? AudioEngine::Instance().SampleRate()
+         : ((gOfflineRender.active && gOfflineRender.node != nullptr) ? gOfflineRender.node->OfflineAudioSampleRate() : 0.0);
       if (sampleRate > 0.0)
       {
          for (AudioTopologyEntry& entry : order)
-            entry.node->PrepareToPlay(sampleRate, kAudioMaxBlockFrames);
+         {
+            // Skip re-preparing a node that is already live at this sample
+            // rate. RebuildAudioTopology runs far more often than "this node
+            // just started running" - every cable connect/disconnect, every
+            // Timeline Strict active-clip change - and nearly every DSP
+            // kernel's PrepareToPlay unconditionally calls Reset(), zeroing
+            // filter/delay/reverb/compressor state. Calling it unconditionally
+            // here zeroed that state out from under audio that was actively
+            // flowing through an already-running node on every rebuild,
+            // producing an audible click/pop whenever the node was reachable
+            // to a connected Audio Out (silent otherwise, since nothing was
+            // listening to the reset buffer). See AudioNode::preparedForSampleRate.
+            if (entry.node->preparedForSampleRate != sampleRate)
+            {
+               entry.node->PrepareToPlay(sampleRate, kAudioMaxBlockFrames);
+               entry.node->preparedForSampleRate = sampleRate;
+            }
+         }
       }
 
       // Plugin/effect delay compensation (PDC). There is no compensation
@@ -29358,11 +34680,24 @@ namespace
       // every pin/terminal lands sample-aligned instead of comb-filtering
       // against its siblings. A branch already at (or past) the max, or a
       // node with only one connected pin, gets an inactive (unallocated)
-      // CompensationDelay - Prepare(0, ...) is the default-constructed
-      // state, so those pins are simply left untouched. Fixed capacity
-      // (kAudioMaxChannels), matching PooledBuffer::Allocate's own
-      // discipline, so a topology generation is never under-allocated if
-      // the device's actual channel count changes mid-generation.
+      // CompensationDelay. Fixed capacity (kAudioMaxChannels), matching
+      // PooledBuffer::Allocate's own discipline, so a topology generation is
+      // never under-allocated if the device's actual channel count changes
+      // mid-generation.
+      //
+      // Prepare() is called unconditionally for every pin, connected or not
+      // (not gated on `delay > 0` the way this used to read) for two
+      // reasons: it lives on the persistent AudioNode now (see
+      // AudioNode::inputCompensation), not a value freshly zero-constructed
+      // in `entry` every rebuild, so a pin whose delay requirement drops
+      // back to 0 (cable disconnected, a sibling branch got shorter) must
+      // still be told to deactivate - otherwise it would keep delaying this
+      // generation's audio by an amount computed for a topology that no
+      // longer exists. And Prepare() is itself idempotent (see its own
+      // comment): calling it again with the same delay this pin already had
+      // is a no-op that preserves the in-flight ring contents, so an
+      // unrelated rebuild elsewhere in the graph no longer clicks a merge
+      // point that didn't actually change.
       for (AudioTopologyEntry& entry : order)
       {
          int maxAmongConnected = 0;
@@ -29375,16 +34710,21 @@ namespace
          for (int i = 0; i < entry.numInputs; i++)
          {
             const int idx = entry.inputBufferIndices[i];
-            if (idx < 0 || idx >= (int)cumulativeLatencyByBuffer.size())
-               continue;
-            const int delay = maxAmongConnected - cumulativeLatencyByBuffer[(size_t)idx];
-            if (delay > 0)
-               entry.inputCompensation[i].Prepare(delay, kAudioMaxChannels);
+            int delay = 0;
+            if (idx >= 0 && idx < (int)cumulativeLatencyByBuffer.size())
+               delay = maxAmongConnected - cumulativeLatencyByBuffer[(size_t)idx];
+            entry.node->inputCompensation[i].Prepare(std::max(0, delay), kAudioMaxChannels);
          }
       }
 
       // Same alignment one level up, across whichever Audio Out terminals
-      // are summed together into the device buffer in RunTopology.
+      // are summed together into the device buffer in RunTopology. Prefers
+      // the owning AudioCaptureRing's persistent compensation (survives
+      // across rebuilds, same reasoning as the input-pin loop above) for any
+      // terminal that has one - every ordinary canvas Audio Out terminal
+      // does. A Timeline Strict clip terminal has no ring, so it falls back
+      // to its own value (rebuilt fresh, and correctly so - it only exists
+      // for the lifetime of one active-clip generation to begin with).
       {
          int maxAmongTerminals = 0;
          for (const AudioTerminal& terminal : terminals)
@@ -29392,19 +34732,53 @@ namespace
                maxAmongTerminals = std::max(maxAmongTerminals, cumulativeLatencyByBuffer[(size_t)terminal.bufferIndex]);
          for (AudioTerminal& terminal : terminals)
          {
-            if (terminal.bufferIndex < 0 || terminal.bufferIndex >= (int)cumulativeLatencyByBuffer.size())
-               continue;
-            const int delay = maxAmongTerminals - cumulativeLatencyByBuffer[(size_t)terminal.bufferIndex];
-            if (delay > 0)
-               terminal.compensation.Prepare(delay, kAudioMaxChannels);
+            int delay = 0;
+            if (terminal.bufferIndex >= 0 && terminal.bufferIndex < (int)cumulativeLatencyByBuffer.size())
+               delay = maxAmongTerminals - cumulativeLatencyByBuffer[(size_t)terminal.bufferIndex];
+            CompensationDelay& terminalComp = terminal.capture != nullptr
+                                                  ? terminal.capture->compensation
+                                                  : (terminal.externalCompensation != nullptr
+                                                        ? *terminal.externalCompensation
+                                                        : terminal.compensation);
+            terminalComp.Prepare(std::max(0, delay), kAudioMaxChannels);
          }
       }
 
       AudioTopology topology;
       topology.order = std::move(order);
       topology.terminalBufferIndices = std::move(terminals);
+      topology.clipWindows = std::move(clipWindows);
       topology.numBuffers = nextBufferIndex;
       AudioEngine::Instance().SetTopology(std::move(topology));
+      // The topology just published describes this revision and this
+      // routing, so ArrangeAudioRebuildIfStale stays quiet until one moves -
+      // whichever of the ~40 graph-edit call sites got here first.
+      gArrangeAudioBuiltRevision = gArrange.revision;
+      gArrangeAudioBuiltRouting = timelineRouting;
+      gAudioTopologyRebuildCount++;
+      ReapArrangeTerminalCompensation();
+   }
+
+   // The main loop's once-a-frame audio trigger (WP5b). gArrange.revision is
+   // the one change signal for the arrangement: every model op and every
+   // direct field edit bumps it, so there is no per-site dirty flag to forget
+   // and nothing to hash. The only other input the schedule has is the
+   // routing (mode, or an arrangement-driven offline render), OR'd in here.
+   // Graph changes are not polled: every one of them already calls
+   // RebuildAudioTopology directly, which records both values above.
+   // Tempo is deliberately absent - see gArrangeAudioBuiltRevision.
+   // Offline render owns its own rebuilds, so the trigger stands down while
+   // one runs. Returns whether it rebuilt.
+   bool ArrangeAudioRebuildIfStale()
+   {
+      if (gOfflineRender.active)
+         return false;
+      if (gArrange.revision == gArrangeAudioBuiltRevision &&
+          ArrangeTimelineRoutingActive() == gArrangeAudioBuiltRouting)
+         return false;
+      const unsigned long long before = gAudioTopologyRebuildCount;
+      RebuildAudioTopology();
+      return gAudioTopologyRebuildCount != before;
    }
 
    // Single choke point for turning the audio engine on. Every call site that
@@ -29552,6 +34926,40 @@ namespace
       return nullptr;
    }
 
+   // The same refusal, scoped to an arrangement render (WP7 #4). A timeline
+   // take only pre-synthesizes the nodes its own clips reference, so the
+   // whole-patch sweep above would refuse a perfectly renderable timeline
+   // just because an unrelated camera sits on the canvas. Only clips that
+   // actually play are considered: disabled ones are excluded everywhere
+   // else in the render path (WP5's `0` key), and an unassigned clip
+   // (srcUid = 0, or a uid whose node is gone) references nothing at all.
+   //
+   // `wantVideo`/`wantAudio` say which lane types this job draws from, so a
+   // video-only job isn't refused by a camera an audio clip happens to point
+   // at. A canvas-sourced side is NOT covered here - that side renders the
+   // live graph and is checked with the whole-patch sweep by the caller.
+   INode* FindHardwareDrivenNodeInArrangeRange(int64_t startTick, int64_t endTick,
+                                               bool wantVideo, bool wantAudio)
+   {
+      for (const Arrange::Lane& l : gArrange.lanes)
+      {
+         const bool isVideo = l.type == Arrange::kLaneVideo;
+         if (isVideo ? !wantVideo : !wantAudio)
+            continue;
+         for (const Arrange::Clip& c : l.clips)
+         {
+            if (!c.enabled || c.srcUid == 0)
+               continue;
+            if (c.End() <= startTick || c.start >= endTick) // half-open, same as the scheduler
+               continue;
+            GraphNode* gn = FindNodeByUid(c.srcUid);
+            if (gn != nullptr && gn->node != nullptr && gn->node->IsHardwareDriven())
+               return gn->node.get();
+         }
+      }
+      return nullptr;
+   }
+
    // Entry point for the "Render" button in an OutputNode's params (see the
    // node-params drawing code below). Refuses up front if the patch has a
    // hardware-driven source or another take (on this or any other OutputNode)
@@ -29559,18 +34967,28 @@ namespace
    // real callback can't race this take's synchronous ProcessOffline calls -
    // see the main-loop pump next to glfwPollEvents()) and forces Transport
    // to play, restoring both once the take finishes or is cancelled.
-   void StartOfflineRenderSession(OutputNode* n)
+   void StartOfflineRenderSession(OutputNode* n, int width, int height, bool isArrange)
    {
       if (gOfflineRender.active || n == nullptr)
          return;
       if (n->IsRecording() || n->IsFinalizing())
          return;
 
-      if (INode* hw = FindHardwareDrivenNode())
+      // A live source can't be pre-synthesized for an offline take, so refuse
+      // rather than write a file full of one frozen frame. An arrangement
+      // take scopes the sweep to the clips inside its own range (WP7 #4);
+      // any side of it that renders the canvas instead falls back to the
+      // whole-patch sweep, which is what that side actually cooks.
+      const bool arrangeScoped = isArrange && gOfflineRender.timelineVideo && gOfflineRender.timelineAudio;
+      INode* hw = arrangeScoped
+                     ? FindHardwareDrivenNodeInArrangeRange(gOfflineRender.rangeStartTick,
+                                                            gOfflineRender.rangeEndTick, true, true)
+                     : FindHardwareDrivenNode();
+      if (hw != nullptr)
       {
-         (void)hw;
-         n->SetRecordStatus("refused: patch has a live source (camera/MIDI/Syphon In) "
-                             "that can't be pre-synthesized for an offline take");
+         n->SetRecordStatus("refused: " + std::string(isArrange ? "the render range has" : "patch has") +
+                            " a live source (camera/MIDI/Syphon In) "
+                            "that can't be pre-synthesized for an offline take");
          return;
       }
 
@@ -29584,8 +35002,8 @@ namespace
       // would only write silence anyway.
       const bool deviceWasRunningBefore = AudioEngine::Instance().SampleRate() > 0.0;
       const bool wantsGraphAudio =
-         n->includeAudio && n->AudioInput().IsConnected() &&
-         dynamic_cast<AudioFileNode*>(n->AudioInput().GetSource()) == nullptr;
+         n->includeAudio && (isArrange || (n->AudioInput().IsConnected() &&
+         dynamic_cast<AudioFileNode*>(n->AudioInput().GetSource()) == nullptr));
       if (wantsGraphAudio && AudioEngine::Instance().SampleRate() <= 0.0)
       {
          if (!StartAudioEngine(gAudioStartError))
@@ -29603,7 +35021,7 @@ namespace
       if (takeSampleRate > 0.0)
          AudioEngine::Instance().Stop();
 
-      if (!n->StartOfflineRender(n->recordVideoPath, takeSampleRate))
+      if (!n->StartOfflineRender(n->recordVideoPath, takeSampleRate, width, height, isArrange))
       {
          // Put the device back exactly as it was - the take never started.
          if (deviceWasRunningBefore)
@@ -29623,6 +35041,7 @@ namespace
       gOfflineRender.lastProgressTime = gOfflineRender.startTime;
       gOfflineRender.lastFramesDone = -1;
       gOfflineRender.waitingOnEncoder = false;
+      gOfflineRender.arrangeDriven = isArrange;
 
       // An offline render is meant to run as fast as the hardware allows, and
       // with vsync on it cannot: the main loop blocks in glfwSwapBuffers for
@@ -29637,6 +35056,7 @@ namespace
       gOfflineRender.startSeconds = Transport::Instance().Seconds();
       Transport::Instance().SetOfflineMode(true, takeSampleRate);
       Transport::Instance().SetPlaying(true);
+      RebuildAudioTopology();
    }
 
    // Small floating progress dialog, drawn once a frame (right before
@@ -29651,6 +35071,28 @@ namespace
          return;
 
       ImGuiIO& io = ImGui::GetIO();
+
+      // Full-screen dim + click-catcher, drawn first so it sits below the
+      // dialog but above every other panel - "pauses everything" means the
+      // canvas/graph/arrangement panel underneath shouldn't be clickable
+      // while a take is in flight, not just that a dialog floats on top of
+      // them. An invisible button spanning the whole viewport intercepts
+      // clicks without needing per-panel disable flags scattered elsewhere.
+      ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+      ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
+      ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.35f));
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+      ImGui::Begin("##OfflineRenderBlocker", nullptr,
+                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                       ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                       ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav |
+                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+      ImGui::InvisibleButton("##OfflineRenderBlockerCatch", io.DisplaySize);
+      ImGui::End();
+      ImGui::PopStyleVar(2);
+      ImGui::PopStyleColor();
+
       ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                                ImGuiCond_Always, ImVec2(0.5f, 0.5f));
       PushElevatedPanelStyle(/*isChild=*/false);
@@ -29684,6 +35126,12 @@ namespace
          // diagnostic can print rather than draw.
          ImGui::Text("Rendering... %d/%d", done, total);
       }
+      // "Job 2 of 4" while a run works through the queue; silent for a lone
+      // take, where the count would only be noise.
+      int qIdx = 0, qTotal = 0;
+      ArrangeRenderQueuePosition(qIdx, qTotal);
+      if (qTotal > 1 && qIdx > 0)
+         ImGui::TextDisabled("Job %d of %d", qIdx, qTotal);
       // A cancelled take's progress bar is meaningless - it would sit frozen
       // at whatever fraction the render reached, which is precisely what
       // made a slow cancel look like a hang.
@@ -29696,9 +35144,701 @@ namespace
       if (ImGui::Button("Cancel", ImVec2(120, 0)))
          n->RequestFinishOfflineRender(true);
       ImGui::EndDisabled();
+      ImGui::SameLine();
+      ImGui::BeginDisabled(qTotal <= 1);
+      if (ImGui::Button("Cancel All", ImVec2(120, 0)))
+         ArrangeRenderCancelAll();
+      ImGui::EndDisabled();
 
       ImGui::End();
       PopElevatedPanelStyle();
+   }
+
+
+   // The audio-only twin of DrawOfflineRenderProgressWindow. Same dim +
+   // click-catcher discipline: a WAV take drives the graph synchronously from
+   // the main loop, so editing underneath it while it runs would be editing
+   // the thing being rendered.
+   void DrawArrangeWavRenderProgressWindow()
+   {
+      if (!gArrangeWavRender.active)
+         return;
+
+      ImGuiIO& io = ImGui::GetIO();
+      ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+      ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
+      ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.35f));
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+      ImGui::Begin("##ArrangeWavRenderBlocker", nullptr,
+                   ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav |
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+      ImGui::InvisibleButton("##ArrangeWavRenderBlockerCatch", io.DisplaySize);
+      ImGui::End();
+      ImGui::PopStyleVar(2);
+      ImGui::PopStyleColor();
+
+      ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                              ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+      PushElevatedPanelStyle(/*isChild=*/false);
+      ImGui::Begin("Rendering Audio", nullptr,
+                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize |
+                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
+
+      const long long total = std::max<long long>(1, gArrangeWavRender.framesTotal);
+      const long long done = std::min(gArrangeWavRender.framesDone, total);
+      const float frac = (float)((double)done / (double)total);
+      if (gArrangeWavRender.cancelRequested)
+         ImGui::Text("Cancelling...");
+      else
+         ImGui::Text("%.1fs of %.1fs at %d Hz", (double)done / gArrangeWavRender.sampleRate,
+                     (double)total / gArrangeWavRender.sampleRate,
+                     (int)llround(gArrangeWavRender.sampleRate));
+      // "Job 2 of 4" while a run works through the queue; silent for a lone
+      // take, where the count would only be noise.
+      int qIdx = 0, qTotal = 0;
+      ArrangeRenderQueuePosition(qIdx, qTotal);
+      if (qTotal > 1 && qIdx > 0)
+         ImGui::TextDisabled("Job %d of %d", qIdx, qTotal);
+      ImGui::ProgressBar(frac, ImVec2(280, 0));
+      ImGui::BeginDisabled(gArrangeWavRender.cancelRequested);
+      if (ImGui::Button("Cancel", ImVec2(120, 0)))
+         ArrangeRenderCancelActive();
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      ImGui::BeginDisabled(qTotal <= 1);
+      if (ImGui::Button("Cancel All", ImVec2(120, 0)))
+         ArrangeRenderCancelAll();
+      ImGui::EndDisabled();
+      ImGui::End();
+      PopElevatedPanelStyle();
+   }
+
+   // ---- the export queue window (WP7) --------------------------------------
+
+   bool gArrangeShowRenderQueue = false;
+
+   const char* ArrangeRenderStatusText(int status)
+   {
+      switch (status)
+      {
+      case kArrangeJobQueued:     return "Queued";
+      case kArrangeJobRendering:  return "Rendering";
+      case kArrangeJobFinalizing: return "Finalizing";
+      case kArrangeJobDone:       return "Done";
+      case kArrangeJobFailed:     return "Failed";
+      case kArrangeJobCancelled:  return "Cancelled";
+      default:                    return "?";
+      }
+   }
+
+   ImVec4 ArrangeRenderStatusColor(int status)
+   {
+      switch (status)
+      {
+      case kArrangeJobDone:       return ImVec4(0.45f, 0.80f, 0.50f, 1.0f);
+      case kArrangeJobFailed:     return ImVec4(0.90f, 0.45f, 0.40f, 1.0f);
+      case kArrangeJobCancelled:  return ImVec4(0.70f, 0.65f, 0.40f, 1.0f);
+      case kArrangeJobRendering:
+      case kArrangeJobFinalizing: return ImVec4(0.50f, 0.72f, 0.95f, 1.0f);
+      default:                    return ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+      }
+   }
+
+   std::string ArrangeRenderFileName(const std::string& path)
+   {
+      const size_t slash = path.find_last_of("/\\");
+      return slash == std::string::npos ? path : path.substr(slash + 1);
+   }
+
+   std::string ArrangeRenderJobSourceText(const ArrangeRenderJob& j)
+   {
+      const char* a = j.audioSource == kArrangeAudioTimeline ? "Timeline"
+                      : j.audioSource == kArrangeAudioCanvas ? "Canvas"
+                                                             : "-";
+      const char* v = j.videoSource == kArrangeVideoTimeline ? "Timeline"
+                      : j.videoSource == kArrangeVideoCanvas ? "Canvas"
+                                                             : "-";
+      return std::string("A:") + a + "  V:" + v;
+   }
+
+   // Seconds left on the running job, or -1 when there is nothing to go on
+   // yet. Straight-line from the frames done so far, which is what every
+   // encoder's ETA is: a long take settles within a few seconds.
+   double ArrangeRenderJobEtaSeconds(const ArrangeRenderJob& j)
+   {
+      if (j.status != kArrangeJobRendering || j.framesDone <= 0 || j.framesTotal <= 0)
+         return -1.0;
+      const double elapsed = glfwGetTime() - j.startedTime;
+      if (elapsed < 0.5)
+         return -1.0;
+      const double perFrame = elapsed / (double)j.framesDone;
+      return perFrame * (double)std::max(0, j.framesTotal - j.framesDone);
+   }
+
+   // Stops the run and marks everything still waiting as cancelled. Shared by
+   // the queue window and by both progress dialogs, which float above the
+   // full-screen click-catcher and so are the only reachable UI mid-take.
+   void ArrangeRenderCancelAll()
+   {
+      // Stop feeding first, then cancel what is in flight: the other order
+      // lets ArrangeRenderQueueTick start the next job in the same frame the
+      // current one was cancelled.
+      gArrangeRenderQueueRunning = false;
+      for (ArrangeRenderJob& j : gArrangeRenderQueue)
+         if (j.status == kArrangeJobQueued)
+         {
+            j.status = kArrangeJobCancelled;
+            j.message = "cancelled";
+         }
+      ArrangeRenderCancelActive();
+   }
+
+   void DrawArrangeRenderQueueControls()
+   {
+      int queued = 0, finished = 0;
+      for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+      {
+         if (j.status == kArrangeJobQueued)
+            queued++;
+         else if (j.status != kArrangeJobRendering && j.status != kArrangeJobFinalizing)
+            finished++;
+      }
+
+      ImGui::BeginDisabled(queued == 0 || gArrangeRenderQueueRunning || ArrangeRenderBusy());
+      if (ImGui::Button("Start Queue", ImVec2(120, 0)))
+         gArrangeRenderQueueRunning = true;
+      ImGui::EndDisabled();
+
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!ArrangeRenderBusy());
+      if (ImGui::Button("Cancel Current", ImVec2(130, 0)))
+         ArrangeRenderCancelActive();
+      ImGui::EndDisabled();
+
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!ArrangeRenderBusy() && queued == 0);
+      if (ImGui::Button("Cancel All", ImVec2(110, 0)))
+         ArrangeRenderCancelAll();
+      ImGui::EndDisabled();
+
+      ImGui::SameLine();
+      ImGui::BeginDisabled(finished == 0);
+      if (ImGui::Button("Clear Finished", ImVec2(120, 0)))
+      {
+         gArrangeRenderQueue.erase(
+            std::remove_if(gArrangeRenderQueue.begin(), gArrangeRenderQueue.end(),
+                           [](const ArrangeRenderJob& j) {
+                              return j.status == kArrangeJobDone || j.status == kArrangeJobFailed ||
+                                     j.status == kArrangeJobCancelled;
+                           }),
+            gArrangeRenderQueue.end());
+      }
+      ImGui::EndDisabled();
+   }
+
+   void DrawArrangeRenderQueueWindow()
+   {
+      if (!gArrangeShowRenderQueue)
+         return;
+
+      ImGui::SetNextWindowSize(ImVec2(640, 320), ImGuiCond_FirstUseEver);
+      PushElevatedPanelStyle(/*isChild=*/false);
+      if (!ImGui::Begin("Render Queue", &gArrangeShowRenderQueue))
+      {
+         ImGui::End();
+         PopElevatedPanelStyle();
+         return;
+      }
+
+      if (gArrangeRenderQueue.empty())
+      {
+         ImGui::TextDisabled("No jobs. Use Render -> Add to Queue on the timeline.");
+      }
+      else if (ImGui::BeginTable("##arrangeQueueTable", 6,
+                                 ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                                    ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp))
+      {
+         ImGui::TableSetupColumn("File", ImGuiTableColumnFlags_WidthStretch, 0.30f);
+         ImGui::TableSetupColumn("Range", ImGuiTableColumnFlags_WidthStretch, 0.20f);
+         ImGui::TableSetupColumn("Sources", ImGuiTableColumnFlags_WidthStretch, 0.16f);
+         ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 0.14f);
+         ImGui::TableSetupColumn("Progress", ImGuiTableColumnFlags_WidthStretch, 0.20f);
+         ImGui::TableSetupColumn("##acts", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+         ImGui::TableHeadersRow();
+
+         int moveFrom = -1, moveTo = -1;
+         int duplicateIdx = -1, removeIdx = -1;
+         const int jobCount = (int)gArrangeRenderQueue.size();
+
+         for (int i = 0; i < jobCount; i++)
+         {
+            ArrangeRenderJob& j = gArrangeRenderQueue[(size_t)i];
+            const bool inFlight = j.status == kArrangeJobRendering || j.status == kArrangeJobFinalizing;
+            ImGui::PushID((int)j.id);
+            ImGui::TableNextRow();
+
+            ImGui::TableNextColumn();
+            // Drag to reorder, the imgui_demo pattern: only a job that has
+            // not started can move, so a reorder can never renumber the take
+            // the runner is holding a pointer into.
+            ImGui::Selectable(ArrangeRenderFileName(j.path).c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip("%s", j.path.c_str());
+            if (j.status == kArrangeJobQueued && ImGui::IsItemActive() && !ImGui::IsItemHovered())
+            {
+               const int next = i + (ImGui::GetMouseDragDelta(0).y < 0.0f ? -1 : 1);
+               if (next >= 0 && next < jobCount && gArrangeRenderQueue[(size_t)next].status == kArrangeJobQueued)
+               {
+                  moveFrom = i;
+                  moveTo = next;
+                  ImGui::ResetMouseDragDelta();
+               }
+            }
+
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s -> %s", ArrangeFormatPos((Arrange::Tick)j.startTick).c_str(),
+                                ArrangeFormatPos((Arrange::Tick)j.endTick).c_str());
+
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", ArrangeRenderJobSourceText(j).c_str());
+
+            ImGui::TableNextColumn();
+            ImGui::TextColored(ArrangeRenderStatusColor(j.status), "%s", ArrangeRenderStatusText(j.status));
+            if (!j.message.empty() && ImGui::IsItemHovered())
+               ImGui::SetTooltip("%s", j.message.c_str());
+
+            ImGui::TableNextColumn();
+            if (inFlight && j.framesTotal > 0)
+            {
+               const float frac = std::clamp((float)j.framesDone / (float)j.framesTotal, 0.0f, 1.0f);
+               char overlay[32];
+               const double eta = ArrangeRenderJobEtaSeconds(j);
+               if (eta >= 0.0)
+                  snprintf(overlay, sizeof(overlay), "%d%%  %s left", (int)(frac * 100.0f),
+                           ArrangeFormatSeconds(eta, false).c_str());
+               else
+                  snprintf(overlay, sizeof(overlay), "%d%%", (int)(frac * 100.0f));
+               ImGui::ProgressBar(frac, ImVec2(-FLT_MIN, 0), overlay);
+            }
+            else if (j.status == kArrangeJobFailed && !j.message.empty())
+            {
+               ImGui::TextDisabled("%s", j.message.c_str());
+            }
+            else
+            {
+               ImGui::TextDisabled("%dx%d @ %d", j.width, j.height, j.fps);
+            }
+
+            ImGui::TableNextColumn();
+            ImGui::BeginDisabled(inFlight);
+            if (ImGui::SmallButton("Dup"))
+               duplicateIdx = i;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X"))
+               removeIdx = i;
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!(j.status == kArrangeJobFailed || j.status == kArrangeJobCancelled));
+            if (ImGui::SmallButton("Retry"))
+            {
+               j.status = kArrangeJobQueued;
+               j.message.clear();
+               j.framesDone = 0;
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(j.status != kArrangeJobDone);
+            if (ImGui::SmallButton("Reveal"))
+               Platform::RevealInFileManager(j.path);
+            ImGui::EndDisabled();
+
+            ImGui::PopID();
+         }
+         ImGui::EndTable();
+
+         // Applied after the loop: mutating the vector mid-iteration is what
+         // turns a click into a dangling reference.
+         if (moveFrom >= 0 && moveTo >= 0)
+            std::swap(gArrangeRenderQueue[(size_t)moveFrom], gArrangeRenderQueue[(size_t)moveTo]);
+         if (duplicateIdx >= 0)
+         {
+            ArrangeRenderJob copy = gArrangeRenderQueue[(size_t)duplicateIdx];
+            copy.id = gArrangeRenderNextJobId++;
+            copy.status = kArrangeJobQueued;
+            copy.message.clear();
+            copy.framesDone = 0;
+            copy.path = ArrangeRenderUniquePath(copy.path); // never two jobs on one file
+            gArrangeRenderQueue.insert(gArrangeRenderQueue.begin() + duplicateIdx + 1, copy);
+         }
+         if (removeIdx >= 0)
+         {
+            if (gArrangeRenderQueue[(size_t)removeIdx].id == gArrangeRenderActiveJobId)
+               ArrangeRenderCancelActive();
+            else
+               gArrangeRenderQueue.erase(gArrangeRenderQueue.begin() + removeIdx);
+         }
+      }
+
+      ImGui::Separator();
+      DrawArrangeRenderQueueControls();
+      ImGui::End();
+      PopElevatedPanelStyle();
+   }
+
+   // "Job 2 of 5", for the progress dialogs. Counts every job that is not
+   // already finished, so it reads as progress through the run rather than
+   // through the list's history.
+   void ArrangeRenderQueuePosition(int& outIndex, int& outTotal)
+   {
+      outIndex = 0;
+      outTotal = 0;
+      for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+      {
+         const bool counts = j.status == kArrangeJobQueued || j.status == kArrangeJobRendering ||
+                             j.status == kArrangeJobFinalizing;
+         if (!counts)
+            continue;
+         outTotal++;
+         if (j.id == gArrangeRenderActiveJobId)
+            outIndex = outTotal;
+      }
+   }
+
+   // ---- Arrangement render jobs: the runner (WP7) ---------------------------
+
+   bool ArrangeRenderBusy()
+   {
+      return gOfflineRender.active || gArrangeWavRender.active;
+   }
+
+   ArrangeRenderJob* ArrangeRenderFindJob(uint64_t id)
+   {
+      for (ArrangeRenderJob& j : gArrangeRenderQueue)
+         if (j.id == id)
+            return &j;
+      return nullptr;
+   }
+
+   // Seconds are derived from the live tempo at the moment the job starts, not
+   // when it was queued: a job is a tick range, so re-tempoing the patch
+   // between queueing and rendering changes its duration on purpose (same
+   // rule the clips themselves follow, WP6).
+   double ArrangeRenderTickSeconds(int64_t t)
+   {
+      return Arrange::TicksToSeconds((Arrange::Tick)t, std::max(1.0, (double)Transport::Instance().Tempo()));
+   }
+
+   void ArrangeRenderFailJob(ArrangeRenderJob& job, const std::string& why)
+   {
+      job.status = kArrangeJobFailed;
+      job.message = why;
+      gArrangeRenderActiveJobId = 0;
+   }
+
+   // Restores everything a take borrowed. Shared by the WAV path's finish and
+   // its failure exits so a half-started take can't leave the device detached
+   // or the transport stuck in offline mode.
+   void ArrangeWavRenderRestore()
+   {
+      Transport::Instance().SetOfflineMode(false);
+      Transport::Instance().Seek(gArrangeWavRender.endSeconds);
+      if (gArrangeWavRender.deviceWasRunning)
+         StartAudioEngine(gAudioStartError);
+      else
+         Transport::Instance().NotifyAudioEngineStopped();
+      Transport::Instance().SetPlaying(gArrangeWavRender.wasPlaying);
+      glfwSwapInterval(gArrangeWavRender.vsyncWasOn ? 1 : 0);
+      gArrangeWavRender.active = false;
+      gArrangeWavRender.timelineAudio = false;
+      gArrangeWavRender.cancelRequested = false;
+      RebuildAudioTopology();
+   }
+
+   // Audio-only take: no encoder, no frames, no OutputNode. Follows the same
+   // order as StartOfflineRenderSession - warm the graph, detach the device,
+   // then arm - because the live callback writes into the same graph this
+   // take drives synchronously, and AudioDeviceClose is not instant.
+   bool ArrangeWavRenderBegin(ArrangeRenderJob& job, double startSec, double endSec)
+   {
+      if (ArrangeRenderBusy())
+         return false;
+
+      const bool deviceWasRunningBefore = AudioEngine::Instance().SampleRate() > 0.0;
+      if (!deviceWasRunningBefore)
+      {
+         // The graph's AudioNodes are only PrepareToPlay'd once a device has
+         // opened at least once this session, so a cold start would render
+         // silence at an unknown rate.
+         if (!StartAudioEngine(gAudioStartError))
+         {
+            ArrangeRenderFailJob(job, "no audio device (" + gAudioStartError + ")");
+            return false;
+         }
+      }
+
+      // The file is written at the rate the graph was actually prepared at,
+      // not at the job's requested rate: every AudioNode keeps generating as
+      // if the device rate still applies, so muxing at anything else plays
+      // back at the wrong speed (the same bug the video path's comment in
+      // OutputNode::StartOfflineRender describes).
+      const double rate = AudioEngine::Instance().SampleRate();
+      if (!(rate > 0.0))
+      {
+         ArrangeRenderFailJob(job, "no audio device");
+         return false;
+      }
+      AudioEngine::Instance().Stop();
+
+      if (!gArrangeWavRender.writer.Open(job.path, rate, 2, AudioFileWriter::Format::Wav))
+      {
+         if (deviceWasRunningBefore)
+            StartAudioEngine(gAudioStartError);
+         ArrangeRenderFailJob(job, "could not create " + job.path);
+         return false;
+      }
+
+      gArrangeWavRender.active = true;
+      gArrangeWavRender.timelineAudio = job.audioSource == kArrangeAudioTimeline;
+      gArrangeWavRender.cancelRequested = false;
+      gArrangeWavRender.sampleRate = rate;
+      gArrangeWavRender.framesTotal = ArrangeRenderSampleBudget(endSec - startSec, rate);
+      gArrangeWavRender.framesDone = 0;
+      gArrangeWavRender.startSeconds = startSec;
+      gArrangeWavRender.endSeconds = endSec;
+      gArrangeWavRender.deviceWasRunning = deviceWasRunningBefore;
+      gArrangeWavRender.wasPlaying = Transport::Instance().IsPlaying();
+      gArrangeWavRender.vsyncWasOn = gVsync;
+      gArrangeWavRender.startedTime = glfwGetTime();
+      glfwSwapInterval(0);
+
+      Transport::Instance().Seek(startSec);
+      Transport::Instance().SetOfflineMode(true, rate);
+      Transport::Instance().SetPlaying(true);
+      RebuildAudioTopology(); // picks up timelineAudio through ArrangeTimelineRoutingActive
+
+      job.status = kArrangeJobRendering;
+      job.framesTotal = (int)std::min<long long>(gArrangeWavRender.framesTotal, (long long)2147483647);
+      job.framesDone = 0;
+      job.startedTime = gArrangeWavRender.startedTime;
+      if (std::abs(rate - (double)job.sampleRate) > 1.0)
+         job.message = "written at the device rate (" + std::to_string((int)llround(rate)) + " Hz)";
+      return true;
+   }
+
+   // One main-loop slice of an audio-only take. Same ~10Hz budget as the video
+   // pump, for the same reason: the progress window and its Cancel button
+   // still have to repaint.
+   void ArrangeWavRenderPump()
+   {
+      if (!gArrangeWavRender.active)
+         return;
+
+      static float sWavL[kAudioMaxBlockFrames];
+      static float sWavR[kAudioMaxBlockFrames];
+      static float* sWavChannels[2] = { sWavL, sWavR };
+      static std::vector<float> sWavInterleave;
+
+      const double budgetStart = glfwGetTime();
+      // Same block size the live device runs at, so the take hears the graph
+      // the way the user does (see OfflineAudioBlockFrames).
+      const int blockCap = OfflineAudioBlockFrames();
+      while (!gArrangeWavRender.cancelRequested &&
+             gArrangeWavRender.framesDone < gArrangeWavRender.framesTotal)
+      {
+         const int blockFrames = (int)std::min<long long>(
+            blockCap, gArrangeWavRender.framesTotal - gArrangeWavRender.framesDone);
+         AudioBuffer buf;
+         buf.channels = sWavChannels;
+         buf.numChannels = 2;
+         buf.numFrames = blockFrames;
+         AudioEngine::Instance().ProcessOffline(buf);
+
+         sWavInterleave.resize((size_t)blockFrames * 2);
+         for (int i = 0; i < blockFrames; i++)
+         {
+            sWavInterleave[(size_t)i * 2 + 0] = sWavL[i];
+            sWavInterleave[(size_t)i * 2 + 1] = sWavR[i];
+         }
+         gArrangeWavRender.writer.Append(sWavInterleave.data(), blockFrames);
+         gArrangeWavRender.framesDone += blockFrames;
+
+         // Keeps the drawn playhead and anything reading video time honest
+         // while the take runs; the clip windows themselves are scheduled off
+         // the audio clock ProcessOffline just advanced (WP3).
+         Transport::Instance().SetOfflineVideoTime(
+            gArrangeWavRender.startSeconds +
+            (double)gArrangeWavRender.framesDone / gArrangeWavRender.sampleRate);
+
+         if (glfwGetTime() - budgetStart > 0.1)
+            break;
+      }
+
+      if (ArrangeRenderJob* job = ArrangeRenderFindJob(gArrangeRenderActiveJobId))
+         job->framesDone = (int)std::min<long long>(gArrangeWavRender.framesDone, (long long)2147483647);
+
+      if (!gArrangeWavRender.cancelRequested &&
+          gArrangeWavRender.framesDone < gArrangeWavRender.framesTotal)
+         return;
+
+      const bool cancelled = gArrangeWavRender.cancelRequested;
+      gArrangeWavRender.writer.Close();
+      ArrangeWavRenderRestore();
+
+      if (ArrangeRenderJob* job = ArrangeRenderFindJob(gArrangeRenderActiveJobId))
+      {
+         job->status = cancelled ? kArrangeJobCancelled : kArrangeJobDone;
+         if (cancelled)
+            job->message = "cancelled";
+      }
+      gArrangeRenderActiveJobId = 0;
+   }
+
+   bool ArrangeRenderBeginJob(ArrangeRenderJob& job)
+   {
+      if (ArrangeRenderBusy())
+         return false;
+
+      const double startSec = ArrangeRenderTickSeconds(job.startTick);
+      const double endSec = ArrangeRenderTickSeconds(job.endTick);
+      const double durSec = endSec - startSec;
+      if (!(durSec > 0.0))
+      {
+         ArrangeRenderFailJob(job, "empty range");
+         return false;
+      }
+      if (job.audioSource == kArrangeAudioNone && job.videoSource == kArrangeVideoNone)
+      {
+         ArrangeRenderFailJob(job, "nothing to render (both sources are None)");
+         return false;
+      }
+      if (job.path.empty())
+      {
+         ArrangeRenderFailJob(job, "no output path");
+         return false;
+      }
+
+      gArrangeRenderActiveJobId = job.id;
+
+      if (job.videoSource == kArrangeVideoNone)
+         return ArrangeWavRenderBegin(job, startSec, endSec);
+
+      OutputNode* rn = nullptr;
+      if (job.videoSource == kArrangeVideoTimeline)
+      {
+         if (!gArrangeTimelineExportNode)
+            gArrangeTimelineExportNode = std::make_unique<OutputNode>();
+         rn = gArrangeTimelineExportNode.get();
+      }
+      else
+      {
+         GraphNode* gn = FindNodeByUid(job.canvasVideoUid);
+         rn = gn != nullptr ? dynamic_cast<OutputNode*>(gn->node.get()) : nullptr;
+         if (rn == nullptr)
+         {
+            ArrangeRenderFailJob(job, "the job's canvas Output node is gone");
+            return false;
+         }
+      }
+
+      rn->recordVideoPath = job.path;
+      rn->videoFormat = job.format == 1 ? 1 : 0;
+      rn->offlineFps = job.fps;
+      // Both are set: the override is what the take actually uses (WP7 #2),
+      // the seconds keep the node's own params readable if the user opens it.
+      rn->offlineDurationSeconds = std::clamp((int)std::ceil(durSec), 1, 3600);
+      rn->offlineTotalFramesOverride = ArrangeRenderFrameBudget(durSec, job.fps);
+      rn->includeAudio = job.audioSource != kArrangeAudioNone;
+
+      // Set before arming: StartOfflineRenderSession's refusal reads the range
+      // and RebuildAudioTopology (its last line) reads the routing flags.
+      Transport::Instance().Seek(startSec);
+      gOfflineRender.arrangeDriven = true;
+      gOfflineRender.timelineVideo = job.videoSource == kArrangeVideoTimeline;
+      gOfflineRender.timelineAudio = job.audioSource == kArrangeAudioTimeline;
+      gOfflineRender.rangeStartTick = job.startTick;
+      gOfflineRender.rangeEndTick = job.endTick;
+      gOfflineRender.endSeconds = endSec;
+      StartOfflineRenderSession(rn, job.width, job.height, true /* isArrange */);
+
+      if (!gOfflineRender.active)
+      {
+         // Refused (hardware source, nothing connected, another take). Put the
+         // flags back so the next job starts from a clean slate.
+         gOfflineRender.arrangeDriven = false;
+         gOfflineRender.timelineVideo = false;
+         gOfflineRender.timelineAudio = false;
+         ArrangeRenderFailJob(job, rn->RecordStatus().empty() ? "could not start the take" : rn->RecordStatus());
+         return false;
+      }
+
+      job.status = kArrangeJobRendering;
+      job.framesTotal = rn->OfflineFramesTotal();
+      job.framesDone = 0;
+      job.startedTime = glfwGetTime();
+      return true;
+   }
+
+   void ArrangeRenderCancelActive()
+   {
+      if (gArrangeWavRender.active)
+      {
+         gArrangeWavRender.cancelRequested = true;
+         return;
+      }
+      if (gOfflineRender.active && gOfflineRender.node != nullptr)
+         gOfflineRender.node->RequestFinishOfflineRender(true);
+   }
+
+   // Called once a frame from the main loop, after the offline pump has had
+   // its slice. Notices a finished video take and starts the next queued job.
+   void ArrangeRenderQueueTick()
+   {
+      ArrangeWavRenderPump();
+
+      if (gArrangeRenderActiveJobId != 0 && !ArrangeRenderBusy())
+      {
+         // A video take just finished (the pump's teardown cleared .active).
+         // The WAV path settles its own job inside ArrangeWavRenderPump.
+         if (ArrangeRenderJob* job = ArrangeRenderFindJob(gArrangeRenderActiveJobId))
+         {
+            if (job->status == kArrangeJobRendering || job->status == kArrangeJobFinalizing)
+            {
+               const bool cancelled = job->framesDone < job->framesTotal;
+               job->status = cancelled ? kArrangeJobCancelled : kArrangeJobDone;
+               if (cancelled)
+                  job->message = "cancelled";
+            }
+         }
+         gArrangeRenderActiveJobId = 0;
+      }
+      else if (gArrangeRenderActiveJobId != 0 && gOfflineRender.active)
+      {
+         if (ArrangeRenderJob* job = ArrangeRenderFindJob(gArrangeRenderActiveJobId))
+         {
+            OutputNode* on = gOfflineRender.node;
+            if (on != nullptr)
+            {
+               job->framesDone = on->OfflineFramesDone();
+               job->framesTotal = on->OfflineFramesTotal();
+               job->status = on->IsOfflineFinalizing() ? kArrangeJobFinalizing : kArrangeJobRendering;
+            }
+         }
+      }
+
+      if (!gArrangeRenderQueueRunning || ArrangeRenderBusy() || gArrangeRenderActiveJobId != 0)
+         return;
+
+      for (ArrangeRenderJob& j : gArrangeRenderQueue)
+      {
+         if (j.status != kArrangeJobQueued)
+            continue;
+         ArrangeRenderBeginJob(j); // failure marks the job and falls through to the next
+         return;
+      }
+      gArrangeRenderQueueRunning = false;
    }
 
    void RemoveNodeByIndex(int index)
@@ -29714,12 +35854,23 @@ namespace
       // on NewPatch, and Undo respawns everything), so a stale key can start
       // driving an unrelated param.
       GestureRecorder::Instance().ClearForNode(index);
-      // Fourth, same reason: a clip is keyed by node index too, and indices
-      // are reused (NewPatch / every Undo respawns from 1).
-      for (Patch::StreamRecord& s : gArrangeStreams)
-         s.clips.erase(std::remove_if(s.clips.begin(), s.clips.end(),
-                                      [index](const Patch::ClipRecord& c) { return c.srcIndex == index; }),
-                       s.clips.end());
+      // Fourth: a clip points at this node. The clip is NOT deleted - it goes
+      // offline (srcUid 0), draws "Unassigned" with a hatch, and is silent
+      // and invisible until something is assigned to it. Deleting it instead
+      // is what used to make "delete a node, undo" silently lose the
+      // arrangement around it, since the clip's own edits had no way back.
+      //
+      // The link comes back through the undo entry PushUndoCheckpoint pushed
+      // above: it snapshots gArrange with srcUid intact, and the node's uid
+      // is persisted, so undo restores both ends (WP5 owner decision).
+      // ClearSource bumps revision when it touched a clip; the topology
+      // rebuild at the end of this function records it.
+      Arrange::ClearSource(gArrange, victim->uid);
+      // A timeline gesture in flight rebuilds gArrange from its snapshot;
+      // clear the source there too or the next drag frame re-links the clip
+      // to a node that no longer exists.
+      if (gArrangeGestureOpen)
+         Arrange::ClearSource(gArrangeGestureBefore, victim->uid);
       ForgetDiscreteSlots(index);
       gModHistory.erase(index);
       DisconnectAllTo(victim->node.get());
@@ -29753,6 +35904,7 @@ namespace
       gNodes.erase(std::remove_if(gNodes.begin(), gNodes.end(),
                                   [index](const GraphNode& g) { return g.index == index; }),
                    gNodes.end());
+      InvalidateNodeByUid(); // every node after the victim moved down a slot
 
       // After, not before: victim is still in gNodes up to the erase() just
       // above, and rebuilding earlier would publish a topology that can
@@ -30289,6 +36441,7 @@ namespace
       {
          Patch::NodeRecord rec;
          rec.index = gn.index;
+         rec.uid = gn.uid;
          rec.category = gn.category;
          rec.typeName = gn.typeName;
          // The cached live position, not the spawn position: the node has almost
@@ -30422,7 +36575,9 @@ namespace
          data.globals.push_back({ g.name, g.expr });
       data.performance = gPerfElements;
       data.perfLayout = gPerfLayout;
-      data.streams = gArrangeStreams;
+      // gArrange is the only arrangement state there is (WP5b deleted the
+      // seconds mirror), loop included.
+      ArrangeModelToPatchData(gArrange, data);
       data.transport.bpm = Transport::Instance().Tempo();
       data.transport.timeSigNum = Transport::Instance().TimeSigNumerator();
       data.transport.timeSigDen = Transport::Instance().TimeSigDenominator();
@@ -30871,6 +37026,15 @@ namespace
    {
       Patch::Data patch;
       GestureRecorder::PlaybackMap gestures;
+      // Set only for timeline-only gestures (move a clip, trim, split, add a
+      // marker). Undoing one of these swaps the arrangement back and touches
+      // nothing else - it must NOT go through ApplyPatchData, which tears down
+      // and respawns the whole graph. That respawn is why dragging a clip used
+      // to reset every node's internal state, drop audio, and rebuild every
+      // FBO. Clips reference node uids, which the graph side never changes
+      // here, so the two entry kinds coexist with no remapping.
+      bool arrangeOnly = false;
+      Arrange::Model arrange;
    };
    std::deque<UndoEntry> gUndoStack;
    std::deque<UndoEntry> gRedoStack;
@@ -30907,6 +37071,32 @@ namespace
       return out;
    }
 
+   // A brand new document (and a fresh app launch before any patch is
+   // recovered/opened) starts with four video and four audio lanes
+   // rather than an empty timeline - matches every DAW/NLE default and
+   // saves the "+ Track" click most sessions would make anyway. Called
+   // only when gArrange has no lanes yet so it never clobbers a
+   // loaded or in-progress arrangement (a genuine File > Open, or
+   // CheckAutosaveRecovery, replaces gArrange wholesale via
+   // ApplyPatchData right after this could run - same seed-then-overwrite
+   // shape as LoadDefaultExprGlobals()).
+   void SeedDefaultArrangeStreams()
+   {
+      if (!gArrange.lanes.empty())
+         return;
+      for (int i = 0; i < 4; i++)
+      {
+         const uint64_t id = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+         Arrange::FindLane(gArrange, id)->name = "Video " + std::to_string(i + 1);
+      }
+      for (int i = 0; i < 4; i++)
+      {
+         const uint64_t id = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+         Arrange::FindLane(gArrange, id)->name = "Audio " + std::to_string(i + 1);
+      }
+      PublishArrangeLoop();
+   }
+
    void NewPatch()
    {
       // Retire rather than destroy outright: NewPatch can run mid-frame (it's
@@ -30929,6 +37119,7 @@ namespace
       while (!gNodeViewports.empty())
          gRetiredViewports.push_back(gNodeViewports.extract(gNodeViewports.begin()));
       gNodes.clear();
+      InvalidateNodeByUid();
       gLinks.clear();
       gModHistory.clear();
       Modulation::Instance().Clear();
@@ -30939,11 +37130,27 @@ namespace
       // clearing here is what makes a recording actually disappear when you
       // undo past the point it was made.
       GestureRecorder::Instance().Clear();
-      gArrangeStreams.clear();
+      {
+         // nextId and revision are counters, not content: they carry across
+         // the reset (ApplyPatchData relies on nextId surviving this for its
+         // own clamp, and revision must only climb - see ApplyArrangeOnlyEntry).
+         const uint64_t keepNextId = gArrange.nextId;
+         const uint64_t keepRevision = gArrange.revision;
+         gArrange = Arrange::Model();
+         gArrange.nextId = keepNextId;
+         gArrange.revision = keepRevision + 1;
+      }
+      gArrangeGestureOpen = false;
+      gArrangeDrag = ArrangeDragState();
+      gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
       ForgetAllDiscreteSlots();
       PaletteBinding::Instance().Clear();
       ExprGlobals::Clear();
       gNextIndex = 1;
+      // Unlike gNextIndex, this does NOT restart: uids are only useful because
+      // they are never reused, and a fresh document that started minting 1, 2,
+      // 3 again would collide with the uids an undo entry from the previous
+      // document still carries. ApplyPatchData clamps it upward, never down.
       gPatchPath.clear();
       gPatchDirty = false;
       gPatchStatus = "New patch";
@@ -30966,6 +37173,15 @@ namespace
          // this call (see ApplyPatchData) - only a genuine fresh document
          // seeds from the app-wide default set.
          LoadDefaultExprGlobals();
+         // A new document: the clip clipboard and selection belong to the
+         // old one (see gArrangePatchGeneration).
+         gArrangePatchGeneration++;
+         SeedDefaultArrangeStreams();
+         // Audio routing is a monitoring choice, not part of the document
+         // (see gAudioMode): a fresh document always starts on the canvas.
+         // Inside this branch and not above it, so an undo/redo - which runs
+         // NewPatch as its first step - never changes what you are hearing.
+         gAudioMode = AudioMode::Canvas;
       }
    }
 
@@ -32006,6 +38222,24 @@ namespace
             continue;
          }
          remap[rec.index] = spawned->index;
+         // SpawnNode already minted a fresh uid; a patch that carries one
+         // overrides it, which is what lets a clip's srcUid still resolve
+         // after a full undo or a reload. A patch saved before uids existed
+         // (rec.uid == 0) keeps the fresh one. gNextNodeUid is clamped past
+         // every restored value below, so no later spawn can collide.
+         // ...unless something else already answers to it. A patch that mixes
+         // uid-bearing and uid-less node lines (a hand edit, a bad merge) can
+         // name the same uid twice; FindNodeByUid returns the first, so the
+         // second node would shadow it and every clip bound to it would
+         // resolve to the wrong node. Keeping the freshly minted uid is the
+         // only lossless option - the clip goes offline rather than silently
+         // attaching to a different node.
+         if (rec.uid != 0 && FindNodeByUid(rec.uid) == nullptr)
+         {
+            const uint64_t mintedUid = spawned->uid;
+            spawned->uid = rec.uid;
+            NoteNodeUidChanged(mintedUid, spawned);
+         }
          spawned->showParams = rec.showParams;
          spawned->node->bypassed = rec.bypassed;
          spawned->showMiniViewport = rec.showMiniViewport;
@@ -32205,25 +38439,36 @@ namespace
       if (gPerfLayout.pageCount < 1) gPerfLayout.pageCount = 1;
       if (gPerfActivePage >= gPerfLayout.pageCount) gPerfActivePage = gPerfLayout.pageCount - 1;
 
-      // A clip whose node didn't survive (deleted at this point in history,
-      // or an unknown type in this build) is dropped, exactly like a cable.
-      // The stream itself is always kept, even if it ends up empty.
-      gArrangeStreams.clear();
-      for (const Patch::StreamRecord& s : data.streams)
-      {
-         Patch::StreamRecord mapped = s;
-         mapped.clips.clear();
-         for (const Patch::ClipRecord& c : s.clips)
-         {
-            GraphNode* src = resolve(c.srcIndex);
-            if (src == nullptr)
-               continue;
-            Patch::ClipRecord mc = c;
-            mc.srcIndex = src->index;
-            mapped.clips.push_back(mc);
-         }
-         gArrangeStreams.push_back(std::move(mapped));
-      }
+      // A clip whose node didn't survive (an unknown type in this build, or a
+      // legacy patch whose saved index no longer resolves) is kept and goes
+      // offline rather than being dropped - see RemoveNodeByIndex. Clips point
+      // at uids now, so a node deleted and undone back re-attaches on its own.
+      for (const GraphNode& gn : gNodes)
+         if (gn.uid >= gNextNodeUid)
+            gNextNodeUid = gn.uid + 1;
+      const uint64_t priorArrangeNextId = gArrange.nextId;
+      const uint64_t priorArrangeRevision = gArrange.revision;
+      PatchDataToArrangeModel(data, gArrange, [&](int savedIndex) -> uint64_t {
+         const GraphNode* src = resolve(savedIndex);
+         return src ? src->uid : 0;
+      });
+      gArrange.revision = priorArrangeRevision + 1;
+      // ApplyPatchData is both "open a file" and "restore an undo entry". For
+      // the undo case nextId must only ever climb (see ApplyArrangeOnlyEntry);
+      // for the file case carrying the previous document's mark forward just
+      // starts the new document's ids higher, which costs nothing.
+      gArrange.nextId = std::max(gArrange.nextId, priorArrangeNextId);
+
+      // Transport before the rebuild (WP3 debt, closed in WP5b): anything the
+      // rebuild reads off the transport must see the loaded document's tempo
+      // and meter, not the previous document's. Clip windows themselves are
+      // in beats and do not depend on it, but the ordering is the one that
+      // cannot go stale when something that does is added.
+      Transport::Instance().SetTempo(data.transport.bpm);
+      Transport::Instance().SetTimeSignature(data.transport.timeSigNum, data.transport.timeSigDen);
+      Transport::Instance().SetKey(data.transport.key);
+      Transport::Instance().SetScale(data.transport.scale);
+      PublishArrangeLoop();
 
       // Once, after every node and cable above is wired, not once per audio
       // cable while loading - a per-cable rebuild here could call
@@ -32231,11 +38476,6 @@ namespace
       // replayed in file order, not source-before-destination order) isn't
       // guaranteed.
       RebuildAudioTopology();
-
-      Transport::Instance().SetTempo(data.transport.bpm);
-      Transport::Instance().SetTimeSignature(data.transport.timeSigNum, data.transport.timeSigDen);
-      Transport::Instance().SetKey(data.transport.key);
-      Transport::Instance().SetScale(data.transport.scale);
 
       if (outRemap != nullptr)
          *outRemap = remap;
@@ -32254,6 +38494,13 @@ namespace
       }
 
       ApplyPatchData(data);
+      // New document: drop the old one's clip clipboard and selection.
+      gArrangePatchGeneration++;
+
+      // Opening a file is a new-document boundary for the routing mode too.
+      // ApplyPatchData runs NewPatch with undo checkpoints suppressed, so
+      // NewPatch's own fresh-document branch deliberately did not fire.
+      gAudioMode = AudioMode::Canvas;
 
       // A freshly opened file is a new-document boundary: undoing back into
       // whatever was open before this file is not a thing anyone wants.
@@ -32856,15 +39103,101 @@ namespace
       gSuppressUndoCheckpoints = false;
    }
 
+   // Snapshots the arrangement alone, for a gesture that changed nothing but
+   // the timeline. Cheap enough to call per gesture (no graph walk, no node
+   // serialization) and, more to the point, undoing it cannot disturb the
+   // running graph.
+   // Pushes `before` (the model as it was before the edit) as one
+   // timeline-only entry. Skipped when the revision has not moved: a click,
+   // a drag that ended where it started, a popup field left untouched - none
+   // of those may leave an undo step that does nothing.
+   void PushArrangeUndoSnapshot(const Arrange::Model& before)
+   {
+      if (gSuppressUndoCheckpoints)
+         return;
+      if (before.revision == gArrange.revision)
+         return;
+      UndoEntry e;
+      e.arrangeOnly = true;
+      e.arrange = before;
+      gUndoStack.push_back(std::move(e));
+      if (gUndoStack.size() > kMaxUndoDepth)
+         gUndoStack.pop_front();
+      gRedoStack.clear();
+      gPatchDirty = true;
+   }
+
+   // Unconditional form: snapshots the model as it is now, for a caller that
+   // is about to change it. Kept for callers outside the panel; the panel
+   // itself uses ArrangeEdit / ArrangeGestureBegin+End, which only push when
+   // something actually changed.
+   void PushArrangeUndo()
+   {
+      if (gSuppressUndoCheckpoints)
+         return;
+      UndoEntry e;
+      e.arrangeOnly = true;
+      e.arrange = gArrange;
+      gUndoStack.push_back(std::move(e));
+      if (gUndoStack.size() > kMaxUndoDepth)
+         gUndoStack.pop_front();
+      gRedoStack.clear();
+      gPatchDirty = true;
+   }
+
+   // Swaps gArrange for `e`'s snapshot and hands the current one back for the
+   // opposite stack. Shared by Undo and Redo so the two can never disagree
+   // about what a timeline-only entry means.
+   void ApplyArrangeOnlyEntry(UndoEntry& e)
+   {
+      Arrange::Model current = gArrange;
+      gArrange = e.arrange;
+      // nextId is a high-water mark, not part of the snapshot. Restoring the
+      // snapshot's value would hand out ids the undone edit already used:
+      // duplicate a clip (id 10, nextId 11), undo (nextId back to 10), make a
+      // different edit and a *different* clip gets id 10 - exactly the reuse
+      // the persisted nextId exists to prevent. Same rule as gNextNodeUid.
+      gArrange.nextId = std::max(gArrange.nextId, current.nextId);
+      // revision is a change counter, not content: it only ever climbs, so
+      // anything keyed on it (the audio rebuild, WP5b) sees
+      // an undo as the change it is instead of a revision it already built.
+      gArrange.revision = current.revision + 1;
+      // Where the panel docks, the display unit and the snap grid are view
+      // choices, not edits - undo leaves them (WP5, WP6).
+      ArrangeRestoreViewSettings(gArrange, ArrangeKeepViewSettings(current));
+      e.arrange = std::move(current);
+      PublishArrangeLoop();
+      // A clip drag or popup edit that was mid-gesture is now describing a
+      // model that no longer exists.
+      gArrangeGestureOpen = false;
+      gArrangeDrag = ArrangeDragState();
+      gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
+   }
+
    void Undo()
    {
       if (gUndoStack.empty())
          return;
+      if (gUndoStack.back().arrangeOnly)
+      {
+         UndoEntry prev = std::move(gUndoStack.back());
+         gUndoStack.pop_back();
+         ApplyArrangeOnlyEntry(prev);
+         gRedoStack.push_back(std::move(prev));
+         gPatchDirty = true;
+         gPatchStatus = "Undo";
+         return;
+      }
       gRedoStack.push_back({ BuildPatchData(), GestureRecorder::Instance().Playbacks() });
       UndoEntry prev = std::move(gUndoStack.back());
       gUndoStack.pop_back();
       std::map<int, int> remap;
+      const ArrangeViewSettings keepView = ArrangeKeepViewSettings(gArrange); // see ApplyArrangeOnlyEntry
       ApplyPatchData(prev.patch, &remap);
+      ArrangeRestoreViewSettings(gArrange, keepView);
+      gArrangeGestureOpen = false;
+      gArrangeDrag = ArrangeDragState();
+      gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
       RemapViewportPanelNodes(remap);
       // After ApplyPatchData, never before: NewPatch (its first step) clears
       // the recorder, so restoring earlier would just be wiped.
@@ -32877,11 +39210,26 @@ namespace
    {
       if (gRedoStack.empty())
          return;
+      if (gRedoStack.back().arrangeOnly)
+      {
+         UndoEntry next = std::move(gRedoStack.back());
+         gRedoStack.pop_back();
+         ApplyArrangeOnlyEntry(next);
+         gUndoStack.push_back(std::move(next));
+         gPatchDirty = true;
+         gPatchStatus = "Redo";
+         return;
+      }
       gUndoStack.push_back({ BuildPatchData(), GestureRecorder::Instance().Playbacks() });
       UndoEntry next = std::move(gRedoStack.back());
       gRedoStack.pop_back();
       std::map<int, int> remap;
+      const ArrangeViewSettings keepView = ArrangeKeepViewSettings(gArrange);
       ApplyPatchData(next.patch, &remap);
+      ArrangeRestoreViewSettings(gArrange, keepView);
+      gArrangeGestureOpen = false;
+      gArrangeDrag = ArrangeDragState();
+      gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
       RemapViewportPanelNodes(remap);
       GestureRecorder::Instance().Restore(RemapGestures(next.gestures, remap), GestureClockNow());
       gPatchDirty = true;
@@ -50257,6 +56605,7 @@ int main(int argc, char** argv)
    // a patch to recover, same as NewPatch()'s own seeding is overwritten by
    // a genuine File > Open.
    LoadDefaultExprGlobals();
+   SeedDefaultArrangeStreams();
    // Feed the loaded device/format prefs into the engine now, before the
    // user ever presses "Start Audio", so a persisted non-default choice
    // actually takes effect on the first Start rather than only after the
@@ -52395,6 +58744,13 @@ int main(int argc, char** argv)
       if (gOfflineRender.active)
       {
          OutputNode* on = gOfflineRender.node;
+         if (on != nullptr)
+         {
+            if (on->StopRequested())
+               on->StopRecordingAsync();
+            on->PollFinalize();
+            on->PollOfflineFinalize();
+         }
          if (on->IsOfflineRendering())
          {
             const double budgetStart = glfwGetTime();
@@ -52419,15 +58775,33 @@ int main(int argc, char** argv)
                static float sOfflineAudioR[kAudioMaxBlockFrames];
                static float* sOfflineAudioChannels[2] = { sOfflineAudioL, sOfflineAudioR };
 
+               // Pumped at the device's own block size rather than at the
+               // scratch capacity: node behaviour is block-granular, so a
+               // 4096-frame slab renders something the user never heard
+               // (see OfflineAudioBlockFrames).
+               const int blockCap = OfflineAudioBlockFrames();
                int owed = on->OfflineAudioFramesOwed(lookahead);
                while (owed > 0)
                {
-                  const int blockFrames = std::min(owed, kAudioMaxBlockFrames);
+                  const int blockFrames = std::min(owed, blockCap);
                   AudioBuffer offlineBuf;
                   offlineBuf.channels = sOfflineAudioChannels;
                   offlineBuf.numChannels = 2;
                   offlineBuf.numFrames = blockFrames;
                   AudioEngine::Instance().ProcessOffline(offlineBuf);
+
+                  if (gOfflineRender.arrangeDriven)
+                  {
+                     static std::vector<float> sArrangeInterleave;
+                     sArrangeInterleave.resize((size_t)blockFrames * 2);
+                     for (int i = 0; i < blockFrames; i++)
+                     {
+                        sArrangeInterleave[(size_t)i * 2 + 0] = sOfflineAudioChannels[0][i];
+                        sArrangeInterleave[(size_t)i * 2 + 1] = sOfflineAudioChannels[1][i];
+                     }
+                     on->CaptureRing().Write(sArrangeInterleave.data(), blockFrames * 2);
+                  }
+
                   on->NoteOfflineAudioGenerated(blockFrames);
                   owed -= blockFrames;
                }
@@ -52478,6 +58852,19 @@ int main(int argc, char** argv)
 
                for (GraphNode& gn : gNodes)
                   gn.node->CookIfNeeded(frameId);
+
+               // Arrangement render: composite every active video lane, bottom
+               // lane first so the top lane is frontmost, directly onto
+               // on->GetFbo() (each lane's blend mode, opacity and aspect fit).
+               // Its own target, never the monitor's: the panel keeps drawing
+               // under the progress window at a different size. Beats() here
+               // reads the video time just set, on the same axis as the audio
+               // envelope's clip windows.
+               if (gOfflineRender.arrangeDriven && gOfflineRender.timelineVideo)
+               {
+                  CompositeArrangeTimelineVideo(gArrangeRenderTarget, &on->GetFbo(), Transport::Instance().Beats(),
+                                                on->GetOutputWidth(), on->GetOutputHeight());
+               }
 
                // INFINITE_OFFLINERENDER_COOKDELAYMS simulates a heavy
                // per-frame GPU cook (the user's real patch, not this
@@ -52533,6 +58920,15 @@ int main(int argc, char** argv)
             // transport play-state back to whatever they were before this
             // take started.
             Transport::Instance().SetOfflineMode(false);
+            // Arrangement render: SetOfflineMode(false) only clears the
+            // offline-active flags - it doesn't resync mSeconds to wherever
+            // the take's mOfflineVideoSeconds ended up, so left alone the
+            // playhead would snap back to wherever it was before "Render
+            // Now" was clicked. Seek() is the same primitive used to park
+            // the transport at the range's start when the take began, and
+            // handles both the audio-engine-running and stopped cases.
+            if (gOfflineRender.arrangeDriven)
+               Transport::Instance().Seek(gOfflineRender.endSeconds);
             if (gOfflineRender.deviceWasRunning)
                StartAudioEngine(gAudioStartError);
             else
@@ -52540,9 +58936,18 @@ int main(int argc, char** argv)
             Transport::Instance().SetPlaying(gOfflineRender.wasPlaying);
             glfwSwapInterval(gOfflineRender.vsyncWasOn ? 1 : 0);
             gOfflineRender.active = false;
+            gOfflineRender.arrangeDriven = false;
+            gOfflineRender.timelineVideo = false;
+            gOfflineRender.timelineAudio = false;
             gOfflineRender.node = nullptr;
+            RebuildAudioTopology();
          }
       }
+
+      // Audio-only takes and the export queue: run after the video pump's
+      // slice so a take that just finished is noticed this frame, and the
+      // next queued job starts on the next one (WP7).
+      ArrangeRenderQueueTick();
 
       // Same dev-harness carve-out as the startup check above.
       if (getenv("INFINITE_EXITAFTER") == nullptr)
@@ -52563,6 +58968,17 @@ int main(int argc, char** argv)
       // prompts/02-device-change-and-wake-recovery.md) - once a frame, main
       // thread only.
       PollAudioRecovery();
+
+      // Timeline audio schedule: rebuild the topology only when the schedule
+      // itself changed, at most once a frame - see ArrangeAudioRebuildIfStale
+      // for what counts. This replaced a per-frame std::set<int> of the clips
+      // under the playhead, whose diff rebuilt the topology at every clip
+      // boundary: that is what made the second of two adjacent clips of one
+      // node silent (the set never changed, so the stale single-clip window
+      // stayed), made onsets land a UI frame late, and reset PDC at every
+      // boundary. One topology now covers the whole arrangement, and clip
+      // boundaries never rebuild.
+      ArrangeAudioRebuildIfStale();
 
       // Update-checker worker handoff - once a frame, main thread only.
       UpdateCheck::Poll();
@@ -53411,6 +59827,29 @@ int main(int argc, char** argv)
                ImGui::EndMenu();
             }
 
+            if (ImGui::BeginMenu("Arrangement Timeline"))
+            {
+               ImGui::Checkbox("Show Arrangement Timeline", &gArrangePanelOpen);
+               if (gArrangePanelOpen)
+               {
+                  // Bottom or top only - a timeline reads left-to-right, so a
+                  // side dock would fight the ruler's own horizontal axis.
+                  // Saved with the document (Settings.dockSide); not undoable.
+                  int dockSide = gArrange.settings.dockSide == 1 ? 1 : 0;
+                  ImGui::SetNextItemWidth(150);
+                  if (ImGui::Combo("Dock", &dockSide, "Bottom\0Top\0") && dockSide != gArrange.settings.dockSide)
+                  {
+                     gArrange.settings.dockSide = dockSide;
+                     gArrange.revision++; // a model field like any other (WP5b)
+                     gPatchDirty = true;
+                  }
+                  ImGui::SetNextItemWidth(150);
+                  ImGui::SliderFloat("Height", &gArrangePanelHeight,
+                                     kArrangePanelMinHeight, 800.0f, "%.0f px");
+               }
+               ImGui::EndMenu();
+            }
+
             if (ImGui::BeginMenu("Nodes"))
             {
                if (ImGui::MenuItem("Show all params"))
@@ -53530,9 +59969,15 @@ int main(int argc, char** argv)
 
          TopBarSameLine(4.0f);
 
-         // Audio engine on/off
+         // Audio engine power, nothing else: Start starts the device, Stop
+         // stops it, and neither touches gAudioMode (which driver the engine
+         // plays - the canvas or the Arrangement Timeline - is the panel's
+         // "Enable Timeline Audio" toggle). While the timeline drives, a
+         // "Timeline" badge sits next to the button so an engine that is on
+         // but ignoring the canvas never looks broken.
          {
-            const bool audioOn = AudioEngine::Instance().SampleRate() > 0.0;
+            const bool engineOn = AudioEngine::Instance().SampleRate() > 0.0;
+            const bool audioOn = engineOn;
             const bool audioIsLight = isLight;
             ImGui::PushStyleColor(ImGuiCol_Button, audioOn
                                                        ? (audioIsLight ? ImVec4(0.20f, 0.62f, 0.34f, 1.0f) : ImVec4(0.16f, 0.52f, 0.28f, 1.0f))
@@ -53543,7 +59988,9 @@ int main(int argc, char** argv)
             if (ImGui::Button(audioOn ? "Stop Audio" : "Start Audio"))
             {
                if (audioOn)
+               {
                   AudioEngine::Instance().Stop();
+               }
                else
                {
                   gAudioStartError.clear();
@@ -53554,6 +60001,25 @@ int main(int argc, char** argv)
             ImGui::PopStyleColor(2);
             if (!audioOn && !gAudioStartError.empty() && ImGui::IsItemHovered())
                ImGui::SetTooltip("%s", gAudioStartError.c_str());
+
+            if (gAudioMode == AudioMode::Timeline)
+            {
+               TopBarSameLine(4.0f);
+               const char* badge = "Timeline";
+               const ImVec2 textSize = ImGui::CalcTextSize(badge);
+               const ImVec2 pad(6.0f, ImGui::GetStyle().FramePadding.y);
+               const ImVec2 bmin = ImGui::GetCursorScreenPos();
+               const ImVec2 bmax(bmin.x + textSize.x + pad.x * 2.0f, bmin.y + ImGui::GetFrameHeight());
+               ImGui::InvisibleButton("##timelineAudioBadge", ImVec2(bmax.x - bmin.x, bmax.y - bmin.y));
+               ImDrawList* dl = ImGui::GetWindowDrawList();
+               const ImU32 edge = audioIsLight ? IM_COL32(40, 130, 72, 255) : IM_COL32(96, 200, 132, 255);
+               dl->AddRect(bmin, bmax, edge, 3.0f, 0, 1.0f);
+               dl->AddText(ImVec2(bmin.x + pad.x, bmin.y + pad.y), edge, badge);
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip(engineOn
+                     ? "The Arrangement Timeline is driving audio. Hand it back to the canvas from the timeline panel."
+                     : "The Arrangement Timeline will drive audio once the engine is started.");
+            }
          }
 
          ImGui::Separator();
@@ -53615,6 +60081,10 @@ int main(int argc, char** argv)
                char bpmBuf[32];
                snprintf(bpmBuf, sizeof(bpmBuf), "%.1f###bpmBtn", bpm);
                ImGui::Button(bpmBuf);
+               if (!ImGui::IsItemActive() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+                  ImGui::SetTooltip("Tempo - drag, double-click or type to change.\n"
+                                    "Arrangement Timeline clips keep their bar/beat positions:\n"
+                                    "a tempo change moves their times in seconds, not their bars.");
                if (ImGui::IsItemHovered())
                {
                   ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
@@ -54011,6 +60481,8 @@ int main(int argc, char** argv)
             return clicked;
          };
 
+         if (TopBarIconToggle("##arrangePanelToggle", gArrangePanelOpen, &Tabler::DrawBox3D, "Arrangement timeline"))
+            gArrangePanelOpen = !gArrangePanelOpen;
          if (TopBarIconToggle("##perfPanelToggle", gPerfPanelOpen, &Tabler::DrawDisc, "Performance mode"))
             gPerfPanelOpen = !gPerfPanelOpen;
          if (TopBarIconToggle("##modMatrixToggle", gModMatrixOpen, &Tabler::DrawGridDots, "Modulation matrix"))
@@ -54105,6 +60577,10 @@ int main(int argc, char** argv)
       const bool perfRight = gPerfPanelOpen && gPerfPanelDock == 1;
       const bool perfLeft = gPerfPanelOpen && gPerfPanelDock == 2;
       const bool perfTop = gPerfPanelOpen && gPerfPanelDock == 3;
+      const bool arrangeBottom = gArrangePanelOpen && ArrangePanelDock() == 0;
+      const bool arrangeRight = gArrangePanelOpen && ArrangePanelDock() == 1;
+      const bool arrangeLeft = gArrangePanelOpen && ArrangePanelDock() == 2;
+      const bool arrangeTop = gArrangePanelOpen && ArrangePanelDock() == 3;
 
       // Drop the 3D render state of any node no longer in the panel. Done
       // here, at the top of the next frame, rather than at the moment its
@@ -54127,8 +60603,8 @@ int main(int argc, char** argv)
       // panel below its minimum indefinitely once something pushed it there.
       {
          const ImVec2 room = ImGui::GetContentRegionAvail();
-         // The matrix and perf panel compete for the same room, so each panel's clamp
-         // subtracts the other's current footprint when they'd otherwise
+         // The panels compete for the same room, so each panel's clamp
+         // subtracts the other panels' current footprint when they'd otherwise
          // share a row/column - a same-side or same-row pair (e.g. both
          // right-docked) still fits because the draw order below chains
          // them with SameLine rather than overlapping.
@@ -54138,36 +60614,56 @@ int main(int argc, char** argv)
          const bool perfVertical = gPerfPanelOpen && (gPerfPanelDock == 0 || gPerfPanelDock == 3);
          const bool viewportHorizontal = viewportPanelOpen && (gViewportPanelDock == 1 || gViewportPanelDock == 2);
          const bool viewportVertical = viewportPanelOpen && (gViewportPanelDock == 0 || gViewportPanelDock == 3);
+         const bool arrangeHorizontal = gArrangePanelOpen && (ArrangePanelDock() == 1 || ArrangePanelDock() == 2);
+         const bool arrangeVertical = gArrangePanelOpen && (ArrangePanelDock() == 0 || ArrangePanelDock() == 3);
 
          const float maxHeight = std::max(kViewportPanelMinHeight,
                                           room.y - 150.0f - (matrixVertical ? gModMatrixHeight : 0.0f)
-                                                          - (perfVertical ? gPerfPanelHeight : 0.0f));
+                                                          - (perfVertical ? gPerfPanelHeight : 0.0f)
+                                                          - (arrangeVertical ? gArrangePanelHeight : 0.0f));
          const float maxWidth = std::max(kViewportPanelMinWidth,
                                          room.x - 200.0f - (gNodePanelOpen ? kNodePanelWidth : 0.0f) -
                                          (matrixHorizontal ? gModMatrixWidth : 0.0f) -
-                                         (perfHorizontal ? gPerfPanelWidth : 0.0f));
+                                         (perfHorizontal ? gPerfPanelWidth : 0.0f) -
+                                         (arrangeHorizontal ? gArrangePanelWidth : 0.0f));
          gViewportPanelHeight = std::min(std::max(gViewportPanelHeight, kViewportPanelMinHeight), maxHeight);
          gViewportPanelWidth = std::min(std::max(gViewportPanelWidth, kViewportPanelMinWidth), maxWidth);
 
          const float maxMatrixHeight = std::max(kModMatrixMinHeight,
                                                 room.y - 150.0f - (viewportVertical ? gViewportPanelHeight : 0.0f)
-                                                                - (perfVertical ? gPerfPanelHeight : 0.0f));
+                                                                - (perfVertical ? gPerfPanelHeight : 0.0f)
+                                                                - (arrangeVertical ? gArrangePanelHeight : 0.0f));
          const float maxMatrixWidth = std::max(kModMatrixMinWidth,
                                                room.x - 200.0f - (gNodePanelOpen ? kNodePanelWidth : 0.0f) -
                                                (viewportHorizontal ? gViewportPanelWidth : 0.0f) -
-                                               (perfHorizontal ? gPerfPanelWidth : 0.0f));
+                                               (perfHorizontal ? gPerfPanelWidth : 0.0f) -
+                                               (arrangeHorizontal ? gArrangePanelWidth : 0.0f));
          gModMatrixHeight = std::min(std::max(gModMatrixHeight, kModMatrixMinHeight), maxMatrixHeight);
          gModMatrixWidth = std::min(std::max(gModMatrixWidth, kModMatrixMinWidth), maxMatrixWidth);
 
          const float maxPerfHeight = std::max(kPerfPanelMinHeight,
                                               room.y - 150.0f - (viewportVertical ? gViewportPanelHeight : 0.0f)
-                                                              - (matrixVertical ? gModMatrixHeight : 0.0f));
+                                                              - (matrixVertical ? gModMatrixHeight : 0.0f)
+                                                              - (arrangeVertical ? gArrangePanelHeight : 0.0f));
          const float maxPerfWidth = std::max(kPerfPanelMinWidth,
                                              room.x - 200.0f - (gNodePanelOpen ? kNodePanelWidth : 0.0f) -
                                              (viewportHorizontal ? gViewportPanelWidth : 0.0f) -
-                                             (matrixHorizontal ? gModMatrixWidth : 0.0f));
+                                             (matrixHorizontal ? gModMatrixWidth : 0.0f) -
+                                             (arrangeHorizontal ? gArrangePanelWidth : 0.0f));
          gPerfPanelHeight = std::min(std::max(gPerfPanelHeight, kPerfPanelMinHeight), maxPerfHeight);
          gPerfPanelWidth = std::min(std::max(gPerfPanelWidth, kPerfPanelMinWidth), maxPerfWidth);
+
+         const float maxArrangeHeight = std::max(kArrangePanelMinHeight,
+                                                 room.y - 150.0f - (viewportVertical ? gViewportPanelHeight : 0.0f)
+                                                                 - (matrixVertical ? gModMatrixHeight : 0.0f)
+                                                                 - (perfVertical ? gPerfPanelHeight : 0.0f));
+         const float maxArrangeWidth = std::max(kArrangePanelMinWidth,
+                                                room.x - 200.0f - (gNodePanelOpen ? kNodePanelWidth : 0.0f) -
+                                                (viewportHorizontal ? gViewportPanelWidth : 0.0f) -
+                                                (matrixHorizontal ? gModMatrixWidth : 0.0f) -
+                                                (perfHorizontal ? gPerfPanelWidth : 0.0f));
+         gArrangePanelHeight = std::min(std::max(gArrangePanelHeight, kArrangePanelMinHeight), maxArrangeHeight);
+         gArrangePanelWidth = std::min(std::max(gArrangePanelWidth, kArrangePanelMinWidth), maxArrangeWidth);
       }
 
       // Measured before the top/left panels below consume any of it, so the
@@ -54187,8 +60683,9 @@ int main(int argc, char** argv)
       float topBottom = 0.0f;
       int   topBottomRows = 0;
       if (viewportTop || viewportBottom) { topBottom += gViewportPanelHeight; topBottomRows++; }
-      if (matrixTop  || matrixBottom)    { topBottom += gModMatrixHeight;     topBottomRows++; }
-      if (perfTop    || perfBottom)      { topBottom += gPerfPanelHeight;     topBottomRows++; }
+      if (matrixTop   || matrixBottom)   { topBottom += gModMatrixHeight;     topBottomRows++; }
+      if (perfTop     || perfBottom)     { topBottom += gPerfPanelHeight;     topBottomRows++; }
+      if (arrangeTop  || arrangeBottom)  { topBottom += gArrangePanelHeight;  topBottomRows++; }
       // No ItemSpacing term: every docked panel is laid out flush (its
       // Draw*Docked zeroes the spacing around its own outer child, and the
       // SameLine chaining below passes an explicit 0 gap), so reserving a
@@ -54208,6 +60705,8 @@ int main(int argc, char** argv)
          DrawModMatrixDocked("##modmatrix_top", ImVec2(0, gModMatrixHeight));
       if (perfTop)
          DrawPerfPanelDocked("##perfpanel_top", ImVec2(0, gPerfPanelHeight));
+      if (arrangeTop)
+         DrawArrangePanelDocked("##arrangepanel_top", ImVec2(0, gArrangePanelHeight));
       if (viewportLeft)
       {
          DrawViewportPanelDocked("##viewportpanel_left", ImVec2(gViewportPanelWidth, graphHeight));
@@ -54221,6 +60720,11 @@ int main(int argc, char** argv)
       if (perfLeft)
       {
          DrawPerfPanelDocked("##perfpanel_left", ImVec2(gPerfPanelWidth, graphHeight));
+         ImGui::SameLine(0.0f, 0.0f);
+      }
+      if (arrangeLeft)
+      {
+         DrawArrangePanelDocked("##arrangepanel_left", ImVec2(gArrangePanelWidth, graphHeight));
          ImGui::SameLine(0.0f, 0.0f);
       }
 
@@ -54241,6 +60745,7 @@ int main(int argc, char** argv)
       if (viewportRight) rightReserved += gViewportPanelWidth;
       if (matrixRight) rightReserved += gModMatrixWidth;
       if (perfRight) rightReserved += gPerfPanelWidth;
+      if (arrangeRight) rightReserved += gArrangePanelWidth;
       const float graphWidth = rightReserved > 0.0f
                                   ? std::max(200.0f, ImGui::GetContentRegionAvail().x - rightReserved)
                                   : 0.0f;
@@ -55771,275 +62276,453 @@ int main(int argc, char** argv)
          NewPatch();
          bool allOk = true;
 
-         // A. Round trip
+         // Every section drives Arrange::Model directly - that is the point of
+         // WP1. Resetting keeps revision climbing (WP5b: it is the only change
+         // signal, so a model that rewinds it could land back on the value the
+         // audio topology was last built at and never rebuild).
+         auto seedModel = [](Arrange::Model& m, int videoLanes, int audioLanes)
          {
-            Patch::Data data;
-            Patch::NodeRecord nr;
-            nr.index = 1;
-            nr.category = "3D";
-            nr.typeName = "Cube";
-            data.nodes.push_back(nr);
+            const uint64_t rev = m.revision;
+            m = Arrange::Model();
+            m.revision = rev + 1;
+            for (int i = 0; i < videoLanes; i++) Arrange::AddLane(m, Arrange::kLaneVideo);
+            for (int i = 0; i < audioLanes; i++) Arrange::AddLane(m, Arrange::kLaneAudio);
+         };
 
-            Patch::StreamRecord s0;
-            s0.type = Patch::kStreamVideo;
-            s0.blendMode = 3;
-            s0.opacity = 0.75f;
-            s0.gainDb = -2.5f;
-            s0.pan = 0.2f;
-            s0.name = "Main Lane";
+         // --- A. Model invariants under the edit ops -----------------------
+         {
+            Arrange::Model m;
+            seedModel(m, 2, 1);
+            bool aOk = true;
+            std::string why;
 
-            Patch::ClipRecord c0_0;
-            c0_0.startSeconds = 0.1;
-            c0_0.lengthSeconds = 0.2;
-            c0_0.srcIndex = 1;
-            c0_0.srcOutput = 1;
-            c0_0.triggerMode = 1;
-            c0_0.fadeInSec = 0.05f;
-            c0_0.fadeOutSec = 0.05f;
-            c0_0.gainDb = -3.0f;
-            c0_0.speed = 0.5f;
-            c0_0.loop = true;
-            s0.clips.push_back(c0_0);
+            Arrange::Clip c;
+            c.start = 0;
+            c.length = Arrange::kTicksPerBar;
+            c.srcUid = 7;
+            uint64_t first = 0, second = 0;
+            aOk = aOk && Arrange::PlaceOverwrite(m, m.lanes[0].id, c, &first);
+            c.start = Arrange::kTicksPerBar;
+            aOk = aOk && Arrange::PlaceOverwrite(m, m.lanes[0].id, c, &second);
+            aOk = aOk && m.lanes[0].clips.size() == 2 && first != second;
 
-            Patch::ClipRecord c0_1;
-            c0_1.startSeconds = c0_0.startSeconds + c0_0.lengthSeconds;
-            c0_1.lengthSeconds = 0.5;
-            c0_1.srcIndex = 1;
-            c0_1.srcOutput = 2;
-            c0_1.triggerMode = 1;
-            c0_1.fadeInSec = 0.1f;
-            c0_1.fadeOutSec = 0.1f;
-            c0_1.gainDb = 1.5f;
-            c0_1.speed = 1.5f;
-            c0_1.loop = true;
-            s0.clips.push_back(c0_1);
+            // Overwrite straddling both: the left one is truncated, the right
+            // one has its head eaten - the exact case index-based editing kept
+            // getting wrong.
+            c.start = Arrange::kPPQ * 2;
+            c.length = Arrange::kPPQ * 4;
+            uint64_t third = 0;
+            aOk = aOk && Arrange::PlaceOverwrite(m, m.lanes[0].id, c, &third);
+            aOk = aOk && m.lanes[0].clips.size() == 3;
+            aOk = aOk && Arrange::Validate(m, &why);
 
-            Patch::StreamRecord s1;
-            s1.type = Patch::kStreamAudio;
-            s1.blendMode = 1;
-            s1.opacity = 0.5f;
-            s1.gainDb = -6.0f;
-            s1.pan = -0.5f;
-            s1.name = "";
+            // Splitting inside a clip yields two, and the ids are distinct.
+            uint64_t rightHalf = 0;
+            aOk = aOk && Arrange::Split(m, third, Arrange::kPPQ * 4, &rightHalf);
+            aOk = aOk && rightHalf != 0 && rightHalf != third;
+            aOk = aOk && Arrange::Validate(m, &why);
 
-            Patch::ClipRecord c1_0;
-            c1_0.startSeconds = 1.0;
-            c1_0.lengthSeconds = 2.0;
-            c1_0.srcIndex = 1;
-            c1_0.srcOutput = 0;
-            c1_0.triggerMode = 1;
-            c1_0.fadeInSec = 0.2f;
-            c1_0.fadeOutSec = 0.3f;
-            c1_0.gainDb = -1.0f;
-            c1_0.speed = 2.0f;
-            c1_0.loop = true;
-            s1.clips.push_back(c1_0);
-
-            Patch::ClipRecord c1_1;
-            c1_1.startSeconds = 3.5;
-            c1_1.lengthSeconds = 1.5;
-            c1_1.srcIndex = 1;
-            c1_1.srcOutput = 1;
-            c1_1.triggerMode = 0;
-            c1_1.fadeInSec = 0.0f;
-            c1_1.fadeOutSec = 0.4f;
-            c1_1.gainDb = 2.0f;
-            c1_1.speed = 0.8f;
-            c1_1.loop = false;
-            s1.clips.push_back(c1_1);
-
-            Patch::StreamRecord s2;
-            s2.type = Patch::kStreamVideo;
-            s2.blendMode = 5;
-            s2.opacity = 0.25f;
-            s2.gainDb = -1.0f;
-            s2.pan = 0.5f;
-            s2.name = "a\\b";
-
-            Patch::ClipRecord c2_0;
-            c2_0.startSeconds = 0.5;
-            c2_0.lengthSeconds = 1.2;
-            c2_0.srcIndex = 1;
-            c2_0.srcOutput = 1;
-            c2_0.triggerMode = 1;
-            c2_0.fadeInSec = 0.1f;
-            c2_0.fadeOutSec = 0.2f;
-            c2_0.gainDb = -4.0f;
-            c2_0.speed = 1.25f;
-            c2_0.loop = true;
-            s2.clips.push_back(c2_0);
-
-            data.streams = { s0, s1, s2 };
-
-            const std::string path = TmpPath("arrange_selftest_roundtrip.inf");
-            std::string err;
-            bool ok = Patch::Write(path, data, err);
-            Patch::Data loaded;
-            ok = ok && Patch::Read(path, loaded, err);
-            std::remove(path.c_str());
-
-            bool streamsMatch = ok && loaded.streams.size() == 3;
-            if (streamsMatch)
+            // A clip that strictly contains an overwrite splits into two, so
+            // the lane grows by one rather than losing the tail.
             {
-               for (size_t si = 0; si < 3 && streamsMatch; si++)
-               {
-                  const auto& origS = data.streams[si];
-                  const auto& loadS = loaded.streams[si];
-                  if (loadS.type != origS.type || loadS.blendMode != origS.blendMode ||
-                      loadS.opacity != origS.opacity || loadS.gainDb != origS.gainDb ||
-                      loadS.pan != origS.pan || loadS.name != origS.name ||
-                      loadS.clips.size() != origS.clips.size())
-                  {
-                     streamsMatch = false;
-                     break;
-                  }
-                  for (size_t ci = 0; ci < origS.clips.size() && streamsMatch; ci++)
-                  {
-                     const auto& origC = origS.clips[ci];
-                     const auto& loadC = loadS.clips[ci];
-                     if (loadC.startSeconds != origC.startSeconds ||
-                         loadC.lengthSeconds != origC.lengthSeconds ||
-                         loadC.srcIndex != origC.srcIndex ||
-                         loadC.srcOutput != origC.srcOutput ||
-                         loadC.triggerMode != origC.triggerMode ||
-                         loadC.fadeInSec != origC.fadeInSec ||
-                         loadC.fadeOutSec != origC.fadeOutSec ||
-                         loadC.gainDb != origC.gainDb ||
-                         loadC.speed != origC.speed ||
-                         loadC.loop != origC.loop)
-                     {
-                        streamsMatch = false;
-                        break;
-                     }
-                  }
-               }
-               if (streamsMatch)
-               {
-                  const auto& c0 = loaded.streams[0].clips[0];
-                  const auto& c1 = loaded.streams[0].clips[1];
-                  if (c1.startSeconds != c0.startSeconds + c0.lengthSeconds)
-                     streamsMatch = false;
-               }
+               Arrange::Model m2;
+               seedModel(m2, 1, 0);
+               Arrange::Clip big;
+               big.start = 0;
+               big.length = Arrange::kPPQ * 16;
+               uint64_t bigId = 0;
+               Arrange::PlaceOverwrite(m2, m2.lanes[0].id, big, &bigId);
+               Arrange::Clip mid;
+               mid.start = Arrange::kPPQ * 4;
+               mid.length = Arrange::kPPQ * 4;
+               Arrange::PlaceOverwrite(m2, m2.lanes[0].id, mid);
+               aOk = aOk && m2.lanes[0].clips.size() == 3 && Arrange::Validate(m2, &why);
             }
-            printf("arrange roundtrip: %s\n", streamsMatch ? "OK" : "FAIL");
-            allOk = allOk && streamsMatch;
+
+            // Groups: two members live, one member deleted dissolves the group
+            // rather than leaving the singleton Validate rejects.
+            {
+               uint64_t gid = 0;
+               aOk = aOk && Arrange::Group(m, { first, second }, &gid) && gid != 0;
+               aOk = aOk && Arrange::Validate(m, &why);
+               aOk = aOk && Arrange::Delete(m, { first });
+               const Arrange::Clip* survivor = Arrange::FindClip(m, second);
+               aOk = aOk && survivor != nullptr && survivor->groupId == 0;
+               aOk = aOk && Arrange::Validate(m, &why);
+            }
+
+            // MoveClips is all-or-nothing: onto a lane of the wrong type it
+            // must refuse, leaving the model exactly as it was.
+            {
+               const uint64_t before = m.revision;
+               const bool refused = !Arrange::MoveClips(m, { second }, 0, 2); // video -> audio
+               aOk = aOk && refused && m.revision == before;
+            }
+
+            // Anything that reaches the model without an edit op - the legacy
+            // UI bridge appends without sorting - must still come out sorted,
+            // non-overlapping and valid.
+            {
+               Arrange::Model m3;
+               seedModel(m3, 1, 0);
+               Arrange::Clip a1, a2;
+               a1.id = m3.NewId(); a1.start = Arrange::kPPQ * 4; a1.length = Arrange::kPPQ * 4;
+               a2.id = m3.NewId(); a2.start = 0;                 a2.length = Arrange::kPPQ * 6;
+               m3.lanes[0].clips.push_back(a1);   // deliberately out of order
+               m3.lanes[0].clips.push_back(a2);   // and overlapping
+               Arrange::Normalize(m3);
+               aOk = aOk && m3.lanes[0].clips.size() == 2 &&
+                     m3.lanes[0].clips[0].start == 0 &&
+                     m3.lanes[0].clips[0].End() == Arrange::kPPQ * 4 &&
+                     Arrange::Validate(m3, &why);
+            }
+
+            printf("arrange model ops: %s%s%s\n", aOk ? "OK" : "FAIL",
+                   why.empty() ? "" : "  reason: ", why.c_str());
+            allOk = allOk && aOk;
          }
 
-         // B. Undo/redo, live
+         // --- B. Fuzz: 2000 seeded random ops, Validate after every one ----
          {
-            NewPatch();
-            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
-            Patch::StreamRecord s;
-            s.type = Patch::kStreamAudio;
-            Patch::ClipRecord c;
-            c.srcIndex = cube->index;
-            c.startSeconds = 2.0;
-            c.lengthSeconds = 1.0;
-            s.clips.push_back(c);
-            gArrangeStreams = { s };
+            Arrange::Model m;
+            seedModel(m, 3, 2);
+            std::mt19937 rng(0xA44A47E5u);
+            auto rnd = [&rng](int lo, int hi) { return lo + (int)(rng() % (uint32_t)(hi - lo + 1)); };
 
-            PushUndoCheckpoint();
-            gArrangeStreams[0].clips[0].startSeconds = 5.0;
-
-            Undo();
-            bool bOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1;
-            if (bOk)
+            bool bOk = true;
+            std::string why;
+            int applied = 0;
+            for (int i = 0; i < 2000 && bOk; i++)
             {
-               bOk = gArrangeStreams[0].clips[0].startSeconds == 2.0;
-               GraphNode* gn = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
-               bOk = bOk && (gn != nullptr && gn->typeName == "Cube");
-            }
+               // Collect the live ids fresh each iteration - an op may have
+               // deleted or split anything from the previous one.
+               std::vector<uint64_t> ids;
+               for (const Arrange::Lane& l : m.lanes)
+                  for (const Arrange::Clip& c : l.clips)
+                     ids.push_back(c.id);
 
-            Redo();
-            if (bOk)
-            {
-               bOk = bOk && gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1 &&
-                     gArrangeStreams[0].clips[0].startSeconds == 5.0;
-               GraphNode* gn = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
-               bOk = bOk && (gn != nullptr && gn->typeName == "Cube");
+               // Group ids and marker ids, also refreshed every iteration.
+               std::vector<uint64_t> groups;
+               for (const Arrange::Lane& l : m.lanes)
+                  for (const Arrange::Clip& c : l.clips)
+                     if (c.groupId != 0 &&
+                         std::find(groups.begin(), groups.end(), c.groupId) == groups.end())
+                        groups.push_back(c.groupId);
+
+               const int op = rnd(0, 14);
+               bool changed = false;
+               switch (op)
+               {
+                  case 0: case 1: case 2:
+                  {
+                     Arrange::Clip c;
+                     c.start = (Arrange::Tick)rnd(0, 64) * (Arrange::kPPQ / 4);
+                     c.length = (Arrange::Tick)rnd(1, 16) * (Arrange::kPPQ / 4);
+                     c.srcUid = (uint64_t)rnd(1, 5);
+                     c.fadeIn = (Arrange::Tick)rnd(0, 4) * (Arrange::kPPQ / 4);
+                     c.fadeOut = (Arrange::Tick)rnd(0, 4) * (Arrange::kPPQ / 4);
+                     c.enabled = rnd(0, 1) != 0;
+                     changed = Arrange::PlaceOverwrite(m, m.lanes[rnd(0, (int)m.lanes.size() - 1)].id, c);
+                     break;
+                  }
+                  case 3:
+                     if (!ids.empty())
+                        changed = Arrange::MoveClips(m, { ids[rnd(0, (int)ids.size() - 1)] },
+                                                     (Arrange::Tick)rnd(-8, 8) * (Arrange::kPPQ / 4),
+                                                     rnd(-1, 1));
+                     break;
+                  case 4:
+                     if (!ids.empty())
+                        changed = Arrange::TrimEdge(m, ids[rnd(0, (int)ids.size() - 1)], rnd(0, 1),
+                                                    (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                     break;
+                  case 5:
+                     if (!ids.empty())
+                        changed = Arrange::Split(m, ids[rnd(0, (int)ids.size() - 1)],
+                                                 (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                     break;
+                  case 6:
+                     if (ids.size() >= 2)
+                     {
+                        std::vector<uint64_t> pick = { ids[rnd(0, (int)ids.size() - 1)],
+                                                       ids[rnd(0, (int)ids.size() - 1)] };
+                        changed = (rnd(0, 1) == 0) ? Arrange::Group(m, pick)
+                                                   : Arrange::DuplicateBlock(m, pick);
+                     }
+                     break;
+                  case 7:
+                     if (!ids.empty())
+                        changed = Arrange::Delete(m, { ids[rnd(0, (int)ids.size() - 1)] });
+                     break;
+                  case 8:
+                     if (!ids.empty())
+                        changed = Arrange::SetEnabled(m, { ids[rnd(0, (int)ids.size() - 1)] }, Arrange::kToggle);
+                     break;
+                  // The group ops. Ungroup/RemoveFromGroup are the two that
+                  // can strand a singleton group, which is invariant 3.
+                  case 9:
+                     if (!groups.empty())
+                     {
+                        const uint64_t g = groups[rnd(0, (int)groups.size() - 1)];
+                        const int which = rnd(0, 3);
+                        if (which == 0)
+                           changed = Arrange::Ungroup(m, { g });
+                        else if (which == 1)
+                        {
+                           const std::vector<uint64_t> members = Arrange::ClipsInGroup(m, g);
+                           if (!members.empty())
+                              changed = Arrange::RemoveFromGroup(m, { members[rnd(0, (int)members.size() - 1)] });
+                        }
+                        else if (which == 2)
+                           changed = Arrange::TrimGroupEdge(m, g, rnd(0, 1),
+                                                            (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                        else
+                           changed = Arrange::ScaleGroup(m, g, rnd(0, 1),
+                                                         (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                     }
+                     break;
+                  case 10:
+                     if (!ids.empty())
+                     {
+                        // ExpandSelectionToGroups has no side effect, but it
+                        // must never return an id the model doesn't hold.
+                        const std::vector<uint64_t> sel =
+                            Arrange::ExpandSelectionToGroups(m, { ids[rnd(0, (int)ids.size() - 1)] });
+                        for (uint64_t id : sel)
+                           bOk = bOk && Arrange::FindClip(m, id) != nullptr;
+                     }
+                     break;
+                  // Lane ops. Add is capped so the fuzz doesn't just grow
+                  // lanes forever, and remove takes whole lanes of clips with
+                  // it - the path most likely to strand a group.
+                  case 11:
+                     if (m.lanes.size() < 8)
+                        changed = Arrange::AddLane(m, rnd(0, 1), rnd(-1, (int)m.lanes.size())) != 0;
+                     break;
+                  case 12:
+                     if (m.lanes.size() > 2)
+                        changed = Arrange::RemoveLane(m, m.lanes[rnd(0, (int)m.lanes.size() - 1)].id);
+                     break;
+                  case 13:
+                     if (m.lanes.size() > 1)
+                        changed = Arrange::ReorderLane(m, m.lanes[rnd(0, (int)m.lanes.size() - 1)].id,
+                                                       rnd(0, (int)m.lanes.size() - 1));
+                     break;
+                  // Markers, and the "a node went away" path.
+                  default:
+                  {
+                     const int which = rnd(0, 3);
+                     if (which == 0)
+                        changed = Arrange::AddMarker(m, (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4), "m") != 0;
+                     else if (!m.markers.empty())
+                     {
+                        const uint64_t mk = m.markers[rnd(0, (int)m.markers.size() - 1)].id;
+                        if (which == 1)
+                           changed = Arrange::MoveMarker(m, mk, (Arrange::Tick)rnd(0, 80) * (Arrange::kPPQ / 4));
+                        else if (which == 2)
+                           changed = Arrange::DeleteMarker(m, mk);
+                        else
+                           changed = Arrange::ClearSource(m, (uint64_t)rnd(1, 5));
+                     }
+                     break;
+                  }
+               }
+               applied += changed ? 1 : 0;
+               if (!Arrange::Validate(m, &why))
+               {
+                  printf("arrange fuzz: invariant broken at op %d (%d): %s\n", i, op, why.c_str());
+                  bOk = false;
+               }
             }
-            printf("arrange undo redo: %s\n", bOk ? "OK" : "FAIL");
+            printf("arrange fuzz: 2000 ops, %d changed the model  %s\n", applied, bOk ? "OK" : "FAIL");
             allOk = allOk && bOk;
          }
 
-         // C. Deletion, live
+         // --- C. Tick save/load round trip, including markers and settings --
          {
-            GraphNode* sphere = SpawnNode("Sphere", "3D", 200.0f, 0.0f);
-            Patch::ClipRecord sc;
-            sc.srcIndex = sphere->index;
-            sc.startSeconds = 10.0;
-            sc.lengthSeconds = 2.0;
-            gArrangeStreams[0].clips.push_back(sc);
-
-            const int sphereIdx = sphere->index;
-            RemoveNodeByIndex(sphereIdx);
-
-            bool cOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 1;
+            NewPatch();
+            // gNodes is a vector, so the second SpawnNode can reallocate and
+            // invalidate the first pointer - read what is needed immediately.
+            GraphNode* spawned = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            const uint64_t cubeUid = spawned ? spawned->uid : 0;
+            spawned = SpawnNode("Sphere", "3D", 200.0f, 0.0f);
+            const uint64_t sphereUid = spawned ? spawned->uid : 0;
+            bool cOk = cubeUid != 0 && sphereUid != 0;
             if (cOk)
             {
-               GraphNode* cubeNode = FindNodeByIndex(gArrangeStreams[0].clips[0].srcIndex);
-               cOk = cOk && (cubeNode != nullptr && cubeNode->typeName == "Cube");
-            }
+               Arrange::Model& m = gArrange;
+               seedModel(m, 1, 1);
+               Arrange::Clip c;
+               c.start = Arrange::kPPQ * 3;          // deliberately off the bar
+               c.length = Arrange::kPPQ * 5;
+               c.srcUid = cubeUid;
+               c.fadeIn = Arrange::kPPQ / 3;         // a triplet, exact in ticks
+               c.gainDb = -6.0f;
+               c.enabled = false;
+               c.name = "clip one";
+               uint64_t idA = 0, idB = 0;
+               Arrange::PlaceOverwrite(m, m.lanes[0].id, c, &idA);
+               c.start = Arrange::kPPQ * 9;
+               c.srcUid = sphereUid;
+               c.enabled = true;
+               c.name.clear();
+               Arrange::PlaceOverwrite(m, m.lanes[1].id, c, &idB);
+               Arrange::Group(m, { idA, idB });
+               Arrange::AddMarker(m, Arrange::kTicksPerBar * 2, "chorus", 0xFF00FF00u);
+               m.settings.timeDisplay = 1;
+               m.settings.snapDivision = 8;
+               m.settings.loop.enabled = true;
+               m.settings.loop.start = 0;
+               m.settings.loop.end = Arrange::kTicksPerBar * 4;
+               m.settings.renderFps = 30;
+               const uint64_t savedNextId = m.nextId;
 
-            Undo();
-            if (cOk)
-            {
-               cOk = gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 2;
+               const std::string path = TmpPath("arrange_selftest_tick.inf");
+               SavePatchTo(path);
+               LoadPatchFrom(path);
+               std::remove(path.c_str());
+
+               const Arrange::Model& r = gArrange;
+               cOk = r.lanes.size() == 2 && r.lanes[0].clips.size() == 1 && r.lanes[1].clips.size() == 1;
                if (cOk)
                {
-                  GraphNode* sphereNode = FindNodeByIndex(gArrangeStreams[0].clips[1].srcIndex);
-                  cOk = cOk && (sphereNode != nullptr && sphereNode->typeName == "Sphere");
+                  const Arrange::Clip& ra = r.lanes[0].clips[0];
+                  const Arrange::Clip& rb = r.lanes[1].clips[0];
+                  // Ticks are exact - no epsilon, which is the whole reason
+                  // the time base moved off doubles.
+                  cOk = ra.start == Arrange::kPPQ * 3 && ra.length == Arrange::kPPQ * 5 &&
+                        ra.fadeIn == Arrange::kPPQ / 3 && ra.gainDb == -6.0f &&
+                        !ra.enabled && ra.name == "clip one" && ra.id == idA &&
+                        rb.id == idB && ra.groupId != 0 && ra.groupId == rb.groupId;
+                  // srcUid survives the whole respawn, which srcIndex could not.
+                  GraphNode* ca = FindNodeByUid(ra.srcUid);
+                  GraphNode* cb = FindNodeByUid(rb.srcUid);
+                  cOk = cOk && ca != nullptr && cb != nullptr && ca->typeName == "Cube" &&
+                        cb->typeName == "Sphere";
+                  cOk = cOk && r.markers.size() == 1 && r.markers[0].pos == Arrange::kTicksPerBar * 2 &&
+                        r.markers[0].name == "chorus" && r.markers[0].color == 0xFF00FF00u;
+                  cOk = cOk && r.settings.timeDisplay == 1 && r.settings.snapDivision == 8 &&
+                        r.settings.loop.enabled && r.settings.loop.end == Arrange::kTicksPerBar * 4 &&
+                        r.settings.renderFps == 30;
+                  // nextId is persisted, not recomputed: a reload must not be
+                  // able to hand out an id a deleted clip already used.
+                  cOk = cOk && r.nextId >= savedNextId;
+                  std::string why;
+                  cOk = cOk && Arrange::Validate(r, &why);
                }
             }
-
-            // Also test ApplyPatchData dropping clips with non-existent node
-            Patch::Data badData = BuildPatchData();
-            Patch::ClipRecord orphan;
-            orphan.srcIndex = 999999;
-            orphan.startSeconds = 1.0;
-            orphan.lengthSeconds = 1.0;
-            badData.streams[0].clips.push_back(orphan);
-            ApplyPatchData(badData);
-            cOk = cOk && (gArrangeStreams.size() == 1 && gArrangeStreams[0].clips.size() == 2);
-
-            printf("arrange deletion: %s\n", cOk ? "OK" : "FAIL");
+            printf("arrange tick roundtrip: %s\n", cOk ? "OK" : "FAIL");
             allOk = allOk && cOk;
          }
 
-         // D. File->New
+         // --- D. Legacy seconds patch converts to ticks --------------------
          {
-            NewPatch();
-            const bool dOk = gArrangeStreams.empty();
-            printf("arrange new patch: %s\n", dOk ? "OK" : "FAIL");
-            allOk = allOk && dOk;
-         }
-
-         // E. Forward compatibility
-         {
-            const std::string path = TmpPath("arrange_selftest_forward.inf");
+            // 120 bpm -> 1 beat = 0.5 s, so 1.0 s is exactly 2 beats and
+            // 2.0 s is 4. The transport line deliberately sits AFTER the clip
+            // to prove the conversion waits for the whole file.
+            const std::string path = TmpPath("arrange_selftest_legacy.inf");
             {
                std::ofstream f(path);
                f << "infinite-patch 1\n";
                f << "node 1 3D Cube\n";
                f << "end\n";
-               f << "stream 1 0 1 0 0 A\n";
-               f << "arrangefuture 1 2 3\n";
-               f << "clip 0 1 2 -1 0 0 0 0 0 1 0\n";
+               f << "stream 0 0 1 0 0 V\n";
+               f << "clip 0 1 2 1 0 1 0.25 0 -3 0.5 1\n";
+               f << "transport 120 4 4 0 0\n";
             }
             Patch::Data loaded;
             std::string err;
-            bool ok = Patch::Read(path, loaded, err);
+            const bool read = Patch::Read(path, loaded, err);
             std::remove(path.c_str());
 
-            const bool eOk = ok && loaded.streams.size() == 1 && loaded.streams[0].clips.size() == 1 &&
-                             loaded.streams[0].name == "A" &&
-                             loaded.streams[0].clips[0].startSeconds == 1.0 &&
-                             loaded.streams[0].clips[0].lengthSeconds == 2.0;
-            printf("arrange forward compat: %s\n", eOk ? "OK" : "FAIL");
+            bool dOk = read && loaded.streams.size() == 1 && loaded.streams[0].clips.size() == 1;
+            if (dOk)
+            {
+               const Patch::ClipRecord& c = loaded.streams[0].clips[0];
+               dOk = c.startTick == Arrange::kPPQ * 2 && c.lengthTick == Arrange::kPPQ * 4 &&
+                     c.fadeInTick == Arrange::kPPQ / 2 && c.gainDb == -3.0f &&
+                     c.legacySrcIndex == 1 && c.srcUid == 0 && c.enabled;
+            }
+            printf("arrange legacy seconds -> ticks: %s\n", dOk ? "OK" : "FAIL");
+            allOk = allOk && dOk;
+         }
+
+         // --- E. Undo/redo, interleaved with node add and delete -----------
+         {
+            NewPatch();
+            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            bool eOk = cube != nullptr;
+            const uint64_t cubeUid = cube ? cube->uid : 0;
+            const int cubeIndex = cube ? cube->index : -1;
+            if (eOk)
+            {
+               seedModel(gArrange, 1, 0);
+               Arrange::Clip c;
+               c.length = Arrange::kTicksPerBar;
+               c.srcUid = cubeUid;
+               uint64_t clipId = 0;
+               Arrange::PlaceOverwrite(gArrange, gArrange.lanes[0].id, c, &clipId);
+
+               // A timeline-only gesture: the entry must not respawn the graph
+               // on undo, so the node's pointer identity survives it.
+               const GraphNode* before = FindNodeByUid(cubeUid);
+               PushArrangeUndo();
+               Arrange::MoveClips(gArrange, { clipId }, Arrange::kTicksPerBar, 0);
+               eOk = eOk && gArrange.lanes[0].clips[0].start == Arrange::kTicksPerBar;
+
+               Undo();
+               eOk = eOk && gArrange.lanes[0].clips[0].start == 0;
+               eOk = eOk && FindNodeByUid(cubeUid) == before;   // no respawn
+               Redo();
+               eOk = eOk && gArrange.lanes[0].clips[0].start == Arrange::kTicksPerBar;
+               Undo();
+
+               // A graph gesture: deleting the node must leave the clip in
+               // place but offline, and undo must re-attach it by uid.
+               const size_t clipsBefore = gArrange.lanes[0].clips.size();
+               PushUndoCheckpoint();
+               RemoveNodeByIndex(cubeIndex);
+               // Offline (WP5): the clip stays, its source is cleared to 0
+               // so it draws "Unassigned"; the link lives in the undo entry.
+               eOk = eOk && gArrange.lanes.size() == 1 &&
+                     gArrange.lanes[0].clips.size() == clipsBefore &&
+                     gArrange.lanes[0].clips[0].srcUid == 0 &&
+                     FindNodeByUid(cubeUid) == nullptr;
+
+               Undo();
+               eOk = eOk && gArrange.lanes.size() == 1 && gArrange.lanes[0].clips.size() == clipsBefore;
+               if (eOk)
+               {
+                  const uint64_t restored = gArrange.lanes[0].clips[0].srcUid;
+                  GraphNode* back = FindNodeByUid(restored);
+                  eOk = restored == cubeUid && back != nullptr && back->typeName == "Cube";
+               }
+               std::string why;
+               eOk = eOk && Arrange::Validate(gArrange, &why);
+            }
+            printf("arrange undo redo + node delete: %s\n", eOk ? "OK" : "FAIL");
             allOk = allOk && eOk;
          }
 
-         // F. Malformed input
+         // --- F. File->New clears the model --------------------------------
+         {
+            NewPatch();
+            // New seeds the default four video + four audio lanes, empty.
+            int videoLanes = 0, audioLanes = 0;
+            size_t clips = 0;
+            for (const Arrange::Lane& l : gArrange.lanes)
+            {
+               (l.type == Arrange::kLaneVideo ? videoLanes : audioLanes)++;
+               clips += l.clips.size();
+            }
+            const bool fOk = gArrange.lanes.size() == 8 && videoLanes == 4 && audioLanes == 4 &&
+                             clips == 0 && gArrange.markers.empty() &&
+                             Arrange::ArrangementEnd(gArrange) == 0;
+            printf("arrange new patch: %s\n", fOk ? "OK" : "FAIL");
+            allOk = allOk && fOk;
+         }
+
+         // --- G. Unknown tags and malformed lines ---------------------------
          {
             const std::string path = TmpPath("arrange_selftest_malformed.inf");
             {
@@ -56047,55 +62730,319 @@ int main(int argc, char** argv)
                f << "infinite-patch 1\n";
                f << "node 1 3D Cube\n";
                f << "end\n";
-               f << "stream 1\n";
+               f << "stream 1\n";                      // malformed, kept with defaults
                f << "stream 0 0 1 0 0 V\n";
-               f << "clip 7 0 1 -1\n";
-               f << "clip 0 0 0 -1\n";
-               f << "clip 0 -1 1 -1\n";
-               f << "clip 0 0 1 -1\n";
-               f << "clip 1 0 1 -1 0 0 0 0 0 abc 0\n";
+               f << "arrangefuture 1 2 3\n";           // from a newer build
+               f << "cliptick 7 0 0 960 0\n";          // out-of-range lane, dropped
+               f << "cliptick 0 0 0 0 0\n";            // zero length, dropped
+               f << "cliptick 0 0 -5 960 0\n";         // negative start, dropped
+               f << "cliptick 0 0 0 960 0 0 99999 0\n"; // fade past the end, clamped
+               f << "marker 0 -4 0 bad\n";             // negative position, dropped
+               f << "marker 0 1920 4278190080 good\n";
             }
             Patch::Data loaded;
             std::string err;
-            bool ok = Patch::Read(path, loaded, err);
+            const bool read = Patch::Read(path, loaded, err);
             std::remove(path.c_str());
 
-            bool fOk = ok && loaded.streams.size() == 2;
-            if (fOk)
+            bool gOk = read && loaded.streams.size() == 2;
+            if (gOk)
             {
-               fOk = fOk && loaded.streams[0].type == 1 &&
-                     loaded.streams[0].opacity == 1.0f &&
-                     loaded.streams[0].gainDb == 0.0f &&
-                     loaded.streams[0].pan == 0.0f &&
+               // The malformed `stream 1` line is kept with defaults rather
+               // than dropped: the clip lines below address their lane by
+               // position, so dropping it would move every later clip onto the
+               // wrong lane. All four cliptick lines name lane 0, which IS
+               // that malformed line - only the last one survives its checks.
+               gOk = loaded.streams[0].type == 1 && loaded.streams[0].opacity == 1.0f &&
                      loaded.streams[0].name.empty() &&
                      loaded.streams[0].clips.size() == 1 &&
-                     loaded.streams[1].clips.size() == 1 &&
-                     loaded.streams[1].clips[0].speed == 1.0f;
+                     loaded.streams[0].clips[0].fadeInTick == 960 &&
+                     loaded.streams[1].clips.empty() &&
+                     loaded.markers.size() == 1 && loaded.markers[0].name == "good";
             }
-            printf("arrange malformed input: %s\n", fOk ? "OK" : "FAIL");
-            allOk = allOk && fOk;
-         }
-
-         // G. JSON parity
-         {
-            NewPatch();
-            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
-            Patch::StreamRecord s;
-            Patch::ClipRecord c;
-            c.srcIndex = cube->index;
-            s.clips.push_back(c);
-            gArrangeStreams = { s };
-
-            nlohmann::json j = PatchJson::ToJson(BuildPatchData());
-            const bool gOk = j.contains("streams") && j["streams"].is_array() &&
-                             j["streams"].size() == gArrangeStreams.size() &&
-                             j["streams"][0]["clips"].is_array() &&
-                             j["streams"][0]["clips"].size() == gArrangeStreams[0].clips.size();
-            printf("arrange json parity: %s\n", gOk ? "OK" : "FAIL");
+            printf("arrange malformed input: %s\n", gOk ? "OK" : "FAIL");
             allOk = allOk && gOk;
          }
 
+         // --- H. JSON parity -----------------------------------------------
+         {
+            NewPatch();
+            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            seedModel(gArrange, 1, 0);
+            Arrange::Clip c;
+            c.length = Arrange::kTicksPerBar;
+            c.srcUid = cube ? cube->uid : 0;
+            Arrange::PlaceOverwrite(gArrange, gArrange.lanes[0].id, c);
+            Arrange::AddMarker(gArrange, Arrange::kPPQ, "m");
+
+            nlohmann::json j = PatchJson::ToJson(BuildPatchData());
+            const bool hOk = j.contains("streams") && j["streams"].is_array() &&
+                             j["streams"].size() == gArrange.lanes.size() &&
+                             j["streams"][0]["clips"].is_array() &&
+                             j["streams"][0]["clips"].size() == gArrange.lanes[0].clips.size() &&
+                             j["streams"][0]["clips"][0].contains("startTick") &&
+                             j.contains("markers") && j["markers"].size() == 1 &&
+                             j.contains("arrange") && j["arrange"].contains("nextId") &&
+                             j["nodes"][0].contains("uid");
+            printf("arrange json parity: %s\n", hOk ? "OK" : "FAIL");
+            allOk = allOk && hOk;
+         }
+
+         // --- I. Ids are unique and never reused ---------------------------
+         // The two defects the WP1 review found, both of which reached disk:
+         // the legacy UI's copy paths clone a clip record verbatim (id and
+         // all), and undo used to restore nextId along with the snapshot.
+         {
+            NewPatch();
+            seedModel(gArrange, 1, 0);
+            const uint64_t laneId = gArrange.lanes[0].id;
+            Arrange::Clip c;
+            c.length = Arrange::kTicksPerBar;
+            uint64_t firstId = 0;
+            Arrange::PlaceOverwrite(gArrange, laneId, c, &firstId);
+
+            // (1) A duplicate id arriving from outside an edit op - exactly
+            // what Cmd+D used to produce - must be re-minted, not accepted.
+            Arrange::Clip clone = gArrange.lanes[0].clips[0];
+            clone.start = Arrange::kTicksPerBar * 2;
+            gArrange.lanes[0].clips.push_back(clone);   // same id, deliberately
+            gArrange.revision++;                         // a direct edit is still a change
+            Arrange::Normalize(gArrange);
+            std::string why;
+            bool iOk = gArrange.lanes[0].clips.size() == 2 &&
+                       gArrange.lanes[0].clips[0].id != gArrange.lanes[0].clips[1].id &&
+                       Arrange::Validate(gArrange, &why);
+
+            // (2) nextId only ever climbs. Snapshot, spend an id, undo, and
+            // the next id handed out must still be a fresh one.
+            PushArrangeUndo();
+            uint64_t spentId = 0;
+            Arrange::Clip extra;
+            extra.start = Arrange::kTicksPerBar * 8;
+            extra.length = Arrange::kTicksPerBar;
+            Arrange::PlaceOverwrite(gArrange, laneId, extra, &spentId);
+            Undo();
+            iOk = iOk && spentId != 0 && gArrange.nextId > spentId;
+
+            Arrange::Clip after;
+            after.start = Arrange::kTicksPerBar * 12;
+            after.length = Arrange::kTicksPerBar;
+            uint64_t afterId = 0;
+            Arrange::PlaceOverwrite(gArrange, laneId, after, &afterId);
+            iOk = iOk && afterId != spentId && Arrange::Validate(gArrange, &why);
+
+            printf("arrange id uniqueness: %s\n", iOk ? "OK" : "FAIL");
+            allOk = allOk && iOk;
+         }
+
          printf("arrange test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Overhaul WP2 (docs/plans/arrangement/overhaul-prompt.md): the transport
+      // clock's three new contracts - a tempo change doesn't move the
+      // playhead, Beats() is seekable, and the loop wraps at a block boundary
+      // rather than a UI frame.
+      //
+      // The audio clock is driven by hand here (NotifyAudioEngineStarted +
+      // AdvanceAudioClock) with the real engine stopped first, so the fixture
+      // is deterministic, needs no audio device, and never races a live audio
+      // thread calling the same functions.
+      if (getenv("INFINITE_TRANSPORTTEST") != nullptr && frameId == 4)
+      {
+         Transport& tr = Transport::Instance();
+         bool allOk = true;
+
+         const bool hadEngine = AudioEngine::Instance().SampleRate() > 0.0;
+         AudioEngine::Instance().Stop();
+         tr.NotifyAudioEngineStopped();
+
+         const double kSr = 48000.0;
+         const int kBlock = 512;
+         const double kBlockSec = (double)kBlock / kSr;
+
+         auto startFakeEngine = [&]() {
+            tr.NotifyAudioEngineStarted(kSr);
+         };
+
+         // --- A. Tempo change mid-play doesn't move the playhead ------------
+         {
+            tr.SetTempo(120.0f);
+            tr.SetLoop(false, 0.0, 0.0);
+            tr.SetPlaying(true);
+            tr.Seek(0.0);
+            startFakeEngine();
+
+            for (int i = 0; i < 400; i++)      // ~4.3 s at 120 bpm
+               tr.AdvanceAudioClock(kBlock);
+
+            const double before = tr.Beats();
+            tr.SetTempo(240.0f);
+            tr.AdvanceAudioClock(kBlock);      // the block that applies it
+            const double after = tr.Beats();
+
+            // One block at the *new* tempo is the largest legitimate step.
+            const double maxStep = kBlockSec * (240.0 / 60.0) * 1.001;
+            const bool continuous = std::fabs(after - before) <= maxStep;
+
+            // ...and the tempo really did change: the next block must advance
+            // at twice the old rate.
+            const double b0 = tr.Beats();
+            tr.AdvanceAudioClock(kBlock);
+            const double rate = (tr.Beats() - b0) / kBlockSec;
+            const bool doubled = std::fabs(rate - 4.0) < 0.01;
+
+            const bool aOk = continuous && doubled;
+            printf("transport tempo continuity: %s (jump %.6f beats, max %.6f; rate %.3f)\n",
+                   aOk ? "OK" : "FAIL", std::fabs(after - before), maxStep, rate);
+            allOk = allOk && aOk;
+         }
+
+         // --- B. SeekBeats ---------------------------------------------------
+         {
+            tr.SetTempo(120.0f);
+            tr.SeekBeats(8.0);
+            tr.AdvanceAudioClock(0);           // consume the pending seek
+            const bool bOk = std::fabs(tr.Beats() - 8.0) < 1e-6 &&
+                             std::fabs(tr.Seconds() - 4.0) < 1e-6 &&
+                             (tr.SeekBeats(-3.0), tr.AdvanceAudioClock(0), tr.Beats() >= 0.0);
+            printf("transport seek beats: %s\n", bOk ? "OK" : "FAIL");
+            allOk = allOk && bOk;
+         }
+
+         // --- C. Loop wraps within one block ---------------------------------
+         {
+            tr.SetTempo(120.0f);
+            tr.SetPlaying(true);
+            tr.SeekBeats(0.0);
+            tr.SetLoop(true, 2.0, 6.0);        // a 4-beat / 2-second loop
+            tr.AdvanceAudioClock(0);
+
+            const double oneBlockBeats = kBlockSec * 2.0;   // 120 bpm
+            double worstOvershoot = 0.0;
+            int laps = 0;
+            double prev = tr.Beats();
+            for (int i = 0; i < 2000; i++)     // ~21 s, five laps' worth
+            {
+               tr.AdvanceAudioClock(kBlock);
+               const double b = tr.Beats();
+               worstOvershoot = std::max(worstOvershoot, b - 6.0);
+               if (b < prev)
+                  laps++;
+               prev = b;
+            }
+            // Never past the end by more than one block, and it really looped
+            // rather than simply stopping.
+            const bool cOk = worstOvershoot <= oneBlockBeats * 1.001 && laps >= 4 &&
+                             tr.Beats() >= 2.0 && tr.Beats() < 6.0;
+            printf("transport loop wrap: %s (%d laps, worst overshoot %.6f beats, budget %.6f)\n",
+                   cOk ? "OK" : "FAIL", laps, worstOvershoot, oneBlockBeats);
+            allOk = allOk && cOk;
+         }
+
+         // --- D. Offline render suspends the loop ----------------------------
+         {
+            tr.SetTempo(120.0f);
+            tr.SetPlaying(true);
+            tr.SeekBeats(0.0);
+            tr.SetLoop(true, 0.0, 4.0);
+            tr.SetOfflineMode(true, kSr);
+            // Read inside the block: offline, Seconds() outside a block is the
+            // video clock, which only moves when the renderer calls
+            // SetOfflineVideoTime. The audio clock is only live between
+            // Begin/EndOfflineAudioBlock, which is where the wrap would have
+            // fired if the loop weren't suspended.
+            double offlineBeats = 0.0;
+            for (int i = 0; i < 600; i++)      // well past four beats
+            {
+               tr.BeginOfflineAudioBlock(kBlock);
+               offlineBeats = tr.Beats();
+               tr.EndOfflineAudioBlock();
+            }
+            tr.SetOfflineMode(false, 0.0);
+            // ...and the user's loop is still armed afterwards.
+            const bool dOk = offlineBeats > 4.0 && tr.LoopEnabled() &&
+                             std::fabs(tr.LoopEndBeats() - 4.0) < 1e-9;
+            printf("transport offline suspends loop: %s (reached %.2f beats)\n",
+                   dOk ? "OK" : "FAIL", offlineBeats);
+            allOk = allOk && dOk;
+         }
+
+         // --- F. The block that laps keeps its own start on the pre-wrap axis
+         // BlockStartBeats() is what RunTopology builds its per-sample beat
+         // axis from. If it were derived as Beats() - numFrames*rate it would
+         // land on the NEW lap for the block that crossed the loop end, and
+         // every sample of that block would be re-placed at the top of the
+         // loop - which silences the last few ms before the loop point on
+         // every lap, with a declick ramp instead of continuity.
+         {
+            tr.SetTempo(120.0f);
+            tr.SetPlaying(true);
+            tr.Seek(0.0);
+            tr.SetLoop(true, 0.0, 4.0);
+            startFakeEngine();
+
+            const double blockBeats = kBlockSec * 2.0; // 120 bpm = 2 beats/s
+            bool sawLap = false;
+            bool axisOk = true;
+            double prevBeats = tr.Beats();
+            for (int i = 0; i < 600; i++)
+            {
+               tr.AdvanceAudioClock(kBlock);
+               const double now = tr.Beats();
+               if (now < prevBeats) // this block crossed the loop end
+               {
+                  sawLap = true;
+                  const double start = tr.BlockStartBeats();
+                  // The start must sit in the last block before the loop end,
+                  // not at the top of the new lap.
+                  axisOk = axisOk && start <= 4.0 && start > 4.0 - blockBeats * 1.001;
+               }
+               prevBeats = now;
+            }
+            tr.SetLoop(false, 0.0, 0.0);
+            const bool fOk = sawLap && axisOk;
+            printf("transport block start across loop: %s (laps seen %d)\n",
+                   fOk ? "OK" : "FAIL", (int)sawLap);
+            allOk = allOk && fOk;
+         }
+
+         // --- E. Loop also wraps on the no-engine fallback clock -------------
+         {
+            tr.NotifyAudioEngineStopped();     // back to Tick()-driven
+            tr.SetTempo(120.0f);
+            tr.SetPlaying(true);
+            tr.Seek(0.0);
+            tr.SetLoop(true, 0.0, 2.0);        // 1 second at 120 bpm
+            bool wrapped = false;
+            double worst = 0.0;
+            for (int i = 0; i < 300; i++)
+            {
+               tr.Tick(1.0f / 60.0f);
+               const double b = tr.Beats();
+               worst = std::max(worst, b - 2.0);
+               if (b < 2.0 && i > 40)
+                  wrapped = true;
+            }
+            const double frameBeats = (1.0 / 60.0) * 2.0;
+            const bool eOk = wrapped && worst <= frameBeats * 1.001;
+            printf("transport loop wrap (no engine): %s (worst overshoot %.6f beats)\n",
+                   eOk ? "OK" : "FAIL", worst);
+            allOk = allOk && eOk;
+         }
+
+         // Leave the transport the way the rest of the session expects it.
+         tr.SetLoop(false, 0.0, 0.0);
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         tr.SetPlaying(true);
+         if (hadEngine)
+         {
+            std::string startErr;
+            if (AudioEngine::Instance().Start(startErr))
+               tr.NotifyAudioEngineStarted(AudioEngine::Instance().SampleRate());
+         }
+
+         printf("transport test: all  %s\n", allOk ? "OK" : "FAIL");
       }
 
       // Regression guard for the BuildPatchData() perf fix in
@@ -56106,6 +63053,1958 @@ int main(int argc, char** argv)
       // in low single-digit milliseconds even at this node count, so this is
       // here to catch a return to O(N^2) (or worse), not to chase a specific
       // number.
+      // Arrangement timeline audio scheduling (overhaul WP3). Deterministic:
+      // no device, no wall clock - the transport runs in offline mode and
+      // AudioEngine::ProcessOffline is pumped by hand, so a block is a block
+      // no matter how loaded the machine is.
+      //
+      // Everything here goes through the REAL RebuildAudioTopology over the
+      // real gArrange model, not a hand-built topology: the bugs WP3 fixes
+      // all lived in what that function decided to put in the topology, so a
+      // fixture that built its own would test nothing.
+      if (getenv("INFINITE_ARRANGEAUDIOTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+
+         Transport& tr = Transport::Instance();
+         const double kSr = 48000.0;
+         const int kBlock = 256;
+         const double kBpm = 120.0;            // 2 beats per second
+         const double kSamplesPerBeat = kSr * 60.0 / kBpm;
+
+         const bool hadEngine = AudioEngine::Instance().SampleRate() > 0.0;
+         AudioEngine::Instance().Stop();
+         tr.NotifyAudioEngineStopped();
+         const AudioMode savedMode = gAudioMode;
+
+         GraphNode* oscGn = SpawnNode("Oscillator", "Synthesizers", 0.0f, 0.0f);
+         const bool spawned = oscGn != nullptr && oscGn->node != nullptr;
+         printf("arrange audio spawn oscillator: %s\n", spawned ? "OK" : "FAIL");
+         allOk = allOk && spawned;
+
+         if (spawned)
+         {
+            const uint64_t oscUid = oscGn->uid;
+            const int oscIndex = oscGn->index;
+
+            // One audio lane, clips filled in per section. Built straight into
+            // gArrange (WP5b); revision keeps climbing across the reset so the
+            // rebuild trigger never sees it rewind onto an old built value.
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            const uint64_t laneId = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            Arrange::FindLane(gArrange, laneId)->name = "A1";
+            (void)oscIndex;
+
+            auto clearClips = [&]()
+            {
+               std::vector<uint64_t> ids;
+               for (const Arrange::Clip& c : Arrange::FindLane(gArrange, laneId)->clips)
+                  ids.push_back(c.id);
+               Arrange::Delete(gArrange, ids);
+            };
+            auto addClip = [&](double startBeat, double lengthBeats, bool enabled)
+            {
+               Arrange::Clip c;
+               c.start = Arrange::BeatsToTicks(startBeat);
+               c.length = Arrange::BeatsToTicks(lengthBeats);
+               c.srcUid = oscUid;
+               c.enabled = enabled;
+               Arrange::PlaceOverwrite(gArrange, laneId, c);
+            };
+            // Rebuilds the per-frame trigger fired while a render ran - it is
+            // called once per block, so crossing a clip boundary with it
+            // running is exactly the "a boundary must never rebuild" check.
+            int staleRebuildsDuringRender = 0;
+
+            gAudioMode = AudioMode::Timeline;
+            tr.SetTempo((float)kBpm);
+            tr.SetLoop(false, 0.0, 0.0);
+            tr.SetPlaying(true);
+            tr.SetOfflineMode(true, kSr);
+
+            // Renders [startBeat, startBeat + numBlocks*kBlock samples) and
+            // returns channel 0, concatenated. Rebuilds the topology first,
+            // then prepares every node by hand: the PrepareToPlay loop inside
+            // RebuildAudioTopology keys off a live device or an offline render
+            // job, and this fixture has neither.
+            // Params reach an AudioNode through its mailbox, which
+            // CookIfNeeded fills - a node that has never been cooked runs on
+            // its constructor defaults with an empty mailbox and produces
+            // nothing. The main loop does this every frame; this fixture runs
+            // its whole life inside one.
+            int fixtureCookFrame = 1000000;
+            auto cookAll = [&]()
+            {
+               fixtureCookFrame++;
+               for (GraphNode& gn : gNodes)
+                  gn.node->CookIfNeeded(fixtureCookFrame);
+            };
+
+            auto render = [&](double startBeat, int numBlocks)
+            {
+               RebuildAudioTopology();
+               cookAll();
+               for (GraphNode& gn : gNodes)
+                  if (auto* an = dynamic_cast<AudioNode*>(gn.node.get()))
+                     if (an->preparedForSampleRate != kSr)
+                     {
+                        an->PrepareToPlay(kSr, kAudioMaxBlockFrames);
+                        an->preparedForSampleRate = kSr;
+                     }
+               tr.SeekBeats(startBeat);
+
+               std::vector<float> chan0((size_t)kBlock), chan1((size_t)kBlock);
+               float* chans[2] = { chan0.data(), chan1.data() };
+               AudioBuffer buffer;
+               buffer.channels = chans;
+               buffer.numChannels = 2;
+               buffer.numFrames = kBlock;
+
+               std::vector<float> out;
+               out.reserve((size_t)kBlock * (size_t)numBlocks);
+               staleRebuildsDuringRender = 0;
+               for (int b = 0; b < numBlocks; b++)
+               {
+                  if (ArrangeAudioRebuildIfStale())
+                     staleRebuildsDuringRender++;
+                  AudioEngine::Instance().ProcessOffline(buffer);
+                  out.insert(out.end(), chan0.begin(), chan0.end());
+               }
+               return out;
+            };
+
+            // Peak |x| over the samples covering [fromBeat, toBeat) of a
+            // render that started at `originBeat`.
+            auto peakOverBeats = [&](const std::vector<float>& x, double originBeat,
+                                     double fromBeat, double toBeat)
+            {
+               const long long lo = std::max(0LL, (long long)((fromBeat - originBeat) * kSamplesPerBeat));
+               const long long hi = std::min((long long)x.size(), (long long)((toBeat - originBeat) * kSamplesPerBeat));
+               float peak = 0.0f;
+               for (long long i = lo; i < hi; i++)
+                  peak = std::max(peak, std::fabs(x[(size_t)i]));
+               return peak;
+            };
+
+            // --- A. Two abutting clips of the same node are both audible ----
+            // The original bug: the per-frame set of active srcIndex never
+            // changed across the seam, so no rebuild happened and the stale
+            // single-clip window silenced everything after the first clip.
+            {
+               clearClips();
+               addClip(0.0, 2.0, true);
+               addClip(2.0, 2.0, true);
+               const std::vector<float> x = render(0.0, 800); // 800*256 = 204800 samples = 4.27 beats
+
+               const float first = peakOverBeats(x, 0.0, 0.2, 1.8);
+               const float second = peakOverBeats(x, 0.0, 2.2, 3.8);
+               // The seam itself: abutting windows skip the declick, so the
+               // signal must run straight through rather than dip to silence.
+               const float seam = peakOverBeats(x, 0.0, 1.98, 2.02);
+               // Two clip boundaries crossed (beat 2 and beat 4) with the
+               // per-frame trigger polled every block: zero rebuilds.
+               const bool aOk = first > 0.05f && second > 0.05f && seam > 0.05f &&
+                                staleRebuildsDuringRender == 0;
+               printf("arrange audio abutting clips: %s (first %.4f, second %.4f, seam %.4f, boundary rebuilds %d)\n",
+                      aOk ? "OK" : "FAIL", first, second, seam, staleRebuildsDuringRender);
+               allOk = allOk && aOk;
+            }
+
+            // --- B. Onset lands on the scheduled sample --------------------
+            {
+               clearClips();
+               addClip(2.0, 2.0, true);
+               const std::vector<float> x = render(0.0, 800);
+
+               const long long expected = (long long)(2.0 * kSamplesPerBeat);
+               long long firstAudible = -1;
+               for (size_t i = 0; i < x.size(); i++)
+                  if (std::fabs(x[i]) > 1e-5f) { firstAudible = (long long)i; break; }
+               // The declick ramp is zero at exactly the onset sample and the
+               // oscillator's own phase starts near zero, so the first sample
+               // over the noise floor lands a hair after the scheduled one -
+               // never before it, and never a UI frame later.
+               const bool bOk = firstAudible >= expected && (firstAudible - expected) <= 8;
+               printf("arrange audio onset: %s (scheduled %lld, first audible %lld, error %lld samples)\n",
+                      bOk ? "OK" : "FAIL", expected, firstAudible, firstAudible - expected);
+               allOk = allOk && bOk;
+            }
+
+            // --- C. A disabled clip is silent -------------------------------
+            // `enabled` was not read by the audio path at all before WP3.
+            {
+               clearClips();
+               addClip(0.0, 4.0, false);
+               const std::vector<float> x = render(0.0, 400);
+               const float peak = peakOverBeats(x, 0.0, 0.0, 2.0);
+               const bool cOk = peak < 1e-6f;
+               printf("arrange audio disabled clip: %s (peak %.8f)\n", cOk ? "OK" : "FAIL", peak);
+               allOk = allOk && cOk;
+            }
+
+            // --- D. Paused in Timeline mode is silent -----------------------
+            {
+               clearClips();
+               addClip(0.0, 4.0, true);
+               tr.SetPlaying(false);
+               const std::vector<float> x = render(0.0, 200);
+               const float peak = peakOverBeats(x, 0.0, 0.0, 1.0);
+               tr.SetPlaying(true);
+               const bool dOk = peak < 1e-6f;
+               printf("arrange audio paused: %s (peak %.8f)\n", dOk ? "OK" : "FAIL", peak);
+               allOk = allOk && dOk;
+            }
+
+            // --- E. Seeking from clip A into clip B of the same node --------
+            // The other half of the original bug: the set of active srcIndex
+            // is identical on both sides of the seek, so nothing rebuilt and
+            // clip B played silence.
+            {
+               clearClips();
+               addClip(0.0, 2.0, true);
+               addClip(4.0, 2.0, true);
+               render(0.5, 100);                     // land inside clip A
+               const std::vector<float> x = render(4.5, 200); // jump into clip B
+               const float peak = peakOverBeats(x, 4.5, 4.6, 5.5);
+               const bool eOk = peak > 0.05f;
+               printf("arrange audio seek across clips: %s (peak %.4f)\n", eOk ? "OK" : "FAIL", peak);
+               allOk = allOk && eOk;
+            }
+
+            // --- F. A rebuild mid-clip does not break the signal ------------
+            // Editing an unrelated lane rebuilds the whole topology. With the
+            // schedule carried on the terminal (and PDC state living outside
+            // the topology), the block after the rebuild must continue the
+            // same envelope rather than restart it.
+            {
+               clearClips();
+               addClip(0.0, 8.0, true);
+               RebuildAudioTopology();
+               cookAll();
+               for (GraphNode& gn : gNodes)
+                  if (auto* an = dynamic_cast<AudioNode*>(gn.node.get()))
+                     if (an->preparedForSampleRate != kSr)
+                     {
+                        an->PrepareToPlay(kSr, kAudioMaxBlockFrames);
+                        an->preparedForSampleRate = kSr;
+                     }
+               tr.SeekBeats(1.0);
+
+               std::vector<float> chan0((size_t)kBlock), chan1((size_t)kBlock);
+               float* chans[2] = { chan0.data(), chan1.data() };
+               AudioBuffer buffer;
+               buffer.channels = chans;
+               buffer.numChannels = 2;
+               buffer.numFrames = kBlock;
+
+               // The rebuild goes through the same per-frame trigger the main
+               // loop runs (WP5b: revision is the only change signal). It is
+               // polled before every block, so the 39 blocks without an edit
+               // are 39 no-op frames: exactly one rebuild over the whole run,
+               // and the edit moves revision by exactly one.
+               float beforePeak = 0.0f, afterPeak = 0.0f;
+               const unsigned long long rebuildsBefore = gAudioTopologyRebuildCount;
+               uint64_t otherLane = 0;
+               bool bumpedOnce = false, noOpFrameQuiet = false;
+               int triggered = 0;
+               for (int b = 0; b < 40; b++)
+               {
+                  if (b == 20)
+                  {
+                     // An edit on a *different* lane - the clip under the
+                     // playhead is untouched.
+                     const uint64_t rev = gArrange.revision;
+                     otherLane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+                     bumpedOnce = gArrange.revision == rev + 1;
+                  }
+                  if (ArrangeAudioRebuildIfStale())
+                     triggered++;
+                  if (b == 20)
+                     noOpFrameQuiet = !ArrangeAudioRebuildIfStale(); // same frame again: nothing changed
+                  AudioEngine::Instance().ProcessOffline(buffer);
+                  for (int i = 0; i < kBlock; i++)
+                  {
+                     if (b == 19) beforePeak = std::max(beforePeak, std::fabs(chan0[i]));
+                     if (b == 20) afterPeak = std::max(afterPeak, std::fabs(chan0[i]));
+                  }
+               }
+               const unsigned long long rebuilds = gAudioTopologyRebuildCount - rebuildsBefore;
+               const bool fOk = beforePeak > 0.05f && afterPeak > 0.05f &&
+                                std::fabs(afterPeak - beforePeak) < 0.25f * beforePeak &&
+                                bumpedOnce && triggered == 1 && rebuilds == 1 && noOpFrameQuiet;
+               printf("arrange audio rebuild mid-clip: %s (before %.4f, after %.4f, revision +1 %d, rebuilds %llu over 40 polled frames, no-op frame quiet %d)\n",
+                      fOk ? "OK" : "FAIL", beforePeak, afterPeak, (int)bumpedOnce, rebuilds, (int)noOpFrameQuiet);
+               allOk = allOk && fOk;
+               Arrange::RemoveLane(gArrange, otherLane);
+            }
+
+            // --- G. Mode resets to Canvas on New and on Open ---------------
+            {
+               gAudioMode = AudioMode::Timeline;
+               NewPatch();
+               const bool afterNew = gAudioMode == AudioMode::Canvas;
+
+               gAudioMode = AudioMode::Timeline;
+               const bool afterOpen = !LoadPatchFrom("/nonexistent-arrangeaudiotest.ifp") ||
+                                      gAudioMode == AudioMode::Canvas;
+               // A failed open must NOT reset the mode - it never became a new
+               // document - so re-check with a real round trip through a file
+               // this fixture writes itself.
+               bool afterRealOpen = true;
+               {
+                  const std::string path = "/tmp/infinite-arrangeaudiotest.ifp";
+                  SpawnNode("Oscillator", "Synthesizers", 0.0f, 0.0f); // a patch with no nodes will not save
+                  const bool saved = SavePatchTo(path);
+                  if (saved)
+                  {
+                     gAudioMode = AudioMode::Timeline;
+                     const bool loaded = LoadPatchFrom(path);
+                     afterRealOpen = loaded && gAudioMode == AudioMode::Canvas;
+                     if (!afterRealOpen)
+                        printf("  [diag] saved %d loaded %d status '%s'\n", (int)saved, (int)loaded, gPatchStatus.c_str());
+                     remove(path.c_str());
+                  }
+                  else
+                  {
+                     printf("  [diag] save failed: '%s'\n", gPatchStatus.c_str());
+                  }
+               }
+               const bool gOk = afterNew && afterOpen && afterRealOpen;
+               printf("arrange audio mode resets: %s (new %d, failed-open %d, open %d)\n",
+                      gOk ? "OK" : "FAIL", (int)afterNew, (int)afterOpen, (int)afterRealOpen);
+               allOk = allOk && gOk;
+            }
+         }
+
+         tr.SetOfflineMode(false);
+         tr.SetPlaying(true);
+         gAudioMode = savedMode;
+         if (hadEngine)
+         {
+            std::string startErr;
+            if (AudioEngine::Instance().Start(startErr))
+               tr.NotifyAudioEngineStarted(AudioEngine::Instance().SampleRate());
+         }
+         RebuildAudioTopology();
+
+         printf("arrange audio test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Overhaul WP4: the arrangement video compositor. Lane order (top lane
+      // frontmost), skip rules (disabled, unassigned), model opacity, and the
+      // geometry-clip cache (no FBO allocation in steady state, per-target
+      // keying, eviction, gPanelViewports untouched). Runs whole inside one
+      // main-loop frame on fixture-owned targets, so neither the panel nor a
+      // render has to be open.
+      if (getenv("INFINITE_ARRANGEVIDEOTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0); // commits the tempo (clips are in ticks, so it only fixes the clock)
+         const double kBeat = 1.0; // the instant every check composites at
+
+         const int kSize = 64;
+         auto spawnRamp = [&](float r, float g, float b) -> int
+         {
+            GraphNode* gn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+            auto* ramp = gn != nullptr ? dynamic_cast<RampNode*>(gn->node.get()) : nullptr;
+            if (ramp == nullptr)
+               return -1;
+            ramp->width = (float)kSize;
+            ramp->height = (float)kSize;
+            for (int s = 0; s < 2; s++)
+            {
+               ramp->stopColor[s][0] = r;
+               ramp->stopColor[s][1] = g;
+               ramp->stopColor[s][2] = b;
+            }
+            return gn->index;
+         };
+         const int redIndex = spawnRamp(1.0f, 0.0f, 0.0f);
+         const int blueIndex = spawnRamp(0.0f, 0.0f, 1.0f);
+         GraphNode* cubeGn = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+         const int cubeIndex = cubeGn != nullptr ? cubeGn->index : -1;
+         const uint64_t cubeUid = cubeGn != nullptr ? cubeGn->uid : 0;
+         cubeGn = nullptr; // SpawnNode pointers dangle across later spawns
+         const bool spawned = redIndex >= 0 && blueIndex >= 0 && cubeIndex >= 0 &&
+                              dynamic_cast<IGeometrySource*>(FindNodeByIndex(cubeIndex)->node.get()) != nullptr;
+         printf("arrange video spawn: %s\n", spawned ? "OK" : "FAIL");
+         allOk = allOk && spawned;
+
+         if (spawned)
+         {
+            // Lane 0 is the TOP lane in the panel, lane 1 the one below it.
+            // Built straight into gArrange (WP5b); revision keeps climbing
+            // across the reset so nothing watching it sees a rewind.
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            uint64_t clipIds[2] = { 0, 0 };
+            for (int l = 0; l < 2; l++)
+            {
+               const uint64_t laneId = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+               Arrange::FindLane(gArrange, laneId)->name = l == 0 ? "V1" : "V2";
+               Arrange::Clip c;
+               c.start = 0;
+               c.length = Arrange::BeatsToTicks(4.0); // beats [0, 4)
+               c.srcUid = FindNodeByIndex(l == 0 ? redIndex : blueIndex)->uid;
+               Arrange::PlaceOverwrite(gArrange, laneId, c, &clipIds[l]);
+            }
+            const uint64_t topId = clipIds[0];
+            const uint64_t bottomId = clipIds[1];
+            auto setTopSource = [&](uint64_t uid)
+            {
+               Arrange::FindClip(gArrange, topId)->srcUid = uid;
+               gArrange.revision++;
+            };
+
+            int cookFrame = 2000000;
+            auto cookAll = [&]()
+            {
+               cookFrame++;
+               for (GraphNode& gn : gNodes)
+                  gn.node->CookIfNeeded(cookFrame);
+            };
+            auto readCenter = [&](const GLUtil::Fbo& f, unsigned char* px)
+            {
+               GLint prev = 0;
+               glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev);
+               glBindFramebuffer(GL_FRAMEBUFFER, f.fbo);
+               glReadPixels(f.w / 2, f.h / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+               glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prev);
+            };
+
+            ArrangeCompositeTarget t{ 90 };
+            auto compositeAndRead = [&](unsigned char* px)
+            {
+               cookAll();
+               CompositeArrangeTimelineVideo(t, nullptr, kBeat, kSize, kSize);
+               readCenter(t.result, px);
+            };
+            unsigned char px[4] = { 0, 0, 0, 0 };
+
+            // --- A. Top lane is frontmost ---------------------------------
+            compositeAndRead(px);
+            const bool aOk = px[0] > 200 && px[2] < 40;
+            printf("arrange video top lane frontmost: %s (rgb %d,%d,%d)\n", aOk ? "OK" : "FAIL", px[0], px[1], px[2]);
+            allOk = allOk && aOk;
+
+            // --- B. Model opacity is honoured (no UI) ---------------------
+            gArrange.lanes[0].opacity = 0.5f;
+            gArrange.revision++;
+            compositeAndRead(px);
+            const bool bOk = px[0] > 100 && px[0] < 155 && px[2] > 100 && px[2] < 155;
+            printf("arrange video lane opacity: %s (rgb %d,%d,%d)\n", bOk ? "OK" : "FAIL", px[0], px[1], px[2]);
+            allOk = allOk && bOk;
+            gArrange.lanes[0].opacity = 1.0f;
+            gArrange.revision++;
+
+            // --- C. A disabled clip is skipped ----------------------------
+            Arrange::SetEnabled(gArrange, { topId }, Arrange::kDisable);
+            compositeAndRead(px);
+            const int countDisabled = CountActiveArrangeVideoClips(kBeat);
+            const bool cOk = px[2] > 200 && px[0] < 40 && countDisabled == 1;
+            printf("arrange video disabled clip skipped: %s (rgb %d,%d,%d, active %d)\n",
+                   cOk ? "OK" : "FAIL", px[0], px[1], px[2], countDisabled);
+            allOk = allOk && cOk;
+            Arrange::SetEnabled(gArrange, { topId }, Arrange::kEnable);
+
+            // --- D. An unassigned clip is skipped -------------------------
+            setTopSource(0);
+            compositeAndRead(px);
+            const bool dOk = px[2] > 200 && px[0] < 40 && CountActiveArrangeVideoClips(kBeat) == 1;
+            printf("arrange video unassigned clip skipped: %s (rgb %d,%d,%d)\n", dOk ? "OK" : "FAIL", px[0], px[1], px[2]);
+            allOk = allOk && dOk;
+
+            // --- E. Nothing usable -> opaque black ------------------------
+            Arrange::SetEnabled(gArrange, { bottomId }, Arrange::kDisable);
+            compositeAndRead(px);
+            const bool eOk = px[0] < 10 && px[1] < 10 && px[2] < 10 && px[3] > 245 &&
+                             CountActiveArrangeVideoClips(kBeat) == 0;
+            printf("arrange video nothing active clears black: %s (rgba %d,%d,%d,%d)\n",
+                   eOk ? "OK" : "FAIL", px[0], px[1], px[2], px[3]);
+            allOk = allOk && eOk;
+            Arrange::SetEnabled(gArrange, { bottomId }, Arrange::kEnable);
+
+            // --- F. Geometry clip: zero FBO allocations over 100 frames ---
+            // Two targets at different sizes composite the same geometry
+            // clip every frame, the shape of a render running under an open
+            // monitor - per-target keying is what keeps them from thrashing.
+            setTopSource(cubeUid);
+            ArrangeCompositeTarget t2{ 91 };
+            const size_t panelViewportsBefore = gPanelViewports.size();
+            auto geomFrame = [&]()
+            {
+               cookAll();
+               CompositeArrangeTimelineVideo(t, nullptr, kBeat, kSize, kSize);
+               CompositeArrangeTimelineVideo(t2, nullptr, kBeat, 96, 54);
+               ReapArrangeGeomViewports();
+            };
+            geomFrame(); // warm-up: first sight allocates each target's viewport + scratch
+            const unsigned long long allocsBefore = GLUtil::FboAllocationCount();
+            for (int f = 0; f < 100; f++)
+               geomFrame();
+            const unsigned long long allocs = GLUtil::FboAllocationCount() - allocsBefore;
+            const bool cached = gArrangeGeomViewports.count({ cubeUid, 90 }) == 1 &&
+                                gArrangeGeomViewports.count({ cubeUid, 91 }) == 1;
+            const bool panelUntouched = gPanelViewports.size() == panelViewportsBefore &&
+                                        gPanelViewports.count(cubeIndex) == 0;
+            const bool fOk = allocs == 0 && cached && panelUntouched;
+            printf("arrange video geometry clip steady state: %s (%llu FBO allocations in 100 frames, cached %d, panel viewports untouched %d)\n",
+                   fOk ? "OK" : "FAIL", allocs, cached ? 1 : 0, panelUntouched ? 1 : 0);
+            allOk = allOk && fOk;
+
+            // --- G. Unused geometry viewports are evicted -----------------
+            Arrange::SetEnabled(gArrange, { topId }, Arrange::kDisable);
+            for (uint64_t f = 0; f < kArrangeGeomEvictFrames; f++)
+               geomFrame();
+            const bool stillThere = gArrangeGeomViewports.count({ cubeUid, 90 }) == 1;
+            geomFrame();
+            const bool evicted = gArrangeGeomViewports.count({ cubeUid, 90 }) == 0 &&
+                                 gArrangeGeomViewports.count({ cubeUid, 91 }) == 0;
+            const bool gOk = stillThere && evicted;
+            printf("arrange video geometry cache eviction: %s (kept through %llu frames %d, then evicted %d)\n",
+                   gOk ? "OK" : "FAIL", (unsigned long long)kArrangeGeomEvictFrames, stillThere ? 1 : 0, evicted ? 1 : 0);
+            allOk = allOk && gOk;
+
+            for (ArrangeCompositeTarget* ft : { &t, &t2 })
+            {
+               GLUtil::DestroyFbo(ft->scratch[0]);
+               GLUtil::DestroyFbo(ft->scratch[1]);
+               GLUtil::DestroyFbo(ft->result);
+               GLUtil::DestroyFbo(ft->retiredResult);
+            }
+         }
+
+         NewPatch();
+         printf("arrange video test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Overhaul WP5a (docs/plans/arrangement/overhaul-prompt.md): the panel's
+      // editing layer, driven through the same helpers the keys, clicks and
+      // menus call (ArrangeClickSelect, ArrangeDrag*, ArrangeCopySelection,
+      // AddNodeToArrangeTimeline, ...) - never by UI scripting. Checks that
+      // selection is by id (survives a lane reorder, a node delete and its
+      // undo; a vanished id clears rather than landing on another clip), that
+      // group gestures keep the model valid, that `0` and every gesture leave
+      // exactly one undo entry (a no-move click none), that the clipboard
+      // belongs to its document, and where Add to Timeline puts a clip.
+      if (getenv("INFINITE_ARRANGEEDITTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         const Arrange::Tick kBar = Arrange::kTicksPerBar;
+         std::string why;
+
+         // A clean model with `video` video lanes then `audio` audio lanes.
+         auto freshModel = [&](int video, int audio)
+         {
+            ArrangeEdit([&]()
+            {
+               while (!gArrange.lanes.empty())
+                  Arrange::RemoveLane(gArrange, gArrange.lanes.front().id);
+               for (int i = 0; i < video; i++)
+                  Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+               for (int i = 0; i < audio; i++)
+                  Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            });
+            gArrangeSel.clear();
+            gArrangeSelAnchor = 0;
+         };
+         auto place = [&](int lane, Arrange::Tick start, Arrange::Tick len, uint64_t uid)
+         {
+            Arrange::Clip c;
+            c.start = start;
+            c.length = len;
+            c.srcUid = uid;
+            uint64_t id = 0;
+            ArrangeEdit([&]() { Arrange::PlaceOverwrite(gArrange, gArrange.lanes[lane].id, c, &id); });
+            return id;
+         };
+         auto selIs = [&](std::set<uint64_t> want)
+         {
+            const std::vector<uint64_t> ids = ArrangeSelectionIds();
+            return std::set<uint64_t>(ids.begin(), ids.end()) == want;
+         };
+
+         // --- A. Selection by id: lane reorder, node delete, undo -----------
+         {
+            GraphNode* cube = SpawnNode("Cube", "3D", 0.0f, 0.0f);
+            const uint64_t cubeUid = cube ? cube->uid : 0;
+            const int cubeIndex = cube ? cube->index : -1;
+            GraphNode* sphere = SpawnNode("Sphere", "3D", 200.0f, 0.0f);
+            const uint64_t sphereUid = sphere ? sphere->uid : 0;
+            bool aOk = cubeUid != 0 && sphereUid != 0;
+            if (aOk)
+            {
+               freshModel(2, 0);
+               const uint64_t laneV1 = gArrange.lanes[0].id;
+               const uint64_t laneV2 = gArrange.lanes[1].id;
+               const uint64_t c1 = place(0, 0, kBar, cubeUid);
+               const uint64_t c2 = place(1, 0, kBar, sphereUid);
+               const uint64_t c3 = place(0, kBar * 2, kBar, sphereUid);
+               ArrangeClickSelect(c1, false, false);
+               ArrangeClickSelect(c2, true, false);
+               aOk = selIs({ c1, c2 }) && gArrangeSelAnchor == c2;
+
+               // Reorder: the ids follow their clips to the new lane indices.
+               ArrangeEdit([&]() { Arrange::ReorderLane(gArrange, laneV2, 0); });
+               aOk = aOk && gArrange.lanes[0].id == laneV2 && selIs({ c1, c2 }) &&
+                     Arrange::Find(gArrange, c1).lane == Arrange::LaneIndex(gArrange, laneV1) &&
+                     Arrange::Find(gArrange, c2).lane == Arrange::LaneIndex(gArrange, laneV2);
+
+               // Node delete: c1 goes offline (srcUid 0), stays selected.
+               RemoveNodeByIndex(cubeIndex);
+               aOk = aOk && selIs({ c1, c2 }) && Arrange::FindClip(gArrange, c1) != nullptr &&
+                     Arrange::FindClip(gArrange, c1)->srcUid == 0;
+
+               // Undo (a graph entry): the same clips, the link restored.
+               Undo();
+               aOk = aOk && selIs({ c1, c2 }) && Arrange::FindClip(gArrange, c1) != nullptr &&
+                     Arrange::FindClip(gArrange, c1)->srcUid == cubeUid && FindNodeByUid(cubeUid) != nullptr &&
+                     Arrange::Find(gArrange, c3).Valid();
+
+               // An id that stops resolving clears; it never retargets.
+               ArrangeClickSelect(c3, false, false);
+               ArrangeDuplicateSelection();
+               const std::vector<uint64_t> dup = ArrangeSelectionIds();
+               aOk = aOk && dup.size() == 1 && dup[0] != c3;
+               Undo();
+               aOk = aOk && ArrangeSelectionIds().empty() && gArrangeSelAnchor == 0;
+               aOk = aOk && Arrange::Validate(gArrange, &why);
+            }
+            printf("arrange edit select by id: %s\n", aOk ? "OK" : "FAIL");
+            allOk = allOk && aOk;
+         }
+
+         // --- B. Group move, duplicate, delete, edge trim keep Validate -----
+         {
+            freshModel(2, 1);
+            const uint64_t g1 = place(0, 0, kBar, 0);
+            const uint64_t g2 = place(1, kBar, kBar, 0);
+            const uint64_t x = place(0, kBar * 8, kBar, 0);
+            const uint64_t aud = place(2, 0, kBar, 0);
+            ArrangeClickSelect(g1, false, false);
+            ArrangeClickSelect(g2, true, false);
+            bool bOk = ArrangeGroupSelection();
+            const uint64_t gid = Arrange::FindClip(gArrange, g1)->groupId;
+            bOk = bOk && gid != 0 && Arrange::FindClip(gArrange, g2)->groupId == gid;
+
+            // A plain click on one member selects the whole group; Alt-click one.
+            ArrangeClickSelect(g2, false, true);
+            bOk = bOk && selIs({ g2 });
+            ArrangeClickSelect(g1, false, false);
+            bOk = bOk && selIs({ g1, g2 });
+
+            // Move: the whole group, one undo entry.
+            size_t undoBefore = gUndoStack.size();
+            ArrangeDragBegin(kArrangeDragMove, g1, Arrange::kEdgeStart, 0);
+            ArrangeDragUpdate(kBar, 0);
+            ArrangeDragUpdate(kBar * 3, 0);
+            const bool pushed = ArrangeDragEnd();
+            bOk = bOk && pushed && gUndoStack.size() == undoBefore + 1 &&
+                  Arrange::FindClip(gArrange, g1)->start == kBar * 3 &&
+                  Arrange::FindClip(gArrange, g2)->start == kBar * 4 && Arrange::Validate(gArrange, &why);
+
+            // A lane delta that would put a member on the audio lane (or off
+            // the end) is refused as a whole; the time delta still applies.
+            ArrangeDragBegin(kArrangeDragMove, g1, Arrange::kEdgeStart, 0);
+            ArrangeDragUpdate(kBar, 1);
+            ArrangeDragEnd();
+            bOk = bOk && Arrange::Find(gArrange, g1).lane == 0 && Arrange::Find(gArrange, g2).lane == 1 &&
+                  Arrange::FindClip(gArrange, g1)->start == kBar * 4 && Arrange::FindClip(gArrange, aud)->start == 0 &&
+                  Arrange::Validate(gArrange, &why);
+
+            // Group edge trim: only the member flush with the end moves.
+            ArrangeDragBegin(kArrangeDragGroupEdge, g2, Arrange::kEdgeEnd, 0);
+            ArrangeDragUpdate(kBar * 5 + kBar / 2, 0);
+            ArrangeDragEnd();
+            bOk = bOk && Arrange::FindClip(gArrange, g1)->length == kBar &&
+                  Arrange::FindClip(gArrange, g2)->End() == kBar * 5 + kBar / 2 && Arrange::Validate(gArrange, &why);
+
+            // Duplicate: a new block, its own new group.
+            ArrangeClickSelect(g1, false, false);
+            bOk = bOk && ArrangeDuplicateSelection();
+            const std::vector<uint64_t> copies = ArrangeSelectionIds();
+            bOk = bOk && copies.size() == 2 && Arrange::Validate(gArrange, &why);
+            if (copies.size() == 2)
+            {
+               const uint64_t ng = Arrange::FindClip(gArrange, copies[0])->groupId;
+               bOk = bOk && ng != 0 && ng != gid && Arrange::FindClip(gArrange, copies[1])->groupId == ng;
+            }
+
+            // Delete a group by clicking one member: both go.
+            if (!copies.empty())
+               ArrangeClickSelect(copies[0], false, false);
+            bOk = bOk && ArrangeDeleteSelection() && Arrange::Validate(gArrange, &why);
+            for (uint64_t id : copies)
+               bOk = bOk && !Arrange::Find(gArrange, id).Valid();
+            bOk = bOk && Arrange::Find(gArrange, g1).Valid() && Arrange::Find(gArrange, x).Valid();
+
+            // Ungroup.
+            ArrangeClickSelect(g1, false, false);
+            bOk = bOk && ArrangeUngroupSelection() && Arrange::FindClip(gArrange, g1)->groupId == 0 &&
+                  Arrange::FindClip(gArrange, g2)->groupId == 0 && Arrange::Validate(gArrange, &why);
+            printf("arrange edit group ops: %s\n", bOk ? "OK" : "FAIL");
+            allOk = allOk && bOk;
+         }
+
+         // --- C. `0` toggles enabled, undoably ------------------------------
+         {
+            freshModel(1, 0);
+            const uint64_t a = place(0, 0, kBar, 0);
+            const uint64_t b = place(0, kBar, kBar, 0);
+            ArrangeClickSelect(a, false, false);
+            ArrangeClickSelect(b, true, false);
+            const size_t undoBefore = gUndoStack.size();
+            bool cOk = ArrangeToggleEnabledSelection() && gUndoStack.size() == undoBefore + 1 &&
+                       !Arrange::FindClip(gArrange, a)->enabled && !Arrange::FindClip(gArrange, b)->enabled;
+            Undo();
+            cOk = cOk && Arrange::FindClip(gArrange, a)->enabled && Arrange::FindClip(gArrange, b)->enabled;
+            // Mixed selection: one press disables all of it.
+            ArrangeEdit([&]() { Arrange::SetEnabled(gArrange, { a }, Arrange::kDisable); });
+            cOk = cOk && ArrangeToggleEnabledSelection() && !Arrange::FindClip(gArrange, b)->enabled;
+            cOk = cOk && ArrangeToggleEnabledSelection() && Arrange::FindClip(gArrange, a)->enabled &&
+                  Arrange::FindClip(gArrange, b)->enabled && Arrange::Validate(gArrange, &why);
+            printf("arrange edit enable toggle: %s\n", cOk ? "OK" : "FAIL");
+            allOk = allOk && cOk;
+         }
+
+         // --- D. A gesture that changes nothing pushes nothing --------------
+         {
+            freshModel(1, 0);
+            const uint64_t a = place(0, 0, kBar, 0);
+            place(0, kBar * 2, kBar, 0);
+            ArrangeClickSelect(a, false, false);
+            const size_t undoBefore = gUndoStack.size();
+            const uint64_t revBefore = gArrange.revision;
+            // A click: begin, no mouse movement, release.
+            ArrangeDragBegin(kArrangeDragMove, a, Arrange::kEdgeStart, 0);
+            bool dOk = !ArrangeDragEnd();
+            // A drag that goes away and comes back.
+            ArrangeDragBegin(kArrangeDragMove, a, Arrange::kEdgeStart, 0);
+            ArrangeDragUpdate(kBar / 2, 0);
+            ArrangeDragUpdate(0, 0);
+            dOk = dOk && !ArrangeDragEnd();
+            // A trim that goes nowhere, and an empty popup-field gesture.
+            ArrangeDragBegin(kArrangeDragTrimEnd, a, Arrange::kEdgeEnd, kBar);
+            ArrangeDragUpdate(kBar + kBar / 4, 0);
+            ArrangeDragUpdate(kBar, 0);
+            dOk = dOk && !ArrangeDragEnd();
+            ArrangeGestureBegin();
+            dOk = dOk && !ArrangeGestureEnd();
+            dOk = dOk && gUndoStack.size() == undoBefore && Arrange::FindClip(gArrange, a)->start == 0 &&
+                  Arrange::FindClip(gArrange, a)->length == kBar && gArrange.revision >= revBefore;
+            printf("arrange edit no-move click: %s (undo %zu -> %zu)\n", dOk ? "OK" : "FAIL", undoBefore,
+                   gUndoStack.size());
+            allOk = allOk && dOk;
+         }
+
+         // --- E. Clipboard: paste at the playhead; cleared on New and Open --
+         {
+            freshModel(2, 0);
+            const uint64_t a = place(0, 0, kBar, 0);
+            const uint64_t b = place(1, kBar, kBar, 0);
+            ArrangeClickSelect(a, false, false);
+            ArrangeClickSelect(b, true, false);
+            ArrangeGroupSelection();
+            ArrangeClickSelect(a, false, false);
+            bool eOk = ArrangeCopySelection() && gArrangeClipboard.items.size() == 2;
+            eOk = eOk && ArrangePasteAt(kBar * 4);
+            const std::vector<uint64_t> pasted = ArrangeSelectionIds();
+            eOk = eOk && pasted.size() == 2 && Arrange::Validate(gArrange, &why);
+            if (pasted.size() == 2)
+            {
+               const Arrange::Clip* p0 = Arrange::FindClip(gArrange, pasted[0]);
+               const Arrange::Clip* p1 = Arrange::FindClip(gArrange, pasted[1]);
+               const Arrange::Tick lo = std::min(p0->start, p1->start);
+               eOk = eOk && lo == kBar * 4 && p0->groupId != 0 && p0->groupId == p1->groupId &&
+                     p0->groupId != Arrange::FindClip(gArrange, a)->groupId;
+            }
+            // An undo is not a new document: the clipboard stays.
+            Undo();
+            eOk = eOk && !gArrangeClipboard.items.empty();
+            // Open is: save, reload, and the clipboard is gone.
+            const std::string path = TmpPath("arrange_edittest_open.inf");
+            SavePatchTo(path);
+            LoadPatchFrom(path);
+            std::remove(path.c_str());
+            eOk = eOk && !ArrangePasteAt(0) && gArrangeClipboard.items.empty() && gArrangeSel.empty();
+            // New is too.
+            freshModel(1, 0);
+            place(0, 0, kBar, 0);
+            ArrangeClickSelect(gArrange.lanes[0].clips[0].id, false, false);
+            eOk = eOk && ArrangeCopySelection() && !gArrangeClipboard.items.empty();
+            NewPatch();
+            eOk = eOk && !ArrangePasteAt(0) && gArrangeClipboard.items.empty() && gArrangeSel.empty();
+            printf("arrange edit clipboard cleared on new: %s\n", eOk ? "OK" : "FAIL");
+            allOk = allOk && eOk;
+         }
+
+         // --- F. Add to Timeline picks the lane (and output) ----------------
+         {
+            NewPatch();
+            tr.Seek(0.0);
+            freshModel(0, 0);
+            GraphNode* video = SpawnNode("Video", "Source", 0.0f, 0.0f);
+            const int videoIndex = video ? video->index : -1;
+            const uint64_t videoUid = video ? video->uid : 0;
+            GraphNode* osc = SpawnNode("Oscillator", "Synthesizers", 300.0f, 0.0f);
+            const int oscIndex = osc ? osc->index : -1;
+            const uint64_t oscUid = osc ? osc->uid : 0;
+            GraphNode* cube = SpawnNode("Cube", "3D", 600.0f, 0.0f);
+            const uint64_t cubeUid = cube ? cube->uid : 0;
+            bool fOk = videoIndex >= 0 && oscIndex >= 0 && cubeUid != 0;
+            if (fOk)
+            {
+               GraphNode* vgn = FindNodeByIndex(videoIndex);
+               fOk = IsNodeVideoCompatible(*vgn) && IsNodeAudioCompatible(*vgn) &&
+                     ArrangeLaneTypeForNode(*vgn) == Arrange::kLaneVideo;
+
+               const uint64_t v = AddNodeToArrangeTimeline(videoIndex);                        // natural: video
+               const uint64_t va = AddNodeToArrangeTimeline(videoIndex, Arrange::kLaneAudio);  // submenu: audio
+               const uint64_t v2 = AddNodeToArrangeTimeline(videoIndex, Arrange::kLaneVideo);  // lands after v
+               const uint64_t o = AddNodeToArrangeTimeline(oscIndex);                          // audio only
+               const Arrange::Loc lv = Arrange::Find(gArrange, v);
+               const Arrange::Loc lva = Arrange::Find(gArrange, va);
+               const Arrange::Loc lo = Arrange::Find(gArrange, o);
+               fOk = fOk && lv.Valid() && lva.Valid() && lo.Valid() && Arrange::Find(gArrange, v2).Valid();
+               if (fOk)
+               {
+                  const Arrange::Clip* cv = Arrange::FindClip(gArrange, v);
+                  const Arrange::Clip* cva = Arrange::FindClip(gArrange, va);
+                  const Arrange::Clip* cv2 = Arrange::FindClip(gArrange, v2);
+                  const Arrange::Clip* co = Arrange::FindClip(gArrange, o);
+                  fOk = gArrange.lanes[lv.lane].type == Arrange::kLaneVideo && cv->srcOutput == 0 &&
+                        cv->srcUid == videoUid && cv->length == kBar && cv->start == 0 &&
+                        gArrange.lanes[lva.lane].type == Arrange::kLaneAudio && cva->srcOutput == 1 &&
+                        cva->srcUid == videoUid &&
+                        cv2->start == cv->End() && Arrange::Find(gArrange, v2).lane == lv.lane &&
+                        gArrange.lanes[lo.lane].type == Arrange::kLaneAudio && co->srcOutput == 0 &&
+                        co->srcUid == oscUid && co->start == cva->End();
+               }
+               // Canvas Assign picker: by uid, type-checked, no-op pushes nothing.
+               const size_t undoBefore = gUndoStack.size();
+               fOk = fOk && !ArrangeAssignClipSource(o, cubeUid);             // cube has no audio
+               fOk = fOk && !ArrangeAssignClipSource(o, oscUid);              // already that source
+               fOk = fOk && gUndoStack.size() == undoBefore;
+               fOk = fOk && ArrangeAssignClipSource(v, cubeUid) && gUndoStack.size() == undoBefore + 1 &&
+                     Arrange::FindClip(gArrange, v)->srcUid == cubeUid;
+               fOk = fOk && Arrange::Validate(gArrange, &why);
+            }
+            printf("arrange edit add to timeline lane pick: %s\n", fOk ? "OK" : "FAIL");
+            allOk = allOk && fOk;
+         }
+
+         if (!why.empty())
+            printf("arrange edit validate: %s\n", why.c_str());
+         gArrangePanelOpen = false;
+         NewPatch();
+         printf("arrange edit test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // WP6: time display, snap grid, markers, playhead keys, scrub-on-release.
+      // Drives the same functions the panel's keys and gestures call.
+      if (getenv("INFINITE_ARRANGEMARKERTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetPlaying(false);
+         tr.SetTempo(120.0f);
+         tr.SeekBeats(0.0);
+         const Arrange::Tick kBar = Arrange::kTicksPerBar;
+         const Arrange::Tick kQ = Arrange::kPPQ;
+         std::string why;
+         auto sorted = [&]()
+         {
+            for (size_t i = 1; i < gArrange.markers.size(); i++)
+               if (gArrange.markers[i - 1].pos > gArrange.markers[i].pos)
+                  return false;
+            return true;
+         };
+         auto findMk = [&](uint64_t id) -> const Arrange::Marker*
+         {
+            for (const Arrange::Marker& m : gArrange.markers)
+               if (m.id == id) return &m;
+            return nullptr;
+         };
+         auto freshModel = [&](int audio)
+         {
+            ArrangeEdit([&]()
+            {
+               while (!gArrange.lanes.empty())
+                  Arrange::RemoveLane(gArrange, gArrange.lanes.front().id);
+               while (!gArrange.markers.empty())
+                  Arrange::DeleteMarker(gArrange, gArrange.markers.front().id);
+               for (int i = 0; i < audio; i++)
+                  Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            });
+            gArrangeSel.clear();
+            gArrangeSelAnchor = 0;
+         };
+         auto place = [&](int lane, Arrange::Tick start, Arrange::Tick len)
+         {
+            Arrange::Clip c;
+            c.start = start;
+            c.length = len;
+            uint64_t id = 0;
+            ArrangeEdit([&]() { Arrange::PlaceOverwrite(gArrange, gArrange.lanes[lane].id, c, &id); });
+            return id;
+         };
+
+         // --- A. Marker add / move / rename / recolor / delete; sorted; every
+         //        op bumps revision and is one undo entry --------------------
+         {
+            freshModel(1);
+            bool aOk = true;
+            size_t undo0 = gUndoStack.size();
+            uint64_t rev = gArrange.revision;
+            uint64_t m1 = 0, m2 = 0, m3 = 0;
+            ArrangeEdit([&]() { m1 = Arrange::AddMarker(gArrange, kBar * 4, "Chorus", 0xEF4444FFu); });
+            aOk = aOk && gArrange.revision > rev; rev = gArrange.revision;
+            ArrangeEdit([&]() { m2 = Arrange::AddMarker(gArrange, kBar, "Verse", kArrangeDefaultMarkerRGBA); });
+            aOk = aOk && gArrange.revision > rev; rev = gArrange.revision;
+            ArrangeEdit([&]() { m3 = Arrange::AddMarker(gArrange, -50, "Intro", kArrangeDefaultMarkerRGBA); });
+            aOk = aOk && gArrange.revision > rev; rev = gArrange.revision;
+            aOk = aOk && m1 && m2 && m3 && gUndoStack.size() == undo0 + 3 && sorted() &&
+                  gArrange.markers.size() == 3 && gArrange.markers[0].id == m3 && gArrange.markers[0].pos == 0 &&
+                  gArrange.markers[1].id == m2 && gArrange.markers[2].id == m1;
+            // Move past a neighbour: re-sorted.
+            aOk = aOk && ArrangeEdit([&]() { Arrange::MoveMarker(gArrange, m3, kBar * 8); });
+            aOk = aOk && gArrange.revision > rev && sorted() && gArrange.markers.back().id == m3; rev = gArrange.revision;
+            aOk = aOk && ArrangeEdit([&]() { Arrange::RenameMarker(gArrange, m2, "Verse 1"); });
+            aOk = aOk && gArrange.revision > rev && findMk(m2)->name == "Verse 1"; rev = gArrange.revision;
+            const uint32_t blue = ArrangeMarkerRGBA(kArrangePalette[6].col);
+            aOk = aOk && blue == 0x3B82F6FFu && ArrangeEdit([&]() { Arrange::RecolorMarker(gArrange, m2, blue); });
+            aOk = aOk && gArrange.revision > rev && findMk(m2)->color == blue; rev = gArrange.revision;
+            // A no-op edit pushes nothing and leaves revision alone.
+            const size_t undoNoop = gUndoStack.size();
+            aOk = aOk && !ArrangeEdit([&]() { Arrange::RenameMarker(gArrange, m2, "Verse 1"); }) &&
+                  !ArrangeEdit([&]() { Arrange::MoveMarker(gArrange, m2, kBar); }) &&
+                  gUndoStack.size() == undoNoop && gArrange.revision == rev;
+            aOk = aOk && ArrangeEdit([&]() { Arrange::DeleteMarker(gArrange, m1); });
+            aOk = aOk && gArrange.revision > rev && findMk(m1) == nullptr && gArrange.markers.size() == 2;
+            aOk = aOk && gUndoStack.size() == undo0 + 7 && Arrange::Validate(gArrange, &why);
+
+            // Undo / redo walk the same entries back and forth.
+            Undo();
+            aOk = aOk && findMk(m1) != nullptr && findMk(m1)->pos == kBar * 4 && sorted();
+            Undo();
+            aOk = aOk && findMk(m2)->color == kArrangeDefaultMarkerRGBA;
+            Undo();
+            aOk = aOk && findMk(m2)->name == "Verse";
+            Undo();
+            aOk = aOk && findMk(m3)->pos == 0 && gArrange.markers.front().id == m3 && sorted();
+            Redo();
+            Redo();
+            Redo();
+            Redo();
+            aOk = aOk && findMk(m1) == nullptr && findMk(m2)->name == "Verse 1" && findMk(m2)->color == blue &&
+                  findMk(m3)->pos == kBar * 8 && sorted() && Arrange::Validate(gArrange, &why);
+
+            // A flag drag: many MoveMarker calls, one gesture, one entry;
+            // a drag that comes back where it started pushes nothing.
+            size_t undoD = gUndoStack.size();
+            ArrangeGestureBegin();
+            for (int k = 1; k <= 6; k++)
+               Arrange::MoveMarker(gArrange, m2, kBar + kQ * k);
+            ArrangeGestureEnd();
+            aOk = aOk && gUndoStack.size() == undoD + 1 && findMk(m2)->pos == kBar + kQ * 6 && sorted();
+            ArrangeGestureBegin();
+            Arrange::MoveMarker(gArrange, m2, kBar * 20);
+            aOk = aOk && sorted() && gArrange.markers.back().id == m2;
+            Arrange::MoveMarker(gArrange, m2, kBar + kQ * 6);
+            ArrangeGestureEnd();
+            aOk = aOk && gUndoStack.size() == undoD + 1 && sorted();
+            Undo();
+            aOk = aOk && findMk(m2)->pos == kBar;
+            // Undo mid-drag closes the gesture, so it must end the flag drag
+            // too - else the rest of the drag moves the marker unrecorded.
+            ArrangeGestureBegin();
+            gArrangeMarkerDragId = m2;
+            Arrange::MoveMarker(gArrange, m2, kBar * 3);
+            Undo();
+            aOk = aOk && gArrangeMarkerDragId == 0 && !gArrangeGestureOpen;
+            Redo();
+            printf("arrange marker ops + undo/redo: %s\n", aOk ? "OK" : "FAIL");
+            allOk = allOk && aOk;
+         }
+
+         // --- B. Save / load round trip: markers + time display + snap -------
+         {
+            freshModel(1);
+            SpawnNode("Cube", "3D", 0.0f, 0.0f); // Patch::Read refuses a file with no nodes
+            place(0, kBar, kBar * 2);
+            uint64_t ma = 0, mb = 0;
+            ArrangeEdit([&]()
+            {
+               ma = Arrange::AddMarker(gArrange, kBar * 3 + kQ, "Drop  here", 0x10B981FFu);
+               mb = Arrange::AddMarker(gArrange, kQ, "Top", kArrangeDefaultMarkerRGBA);
+            });
+            ArrangeSetTimeDisplay(1);
+            ArrangeSetSnap(8, true);
+            const std::vector<Arrange::Marker> before = gArrange.markers;
+            const std::string path = TmpPath("arrange_markertest.inf");
+            bool bOk = SavePatchTo(path);
+            NewPatch();
+            bOk = bOk && gArrange.markers.empty() && gArrange.settings.timeDisplay == 0;
+            bOk = bOk && LoadPatchFrom(path);
+            bOk = bOk && gArrange.markers.size() == before.size() && sorted();
+            for (size_t i = 0; bOk && i < before.size(); i++)
+               bOk = gArrange.markers[i].id == before[i].id && gArrange.markers[i].pos == before[i].pos &&
+                     gArrange.markers[i].name == before[i].name && gArrange.markers[i].color == before[i].color;
+            bOk = bOk && gArrange.settings.timeDisplay == 1 && gArrange.settings.snapDivision == 8 &&
+                  gArrange.settings.snapTriplet && ArrangeSnapGridTicks() == 320;
+            // Snap off survives too (0 used to be clamped back to 1/4).
+            ArrangeSetSnap(0, false);
+            bOk = bOk && SavePatchTo(path) && LoadPatchFrom(path) && gArrange.settings.snapDivision == 0 &&
+                  ArrangeSnapGridTicks() == 0;
+            // A marker added after the reload gets a fresh id.
+            uint64_t mc = 0;
+            ArrangeEdit([&]() { mc = Arrange::AddMarker(gArrange, 0, "New", kArrangeDefaultMarkerRGBA); });
+            bOk = bOk && mc != 0 && mc != ma && mc != mb && Arrange::Validate(gArrange, &why);
+            std::remove(path.c_str());
+            printf("arrange marker save/load round trip: %s\n", bOk ? "OK" : "FAIL");
+            allOk = allOk && bOk;
+         }
+
+         // --- C. BPM change: ticks stay, seconds rescale ---------------------
+         {
+            NewPatch();
+            tr.SetTempo(120.0f);
+            freshModel(1);
+            const uint64_t c = place(0, kBar * 2, kBar);
+            uint64_t mk = 0;
+            ArrangeEdit([&]() { mk = Arrange::AddMarker(gArrange, kBar * 4, "M", kArrangeDefaultMarkerRGBA); });
+            const double s120 = Arrange::TicksToSeconds(Arrange::FindClip(gArrange, c)->start, tr.Tempo());
+            const double l120 = Arrange::TicksToSeconds(Arrange::FindClip(gArrange, c)->length, tr.Tempo());
+            const uint64_t rev = gArrange.revision;
+            tr.SetTempo(240.0f);
+            const Arrange::Clip* cp = Arrange::FindClip(gArrange, c);
+            const double s240 = Arrange::TicksToSeconds(cp->start, tr.Tempo());
+            const double l240 = Arrange::TicksToSeconds(cp->length, tr.Tempo());
+            const bool cOk = cp->start == kBar * 2 && cp->length == kBar && findMk(mk)->pos == kBar * 4 &&
+                             gArrange.revision == rev && std::abs(s120 - 4.0) < 1e-9 && std::abs(l120 - 2.0) < 1e-9 &&
+                             std::abs(s240 - 2.0) < 1e-9 && std::abs(l240 - 1.0) < 1e-9 &&
+                             ArrangeFormatBBT(cp->start) == "3.1.1" && ArrangeFormatTickSeconds(cp->start) == "0:02.00";
+            tr.SetTempo(120.0f);
+            printf("arrange bpm change keeps ticks, rescales seconds: %s (%.2fs -> %.2fs)\n", cOk ? "OK" : "FAIL",
+                   s120, s240);
+            allOk = allOk && cOk;
+         }
+
+         // --- D. Snap grid tick math, triplets included ----------------------
+         {
+            bool dOk = Arrange::SnapGridTicks(0, false) == 0 && Arrange::SnapGridTicks(1, false) == 3840 &&
+                       Arrange::SnapGridTicks(1, true) == 3840 && Arrange::SnapGridTicks(1, false, 3.0) == 2880 &&
+                       Arrange::SnapGridTicks(2, false) == 1920 && Arrange::SnapGridTicks(4, false) == 960 &&
+                       Arrange::SnapGridTicks(8, false) == 480 && Arrange::SnapGridTicks(16, false) == 240 &&
+                       Arrange::SnapGridTicks(2, true) == 1280 && Arrange::SnapGridTicks(4, true) == 640 &&
+                       Arrange::SnapGridTicks(8, true) == 320 && Arrange::SnapGridTicks(16, true) == 160;
+            // Every grid the dropdown offers is exactly MusicTime's length.
+            for (const ArrangeGridChoice& g : kArrangeGridChoices)
+            {
+               if (g.rd < 0)
+                  dOk = dOk && Arrange::SnapGridTicks(g.division, g.triplet) == 0;
+               else
+                  dOk = dOk && Arrange::SnapGridTicks(g.division, g.triplet, 4.0) ==
+                                  Arrange::BeatsToTicks(MusicTime::BeatsFor((MusicTime::RateDivision)g.rd));
+            }
+            dOk = dOk && Arrange::SnapToGrid(479, 960) == 0 && Arrange::SnapToGrid(480, 960) == 960 &&
+                  Arrange::SnapToGrid(1500, 640) == 1280 && Arrange::SnapToGrid(1700, 640) == 1920 &&
+                  Arrange::SnapToGrid(1234, 0) == 1234 &&
+                  Arrange::GridFloor(959, 960) == 0 && Arrange::GridFloor(960, 960) == 960 &&
+                  Arrange::GridFloor(-1, 960) == -960 && Arrange::GridCeil(1, 960) == 960 &&
+                  Arrange::GridCeil(960, 960) == 960 && Arrange::GridCeil(-1, 960) == 0;
+            // Settings setters: view changes bump revision, never push undo.
+            const size_t undo0 = gUndoStack.size();
+            uint64_t rev = gArrange.revision;
+            ArrangeSetSnap(16, true);
+            dOk = dOk && gArrange.revision > rev && ArrangeSnapGridTicks() == 160; rev = gArrange.revision;
+            ArrangeSetSnap(1, true); // a bar has no triplet
+            dOk = dOk && !gArrange.settings.snapTriplet && ArrangeSnapGridTicks() == 3840; rev = gArrange.revision;
+            ArrangeSetSnap(1, false);
+            dOk = dOk && gArrange.revision == rev; // unchanged: no bump
+            ArrangeSetTimeDisplay(1);
+            dOk = dOk && gArrange.revision > rev && gUndoStack.size() == undo0;
+            ArrangeSetTimeDisplay(0);
+            printf("arrange snap grid tick math: %s\n", dOk ? "OK" : "FAIL");
+            allOk = allOk && dOk;
+         }
+
+         // --- E. Scrub: the ghost moves, the transport seeks once on release -
+         {
+            NewPatch();
+            tr.SetPlaying(false);
+            ArrangeSetLoop(false, gArrange.settings.loop.start, gArrange.settings.loop.end);
+            ArrangeSeekTick(kBar);
+            const double beats0 = tr.Beats();
+            const unsigned long long e0 = tr.ResetEpoch();
+            ArrangeScrubBegin(kBar * 2);
+            for (int k = 0; k < 20; k++)
+               ArrangeScrubUpdate(kBar * 2 + kQ * k);
+            const bool stillBefore = tr.ResetEpoch() == e0 && tr.Beats() == beats0 && gArrangeScrubbing;
+            const bool ended = ArrangeScrubEnd();
+            const unsigned long long e1 = tr.ResetEpoch();
+            const bool endedTwice = ArrangeScrubEnd(); // a second release is a no-op
+            bool eOk = stillBefore && ended && !endedTwice && e1 - e0 == 1 && tr.ResetEpoch() == e1 &&
+                       ArrangePlayTick() == kBar * 2 + kQ * 19 && !gArrangeScrubbing;
+            // Escape: no seek at all.
+            const unsigned long long e2 = tr.ResetEpoch();
+            ArrangeScrubBegin(0);
+            ArrangeScrubUpdate(kBar * 9);
+            ArrangeScrubCancel();
+            eOk = eOk && !ArrangeScrubEnd() && tr.ResetEpoch() == e2 && ArrangePlayTick() == kBar * 2 + kQ * 19;
+            printf("arrange scrub seeks once on release: %s (epoch delta %llu)\n", eOk ? "OK" : "FAIL", e1 - e0);
+            allOk = allOk && eOk;
+         }
+
+         // --- F. Playhead keys: Home, End, arrows, markers -------------------
+         {
+            freshModel(2);
+            place(0, 0, kBar * 2);
+            const uint64_t late = place(1, kBar * 5, kBar + kQ);
+            ArrangeSetSnap(4, false);
+            bool fOk = ArrangeEndKeyTargetTick() == Arrange::ArrangementEnd(gArrange) &&
+                       ArrangeEndKeyTargetTick() == kBar * 6 + kQ;
+            ArrangeSeekTick(ArrangeEndKeyTargetTick()); // End
+            fOk = fOk && ArrangePlayTick() == Arrange::ArrangementEnd(gArrange);
+            ArrangeSeekTick(0);                         // Home
+            fOk = fOk && ArrangePlayTick() == 0;
+
+            // Arrows with nothing selected step the playhead on the grid.
+            ArrangeSeekTick(1000);
+            fOk = fOk && ArrangeNudge(1) && ArrangePlayTick() == 1920;
+            ArrangeSeekTick(1000);
+            fOk = fOk && ArrangeNudge(-1) && ArrangePlayTick() == 960;
+            fOk = fOk && ArrangeNudge(-1) && ArrangePlayTick() == 0;
+            fOk = fOk && !ArrangeNudge(-1) && ArrangePlayTick() == 0;
+            ArrangeSetSnap(0, false); // off: a sixteenth
+            fOk = fOk && ArrangeNudge(1) && ArrangePlayTick() == kQ / 4;
+            ArrangeSetSnap(8, true);
+            fOk = fOk && ArrangeNudge(1) && ArrangePlayTick() == 320;
+
+            // Arrows with a selection move it through MoveClips, one entry each.
+            ArrangeSetSnap(4, false);
+            ArrangeClickSelect(late, false, false);
+            const size_t undo0 = gUndoStack.size();
+            const Arrange::Tick play0 = ArrangePlayTick();
+            fOk = fOk && ArrangeNudge(1) && Arrange::FindClip(gArrange, late)->start == kBar * 5 + kQ &&
+                  gUndoStack.size() == undo0 + 1 && ArrangePlayTick() == play0;
+            fOk = fOk && ArrangeNudge(-1) && ArrangeNudge(-1) && Arrange::FindClip(gArrange, late)->start == kBar * 5 - kQ &&
+                  gUndoStack.size() == undo0 + 3;
+            Undo();
+            fOk = fOk && Arrange::FindClip(gArrange, late)->start == kBar * 5 && Arrange::Validate(gArrange, &why);
+            gArrangeSel.clear();
+            gArrangeSelAnchor = 0;
+
+            // M: a marker at the playhead, snapped.
+            ArrangeSeekTick(1000);
+            const uint64_t mA = ArrangeAddMarkerAtPlayhead();
+            fOk = fOk && mA != 0 && findMk(mA)->pos == 960 && findMk(mA)->color == kArrangeDefaultMarkerRGBA;
+            ArrangeSetSnap(0, false);
+            const uint64_t mB = ArrangeAddMarkerAtPlayhead();
+            fOk = fOk && mB != 0 && findMk(mB)->pos == 1000 && sorted();
+            ArrangeSetSnap(4, false);
+            ArrangeEdit([&]() { Arrange::AddMarker(gArrange, kBar * 3, "C", kArrangeDefaultMarkerRGBA); });
+
+            // Alt+Left / Alt+Right, stopped: 960, 1000, 11520.
+            ArrangeSeekTick(kBar * 2);
+            fOk = fOk && ArrangeJumpToMarker(-1) && ArrangePlayTick() == 1000;
+            fOk = fOk && ArrangeJumpToMarker(-1) && ArrangePlayTick() == 960;
+            fOk = fOk && !ArrangeJumpToMarker(-1) && ArrangePlayTick() == 960;
+            fOk = fOk && ArrangeJumpToMarker(1) && ArrangePlayTick() == 1000;
+            fOk = fOk && ArrangeJumpToMarker(1) && ArrangePlayTick() == kBar * 3;
+            fOk = fOk && !ArrangeJumpToMarker(1) && ArrangePlayTick() == kBar * 3;
+            // Tolerance only while playing.
+            fOk = fOk && Arrange::PrevMarker(gArrange, kBar * 3 + 100, kQ / 2)->pos == 1000 &&
+                  Arrange::PrevMarker(gArrange, kBar * 3 + 100, 0)->pos == kBar * 3 &&
+                  Arrange::NextMarker(gArrange, 960, 0)->pos == 1000 && Arrange::NextMarker(gArrange, kBar * 3) == nullptr;
+            printf("arrange playhead keys (home/end/arrows/markers): %s (end %lld)\n", fOk ? "OK" : "FAIL",
+                   (long long)ArrangeEndKeyTargetTick());
+            allOk = allOk && fOk;
+         }
+
+         // --- G. View settings are not undo state ----------------------------
+         {
+            freshModel(1);
+            ArrangeSetTimeDisplay(0);
+            ArrangeSetSnap(4, false);
+            const uint64_t c = place(0, 0, kBar);
+            ArrangeSetTimeDisplay(1);
+            ArrangeSetSnap(16, true);
+            Undo(); // takes the clip back, not the view
+            bool gOk = !Arrange::Find(gArrange, c).Valid() && gArrange.settings.timeDisplay == 1 &&
+                       gArrange.settings.snapDivision == 16 && gArrange.settings.snapTriplet;
+            Redo();
+            gOk = gOk && Arrange::Find(gArrange, c).Valid() && gArrange.settings.timeDisplay == 1 &&
+                  gArrange.settings.snapDivision == 16;
+            // Parse / format in both units.
+            ArrangeSetTimeDisplay(0);
+            gOk = gOk && ArrangeParsePos("3.2.1") == kBar * 2 + kQ && ArrangeParsePos("1") == 0 &&
+                  ArrangeParsePos("x") == -1 && ArrangeFormatPos(kBar * 2 + kQ) == "3.2.1" &&
+                  ArrangeFormatLength(kBar + kQ / 4) == "1.0.1";
+            ArrangeSetTimeDisplay(1);
+            gOk = gOk && ArrangeParsePos("0:04") == kBar * 2 && ArrangeParsePos("1.5") == kQ * 3 &&
+                  ArrangeFormatPos(kBar * 2) == "0:04.00";
+            printf("arrange view settings survive undo: %s\n", gOk ? "OK" : "FAIL");
+            allOk = allOk && gOk;
+         }
+
+         if (!why.empty())
+            printf("arrange marker validate: %s\n", why.c_str());
+         tr.SetTempo(120.0f);
+         tr.SeekBeats(0.0);
+         gArrangePanelOpen = false;
+         NewPatch();
+         printf("arrange marker test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Overhaul WP7 (docs/plans/arrangement/overhaul-prompt.md): the export
+      // queue. Checks the parts of a take that are decided before a single
+      // frame or sample is written - the range a kind resolves to, the exact
+      // frame and sample budgets that range implies (#2: a 2.4s range must
+      // not round up to a 3s file), which terminals the audio comes out of
+      // for each source combination, that a take never changes what the user
+      // is monitoring, and the queue's own mechanics. Deliberately NOT a
+      // full encode: a video take is pumped by the main loop a frame at a
+      // time and this fixture lives inside one frame. The audio-only path
+      // runs for real when a device can be opened, and says so when not.
+      if (getenv("INFINITE_ARRANGERENDERTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetTempo(120.0f); // 1 beat = 0.5s, so every expected time below is exact
+         tr.Seek(0.0);
+         const AudioMode modeBefore = gAudioMode;
+
+         GraphNode* rampGn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+         GraphNode* oscGn = SpawnNode("Oscillator", "Synthesizers", 200.0f, 0.0f);
+         const bool spawned = rampGn != nullptr && oscGn != nullptr;
+         printf("arrange render spawn: %s\n", spawned ? "OK" : "FAIL");
+         allOk = allOk && spawned;
+
+         if (spawned)
+         {
+            const uint64_t rampUid = rampGn->uid;
+            const uint64_t oscUid = oscGn->uid;
+
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            const uint64_t vLane = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+            const uint64_t aLane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            auto place = [&](uint64_t lane, uint64_t uid, double startBeat, double lenBeats) {
+               Arrange::Clip c;
+               c.start = Arrange::BeatsToTicks(startBeat);
+               c.length = Arrange::BeatsToTicks(lenBeats);
+               c.srcUid = uid;
+               Arrange::PlaceOverwrite(gArrange, lane, c);
+            };
+            // Video [0, 6) beats = [0, 3)s, audio [0, 8) beats = [0, 4)s.
+            place(vLane, rampUid, 0.0, 6.0);
+            place(aLane, oscUid, 0.0, 8.0);
+            Arrange::AddMarker(gArrange, Arrange::BeatsToTicks(1.0), "A");
+            Arrange::AddMarker(gArrange, Arrange::BeatsToTicks(5.8), "B"); // 2.4s after A
+            gArrange.settings.loop.enabled = true;
+            gArrange.settings.loop.start = Arrange::BeatsToTicks(2.0);
+            gArrange.settings.loop.end = Arrange::BeatsToTicks(4.4); // 1.2s, fractional
+
+            // --- A. Every range kind resolves to the span it names ---------
+            struct RangeCase { int kind; double aBeat; double bBeat; const char* what; };
+            const RangeCase cases[] = {
+               { kArrangeRangeWhole,   0.0, 8.0, "whole" },      // the audio clip is the longest
+               { kArrangeRangeLoop,    2.0, 4.4, "loop" },
+               { kArrangeRangeMarkers, 1.0, 5.8, "markers" },
+               { kArrangeRangeCustom,  3.0, 7.0, "custom" },
+            };
+            bool aOk = true;
+            for (const RangeCase& rc : cases)
+            {
+               Arrange::Tick ra = 0, rb = 0;
+               ArrangeRenderResolveRange(rc.kind, 0, 1, Arrange::BeatsToTicks(3.0),
+                                         Arrange::BeatsToTicks(7.0), ra, rb);
+               const bool ok = ra == Arrange::BeatsToTicks(rc.aBeat) && rb == Arrange::BeatsToTicks(rc.bBeat);
+               if (!ok)
+                  printf("arrange render range %s: FAIL (got %.3f..%.3f beats, want %.3f..%.3f)\n", rc.what,
+                         Arrange::TicksToBeats(ra), Arrange::TicksToBeats(rb), rc.aBeat, rc.bBeat);
+               aOk = aOk && ok;
+            }
+            // Reversed markers swap rather than producing a negative range.
+            {
+               Arrange::Tick ra = 0, rb = 0;
+               ArrangeRenderResolveRange(kArrangeRangeMarkers, 1, 0, 0, 0, ra, rb);
+               aOk = aOk && ra == Arrange::BeatsToTicks(1.0) && rb == Arrange::BeatsToTicks(5.8);
+            }
+            // An empty range is widened, never handed to the runner as-is.
+            {
+               Arrange::Tick ra = 0, rb = 0;
+               ArrangeRenderResolveRange(kArrangeRangeCustom, 0, 0, Arrange::BeatsToTicks(2.0),
+                                         Arrange::BeatsToTicks(2.0), ra, rb);
+               aOk = aOk && rb > ra;
+            }
+            printf("arrange render range kinds: %s\n", aOk ? "OK" : "FAIL");
+            allOk = allOk && aOk;
+
+            // --- B. Frame budget is ceil, not whole seconds (#2) -----------
+            // The marker range is 2.4s: 72 frames at 30fps, and the old
+            // ceil(durationSeconds) * fps would have written 90 (a 3s file).
+            const int f30 = ArrangeRenderFrameBudget(2.4, 30);
+            const int f60 = ArrangeRenderFrameBudget(2.4, 60);
+            const int fLoop = ArrangeRenderFrameBudget(1.2, 25);       // exact, no rounding
+            const int fPartial = ArrangeRenderFrameBudget(1.201, 25);  // one frame more
+            const int fTiny = ArrangeRenderFrameBudget(0.001, 1);      // never zero frames
+            const bool bOk = f30 == 72 && f60 == 144 && fLoop == 30 && fPartial == 31 && fTiny == 1;
+            printf("arrange render frame budget: %s (2.4s@30=%d 2.4s@60=%d 1.2s@25=%d 1.201s@25=%d 0.001s@1=%d)\n",
+                   bOk ? "OK" : "FAIL", f30, f60, fLoop, fPartial, fTiny);
+            allOk = allOk && bOk;
+
+            // --- C. Sample budget rounds to the nearest whole sample -------
+            const long long s48 = ArrangeRenderSampleBudget(2.4, 48000.0);
+            const long long s441 = ArrangeRenderSampleBudget(2.4, 44100.0);
+            const long long sTiny = ArrangeRenderSampleBudget(0.0, 48000.0);
+            const bool cOk = s48 == 115200 && s441 == 105840 && sTiny == 1;
+            printf("arrange render sample budget: %s (2.4s@48k=%lld 2.4s@44.1k=%lld)\n", cOk ? "OK" : "FAIL",
+                   s48, s441);
+            allOk = allOk && cOk;
+
+            // --- D. The source matrix picks the right audio terminals ------
+            // ArrangeTimelineRoutingActive() is the single gate: Timeline
+            // audio must use the timeline's terminals even though the user is
+            // monitoring the canvas, and canvas audio must not, even when the
+            // take is compositing the timeline's video.
+            gAudioMode = AudioMode::Canvas;
+            struct MatrixCase { int audio; int video; bool wantTimeline; const char* what; };
+            const MatrixCase matrix[] = {
+               { kArrangeAudioTimeline, kArrangeVideoTimeline, true,  "timeline A + timeline V" },
+               { kArrangeAudioCanvas,   kArrangeVideoTimeline, false, "canvas A + timeline V" },
+               { kArrangeAudioTimeline, kArrangeVideoCanvas,   true,  "timeline A + canvas V" },
+               { kArrangeAudioCanvas,   kArrangeVideoCanvas,   false, "canvas A + canvas V" },
+               { kArrangeAudioNone,     kArrangeVideoTimeline, false, "no audio" },
+            };
+            bool dOk = true;
+            for (const MatrixCase& mc : matrix)
+            {
+               gOfflineRender.active = true;
+               gOfflineRender.arrangeDriven = true;
+               gOfflineRender.timelineAudio = mc.audio == kArrangeAudioTimeline;
+               gOfflineRender.timelineVideo = mc.video == kArrangeVideoTimeline;
+               const bool got = ArrangeTimelineRoutingActive();
+               if (got != mc.wantTimeline)
+                  printf("arrange render routing %s: FAIL (got %d, want %d)\n", mc.what, got ? 1 : 0,
+                         mc.wantTimeline ? 1 : 0);
+               dOk = dOk && got == mc.wantTimeline;
+            }
+            // The audio-only path routes through its own flag, not gOfflineRender's.
+            gOfflineRender.active = false;
+            gOfflineRender.arrangeDriven = false;
+            gOfflineRender.timelineAudio = false;
+            gOfflineRender.timelineVideo = false;
+            gArrangeWavRender.active = true;
+            gArrangeWavRender.timelineAudio = true;
+            dOk = dOk && ArrangeTimelineRoutingActive();
+            gArrangeWavRender.timelineAudio = false;
+            dOk = dOk && !ArrangeTimelineRoutingActive();
+            gArrangeWavRender.active = false;
+            // And with nothing rendering it is the monitoring mode alone.
+            dOk = dOk && !ArrangeTimelineRoutingActive();
+            gAudioMode = AudioMode::Timeline;
+            dOk = dOk && ArrangeTimelineRoutingActive();
+            gAudioMode = AudioMode::Canvas;
+            printf("arrange render source matrix: %s\n", dOk ? "OK" : "FAIL");
+            allOk = allOk && dOk;
+
+            // --- E. The default audio source follows the Timeline toggle ---
+            // -1 in the settings means "decide when the popup draws" (#6b), so
+            // the same patch renders what the user is currently hearing.
+            gArrange.settings.renderAudioSource = -1;
+            auto defaultAudioSource = []() {
+               return gArrange.settings.renderAudioSource >= 0
+                         ? std::clamp(gArrange.settings.renderAudioSource, 0, 2)
+                         : (gAudioMode == AudioMode::Timeline ? kArrangeAudioTimeline : kArrangeAudioCanvas);
+            };
+            const int defCanvas = defaultAudioSource();
+            gAudioMode = AudioMode::Timeline;
+            const int defTimeline = defaultAudioSource();
+            gArrange.settings.renderAudioSource = kArrangeAudioCanvas; // an explicit choice sticks
+            const int defPinned = defaultAudioSource();
+            gAudioMode = AudioMode::Canvas;
+            const bool eOk = defCanvas == kArrangeAudioCanvas && defTimeline == kArrangeAudioTimeline &&
+                             defPinned == kArrangeAudioCanvas;
+            printf("arrange render default audio source: %s\n", eOk ? "OK" : "FAIL");
+            allOk = allOk && eOk;
+            gArrange.settings.renderAudioSource = -1;
+
+            // --- F. Queue mechanics ----------------------------------------
+            const std::string tmpDir = std::filesystem::temp_directory_path().string();
+            gArrangeRenderQueue.clear();
+            gArrangeRenderActiveJobId = 0;
+            gArrangeRenderQueueRunning = false;
+            auto makeJob = [&](const char* name, int audio, int video, double aBeat, double bBeat) {
+               ArrangeRenderJob j;
+               j.id = gArrangeRenderNextJobId++;
+               j.startTick = Arrange::BeatsToTicks(aBeat);
+               j.endTick = Arrange::BeatsToTicks(bBeat);
+               j.audioSource = audio;
+               j.videoSource = video;
+               j.path = tmpDir + "/infinite_wp7_" + name + (video == kArrangeVideoNone ? ".wav" : ".mp4");
+               gArrangeRenderQueue.push_back(j);
+               return gArrangeRenderQueue.back().id;
+            };
+            makeJob("whole", kArrangeAudioTimeline, kArrangeVideoTimeline, 0.0, 8.0);
+            makeJob("loop", kArrangeAudioTimeline, kArrangeVideoTimeline, 2.0, 4.4);
+            const uint64_t emptyId = makeJob("empty", kArrangeAudioTimeline, kArrangeVideoTimeline, 3.0, 3.0);
+            const uint64_t bothNoneId = makeJob("none", kArrangeAudioNone, kArrangeVideoNone, 0.0, 4.0);
+
+            // A job with nothing to do fails at the gate instead of arming a
+            // take, and the runner moves on rather than stalling the queue.
+            ArrangeRenderJob* emptyJob = ArrangeRenderFindJob(emptyId);
+            ArrangeRenderJob* noneJob = ArrangeRenderFindJob(bothNoneId);
+            const bool emptyRefused = emptyJob != nullptr && !ArrangeRenderBeginJob(*emptyJob) &&
+                                      emptyJob->status == kArrangeJobFailed;
+            const bool noneRefused = noneJob != nullptr && !ArrangeRenderBeginJob(*noneJob) &&
+                                     noneJob->status == kArrangeJobFailed;
+            gArrangeRenderActiveJobId = 0;
+            printf("arrange render invalid jobs refused: %s (%s / %s)\n",
+                   emptyRefused && noneRefused ? "OK" : "FAIL",
+                   emptyJob != nullptr ? emptyJob->message.c_str() : "?",
+                   noneJob != nullptr ? noneJob->message.c_str() : "?");
+            allOk = allOk && emptyRefused && noneRefused;
+
+            // Retry puts a failed job back in line with its counters reset.
+            emptyJob->status = kArrangeJobFailed;
+            emptyJob->framesDone = 17;
+            emptyJob->status = kArrangeJobQueued;
+            emptyJob->framesDone = 0;
+            emptyJob->message.clear();
+
+            // Cancel All stops the run and marks everything still waiting,
+            // and leaves the finished ones alone.
+            noneJob->status = kArrangeJobDone;
+            gArrangeRenderQueueRunning = true;
+            ArrangeRenderCancelAll();
+            int cancelled = 0, done = 0, stillQueued = 0;
+            for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+            {
+               if (j.status == kArrangeJobCancelled) cancelled++;
+               else if (j.status == kArrangeJobDone) done++;
+               else if (j.status == kArrangeJobQueued) stillQueued++;
+            }
+            const bool fOk = !gArrangeRenderQueueRunning && cancelled == 3 && done == 1 && stillQueued == 0;
+            printf("arrange render cancel all: %s (%d cancelled, %d done, %d still queued, running %d)\n",
+                   fOk ? "OK" : "FAIL", cancelled, done, stillQueued, gArrangeRenderQueueRunning ? 1 : 0);
+            allOk = allOk && fOk;
+
+            // --- G. Two jobs never share an output file --------------------
+            const std::string taken = gArrangeRenderQueue[0].path;
+            gArrangeRenderQueue[0].status = kArrangeJobQueued; // back in the queue, so it owns its path
+            const bool seen = ArrangeRenderPathQueued(taken, 0);
+            const bool notMine = !ArrangeRenderPathQueued(taken, gArrangeRenderQueue[0].id);
+            const std::string unique = ArrangeRenderUniquePath(taken);
+            const bool gOk = seen && notMine && unique != taken && unique.size() > 4 &&
+                             unique.compare(unique.size() - 4, 4, ".mp4") == 0 &&
+                             !ArrangeRenderPathQueued(unique, 0);
+            printf("arrange render unique path: %s (%s -> %s)\n", gOk ? "OK" : "FAIL", taken.c_str(),
+                   unique.c_str());
+            allOk = allOk && gOk;
+
+            // --- H. A live source in the range refuses the take ------------
+            // Off-range hardware must not refuse: that was the whole point of
+            // scoping the check to the render range rather than the patch.
+            GraphNode* camGn = SpawnNode("Video In", "Source", 400.0f, 0.0f);
+            if (camGn != nullptr && camGn->node != nullptr && camGn->node->IsHardwareDriven())
+            {
+               Arrange::Clip cam;
+               cam.start = Arrange::BeatsToTicks(10.0);
+               cam.length = Arrange::BeatsToTicks(2.0);
+               cam.srcUid = camGn->uid;
+               Arrange::PlaceOverwrite(gArrange, vLane, cam);
+               const bool inRange =
+                  FindHardwareDrivenNodeInArrangeRange(Arrange::BeatsToTicks(10.0), Arrange::BeatsToTicks(12.0),
+                                                       true, true) != nullptr;
+               const bool outOfRange =
+                  FindHardwareDrivenNodeInArrangeRange(Arrange::BeatsToTicks(0.0), Arrange::BeatsToTicks(6.0),
+                                                       true, true) == nullptr;
+               const bool hOk = inRange && outOfRange;
+               printf("arrange render live source scoped to range: %s (in %d, out %d)\n", hOk ? "OK" : "FAIL",
+                      inRange ? 1 : 0, outOfRange ? 1 : 0);
+               allOk = allOk && hOk;
+            }
+            else
+            {
+               printf("arrange render live source scoped to range: SKIP (no hardware-driven node)\n");
+            }
+
+            // --- I. An audio-only take, for real, when a device exists -----
+            // This is the only end-to-end path a single frame can run: no
+            // encoder, no per-frame main-loop pump. Without a device there is
+            // nothing to render at (every AudioNode is prepared at the device
+            // rate), so it says so rather than failing.
+            gArrangeRenderQueue.clear();
+            gArrangeRenderActiveJobId = 0;
+            gArrangeRenderQueueRunning = false;
+            const std::string wavPath = tmpDir + "/infinite_wp7_audio_only.wav";
+            std::error_code rmEc;
+            std::filesystem::remove(wavPath, rmEc);
+            if (AudioEngine::Instance().SampleRate() > 0.0 || StartAudioEngine(gAudioStartError))
+            {
+               const double devRate = AudioEngine::Instance().SampleRate();
+               ArrangeRenderJob j;
+               j.id = gArrangeRenderNextJobId++;
+               j.startTick = Arrange::BeatsToTicks(1.0);
+               j.endTick = Arrange::BeatsToTicks(5.8); // 2.4s
+               j.audioSource = kArrangeAudioTimeline;
+               j.videoSource = kArrangeVideoNone;
+               j.format = 2;
+               j.path = wavPath;
+               gArrangeRenderQueue.push_back(j);
+               gArrangeRenderQueueRunning = true;
+
+               // What the main loop does, without the frames in between. The
+               // cap is a hang guard: at a 0.1s budget per tick a 2.4s take
+               // needs a handful.
+               int ticks = 0;
+               while (gArrangeRenderQueueRunning && ticks++ < 2000)
+                  ArrangeRenderQueueTick();
+
+               const ArrangeRenderJob& doneJob = gArrangeRenderQueue.back();
+               const long long wantSamples = ArrangeRenderSampleBudget(2.4, devRate);
+               long long gotSamples = -1;
+               std::error_code szEc;
+               const auto bytes = (long long)std::filesystem::file_size(wavPath, szEc);
+               if (!szEc)
+                  gotSamples = (bytes - 44) / 4; // 16-bit stereo after the canonical WAV header
+               // +-1 block: the pump writes in whole blocks of
+               // OfflineAudioBlockFrames() and the last one is clipped to the
+               // budget, so the file is exact - the tolerance is for a writer
+               // that pads, not for a pump that overruns.
+               const bool iOk = doneJob.status == kArrangeJobDone && gotSamples > 0 &&
+                                std::llabs(gotSamples - wantSamples) <= OfflineAudioBlockFrames() &&
+                                !ArrangeRenderBusy() && gArrangeRenderActiveJobId == 0;
+               printf("arrange render audio-only take: %s (%lld samples, want %lld at %.0f Hz, status %d, %d ticks)\n",
+                      iOk ? "OK" : "FAIL", gotSamples, wantSamples, devRate, doneJob.status, ticks);
+               allOk = allOk && iOk;
+               std::filesystem::remove(wavPath, rmEc);
+            }
+            else
+            {
+               printf("arrange render audio-only take: SKIP (no audio device: %s)\n", gAudioStartError.c_str());
+            }
+
+            // --- K. A take parks the loop instead of wrapping inside it ----
+            // A fractional loop used to make the take re-render the loop body
+            // until the frame budget ran out (#3). WP2 moved the wrap into
+            // Transport and suspends it for the duration of a take; the
+            // user's own loop flag is left alone so it comes back after.
+            tr.SetLoop(true, 2.0, 4.4);
+            const bool loopOnBefore = tr.LoopEnabled();
+            const bool suspendedBefore = tr.LoopSuspended();
+            tr.SetOfflineMode(true, 48000.0);
+            const bool suspendedDuring = tr.LoopSuspended();
+            const bool flagKept = tr.LoopEnabled();
+            tr.SetOfflineMode(false);
+            const bool suspendedAfter = tr.LoopSuspended();
+            const bool kOk = loopOnBefore && !suspendedBefore && suspendedDuring && flagKept &&
+                             !suspendedAfter && tr.LoopEnabled();
+            printf("arrange render loop parked during take: %s (before %d, during %d, after %d)\n",
+                   kOk ? "OK" : "FAIL", suspendedBefore ? 1 : 0, suspendedDuring ? 1 : 0,
+                   suspendedAfter ? 1 : 0);
+            allOk = allOk && kOk;
+            tr.SetLoop(false, 0.0, 0.0);
+
+            // --- J. A take never changes what the user is monitoring -------
+            const bool jOk = gAudioMode == modeBefore && !ArrangeRenderBusy() &&
+                             !gOfflineRender.arrangeDriven && !gOfflineRender.timelineAudio &&
+                             !gOfflineRender.timelineVideo && !gArrangeWavRender.active &&
+                             !Transport::Instance().IsOfflineMode();
+            printf("arrange render leaves live state alone: %s (mode %d, offline %d)\n", jOk ? "OK" : "FAIL",
+                   (int)gAudioMode, Transport::Instance().IsOfflineMode() ? 1 : 0);
+            allOk = allOk && jOk;
+
+            // --- L. Renders follow the global audio settings ---------------
+            // The popup offers no rate or buffer control; both are read off
+            // the live engine, so a job can never ask for something the
+            // prepared graph cannot generate.
+            const double activeRate = ArrangeRenderActiveSampleRate();
+            const double engineRate = AudioEngine::Instance().SampleRate();
+            const bool rateFollows =
+               activeRate > 0.0 &&
+               (engineRate > 0.0 ? std::abs(activeRate - engineRate) < 1.0
+                                 : std::abs(activeRate - (gAudioSampleRate > 0.0 ? gAudioSampleRate
+                                                                                 : 48000.0)) < 1.0);
+            const int blockNow = OfflineAudioBlockFrames();
+            const uint32_t devPeriod = Platform::AudioDeviceBufferFrames(gAudioOutputDeviceId);
+            const int wantBlock =
+               std::clamp(devPeriod > 0 ? (int)devPeriod
+                                        : (gAudioBufferFrames > 0 ? gAudioBufferFrames : 512),
+                          1, kAudioMaxBlockFrames);
+            // The buffer setting has to actually reach the pump: rendering in
+            // kAudioMaxBlockFrames slabs latches MixerNode's pan/mute/solo
+            // once per 4096 frames instead of once per period.
+            const bool blockFollows = blockNow == wantBlock && blockNow <= kAudioMaxBlockFrames &&
+                                      blockNow >= 1;
+            const bool lOk = rateFollows && blockFollows;
+            printf("arrange render follows audio settings: %s (%.0f Hz, %d-frame blocks, "
+                   "engine %.0f Hz, setting %d, device period %u)\n",
+                   lOk ? "OK" : "FAIL", activeRate, blockNow, engineRate, gAudioBufferFrames,
+                   devPeriod);
+            allOk = allOk && lOk;
+
+            std::string why;
+            if (!Arrange::Validate(gArrange, &why))
+            {
+               printf("arrange render validate: %s\n", why.c_str());
+               allOk = false;
+            }
+         }
+
+         gArrangeRenderQueue.clear();
+         gArrangeRenderActiveJobId = 0;
+         gArrangeRenderQueueRunning = false;
+         gAudioMode = modeBefore;
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         NewPatch();
+         printf("arrange render test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // ---- WP8: live clip waveforms and video thumbnails ----------------
+      // What a frame-4 fixture can decide: the ring's SPSC discipline and its
+      // drop-rather-than-overwrite rule, the bucket maths, the cache's
+      // shaping / invalidation / eviction rules, and - where a device opens -
+      // a real take actually filling a clip's buckets through the audio
+      // thread. What it cannot: the drawing, which the owner eyeballs.
+      if (getenv("INFINITE_ARRANGEWAVETEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         const AudioMode modeBefore = gAudioMode;
+
+         // --- A. The ring is SPSC, never overwrites, and counts its drops --
+         {
+            static ClipPeakRing sRing; // static: kCapacity entries is not a stack object
+            ClipPeak out[8];
+            bool aOk = sRing.Read(out, 8) == 0 && sRing.DroppedCount() == 0;
+            sRing.Write({ 7, 0, 3, -0.5f, 0.25f });
+            sRing.Write({ 7, 0, 4, -1.0f, 1.0f });
+            aOk = aOk && sRing.Read(out, 8) == 2 && out[0].clipId == 7 && out[0].bucket == 3 &&
+                  out[0].minValue == -0.5f && out[1].bucket == 4 && out[1].maxValue == 1.0f;
+            // Order is preserved and a partial read leaves the rest queued.
+            for (int i = 0; i < 5; i++)
+               sRing.Write({ 9, 0, i, 0.0f, (float)i });
+            aOk = aOk && sRing.Read(out, 2) == 2 && out[0].bucket == 0 && out[1].bucket == 1;
+            aOk = aOk && sRing.Read(out, 8) == 3 && out[0].bucket == 2 && out[2].bucket == 4;
+            // Overfilling drops the NEW entries and says so; what was already
+            // queued is still readable. A waveform that lost buckets should
+            // lose the ones it missed, not the ones about to be drawn.
+            for (int i = 0; i < ClipPeakRing::kCapacity + 10; i++)
+               sRing.Write({ 11, 0, i, 0.0f, 1.0f });
+            const uint64_t dropped = sRing.DroppedCount();
+            aOk = aOk && dropped == 11; // capacity-1 usable slots
+            int drained = 0, n = 0;
+            while ((n = sRing.Read(out, 8)) > 0)
+               drained += n;
+            aOk = aOk && drained == ClipPeakRing::kCapacity - 1 && sRing.Read(out, 8) == 0;
+            printf("arrange wave ring spsc: %s (drained %d of %d, dropped %llu)\n", aOk ? "OK" : "FAIL",
+                   drained, ClipPeakRing::kCapacity, (unsigned long long)dropped);
+            allOk = allOk && aOk;
+         }
+
+         // --- B. Bucket maths: 1/16 beat, ceil, never unbounded ------------
+         {
+            const bool bOk = kArrangeWaveBucketTicks == Arrange::kPPQ / 16 &&
+                             (double)Arrange::kPPQ / (double)kArrangeWaveBucketTicks ==
+                                kClipPeakBucketsPerBeat &&
+                             ArrangeWaveBucketCount(0) == 0 &&
+                             ArrangeWaveBucketCount(1) == 1 &&  // a sliver still gets one bucket
+                             ArrangeWaveBucketCount(kArrangeWaveBucketTicks) == 1 &&
+                             ArrangeWaveBucketCount(kArrangeWaveBucketTicks + 1) == 2 &&
+                             ArrangeWaveBucketCount(Arrange::kPPQ) == 16 &&
+                             ArrangeWaveBucketCount(Arrange::kPPQ * 4) == 64 &&
+                             ArrangeWaveBucketCount((Arrange::Tick)Arrange::kPPQ * 1000000) ==
+                                kArrangeWaveMaxBuckets;
+            printf("arrange wave bucket math: %s (%d ticks/bucket, %d per beat)\n", bOk ? "OK" : "FAIL",
+                   (int)kArrangeWaveBucketTicks, ArrangeWaveBucketCount(Arrange::kPPQ));
+            allOk = allOk && bOk;
+         }
+
+         GraphNode* oscGn = SpawnNode("Oscillator", "Synthesizers", 200.0f, 0.0f);
+         GraphNode* rampGn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+         const bool spawned = oscGn != nullptr && rampGn != nullptr;
+         printf("arrange wave spawn: %s\n", spawned ? "OK" : "FAIL");
+         allOk = allOk && spawned;
+
+         if (spawned)
+         {
+            const uint64_t oscUid = oscGn->uid;
+            const uint64_t rampUid = rampGn->uid;
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            const uint64_t vLane = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+            const uint64_t aLane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            auto place = [&](uint64_t lane, uint64_t uid, double startBeat, double lenBeats) -> uint64_t {
+               Arrange::Clip c;
+               c.start = Arrange::BeatsToTicks(startBeat);
+               c.length = Arrange::BeatsToTicks(lenBeats);
+               c.srcUid = uid;
+               uint64_t id = 0;
+               Arrange::PlaceOverwrite(gArrange, lane, c, &id);
+               return id;
+            };
+
+            // --- C. The cache is shaped by the model, one entry per clip ---
+            const uint64_t audioClip = place(aLane, oscUid, 0.0, 8.0); // 4s at 120bpm
+            ArrangeSyncClipVisuals();
+            auto waveOf = [](uint64_t id) -> const ArrangeClipWave* {
+               auto it = gArrangeClipWaves.find(id);
+               return it == gArrangeClipWaves.end() ? nullptr : &it->second;
+            };
+            const ArrangeClipWave* w0 = waveOf(audioClip);
+            bool cOk = w0 != nullptr && (int)w0->minv.size() == 8 * 16 &&
+                       w0->maxv.size() == w0->minv.size() && w0->filled.size() == w0->minv.size() &&
+                       w0->srcUid == oscUid && w0->length == Arrange::BeatsToTicks(8.0);
+            // A video clip gets a thumbnail slot, never a waveform.
+            const uint64_t videoClip = place(vLane, rampUid, 0.0, 6.0);
+            ArrangeSyncClipVisuals();
+            cOk = cOk && waveOf(videoClip) == nullptr &&
+                  gArrangeClipThumbs.count(videoClip) == 1 && gArrangeClipThumbs.count(audioClip) == 0;
+            printf("arrange wave cache shaping: %s (%d buckets for 8 beats)\n", cOk ? "OK" : "FAIL",
+                   w0 != nullptr ? (int)w0->minv.size() : -1);
+            allOk = allOk && cOk;
+
+            // --- D. Only the four shape fields clear a filled cache --------
+            {
+               // Pretend the take already ran.
+               auto fill = [&](uint64_t id) {
+                  auto it = gArrangeClipWaves.find(id);
+                  if (it == gArrangeClipWaves.end())
+                     return;
+                  std::fill(it->second.filled.begin(), it->second.filled.end(), (uint8_t)1);
+                  std::fill(it->second.maxv.begin(), it->second.maxv.end(), 0.5f);
+               };
+               auto filledCount = [&](uint64_t id) {
+                  auto it = gArrangeClipWaves.find(id);
+                  if (it == gArrangeClipWaves.end())
+                     return -1;
+                  int n = 0;
+                  for (uint8_t f : it->second.filled)
+                     n += f != 0 ? 1 : 0;
+                  return n;
+               };
+               fill(audioClip);
+               const int filled0 = filledCount(audioClip);
+
+               // Gain and fade are measured around, not into, the buckets -
+               // the audio thread reads pre-envelope - so they must NOT clear.
+               if (Arrange::Clip* c = Arrange::FindClip(gArrange, audioClip))
+               {
+                  c->gainDb = -6.0f;
+                  c->fadeIn = Arrange::BeatsToTicks(0.5);
+                  gArrange.revision++;
+               }
+               ArrangeSyncClipVisuals();
+               bool dOk = filledCount(audioClip) == filled0 && filled0 == 8 * 16;
+
+               // Length does: the buckets no longer describe the clip.
+               Arrange::TrimEdge(gArrange, audioClip, Arrange::kEdgeEnd, Arrange::BeatsToTicks(4.0));
+               ArrangeSyncClipVisuals();
+               dOk = dOk && filledCount(audioClip) == 0 &&
+                     (int)gArrangeClipWaves[audioClip].minv.size() == 4 * 16;
+
+               // So does a reassign.
+               fill(audioClip);
+               if (Arrange::Clip* c = Arrange::FindClip(gArrange, audioClip))
+               {
+                  c->srcUid = rampUid;
+                  gArrange.revision++;
+               }
+               ArrangeSyncClipVisuals();
+               dOk = dOk && filledCount(audioClip) == 0;
+               if (Arrange::Clip* c = Arrange::FindClip(gArrange, audioClip))
+               {
+                  c->srcUid = oscUid;
+                  gArrange.revision++;
+               }
+               ArrangeSyncClipVisuals();
+
+               // So does a move. A clip's source is a LIVE NODE, not a file:
+               // the same clip two beats later plays whatever the node emits
+               // two beats later, which is not what was measured. This is the
+               // one place the waveform differs from a file-backed DAW's.
+               fill(audioClip);
+               std::vector<uint64_t> one{ audioClip };
+               Arrange::MoveClips(gArrange, one, Arrange::BeatsToTicks(2.0), 0);
+               ArrangeSyncClipVisuals();
+               dOk = dOk && filledCount(audioClip) == 0 &&
+                     (int)gArrangeClipWaves[audioClip].minv.size() == 4 * 16;
+               printf("arrange wave cache invalidation: %s\n", dOk ? "OK" : "FAIL");
+               allOk = allOk && dOk;
+            }
+
+            // --- E. A bucket in flight for a deleted clip is dropped -------
+            {
+               const uint64_t ghost = 0xDEADBEEFull;
+               const uint64_t shape = gArrangeClipWaves[audioClip].shape;
+               AudioEngine::Instance().ClipPeaks().Write({ ghost, 0, 0, -1.0f, 1.0f });
+               AudioEngine::Instance().ClipPeaks().Write({ audioClip, shape, 2, -0.25f, 0.75f });
+               ArrangeSyncClipVisuals();
+               const ArrangeClipWave* w = waveOf(audioClip);
+               const bool eOk = gArrangeClipWaves.count(ghost) == 0 && w != nullptr &&
+                                w->filled[2] != 0 && w->minv[2] == -0.25f && w->maxv[2] == 0.75f;
+               printf("arrange wave drain ignores unknown clips: %s\n", eOk ? "OK" : "FAIL");
+               allOk = allOk && eOk;
+            }
+
+            // --- E2. A bucket measured under the PREVIOUS shape is dropped --
+            // The race the shape stamp exists for: the audio thread can still
+            // be mid-block on the old topology when an edit resizes a clip,
+            // so a finished bucket arrives after the cache has been zeroed.
+            // Its index can be perfectly valid in the new array - only the
+            // shape says it describes material the clip no longer holds.
+            {
+               const uint64_t staleShape = gArrangeClipWaves[audioClip].shape;
+               // Clip currently spans beats 2..6 (section D moved it); drag
+               // the right edge out to 8 so it is longer, not shorter - the
+               // stale bucket's index then still fits the new array.
+               Arrange::TrimEdge(gArrange, audioClip, Arrange::kEdgeEnd, Arrange::BeatsToTicks(8.0));
+               ArrangeSyncClipVisuals();
+               const uint64_t freshShape = gArrangeClipWaves[audioClip].shape;
+               AudioEngine::Instance().ClipPeaks().Write({ audioClip, staleShape, 1, -0.9f, 0.9f });
+               AudioEngine::Instance().ClipPeaks().Write({ audioClip, freshShape, 3, -0.1f, 0.2f });
+               ArrangeSyncClipVisuals();
+               const ArrangeClipWave* w = waveOf(audioClip);
+               const bool e2Ok = staleShape != freshShape && w != nullptr &&
+                                 w->filled.size() > 3 && w->filled[1] == 0 && w->filled[3] != 0 &&
+                                 w->maxv[3] == 0.2f;
+               printf("arrange wave drops stale-shape buckets: %s\n", e2Ok ? "OK" : "FAIL");
+               allOk = allOk && e2Ok;
+            }
+
+            // --- F. 50 video clips in, 50 thumbnail slots; deleted, none ---
+            // The exit criterion WP8 names. Slots, not FBOs: an FBO is only
+            // allocated on the first real composite, which a frame-4 fixture
+            // has not run - so this asserts the pool's bookkeeping and
+            // GLUtil's allocation counter asserts nothing leaked.
+            {
+               const size_t thumbsBefore = gArrangeClipThumbs.size();
+               const unsigned long long fbo0 = GLUtil::FboAllocationCount();
+               std::vector<uint64_t> made;
+               for (int i = 0; i < 50; i++)
+                  made.push_back(place(vLane, rampUid, 10.0 + (double)i * 2.0, 2.0));
+               ArrangeSyncClipVisuals();
+               const size_t thumbsAfter = gArrangeClipThumbs.size();
+               Arrange::Delete(gArrange, made);
+               ArrangeSyncClipVisuals();
+               const bool fOk = thumbsAfter == thumbsBefore + 50 &&
+                                gArrangeClipThumbs.size() == thumbsBefore &&
+                                GLUtil::FboAllocationCount() == fbo0;
+               printf("arrange thumb pool returns to baseline: %s (%zu -> %zu -> %zu)\n", fOk ? "OK" : "FAIL",
+                      thumbsBefore, thumbsAfter, gArrangeClipThumbs.size());
+               allOk = allOk && fOk;
+            }
+
+            // --- G. Playing through a clip fills its waveform --------------
+            // The other WP8 exit criterion, end to end: the audio thread's
+            // accumulation, the ring, the drain and the cache. Driven through
+            // ProcessOffline rather than a device callback so it is
+            // deterministic, but it is the same RunTopology path.
+            if (AudioEngine::Instance().SampleRate() > 0.0 || StartAudioEngine(gAudioStartError))
+            {
+               const double rate = AudioEngine::Instance().SampleRate();
+               // One 2-beat (1s) clip at the origin, Timeline-Strict so the
+               // clip's own terminal is what feeds the device.
+               gArrange = Arrange::Model();
+               gArrange.revision++;
+               const uint64_t lane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+               const uint64_t clip = place(lane, oscUid, 0.0, 2.0);
+               gAudioMode = AudioMode::Timeline;
+               ArrangeSyncClipVisuals();
+               RebuildAudioTopology();
+
+               const uint64_t droppedBefore = AudioEngine::Instance().ClipPeaks().DroppedCount();
+               tr.Seek(0.0);
+               tr.SetOfflineMode(true, rate);
+               tr.SetPlaying(true);
+               static float sL[kAudioMaxBlockFrames];
+               static float sR[kAudioMaxBlockFrames];
+               static float* sCh[2] = { sL, sR };
+               const int block = OfflineAudioBlockFrames();
+               // One second is the whole clip; render a tenth past it so the
+               // playhead crosses out of the clip and publishes its last bucket.
+               const long long want = (long long)llround(1.1 * rate);
+               long long done = 0;
+               while (done < want)
+               {
+                  const int nFrames = (int)std::min<long long>(block, want - done);
+                  AudioBuffer buf;
+                  buf.channels = sCh;
+                  buf.numChannels = 2;
+                  buf.numFrames = nFrames;
+                  AudioEngine::Instance().ProcessOffline(buf);
+                  done += nFrames;
+                  // Drain as we go, the way the main loop does - the ring is
+                  // sized for a frame's worth of buckets, not a whole take.
+                  ArrangeSyncClipVisuals();
+               }
+               tr.SetOfflineMode(false);
+               tr.SetPlaying(false);
+               ArrangeSyncClipVisuals();
+
+               int filled = 0, total = 0, nonSilent = 0;
+               if (const ArrangeClipWave* w = waveOf(clip))
+               {
+                  total = (int)w->filled.size();
+                  for (int i = 0; i < total; i++)
+                  {
+                     if (w->filled[(size_t)i] == 0)
+                        continue;
+                     filled++;
+                     if (w->maxv[(size_t)i] > 1e-4f || w->minv[(size_t)i] < -1e-4f)
+                        nonSilent++;
+                  }
+               }
+               // The playhead ran past the clip's end, so even the last bucket
+               // is published (a clip followed by a gap must not keep a flat
+               // notch at its right edge).
+               const bool gOk = total == 32 && filled == total && nonSilent >= total - 2 &&
+                                AudioEngine::Instance().ClipPeaks().DroppedCount() == droppedBefore;
+               printf("arrange wave filled by playback: %s (%d/%d buckets, %d non-silent, %lld frames @ %.0f Hz)\n",
+                      gOk ? "OK" : "FAIL", filled, total, nonSilent, done, rate);
+               allOk = allOk && gOk;
+            }
+            else
+            {
+               printf("arrange wave filled by playback: SKIP (no audio device: %s)\n", gAudioStartError.c_str());
+            }
+         }
+
+         gAudioMode = modeBefore;
+         tr.SetOfflineMode(false);
+         tr.SetPlaying(false);
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         NewPatch();
+         ArrangeSyncClipVisuals();
+         const bool cleared = gArrangeClipWaves.empty() && gArrangeClipThumbs.empty();
+         printf("arrange wave cleared on new patch: %s\n", cleared ? "OK" : "FAIL");
+         allOk = allOk && cleared;
+         printf("arrange wave test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
       if (getenv("INFINITE_UNDOPERFTEST") != nullptr && frameId == 4)
       {
          NewPatch();
@@ -67145,6 +76044,10 @@ int main(int argc, char** argv)
       if (!typing && shiftOnly && ImGui::IsKeyPressed(ImGuiKey_P, false))
          gPerfPanelOpen = !gPerfPanelOpen;
 
+      // Shift+T: the docked arrangement timeline
+      if (!typing && shiftOnly && ImGui::IsKeyPressed(ImGuiKey_T, false))
+         gArrangePanelOpen = !gArrangePanelOpen;
+
       // Shift+Y: fit view to content, replacing the old menu-only entry
       if (!typing && shiftOnly && ImGui::IsKeyPressed(ImGuiKey_Y, false))
          gRequestFitView = true;
@@ -67297,8 +76200,30 @@ int main(int argc, char** argv)
             gPerfMatrixFocused = false;
          }
       }
+
+      // Arrangement Timeline focus guard: when arrangement timeline owns the
+      // keyboard focus, keystrokes (Delete, Backspace, Cmd+C, Cmd+V, Cmd+D)
+      // belong strictly to the timeline clips, not the graph canvas.
+      if (!gArrangePanelOpen)
+      {
+         gArrangeClaimedKeys = false;
+         gArrangeFocused = false;
+      }
+      else if (gArrangeClaimedKeys &&
+               (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) &&
+               !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+      {
+         const ImVec2 m = ImGui::GetIO().MousePos;
+         if (m.x < gArrangePanelRectMin.x || m.x > gArrangePanelRectMax.x ||
+             m.y < gArrangePanelRectMin.y || m.y > gArrangePanelRectMax.y)
+         {
+            gArrangeClaimedKeys = false;
+            gArrangeFocused = false;
+         }
+      }
+
       const bool doDelete = gRequestDelete ||
-         (!typing && !gPerfMatrixFocused && (ImGui::IsKeyPressed(ImGuiKey_Delete, false) ||
+         (!typing && !gPerfMatrixFocused && !gArrangeFocused && (ImGui::IsKeyPressed(ImGuiKey_Delete, false) ||
                       ImGui::IsKeyPressed(ImGuiKey_Backspace, false) ||
                       (shiftOnly && ImGui::IsKeyPressed(ImGuiKey_X, false))));
       gRequestDelete = false;
@@ -67369,7 +76294,7 @@ int main(int argc, char** argv)
       // Shift+D (or Cmd/Ctrl+D) duplicates whatever is selected without
       // touching the clipboard.
       const bool doDuplicate = gRequestDuplicate ||
-         (!typing && !gPerfMatrixFocused && (io.KeyShift || cmdOrCtrl) && ImGui::IsKeyPressed(ImGuiKey_D, false));
+         (!typing && !gPerfMatrixFocused && !gArrangeFocused && (io.KeyShift || cmdOrCtrl) && ImGui::IsKeyPressed(ImGuiKey_D, false));
       gRequestDuplicate = false;
       if (doDuplicate)
       {
@@ -67474,12 +76399,14 @@ int main(int argc, char** argv)
          }
       }
 
+      // !gArrangeFocused: Cmd+G / Cmd+Shift+G group timeline clips while the
+      // Arrangement panel has focus, and must not also group canvas nodes.
       const bool doGroup =
          gRequestGroup ||
-         (!typing && cmdOrCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false));
+         (!typing && !gArrangeFocused && cmdOrCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false));
       const bool doUngroup =
          gRequestUngroup ||
-         (!typing && cmdOrCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false));
+         (!typing && !gArrangeFocused && cmdOrCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false));
       gRequestGroup = false;
       gRequestUngroup = false;
 
@@ -67651,7 +76578,7 @@ int main(int argc, char** argv)
       // panel, not to the canvas selection behind it.
       const bool doBypass =
          gRequestBypass ||
-         (!typing && !gPerfMatrixFocused && !cmdOrCtrl && !io.KeyShift && !io.KeyAlt &&
+         (!typing && !gPerfMatrixFocused && !gArrangeFocused && !cmdOrCtrl && !io.KeyShift && !io.KeyAlt &&
           ImGui::IsKeyPressed(ImGuiKey_B, false));
       gRequestBypass = false;
 
@@ -67684,7 +76611,7 @@ int main(int argc, char** argv)
          }
       }
 
-      const bool doCopy = gRequestCopy || (!typing && !gPerfMatrixFocused && cmdOrCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false));
+      const bool doCopy = gRequestCopy || (!typing && !gPerfMatrixFocused && !gArrangeFocused && cmdOrCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false));
       gRequestCopy = false;
       if (doCopy)
       {
@@ -67730,7 +76657,7 @@ int main(int argc, char** argv)
          }
       }
 
-      const bool doPaste = (gRequestPaste || (!typing && !gPerfMatrixFocused && cmdOrCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false))) && !clipboard.empty();
+      const bool doPaste = (gRequestPaste || (!typing && !gPerfMatrixFocused && !gArrangeFocused && cmdOrCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false))) && !clipboard.empty();
       gRequestPaste = false;
       if (doPaste)
       {
@@ -68111,6 +77038,24 @@ int main(int argc, char** argv)
             {
                if (ImGui::MenuItem("Show modulation matrix"))
                   gModMatrixOpen = true;
+            }
+            if (IsNodeVideoCompatible(*gn) && IsNodeAudioCompatible(*gn))
+            {
+               // Picture and sound from one node (Video Source): the user
+               // picks the lane; the audio clip reads its audio output.
+               if (ImGui::BeginMenu("Add to Timeline"))
+               {
+                  if (ImGui::MenuItem("Video"))
+                     AddNodeToArrangeTimeline(gn->index, Arrange::kLaneVideo);
+                  if (ImGui::MenuItem("Audio"))
+                     AddNodeToArrangeTimeline(gn->index, Arrange::kLaneAudio);
+                  ImGui::EndMenu();
+               }
+            }
+            else if (IsNodeVideoCompatible(*gn) || IsNodeAudioCompatible(*gn))
+            {
+               if (ImGui::MenuItem("Add to Timeline"))
+                  AddNodeToArrangeTimeline(gn->index);
             }
             ProjectorWindow* projector = FindProjectorWindow(gn->index);
             if (CanShowInViewportPanel(*gn) && projector != nullptr)
@@ -69474,6 +78419,63 @@ int main(int argc, char** argv)
          }
       }
 
+      // Arrangement clip "Assign Node..." canvas picker - same click-to-assign
+      // UX as gPerfAssigningElemIdx above, but whole-node instead of
+      // per-parameter: hovering a compatible node glows its whole bounding
+      // box (via ed::GetNodePosition/GetNodeSize, both canvas-space here
+      // just like the param picker's mp above) and a click assigns it as the
+      // clip's source.
+      if (gArrangeAssigningClipId != 0 && !Arrange::Find(gArrange, gArrangeAssigningClipId).Valid())
+         gArrangeAssigningClipId = 0;
+      if (gArrangeAssigningClipId != 0)
+      {
+         const Arrange::Loc assignLoc = Arrange::Find(gArrange, gArrangeAssigningClipId);
+         const bool assignIsVideo = gArrange.lanes[assignLoc.lane].type == Arrange::kLaneVideo;
+         const ImVec2 mp = ImGui::GetMousePos();
+
+         GraphNode* hoveredCompatible = nullptr;
+         ImVec2 hoveredP(0, 0), hoveredS(0, 0);
+         for (GraphNode& gn : gNodes)
+         {
+            const bool match = assignIsVideo ? IsNodeVideoCompatible(gn) : IsNodeAudioCompatible(gn);
+            if (!match)
+               continue;
+            const ImVec2 p = ed::GetNodePosition(gn.NodeId());
+            const ImVec2 s = ed::GetNodeSize(gn.NodeId());
+            if (mp.x >= p.x && mp.x <= p.x + s.x && mp.y >= p.y && mp.y <= p.y + s.y)
+            {
+               hoveredCompatible = &gn;
+               hoveredP = p;
+               hoveredS = s;
+               break;
+            }
+         }
+
+         if (hoveredCompatible != nullptr)
+         {
+            ImDrawList* hoverDl = ImGui::GetWindowDrawList();
+            const ImU32 glowCol = IM_COL32(0, 230, 255, 40);
+            const ImU32 ringCol = IM_COL32(0, 230, 255, 200);
+            hoverDl->AddRectFilled(hoveredP, ImVec2(hoveredP.x + hoveredS.x, hoveredP.y + hoveredS.y), glowCol, 6.0f);
+            hoverDl->AddRect(hoveredP, ImVec2(hoveredP.x + hoveredS.x, hoveredP.y + hoveredS.y), ringCol, 6.0f, 0, 2.0f);
+
+            ed::Suspend();
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            ImGui::SetTooltip("Assign clip source -> %s", NodeTitle(*hoveredCompatible).c_str());
+            ed::Resume();
+
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            {
+               // By uid, through the model: one timeline undo entry.
+               ArrangeAssignClipSource(gArrangeAssigningClipId, hoveredCompatible->uid);
+               gArrangeAssigningClipId = 0;
+            }
+         }
+
+         if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+            gArrangeAssigningClipId = 0;
+      }
+
       // [edperf] BuildControl's per-frame hit-test walk is the one part of the
       // editor whose cost scales with patch size; a spindump that lands here
       // is indistinguishable from a freeze, so keep it measurable.
@@ -69630,6 +78632,13 @@ int main(int argc, char** argv)
       {
          ImGui::SameLine(0.0f, 0.0f);
          DrawPerfPanelDocked("##perfpanel_right", ImVec2(gPerfPanelWidth, graphHeight));
+      }
+
+      // Right-docked arrangement timeline
+      if (arrangeRight)
+      {
+         ImGui::SameLine(0.0f, 0.0f);
+         DrawArrangePanelDocked("##arrangepanel_right", ImVec2(gArrangePanelWidth, graphHeight));
       }
 
       // ---- node browser / search panel ----
@@ -69953,6 +78962,8 @@ int main(int argc, char** argv)
          DrawModMatrixDocked("##modmatrix_bottom", ImVec2(0, gModMatrixHeight));
       if (perfBottom)
          DrawPerfPanelDocked("##perfpanel_bottom", ImVec2(0, gPerfPanelHeight));
+      if (arrangeBottom)
+         DrawArrangePanelDocked("##arrangepanel_bottom", ImVec2(0, gArrangePanelHeight));
 
       ImGui::End();
 
@@ -70634,6 +79645,7 @@ int main(int argc, char** argv)
          if (doRecover)
          {
             ApplyPatchData(gPendingRecoveryData);
+            gArrangePatchGeneration++; // a new document, same as File > Open
             gUndoStack.clear();
             gRedoStack.clear();
             gPatchPath.clear();          // it is not the user's file - force Save As
@@ -71299,6 +80311,15 @@ int main(int argc, char** argv)
       for (GraphNode& gn : gNodes)
          gn.node->CookIfNeeded(frameId);
 
+      // Arrangement monitor (overhaul WP4): after the cook, so the clips it
+      // selects and the textures it reads belong to the same frame.
+      CompositeArrangeMonitorIfRequested();
+      ReapArrangeGeomViewports();
+      // Unconditional, panel open or not: the audio thread's peak ring has
+      // to be drained every frame or it fills and starts dropping buckets
+      // the waveform would never get back (WP8).
+      ArrangeSyncClipVisuals();
+
       // The node cook loop above is the longest single stretch of the frame,
       // and it runs after glfwPollEvents() with the run loop otherwise
       // unserviced - see local-prompts/02-plugin-editor-lag.md. Pump it here
@@ -71461,8 +80482,10 @@ int main(int argc, char** argv)
          glfwSetWindowShouldClose(window, GLFW_TRUE);
       }
 
+      DrawArrangeRenderQueueWindow();
       if (gOfflineRender.active)
          DrawOfflineRenderProgressWindow();
+      DrawArrangeWavRenderProgressWindow();
 
       ImGui::Render();
       int fbW, fbH;
@@ -71572,6 +80595,10 @@ int main(int argc, char** argv)
          glfwMakeContextCurrent(window);
 
       ++frameId;
+      // The uid map is rebuilt at most once a frame on first use (WP5b), so a
+      // gNodes mutation that did not report in is stale for one frame at most
+      // - and FindNodeByUid's own storage/size check catches most of those.
+      InvalidateNodeByUid();
 
       // Patch shortcuts. Handled outside the node editor so its own Cmd/Ctrl-key
       // bindings do not swallow them, and gated on no text field having focus

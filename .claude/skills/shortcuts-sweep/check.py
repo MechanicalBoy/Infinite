@@ -24,6 +24,8 @@ KEY_ALIASES = {
     "delete": "Delete", "backspace": "Backspace", "space": "Space",
     "/": "Slash", "escape": "Escape", "enter": "Enter", "tab": "Tab",
     "scroll wheel": None, "drag canvas": None, "shift + drag": None,
+    "left": "LeftArrow", "right": "RightArrow", "up": "UpArrow", "down": "DownArrow",
+    "home": "Home", "end": "End",
 }
 
 def norm_key(tok):
@@ -33,6 +35,11 @@ def norm_key(tok):
         return KEY_ALIASES[t]
     if len(t) == 1 and t.isalpha():
         return t.upper()
+    if len(t) == 1 and t.isdigit():
+        return t                       # ImGuiKey_0 .. ImGuiKey_9
+    m = re.fullmatch(r"keypad\s*(\d)", t)
+    if m:
+        return "Keypad" + m.group(1)   # ImGuiKey_Keypad0 ..
     if len(t) == 1 and t == "/":
         return "Slash"
     return None
@@ -44,6 +51,7 @@ def norm_key(tok):
 LOCAL_KEYS = {
     "Escape": "dismisses a popup/modal/inline edit - not a global binding",
     "Enter":  "commits an inline text edit - not a global binding",
+    "KeypadEnter": "Enter's keypad twin - opens a hovered comment's inline edit, not a global binding",
     "Minus":  "zoom-out within the canvas zoom handler, paired with the scroll gesture",
 }
 
