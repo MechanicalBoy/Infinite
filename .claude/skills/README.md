@@ -55,5 +55,5 @@ descriptions. Broadly:
 - **Process** — `bug-blast-radius`, `invariant-interaction-audit`,
   `codebase-navigation`, `git-branch-workflow`, `prior-art-scout`,
   `infinite-code-review`, `write-fix-brief`, `run-infinite-hygiene`,
-  `ship-infinite`, `release-notes-audit`, `windows-parity`,
+  `ship-infinite`, `release-notes-audit`, `windows-parity`, `linux-parity`,
   `plugin-host-hardening`
