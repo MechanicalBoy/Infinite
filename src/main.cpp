@@ -48,6 +48,21 @@
 #include <io.h>
 #endif
 
+// INFINITE_MIDIPARSETEST's pure-parser hook, so the test can drive
+// MidiLinux.cpp's ALSA sequencer event->table/ring code with synthetic
+// snd_seq_event_t values and no real /dev/snd/seq - see
+// docs/plans/linux/phase-02-audio-midi.md 2.5.2 and
+// docs/plans/linux/validation.md's P0 spike (no kernel sound modules on
+// GitHub Actions/OrbStack, so this is the primary MIDI proof on CI). Linux
+// only, same footing as the existing _WIN32 branches in this file for
+// platform-specific test dispatch - see linux-parity SS0's note that main.cpp
+// currently carries no __linux__ branches, which this is the first of,
+// exactly because there is no portable way to exercise an ALSA-specific
+// parser from a Platform:: call all three platforms implement.
+#if defined(__linux__)
+#include "platform/linux/MidiParseTestHooks.h"
+#endif
+
 // Displayed shortcut labels: the modifier key shown in menus and the
 // shortcuts reference differs by platform (Cmd doesn't exist on Windows),
 // while the underlying handling already accepts Ctrl on both (see cmdOrCtrl).
@@ -54089,6 +54104,175 @@ static bool RunAudioPdcTest()
    return ok;
 }
 
+// ======================================================= INFINITE_MIDIPARSETEST
+// Linux only: feeds synthetic snd_seq_event_t values straight into
+// MidiLinux.cpp's pure event->table/ring translator (no real ALSA sequencer
+// handle, no /dev/snd/seq) - see docs/plans/linux/phase-02-audio-midi.md
+// 2.5.2. This is the primary MIDI proof on CI, since real end-to-end ALSA
+// devices are unreachable on GitHub Actions/OrbStack (validation.md's P0
+// spike). Gated as an early exit before glfwInit(), same as INFINITE_DSPTEST.
+#if defined(__linux__)
+static int RunMidiParseTest()
+{
+   PlatformLinuxTestHooks::MidiParseTestResetState();
+
+   const unsigned int devA = PlatformLinuxTestHooks::MidiParseTestDeviceId("Test Port A");
+   const unsigned int devB = PlatformLinuxTestHooks::MidiParseTestDeviceId("Test Port B");
+
+   bool ok = true;
+   auto check = [&](bool cond, const char* what) {
+      if (!cond)
+      {
+         printf("MIDIPARSETEST FAIL: %s\n", what);
+         ok = false;
+      }
+   };
+
+   // A throwaway note first, so the ring's write position is not literally
+   // zero when we capture noteStreamStart below. MidiReadNotesSince treats
+   // cursor==0 as "fresh consumer, fast-forward to the current write
+   // position, don't replay history" (matching MidiWin.cpp's
+   // ReadNotesSince) - a real 0 is indistinguishable from that sentinel, so
+   // capturing position 0 right after a from-scratch reset would always
+   // read back zero regardless of whether the ring itself worked. Using a
+   // channel/note pair (15/126) not touched anywhere else in this test
+   // keeps it from perturbing the checks below.
+   {
+      snd_seq_event_t warm{};
+      warm.type = SND_SEQ_EVENT_NOTEON;
+      warm.data.note.channel = 15;
+      warm.data.note.note = 126;
+      warm.data.note.velocity = 1;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, warm);
+      warm.type = SND_SEQ_EVENT_NOTEOFF;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, warm);
+   }
+   const unsigned long long noteStreamStart = Platform::MidiNoteStreamPosition();
+
+   // Note On, device A, channel 0, note 60, velocity 100.
+   {
+      snd_seq_event_t ev{};
+      ev.type = SND_SEQ_EVENT_NOTEON;
+      ev.data.note.channel = 0;
+      ev.data.note.note = 60;
+      ev.data.note.velocity = 100;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, ev);
+   }
+   float v = 0.0f;
+   check(Platform::MidiRead(devA, 0, 60, true, v) && std::fabs(v - 100.0f / 127.0f) < 0.001f,
+        "note on value");
+
+   Platform::MidiLastNote last{};
+   check(Platform::MidiChannelLastNote(devA, 0, last) && last.note == 60 && last.hitSeq == 1,
+        "channel last note");
+   check(Platform::MidiNoteHitCount(devA, 0, 60) == 1, "note hit count");
+
+   // Note Off, device A - same note, must zero the held-note table.
+   {
+      snd_seq_event_t ev{};
+      ev.type = SND_SEQ_EVENT_NOTEOFF;
+      ev.data.note.channel = 0;
+      ev.data.note.note = 60;
+      ev.data.note.velocity = 0;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, ev);
+   }
+   check(Platform::MidiRead(devA, 0, 60, true, v) && v == 0.0f, "note off zeroes value");
+
+   // Velocity-0 Note On == Note Off (MIDI convention), on a second,
+   // interleaved source port (device B) - proves per-device scoping and the
+   // velocity-0 special case at once.
+   {
+      snd_seq_event_t on{};
+      on.type = SND_SEQ_EVENT_NOTEON;
+      on.data.note.channel = 1;
+      on.data.note.note = 40;
+      on.data.note.velocity = 80;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devB, on);
+
+      snd_seq_event_t off{};
+      off.type = SND_SEQ_EVENT_NOTEON;
+      off.data.note.channel = 1;
+      off.data.note.note = 40;
+      off.data.note.velocity = 0; // velocity-0 note-on == note-off
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devB, off);
+   }
+   check(Platform::MidiRead(devB, 1, 40, true, v) && v == 0.0f,
+        "velocity-0 note-on treated as note-off");
+   // Device A's channel-0 note-60 state must be untouched by device B traffic.
+   check(Platform::MidiRead(devA, 0, 60, true, v) && v == 0.0f, "device scoping unaffected");
+
+   // Control Change, device A.
+   {
+      snd_seq_event_t ev{};
+      ev.type = SND_SEQ_EVENT_CONTROLLER;
+      ev.data.control.channel = 2;
+      ev.data.control.param = 74;
+      ev.data.control.value = 64;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, ev);
+   }
+   check(Platform::MidiRead(devA, 2, 74, false, v) && std::fabs(v - 64.0f / 127.0f) < 0.001f,
+        "CC value");
+
+   Platform::MidiCCValue touched{};
+   check(Platform::MidiPollLastTouched(touched) && touched.device == devA && touched.controller == 74 &&
+            !touched.isNote,
+        "last touched CC");
+
+   // Pitch bend: not part of the CC/note table contract on any platform
+   // (Platform.h has no accessor for it) - must be accepted without
+   // corrupting other table state, not necessarily produce a readable value.
+   {
+      snd_seq_event_t ev{};
+      ev.type = SND_SEQ_EVENT_PITCHBEND;
+      ev.data.control.channel = 0;
+      ev.data.control.value = 0;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, ev);
+   }
+   check(Platform::MidiRead(devA, 2, 74, false, v) && std::fabs(v - 64.0f / 127.0f) < 0.001f,
+        "CC table unaffected by pitch bend");
+
+   // MIDI clock: Start, then a steady run of pulses at ~120 BPM (24 ppqn ->
+   // ~20.8ms/pulse), must yield MidiClockIsPresent()==true and a plausible
+   // BPM; Stop must reset it. distinct event types per
+   // phase-02-audio-midi.md 2.4, not a raw status byte needing the
+   // >=0xF0-before-masking care MidiWin.cpp SS3.2 required.
+   {
+      snd_seq_event_t start{};
+      start.type = SND_SEQ_EVENT_START;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, start);
+
+      for (int i = 0; i < 30; i++)
+      {
+         snd_seq_event_t clockEv{};
+         clockEv.type = SND_SEQ_EVENT_CLOCK;
+         PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, clockEv);
+         std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      }
+   }
+   check(Platform::MidiClockIsPresent(), "clock present after pulses");
+   const float bpm = Platform::MidiClockBpm();
+   check(bpm > 80.0f && bpm < 160.0f, "clock bpm in plausible range");
+
+   {
+      snd_seq_event_t stopEv{};
+      stopEv.type = SND_SEQ_EVENT_STOP;
+      PlatformLinuxTestHooks::MidiParseTestFeedEvent(devA, stopEv);
+   }
+   check(Platform::MidiClockBpm() == 0.0f, "clock bpm reset after stop");
+
+   // Live note stream: on, off, velocity-0-as-off above should all have
+   // landed on the ring, readable from the position captured before they
+   // were published.
+   unsigned long long cursor = noteStreamStart;
+   Platform::MidiNoteMessage msgs[16];
+   const int n = Platform::MidiReadNotesSince(cursor, msgs, 16);
+   check(n >= 3, "note stream ring captured on/off/off events");
+
+   printf("%s\n", ok ? "MIDIPARSETEST OK" : "MIDIPARSETEST FAIL");
+   return ok ? 0 : 1;
+}
+#endif
+
 // ===================================================== INFINITE_AUDIOPARAMSWEEPTEST
 //
 // Generic sweep, not a fixture per node (docs/plans/audio/README.md §4/§7):
@@ -56727,6 +56911,11 @@ int main(int argc, char** argv)
 
    if (getenv("INFINITE_AUDIOPCMTEST") != nullptr)
       return Platform::AudioPcmConversionSelfTest() ? 0 : 1;
+
+#if defined(__linux__)
+   if (getenv("INFINITE_MIDIPARSETEST") != nullptr)
+      return RunMidiParseTest();
+#endif
 
    if (getenv("INFINITE_SYPHONPATCHTEST") != nullptr)
       return RunSyphonPatchTest();
