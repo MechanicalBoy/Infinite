@@ -3,6 +3,8 @@
 #include <atomic>
 #include <cstddef>
 
+#include "CompensationDelay.h"
+
 // Lock-free single-producer (audio thread) / single-consumer (main thread)
 // ring carrying interleaved float samples for one Audio Out's WAV capture -
 // same SPSC shape as MeterRing, but sized for real audio instead of a
@@ -31,6 +33,16 @@ public:
    // dropped; read and reset by the consumer that reports it, so a stall
    // shows up in the UI instead of silently producing a glitched file.
    std::atomic<uint64_t> overflowCount { 0 };
+
+   // Main thread only (RebuildAudioTopology, main.cpp). Terminal-level PDC
+   // for whichever canvas Audio Out owns this ring - one level up from
+   // AudioNode::inputCompensation, same reason it lives here rather than as
+   // a value on the transient AudioTerminal RebuildAudioTopology rebuilds
+   // every generation: this ring is owned by the AudioOutputNode/OutputNode
+   // itself and outlives any one topology generation, so Prepare()'s
+   // idempotent no-op-when-unchanged check actually has a previous instance
+   // to compare against. See CompensationDelay::Prepare's comment.
+   CompensationDelay compensation;
 
 private:
    float mEntries[kCapacity] {};

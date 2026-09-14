@@ -57,12 +57,15 @@ line *content* so it survives edits elsewhere in the file. Adding to it is a
 deliberate act; do it with the reason in the comment, the way the existing
 entries do.
 
-## Known finding as of this skill being written
+## Past findings
 
-**Shift+P opens the docked performance matrix (`main.cpp` ~44946) and is
-absent from the shortcuts window**, while its sibling Shift+M (modulation
-matrix) is listed. Either add the row or remove the binding - the check stays
-red until one of those happens, which is the intended behaviour of a gate.
+- **Shift+P** (docked performance matrix) was bound but missing from the
+  shortcuts window while its sibling Shift+M was listed. Row added in the
+  arrangement WP6 commit; the check went green.
+- **KeypadEnter** (a hovered comment's inline edit, Enter's keypad twin) is
+  dialog-local and now sits in `LOCAL_KEYS`.
+- Arrow keys, Home and End map through `KEY_ALIASES` ("Left", "Right", "Up",
+  "Down", "Home", "End"), for the Arrangement Timeline's playhead keys.
 
 ## What this does not prove
 

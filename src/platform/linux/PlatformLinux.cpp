@@ -107,10 +107,10 @@ namespace Platform
       // No App Nap mechanism on Linux that affects GLFW.
    }
 
-   float PollTrackpadMagnificationDelta()
+   double PollTrackpadMagnificationDelta()
    {
       // GLFW does not expose trackpad magnification gestures on X11/Wayland.
-      return 0.0f;
+      return 0.0;
    }
 
    void AppendLogLine(const std::string& line)
@@ -293,6 +293,89 @@ namespace Platform
       char* argv[] = {
          const_cast<char*>("xdg-open"),
          const_cast<char*>(url.c_str()),
+         nullptr
+      };
+      if (posix_spawnp(&pid, "xdg-open", nullptr, nullptr, argv, environ) == 0)
+      {
+         int status = 0;
+         waitpid(pid, &status, WNOHANG);
+      }
+   }
+
+   std::string UriEncodePath(const std::string& path)
+   {
+      static const char* hex = "0123456789ABCDEF";
+      std::string out;
+      out.reserve(path.size());
+      for (unsigned char c : path)
+      {
+         if (isalnum(c) || c == '/' || c == '-' || c == '_' || c == '.' || c == '~')
+            out += (char)c;
+         else
+         {
+            out += '%';
+            out += hex[(c >> 4) & 0xF];
+            out += hex[c & 0xF];
+         }
+      }
+      return out;
+   }
+
+   void RevealInFileManager(const std::string& path)
+   {
+      if (path.empty())
+         return;
+      struct stat st;
+      if (stat(path.c_str(), &st) != 0)
+         return;
+
+      const std::string uri = "file://" + UriEncodePath(path);
+
+      // org.freedesktop.FileManager1.ShowItems is the D-Bus method GNOME
+      // Files, Nautilus, Dolphin and most other Linux file managers
+      // implement to select a file in its folder - the equivalent of
+      // macOS's activateFileViewerSelectingURLs and Windows's
+      // "explorer /select,". Spawn gdbus (ships with GLib, present on any
+      // GNOME/KDE desktop) rather than linking libdbus directly.
+      bool revealed = false;
+      if (CheckExecutableOnPath("gdbus"))
+      {
+         const std::string uriArray = "['" + uri + "']";
+         pid_t pid;
+         char* argv[] = {
+            const_cast<char*>("gdbus"),
+            const_cast<char*>("call"),
+            const_cast<char*>("--session"),
+            const_cast<char*>("--dest"),
+            const_cast<char*>("org.freedesktop.FileManager1"),
+            const_cast<char*>("--object-path"),
+            const_cast<char*>("/org/freedesktop/FileManager1"),
+            const_cast<char*>("--method"),
+            const_cast<char*>("org.freedesktop.FileManager1.ShowItems"),
+            const_cast<char*>(uriArray.c_str()),
+            const_cast<char*>(""),
+            nullptr
+         };
+         if (posix_spawnp(&pid, "gdbus", nullptr, nullptr, argv, environ) == 0)
+         {
+            int status = 0;
+            revealed = (waitpid(pid, &status, 0) == pid) && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+         }
+      }
+
+      if (revealed)
+         return;
+
+      // Fall back to opening the containing folder with xdg-open, the same
+      // helper OpenExternalUrl uses - no selection, but the file is at
+      // least visible rather than never opened at all. Never hand the file
+      // itself to xdg-open here: a reveal must not open or execute it.
+      const size_t slash = path.find_last_of('/');
+      const std::string parentDir = (slash == std::string::npos) ? "." : path.substr(0, slash);
+      pid_t pid;
+      char* argv[] = {
+         const_cast<char*>("xdg-open"),
+         const_cast<char*>(parentDir.c_str()),
          nullptr
       };
       if (posix_spawnp(&pid, "xdg-open", nullptr, nullptr, argv, environ) == 0)

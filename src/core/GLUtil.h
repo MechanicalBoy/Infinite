@@ -25,6 +25,14 @@ namespace GLUtil
    bool EnsureFbo(Fbo& fbo, int w, int h, unsigned int internalFormat = GL_RGBA8);
    void DestroyFbo(Fbo& fbo);
 
+   // Process-wide count of render-target (re)allocations: every time
+   // EnsureFbo actually creates a texture+FBO, plus any other owner of a
+   // render target (NodeViewport) that reports its own through
+   // NoteFboAllocation(). Diagnostic only - fixtures difference it across a
+   // run of frames to prove a steady-state path allocates nothing.
+   void NoteFboAllocation();
+   unsigned long long FboAllocationCount();
+
    inline unsigned int FboTexture(const Fbo& fbo) { return fbo.tex; }
 
    // Compiles fragSrc against a shared fullscreen-quad vertex shader (attributes
