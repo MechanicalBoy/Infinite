@@ -570,7 +570,11 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Threads REQUIRED)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
+    pkg_check_modules(FREETYPE REQUIRED freetype2)
     target_sources(Infinite PRIVATE ${LINUX_SOURCES})
+    target_include_directories(Infinite PRIVATE ${FONTCONFIG_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
 endif()
 
 target_include_directories(Infinite PRIVATE
@@ -754,6 +758,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         ${CMAKE_DL_LIBS}
         m
         FLAC::FLAC
+        ${FONTCONFIG_LIBRARIES}
+        ${FREETYPE_LIBRARIES}
     )
     add_custom_command(TARGET Infinite POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
