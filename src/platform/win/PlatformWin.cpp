@@ -25,6 +25,8 @@
 #include <onnxruntime_cxx_api.h>
 #include <dml_provider_factory.h>
 
+#include "../common/SubjectMaskOnnx.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -609,238 +611,43 @@ namespace Platform
    // this feature is worth - see RemoveBgNode's mode names for how this is
    // surfaced to the user.
 
-   // Holds the one-time-constructed session and everything needed to run it.
-   // Built once (see EnsureOrtSession below) and reused for every call -
-   // constructing a session (loading + optimizing the model graph) costs far
-   // more than a single inference and there is no reason to repeat it.
-   struct OrtMattingSession
+   void DirectMLProviderHook(void* sessionOptionsPtr, bool& outUsedGpuEp)
    {
-      Ort::Env env{ ORT_LOGGING_LEVEL_WARNING, "Infinite" };
-      std::unique_ptr<Ort::Session> session;
-      std::string inputName;
-      std::string outputName;
-      int inputW = 320;
-      int inputH = 320;
-      bool usedDml = false; // true if the DirectML EP registered (GPU path)
-      std::string error; // non-empty if construction failed; session stays null
-   };
-
-   // Which compute path the matting session resolved to, for MattingBackend()'s
-   // UI readout. 0 = not built yet, 1 = DirectML GPU, 2 = CPU fallback,
-   // 3 = unavailable (model failed to load). Set once inside EnsureOrtSession.
-   std::atomic<int> gMattingBackendKind{ 0 };
-
-   OrtMattingSession& EnsureOrtSession()
-   {
-      static OrtMattingSession* holder = nullptr;
-      static std::once_flag once;
-      std::call_once(once, [] {
-         holder = new OrtMattingSession();
-
-         const std::string exe = ExecutablePath();
-         const size_t slash = exe.find_last_of("/\\");
-         if (slash == std::string::npos)
-         {
-            holder->error = "could not locate the app's own executable path";
-            return;
-         }
-         const std::wstring modelPath =
-            WinCommon::Utf8ToWide(exe.substr(0, slash + 1) + "assets\\models\\u2netp.onnx");
-
-         try
-         {
-            Ort::SessionOptions options;
-            options.SetIntraOpNumThreads(1);
-            options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-
-            // DirectML needs sequential execution; a failed registration
-            // (missing/old GPU driver, no DX12) is not fatal - the session
-            // still runs on ORT's built-in CPU EP, just slower.
-            try
-            {
-               options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
-               options.DisableMemPattern();
-               Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(options, 0));
-               holder->usedDml = true;
-            }
-            catch (const Ort::Exception&)
-            {
-               // Fall through and run on CPU.
-               holder->usedDml = false;
-            }
-
-            holder->session = std::make_unique<Ort::Session>(holder->env, modelPath.c_str(), options);
-
-            Ort::AllocatorWithDefaultOptions allocator;
-            Ort::AllocatedStringPtr inName = holder->session->GetInputNameAllocated(0, allocator);
-            Ort::AllocatedStringPtr outName = holder->session->GetOutputNameAllocated(0, allocator);
-            holder->inputName = inName.get();
-            holder->outputName = outName.get();
-
-            const Ort::TypeInfo inputInfo = holder->session->GetInputTypeInfo(0);
-            const std::vector<int64_t> shape = inputInfo.GetTensorTypeAndShapeInfo().GetShape();
-            // NCHW; only trust H/W from the model if they're fixed (not -1).
-            if (shape.size() == 4 && shape[2] > 0 && shape[3] > 0)
-            {
-               holder->inputH = (int)shape[2];
-               holder->inputW = (int)shape[3];
-            }
-         }
-         catch (const Ort::Exception& e)
-         {
-            holder->session.reset();
-            holder->error = std::string("could not load background removal model: ") + e.what();
-         }
-
-         gMattingBackendKind.store(
-            holder->session ? (holder->usedDml ? 1 : 2) : 3, std::memory_order_release);
-      });
-      return *holder;
+      auto* options = static_cast<Ort::SessionOptions*>(sessionOptionsPtr);
+      options->SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+      options->DisableMemPattern();
+      Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(*options, 0));
+      outUsedGpuEp = true;
    }
 
-   // Bilinear-resamples RGBA (dropping alpha) into a planar CHW float tensor,
-   // normalized the way U^2-Net's own preprocessing does: scaled to [0,1]
-   // then per-channel mean/std (ImageNet statistics, as used by the reference
-   // training/inference code this model was exported from).
-   void ResizeAndNormalize(const unsigned char* rgba, int srcW, int srcH, bool srcBottomUp,
-                           float* chw, int dstW, int dstH)
+   std::string MattingModelPath()
    {
-      static const float kMean[3] = { 0.485f, 0.456f, 0.406f };
-      static const float kStd[3] = { 0.229f, 0.224f, 0.225f };
-      const size_t srcStride = (size_t)srcW * 4;
-      const size_t planeSize = (size_t)dstW * dstH;
-
-      for (int y = 0; y < dstH; y++)
-      {
-         const float sy = (dstH > 1) ? ((float)y + 0.5f) * srcH / dstH - 0.5f : 0.0f;
-         const int sy0 = std::clamp((int)std::floor(sy), 0, srcH - 1);
-         const int sy1 = std::clamp(sy0 + 1, 0, srcH - 1);
-         const float fy = std::clamp(sy - sy0, 0.0f, 1.0f);
-         const int ry0 = srcBottomUp ? (srcH - 1 - sy0) : sy0;
-         const int ry1 = srcBottomUp ? (srcH - 1 - sy1) : sy1;
-
-         for (int x = 0; x < dstW; x++)
-         {
-            const float sx = (dstW > 1) ? ((float)x + 0.5f) * srcW / dstW - 0.5f : 0.0f;
-            const int sx0 = std::clamp((int)std::floor(sx), 0, srcW - 1);
-            const int sx1 = std::clamp(sx0 + 1, 0, srcW - 1);
-            const float fx = std::clamp(sx - sx0, 0.0f, 1.0f);
-
-            for (int c = 0; c < 3; c++)
-            {
-               const float p00 = rgba[ry0 * srcStride + sx0 * 4 + c];
-               const float p10 = rgba[ry0 * srcStride + sx1 * 4 + c];
-               const float p01 = rgba[ry1 * srcStride + sx0 * 4 + c];
-               const float p11 = rgba[ry1 * srcStride + sx1 * 4 + c];
-               const float top = p00 + (p10 - p00) * fx;
-               const float bot = p01 + (p11 - p01) * fx;
-               const float value = (top + (bot - top) * fy) / 255.0f;
-               chw[c * planeSize + (size_t)y * dstW + x] = (value - kMean[c]) / kStd[c];
-            }
-         }
-      }
+      const std::string exe = ExecutablePath();
+      const size_t slash = exe.find_last_of("/\\");
+      if (slash == std::string::npos)
+         return {};
+      return exe.substr(0, slash + 1) + "assets\\models\\u2netp.onnx";
    }
 
    bool SubjectMask(const std::vector<unsigned char>& rgbaPixels, int width, int height,
-                    MattingMode /*mode*/, std::vector<unsigned char>& outMask,
+                    MattingMode mode, std::vector<unsigned char>& outMask,
                     std::string& outError)
    {
-      outMask.clear();
-
-      if (width <= 0 || height <= 0 || rgbaPixels.size() < (size_t)width * height * 4)
-      {
-         outError = "bad image";
-         return false;
-      }
-
-      OrtMattingSession& ort = EnsureOrtSession();
-      if (!ort.session)
-      {
-         outError = ort.error.empty() ? "background removal model unavailable" : ort.error;
-         return false;
-      }
-
-      try
-      {
-         std::vector<float> input((size_t)3 * ort.inputW * ort.inputH);
-         // rgbaPixels arrives bottom-up (GL order), same as the macOS path.
-         ResizeAndNormalize(rgbaPixels.data(), width, height, /*srcBottomUp=*/true,
-                            input.data(), ort.inputW, ort.inputH);
-
-         Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-         const int64_t inputShape[4] = { 1, 3, ort.inputH, ort.inputW };
-         Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
-            memInfo, input.data(), input.size(), inputShape, 4);
-
-         const char* inputNames[] = { ort.inputName.c_str() };
-         const char* outputNames[] = { ort.outputName.c_str() };
-         auto outputs = ort.session->Run(Ort::RunOptions{ nullptr }, inputNames, &inputTensor, 1,
-                                         outputNames, 1);
-
-         const float* pred = outputs[0].GetTensorData<float>();
-         const size_t predCount = outputs[0].GetTensorTypeAndShapeInfo().GetElementCount();
-         const size_t maskPlane = (size_t)ort.inputW * ort.inputH;
-         if (predCount < maskPlane)
-         {
-            outError = "background removal model returned an unexpected output shape";
-            return false;
-         }
-
-         // Reference U^2-Net postprocessing: min-max normalize the saliency
-         // map to [0,1] before turning it into a mask image.
-         float lo = pred[0], hi = pred[0];
-         for (size_t i = 0; i < maskPlane; i++)
-         {
-            lo = std::min(lo, pred[i]);
-            hi = std::max(hi, pred[i]);
-         }
-         const float range = (hi - lo) > 1e-6f ? (hi - lo) : 1.0f;
-
-         std::vector<unsigned char> modelMask(maskPlane);
-         for (size_t i = 0; i < maskPlane; i++)
-         {
-            const float v = (pred[i] - lo) / range;
-            modelMask[i] = (unsigned char)std::clamp(v * 255.0f, 0.0f, 255.0f);
-         }
-
-         // Rescale (nearest) to the requested size and flip to GL order, same
-         // as the macOS/Vision path.
-         outMask.assign((size_t)width * height, 0);
-         for (int y = 0; y < height; y++)
-         {
-            const int sy = std::min(ort.inputH - 1, y * ort.inputH / height);
-            unsigned char* dstRow = &outMask[(size_t)(height - 1 - y) * width];
-            const unsigned char* srcRow = &modelMask[(size_t)sy * ort.inputW];
-            for (int x = 0; x < width; x++)
-               dstRow[x] = srcRow[std::min(ort.inputW - 1, x * ort.inputW / width)];
-         }
-
-         outError.clear();
-         return true;
-      }
-      catch (const Ort::Exception& e)
-      {
-         outMask.clear();
-         outError = std::string("background removal failed: ") + e.what();
-         return false;
-      }
+      static std::once_flag hookOnce;
+      std::call_once(hookOnce, [] {
+         OrtMatting::SetProviderHook(DirectMLProviderHook);
+      });
+      return OrtMatting::SubjectMask(MattingModelPath(), rgbaPixels, width, height, mode, outMask, outError);
    }
 
    std::string MattingBackend()
    {
-      switch (gMattingBackendKind.load(std::memory_order_acquire))
-      {
-         case 1: return "DirectML GPU (DX12)";
-         case 2: return "CPU (DirectML unavailable)";
-         case 3: return "unavailable";
-         default: return "not yet determined";
-      }
+      return OrtMatting::MattingBackend();
    }
 
    const std::vector<std::string>& MattingModeNames()
    {
-      static const std::vector<std::string> kNames = { "Salient subject (GPU)" };
-      return kNames;
+      return OrtMatting::MattingModeNames();
    }
 
    // ---- audio synthesis spike (throwaway feasibility probe) ---------------

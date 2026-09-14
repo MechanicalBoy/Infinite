@@ -132,34 +132,54 @@ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(ONNXRUNTIME_DML_VERSION "1.20.1")
     set(DIRECTML_VERSION "1.15.4")
 
-    # Matches the -A argument package.ps1/build.yml pass to cmake's Visual
-    # Studio generator (the only generator this Windows port supports).
-    set(INFINITE_WIN_ARCH "x64")
-    if(CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
-        set(INFINITE_WIN_ARCH "arm64")
+    if(WIN32)
+        # Matches the -A argument package.ps1/build.yml pass to cmake's Visual
+        # Studio generator (the only generator this Windows port supports).
+        set(INFINITE_WIN_ARCH "x64")
+        if(CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
+            set(INFINITE_WIN_ARCH "arm64")
+        endif()
+
+        FetchContent_Declare(
+            onnxruntime_dml
+            URL "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/${ONNXRUNTIME_DML_VERSION}"
+            URL_HASH SHA256=6763468507b7cfc777b1334b3e174c11a540ddacb7bd4354bc2e0ec89e56eec2
+            DOWNLOAD_NAME "onnxruntime-directml-${ONNXRUNTIME_DML_VERSION}.zip"
+        )
+        FetchContent_Declare(
+            directml_redist
+            URL "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/${DIRECTML_VERSION}"
+            URL_HASH SHA256=4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9
+            DOWNLOAD_NAME "directml-${DIRECTML_VERSION}.zip"
+        )
+        FetchContent_MakeAvailable(onnxruntime_dml directml_redist)
+
+        # Package layout, from inspecting the .nupkg contents directly:
+        #   onnxruntime_dml: build/native/include/*.h, runtimes/win-<arch>/native/onnxruntime.{dll,lib}
+        #   directml_redist: bin/<arch>-win/DirectML.dll  (note the reversed arch/win order)
+        set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_dml_SOURCE_DIR}/build/native/include")
+        set(ONNXRUNTIME_LIB "${onnxruntime_dml_SOURCE_DIR}/runtimes/win-${INFINITE_WIN_ARCH}/native/onnxruntime.lib")
+        set(ONNXRUNTIME_DLL "${onnxruntime_dml_SOURCE_DIR}/runtimes/win-${INFINITE_WIN_ARCH}/native/onnxruntime.dll")
+        set(DIRECTML_DLL "${directml_redist_SOURCE_DIR}/bin/${INFINITE_WIN_ARCH}-win/DirectML.dll")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(ONNX_LINUX_ARCH "x64")
+        set(ONNX_LINUX_SHA256 "67db4dc1561f1e3fd42e619575c82c601ef89849afc7ea85a003abbac1a1a105")
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+            set(ONNX_LINUX_ARCH "aarch64")
+            set(ONNX_LINUX_SHA256 "ae4fedbdc8c18d688c01306b4b50c63de3445cdf2dbd720e01a2fa3810b8106a")
+        endif()
+
+        FetchContent_Declare(
+            onnxruntime_linux
+            URL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_DML_VERSION}/onnxruntime-linux-${ONNX_LINUX_ARCH}-${ONNXRUNTIME_DML_VERSION}.tgz"
+            URL_HASH SHA256=${ONNX_LINUX_SHA256}
+        )
+        FetchContent_MakeAvailable(onnxruntime_linux)
+
+        set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_linux_SOURCE_DIR}/include")
+        set(ONNXRUNTIME_LIB "${onnxruntime_linux_SOURCE_DIR}/lib/libonnxruntime.so")
+        file(GLOB ONNXRUNTIME_SO_FILES "${onnxruntime_linux_SOURCE_DIR}/lib/libonnxruntime*.so*")
     endif()
-
-    FetchContent_Declare(
-        onnxruntime_dml
-        URL "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/${ONNXRUNTIME_DML_VERSION}"
-        URL_HASH SHA256=6763468507b7cfc777b1334b3e174c11a540ddacb7bd4354bc2e0ec89e56eec2
-        DOWNLOAD_NAME "onnxruntime-directml-${ONNXRUNTIME_DML_VERSION}.zip"
-    )
-    FetchContent_Declare(
-        directml_redist
-        URL "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/${DIRECTML_VERSION}"
-        URL_HASH SHA256=4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9
-        DOWNLOAD_NAME "directml-${DIRECTML_VERSION}.zip"
-    )
-    FetchContent_MakeAvailable(onnxruntime_dml directml_redist)
-
-    # Package layout, from inspecting the .nupkg contents directly:
-    #   onnxruntime_dml: build/native/include/*.h, runtimes/win-<arch>/native/onnxruntime.{dll,lib}
-    #   directml_redist: bin/<arch>-win/DirectML.dll  (note the reversed arch/win order)
-    set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_dml_SOURCE_DIR}/build/native/include")
-    set(ONNXRUNTIME_LIB "${onnxruntime_dml_SOURCE_DIR}/runtimes/win-${INFINITE_WIN_ARCH}/native/onnxruntime.lib")
-    set(ONNXRUNTIME_DLL "${onnxruntime_dml_SOURCE_DIR}/runtimes/win-${INFINITE_WIN_ARCH}/native/onnxruntime.dll")
-    set(DIRECTML_DLL "${directml_redist_SOURCE_DIR}/bin/${INFINITE_WIN_ARCH}-win/DirectML.dll")
 endif()
 
 # VST3 plugin hosting backend. On by default: the Steinberg VST3 SDK is
@@ -465,6 +485,7 @@ set(WIN32_SOURCES
     src/platform/win/MidiWin.cpp
     src/platform/win/MediaWin.cpp
     src/platform/common/MediaDecodePortable.cpp
+    src/platform/common/SubjectMaskOnnx.cpp
     src/platform/win/PluginHostWin.cpp
     src/audio/AudioFileWriter.cpp
     # zlib backend for tinyexr's EXR decode (see MediaDecodePortable.cpp).
@@ -494,6 +515,7 @@ set(LINUX_SOURCES
     src/platform/linux/PluginHostLinux.cpp
     src/platform/linux/SyphonLinux.cpp
     src/platform/common/MediaDecodePortable.cpp
+    src/platform/common/SubjectMaskOnnx.cpp
     src/audio/AudioFileWriter.cpp
     external/tinyfiledialogs/tinyfiledialogs.c
     external/miniz.c
@@ -753,6 +775,7 @@ elseif(APPLE)
         ${SYPHON_DIR}/src
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_include_directories(Infinite PRIVATE "${ONNXRUNTIME_INCLUDE_DIR}")
     target_link_libraries(Infinite PRIVATE
         Threads::Threads
         ${CMAKE_DL_LIBS}
@@ -760,6 +783,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         FLAC::FLAC
         ${FONTCONFIG_LIBRARIES}
         ${FREETYPE_LIBRARIES}
+        "${ONNXRUNTIME_LIB}"
+    )
+    set_target_properties(Infinite PROPERTIES
+        BUILD_RPATH_USE_ORIGIN ON
+        INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib"
     )
     add_custom_command(TARGET Infinite POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -774,7 +802,15 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         COMMAND ${CMAKE_COMMAND} -E copy
                 "${CMAKE_CURRENT_SOURCE_DIR}/external/icons/Lucide/lucide.ttf"
                 "$<TARGET_FILE_DIR:Infinite>/Resources/icons/"
-        COMMENT "Copying bundled fonts next to Infinite")
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${ONNXRUNTIME_SO_FILES}
+                "$<TARGET_FILE_DIR:Infinite>/"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:Infinite>/assets/models"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/u2netp.onnx"
+                "$<TARGET_FILE_DIR:Infinite>/assets/models/u2netp.onnx"
+        COMMENT "Copying bundled fonts, ONNX Runtime libraries and model next to Infinite")
 endif()
 
 # imgui-node-editor 0.9.1 ships its own GetKeyIndex() shim, which collides with

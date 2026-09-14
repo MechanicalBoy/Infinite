@@ -1,5 +1,6 @@
 #include "platform/Platform.h"
 #include "platform/AppPaths.h"
+#include "platform/common/SubjectMaskOnnx.h"
 #include "tinyfiledialogs.h"
 
 #include <cstdio>
@@ -343,22 +344,29 @@ namespace Platform
    {
    }
 
-   bool SubjectMask(const std::vector<unsigned char>& /*inputRgba*/, int /*width*/, int /*height*/,
-                    MattingMode /*mode*/, std::vector<unsigned char>& /*outAlpha*/,
+   std::string MattingModelPath()
+   {
+      std::string exe = ExecutablePath();
+      size_t slash = exe.find_last_of('/');
+      if (slash == std::string::npos)
+         return {};
+      return exe.substr(0, slash + 1) + "assets/models/u2netp.onnx";
+   }
+
+   bool SubjectMask(const std::vector<unsigned char>& inputRgba, int width, int height,
+                    MattingMode mode, std::vector<unsigned char>& outAlpha,
                     std::string& outError)
    {
-      outError = "not yet implemented on Linux (P1)";
-      return false;
+      return OrtMatting::SubjectMask(MattingModelPath(), inputRgba, width, height, mode, outAlpha, outError);
    }
 
    std::string MattingBackend()
    {
-      return "None (Linux P1)";
+      return OrtMatting::MattingBackend();
    }
 
    const std::vector<std::string>& MattingModeNames()
    {
-      static const std::vector<std::string> kNames = { "Default" };
-      return kNames;
+      return OrtMatting::MattingModeNames();
    }
 }
