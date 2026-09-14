@@ -1,5 +1,6 @@
 #include "SysInfo.h"
 #include "core/gl3.h"
+#include "platform/Platform.h"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -8,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #if defined(_WIN32)
    #include <windows.h>
@@ -65,6 +67,30 @@ namespace SysInfo
 #if defined(__linux__)
       std::printf("Dialog helper: %s\n", Platform::HasGuiDialogHelper() ? "yes" : "no (zenity/kdialog missing)");
 #endif
+
+      // Audio backend/device and MIDI port enumeration - portable, since
+      // AudioListDevices/MidiStart/MidiDeviceSummary are already implemented
+      // on all three platforms (docs/plans/linux/phase-02-audio-midi.md
+      // 2.5.3). This is diagnostics only: MidiStart's device list here comes
+      // from whatever was already running, or a short-lived probe start/stop
+      // if nothing was, so INFINITE_SYSINFO stays a read-only snapshot.
+      const std::vector<Platform::AudioDeviceInfo> audioDevices = Platform::AudioListDevices();
+      std::printf("Audio devices: %d\n", (int)audioDevices.size());
+      for (const auto& dev : audioDevices)
+      {
+         std::printf("  [%u] %s%s%s (in=%d out=%d)\n", dev.deviceId, dev.name.c_str(),
+                     dev.isInput ? " [input]" : "", dev.isOutput ? " [output]" : "",
+                     dev.inputChannels, dev.outputChannels);
+      }
+
+      const bool midiWasRunning = Platform::MidiIsRunning();
+      std::string midiError;
+      if (!midiWasRunning)
+         Platform::MidiStart(midiError);
+      std::printf("MIDI ports: %s\n", Platform::MidiDeviceSummary().c_str());
+      if (!midiWasRunning)
+         Platform::MidiStop();
+
       std::printf("======================================================\n");
       std::fflush(stdout);
       std::exit(0);
