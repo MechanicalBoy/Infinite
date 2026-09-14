@@ -345,6 +345,14 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
       for (const ClipRecord& c : s.clips)
          if (c.blendMode > 0)
             file << "clipblend " << i << " " << c.id << " " << c.blendMode << "\n";
+      for (const ClipRecord& c : s.clips)
+         if (c.pan != 0.0f || c.pitch != 0.0f || !c.syncToTempo)
+            file << "clipaudio " << i << " " << c.id << " " << FloatToString(c.pan) << " "
+                 << FloatToString(c.pitch) << " " << (c.syncToTempo ? 1 : 0) << "\n";
+      for (const ClipRecord& c : s.clips)
+         if (c.colorBrightness != 0.0f || c.colorContrast != 0.0f || c.colorSaturation != 1.0f)
+            file << "clipgrade " << i << " " << c.id << " " << FloatToString(c.colorBrightness) << " "
+                 << FloatToString(c.colorContrast) << " " << FloatToString(c.colorSaturation) << "\n";
    }
    for (const MarkerRecord& mk : data.markers)
       file << "marker " << mk.id << " " << mk.posTick << " " << mk.color << " " << EscapeLine(mk.name) << "\n";
@@ -779,6 +787,46 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
             for (ClipRecord& c : outData.streams[streamIdx].clips)
                if (c.id == clipId)
                   c.blendMode = (mode >= 0 && mode <= 31) ? mode : 0;
+      }
+      else if (tag == "clipaudio")
+      {
+         int streamIdx = -1;
+         uint64_t clipId = 0;
+         float pan = 0.0f, pitch = 0.0f;
+         int syncToTempo = 1;
+         if (in >> streamIdx >> clipId >> pan >> pitch >> syncToTempo &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() && clipId != 0)
+         {
+            if (!std::isfinite(pan)) pan = 0.0f;
+            if (!std::isfinite(pitch)) pitch = 0.0f;
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+               {
+                  c.pan = std::clamp(pan, -1.0f, 1.0f);
+                  c.pitch = std::clamp(pitch, -24.0f, 24.0f);
+                  c.syncToTempo = syncToTempo != 0;
+               }
+         }
+      }
+      else if (tag == "clipgrade")
+      {
+         int streamIdx = -1;
+         uint64_t clipId = 0;
+         float brightness = 0.0f, contrast = 0.0f, saturation = 1.0f;
+         if (in >> streamIdx >> clipId >> brightness >> contrast >> saturation &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() && clipId != 0)
+         {
+            if (!std::isfinite(brightness)) brightness = 0.0f;
+            if (!std::isfinite(contrast)) contrast = 0.0f;
+            if (!std::isfinite(saturation)) saturation = 1.0f;
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+               {
+                  c.colorBrightness = std::clamp(brightness, -1.0f, 1.0f);
+                  c.colorContrast = std::clamp(contrast, -1.0f, 1.0f);
+                  c.colorSaturation = std::clamp(saturation, 0.0f, 2.0f);
+               }
+         }
       }
       else if (tag == "cliptick")
       {

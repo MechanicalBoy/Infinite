@@ -168,6 +168,16 @@ void Normalize(Model& m)
          if (clip.srcOutput < 0) clip.srcOutput = 0;
          if (!std::isfinite(clip.gainDb)) clip.gainDb = 0.0f;
          if (clip.blendMode < 0 || clip.blendMode > 31) clip.blendMode = 0; // BlendModes::Names() range
+         if (!std::isfinite(clip.pan)) clip.pan = 0.0f;
+         clip.pan = std::clamp(clip.pan, -1.0f, 1.0f);
+         if (!std::isfinite(clip.pitch)) clip.pitch = 0.0f;
+         clip.pitch = std::clamp(clip.pitch, -24.0f, 24.0f);
+         if (!std::isfinite(clip.colorBrightness)) clip.colorBrightness = 0.0f;
+         clip.colorBrightness = std::clamp(clip.colorBrightness, -1.0f, 1.0f);
+         if (!std::isfinite(clip.colorContrast)) clip.colorContrast = 0.0f;
+         clip.colorContrast = std::clamp(clip.colorContrast, -1.0f, 1.0f);
+         if (!std::isfinite(clip.colorSaturation)) clip.colorSaturation = 1.0f;
+         clip.colorSaturation = std::clamp(clip.colorSaturation, 0.0f, 2.0f);
          ClampFades(clip);
          if (clip.id == 0) clip.id = m.NewId();
       }

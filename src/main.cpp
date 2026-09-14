@@ -111,6 +111,7 @@ namespace
 #include "core/Palette.h"
 #include "core/Patch.h"
 #include "arrange/ArrangeModel.h"
+#include "arrange/ArrangeMediaImport.h"
 #include "core/NodeViewport.h"
 #include "core/AudioCable.h"
 #include "core/NoteCable.h"
@@ -1361,6 +1362,33 @@ namespace
    uint64_t gArrangeMixGestureLaneId = 0;   // lane whose header S/M/pan/gain/opacity control is mid-gesture
    uint64_t gArrangeCtxClipId = 0;
    uint64_t gArrangeAssigningClipId = 0;
+
+   // One dropped-media-file decode in flight (or about to be), tracking the
+   // clip/node already placed in a "loading" state so ArrangePollMediaImports
+   // can find them again once Arrange::MediaImportManager finishes decoding.
+   // See ArrangeImportMediaFile/ArrangePollMediaImports below.
+   struct ArrangePendingImport
+   {
+      uint64_t jobId = 0;
+      uint64_t clipId = 0;
+      uint64_t nodeUid = 0;
+      Arrange::ImportMediaKind kind = Arrange::ImportMediaKind::Audio;
+   };
+   std::vector<ArrangePendingImport> gArrangePendingImports;
+
+   // A browser-panel media drag (gSampleDragActive) released over the
+   // Arrange panel rect - stashed here rather than resolved on the spot,
+   // since the lane/tick under a screen point is only computable from
+   // inside DrawArrangePanelContent's own layout state (scroll, zoom, lane
+   // rows). Picked up and cleared on that function's next call, which is at
+   // most one frame later - not perceptible for a released drag.
+   struct ArrangePendingBrowserDrop
+   {
+      bool pending = false;
+      ImVec2 screenPos { 0.0f, 0.0f };
+      std::string path;
+   };
+   ArrangePendingBrowserDrop gArrangePendingBrowserDrop;
    // Stable node identity, handed out at spawn and never reused, unlike
    // GraphNode::index. Arrangement clips reference it, so a clip survives its
    // node being deleted and undone back. Persisted per node in the patch;
@@ -6127,10 +6155,11 @@ namespace
             r.colorG = c.colorG;
             r.colorB = c.colorB;
             r.blendMode = c.blendMode;
-            r.opacity = c.opacity;
-            r.brightness = c.brightness;
-            r.contrast = c.contrast;
-            r.saturation = c.saturation;
+            r.pitch = c.pitch;
+            r.syncToTempo = c.syncToTempo;
+            r.colorBrightness = c.colorBrightness;
+            r.colorContrast = c.colorContrast;
+            r.colorSaturation = c.colorSaturation;
             s.clips.push_back(std::move(r));
          }
          data.streams.push_back(std::move(s));
@@ -6235,10 +6264,12 @@ namespace
             clip.colorG = c.colorG;
             clip.colorB = c.colorB;
             clip.blendMode = (c.blendMode >= 0) ? c.blendMode : s.blendMode;
-            clip.opacity = c.opacity;
-            clip.brightness = c.brightness;
-            clip.contrast = c.contrast;
-            clip.saturation = c.saturation;
+            clip.pan = c.pan;
+            clip.pitch = c.pitch;
+            clip.syncToTempo = c.syncToTempo;
+            clip.colorBrightness = c.colorBrightness;
+            clip.colorContrast = c.colorContrast;
+            clip.colorSaturation = c.colorSaturation;
             lane.clips.push_back(std::move(clip));
          }
          m.lanes.push_back(std::move(lane));
@@ -6569,6 +6600,11 @@ namespace
    // Defined near DisconnectAllTo/RemoveNodeByIndex, below; forward-declared
    // here since DisconnectLinkById (earlier in the file) needs to call it too.
    void RebuildAudioTopology();
+
+   // Forward-declared here since ArrangeImportMediaFile (Arrange media-drop
+   // import, earlier in the file) needs to clean up a just-spawned node when
+   // the clip placement it was for fails.
+   void RemoveNodeByIndex(int index);
 
    // Which geometry-ish pin a node exposes at a given slot, and how to set it.
    // Geometry, camera, light and modulator connections are raw pointers rather
@@ -27175,6 +27211,11 @@ namespace
       int blendMode = 0;
       float opacity = 1.0f;
       uint64_t clipId = 0; // whose thumbnail this layer's texture feeds (WP8)
+      // Basic color grade (Clip::colorBrightness/colorContrast/colorSaturation).
+      // 0/0/1 is a no-op, so every clip that predates this field grades identically.
+      float gradeBrightness = 0.0f;
+      float gradeContrast = 0.0f;
+      float gradeSaturation = 1.0f;
    };
 
    // Every video lane's active clip at `beat`, in COMPOSITE order: bottom lane
@@ -27209,7 +27250,7 @@ namespace
                GraphNode* gn = FindNodeByUid(c.srcUid);
                if (gn != nullptr && gn->node != nullptr)
                   out.push_back({ gn, c.srcOutput, c.blendMode, std::clamp(lane.opacity, 0.0f, 1.0f),
-                                  c.id });
+                                  c.id, c.colorBrightness, c.colorContrast, c.colorSaturation });
             }
             break;
          }
@@ -27229,7 +27270,7 @@ namespace
    struct ArrangeComposeProgram
    {
       unsigned int program = 0;
-      int uTexBase = -1, uTexTop = -1, uMode = -1, uOpacity = -1, uTopFit = -1;
+      int uTexBase = -1, uTexTop = -1, uMode = -1, uOpacity = -1, uTopFit = -1, uGrade = -1;
    };
    const ArrangeComposeProgram& ArrangeComposeShader()
    {
@@ -27247,13 +27288,17 @@ namespace
             "uniform sampler2D uTexTop;\n"
             "uniform int uMode;\n"
             "uniform float uOpacity;\n"
-            "uniform vec4 uTopFit;\n")
+            "uniform vec4 uTopFit;\n"
+            "uniform vec3 uGrade;\n") // x = brightness -1..1, y = contrast -1..1, z = saturation 0..2
          + BlendModes::kBlendGLSL
          + "void main() {\n"
            "   vec2 topUv = (vUv - uTopFit.zw) / uTopFit.xy;\n"
            "   vec4 top = vec4(0.0);\n"
            "   if (topUv.x >= 0.0 && topUv.x <= 1.0 && topUv.y >= 0.0 && topUv.y <= 1.0) {\n"
            "      top = texture(uTexTop, topUv);\n"
+           "      vec3 graded = (top.rgb - 0.5) * (1.0 + uGrade.y) + 0.5 + uGrade.x;\n"
+           "      float luma = dot(graded, vec3(0.299, 0.587, 0.114));\n"
+           "      top.rgb = clamp(mix(vec3(luma), graded, uGrade.z), 0.0, 1.0);\n"
            "   }\n"
            "   vec4 base = texture(uTexBase, vUv);\n"
            "   float as = top.a * uOpacity;\n"
@@ -27277,6 +27322,7 @@ namespace
          sProg.uMode = glGetUniformLocation(sProg.program, "uMode");
          sProg.uOpacity = glGetUniformLocation(sProg.program, "uOpacity");
          sProg.uTopFit = glGetUniformLocation(sProg.program, "uTopFit");
+         sProg.uGrade = glGetUniformLocation(sProg.program, "uGrade");
       }
       return sProg;
    }
@@ -27318,6 +27364,7 @@ namespace
          int srcW, srcH;
          int blendMode;
          float opacity;
+         float gradeBrightness, gradeContrast, gradeSaturation;
       };
       static std::vector<ResolvedLayer> sResolved;
       sResolved.clear();
@@ -27330,7 +27377,13 @@ namespace
          {
             ArrangeGeomViewport& slot = gArrangeGeomViewports[{ gn->uid, target.slot }];
             slot.lastUsedFrame = gArrangeGeomFrame;
-            tex = slot.viewport.Render(geo, gNodeCameras[gn->index], targetW, targetH);
+            // Offline export must not trust NodeViewport's live-preview
+            // change-gate: it skips redraw whenever the node's own
+            // revisions haven't ticked between calls, which is fine for a
+            // UI glance but silently recaptures the prior frame's pixels
+            // under a correct-but-stale timestamp during a take.
+            tex = slot.viewport.Render(geo, gNodeCameras[gn->index], targetW, targetH,
+                                       Transport::Instance().IsOfflineMode());
             w = targetW;
             h = targetH;
          }
@@ -27345,7 +27398,8 @@ namespace
          }
          if (tex != 0 && w > 0 && h > 0)
          {
-            sResolved.push_back({ tex, w, h, layer.blendMode, layer.opacity });
+            sResolved.push_back({ tex, w, h, layer.blendMode, layer.opacity,
+                                   layer.gradeBrightness, layer.gradeContrast, layer.gradeSaturation });
             // The thumbnail rides on the composite's own resolve: the
             // texture is already in hand, so a thumbnail never costs a
             // second decode or a second geometry render. Skipped during an
@@ -27426,6 +27480,7 @@ namespace
             glUniform1i(prog.uMode, layer.blendMode);
             glUniform1f(prog.uOpacity, layer.opacity);
             glUniform4f(prog.uTopFit, scaleX, scaleY, offX, offY);
+            glUniform3f(prog.uGrade, layer.gradeBrightness, layer.gradeContrast, layer.gradeSaturation);
          });
          baseIdx = 1 - baseIdx;
       }
@@ -28680,6 +28735,181 @@ namespace
       return std::clamp(frames, 1, kAudioMaxBlockFrames);
    }
 
+   // Classifies a dropped file for Arrange media-drop import (audio sample,
+   // video, or image). Video/image share their extension lists with the
+   // canvas drop handler and SampleScanner (MediaExtensions.h); audio gets
+   // its own short list here matching exactly what AudioFileNode/
+   // AudioDecodeCache already link, rather than MediaExtensions growing an
+   // audio list of its own for this one caller.
+   bool ArrangeMediaKindForPath(const std::string& path, Arrange::ImportMediaKind& outKind)
+   {
+      static const std::vector<std::string> kAudioExt = {
+         "wav", "aif", "aiff", "mp3", "m4a", "aac", "caf", "flac", "ogg"
+      };
+      if (HasExtension(path, kAudioExt)) { outKind = Arrange::ImportMediaKind::Audio; return true; }
+      if (HasExtension(path, MediaExtensions::Video())) { outKind = Arrange::ImportMediaKind::Video; return true; }
+      if (HasExtension(path, MediaExtensions::Image())) { outKind = Arrange::ImportMediaKind::Image; return true; }
+      return false;
+   }
+
+   // Drops `path` onto the Arrange timeline at (laneId, atTick): spawns the
+   // matching source node, places a clip referencing it immediately in an
+   // `importPending` state (so the timeline shows something the instant the
+   // drop lands, per the "loading state clip shown immediately" requirement),
+   // and kicks off the file's real decode on a worker thread via
+   // Arrange::GetMediaImportManager() (ArrangeMediaImport.h). The clip/node
+   // pair is tracked in gArrangePendingImports until ArrangePollMediaImports
+   // (below) adopts the finished decode.
+   //
+   // Silently does nothing if `path` isn't a media file this feature
+   // understands, or if it doesn't match the dropped-on lane's type (audio
+   // file onto a video lane or vice versa) - same silent-no-op convention
+   // every other unmatched-drop branch in this file already follows.
+   void ArrangeImportMediaFile(const std::string& path, uint64_t laneId, Arrange::Tick atTick)
+   {
+      Arrange::ImportMediaKind kind;
+      if (!ArrangeMediaKindForPath(path, kind))
+         return;
+
+      int laneIdx = -1;
+      for (size_t i = 0; i < gArrange.lanes.size(); i++)
+      {
+         if (gArrange.lanes[i].id == laneId)
+         {
+            laneIdx = (int)i;
+            break;
+         }
+      }
+      if (laneIdx < 0)
+         return;
+
+      const bool isAudioKind = (kind == Arrange::ImportMediaKind::Audio);
+      const bool isAudioLane = (gArrange.lanes[laneIdx].type == Arrange::kLaneAudio);
+      if (isAudioKind != isAudioLane)
+         return;
+
+      const char* typeName = isAudioKind ? "Audio File" : (kind == Arrange::ImportMediaKind::Video ? "Video" : "Image Source");
+      const char* category = isAudioKind ? "Modulators" : "Source";
+      const ImVec2 spawnPos = FindFreeSpawnPosition(gViewCenterCanvas);
+      GraphNode* spawned = SpawnNode(typeName, category, spawnPos.x, spawnPos.y);
+      if (spawned == nullptr)
+         return;
+
+      // Placeholder length until the real duration is known: one bar for
+      // audio/video, corrected in ArrangePollMediaImports once decode
+      // finishes; an image's fixed 5-second length is already final, since
+      // an image has no natural duration to later correct to.
+      const double bpm = std::max(1.0, (double)Transport::Instance().Tempo());
+      Arrange::Tick length = Arrange::kTicksPerBar;
+      if (kind == Arrange::ImportMediaKind::Image)
+         length = std::max<Arrange::Tick>(1, Arrange::SecondsToTicks(5.0, bpm));
+
+      uint64_t clipId = 0;
+      ArrangeEdit([&]()
+      {
+         Arrange::Clip c;
+         c.start = atTick;
+         c.length = std::max<Arrange::Tick>(1, length);
+         c.srcUid = spawned->uid;
+         c.name = spawned->typeName;
+         c.importPending = true;
+         Arrange::PlaceOverwrite(gArrange, laneId, c, &clipId);
+      });
+      if (clipId == 0)
+      {
+         RemoveNodeByIndex(spawned->index);
+         return;
+      }
+
+      ArrangePendingImport pending;
+      pending.jobId = Arrange::GetMediaImportManager().StartImport(path, kind);
+      pending.clipId = clipId;
+      pending.nodeUid = spawned->uid;
+      pending.kind = kind;
+      gArrangePendingImports.push_back(pending);
+
+      gArrangeSel = { clipId };
+      gArrangeSelAnchor = clipId;
+      gArrangeFlashClipId = clipId;
+      gArrangeFlashStart = ImGui::GetTime();
+      gPatchDirty = true;
+   }
+
+   // Main thread, once per frame (called from DrawArrangePanelContent - the
+   // Arrange panel is the only consumer of import results, same as
+   // SampleScanner/PluginScanner only ever poll from the panel that shows
+   // their state). Adopts any decode that finished since the last poll: the
+   // node gets the real buffer/handle/pixels, and syncToTempo clips get
+   // their placeholder length corrected to the file's real duration.
+   void ArrangePollMediaImports()
+   {
+      if (gArrangePendingImports.empty())
+         return;
+
+      std::vector<Arrange::MediaImportResult> results = Arrange::GetMediaImportManager().PollResults();
+      if (results.empty())
+         return;
+
+      const double bpm = std::max(1.0, (double)Transport::Instance().Tempo());
+
+      for (Arrange::MediaImportResult& r : results)
+      {
+         const auto it = std::find_if(gArrangePendingImports.begin(), gArrangePendingImports.end(),
+            [&](const ArrangePendingImport& p) { return p.jobId == r.jobId; });
+         if (it == gArrangePendingImports.end())
+         {
+            // Nothing is tracking this job anymore (e.g. the clip/node was
+            // deleted while the decode was still in flight) - just release
+            // whatever it decoded.
+            delete r.audioBuffer;
+            if (r.videoHandle != nullptr)
+               Platform::VideoClose(r.videoHandle);
+            continue;
+         }
+
+         const ArrangePendingImport pending = *it;
+         gArrangePendingImports.erase(it);
+
+         GraphNode* gn = FindNodeByUid(pending.nodeUid);
+         if (!r.success || gn == nullptr)
+         {
+            delete r.audioBuffer;
+            if (r.videoHandle != nullptr)
+               Platform::VideoClose(r.videoHandle);
+            if (!r.success)
+               printf("Arrange media import failed for %s: %s\n", r.path.c_str(), r.error.c_str());
+            // Leave the clip in place but no longer pending - it just stays
+            // silent/blank, same as any other clip whose node never loaded.
+            if (Arrange::Clip* c = Arrange::FindClip(gArrange, pending.clipId))
+            {
+               c->importPending = false;
+               gArrange.revision++;
+            }
+            continue;
+         }
+
+         if (pending.kind == Arrange::ImportMediaKind::Audio)
+            static_cast<AudioFileNode*>(gn->node.get())->OpenFromDecoded(r.path, r.audioBuffer);
+         else if (pending.kind == Arrange::ImportMediaKind::Video)
+            static_cast<VideoSourceNode*>(gn->node.get())->OpenFromHandle(r.path, r.videoHandle, r.audioBuffer);
+         else
+            static_cast<ImageSourceNode*>(gn->node.get())->LoadFromDecoded(r.imagePixels, r.width, r.height, r.path);
+
+         if (Arrange::Clip* c = Arrange::FindClip(gArrange, pending.clipId))
+         {
+            c->importPending = false;
+            // "Length only" syncToTempo (see Clip::syncToTempo's comment):
+            // the clip's timeline length is the file's natural duration
+            // converted to ticks at the current tempo - on or off, the same
+            // one-time calculation, never revisited on a later tempo change.
+            if (pending.kind != Arrange::ImportMediaKind::Image && r.durationSeconds > 0.0)
+               c->length = std::max<Arrange::Tick>(1, Arrange::SecondsToTicks(r.durationSeconds, bpm));
+            gArrange.revision++;
+         }
+         AudioTopologyRequest::Request();
+      }
+   }
+
    std::string ArrangeRenderUniquePath(const std::string& path)
    {
       const size_t dot = path.rfind('.');
@@ -28764,6 +28994,11 @@ namespace
       // Every id this panel holds (selection, anchor, rename/context/assign
       // targets) is re-resolved here; one that no longer exists clears.
       ArrangePruneSelection();
+
+      // Adopt any dropped-media decode that finished since last frame -
+      // see ArrangePollMediaImports's own comment for why this is only
+      // polled from here.
+      ArrangePollMediaImports();
 
       // Clip labels, the offline test and the render popup's resolution probe
       // all look nodes up by uid - through the global per-frame map (WP5b),
@@ -31299,7 +31534,7 @@ namespace
             // - and a stretch that has never played stays on the centre
             // line rather than guessing. Nothing is drawn during a take: the
             // panel is locked anyway and the take owns the frame budget.
-            if (!isVideo && cWidth > 6.0f && !ArrangeRenderBusy())
+            if (!isVideo && cWidth > 6.0f && !ArrangeRenderBusy() && !clip.importPending)
             {
                const float midY = (cTop + cBottom) * 0.5f;
                const float halfH = std::max(2.0f, (cBottom - cTop) * 0.5f - 5.0f);
@@ -31353,7 +31588,7 @@ namespace
             // been under the playhead has none yet and just shows its
             // colour.
             float thumbRight = cLeft;
-            if (isVideo && cWidth > (float)kArrangeThumbW + 16.0f && !ArrangeRenderBusy())
+            if (isVideo && cWidth > (float)kArrangeThumbW + 16.0f && !ArrangeRenderBusy() && !clip.importPending)
             {
                auto thumbIt = gArrangeClipThumbs.find(clip.id);
                if (thumbIt != gArrangeClipThumbs.end() && thumbIt->second.fbo.tex != 0 &&
@@ -31377,6 +31612,21 @@ namespace
 
             dl->AddRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), clipBorderCol, 4.0f, 0,
                         isSelected ? 2.5f : (grouped ? 1.8f : 1.2f));
+
+            // Loading state: the clip's real decode (ArrangeMediaImport.h)
+            // hasn't landed yet - shown instead of a waveform/thumbnail,
+            // which importPending already suppresses above.
+            if (clip.importPending)
+            {
+               const char* loadingLabel = "Loading...";
+               const ImVec2 ts = ImGui::CalcTextSize(loadingLabel);
+               if (cWidth > ts.x + 8.0f)
+               {
+                  const float midY = (cTop + cBottom) * 0.5f;
+                  dl->AddText(ImVec2(cLeft + (cWidth - ts.x) * 0.5f, midY - ts.y * 0.5f),
+                              IM_COL32(255, 255, 255, 200), loadingLabel);
+               }
+            }
 
             // Just added from the canvas: a white outline that fades over a
             // second, so the new clip is found at a glance.
@@ -31495,8 +31745,59 @@ namespace
             }
          }
 
+         // OS-level Finder drop landing on this lane row. gDropPos is a
+         // plain screen-space point captured once at drop time
+         // (OnFilesDropped), not live mouse state like `mouse` above, so
+         // this is hit-tested against the row independently of hover. This
+         // runs before the node-editor canvas's own gDroppedFiles handling
+         // further down main.cpp, and consumes (clears) any path it
+         // recognizes so that later handling never sees it - the two
+         // dispatches only ever pull from one shared list.
+         if (!gDroppedFiles.empty() && gDropPos.x >= rulerStartX && gDropPos.x < rulerStartX + rulerWidth &&
+             gDropPos.y >= curY && gDropPos.y < curY + kLaneHeight)
+         {
+            // Multiple files dropped in one gesture all share the same
+            // gDropPos (OnFilesDropped records one point per drop event,
+            // not per path) - each successive one is placed one placeholder
+            // length further along so they land as separate back-to-back
+            // clips instead of fully overwriting each other in PlaceOverwrite.
+            Arrange::Tick cursorTick = gridSnap(xToTick(gDropPos.x));
+            std::vector<std::string> remaining;
+            for (const std::string& p : gDroppedFiles)
+            {
+               Arrange::ImportMediaKind kindProbe;
+               if (ArrangeMediaKindForPath(p, kindProbe))
+               {
+                  ArrangeImportMediaFile(p, laneId, cursorTick);
+                  cursorTick += Arrange::kTicksPerBar;
+               }
+               else
+               {
+                  remaining.push_back(p);
+               }
+            }
+            gDroppedFiles = std::move(remaining);
+         }
+
+         // A browser/search-panel sample or media drag released over this
+         // lane row - see gArrangePendingBrowserDrop's own comment for why
+         // this is resolved here instead of at the drag's mouse-release site.
+         if (gArrangePendingBrowserDrop.pending &&
+             gArrangePendingBrowserDrop.screenPos.x >= rulerStartX &&
+             gArrangePendingBrowserDrop.screenPos.x < rulerStartX + rulerWidth &&
+             gArrangePendingBrowserDrop.screenPos.y >= curY && gArrangePendingBrowserDrop.screenPos.y < curY + kLaneHeight)
+         {
+            ArrangeImportMediaFile(gArrangePendingBrowserDrop.path, laneId,
+                                   gridSnap(xToTick(gArrangePendingBrowserDrop.screenPos.x)));
+            gArrangePendingBrowserDrop.pending = false;
+         }
+
          ImGui::PopID();
       }
+
+      // Didn't land inside any lane row (header, ruler, gap between lanes,
+      // etc.) - drop it rather than let it apply to a future, unrelated drop.
+      gArrangePendingBrowserDrop.pending = false;
 
       // Commit the marquee-select union onto the real selection - every
       // frame while dragging (so the highlight tracks live), and one last
@@ -31621,6 +31922,20 @@ namespace
                   break;
                }
             }
+
+            // Rename and Active/Bypass: apply to every clip type, mirroring
+            // the double-click-to-rename and '0'-key shortcuts this menu
+            // just gives an explicit, discoverable entry point for.
+            if (ImGui::MenuItem("Rename"))
+            {
+               const std::string label = !cp->name.empty() ? cp->name
+                  : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
+               gArrangeRenamingClipId = cid;
+               snprintf(gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer), "%s", label.c_str());
+            }
+            if (ImGui::MenuItem("Active", nullptr, cp->enabled))
+               ArrangeToggleEnabledSelection();
+            ImGui::Separator();
             // Fade fields: live on the model, one undo entry per drag of a
             // field (opened on the first change, pushed on deactivate, and
             // only if something changed).
@@ -31685,6 +32000,53 @@ namespace
                   gArrange.revision++;
                }
                fieldGestureEnd();
+
+               float gainDb = cp->gainDb;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::SliderFloat("Gain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->gainDb = gainDb;
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               cp = Arrange::FindClip(gArrange, cid);
+               float pan = cp->pan;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::SliderFloat("Pan", &pan, -1.0f, 1.0f, "%.2f"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->pan = std::clamp(pan, -1.0f, 1.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               cp = Arrange::FindClip(gArrange, cid);
+               float pitch = cp->pitch;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::SliderFloat("Pitch", &pitch, -24.0f, 24.0f, "%.1f st"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->pitch = std::clamp(pitch, -24.0f, 24.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               cp = Arrange::FindClip(gArrange, cid);
+               bool syncToTempo = cp->syncToTempo;
+               if (ImGui::Checkbox("Sync to Tempo", &syncToTempo))
+               {
+                  ArrangeEdit([&]()
+                  {
+                     if (Arrange::Clip* c = Arrange::FindClip(gArrange, cid))
+                        c->syncToTempo = syncToTempo;
+                  });
+               }
+
                ImGui::Separator();
             }
             else if (ctxSelectionSingleType && ctxLaneType != Arrange::kLaneAudio && ImGui::BeginMenu("Compositing"))
@@ -31715,6 +32077,50 @@ namespace
                   }
                   ImGui::PopID();
                }
+               ImGui::EndMenu();
+            }
+
+            if (ctxLaneType == Arrange::kLaneVideo && ImGui::BeginMenu("Color Grade"))
+            {
+               // Basic grade only: brightness/contrast/saturation, consumed
+               // by the compositor as a per-clip shader pass. Defaults are a
+               // no-op (0/0/1) so this menu never needs a reset button.
+               cp = Arrange::FindClip(gArrange, cid);
+               float brightness = cp->colorBrightness;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::SliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->colorBrightness = std::clamp(brightness, -1.0f, 1.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               cp = Arrange::FindClip(gArrange, cid);
+               float contrast = cp->colorContrast;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::SliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->colorContrast = std::clamp(contrast, -1.0f, 1.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               cp = Arrange::FindClip(gArrange, cid);
+               float saturation = cp->colorSaturation;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ImGui::SliderFloat("Saturation", &saturation, 0.0f, 2.0f, "%.2f"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->colorSaturation = std::clamp(saturation, 0.0f, 2.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
                ImGui::EndMenu();
             }
 
@@ -79777,7 +80183,29 @@ int main(int argc, char** argv)
             const ImVec2 canvasMouse = ed::ScreenToCanvas(mp);
             const bool overCanvas = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
-            if (gSampleDragKind == LibraryDragKind::FieldPreset)
+            // Released over the Arrange panel instead of the canvas: route
+            // to the timeline-drop import path (stashed for
+            // DrawArrangePanelContent to resolve into a lane+tick - see
+            // gArrangePendingBrowserDrop's own comment) rather than any of
+            // the canvas-node-target dispatch below. Only Sample/Media drags
+            // carry a real file path Arrange import understands; Plugin and
+            // FieldPreset drags have no Arrange meaning and fall through to
+            // their usual canvas-only handling untouched.
+            const bool overArrangePanelForDrop = gArrangePanelOpen &&
+               mp.x >= gArrangePanelRectMin.x && mp.x < gArrangePanelRectMax.x &&
+               mp.y >= gArrangePanelRectMin.y && mp.y < gArrangePanelRectMax.y;
+            if (overArrangePanelForDrop &&
+                (gSampleDragKind == LibraryDragKind::Sample || gSampleDragKind == LibraryDragKind::Media) &&
+                !gSampleDragPath.empty())
+            {
+               gArrangePendingBrowserDrop.pending = true;
+               gArrangePendingBrowserDrop.screenPos = mp;
+               gArrangePendingBrowserDrop.path = gSampleDragPath;
+               // Drag-state reset (gSampleDragActive etc.) happens once,
+               // unconditionally, right after this whole if/else-if chain -
+               // no need to repeat it here.
+            }
+            else if (gSampleDragKind == LibraryDragKind::FieldPreset)
             {
                FieldSearchEntry entry;
                entry.name = gFieldDragPresetName;

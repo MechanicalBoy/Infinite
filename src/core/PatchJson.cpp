@@ -128,7 +128,13 @@ namespace PatchJson
                {"colorR", c.colorR},
                {"colorG", c.colorG},
                {"colorB", c.colorB},
-               {"blendMode", c.blendMode}
+               {"blendMode", c.blendMode},
+               {"pan", c.pan},
+               {"pitch", c.pitch},
+               {"syncToTempo", c.syncToTempo},
+               {"colorBrightness", c.colorBrightness},
+               {"colorContrast", c.colorContrast},
+               {"colorSaturation", c.colorSaturation}
             });
          }
          out["streams"].push_back({

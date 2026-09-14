@@ -69,6 +69,14 @@ class INode;
 //   clipblend <streamIndex> <clipId> <blendMode>
 //     A video clip's compositing mode, only written when non-Normal. Files
 //     without it inherit the stream line's (legacy, lane-wide) blendMode.
+//   clipaudio <streamIndex> <clipId> <pan> <pitch> <syncToTempo>
+//     Sample-dropped audio clip fields, only written when any differs from
+//     default (pan 0, pitch 0, syncToTempo true). Missing entirely on a
+//     patch saved before these fields existed, or on a clip that never set
+//     them - ClipRecord's in-struct defaults cover both.
+//   clipgrade <streamIndex> <clipId> <brightness> <contrast> <saturation>
+//     Sample-dropped video/image clip basic color grade, only written when
+//     any differs from default (brightness 0, contrast 0, saturation 1).
 //   marker <id> <posTick> <colorRGBA8> <name to end of line>
 //   arrange <nextId> <timeDisplay> <snap> <triplet> <zoom> <scroll> <loopOn>
 //           <loopStart> <loopEnd> <dock> <w> <h> <fps> <sr> <format>
@@ -290,10 +298,14 @@ namespace Patch
       std::string name;          // empty = auto (source node's own title)
       float  colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = no tint
       int    blendMode = -1;     // -1 = not in the file: inherit the stream's legacy blendMode
-      float  opacity   = 1.0f;
-      float  brightness = 0.0f;
-      float  contrast   = 1.0f;
-      float  saturation = 1.0f;
+      // Sample-dropped media fields (own lines - see `clipaudio`/`clipgrade`
+      // in the format comment above - since cliptick already ends in a
+      // to-end-of-line name and nothing can be appended after it).
+      float  pitch   = 0.0f;    // audio only, semitones, +/-24
+      bool   syncToTempo = true; // audio only
+      float  colorBrightness = 0.0f; // video/image only, -1..1, 0 = no change
+      float  colorContrast   = 0.0f; // video/image only, -1..1, 0 = no change
+      float  colorSaturation = 1.0f; // video/image only, 0..2, 1 = no change
    };
 
    struct StreamRecord

@@ -311,12 +311,13 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
       // the same callback, so Beats() is already the position at the END of
       // this block and the block started numFrames earlier.
       static thread_local float sEnvScratch[kAudioMaxBlockFrames];
-      // Per-channel envelope including the clip's own pan (the mono
-      // sEnvScratch above only carries gain/fades - clip pan varies
-      // window-to-window within one block, so it can't be folded into the
-      // flat per-terminal lanePanL/R applied after this loop).
-      static thread_local float sEnvScratchL[kAudioMaxBlockFrames];
-      static thread_local float sEnvScratchR[kAudioMaxBlockFrames];
+      // Per-frame clip pan (see ClipWindow::panL/R): varies with which
+      // window is under the playhead, unlike the terminal's own lane pan,
+      // which is flat across the whole block - so it needs its own
+      // per-frame scratch alongside sEnvScratch rather than folding into
+      // the constant chGain the no-window path below still uses.
+      static thread_local float sPanLScratch[kAudioMaxBlockFrames];
+      static thread_local float sPanRScratch[kAudioMaxBlockFrames];
       double runSampleRate = mSampleRate.load(std::memory_order_relaxed);
       if (runSampleRate <= 0.0 && Transport::Instance().IsOfflineMode())
          runSampleRate = Transport::Instance().AudioSampleRate();
@@ -370,8 +371,8 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             if (!playing || beat < w.startBeat || beat >= w.endBeat)
             {
                sEnvScratch[i] = 0.0f;
-               sEnvScratchL[i] = 0.0f;
-               sEnvScratchR[i] = 0.0f;
+               sPanLScratch[i] = 1.0f;
+               sPanRScratch[i] = 1.0f;
                // A playing head that has left every window has also left the
                // bucket in progress - flush it here, or a clip followed by a
                // gap never publishes its last bucket and keeps a flat notch
@@ -401,10 +402,9 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
                if (!w.abutsNext && untilEnd < declickBeats)
                   env *= untilEnd / declickBeats;
             }
-            const float envF = (float)(env < 0.0 ? 0.0 : env);
-            sEnvScratch[i] = envF;
-            sEnvScratchL[i] = envF * w.panL;
-            sEnvScratchR[i] = envF * w.panR;
+            sEnvScratch[i] = (float)(env < 0.0 ? 0.0 : env);
+            sPanLScratch[i] = w.panL;
+            sPanRScratch[i] = w.panR;
 
             // Live waveform bucket (WP8). Measured on the clip's own
             // material BEFORE the envelope and both gains, so editing a
@@ -437,15 +437,15 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
 
          for (int ch = 0; ch < numChannels; ch++)
          {
-            // Channels beyond stereo have no clip/lane pan concept and use
-            // the flat mono envelope; L/R fold in both the clip's own pan
-            // (per-window, varies within the block) and the lane's pan
-            // (flat per-terminal).
-            const float* chEnv = (numChannels < 2) ? sEnvScratch : (ch == 0 ? sEnvScratchL : ch == 1 ? sEnvScratchR : sEnvScratch);
-            const float chLanePan = (numChannels < 2) ? 1.0f : (ch == 0 ? terminal.lanePanL : ch == 1 ? terminal.lanePanR : 1.0f);
-            const float chGain = gain * chLanePan;
+            const float laneChPan =
+               numChannels < 2 ? 1.0f : ch == 0 ? terminal.lanePanL : ch == 1 ? terminal.lanePanR : 1.0f;
+            const float* clipChPan = numChannels < 2 ? nullptr : ch == 0 ? sPanLScratch : ch == 1 ? sPanRScratch : nullptr;
             for (int i = 0; i < numFrames; i++)
-               deviceBuffer.channels[ch][i] += src.channels[ch][i] * chGain * chEnv[i];
+            {
+               const float chGain = gain * laneChPan * (clipChPan != nullptr ? clipChPan[i] : 1.0f);
+               deviceBuffer.channels[ch][i] += src.channels[ch][i] * chGain * sEnvScratch[i];
+            }
+         }
          }
       }
       else if (terminal.numWindows > 0)
