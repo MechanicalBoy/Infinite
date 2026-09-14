@@ -147,9 +147,9 @@ phase is merged. The owner merges; you never merge to `main` without asking.
 
 | Phase | State | Tip commit | Verified (CI/local) | Unverified (needs hardware/humans) |
 |---|---|---|---|---|
-| 0 | not started | | | |
-| 1 | not started | | | |
-| 2 | not started | | | |
-| 3 | not started | | | |
-| 4 | not started | | | |
-| 5 | not started | | | |
+| 0 | **COMPLETE** | `b25b5bd` | [Run 34769650449](https://github.com/n1m21n/Infinite/actions/runs/34769650449): x86_64 Clang **and** GCC build green, headless self-tests pass, Xvfb screenshot artifact produced | — |
+| 1 | **COMPLETE** | `feature/linux-step-01-followups` | Local arm64 container (Clang): build green; `ldd` shows no direct libGL/libGLX/libEGL and no direct libX11; `--fast` 30/30; `--group ui,3d,compositing` 45 pass / 0 fail / 1 known xfail; headless suite green incl. a real SIGSEGV→backtrace, a real TLS request, and `SYPHONPATCHTEST`; six per-category shots with a blank-render gate. macOS `--fast` 29 pass / 1 fail — `ARRANGEWAVETEST`, which fails identically when run from `main`'s own binary (`101c874`) and belongs to the in-flight arrangement audio work, not to the port. It passes on Linux, so whatever is unfinished there is macOS-side; re-check it once arrangement audio lands rather than treating this row as a port regression | Real GPU drivers (only llvmpipe is exercised), real X11/Wayland desktops, HiDPI scaling, window-manager behaviour, the window icon actually appearing in a taskbar, real font sets via fontconfig, complex-script text (no HarfBuzz — see `TextLinux.cpp`) |
+| 2 | not started | | | Real audio interfaces, JACK/PipeWire servers, real MIDI hardware |
+| 3 | not started | | | Real webcams and UVC quirks, hardware decode paths, long recordings |
+| 4 | not started | | | VST3 editors on a real desktop, commercial plugins |
+| 5 | not started | | | Multi-distro install, beta testers |

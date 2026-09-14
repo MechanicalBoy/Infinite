@@ -255,6 +255,18 @@ jobs:
         run: |
           tools/linux/xvfb-harness.sh --fast
 
+      # --fast is the pre-commit smoke tier and covers almost no rendering.
+      # These three groups are where the port's actual risk lives: the editor
+      # UI, the 3D pipeline and the compositing chain all run through Mesa's
+      # llvmpipe here rather than a real driver, and they are the checks most
+      # likely to catch a GLSL or state-management difference from macOS.
+      # Only clang runs them - GCC's value is proving the code compiles under a
+      # second toolchain, and doubling a slow render suite for that buys little.
+      - name: Virtual display Xvfb render groups
+        if: matrix.compiler == 'clang'
+        run: |
+          tools/linux/xvfb-harness.sh --group ui,3d,compositing
+
       - name: Upload Linux test & visual artifacts
         uses: actions/upload-artifact@v4
         if: always()
