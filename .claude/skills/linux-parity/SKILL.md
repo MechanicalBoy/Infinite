@@ -214,16 +214,29 @@ x86_64. The two contract floating-point arithmetic differently, so a value can
 land on opposite sides of a comparison.
 
 `PHASECTEST`'s metaball watertightness check found this the hard way: identical
-6096-triangle meshes, `0` open edges on arm64 and `8` on x86_64, because
-`MeshOps::BuildWeldMap` compares float positions against an epsilon rather than
-quantising them. It is baselined in `known-test-failures-linux.txt` with the
-full story.
+6096-triangle meshes, `0` open edges on arm64 and `8` on x86_64. `MeshOps::
+BuildWeldMap` already quantised positions to an integer grid before hashing —
+that part was fine. The actual cause was upstream, in `EmitTetra`'s
+`lerpPoint` (`src/core/Mesh.cpp`): two tetrahedra sharing an edge each
+classify their own corners into `inside[]`/`outside[]`, so the same grid edge
+could be lerped as `(a, b)` from one tetrahedron and `(b, a)` from its
+neighbour. Those two expressions are mathematically equal but not
+bit-identical, and x86_64 and arm64 contract the FMA differently, so the
+"same" vertex landed a ULP apart — on opposite sides of one of BuildWeldMap's
+quantisation boundaries, on x86_64 only. The fix was to canonicalise
+`lerpPoint` on corner identity rather than the caller's inside/outside
+labelling, so both call sites always evaluate the exact same expression.
+Fixed on `feature/weld-map-quantization-fix`; the baseline entry has been
+removed.
 
-Two rules follow. Any geometry or DSP code that decides something by comparing
-floats should quantise to an integer grid before hashing or bucketing, not
-compare and hope. And **local green on arm64 is not green** — for anything
-numerical, either push and read x86_64 CI or run the container under
-`--platform linux/amd64`, which works on this machine.
+Two rules follow. Any geometry or DSP code that combines the same value via
+more than one code path (here: the same edge crossed from two directions)
+must canonicalise first so both paths evaluate an identical expression —
+"mathematically equal" is not "bit equal," and downstream bucketing/hashing
+will amplify a ULP-level difference into a different bucket. And **local
+green on arm64 is not green** — for anything numerical, either push and read
+x86_64 CI or run the container under `--platform linux/amd64`, which works on
+this machine.
 
 ### 3.8 `STBI_NO_STDIO` — `stbi_load` does not exist in this binary
 

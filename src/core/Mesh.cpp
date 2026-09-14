@@ -5,6 +5,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 #include <memory>
 
@@ -3866,13 +3867,28 @@ namespace
 
       auto lerpPoint = [&](int a, int b, float out[3])
       {
-         const float va = p[a].value, vb = p[b].value;
+         // Two tetrahedra sharing this edge each classify its own corners into
+         // inside[]/outside[], so the same grid edge can arrive here as (a, b)
+         // from one tetrahedron and (b, a) from its neighbour. Evaluating
+         // p[a] + (p[b]-p[a])*t versus p[b] + (p[a]-p[b])*(1-t) is
+         // mathematically the same point but not bit-identical, and FMA
+         // contraction rounds the two expressions differently on x86_64 than
+         // on arm64 - so the "same" vertex lands a ULP apart, on opposite
+         // sides of a BuildWeldMap quantisation boundary on one architecture
+         // only. Canonicalising on corner identity (not the caller's
+         // inside/outside labelling) makes both call sites evaluate the exact
+         // same expression, so the two crossings are bit-identical wherever
+         // they are computed.
+         int lo = a, hi = b;
+         if (std::tie(p[b].x, p[b].y, p[b].z) < std::tie(p[a].x, p[a].y, p[a].z))
+            std::swap(lo, hi);
+         const float va = p[lo].value, vb = p[hi].value;
          const float denom = vb - va;
          const float t = (std::fabs(denom) < 1e-9f) ? 0.5f : (threshold - va) / denom;
          const float clamped = std::max(0.0f, std::min(t, 1.0f));
-         out[0] = p[a].x + (p[b].x - p[a].x) * clamped;
-         out[1] = p[a].y + (p[b].y - p[a].y) * clamped;
-         out[2] = p[a].z + (p[b].z - p[a].z) * clamped;
+         out[0] = p[lo].x + (p[hi].x - p[lo].x) * clamped;
+         out[1] = p[lo].y + (p[hi].y - p[lo].y) * clamped;
+         out[2] = p[lo].z + (p[hi].z - p[lo].z) * clamped;
       };
 
       // Outward is from the inside corners toward the outside ones - the
