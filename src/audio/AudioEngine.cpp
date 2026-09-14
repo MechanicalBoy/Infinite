@@ -425,8 +425,12 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          terminal.windowCursor = cursor;
 
          for (int ch = 0; ch < numChannels; ch++)
+         {
+            const float chGain =
+               gain * (numChannels < 2 ? 1.0f : ch == 0 ? terminal.lanePanL : ch == 1 ? terminal.lanePanR : 1.0f);
             for (int i = 0; i < numFrames; i++)
-               deviceBuffer.channels[ch][i] += src.channels[ch][i] * gain * sEnvScratch[i];
+               deviceBuffer.channels[ch][i] += src.channels[ch][i] * chGain * sEnvScratch[i];
+         }
       }
       else if (terminal.numWindows > 0)
       {

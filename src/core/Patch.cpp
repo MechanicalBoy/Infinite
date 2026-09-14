@@ -321,7 +321,8 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
    {
       const StreamRecord& s = data.streams[i];
       file << "stream " << s.type << " " << s.blendMode << " " << FloatToString(s.opacity) << " "
-           << FloatToString(s.gainDb) << " " << FloatToString(s.pan) << " " << EscapeLine(s.name) << "\n";
+           << FloatToString(s.gainDb) << " " << FloatToString(s.pan) << " "
+           << (s.enabled ? 1 : 0) << " " << s.groupId << " " << EscapeLine(s.name) << "\n";
       // The stream's own id trails the line it has always had, so an older
       // build reading a newer patch still gets the lane (it just ignores the
       // extra token, which lands after the name and so is part of the name -
@@ -337,9 +338,22 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
               << FloatToString(c.gainDb) << " " << (c.enabled ? 1 : 0) << " " << c.groupId << " "
               << FloatToString(c.colorR) << " " << FloatToString(c.colorG) << " " << FloatToString(c.colorB) << " "
               << EscapeLine(c.name) << "\n";
+      // Own lines, not cliptick fields: cliptick ends in a to-end-of-line
+      // name, so nothing can be appended after it.
+      if (s.mute || s.solo)
+         file << "streammix " << i << " " << (s.mute ? 1 : 0) << " " << (s.solo ? 1 : 0) << "\n";
+      for (const ClipRecord& c : s.clips)
+         if (c.blendMode > 0)
+            file << "clipblend " << i << " " << c.id << " " << c.blendMode << "\n";
    }
    for (const MarkerRecord& mk : data.markers)
       file << "marker " << mk.id << " " << mk.posTick << " " << mk.color << " " << EscapeLine(mk.name) << "\n";
+   // Track groups: a new tag line, one per group, same shape as `marker` -
+   // an older reader that doesn't know this tag simply skips the line
+   // (see the "anything else is from a newer version" catch-all below).
+   for (const TrackGroupRecord& g : data.trackGroups)
+      file << "trackgroup " << g.id << " " << g.color << " " << (g.enabled ? 1 : 0) << " "
+           << (g.collapsed ? 1 : 0) << " " << EscapeLine(g.name) << "\n";
    {
       const ArrangeSettingsRecord& a = data.arrangeSettings;
       file << "arrange " << a.nextId << " " << a.timeDisplay << " " << a.snapDivision << " "
@@ -711,6 +725,16 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
          // onto the wrong lane. Missing/garbage tokens leave defaults.
          StreamRecord s;
          in >> s.type >> s.blendMode >> s.opacity >> s.gainDb >> s.pan;
+         // Trailing fields: a pre-groups patch's `stream` line has no more
+         // numeric tokens here (next thing on the line is the escaped name),
+         // so this extraction fails. Per C++11 that ZEROES the target on
+         // failure - so `enabled` would land on false/disabled unless
+         // explicitly restored to true here. groupId's zero-on-failure IS
+         // the right default (0 = ungrouped), so it needs no such fixup.
+         int enabled = 1;
+         if (!(in >> enabled)) enabled = 1;
+         in >> s.groupId;
+         s.enabled = enabled != 0;
          std::string raw;
          std::getline(in, raw);
          if (!raw.empty() && raw[0] == ' ')
@@ -731,6 +755,25 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
          uint64_t id = 0;
          if (in >> streamIdx >> id && streamIdx >= 0 && streamIdx < (int)outData.streams.size())
             outData.streams[streamIdx].id = id;
+      }
+      else if (tag == "streammix")
+      {
+         int streamIdx = -1, mute = 0, solo = 0;
+         if (in >> streamIdx >> mute >> solo && streamIdx >= 0 && streamIdx < (int)outData.streams.size())
+         {
+            outData.streams[streamIdx].mute = mute != 0;
+            outData.streams[streamIdx].solo = solo != 0;
+         }
+      }
+      else if (tag == "clipblend")
+      {
+         int streamIdx = -1, mode = 0;
+         uint64_t clipId = 0;
+         if (in >> streamIdx >> clipId >> mode && streamIdx >= 0 && streamIdx < (int)outData.streams.size() &&
+             clipId != 0)
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+                  c.blendMode = (mode >= 0 && mode <= 31) ? mode : 0;
       }
       else if (tag == "cliptick")
       {
@@ -815,6 +858,22 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
                raw.erase(0, 1);
             mk.name = UnescapeLine(raw);
             outData.markers.push_back(mk);
+         }
+      }
+      else if (tag == "trackgroup")
+      {
+         TrackGroupRecord g;
+         int enabled = 1, collapsed = 0;
+         if (in >> g.id >> g.color >> enabled >> collapsed && g.id != 0)
+         {
+            g.enabled = enabled != 0;
+            g.collapsed = collapsed != 0;
+            std::string raw;
+            std::getline(in, raw);
+            if (!raw.empty() && raw[0] == ' ')
+               raw.erase(0, 1);
+            g.name = UnescapeLine(raw);
+            outData.trackGroups.push_back(g);
          }
       }
       else if (tag == "arrange")
