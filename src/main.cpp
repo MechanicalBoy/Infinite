@@ -26,6 +26,7 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include "stb_image.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -514,6 +515,11 @@ namespace
          return "spout in";
       if (name == "Syphon Out")
          return "spout out";
+#elif !defined(__APPLE__)
+      if (name == "Syphon In")
+         return "syphon in (unavailable on linux)";
+      if (name == "Syphon Out")
+         return "syphon out (unavailable on linux)";
 #endif
       std::string out = name;
       std::transform(out.begin(), out.end(), out.begin(),
@@ -535,6 +541,12 @@ namespace
    // NodeFactory's raw listing.
    bool IsUserSpawnable(const std::string& name)
    {
+#if !defined(__APPLE__) && !defined(_WIN32)
+      // Syphon/Spout texture sharing is unavailable on Linux; keep nodes registered
+      // so existing patches load without error, but hide them from the Add menu and search.
+      if (name == "Syphon In" || name == "Syphon Out")
+         return false;
+#endif
       // Field Graph stays registered (NodeFactory::MakeNode) so a patch saved
       // with one still loads, but is no longer creatable from the spawn menu
       // or search - see the device-catalog simplification's REGISTER_NODE
@@ -6434,6 +6446,12 @@ namespace
 
    void DrawSyphonOutParams(SyphonOutNode* n)
    {
+#if !defined(__APPLE__) && !defined(_WIN32)
+      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      ImGui::TextDisabled("Syphon/Spout texture sharing is unavailable on Linux.");
+      ImGui::PopTextWrapPos();
+      return;
+#else
       ImGui::SetNextItemWidth(kPreviewSize);
       if (ImGui::InputText("##syphon_name", &n->serverNameInput, ImGuiInputTextFlags_EnterReturnsTrue))
       {
@@ -6458,10 +6476,17 @@ namespace
          ImGui::TextDisabled("Connect an image input to publish");
       }
       ImGui::PopTextWrapPos();
+#endif
    }
 
    void DrawSyphonInParams(SyphonInNode* n)
    {
+#if !defined(__APPLE__) && !defined(_WIN32)
+      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      ImGui::TextDisabled("Syphon/Spout texture sharing is unavailable on Linux.");
+      ImGui::PopTextWrapPos();
+      return;
+#else
       if (ImGui::Button("Refresh Servers", ImVec2(kPreviewSize, 0)))
       {
          n->RefreshServers();
@@ -6507,6 +6532,7 @@ namespace
          }
          ImGui::PopTextWrapPos();
       }
+#endif
    }
 
    void DrawOscReceiveParams(OscReceiveNode* n)
@@ -28251,6 +28277,8 @@ namespace
          { "Output", "Terminal node. Shows the final image, exports a PNG, and records an H.264 .mov at a chosen frame rate. Recording captures the cooked output, so what you see is what is written." },
 #if defined(_WIN32)
          { "Syphon Out", "Broadcasts video, 3D renders, or visual shaders to other Windows applications in real-time via Spout, zero-copy GPU texture sharing." },
+#elif !defined(__APPLE__)
+         { "Syphon Out", "Syphon/Spout texture sharing is not available on Linux." },
 #else
          { "Syphon Out", "Broadcasts video, 3D renders, or visual shaders to other macOS applications in real-time via zero-copy GPU texture sharing." },
 #endif
@@ -28796,6 +28824,8 @@ namespace
                { "Output", "Terminal node. Shows the final image, exports a PNG, and records an H.264 .mov at a chosen frame rate. Recording captures the cooked output, so what you see is what is written." },
 #if defined(_WIN32)
                { "Syphon Out", "Broadcasts video, 3D renders, or visual shaders to other Windows applications in real-time via Spout, zero-copy GPU texture sharing." },
+#elif !defined(__APPLE__)
+               { "Syphon Out", "Syphon/Spout texture sharing is not available on Linux." },
 #else
                { "Syphon Out", "Broadcasts video, 3D renders, or visual shaders to other macOS applications in real-time via zero-copy GPU texture sharing." },
 #endif
@@ -33422,6 +33452,70 @@ namespace
       }
    }
 
+   // Resolves a bundled asset shipped next to the app (fonts, icon fonts) from
+   // the *executable's own location*, not the process's working directory.
+   //
+   // This matters because of two different launch contexts that disagree about
+   // cwd: a Finder/LaunchServices launch on macOS leaves cwd at
+   // Contents/Resources (Cocoa's doing), but the run-infinite-hygiene harness
+   // (and any other direct exec, e.g. from a terminal or a debugger) invokes
+   // the binary directly with whatever cwd the caller happened to have - it is
+   // never Resources there. Resolving relative to argv[0]/getcwd would work by
+   // accident in one context and silently fail in the other. Platform::
+   // ExecutablePath() (Platform.mm's _NSGetExecutablePath /
+   // PlatformWin.cpp's GetModuleFileNameW / PlatformLinux.cpp's /proc/self/exe)
+   // is the one source of truth for "where is my own binary" across platforms
+   // and doesn't depend on cwd at all.
+   //
+   // `relPath` is relative to the Resources directory: macOS ships assets at
+   // Contents/Resources/<relPath> (MACOSX_PACKAGE_LOCATION "Resources/..." in
+   // CMakeLists.txt, the same convention the app icons already use); Windows
+   // and Linux have no bundle, so CMake's post-build step copies the same assets
+   // to Resources/<relPath> next to the Infinite binary. Returns an empty string
+   // if the executable path can't be resolved or the file isn't there, so callers
+   // can fall through to their own fallback chain.
+   static std::string BundledResourcePath(const char* relPath)
+   {
+      const std::string exe = Platform::ExecutablePath();
+      if (exe.empty())
+         return {};
+      std::filesystem::path exeDir = std::filesystem::path(exe).parent_path();
+#if defined(__APPLE__)
+      // exe is at Contents/MacOS/Infinite -> Resources is a sibling of MacOS.
+      std::filesystem::path resourceDir = exeDir.parent_path() / "Resources";
+#else
+      // No bundle on Windows/Linux: Resources sits next to Infinite binary.
+      std::filesystem::path resourceDir = exeDir / "Resources";
+#endif
+      std::filesystem::path full = resourceDir / relPath;
+      std::error_code ec;
+      if (!std::filesystem::exists(full, ec))
+         return {};
+      return full.string();
+   }
+
+   static void SetWindowIcon(GLFWwindow* window)
+   {
+      if (!window) return;
+#if defined(_WIN32)
+      Platform::SetWindowIconFromResource(window);
+#elif !defined(__APPLE__)
+      const std::string iconPath = BundledResourcePath("icons/icon_1024.png");
+      if (iconPath.empty()) return;
+      int w = 0, h = 0, channels = 0;
+      unsigned char* pixels = stbi_load(iconPath.c_str(), &w, &h, &channels, 4);
+      if (pixels)
+      {
+         GLFWimage img;
+         img.width = w;
+         img.height = h;
+         img.pixels = pixels;
+         glfwSetWindowIcon(window, 1, &img);
+         stbi_image_free(pixels);
+      }
+#endif
+   }
+
    // Default extension for newly saved patches.
    //
    // Windows RESERVES ".inf" for Setup Information files - the driver/install
@@ -33856,9 +33950,7 @@ namespace
          glfwMakeContextCurrent(mainWindow);
          return;
       }
-#if defined(_WIN32)
-      Platform::SetWindowIconFromResource(projWindow);
-#endif
+      SetWindowIcon(projWindow);
 
       // Offset from the main window rather than wherever the OS happens to
       // drop it, so opening several in a row doesn't stack them exactly on
@@ -49557,46 +49649,73 @@ void ApplyModulationAndPalette(int frameId)
    }
 }
 
-// Resolves a bundled asset shipped next to the app (fonts, icon fonts) from
-// the *executable's own location*, not the process's working directory.
-//
-// This matters because of two different launch contexts that disagree about
-// cwd: a Finder/LaunchServices launch on macOS leaves cwd at
-// Contents/Resources (Cocoa's doing), but the run-infinite-hygiene harness
-// (and any other direct exec, e.g. from a terminal or a debugger) invokes
-// the binary directly with whatever cwd the caller happened to have - it is
-// never Resources there. Resolving relative to argv[0]/getcwd would work by
-// accident in one context and silently fail in the other. Platform::
-// ExecutablePath() (Platform.mm's _NSGetExecutablePath /
-// PlatformWin.cpp's GetModuleFileNameW) is the one source of truth for
-// "where is my own binary" on both platforms and doesn't depend on cwd at
-// all.
-//
-// `relPath` is relative to the Resources directory: macOS ships assets at
-// Contents/Resources/<relPath> (MACOSX_PACKAGE_LOCATION "Resources/..." in
-// CMakeLists.txt, the same convention the app icons already use); Windows
-// has no bundle, so CMake's post-build step copies the same assets to
-// Resources/<relPath> next to Infinite.exe. Returns an empty string if the
-// executable path can't be resolved or the file isn't there, so callers can
-// fall through to their own fallback chain.
-static std::string BundledResourcePath(const char* relPath)
+// ==================================================== INFINITE_SYPHONPATCHTEST
+int RunSyphonPatchTest()
 {
-   const std::string exe = Platform::ExecutablePath();
-   if (exe.empty())
-      return {};
-   std::filesystem::path exeDir = std::filesystem::path(exe).parent_path();
-#if defined(__APPLE__)
-   // exe is at Contents/MacOS/Infinite -> Resources is a sibling of MacOS.
-   std::filesystem::path resourceDir = exeDir.parent_path() / "Resources";
-#else
-   // No bundle on Windows: Resources sits next to Infinite.exe.
-   std::filesystem::path resourceDir = exeDir / "Resources";
-#endif
-   std::filesystem::path full = resourceDir / relPath;
-   std::error_code ec;
-   if (!std::filesystem::exists(full, ec))
-      return {};
-   return full.string();
+   setvbuf(stdout, nullptr, _IONBF, 0);
+   RegisterNodes();
+
+   Patch::Data data;
+   Patch::NodeRecord n1;
+   n1.index = 1;
+   n1.category = "Utility";
+   n1.typeName = "Syphon In";
+   n1.x = 100.0f;
+   n1.y = 100.0f;
+   data.nodes.push_back(n1);
+
+   Patch::NodeRecord n2;
+   n2.index = 2;
+   n2.category = "Utility";
+   n2.typeName = "Syphon Out";
+   n2.x = 400.0f;
+   n2.y = 100.0f;
+   data.nodes.push_back(n2);
+
+   std::string testPath = TmpPath("syphon_test_load.inf");
+   std::string writeErr, readErr;
+   if (!Patch::Write(testPath, data, writeErr))
+   {
+      printf("SYPHONPATCHTEST FAIL: could not write test patch: %s\n", writeErr.c_str());
+      return 1;
+   }
+
+   Patch::Data readData;
+   if (!Patch::Read(testPath, readData, readErr))
+   {
+      printf("SYPHONPATCHTEST FAIL: Patch::Read failed: %s\n", readErr.c_str());
+      std::remove(testPath.c_str());
+      return 1;
+   }
+   std::remove(testPath.c_str());
+
+   if (readData.nodes.size() != 2)
+   {
+      printf("SYPHONPATCHTEST FAIL: expected 2 nodes, got %zu\n", readData.nodes.size());
+      return 1;
+   }
+
+   // Verify ApplyPatchData instantiates both nodes safely
+   NewPatch();
+   ApplyPatchData(readData);
+
+   bool foundIn = false;
+   bool foundOut = false;
+   for (const auto& gn : gNodes)
+   {
+      if (gn.node && gn.typeName == "Syphon In") foundIn = true;
+      if (gn.node && gn.typeName == "Syphon Out") foundOut = true;
+   }
+
+   if (!foundIn || !foundOut)
+   {
+      printf("SYPHONPATCHTEST FAIL: Syphon nodes missing after ApplyPatchData (in=%d, out=%d)\n",
+             foundIn ? 1 : 0, foundOut ? 1 : 0);
+      return 1;
+   }
+
+   printf("SYPHONPATCHTEST OK\n");
+   return 0;
 }
 
 int main(int argc, char** argv)
@@ -49750,6 +49869,9 @@ int main(int argc, char** argv)
    if (getenv("INFINITE_AUDIOPCMTEST") != nullptr)
       return Platform::AudioPcmConversionSelfTest() ? 0 : 1;
 
+   if (getenv("INFINITE_SYPHONPATCHTEST") != nullptr)
+      return RunSyphonPatchTest();
+
    // Out-of-process half of the plugin scan: describe ONE bundle and exit. The
    // parent (Platform::EnumerateVST3Plugins) re-execs us once per bundle so
    // that a plugin which cannot be loaded - damaged code pages earn an
@@ -49868,9 +49990,7 @@ int main(int argc, char** argv)
       glfwTerminate();
       return 1;
    }
-#if defined(_WIN32)
-   Platform::SetWindowIconFromResource(window);
-#endif
+   SetWindowIcon(window);
 
    glfwMakeContextCurrent(window);
 #if !defined(__APPLE__)
