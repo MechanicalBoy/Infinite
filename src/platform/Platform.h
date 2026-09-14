@@ -1009,6 +1009,13 @@ namespace Platform
    // executable by way of a file:// or shell URL.
    void OpenExternalUrl(const std::string& url);
 
+   // Shows `path` selected in the OS file manager (Finder / Explorer). Used by
+   // the render queue's "Reveal" - the one thing a finished export wants that
+   // the app itself can't show. Fire-and-forget and deliberately narrow: it
+   // only ever selects an existing file in its own folder, it never opens or
+   // executes it, and a path that does not exist is dropped.
+   void RevealInFileManager(const std::string& path);
+
    // Blocking HTTPS GET. Call from a worker thread, never the render or audio
    // thread. Returns false on any transport, TLS, or non-2xx failure and fills
    // outError; outBody is only valid when it returns true. Bounded by

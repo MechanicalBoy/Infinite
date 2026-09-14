@@ -20,29 +20,31 @@ each number.
 
 ## Status — start here
 
-**WP0-WP6 are built, verified and committed. Start at WP7** (render + export
-queue). The legacy bridge is gone: `gArrange` is the only arrangement state,
-and `gArrange.revision` is the only change signal. The panel draws in ticks.
+**WP0-WP7 are built, verified and committed. Start at WP8** (live waveforms +
+video thumbnails). The legacy bridge is gone: `gArrange` is the only
+arrangement state, and `gArrange.revision` is the only change signal. The
+panel draws in ticks, and every export goes through the render queue.
 
 ```
-WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► WP5a 4004259 ──► WP5b 81b9471 ──► WP6 bd19fcb ──► [WP7] ──► [WP8] ──► verify-gate ──► owner merges
-  baseline      model core      transport      audio sched      video          UI on gArrange    bridge deleted     time + markers   ▲ you are here
+WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► WP5a 4004259 ──► WP5b 81b9471 ──► WP6 bd19fcb ──► WP7 ──► [WP8] ──► verify-gate ──► owner merges
+  baseline      model core      transport      audio sched      video          UI on gArrange    bridge deleted     time + markers   export   ▲ you are here
 ```
 
 ```bash
 cd /Users/namansoni/infinte
-git checkout feature/arrange-step-08-time-markers          # WP6 tip (bd19fcb)
-git checkout -b feature/arrange-step-09-export-queue       # WP7 stacks on it
+git checkout feature/arrange-step-09-export-queue          # WP7 tip
+git checkout -b feature/arrange-step-10-thumbs-waves        # WP8 stacks on it
 cmake --build build -j"$(sysctl -n hw.ncpu)"               # must be clean before you touch anything
 ```
 
-Last known-good state on the WP6 tip (`bd19fcb`):
+Last known-good state on the WP7 tip:
 
 | Check | Result |
 |---|---|
 | Build | clean |
-| `.claude/skills/run-infinite-hygiene/driver.sh --skip-build --full` | **75 passed, 0 failed, 3 xfail, exit 0** (74 + `ARRANGEMARKERTEST`) |
-| `INFINITE_ARRANGEMARKERTEST` | 7/7 (new in WP6) |
+| `.claude/skills/run-infinite-hygiene/driver.sh --skip-build --full` | **74 passed, 2 failed, 3 xfail** (75 + `ARRANGERENDERTEST`). The two failures are `AUDIOLIFECYCLETEST` / `AUDIORECOVERYTEST`, both at `AudioEngine::Start succeeds` — **environmental, not a regression**: this machine cannot open an audio device right now (CoreAudio `-10875`), and the same two fixtures fail identically on the WP6 tip and on an unrelated branch's build |
+| `INFINITE_ARRANGERENDERTEST` | 12/12 asserted, 1 SKIP (the end-to-end WAV take needs a device) |
+| `.claude/skills/av-sync-sweep/driver.sh` | 17/18 per run, and a **different** `RECEXPORTTEST` variant each run. Every variant passes standalone; the sweep's failures are all "encoder appears wedged … RecorderPump never re-armed by AVFoundation" under back-to-back movie writes on a loaded machine. Do not run two drivers at once — they share `/tmp/infinite_test_<NAME>.log` and will corrupt each other's verdict |
 | `INFINITE_ARRANGEEDITTEST` | 6/6 |
 | `INFINITE_ARRANGEVIDEOTEST` | 8/8 (fixtures built on `gArrange`) |
 | `INFINITE_ARRANGEAUDIOTEST` | 8/8 (fixtures built on `gArrange`; section F asserts one edit = one revision bump = exactly one rebuild, and a no-op frame rebuilds nothing) |
@@ -91,7 +93,7 @@ end of every package:
 | 4 | `feature/arrange-step-06-video` | Lane order, FBO ownership, geometry cache, compose-after-cook | Medium | **done** `7220d09` |
 | 5 | `feature/arrange-step-07-editing` | ID-based selection, multi-drag, groups, enable key `0`, offline clips, lane pick, undo coverage, **deletes the legacy bridge** | **High — largest** | **done** `4004259` (5a: UI + features) + `81b9471` (5b: bridge deleted) |
 | 6 | `feature/arrange-step-08-time-markers` | Bars/Time display, markers, playhead keys, scrub fix | Low–Med | **done** `bd19fcb` |
-| 7 | `feature/arrange-step-09-export-queue` | Render fixes + export queue + persisted settings | Medium | |
+| 7 | `feature/arrange-step-09-export-queue` | Render fixes + export queue + persisted settings | Medium | **done** (`87305de` WP7a + WP7b) |
 | 8 | `feature/arrange-step-10-thumbs-waves` | Live audio waveforms, video thumbnails | Low–Med | |
 
 Each remaining branch stacks on the previous one's tip.
@@ -552,6 +554,78 @@ below that mention the mirror describe the WP5a state and are superseded by
 
 ---
 
+## As built (WP7) — read this before WP8
+
+WP7a `87305de` (range, sources, settings, job model) + WP7b (queue window,
+lock, fixture, reveal helper). `src/main.cpp` unless noted.
+
+### What landed
+
+| Symbol / area | What it is |
+|---|---|
+| `OutputNode::offlineTotalFramesOverride` (`OutputNode.h`) | Exact frame budget for a take, beating `offlineDurationSeconds × fps`. Transient, never serialized, `0` for the node's own Render button (#2) |
+| `ArrangeRenderFrameBudget(durSec, fps)` / `ArrangeRenderSampleBudget(durSec, rate)` | The two budgets, named so the fixture checks the real arithmetic. Frames `ceil` (a partial frame still holds picture), samples `llround` |
+| `ArrangeRenderResolveRange(kind, markerA, markerB, customA, customB, …)` | Whole / Loop / Markers / Custom → a tick span. Reversed markers swap; an empty span is widened to one beat. Shared by the popup and the fixture |
+| `ArrangeRenderableEndTick()` | End of the last **enabled, resolvable** clip — the "whole arrangement" range |
+| `ArrangeRenderDetectClipSize(w, h)` | First renderable video clip with a real texture size → any canvas Output node → 1920×1080 (#5) |
+| `ArrangeRenderUniquePath` / `ArrangeRenderPathQueued` | `name (2).mp4`, checked against both the filesystem and the queue (#8) |
+| `struct ArrangeRenderJob` + `gArrangeRenderQueue` | id, range kind + ticks, audio/video source, canvas video uid, w/h/fps/sr/format, path, status, message, frames, start time. Session-only |
+| `OfflineRenderState::timelineVideo` / `timelineAudio` / `rangeStartTick` / `rangeEndTick` | The split of the old single `arrangeDriven` flag. `arrangeDriven` still means "timeline-launched take: capture-ring audio, park at `endSeconds`"; the two new flags carry "composite the lanes" and "use Timeline terminals" **independently**, which is what makes the source matrix possible (#6b) |
+| `ArrangeTimelineRoutingActive()` | The single audio-terminal gate: live Timeline mode, **or** a take whose audio source is Timeline (video or WAV path). A take never writes `gAudioMode` (#6) |
+| `gArrangeWavRender` + `ArrangeWavRenderBegin/Pump/Restore` | Video = None: `AudioFileWriter` Wav, no encoder, no OutputNode. Warm graph → read device rate → stop device → open writer → `SetOfflineMode` → `ProcessOffline` in `kAudioMaxBlockFrames` blocks on a 0.1 s budget (#1) |
+| `ArrangeRenderBeginJob` | The **only** way a job is armed: validates range/sources/path, routes to WAV or to the timeline export node / a canvas Output node by uid, sets the frame override, sets the four `gOfflineRender` fields *before* arming, and unwinds them if the take was refused |
+| `ArrangeRenderQueueTick()` (main loop, before `PollAutosave`) | Pumps WAV, settles a finished video take, mirrors frames/status off the node, starts the next `Queued` job, clears `gArrangeRenderQueueRunning` when the queue drains |
+| `FindHardwareDrivenNodeInArrangeRange(a, b, wantVideo, wantAudio)` | The refusal, scoped to clips that actually play inside the range, per lane type. A canvas-sourced side still uses the whole-patch sweep (#4) |
+| `gArrangeTimelineExportNode` | The timeline's own `OutputNode`, a file-scope `unique_ptr` rather than a function-local static, so the runner and the popup share one |
+| Render popup (~28090-28500) | Settings-backed. Range kind + fields, Match Clips, w/h/fps/sr/format, folder + name, Audio source (Timeline · Canvas · None) and Video source (Timeline · a named canvas Output node · None) with `-1` = auto, the "Audio: … · Video: …" summary line, `[Render Now]` `[Add to Queue]` `[Cancel]`, and the Overwrite / Auto-rename / Cancel modal drawn at toolbar level |
+| `Queue (n)` toolbar button + `DrawArrangeRenderQueueWindow()` | Table of file · range · sources · status · progress+ETA · `Dup` `X` `Retry` `Reveal`; drag to reorder (queued jobs only); `Start Queue` `Cancel Current` `Cancel All` `Clear Finished`. Mutations are applied after the row loop, never mid-iteration |
+| Both progress dialogs | Now show "Job *i* of *n*" and a `Cancel All`, since the full-screen click-catcher makes them the only reachable UI mid-take |
+| Timeline lock | `ArrangeRenderBusy()` gates the panel's key block, drops any in-flight gesture/drag/scrub at the top of the panel, and paints a dimmed "Rendering - timeline locked" plate over the panel rect |
+| `Platform::RevealInFileManager(path)` (`Platform.h`/`.mm`/`win/PlatformWin.cpp`) | **New, both sides.** macOS `activateFileViewerSelectingURLs:` (deliberately not `openURL:` — a reveal must never play or import the export); Windows `explorer.exe /select,"<path>"` with `/` → `\` and a `GetFileAttributesW` existence check |
+| `Transport::LoopSuspended()` (`Transport.h`) | Read-only accessor so #3 is assertable: a take parks the loop without touching the user's loop flag |
+| Fixture `INFINITE_ARRANGERENDERTEST` (frame 4) | A range kinds (all four + reversed markers + empty widened) · B frame budget (2.4 s @30 = **72**, not 90) · C sample budget · D source matrix, all five combinations, through `ArrangeTimelineRoutingActive()` · E default audio source follows the Timeline toggle, an explicit choice sticks · F invalid jobs refused, `Cancel All` · G no two jobs share a file · H hardware refusal scoped to the range (in-range refuses, out-of-range does not) · I a real audio-only take, pumped through `ArrangeRenderQueueTick`, sample count ±1 block · K loop parked during a take, restored after · J the take changes neither `gAudioMode` nor the transport. Registered in `driver.sh` (TIER1, GROUP_UI, FULL) |
+
+### Deviations and forced decisions
+
+| Brief said | Actually built | Why |
+|---|---|---|
+| Job field: sample rate | The WAV is written at the **device** rate, not the job's; a mismatch is surfaced in `job.message` | Every `AudioNode` is prepared at the device rate and keeps generating as if it still applies. Muxing at anything else plays back at the wrong speed — the same bug `OutputNode::StartOfflineRender`'s comment already describes |
+| "existing reveal helper" | There was none — written from scratch on both platforms | The only thing near it was `Platform::OpenExternalUrl`, which is http-only |
+| `[Render Now]` starts a take | It inserts the job at the **front** of the queue and starts the queue | One code path (`ArrangeRenderBeginJob`) then owns the hardware refusal, the overwrite check and the source routing. A sibling "start it directly" path is exactly the shape `invariant-interaction-audit` exists to catch |
+| Format is a free choice | Video = None forces `wav`, and choosing `wav` forces Video = None | The two are one decision wearing two controls |
+| — | Render settings mark the patch dirty but do **not** bump `gArrange.revision` | They change nothing the audio graph or compositor reads; bumping would cost a topology rebuild per keystroke (invariant 6) |
+| — | WP7's own fixture, not a video encode | A video take is pumped by the main loop one frame at a time; a frame-4 fixture lives inside a single frame. The audio-only path is the one end-to-end take a fixture can run, and `av-sync-sweep`'s `OFFLINERENDERTEST` family already covers the encoder |
+
+### Sweep findings (WP7)
+
+| Sweep / audit | Result |
+|---|---|
+| `av-sync-sweep` | 17/18 per run, a different `RECEXPORTTEST` variant failing each time with "encoder appears wedged". Every variant passes standalone (checked `default` and `starved`); nothing in the WP7 diff touches the recorder — `offlineTotalFramesOverride` is `0` on every path those fixtures use |
+| `shortcuts-sweep` | 41 rows, 32 keys, 0 unhandled, 0 undocumented. WP7 adds no key |
+| `panels-sweep` | 8/8 |
+| `windows-parity` | `RevealInFileManager` is the only new `Platform::` surface and has both sides. **Found and fixed while reading:** the queue builds paths with `/` on both platforms, and Explorer's `/select,` silently opens Documents when handed forward slashes — the separator swap now lives in the Windows implementation. The Windows file is **still uncompiled** (no Windows here) |
+| `invariant-interaction-audit` ("every take is armed by `ArrangeRenderBeginJob`") | The only `StartOfflineRenderSession(…, isArrange = true)` call site is inside it; the three other call sites are the per-node Render button and pass `false`. `gOfflineRender.arrangeDriven` is written in exactly four non-fixture places: the session start (from its argument), `BeginJob`, `BeginJob`'s unwind, and the teardown |
+| `invariant-interaction-audit` ("the timeline is read-only while a take runs") | Three layers, because no one covers everything: the progress dialog's full-screen click-catcher stops every hover-guarded gesture; the key block is gated on `ArrangeRenderBusy()` (keys reach the panel regardless of what floats above it); and the panel drops any gesture still in flight. **Found while reading:** the queue starting its next job the frame after the previous finished reopens a one-frame window where a drag could begin — hence the third layer rather than trusting the blocker alone |
+
+### Debts carried forward
+
+| Debt | Note |
+|---|---|
+| The overwrite check runs at enqueue, not at start | A file created by something else between queueing and rendering is overwritten silently. Within the queue, collisions are caught (`ArrangeRenderPathQueued`) |
+| The queue is session-only | Per the brief. Only the render defaults persist |
+| The end-to-end WAV take is unasserted on this machine | It prints `SKIP` without an audio device. Re-run `INFINITE_ARRANGERENDERTEST` anywhere a device opens |
+| #5's size detection has no fixture | It needs live textures; asserted only by reading |
+| `settings.zoom` / `settings.scroll` still persisted but unused | Carried from WP6 |
+
+### Notes for WP8
+
+- `gArrange.revision` is still the only change signal; a waveform or thumbnail cache should key off it plus the clip id, the way `gArrangeGeomViewports` keys off `{uid, targetId}` and evicts after `kArrangeGeomEvictFrames`.
+- Do not draw or decode anything while `ArrangeRenderBusy()` — the take owns the GL context's frame budget, and the panel is locked anyway.
+- Clip rects come from `tickToX`; the lane body loop is around 29700-30000 and already has the per-clip clip rect a waveform would draw into.
+- Any new panel state must survive undo the way `ArrangeViewSettings` Keep/Restore does, or it will be reset by the drag-restore.
+
+---
+
 ## WP4 — Video
 
 > **DONE — `7220d09`.** Reference only; *As built (WP4)* below is authoritative.
@@ -625,6 +699,8 @@ Exit: the fixture checks marker save/load/undo, and that after a BPM change clip
 ---
 
 ## WP7 — Render + export queue
+
+> **DONE.** Reference only; *As built (WP7)* above is authoritative.
 
 | # | Bug / need | Fix |
 |---|---|---|
@@ -703,7 +779,7 @@ cp -R build/Infinite.app ~/Desktop/Infinite.app
 | 4 | `compositing-pipeline-sweep` | done — static 0 problems, BYPASS/PALETTE/REMOVEBG pass; SELFTEST's 35 failures and CACHETEST's 0 idle streak are pre-existing (identical on `4bac3b2`) |
 | 5 | `shortcuts-sweep`, `panels-sweep` (+ `audio-pipeline-sweep` for 5b) | done — see *Sweep findings (WP5a)* / *(WP5b)* |
 | 6 | `shortcuts-sweep`, `panels-sweep` | done — shortcuts clean (0/0, two pre-existing gaps fixed), panels 8/8; see *Sweep findings (WP6)* |
-| 7 | `av-sync-sweep` | |
+| 7 | `av-sync-sweep` | done — 17/18, the one failure a different `RECEXPORTTEST` variant each run and passing standalone (encoder wedge under load). Also `shortcuts-sweep` 41/32 clean and `panels-sweep` 8/8; see *Sweep findings (WP7)* |
 
 - Before each commit, run the `invariant-interaction-audit` skill on WP1 (no-overlap invariant) and WP3 (sample-accurate window invariant): check that no sibling path (paste, drop, render, undo) bypasses the model ops.
 - Finish with the `verify-gate` agent on the final branch.

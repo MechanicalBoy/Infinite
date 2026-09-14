@@ -910,6 +910,32 @@ namespace Platform
       ShellExecuteW(nullptr, L"open", wideUrl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
    }
 
+   void RevealInFileManager(const std::string& path)
+   {
+      if (path.empty())
+         return;
+      std::wstring widePath = WinCommon::Utf8ToWide(path);
+      // Explorer's /select, verb only understands backslashes: handed
+      // "C:/Users/x/out.mp4" it silently opens Documents instead of selecting
+      // anything. The render queue builds its paths with '/' on both
+      // platforms (one AppPaths join, one format string), so the separator
+      // swap belongs here rather than at every call site.
+      std::replace(widePath.begin(), widePath.end(), L'/', L'\\');
+      // GetFileAttributes rather than a stat: the path is wide here, and a
+      // missing file must be dropped rather than opening an empty Explorer
+      // window on the user's home folder.
+      const DWORD attrs = GetFileAttributesW(widePath.c_str());
+      if (attrs == INVALID_FILE_ATTRIBUTES)
+         return;
+      // /select, is the Explorer verb that opens the containing folder with
+      // the file highlighted - the twin of macOS's
+      // activateFileViewerSelectingURLs. The path is quoted because it can
+      // contain spaces and commas, and "explorer.exe" is launched rather than
+      // the file itself so a reveal can never execute the export.
+      const std::wstring args = L"/select,\"" + widePath + L"\"";
+      ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+   }
+
    bool HttpGet(const std::string& url, const std::string& userAgent,
                 std::string& outBody, std::string& outError,
                 int timeoutSeconds)

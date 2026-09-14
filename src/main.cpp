@@ -607,6 +607,10 @@ namespace
    void StartOfflineRenderSession(OutputNode* n, int width = 0, int height = 0, bool isArrange = false);
    void DrawOfflineRenderProgressWindow();
    void DrawArrangeWavRenderProgressWindow();
+   void DrawArrangeRenderQueueWindow();
+   void ArrangeRenderQueuePosition(int& outIndex, int& outTotal);
+   void ArrangeRenderCancelAll();
+   extern bool gArrangeShowRenderQueue;
    bool StartAudioEngine(std::string& outError);
 
    std::vector<GraphNode> gNodes;
@@ -27756,6 +27760,62 @@ namespace
       return false;
    }
 
+   // The tick span a range kind resolves to against the model as it stands
+   // right now. Extracted from the render popup so INFINITE_ARRANGERENDERTEST
+   // checks the code the popup runs rather than a copy of it. `markerA/B` are
+   // indices into gArrange.markers and are ignored by the other kinds.
+   void ArrangeRenderResolveRange(int kind, int markerA, int markerB, Arrange::Tick customStart,
+                                  Arrange::Tick customEnd, Arrange::Tick& outA, Arrange::Tick& outB)
+   {
+      switch (kind)
+      {
+      case kArrangeRangeLoop:
+         outA = gArrange.settings.loop.start;
+         outB = gArrange.settings.loop.end;
+         break;
+      case kArrangeRangeMarkers:
+      {
+         const int n = (int)gArrange.markers.size();
+         const int ia = std::clamp(markerA, 0, std::max(0, n - 1));
+         const int ib = std::clamp(markerB, 0, std::max(0, n - 1));
+         outA = n > 0 ? gArrange.markers[ia].pos : 0;
+         outB = n > 0 ? gArrange.markers[ib].pos : 0;
+         if (outB < outA)
+            std::swap(outA, outB);
+         break;
+      }
+      case kArrangeRangeCustom:
+         outA = customStart;
+         outB = customEnd;
+         break;
+      case kArrangeRangeWhole:
+      default:
+         outA = 0;
+         outB = ArrangeRenderableEndTick();
+         break;
+      }
+      if (outB <= outA) // never hand the runner an empty job
+         outB = outA + Arrange::kPPQ;
+   }
+
+   // Frames a take of `durSec` writes at `fps`. ceil, not round or truncate:
+   // a 2.4s range at 30fps is 72 frames, and dropping the partial one would
+   // end the file short of the range the user asked for (WP7 #2). The clamp's
+   // upper bound is 240 hours at 1fps / 1 hour at 240fps - a guard against a
+   // nonsense tick range, not a policy.
+   int ArrangeRenderFrameBudget(double durSec, int fps)
+   {
+      return std::clamp((int)std::ceil(durSec * (double)std::max(1, fps)), 1, 240 * 3600);
+   }
+
+   // Sample frames an audio-only take of `durSec` writes at `rate`. Round, not
+   // ceil: unlike a video frame a sample is not a container for a slice of
+   // time, so the nearest whole sample is the closest the file can get.
+   long long ArrangeRenderSampleBudget(double durSec, double rate)
+   {
+      return std::max<long long>(1, llround(durSec * rate));
+   }
+
    std::string ArrangeRenderUniquePath(const std::string& path)
    {
       const size_t dot = path.rfind('.');
@@ -27805,6 +27865,28 @@ namespace
       // Track panel rect for keyboard shortcut focus routing
       gArrangePanelRectMin = panelOrigin;
       gArrangePanelRectMax = ImVec2(panelOrigin.x + panelSize.x, panelOrigin.y + panelSize.y);
+
+      // The timeline is read-only for the duration of a take (WP7): the
+      // compositor and the audio scheduler both read gArrange frame by frame
+      // while a job runs, and an edit landing mid-render would change the
+      // thing being rendered halfway through the file.
+      //
+      // Three layers, because no one of them covers everything: the progress
+      // dialog's full-screen click-catcher stops hover-guarded clicks, the
+      // shortcut block below is gated on ArrangeRenderBusy(), and this drops
+      // any gesture that was somehow still in flight - a drag can only have
+      // started before the take (the Render button needs a click of its own),
+      // but a queue that starts its next job the frame after the previous one
+      // finished reopens that window once per job.
+      if (ArrangeRenderBusy())
+      {
+         if (gArrangeGestureOpen)
+            ArrangeGestureEnd();
+         gArrangeDrag.mode = kArrangeDragNone;
+         gArrangeMarkerDragId = 0;
+         if (gArrangeScrubbing)
+            ArrangeScrubCancel();
+      }
 
       // Mouse wheel horizontal zoom / pan across the timeline area
       const ImVec2 mouse = ImGui::GetIO().MousePos;
@@ -27897,7 +27979,12 @@ namespace
       const bool scrubEscaped = gArrangeScrubbing && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
       if (scrubEscaped)
          ArrangeScrubCancel();
-      if (gArrangeFocused && !ImGui::GetIO().WantTextInput && !scrubEscaped &&
+      // !ArrangeRenderBusy(): the timeline is read-only for the duration of a
+      // take (WP7). The mouse is already blocked by the progress dialog's
+      // click-catcher, but keys reach here regardless of what floats on top,
+      // and an edit landing mid-render would change the model the compositor
+      // is reading frame by frame.
+      if (gArrangeFocused && !ImGui::GetIO().WantTextInput && !scrubEscaped && !ArrangeRenderBusy() &&
           gArrangeDrag.mode == kArrangeDragNone && !gArrangeGestureOpen && !gArrangeScrubbing &&
           gArrangeMarkerDragId == 0)
       {
@@ -28048,35 +28135,8 @@ namespace
 
             // The range the current settings describe, in ticks.
             auto currentRange = [&](Arrange::Tick& outA, Arrange::Tick& outB) {
-               switch (rset.renderRangeKind)
-               {
-               case kArrangeRangeLoop:
-                  outA = rset.loop.start;
-                  outB = rset.loop.end;
-                  break;
-               case kArrangeRangeMarkers:
-               {
-                  const int n = (int)gArrange.markers.size();
-                  const int ia = std::clamp(sArrangeRenderMarkerA, 0, std::max(0, n - 1));
-                  const int ib = std::clamp(sArrangeRenderMarkerB, 0, std::max(0, n - 1));
-                  outA = n > 0 ? gArrange.markers[ia].pos : 0;
-                  outB = n > 0 ? gArrange.markers[ib].pos : 0;
-                  if (outB < outA)
-                     std::swap(outA, outB);
-                  break;
-               }
-               case kArrangeRangeCustom:
-                  outA = rset.renderRangeStart;
-                  outB = rset.renderRangeEnd;
-                  break;
-               case kArrangeRangeWhole:
-               default:
-                  outA = 0;
-                  outB = renderableEnd;
-                  break;
-               }
-               if (outB <= outA) // never hand the runner an empty job
-                  outB = outA + Arrange::kPPQ;
+               ArrangeRenderResolveRange(rset.renderRangeKind, sArrangeRenderMarkerA, sArrangeRenderMarkerB,
+                                         rset.renderRangeStart, rset.renderRangeEnd, outA, outB);
             };
 
             Arrange::Tick rangeA = 0, rangeB = 0;
@@ -28135,6 +28195,31 @@ namespace
                ImGui::OpenPopup("##arrangeRenderPopup");
             }
             ImGui::EndDisabled();
+
+            // Queue button, immediately left of Render. Carries the count of
+            // jobs still to run so the queue is discoverable without opening
+            // the window - a background render is otherwise invisible once
+            // the progress dialog for a WAV-only take has closed.
+            {
+               int pending = 0;
+               for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+                  if (j.status == kArrangeJobQueued || j.status == kArrangeJobRendering ||
+                      j.status == kArrangeJobFinalizing)
+                     pending++;
+               char queueLabel[32];
+               if (pending > 0)
+                  snprintf(queueLabel, sizeof(queueLabel), "Queue (%d)", pending);
+               else
+                  snprintf(queueLabel, sizeof(queueLabel), "Queue");
+               const float queueBtnW =
+                  ImGui::CalcTextSize(queueLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
+               ImGui::SetCursorScreenPos(ImVec2(renderBtnPos.x - queueBtnW - 6.0f, renderBtnPos.y));
+               if (ImGui::Button(queueLabel, ImVec2(queueBtnW, 0.0f)))
+                  gArrangeShowRenderQueue = !gArrangeShowRenderQueue;
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("Export queue (%d job%s)", (int)gArrangeRenderQueue.size(),
+                                    gArrangeRenderQueue.size() == 1 ? "" : "s");
+            }
             ImGui::SetCursorScreenPos(savedCursor);
 
             if (ImGui::BeginPopup("##arrangeRenderPopup"))
@@ -30240,6 +30325,28 @@ namespace
       ImGui::Dummy(ImVec2(kHeaderWidth + rulerWidth, totalH));
 
       ImGui::EndChild();
+
+      // "Rendering - timeline locked" (WP7). The click-catcher the progress
+      // dialog puts across the viewport already stops every mouse gesture in
+      // here, and the shortcut block up top is gated on ArrangeRenderBusy();
+      // this is the reason-why, so an inert timeline reads as locked rather
+      // than as hung. On the panel's own draw list and clipped to the panel,
+      // so it can never paint over the progress dialog.
+      if (ArrangeRenderBusy())
+      {
+         ImDrawList* odl = ImGui::GetWindowDrawList();
+         const ImVec2 a = gArrangePanelRectMin, b = gArrangePanelRectMax;
+         odl->PushClipRect(a, b, true);
+         odl->AddRectFilled(a, b, IM_COL32(0, 0, 0, 110));
+         const char* lockText = "Rendering - timeline locked";
+         const ImVec2 ts = ImGui::CalcTextSize(lockText);
+         const ImVec2 c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
+         const ImVec2 t0(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f);
+         odl->AddRectFilled(ImVec2(t0.x - 12.0f, t0.y - 7.0f), ImVec2(t0.x + ts.x + 12.0f, t0.y + ts.y + 7.0f),
+                            IM_COL32(18, 18, 22, 225), 5.0f);
+         odl->AddText(t0, IM_COL32(235, 235, 240, 255), lockText);
+         odl->PopClipRect();
+      }
 
       if (isWide && gArrangeViewportOnRight)
       {
@@ -34568,6 +34675,12 @@ namespace
          // diagnostic can print rather than draw.
          ImGui::Text("Rendering... %d/%d", done, total);
       }
+      // "Job 2 of 4" while a run works through the queue; silent for a lone
+      // take, where the count would only be noise.
+      int qIdx = 0, qTotal = 0;
+      ArrangeRenderQueuePosition(qIdx, qTotal);
+      if (qTotal > 1 && qIdx > 0)
+         ImGui::TextDisabled("Job %d of %d", qIdx, qTotal);
       // A cancelled take's progress bar is meaningless - it would sit frozen
       // at whatever fraction the render reached, which is precisely what
       // made a slow cancel look like a hang.
@@ -34579,6 +34692,11 @@ namespace
       ImGui::BeginDisabled(n->IsOfflineFinalizing());
       if (ImGui::Button("Cancel", ImVec2(120, 0)))
          n->RequestFinishOfflineRender(true);
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      ImGui::BeginDisabled(qTotal <= 1);
+      if (ImGui::Button("Cancel All", ImVec2(120, 0)))
+         ArrangeRenderCancelAll();
       ImGui::EndDisabled();
 
       ImGui::End();
@@ -34627,13 +34745,315 @@ namespace
          ImGui::Text("%.1fs of %.1fs at %d Hz", (double)done / gArrangeWavRender.sampleRate,
                      (double)total / gArrangeWavRender.sampleRate,
                      (int)llround(gArrangeWavRender.sampleRate));
+      // "Job 2 of 4" while a run works through the queue; silent for a lone
+      // take, where the count would only be noise.
+      int qIdx = 0, qTotal = 0;
+      ArrangeRenderQueuePosition(qIdx, qTotal);
+      if (qTotal > 1 && qIdx > 0)
+         ImGui::TextDisabled("Job %d of %d", qIdx, qTotal);
       ImGui::ProgressBar(frac, ImVec2(280, 0));
       ImGui::BeginDisabled(gArrangeWavRender.cancelRequested);
       if (ImGui::Button("Cancel", ImVec2(120, 0)))
          ArrangeRenderCancelActive();
       ImGui::EndDisabled();
+      ImGui::SameLine();
+      ImGui::BeginDisabled(qTotal <= 1);
+      if (ImGui::Button("Cancel All", ImVec2(120, 0)))
+         ArrangeRenderCancelAll();
+      ImGui::EndDisabled();
       ImGui::End();
       PopElevatedPanelStyle();
+   }
+
+   // ---- the export queue window (WP7) --------------------------------------
+
+   bool gArrangeShowRenderQueue = false;
+
+   const char* ArrangeRenderStatusText(int status)
+   {
+      switch (status)
+      {
+      case kArrangeJobQueued:     return "Queued";
+      case kArrangeJobRendering:  return "Rendering";
+      case kArrangeJobFinalizing: return "Finalizing";
+      case kArrangeJobDone:       return "Done";
+      case kArrangeJobFailed:     return "Failed";
+      case kArrangeJobCancelled:  return "Cancelled";
+      default:                    return "?";
+      }
+   }
+
+   ImVec4 ArrangeRenderStatusColor(int status)
+   {
+      switch (status)
+      {
+      case kArrangeJobDone:       return ImVec4(0.45f, 0.80f, 0.50f, 1.0f);
+      case kArrangeJobFailed:     return ImVec4(0.90f, 0.45f, 0.40f, 1.0f);
+      case kArrangeJobCancelled:  return ImVec4(0.70f, 0.65f, 0.40f, 1.0f);
+      case kArrangeJobRendering:
+      case kArrangeJobFinalizing: return ImVec4(0.50f, 0.72f, 0.95f, 1.0f);
+      default:                    return ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+      }
+   }
+
+   std::string ArrangeRenderFileName(const std::string& path)
+   {
+      const size_t slash = path.find_last_of("/\\");
+      return slash == std::string::npos ? path : path.substr(slash + 1);
+   }
+
+   std::string ArrangeRenderJobSourceText(const ArrangeRenderJob& j)
+   {
+      const char* a = j.audioSource == kArrangeAudioTimeline ? "Timeline"
+                      : j.audioSource == kArrangeAudioCanvas ? "Canvas"
+                                                             : "-";
+      const char* v = j.videoSource == kArrangeVideoTimeline ? "Timeline"
+                      : j.videoSource == kArrangeVideoCanvas ? "Canvas"
+                                                             : "-";
+      return std::string("A:") + a + "  V:" + v;
+   }
+
+   // Seconds left on the running job, or -1 when there is nothing to go on
+   // yet. Straight-line from the frames done so far, which is what every
+   // encoder's ETA is: a long take settles within a few seconds.
+   double ArrangeRenderJobEtaSeconds(const ArrangeRenderJob& j)
+   {
+      if (j.status != kArrangeJobRendering || j.framesDone <= 0 || j.framesTotal <= 0)
+         return -1.0;
+      const double elapsed = glfwGetTime() - j.startedTime;
+      if (elapsed < 0.5)
+         return -1.0;
+      const double perFrame = elapsed / (double)j.framesDone;
+      return perFrame * (double)std::max(0, j.framesTotal - j.framesDone);
+   }
+
+   // Stops the run and marks everything still waiting as cancelled. Shared by
+   // the queue window and by both progress dialogs, which float above the
+   // full-screen click-catcher and so are the only reachable UI mid-take.
+   void ArrangeRenderCancelAll()
+   {
+      // Stop feeding first, then cancel what is in flight: the other order
+      // lets ArrangeRenderQueueTick start the next job in the same frame the
+      // current one was cancelled.
+      gArrangeRenderQueueRunning = false;
+      for (ArrangeRenderJob& j : gArrangeRenderQueue)
+         if (j.status == kArrangeJobQueued)
+         {
+            j.status = kArrangeJobCancelled;
+            j.message = "cancelled";
+         }
+      ArrangeRenderCancelActive();
+   }
+
+   void DrawArrangeRenderQueueControls()
+   {
+      int queued = 0, finished = 0;
+      for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+      {
+         if (j.status == kArrangeJobQueued)
+            queued++;
+         else if (j.status != kArrangeJobRendering && j.status != kArrangeJobFinalizing)
+            finished++;
+      }
+
+      ImGui::BeginDisabled(queued == 0 || gArrangeRenderQueueRunning || ArrangeRenderBusy());
+      if (ImGui::Button("Start Queue", ImVec2(120, 0)))
+         gArrangeRenderQueueRunning = true;
+      ImGui::EndDisabled();
+
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!ArrangeRenderBusy());
+      if (ImGui::Button("Cancel Current", ImVec2(130, 0)))
+         ArrangeRenderCancelActive();
+      ImGui::EndDisabled();
+
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!ArrangeRenderBusy() && queued == 0);
+      if (ImGui::Button("Cancel All", ImVec2(110, 0)))
+         ArrangeRenderCancelAll();
+      ImGui::EndDisabled();
+
+      ImGui::SameLine();
+      ImGui::BeginDisabled(finished == 0);
+      if (ImGui::Button("Clear Finished", ImVec2(120, 0)))
+      {
+         gArrangeRenderQueue.erase(
+            std::remove_if(gArrangeRenderQueue.begin(), gArrangeRenderQueue.end(),
+                           [](const ArrangeRenderJob& j) {
+                              return j.status == kArrangeJobDone || j.status == kArrangeJobFailed ||
+                                     j.status == kArrangeJobCancelled;
+                           }),
+            gArrangeRenderQueue.end());
+      }
+      ImGui::EndDisabled();
+   }
+
+   void DrawArrangeRenderQueueWindow()
+   {
+      if (!gArrangeShowRenderQueue)
+         return;
+
+      ImGui::SetNextWindowSize(ImVec2(640, 320), ImGuiCond_FirstUseEver);
+      PushElevatedPanelStyle(/*isChild=*/false);
+      if (!ImGui::Begin("Render Queue", &gArrangeShowRenderQueue))
+      {
+         ImGui::End();
+         PopElevatedPanelStyle();
+         return;
+      }
+
+      if (gArrangeRenderQueue.empty())
+      {
+         ImGui::TextDisabled("No jobs. Use Render -> Add to Queue on the timeline.");
+      }
+      else if (ImGui::BeginTable("##arrangeQueueTable", 6,
+                                 ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                                    ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp))
+      {
+         ImGui::TableSetupColumn("File", ImGuiTableColumnFlags_WidthStretch, 0.30f);
+         ImGui::TableSetupColumn("Range", ImGuiTableColumnFlags_WidthStretch, 0.20f);
+         ImGui::TableSetupColumn("Sources", ImGuiTableColumnFlags_WidthStretch, 0.16f);
+         ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 0.14f);
+         ImGui::TableSetupColumn("Progress", ImGuiTableColumnFlags_WidthStretch, 0.20f);
+         ImGui::TableSetupColumn("##acts", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+         ImGui::TableHeadersRow();
+
+         int moveFrom = -1, moveTo = -1;
+         int duplicateIdx = -1, removeIdx = -1;
+         const int jobCount = (int)gArrangeRenderQueue.size();
+
+         for (int i = 0; i < jobCount; i++)
+         {
+            ArrangeRenderJob& j = gArrangeRenderQueue[(size_t)i];
+            const bool inFlight = j.status == kArrangeJobRendering || j.status == kArrangeJobFinalizing;
+            ImGui::PushID((int)j.id);
+            ImGui::TableNextRow();
+
+            ImGui::TableNextColumn();
+            // Drag to reorder, the imgui_demo pattern: only a job that has
+            // not started can move, so a reorder can never renumber the take
+            // the runner is holding a pointer into.
+            ImGui::Selectable(ArrangeRenderFileName(j.path).c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip("%s", j.path.c_str());
+            if (j.status == kArrangeJobQueued && ImGui::IsItemActive() && !ImGui::IsItemHovered())
+            {
+               const int next = i + (ImGui::GetMouseDragDelta(0).y < 0.0f ? -1 : 1);
+               if (next >= 0 && next < jobCount && gArrangeRenderQueue[(size_t)next].status == kArrangeJobQueued)
+               {
+                  moveFrom = i;
+                  moveTo = next;
+                  ImGui::ResetMouseDragDelta();
+               }
+            }
+
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s -> %s", ArrangeFormatPos((Arrange::Tick)j.startTick).c_str(),
+                                ArrangeFormatPos((Arrange::Tick)j.endTick).c_str());
+
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", ArrangeRenderJobSourceText(j).c_str());
+
+            ImGui::TableNextColumn();
+            ImGui::TextColored(ArrangeRenderStatusColor(j.status), "%s", ArrangeRenderStatusText(j.status));
+            if (!j.message.empty() && ImGui::IsItemHovered())
+               ImGui::SetTooltip("%s", j.message.c_str());
+
+            ImGui::TableNextColumn();
+            if (inFlight && j.framesTotal > 0)
+            {
+               const float frac = std::clamp((float)j.framesDone / (float)j.framesTotal, 0.0f, 1.0f);
+               char overlay[32];
+               const double eta = ArrangeRenderJobEtaSeconds(j);
+               if (eta >= 0.0)
+                  snprintf(overlay, sizeof(overlay), "%d%%  %s left", (int)(frac * 100.0f),
+                           ArrangeFormatSeconds(eta, false).c_str());
+               else
+                  snprintf(overlay, sizeof(overlay), "%d%%", (int)(frac * 100.0f));
+               ImGui::ProgressBar(frac, ImVec2(-FLT_MIN, 0), overlay);
+            }
+            else if (j.status == kArrangeJobFailed && !j.message.empty())
+            {
+               ImGui::TextDisabled("%s", j.message.c_str());
+            }
+            else
+            {
+               ImGui::TextDisabled("%dx%d @ %d", j.width, j.height, j.fps);
+            }
+
+            ImGui::TableNextColumn();
+            ImGui::BeginDisabled(inFlight);
+            if (ImGui::SmallButton("Dup"))
+               duplicateIdx = i;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X"))
+               removeIdx = i;
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!(j.status == kArrangeJobFailed || j.status == kArrangeJobCancelled));
+            if (ImGui::SmallButton("Retry"))
+            {
+               j.status = kArrangeJobQueued;
+               j.message.clear();
+               j.framesDone = 0;
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(j.status != kArrangeJobDone);
+            if (ImGui::SmallButton("Reveal"))
+               Platform::RevealInFileManager(j.path);
+            ImGui::EndDisabled();
+
+            ImGui::PopID();
+         }
+         ImGui::EndTable();
+
+         // Applied after the loop: mutating the vector mid-iteration is what
+         // turns a click into a dangling reference.
+         if (moveFrom >= 0 && moveTo >= 0)
+            std::swap(gArrangeRenderQueue[(size_t)moveFrom], gArrangeRenderQueue[(size_t)moveTo]);
+         if (duplicateIdx >= 0)
+         {
+            ArrangeRenderJob copy = gArrangeRenderQueue[(size_t)duplicateIdx];
+            copy.id = gArrangeRenderNextJobId++;
+            copy.status = kArrangeJobQueued;
+            copy.message.clear();
+            copy.framesDone = 0;
+            copy.path = ArrangeRenderUniquePath(copy.path); // never two jobs on one file
+            gArrangeRenderQueue.insert(gArrangeRenderQueue.begin() + duplicateIdx + 1, copy);
+         }
+         if (removeIdx >= 0)
+         {
+            if (gArrangeRenderQueue[(size_t)removeIdx].id == gArrangeRenderActiveJobId)
+               ArrangeRenderCancelActive();
+            else
+               gArrangeRenderQueue.erase(gArrangeRenderQueue.begin() + removeIdx);
+         }
+      }
+
+      ImGui::Separator();
+      DrawArrangeRenderQueueControls();
+      ImGui::End();
+      PopElevatedPanelStyle();
+   }
+
+   // "Job 2 of 5", for the progress dialogs. Counts every job that is not
+   // already finished, so it reads as progress through the run rather than
+   // through the list's history.
+   void ArrangeRenderQueuePosition(int& outIndex, int& outTotal)
+   {
+      outIndex = 0;
+      outTotal = 0;
+      for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+      {
+         const bool counts = j.status == kArrangeJobQueued || j.status == kArrangeJobRendering ||
+                             j.status == kArrangeJobFinalizing;
+         if (!counts)
+            continue;
+         outTotal++;
+         if (j.id == gArrangeRenderActiveJobId)
+            outIndex = outTotal;
+      }
    }
 
    // ---- Arrangement render jobs: the runner (WP7) ---------------------------
@@ -34733,7 +35153,7 @@ namespace
       gArrangeWavRender.timelineAudio = job.audioSource == kArrangeAudioTimeline;
       gArrangeWavRender.cancelRequested = false;
       gArrangeWavRender.sampleRate = rate;
-      gArrangeWavRender.framesTotal = std::max<long long>(1, llround((endSec - startSec) * rate));
+      gArrangeWavRender.framesTotal = ArrangeRenderSampleBudget(endSec - startSec, rate);
       gArrangeWavRender.framesDone = 0;
       gArrangeWavRender.startSeconds = startSec;
       gArrangeWavRender.endSeconds = endSec;
@@ -34875,8 +35295,7 @@ namespace
       // Both are set: the override is what the take actually uses (WP7 #2),
       // the seconds keep the node's own params readable if the user opens it.
       rn->offlineDurationSeconds = std::clamp((int)std::ceil(durSec), 1, 3600);
-      rn->offlineTotalFramesOverride =
-         std::clamp((int)std::ceil(durSec * (double)std::max(1, job.fps)), 1, 240 * 3600);
+      rn->offlineTotalFramesOverride = ArrangeRenderFrameBudget(durSec, job.fps);
       rn->includeAudio = job.audioSource != kArrangeAudioNone;
 
       // Set before arming: StartOfflineRenderSession's refusal reads the range
@@ -63181,6 +63600,386 @@ int main(int argc, char** argv)
          printf("arrange marker test: all  %s\n", allOk ? "OK" : "FAIL");
       }
 
+      // Overhaul WP7 (docs/plans/arrangement/overhaul-prompt.md): the export
+      // queue. Checks the parts of a take that are decided before a single
+      // frame or sample is written - the range a kind resolves to, the exact
+      // frame and sample budgets that range implies (#2: a 2.4s range must
+      // not round up to a 3s file), which terminals the audio comes out of
+      // for each source combination, that a take never changes what the user
+      // is monitoring, and the queue's own mechanics. Deliberately NOT a
+      // full encode: a video take is pumped by the main loop a frame at a
+      // time and this fixture lives inside one frame. The audio-only path
+      // runs for real when a device can be opened, and says so when not.
+      if (getenv("INFINITE_ARRANGERENDERTEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         Transport& tr = Transport::Instance();
+         tr.SetTempo(120.0f); // 1 beat = 0.5s, so every expected time below is exact
+         tr.Seek(0.0);
+         const AudioMode modeBefore = gAudioMode;
+
+         GraphNode* rampGn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+         GraphNode* oscGn = SpawnNode("Oscillator", "Synthesizers", 200.0f, 0.0f);
+         const bool spawned = rampGn != nullptr && oscGn != nullptr;
+         printf("arrange render spawn: %s\n", spawned ? "OK" : "FAIL");
+         allOk = allOk && spawned;
+
+         if (spawned)
+         {
+            const uint64_t rampUid = rampGn->uid;
+            const uint64_t oscUid = oscGn->uid;
+
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            const uint64_t vLane = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+            const uint64_t aLane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            auto place = [&](uint64_t lane, uint64_t uid, double startBeat, double lenBeats) {
+               Arrange::Clip c;
+               c.start = Arrange::BeatsToTicks(startBeat);
+               c.length = Arrange::BeatsToTicks(lenBeats);
+               c.srcUid = uid;
+               Arrange::PlaceOverwrite(gArrange, lane, c);
+            };
+            // Video [0, 6) beats = [0, 3)s, audio [0, 8) beats = [0, 4)s.
+            place(vLane, rampUid, 0.0, 6.0);
+            place(aLane, oscUid, 0.0, 8.0);
+            Arrange::AddMarker(gArrange, Arrange::BeatsToTicks(1.0), "A");
+            Arrange::AddMarker(gArrange, Arrange::BeatsToTicks(5.8), "B"); // 2.4s after A
+            gArrange.settings.loop.enabled = true;
+            gArrange.settings.loop.start = Arrange::BeatsToTicks(2.0);
+            gArrange.settings.loop.end = Arrange::BeatsToTicks(4.4); // 1.2s, fractional
+
+            // --- A. Every range kind resolves to the span it names ---------
+            struct RangeCase { int kind; double aBeat; double bBeat; const char* what; };
+            const RangeCase cases[] = {
+               { kArrangeRangeWhole,   0.0, 8.0, "whole" },      // the audio clip is the longest
+               { kArrangeRangeLoop,    2.0, 4.4, "loop" },
+               { kArrangeRangeMarkers, 1.0, 5.8, "markers" },
+               { kArrangeRangeCustom,  3.0, 7.0, "custom" },
+            };
+            bool aOk = true;
+            for (const RangeCase& rc : cases)
+            {
+               Arrange::Tick ra = 0, rb = 0;
+               ArrangeRenderResolveRange(rc.kind, 0, 1, Arrange::BeatsToTicks(3.0),
+                                         Arrange::BeatsToTicks(7.0), ra, rb);
+               const bool ok = ra == Arrange::BeatsToTicks(rc.aBeat) && rb == Arrange::BeatsToTicks(rc.bBeat);
+               if (!ok)
+                  printf("arrange render range %s: FAIL (got %.3f..%.3f beats, want %.3f..%.3f)\n", rc.what,
+                         Arrange::TicksToBeats(ra), Arrange::TicksToBeats(rb), rc.aBeat, rc.bBeat);
+               aOk = aOk && ok;
+            }
+            // Reversed markers swap rather than producing a negative range.
+            {
+               Arrange::Tick ra = 0, rb = 0;
+               ArrangeRenderResolveRange(kArrangeRangeMarkers, 1, 0, 0, 0, ra, rb);
+               aOk = aOk && ra == Arrange::BeatsToTicks(1.0) && rb == Arrange::BeatsToTicks(5.8);
+            }
+            // An empty range is widened, never handed to the runner as-is.
+            {
+               Arrange::Tick ra = 0, rb = 0;
+               ArrangeRenderResolveRange(kArrangeRangeCustom, 0, 0, Arrange::BeatsToTicks(2.0),
+                                         Arrange::BeatsToTicks(2.0), ra, rb);
+               aOk = aOk && rb > ra;
+            }
+            printf("arrange render range kinds: %s\n", aOk ? "OK" : "FAIL");
+            allOk = allOk && aOk;
+
+            // --- B. Frame budget is ceil, not whole seconds (#2) -----------
+            // The marker range is 2.4s: 72 frames at 30fps, and the old
+            // ceil(durationSeconds) * fps would have written 90 (a 3s file).
+            const int f30 = ArrangeRenderFrameBudget(2.4, 30);
+            const int f60 = ArrangeRenderFrameBudget(2.4, 60);
+            const int fLoop = ArrangeRenderFrameBudget(1.2, 25);       // exact, no rounding
+            const int fPartial = ArrangeRenderFrameBudget(1.201, 25);  // one frame more
+            const int fTiny = ArrangeRenderFrameBudget(0.001, 1);      // never zero frames
+            const bool bOk = f30 == 72 && f60 == 144 && fLoop == 30 && fPartial == 31 && fTiny == 1;
+            printf("arrange render frame budget: %s (2.4s@30=%d 2.4s@60=%d 1.2s@25=%d 1.201s@25=%d 0.001s@1=%d)\n",
+                   bOk ? "OK" : "FAIL", f30, f60, fLoop, fPartial, fTiny);
+            allOk = allOk && bOk;
+
+            // --- C. Sample budget rounds to the nearest whole sample -------
+            const long long s48 = ArrangeRenderSampleBudget(2.4, 48000.0);
+            const long long s441 = ArrangeRenderSampleBudget(2.4, 44100.0);
+            const long long sTiny = ArrangeRenderSampleBudget(0.0, 48000.0);
+            const bool cOk = s48 == 115200 && s441 == 105840 && sTiny == 1;
+            printf("arrange render sample budget: %s (2.4s@48k=%lld 2.4s@44.1k=%lld)\n", cOk ? "OK" : "FAIL",
+                   s48, s441);
+            allOk = allOk && cOk;
+
+            // --- D. The source matrix picks the right audio terminals ------
+            // ArrangeTimelineRoutingActive() is the single gate: Timeline
+            // audio must use the timeline's terminals even though the user is
+            // monitoring the canvas, and canvas audio must not, even when the
+            // take is compositing the timeline's video.
+            gAudioMode = AudioMode::Canvas;
+            struct MatrixCase { int audio; int video; bool wantTimeline; const char* what; };
+            const MatrixCase matrix[] = {
+               { kArrangeAudioTimeline, kArrangeVideoTimeline, true,  "timeline A + timeline V" },
+               { kArrangeAudioCanvas,   kArrangeVideoTimeline, false, "canvas A + timeline V" },
+               { kArrangeAudioTimeline, kArrangeVideoCanvas,   true,  "timeline A + canvas V" },
+               { kArrangeAudioCanvas,   kArrangeVideoCanvas,   false, "canvas A + canvas V" },
+               { kArrangeAudioNone,     kArrangeVideoTimeline, false, "no audio" },
+            };
+            bool dOk = true;
+            for (const MatrixCase& mc : matrix)
+            {
+               gOfflineRender.active = true;
+               gOfflineRender.arrangeDriven = true;
+               gOfflineRender.timelineAudio = mc.audio == kArrangeAudioTimeline;
+               gOfflineRender.timelineVideo = mc.video == kArrangeVideoTimeline;
+               const bool got = ArrangeTimelineRoutingActive();
+               if (got != mc.wantTimeline)
+                  printf("arrange render routing %s: FAIL (got %d, want %d)\n", mc.what, got ? 1 : 0,
+                         mc.wantTimeline ? 1 : 0);
+               dOk = dOk && got == mc.wantTimeline;
+            }
+            // The audio-only path routes through its own flag, not gOfflineRender's.
+            gOfflineRender.active = false;
+            gOfflineRender.arrangeDriven = false;
+            gOfflineRender.timelineAudio = false;
+            gOfflineRender.timelineVideo = false;
+            gArrangeWavRender.active = true;
+            gArrangeWavRender.timelineAudio = true;
+            dOk = dOk && ArrangeTimelineRoutingActive();
+            gArrangeWavRender.timelineAudio = false;
+            dOk = dOk && !ArrangeTimelineRoutingActive();
+            gArrangeWavRender.active = false;
+            // And with nothing rendering it is the monitoring mode alone.
+            dOk = dOk && !ArrangeTimelineRoutingActive();
+            gAudioMode = AudioMode::Timeline;
+            dOk = dOk && ArrangeTimelineRoutingActive();
+            gAudioMode = AudioMode::Canvas;
+            printf("arrange render source matrix: %s\n", dOk ? "OK" : "FAIL");
+            allOk = allOk && dOk;
+
+            // --- E. The default audio source follows the Timeline toggle ---
+            // -1 in the settings means "decide when the popup draws" (#6b), so
+            // the same patch renders what the user is currently hearing.
+            gArrange.settings.renderAudioSource = -1;
+            auto defaultAudioSource = []() {
+               return gArrange.settings.renderAudioSource >= 0
+                         ? std::clamp(gArrange.settings.renderAudioSource, 0, 2)
+                         : (gAudioMode == AudioMode::Timeline ? kArrangeAudioTimeline : kArrangeAudioCanvas);
+            };
+            const int defCanvas = defaultAudioSource();
+            gAudioMode = AudioMode::Timeline;
+            const int defTimeline = defaultAudioSource();
+            gArrange.settings.renderAudioSource = kArrangeAudioCanvas; // an explicit choice sticks
+            const int defPinned = defaultAudioSource();
+            gAudioMode = AudioMode::Canvas;
+            const bool eOk = defCanvas == kArrangeAudioCanvas && defTimeline == kArrangeAudioTimeline &&
+                             defPinned == kArrangeAudioCanvas;
+            printf("arrange render default audio source: %s\n", eOk ? "OK" : "FAIL");
+            allOk = allOk && eOk;
+            gArrange.settings.renderAudioSource = -1;
+
+            // --- F. Queue mechanics ----------------------------------------
+            const std::string tmpDir = std::filesystem::temp_directory_path().string();
+            gArrangeRenderQueue.clear();
+            gArrangeRenderActiveJobId = 0;
+            gArrangeRenderQueueRunning = false;
+            auto makeJob = [&](const char* name, int audio, int video, double aBeat, double bBeat) {
+               ArrangeRenderJob j;
+               j.id = gArrangeRenderNextJobId++;
+               j.startTick = Arrange::BeatsToTicks(aBeat);
+               j.endTick = Arrange::BeatsToTicks(bBeat);
+               j.audioSource = audio;
+               j.videoSource = video;
+               j.path = tmpDir + "/infinite_wp7_" + name + (video == kArrangeVideoNone ? ".wav" : ".mp4");
+               gArrangeRenderQueue.push_back(j);
+               return gArrangeRenderQueue.back().id;
+            };
+            makeJob("whole", kArrangeAudioTimeline, kArrangeVideoTimeline, 0.0, 8.0);
+            makeJob("loop", kArrangeAudioTimeline, kArrangeVideoTimeline, 2.0, 4.4);
+            const uint64_t emptyId = makeJob("empty", kArrangeAudioTimeline, kArrangeVideoTimeline, 3.0, 3.0);
+            const uint64_t bothNoneId = makeJob("none", kArrangeAudioNone, kArrangeVideoNone, 0.0, 4.0);
+
+            // A job with nothing to do fails at the gate instead of arming a
+            // take, and the runner moves on rather than stalling the queue.
+            ArrangeRenderJob* emptyJob = ArrangeRenderFindJob(emptyId);
+            ArrangeRenderJob* noneJob = ArrangeRenderFindJob(bothNoneId);
+            const bool emptyRefused = emptyJob != nullptr && !ArrangeRenderBeginJob(*emptyJob) &&
+                                      emptyJob->status == kArrangeJobFailed;
+            const bool noneRefused = noneJob != nullptr && !ArrangeRenderBeginJob(*noneJob) &&
+                                     noneJob->status == kArrangeJobFailed;
+            gArrangeRenderActiveJobId = 0;
+            printf("arrange render invalid jobs refused: %s (%s / %s)\n",
+                   emptyRefused && noneRefused ? "OK" : "FAIL",
+                   emptyJob != nullptr ? emptyJob->message.c_str() : "?",
+                   noneJob != nullptr ? noneJob->message.c_str() : "?");
+            allOk = allOk && emptyRefused && noneRefused;
+
+            // Retry puts a failed job back in line with its counters reset.
+            emptyJob->status = kArrangeJobFailed;
+            emptyJob->framesDone = 17;
+            emptyJob->status = kArrangeJobQueued;
+            emptyJob->framesDone = 0;
+            emptyJob->message.clear();
+
+            // Cancel All stops the run and marks everything still waiting,
+            // and leaves the finished ones alone.
+            noneJob->status = kArrangeJobDone;
+            gArrangeRenderQueueRunning = true;
+            ArrangeRenderCancelAll();
+            int cancelled = 0, done = 0, stillQueued = 0;
+            for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+            {
+               if (j.status == kArrangeJobCancelled) cancelled++;
+               else if (j.status == kArrangeJobDone) done++;
+               else if (j.status == kArrangeJobQueued) stillQueued++;
+            }
+            const bool fOk = !gArrangeRenderQueueRunning && cancelled == 3 && done == 1 && stillQueued == 0;
+            printf("arrange render cancel all: %s (%d cancelled, %d done, %d still queued, running %d)\n",
+                   fOk ? "OK" : "FAIL", cancelled, done, stillQueued, gArrangeRenderQueueRunning ? 1 : 0);
+            allOk = allOk && fOk;
+
+            // --- G. Two jobs never share an output file --------------------
+            const std::string taken = gArrangeRenderQueue[0].path;
+            gArrangeRenderQueue[0].status = kArrangeJobQueued; // back in the queue, so it owns its path
+            const bool seen = ArrangeRenderPathQueued(taken, 0);
+            const bool notMine = !ArrangeRenderPathQueued(taken, gArrangeRenderQueue[0].id);
+            const std::string unique = ArrangeRenderUniquePath(taken);
+            const bool gOk = seen && notMine && unique != taken && unique.size() > 4 &&
+                             unique.compare(unique.size() - 4, 4, ".mp4") == 0 &&
+                             !ArrangeRenderPathQueued(unique, 0);
+            printf("arrange render unique path: %s (%s -> %s)\n", gOk ? "OK" : "FAIL", taken.c_str(),
+                   unique.c_str());
+            allOk = allOk && gOk;
+
+            // --- H. A live source in the range refuses the take ------------
+            // Off-range hardware must not refuse: that was the whole point of
+            // scoping the check to the render range rather than the patch.
+            GraphNode* camGn = SpawnNode("Video In", "Source", 400.0f, 0.0f);
+            if (camGn != nullptr && camGn->node != nullptr && camGn->node->IsHardwareDriven())
+            {
+               Arrange::Clip cam;
+               cam.start = Arrange::BeatsToTicks(10.0);
+               cam.length = Arrange::BeatsToTicks(2.0);
+               cam.srcUid = camGn->uid;
+               Arrange::PlaceOverwrite(gArrange, vLane, cam);
+               const bool inRange =
+                  FindHardwareDrivenNodeInArrangeRange(Arrange::BeatsToTicks(10.0), Arrange::BeatsToTicks(12.0),
+                                                       true, true) != nullptr;
+               const bool outOfRange =
+                  FindHardwareDrivenNodeInArrangeRange(Arrange::BeatsToTicks(0.0), Arrange::BeatsToTicks(6.0),
+                                                       true, true) == nullptr;
+               const bool hOk = inRange && outOfRange;
+               printf("arrange render live source scoped to range: %s (in %d, out %d)\n", hOk ? "OK" : "FAIL",
+                      inRange ? 1 : 0, outOfRange ? 1 : 0);
+               allOk = allOk && hOk;
+            }
+            else
+            {
+               printf("arrange render live source scoped to range: SKIP (no hardware-driven node)\n");
+            }
+
+            // --- I. An audio-only take, for real, when a device exists -----
+            // This is the only end-to-end path a single frame can run: no
+            // encoder, no per-frame main-loop pump. Without a device there is
+            // nothing to render at (every AudioNode is prepared at the device
+            // rate), so it says so rather than failing.
+            gArrangeRenderQueue.clear();
+            gArrangeRenderActiveJobId = 0;
+            gArrangeRenderQueueRunning = false;
+            const std::string wavPath = tmpDir + "/infinite_wp7_audio_only.wav";
+            std::error_code rmEc;
+            std::filesystem::remove(wavPath, rmEc);
+            if (AudioEngine::Instance().SampleRate() > 0.0 || StartAudioEngine(gAudioStartError))
+            {
+               const double devRate = AudioEngine::Instance().SampleRate();
+               ArrangeRenderJob j;
+               j.id = gArrangeRenderNextJobId++;
+               j.startTick = Arrange::BeatsToTicks(1.0);
+               j.endTick = Arrange::BeatsToTicks(5.8); // 2.4s
+               j.audioSource = kArrangeAudioTimeline;
+               j.videoSource = kArrangeVideoNone;
+               j.format = 2;
+               j.path = wavPath;
+               gArrangeRenderQueue.push_back(j);
+               gArrangeRenderQueueRunning = true;
+
+               // What the main loop does, without the frames in between. The
+               // cap is a hang guard: at a 0.1s budget per tick a 2.4s take
+               // needs a handful.
+               int ticks = 0;
+               while (gArrangeRenderQueueRunning && ticks++ < 2000)
+                  ArrangeRenderQueueTick();
+
+               const ArrangeRenderJob& doneJob = gArrangeRenderQueue.back();
+               const long long wantSamples = ArrangeRenderSampleBudget(2.4, devRate);
+               long long gotSamples = -1;
+               std::error_code szEc;
+               const auto bytes = (long long)std::filesystem::file_size(wavPath, szEc);
+               if (!szEc)
+                  gotSamples = (bytes - 44) / 4; // 16-bit stereo after the canonical WAV header
+               // +-1 block: the pump writes in whole blocks of up to
+               // kAudioMaxBlockFrames and the last one is clipped to the
+               // budget, so the file is exact - the tolerance is for a writer
+               // that pads, not for a pump that overruns.
+               const bool iOk = doneJob.status == kArrangeJobDone && gotSamples > 0 &&
+                                std::llabs(gotSamples - wantSamples) <= kAudioMaxBlockFrames &&
+                                !ArrangeRenderBusy() && gArrangeRenderActiveJobId == 0;
+               printf("arrange render audio-only take: %s (%lld samples, want %lld at %.0f Hz, status %d, %d ticks)\n",
+                      iOk ? "OK" : "FAIL", gotSamples, wantSamples, devRate, doneJob.status, ticks);
+               allOk = allOk && iOk;
+               std::filesystem::remove(wavPath, rmEc);
+            }
+            else
+            {
+               printf("arrange render audio-only take: SKIP (no audio device: %s)\n", gAudioStartError.c_str());
+            }
+
+            // --- K. A take parks the loop instead of wrapping inside it ----
+            // A fractional loop used to make the take re-render the loop body
+            // until the frame budget ran out (#3). WP2 moved the wrap into
+            // Transport and suspends it for the duration of a take; the
+            // user's own loop flag is left alone so it comes back after.
+            tr.SetLoop(true, 2.0, 4.4);
+            const bool loopOnBefore = tr.LoopEnabled();
+            const bool suspendedBefore = tr.LoopSuspended();
+            tr.SetOfflineMode(true, 48000.0);
+            const bool suspendedDuring = tr.LoopSuspended();
+            const bool flagKept = tr.LoopEnabled();
+            tr.SetOfflineMode(false);
+            const bool suspendedAfter = tr.LoopSuspended();
+            const bool kOk = loopOnBefore && !suspendedBefore && suspendedDuring && flagKept &&
+                             !suspendedAfter && tr.LoopEnabled();
+            printf("arrange render loop parked during take: %s (before %d, during %d, after %d)\n",
+                   kOk ? "OK" : "FAIL", suspendedBefore ? 1 : 0, suspendedDuring ? 1 : 0,
+                   suspendedAfter ? 1 : 0);
+            allOk = allOk && kOk;
+            tr.SetLoop(false, 0.0, 0.0);
+
+            // --- J. A take never changes what the user is monitoring -------
+            const bool jOk = gAudioMode == modeBefore && !ArrangeRenderBusy() &&
+                             !gOfflineRender.arrangeDriven && !gOfflineRender.timelineAudio &&
+                             !gOfflineRender.timelineVideo && !gArrangeWavRender.active &&
+                             !Transport::Instance().IsOfflineMode();
+            printf("arrange render leaves live state alone: %s (mode %d, offline %d)\n", jOk ? "OK" : "FAIL",
+                   (int)gAudioMode, Transport::Instance().IsOfflineMode() ? 1 : 0);
+            allOk = allOk && jOk;
+
+            std::string why;
+            if (!Arrange::Validate(gArrange, &why))
+            {
+               printf("arrange render validate: %s\n", why.c_str());
+               allOk = false;
+            }
+         }
+
+         gArrangeRenderQueue.clear();
+         gArrangeRenderActiveJobId = 0;
+         gArrangeRenderQueueRunning = false;
+         gAudioMode = modeBefore;
+         tr.SetTempo(120.0f);
+         tr.Seek(0.0);
+         NewPatch();
+         printf("arrange render test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
       if (getenv("INFINITE_UNDOPERFTEST") != nullptr && frameId == 4)
       {
          NewPatch();
@@ -78654,6 +79453,7 @@ int main(int argc, char** argv)
          glfwSetWindowShouldClose(window, GLFW_TRUE);
       }
 
+      DrawArrangeRenderQueueWindow();
       if (gOfflineRender.active)
          DrawOfflineRenderProgressWindow();
       DrawArrangeWavRenderProgressWindow();

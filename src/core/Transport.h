@@ -72,6 +72,11 @@ public:
    bool LoopEnabled() const { return mLoopEnabled.load(std::memory_order_relaxed); }
    double LoopStartBeats() const { return mLoopStartBeats.load(std::memory_order_relaxed); }
    double LoopEndBeats() const { return mLoopEndBeats.load(std::memory_order_relaxed); }
+   // True while an offline take has the loop parked. The user's own loop flag
+   // (LoopEnabled) is deliberately left alone across a take, so this is the
+   // only way to tell "not looping right now" from "the user turned it off" -
+   // INFINITE_ARRANGERENDERTEST asserts the pair (WP7 #3).
+   bool LoopSuspended() const { return mLoopSuspended.load(std::memory_order_relaxed); }
 
    // Musical position; modulator rates are expressed in beats.
    double Beats() const;

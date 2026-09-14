@@ -6512,6 +6512,25 @@ namespace Platform
       }
    }
 
+   void RevealInFileManager(const std::string& path)
+   {
+      if (path.empty())
+         return;
+      @autoreleasepool
+      {
+         NSString* nsPath = [NSString stringWithUTF8String:path.c_str()];
+         if (nsPath == nil || ![[NSFileManager defaultManager] fileExistsAtPath:nsPath])
+            return;
+         NSURL* fileUrl = [NSURL fileURLWithPath:nsPath];
+         if (fileUrl == nil)
+            return;
+         // activateFileViewerSelectingURLs, not openURL: the file is selected
+         // in its folder rather than handed to whatever app claims the
+         // extension - revealing an export must never play or import it.
+         [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ fileUrl ]];
+      }
+   }
+
    bool HttpGet(const std::string& url, const std::string& userAgent,
                 std::string& outBody, std::string& outError,
                 int timeoutSeconds)
