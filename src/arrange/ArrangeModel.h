@@ -115,6 +115,9 @@ namespace Arrange
       int   renderWidth  = 1920;
       int   renderHeight = 1080;
       int   renderFps    = 60;
+      // Legacy: a render is always written at the rate the audio graph was
+      // prepared at (Settings -> Audio), never at a per-arrangement choice,
+      // so nothing reads this. Kept because it is in the patch format.
       int   renderSampleRate = 48000;
       int   renderFormat = 0;     // 0 = mp4, 1 = mov, 2 = wav
       int   renderRangeKind = 0;  // 0 = whole, 1 = loop, 2 = markers, 3 = custom

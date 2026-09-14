@@ -27816,6 +27816,40 @@ namespace
       return std::max<long long>(1, llround(durSec * rate));
    }
 
+   // The sample rate an offline take will actually be written at. Every
+   // AudioNode is PrepareToPlay'd at the rate the device negotiated, so the
+   // engine's rate is not a preference the render can override - it is the
+   // only rate the graph knows how to generate. Before the device has ever
+   // opened, the global setting is the best prediction of what it will be
+   // (0 there means "device default", and 48k is what every supported
+   // backend defaults to).
+   double ArrangeRenderActiveSampleRate()
+   {
+      const double engine = AudioEngine::Instance().SampleRate();
+      if (engine > 0.0)
+         return engine;
+      if (gAudioSampleRate > 0.0)
+         return gAudioSampleRate;
+      return 48000.0;
+   }
+
+   // The block size an offline take should pump in. Node behaviour is
+   // block-granular - MixerNode latches pan/mute/solo once per block before
+   // its per-sample loop, for one - so a take pumped in kAudioMaxBlockFrames
+   // slabs does not sound like what the user heard through their configured
+   // buffer size. Follow the device's real period where the platform reports
+   // one, the Settings -> Audio value otherwise, and never exceed the
+   // capacity every node was prepared with.
+   int OfflineAudioBlockFrames()
+   {
+      int frames = (int)Platform::AudioDeviceBufferFrames(gAudioOutputDeviceId);
+      if (frames <= 0)
+         frames = gAudioBufferFrames;
+      if (frames <= 0)
+         frames = 512;
+      return std::clamp(frames, 1, kAudioMaxBlockFrames);
+   }
+
    std::string ArrangeRenderUniquePath(const std::string& path)
    {
       const size_t dot = path.rfind('.');
@@ -28407,6 +28441,17 @@ namespace
                rset.renderFps = std::clamp(rset.renderFps, 1, 240);
                ImGui::EndDisabled();
 
+               // Read-out, not a control: both render paths write at the rate
+               // and block size the live audio graph runs at, so the only
+               // honest thing the popup can do is say what those are and
+               // where to change them.
+               ImGui::TextDisabled("Audio: %d Hz, %d-frame blocks",
+                                   (int)llround(ArrangeRenderActiveSampleRate()),
+                                   OfflineAudioBlockFrames());
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip("Renders follow the global audio settings.\n"
+                                    "Change them in Menu > Settings > Audio.");
+
                ImGui::Separator();
 
                // ---- Output file ----
@@ -28472,7 +28517,11 @@ namespace
                   job.width = rset.renderWidth;
                   job.height = rset.renderHeight;
                   job.fps = rset.renderFps;
-                  job.sampleRate = rset.renderSampleRate;
+                  // Follows Settings -> Audio, not rset.renderSampleRate: the
+                  // graph only knows how to generate at the rate its nodes
+                  // were prepared at, so a per-arrangement rate would be a
+                  // choice nothing downstream could honour.
+                  job.sampleRate = (int)llround(ArrangeRenderActiveSampleRate());
                   job.format = job.videoSource == kArrangeVideoNone ? 2 : (rset.renderFormat == 1 ? 1 : 0);
                   job.path = renderFullPath();
                   return job;
@@ -35191,11 +35240,14 @@ namespace
       static std::vector<float> sWavInterleave;
 
       const double budgetStart = glfwGetTime();
+      // Same block size the live device runs at, so the take hears the graph
+      // the way the user does (see OfflineAudioBlockFrames).
+      const int blockCap = OfflineAudioBlockFrames();
       while (!gArrangeWavRender.cancelRequested &&
              gArrangeWavRender.framesDone < gArrangeWavRender.framesTotal)
       {
          const int blockFrames = (int)std::min<long long>(
-            kAudioMaxBlockFrames, gArrangeWavRender.framesTotal - gArrangeWavRender.framesDone);
+            blockCap, gArrangeWavRender.framesTotal - gArrangeWavRender.framesDone);
          AudioBuffer buf;
          buf.channels = sWavChannels;
          buf.numChannels = 2;
@@ -58111,10 +58163,15 @@ int main(int argc, char** argv)
                static float sOfflineAudioR[kAudioMaxBlockFrames];
                static float* sOfflineAudioChannels[2] = { sOfflineAudioL, sOfflineAudioR };
 
+               // Pumped at the device's own block size rather than at the
+               // scratch capacity: node behaviour is block-granular, so a
+               // 4096-frame slab renders something the user never heard
+               // (see OfflineAudioBlockFrames).
+               const int blockCap = OfflineAudioBlockFrames();
                int owed = on->OfflineAudioFramesOwed(lookahead);
                while (owed > 0)
                {
-                  const int blockFrames = std::min(owed, kAudioMaxBlockFrames);
+                  const int blockFrames = std::min(owed, blockCap);
                   AudioBuffer offlineBuf;
                   offlineBuf.channels = sOfflineAudioChannels;
                   offlineBuf.numChannels = 2;
@@ -63915,12 +63972,12 @@ int main(int argc, char** argv)
                const auto bytes = (long long)std::filesystem::file_size(wavPath, szEc);
                if (!szEc)
                   gotSamples = (bytes - 44) / 4; // 16-bit stereo after the canonical WAV header
-               // +-1 block: the pump writes in whole blocks of up to
-               // kAudioMaxBlockFrames and the last one is clipped to the
+               // +-1 block: the pump writes in whole blocks of
+               // OfflineAudioBlockFrames() and the last one is clipped to the
                // budget, so the file is exact - the tolerance is for a writer
                // that pads, not for a pump that overruns.
                const bool iOk = doneJob.status == kArrangeJobDone && gotSamples > 0 &&
-                                std::llabs(gotSamples - wantSamples) <= kAudioMaxBlockFrames &&
+                                std::llabs(gotSamples - wantSamples) <= OfflineAudioBlockFrames() &&
                                 !ArrangeRenderBusy() && gArrangeRenderActiveJobId == 0;
                printf("arrange render audio-only take: %s (%lld samples, want %lld at %.0f Hz, status %d, %d ticks)\n",
                       iOk ? "OK" : "FAIL", gotSamples, wantSamples, devRate, doneJob.status, ticks);
@@ -63961,6 +64018,35 @@ int main(int argc, char** argv)
             printf("arrange render leaves live state alone: %s (mode %d, offline %d)\n", jOk ? "OK" : "FAIL",
                    (int)gAudioMode, Transport::Instance().IsOfflineMode() ? 1 : 0);
             allOk = allOk && jOk;
+
+            // --- L. Renders follow the global audio settings ---------------
+            // The popup offers no rate or buffer control; both are read off
+            // the live engine, so a job can never ask for something the
+            // prepared graph cannot generate.
+            const double activeRate = ArrangeRenderActiveSampleRate();
+            const double engineRate = AudioEngine::Instance().SampleRate();
+            const bool rateFollows =
+               activeRate > 0.0 &&
+               (engineRate > 0.0 ? std::abs(activeRate - engineRate) < 1.0
+                                 : std::abs(activeRate - (gAudioSampleRate > 0.0 ? gAudioSampleRate
+                                                                                 : 48000.0)) < 1.0);
+            const int blockNow = OfflineAudioBlockFrames();
+            const uint32_t devPeriod = Platform::AudioDeviceBufferFrames(gAudioOutputDeviceId);
+            const int wantBlock =
+               std::clamp(devPeriod > 0 ? (int)devPeriod
+                                        : (gAudioBufferFrames > 0 ? gAudioBufferFrames : 512),
+                          1, kAudioMaxBlockFrames);
+            // The buffer setting has to actually reach the pump: rendering in
+            // kAudioMaxBlockFrames slabs latches MixerNode's pan/mute/solo
+            // once per 4096 frames instead of once per period.
+            const bool blockFollows = blockNow == wantBlock && blockNow <= kAudioMaxBlockFrames &&
+                                      blockNow >= 1;
+            const bool lOk = rateFollows && blockFollows;
+            printf("arrange render follows audio settings: %s (%.0f Hz, %d-frame blocks, "
+                   "engine %.0f Hz, setting %d, device period %u)\n",
+                   lOk ? "OK" : "FAIL", activeRate, blockNow, engineRate, gAudioBufferFrames,
+                   devPeriod);
+            allOk = allOk && lOk;
 
             std::string why;
             if (!Arrange::Validate(gArrange, &why))
