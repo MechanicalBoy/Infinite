@@ -1,4 +1,4 @@
-// Windows implementation of the Platform facade's decoding surface:
+// Portable implementation of the Platform facade's decoding surface:
 //
 //   - LoadImageRGBA: stb_image (png/jpeg/bmp/gif/tga/webp/pic/pnm), flipped
 //     for GL like the macOS ImageIO path was. TIFF/HEIC are not inbox formats
@@ -15,8 +15,7 @@
 //     AVFoundation-only containers (m4a/alac/caf) report an explicit error.
 
 #include "../Platform.h"
-
-#include "WinCommon.h"
+#include "PathOpen.h"
 
 // Declarations only: STB_IMAGE_IMPLEMENTATION already lives in
 // EnvironmentNode.cpp (it owns the HDRI loader there too), so defining it
@@ -45,6 +44,10 @@
 #include <map>
 #include <string>
 #include <vector>
+
+#if !defined(_WIN32)
+   #define strtok_s strtok_r
+#endif
 
 namespace
 {
@@ -75,14 +78,32 @@ namespace
       return ext;
    }
 
-// Path conventions:
-//   - dr_libs' plain `*_init_file` APIs go through raw fopen, which mangles
-//     non-ASCII paths on Windows; use their explicit `_w` variants.
-//   - stb_image converts its UTF-8 char* paths to _wfopen internally when
-//     built with MSVC, so pass paths.c_str() straight through.
-//   - tinyexr only offers fopen-based loading; hand it the file bytes and use
-//     the from-memory entry point instead.
-#define WPATH(path) WinCommon::Utf8ToWide(path).c_str()
+   inline bool InitDrWavFile(drwav* wav, const std::string& path)
+   {
+#if defined(_WIN32)
+      return drwav_init_file_w(wav, WinCommon::Utf8ToWide(path).c_str(), nullptr) != 0;
+#else
+      return drwav_init_file(wav, path.c_str(), nullptr) != 0;
+#endif
+   }
+
+   inline bool InitDrMp3File(drmp3* mp3, const std::string& path)
+   {
+#if defined(_WIN32)
+      return drmp3_init_file_w(mp3, WinCommon::Utf8ToWide(path).c_str(), nullptr) != 0;
+#else
+      return drmp3_init_file(mp3, path.c_str(), nullptr) != 0;
+#endif
+   }
+
+   inline drflac* OpenDrFlacFile(const std::string& path)
+   {
+#if defined(_WIN32)
+      return drflac_open_file_w(WinCommon::Utf8ToWide(path).c_str(), nullptr);
+#else
+      return drflac_open_file(path.c_str(), nullptr);
+#endif
+   }
 
    // ---- shared geometry helpers ---------------------------------------------
 
@@ -189,7 +210,7 @@ namespace
    bool LoadModelObj(const std::string& path, std::vector<Platform::ModelVertex>& outVertices,
                      std::vector<unsigned int>& outIndices, std::string& outError)
    {
-      std::ifstream file(path, std::ios::binary);
+      std::ifstream file = OpenIfstreamUtf8(path, std::ios::binary);
       if (!file)
       {
          outError = "cannot open file";
@@ -311,7 +332,7 @@ namespace
    bool LoadModelStl(const std::string& path, std::vector<Platform::ModelVertex>& outVertices,
                      std::vector<unsigned int>& outIndices, std::string& outError)
    {
-      std::ifstream file(path, std::ios::binary | std::ios::ate);
+      std::ifstream file = OpenIfstreamUtf8(path, std::ios::binary | std::ios::ate);
       if (!file)
       {
          outError = "cannot open file";
@@ -442,7 +463,7 @@ namespace
    bool LoadModelPly(const std::string& path, std::vector<Platform::ModelVertex>& outVertices,
                      std::vector<unsigned int>& outIndices, std::string& outError)
    {
-      std::ifstream file(path, std::ios::binary);
+      std::ifstream file = OpenIfstreamUtf8(path, std::ios::binary);
       if (!file)
       {
          outError = "cannot open file";
@@ -657,7 +678,7 @@ namespace
 
    bool DecodeAiff(const std::string& path, Platform::SampleBuffer& out, std::string& outError)
    {
-      std::ifstream file(path, std::ios::binary);
+      std::ifstream file = OpenIfstreamUtf8(path, std::ios::binary);
       if (!file)
       {
          outError = "cannot open file";
@@ -780,15 +801,15 @@ namespace
       return true;
    }
 
-   // Whole-file read through wide-char streams so UTF-8 paths survive
-   // conversion to the system codepage. Image decoding goes through stb's
-   // *_from_memory entry points because the one STB_IMAGE_IMPLEMENTATION in
-   // this target (EnvironmentNode.cpp) is compiled with STBI_NO_STDIO - there
-   // are no FILE*-based loaders to link against.
+   // Whole-file read through wide-char streams on Windows (UTF-8 safe) so
+   // UTF-8 paths survive conversion to the system codepage. Image decoding
+   // goes through stb's *_from_memory entry points because the one
+   // STB_IMAGE_IMPLEMENTATION in this target (EnvironmentNode.cpp) is compiled
+   // with STBI_NO_STDIO - there are no FILE*-based loaders to link against.
    bool ReadFileBytes(const std::string& path, std::vector<unsigned char>& outBytes,
                       std::string& outError)
    {
-      std::ifstream file(WinCommon::Utf8ToWide(path), std::ios::binary | std::ios::ate);
+      std::ifstream file = OpenIfstreamUtf8(path, std::ios::binary | std::ios::ate);
       if (!file)
       {
          outError = "cannot open file";
@@ -986,7 +1007,7 @@ namespace Platform
       if (ext == "wav")
       {
          drwav wav;
-         if (!drwav_init_file_w(&wav, WPATH(path), nullptr))
+         if (!InitDrWavFile(&wav, path))
          {
             outError = "not a readable WAV file";
             return false;
@@ -1012,7 +1033,7 @@ namespace Platform
       if (ext == "mp3")
       {
          drmp3 mp3;
-         if (!drmp3_init_file_w(&mp3, WPATH(path), nullptr))
+         if (!InitDrMp3File(&mp3, path))
          {
             outError = "not a readable MP3 file";
             return false;
@@ -1041,7 +1062,7 @@ namespace Platform
 
       if (ext == "flac")
       {
-         drflac* flac = drflac_open_file_w(WPATH(path), nullptr);
+         drflac* flac = OpenDrFlacFile(path);
          if (flac == nullptr)
          {
             outError = "not a readable FLAC file";

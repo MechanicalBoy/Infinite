@@ -37,9 +37,7 @@ status=0
 # --- exit-code gated -------------------------------------------------------
 
 echo "== INFINITE_DSPTEST"
-if [ "$UNAME_S" = "Linux" ]; then
-   echo "   SKIP (Linux audio decode and sampler test fixtures land in P1/P2)"
-elif INFINITE_DSPTEST=1 "$BIN"; then
+if INFINITE_DSPTEST=1 "$BIN"; then
    echo "   pass"
 else
    echo "   FAIL (exit $?)"
@@ -79,6 +77,14 @@ check_verdict() {
 }
 
 check_verdict INFINITE_AUDIOPDCTEST "AUDIOPDCTEST OK"
+
+# Syphon/Spout nodes are hidden from the Add menu on Linux (no equivalent
+# exists) but stay registered so existing patches keep loading. Hiding a node
+# type from the spawn path is exactly the change that can break reading it back
+# from a file, and nothing else covers that: writes a two-node Syphon patch,
+# reads it back and asserts both nodes survive ApplyPatchData. Headless -
+# returns before glfwInit().
+check_verdict INFINITE_SYPHONPATCHTEST "SYPHONPATCHTEST OK"
 
 # Exported-movie A/V sync: pure arithmetic over the same pacing both
 # recorders' PTS depend on, so it runs headless here as well as on macOS -
@@ -145,6 +151,44 @@ if INFINITE_AUDIOPARAMSWEEPTEST=1 "$BIN" > /dev/null 2>&1; then
 else
    echo "   FAIL (crashed, exit $?)"
    status=1
+fi
+
+if [ "$UNAME_S" = "Linux" ]; then
+   echo "== INFINITE_CRASHTEST (crash log verification)"
+   CRASH_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/Infinite/crash"
+   rm -rf "$CRASH_DIR"
+   if INFINITE_CRASHTEST=1 "$BIN" > /dev/null 2>&1; then
+      echo "   FAIL (expected process to crash but exited 0)"
+      status=1
+   else
+      # Process died from signal as expected; verify crash log file was generated
+      if [ -d "$CRASH_DIR" ] && ls "$CRASH_DIR"/crash-*.txt >/dev/null 2>&1; then
+         CRASH_FILE="$(ls -t "$CRASH_DIR"/crash-*.txt | head -1)"
+         if grep -q "SIGSEGV" "$CRASH_FILE"; then
+            echo "   pass (crash log written with SIGSEGV backtrace)"
+         else
+            echo "   FAIL (crash log missing SIGSEGV details)"
+            cat "$CRASH_FILE"
+            status=1
+         fi
+      else
+         echo "   FAIL (no crash-*.txt file found in $CRASH_DIR)"
+         status=1
+      fi
+   fi
+
+   echo "== INFINITE_NETWORKTEST"
+   if ! out="$(INFINITE_NETWORKTEST=1 "$BIN" 2>&1)"; then
+      echo "   FAIL (crashed or failed, exit $?)"
+      printf '%s\n' "$out" | tail -20
+      status=1
+   elif printf '%s\n' "$out" | grep -q "NETWORKTEST OK"; then
+      echo "   pass (HTTP GET and TLS verified via libcurl)"
+   else
+      echo "   FAIL (no OK verdict)"
+      printf '%s\n' "$out" | tail -20
+      status=1
+   fi
 fi
 
 echo

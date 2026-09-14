@@ -1,6 +1,8 @@
 #include "platform/Platform.h"
+#include "tinyfiledialogs.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -8,7 +10,23 @@ namespace Platform
 {
    std::string OpenAudioDialog()
    {
-      return "";
+      if (std::getenv("INFINITE_EXITAFTER") != nullptr) return "";
+      const char* disp = std::getenv("DISPLAY");
+      const char* wayland = std::getenv("WAYLAND_DISPLAY");
+      if ((!disp || disp[0] == '\0') && (!wayland || wayland[0] == '\0')) return "";
+
+      const char* const filterPatterns[] = {
+         "*.wav", "*.aif", "*.aiff", "*.mp3", "*.flac"
+      };
+      const char* res = tinyfd_openFileDialog(
+         "Choose Audio File",
+         "",
+         (int)(sizeof(filterPatterns) / sizeof(filterPatterns[0])),
+         filterPatterns,
+         "Audio files (*.wav, *.aif, *.aiff, *.mp3, *.flac)",
+         0
+      );
+      return res ? std::string(res) : std::string();
    }
 
    bool AudioStart(std::string& outError)
@@ -47,6 +65,9 @@ namespace Platform
 
    bool AudioSpikeStart(std::string& outError)
    {
+      // Not a phase stub: this is a P0 throwaway that was never wired into the
+      // product UI, and PlatformWin.cpp:662 declines it for the same reason.
+      // No phase tag, because no phase will implement it.
       outError = "not supported on Linux";
       return false;
    }
