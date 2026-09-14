@@ -37,11 +37,65 @@ fi
 echo "==> Running INFINITE_SYSINFO..."
 INFINITE_SYSINFO=1 "$BIN_PATH" || true
 
+echo "==> MIDI hardware check: $( [ -e /dev/snd/seq ] && echo 'present' || echo 'absent' )"
+if [ ! -e /dev/snd/seq ]; then
+  # docs/plans/linux/phase-02-audio-midi.md 2.5: neither GitHub Actions
+  # runners nor OrbStack/local containers ship the snd-seq kernel module, so
+  # a real end-to-end ALSA sequencer device is unreachable here on any
+  # platform this harness runs on - documented, not a bug. MidiStart()
+  # already handles this by treating "no sequencer available" as
+  # non-fatal, and INFINITE_MIDIPARSETEST (below, via driver.sh's
+  # MIDIPARSETEST check) is the primary MIDI proof: it feeds synthetic
+  # snd_seq_event_t's straight into the parser, with no real handle needed.
+  echo "    SKIP real ALSA sequencer device test: no /dev/snd/seq in this container (L4, see phase-02-audio-midi.md)."
+fi
+
 echo "==> Running test driver..."
 export INFINITE_BIN="$BIN_PATH"
 # Run driver with skip-build
 EXIT_CODE=0
-./.claude/skills/run-infinite-hygiene/driver.sh --skip-build "$@" || EXIT_CODE=$?
+
+# Task 2.5: the audio group must be proven on two different miniaudio
+# backends - the null backend (always available, no real device) and
+# PulseAudio backed by a null sink (exercises the real negotiation path
+# without depending on host audio hardware). Only the audio group itself
+# needs the double run; other groups/tiers are backend-agnostic.
+RUN_AUDIO_TWICE=0
+for arg in "$@"; do
+  case "$arg" in
+    *audio*) RUN_AUDIO_TWICE=1 ;;
+  esac
+done
+
+if [ "$RUN_AUDIO_TWICE" = "1" ]; then
+  echo "==> Audio group pass 1/2: INFINITE_AUDIO_BACKEND=null"
+  INFINITE_AUDIO_BACKEND=null ./.claude/skills/run-infinite-hygiene/driver.sh --skip-build "$@" || EXIT_CODE=$?
+
+  PULSE_READY=0
+  if command -v pulseaudio >/dev/null 2>&1 && command -v pactl >/dev/null 2>&1; then
+    echo "==> Starting a throwaway PulseAudio daemon with a null sink for pass 2/2..."
+    pulseaudio --start --exit-idle-time=-1 --disallow-exit -D >/tmp/infinite_pulse.log 2>&1 || true
+    if pactl info >/dev/null 2>&1; then
+      pactl load-module module-null-sink sink_name=infinite_null_sink >/dev/null 2>&1 || true
+      pactl set-default-sink infinite_null_sink >/dev/null 2>&1 || true
+      PULSE_READY=1
+    fi
+  fi
+
+  if [ "$PULSE_READY" = "1" ]; then
+    echo "==> Audio group pass 2/2: INFINITE_AUDIO_BACKEND=pulse (null sink)"
+    PASS2_EXIT=0
+    INFINITE_AUDIO_BACKEND=pulse ./.claude/skills/run-infinite-hygiene/driver.sh --skip-build "$@" || PASS2_EXIT=$?
+    if [ "$PASS2_EXIT" -ne 0 ]; then
+      EXIT_CODE=$PASS2_EXIT
+    fi
+    pulseaudio --kill >/dev/null 2>&1 || true
+  else
+    echo "==> PulseAudio (or pactl) not available in this container - pass 2/2 skipped, null-backend pass above is the audio-group proof for this run."
+  fi
+else
+  ./.claude/skills/run-infinite-hygiene/driver.sh --skip-build "$@" || EXIT_CODE=$?
+fi
 
 echo "==> Per-category shots..."
 # Soft-fail: a missing shot is reported in the artifact but must not mask the

@@ -130,6 +130,16 @@ TIER1_CHECKS=(
   "AUTOSAVEMARKERTEST:1"
 )
 
+# INFINITE_MIDIPARSETEST is a Linux-only fixture (#if defined(__linux__) in
+# main.cpp) exercising the ALSA sequencer event parser with synthetic
+# snd_seq_event_t's - it needs no real MIDI hardware or /dev/snd/seq. It is
+# appended to TIER1_CHECKS and GROUP_AUDIO conditionally on $OS so macOS and
+# Windows runs of this same driver never set an env var their binary doesn't
+# recognise (which would print no verdict line and read as a bare FAIL).
+if [ "$OS" = "Linux" ]; then
+  TIER1_CHECKS+=("MIDIPARSETEST:1")
+fi
+
 GROUP_AUDIO=(
   "AUDIOPARAMSWEEPTEST:1"
   "AUDIOTEARDOWNSWEEPTEST:10"
@@ -141,6 +151,9 @@ GROUP_AUDIO=(
   "RECEXPORTTEST:1"
   "METALLICDECAYTEST:1"
 )
+if [ "$OS" = "Linux" ]; then
+  GROUP_AUDIO+=("MIDIPARSETEST:1")
+fi
 
 GROUP_3D=(
   "GEOTEST:30"
@@ -304,6 +317,9 @@ FULL_TESTS=(
   "CURVESLUTTEST:10"
   "METALLICDECAYTEST:1"
 )
+if [ "$OS" = "Linux" ]; then
+  FULL_TESTS+=("MIDIPARSETEST:1")
+fi
 
 # Helper to add checks uniquely to an array
 declare -a SELECTED_TESTS=()
