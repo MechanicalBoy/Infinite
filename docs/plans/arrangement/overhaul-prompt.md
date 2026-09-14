@@ -20,13 +20,15 @@ each number.
 
 ## Status — start here
 
-**WP0-WP7 are built, verified and committed. Start at WP8** (live waveforms +
-video thumbnails). The legacy bridge is gone: `gArrange` is the only
+**WP0-WP8 are built, verified and committed, and `verify-gate` has run
+(clear to merge).** The tip is `feature/arrange-step-11-main-sync` (WP8 +
+`main` merged in + two follow-ups); only the owner's merge remains. Current
+state: `docs/plans/arrangement/wp8-handoff.md`. The text below is history. The legacy bridge is gone: `gArrange` is the only
 arrangement state, and `gArrange.revision` is the only change signal. The
 panel draws in ticks, and every export goes through the render queue.
 
 ```
-WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► WP5a 4004259 ──► WP5b 81b9471 ──► WP6 bd19fcb ──► WP7 357a757 ──► WP8 ──► verify-gate ──► owner merges
+WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 ──► WP4 7220d09 ──► WP5a 4004259 ──► WP5b 81b9471 ──► WP6 bd19fcb ──► WP7 357a757 ──► WP8 69ac331 ──► sync 04639e7 ──► verify-gate ✓ ──► owner merges
   baseline      model core      transport      audio sched      video          UI on gArrange    bridge deleted     time + markers   export   thumbs+waves   ▲ all done
 ```
 

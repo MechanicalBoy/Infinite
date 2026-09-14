@@ -8,7 +8,8 @@ built; nothing is merged.
 | | |
 |---|---|
 | Worktree | `/Users/namansoni/infinte/.claude/worktrees/arrange-step-07` |
-| Tip branch | `feature/arrange-step-10-thumbs-waves` (WP8) |
+| Tip branch | `feature/arrange-step-11-main-sync` — WP8 + `main` merged in + two follow-ups (see *Post-WP8* below). **Merge this one** |
+| WP8 branch | `feature/arrange-step-10-thumbs-waves` — unchanged, for reference |
 | Authoritative plan | `docs/plans/arrangement/overhaul-prompt.md` — each WP's **"As built"** section beats its original brief wherever they disagree |
 | App copy | `~/Desktop/Infinite.app`, rebuilt after every green build |
 
@@ -16,7 +17,8 @@ built; nothing is merged.
 main
  └─ …WP6 bd19fcb
      └─ feature/arrange-step-09-export-queue   87305de (WP7a) → 2ebe2f1 (WP7b) → 357a757 (WP7c)
-         └─ feature/arrange-step-10-thumbs-waves   (WP8)   ◄ tip
+         └─ feature/arrange-step-10-thumbs-waves   69ac331 (WP8)
+             └─ feature/arrange-step-11-main-sync   035de32 (merge main) → f8ef1d0 → 04639e7   ◄ tip
 ```
 
 Branches are **stacked**, not independent — WP8 contains WP7 contains WP6.
@@ -26,8 +28,28 @@ Merging the tip merges the whole overhaul. **The owner merges; no session does.*
 
 | Step | Note |
 |---|---|
-| Run the `verify-gate` agent on the tip branch | The plan asks for it explicitly as the final gate. Advisory — it reports, it does not block or merge |
-| Merge | Owner only |
+| ~~Run the `verify-gate` agent~~ | **Done** on `04639e7` — *clear to merge*. See *Post-WP8* |
+| Merge `feature/arrange-step-11-main-sync` into `main` | Owner only. `main` is already merged in, so it fast-forwards |
+
+## Post-WP8 (the sync branch)
+
+| Commit | What | Why |
+|---|---|---|
+| `035de32` | Merge `main` (15 Linux-port commits) | No textual conflicts, but two semantic ones — next row |
+| `f8ef1d0` | `PlatformLinux.cpp`: `PollTrackpadMagnificationDelta` `float` → `double`; `RevealInFileManager` Phase-0 stub | Linux declared the first with the wrong return type and lacked the second (WP7). Both would have broken the Linux build after the merge. **`feature/linux-step-01-desktop` carries the same `float` and needs the same fix plus a real reveal** (xdg-open / `FileManager1.ShowItems`) |
+| `04639e7` | `RunTopology` flushes the bucket in progress when a playing head is outside every window | A clip followed by a gap never published its last 1/16 beat — a flat notch at its right edge. `ARRANGEWAVETEST` G now renders past the clip end and asserts 32/32 (still SKIPs without a device) |
+
+`verify-gate` on `04639e7`:
+
+| Check | Result |
+|---|---|
+| hygiene `--full` (pre-`04639e7`) / `--fast` (post) | 75/2/3 / 29/29 — baseline |
+| panels / audio-pipeline / av-sync / shortcuts | 8/8 · 11/15 (0 new, 423 blind spots) · 18/18 · 41/32 clean |
+| windows-parity | pass — mac/win/linux signatures match for both new `Platform::` functions |
+| invariant-interaction-audit | pass — both `ClipPeakRing::Write` sites stamp-guarded |
+| infinite-code-review | pass |
+| data-accuracy-sweep | 8/9 + `IMAGERESYNTH_SELFTEST`. Both failures **pre-existing**: `IMAGERESYNTH_SELFTEST` is WP4's documented 35 texture-less types; `UTILTEST` ("1 upload, SUSPECT - re-uploading through Null") reproduces identically on a build with no arrangement code (`linux-eval` worktree, `e447504`) |
+| Routing gap | `verify-gate`'s table has no arrangement row — `src/arrange/` was covered by the always-run skills and the per-WP audits only |
 
 ## State of the test suite on this machine
 
@@ -49,6 +71,7 @@ The failures that are *expected* and **not** regressions:
 | `MOLDERTEST` | Pre-existing, unbaselined, handled on its own branch. Do not fold it into this work |
 | `AUDIOPARAMSWEEPTEST` | 423 baselined blind spots. Count them (`grep -c '\[FAIL\]'`) — 423 means nothing new |
 | `GROUPTEST`, `DRAGTEST`, `PLUGINDRAGTEST` | Listed in `known-test-failures.txt`; the driver prints them as `[xfail]` and that file IS the confirmation |
+| `UTILTEST`, `IMAGERESYNTH_SELFTEST` (data-accuracy-sweep only) | Pre-existing, not arrangement — see *Post-WP8* |
 
 The same device gap makes three assertions print `SKIP` rather than run:
 the WP7 end-to-end WAV take, WP8's "playback fills the waveform", and the
