@@ -17,6 +17,14 @@ uniforms, serialization traps) and the required method for chasing a symbol past
 first match. Follow that method — this agent exists to execute it well, not to
 replace it.
 
+For a deep dive ("how does X work", "map X", "deep dive into X"), also invoke
+`codebase-lenses` and follow its **Mode B**:
+- Pick the lenses where X has real substance.
+- Report per lens at the zoom level (L1 system → L4 code) the question needs.
+- Finish with the "Links across lenses" block and a per-lens "not found" list.
+Skip lens framing only for a narrow single-path question, such as "where is Y
+registered".
+
 ## 1. Read efficiently, not narrowly
 
 - Once a file is confirmed relevant, read it whole (or in large contiguous chunks),
