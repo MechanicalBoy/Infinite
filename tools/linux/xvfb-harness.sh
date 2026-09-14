@@ -67,6 +67,13 @@ fi
 for log in /tmp/infinite_shot.log /tmp/infinite_build.log; do
   [ -f "$log" ] && cp "$log" "$ARTIFACTS_DIR/" 2>/dev/null || true
 done
+# Per-test output. driver.sh writes /tmp/infinite_test_<NAME>.log for every
+# check and, on failure, prints only "see <that path>" - which is useless from
+# a CI log, because the path is on a runner that no longer exists. A test that
+# passes locally on arm64 and fails here on x86_64 is exactly the case this
+# harness exists to catch, and without these files there is nothing to read.
+mkdir -p "$ARTIFACTS_DIR/test-logs"
+cp /tmp/infinite_test_*.log "$ARTIFACTS_DIR/test-logs/" 2>/dev/null || true
 if [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/Infinite" ]; then
   cp -r "${XDG_CONFIG_HOME:-$HOME/.config}/Infinite" "$ARTIFACTS_DIR/app-support" 2>/dev/null || true
 fi
