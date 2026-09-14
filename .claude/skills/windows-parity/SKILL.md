@@ -338,3 +338,12 @@ built; this skill covers what happens to it on the other platform. If you are
 adding a node that needs a file, a device, a codec, or a font, read the
 relevant one **and** §2 here. `infinite-code-review` should apply §3 as a
 checklist whenever a diff touches `src/platform/`.
+
+`linux-parity` is the third implementation behind the same `Platform.h` and
+builds directly on this skill — read this one first, then that one. Two
+consequences for the text above: §2's "two-sided obligation" is now
+**three**-sided (a Linux definition too, and `LINUX_SOURCES` at
+`CMakeLists.txt:508`), and `src/platform/common/` now exists for code Windows
+and Linux genuinely share — prefer moving a portable function there over
+copying it. Unlike Windows, Linux **can** be executed locally via
+`tools/linux/local.sh`, so Linux claims should be run, not reasoned about.

@@ -65,6 +65,9 @@ namespace Platform
 
    bool AudioSpikeStart(std::string& outError)
    {
+      // Not a phase stub: this is a P0 throwaway that was never wired into the
+      // product UI, and PlatformWin.cpp:662 declines it for the same reason.
+      // No phase tag, because no phase will implement it.
       outError = "not supported on Linux";
       return false;
    }
