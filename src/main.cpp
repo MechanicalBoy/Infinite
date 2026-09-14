@@ -109,7 +109,6 @@ namespace
 #include "core/Palette.h"
 #include "core/Patch.h"
 #include "arrange/ArrangeModel.h"
-#include "arrange/ArrangeLegacy.h"
 #include "core/NodeViewport.h"
 #include "core/AudioCable.h"
 #include "core/NoteCable.h"
@@ -1025,13 +1024,12 @@ namespace
    bool  gArrangeSnapToGrid = true;
    bool  gArrangeDraggingPlayhead = false;
    // Loop region: Shift+drag on the ruler sets [start,end) and arms it;
-   // right-clicking the ruler while armed disarms it. The manual duration
-   // field in the toolbar is the same mechanism with start pinned to 0.
-   bool   gArrangeLoopEnabled = false;
-   double gArrangeLoopStartSec = 0.0;
-   double gArrangeLoopEndSec = 0.0;
+   // right-clicking the ruler while armed disarms it. The loop itself is
+   // gArrange.settings.loop, in ticks (WP5b) - these are only the drag's
+   // transient state. The anchor is a tick so the band does not slide when
+   // the tempo changes mid-drag.
    bool   gArrangeShiftDraggingLoop = false;
-   double gArrangeLoopDragAnchorSec = 0.0;
+   int64_t gArrangeLoopDragAnchorTick = 0;
    bool   gArrangeFitViewToLoopPending = false; // set by the manual duration field; consumed once rulerWidth is known
    bool  gArrangeClaimedKeys = false;
    bool  gArrangeFocused = false;
@@ -1103,15 +1101,12 @@ namespace
    //
    // gArrange is the source of truth: ticks, stable clip ids, markers and
    // settings, and the only thing that is saved, loaded, undone or edited -
-   // every panel edit goes through an Arrange:: op (WP5a).
-   // gArrangeStreams is a read-only mirror in seconds and live node indices,
-   // rebuilt from gArrange whenever its revision (or the tempo) moves - see
-   // RefreshArrangeMirror. Only the audio topology, the video layer walk and
-   // two fixtures still read it; WP5b moves those onto gArrange and deletes it.
+   // every panel edit goes through an Arrange:: op (WP5a). The audio
+   // schedule, the video layer walk and the panel all read it directly
+   // (WP5b deleted the seconds mirror), and gArrange.revision is the one
+   // change signal: every op and every direct field edit bumps it, and the
+   // audio topology rebuilds when it moves (ArrangeAudioRebuildIfStale).
    Arrange::Model gArrange;
-   std::vector<LegacyArrange::StreamRecord> gArrangeStreams;
-   uint64_t gArrangeMirroredRevision = UINT64_MAX;
-   float    gArrangeMirroredTempo = 0.0f;
    // Bumped on every new-document boundary (File > New, File > Open) and never
    // by undo. Anything that must not outlive the document it was made in -
    // the clip clipboard, the selection - carries the generation it was made
@@ -5487,65 +5482,97 @@ namespace
       return nullptr;
    }
 
-   // The arrangement's node lookup. A linear scan like FindNodeByIndex rather
-   // than a cached map: it runs at the save/load/undo boundaries, not per clip
-   // per frame. WP5 adds the per-frame cached map the panel draw needs.
+   // uid -> GraphNode*, backing FindNodeByUid (WP5b). The arrangement asks for
+   // a node by uid per clip per frame (panel draw, video layer walk, audio
+   // schedule), so the linear scan it replaced was O(clips x nodes) a frame.
+   //
+   // Kept honest three ways, so a mutation site that forgets to report in
+   // costs a rebuild, never a wrong answer:
+   //  - SpawnNode appends in place (NoteNodeAppended); erase, clear and a
+   //    uid restore on load invalidate or patch it (InvalidateNodeByUid,
+   //    NoteNodeUidChanged).
+   //  - A lookup rebuilds whenever gNodes' storage or size moved since the
+   //    map was built - a reallocation dangles every pointer in it.
+   //  - The main loop invalidates it once a frame, and a hit is re-checked
+   //    (uid still matches) before it is returned.
+   // First uid wins on a duplicate, which is what the linear scan did.
+   std::unordered_map<uint64_t, GraphNode*> gNodeByUid;
+   bool gNodeByUidDirty = true;
+   const GraphNode* gNodeByUidData = nullptr;
+   size_t gNodeByUidSize = 0;
+
+   void InvalidateNodeByUid()
+   {
+      gNodeByUidDirty = true;
+   }
+
+   void RebuildNodeByUid()
+   {
+      gNodeByUid.clear();
+      gNodeByUid.reserve(gNodes.size());
+      for (GraphNode& gn : gNodes)
+         if (gn.uid != 0)
+            gNodeByUid.emplace(gn.uid, &gn);
+      gNodeByUidData = gNodes.data();
+      gNodeByUidSize = gNodes.size();
+      gNodeByUidDirty = false;
+   }
+
+   // After gNodes.push_back: one emplace when nothing else moved, otherwise
+   // leave it to the next lookup's rebuild (a reallocating push moved every
+   // node).
+   void NoteNodeAppended()
+   {
+      if (!gNodeByUidDirty && gNodes.data() == gNodeByUidData && gNodes.size() == gNodeByUidSize + 1)
+      {
+         GraphNode& gn = gNodes.back();
+         if (gn.uid != 0)
+            gNodeByUid.emplace(gn.uid, &gn);
+         gNodeByUidSize = gNodes.size();
+      }
+      else
+      {
+         gNodeByUidDirty = true;
+      }
+   }
+
+   void NoteNodeUidChanged(uint64_t oldUid, GraphNode* gn)
+   {
+      if (gNodeByUidDirty)
+         return;
+      auto it = gNodeByUid.find(oldUid);
+      if (it != gNodeByUid.end() && it->second == gn)
+         gNodeByUid.erase(it);
+      if (gn->uid != 0)
+         gNodeByUid.emplace(gn->uid, gn);
+   }
+
    GraphNode* FindNodeByUid(uint64_t uid)
    {
       if (uid == 0)
          return nullptr;
-      for (GraphNode& gn : gNodes)
+      if (gNodeByUidDirty || gNodes.data() != gNodeByUidData || gNodes.size() != gNodeByUidSize)
+         RebuildNodeByUid();
+      auto it = gNodeByUid.find(uid);
+      if (it == gNodeByUid.end())
+         return nullptr;
+      if (it->second->uid != uid)
       {
-         if (gn.uid == uid)
-            return &gn;
+         // Something rewrote a uid in place without reporting it. Rebuild once
+         // rather than hand back the wrong node.
+         RebuildNodeByUid();
+         it = gNodeByUid.find(uid);
+         return it == gNodeByUid.end() ? nullptr : it->second;
       }
-      return nullptr;
+      return it->second;
    }
 
-   // The two LegacyArrange callbacks, in one place so both boundaries agree on
-   // what "unassigned" means: index -1 and uid 0 are the same thing.
-   uint64_t ArrangeIndexToUid(int index, void*)
-   {
-      const GraphNode* gn = FindNodeByIndex(index);
-      return gn ? gn->uid : 0;
-   }
-
-   int ArrangeUidToIndex(uint64_t uid, void*)
-   {
-      const GraphNode* gn = FindNodeByUid(uid);
-      return gn ? gn->index : -1;
-   }
-
-   // gArrange <- the legacy streams. Production code no longer calls this
-   // (gArrange is edited directly since WP5a); only the WP3/WP4 fixtures that
-   // still build their scenes in gArrangeStreams do. WP5b deletes it.
-   void SyncArrangeFromLegacy()
-   {
-      LegacyArrange::FromLegacyStreams(gArrangeStreams, (double)Transport::Instance().Tempo(),
-                                       &ArrangeIndexToUid, nullptr, gArrange);
-   }
-
-   // The legacy mirror <- gArrange, lanes and clips only. Cheap no-op unless
-   // the model's revision or the tempo moved since the last rebuild, so it is
-   // safe to call after every edit and once per frame (the main loop does,
-   // just before the audio schedule check reads the mirror). A tempo change
-   // re-mirrors because the model is in ticks: clips keep their bar
-   // positions and only their seconds change.
-   void RefreshArrangeMirror()
-   {
-      const float tempo = Transport::Instance().Tempo();
-      if (gArrange.revision == gArrangeMirroredRevision && tempo == gArrangeMirroredTempo)
-         return;
-      LegacyArrange::ToLegacyStreams(gArrange, (double)tempo, &ArrangeUidToIndex, nullptr, gArrangeStreams);
-      gArrangeMirroredRevision = gArrange.revision;
-      gArrangeMirroredTempo = tempo;
-   }
-
-   // Every panel edit ends here: republish the mirror and mark the document
-   // dirty. The undo push is the caller's (see ArrangeEdit below).
+   // Every panel edit ends here: mark the document dirty. The undo push is the
+   // caller's (see ArrangeEdit below). Nothing is republished - the audio
+   // schedule, video layers and panel all read gArrange directly, and the
+   // audio side notices the edit through gArrange.revision (WP5b).
    void ArrangeCommitEdit()
    {
-      RefreshArrangeMirror();
       gPatchDirty = true;
    }
 
@@ -5622,35 +5649,53 @@ namespace
       if (gArrangeGestureBefore.revision == gArrange.revision)
          return false;
       if (ArrangeContentEqual(gArrangeGestureBefore, gArrange))
-      {
-         RefreshArrangeMirror();
          return false;
-      }
       PushArrangeUndoSnapshot(gArrangeGestureBefore);
       ArrangeCommitEdit();
       return true;
    }
 
-   // The legacy mirror <- gArrange, plus the loop re-seat. Called after
-   // anything replaces the model wholesale (load, undo, New).
-   void SyncLegacyFromArrange()
+   // Transport's loop <- gArrange.settings.loop. The model holds the loop in
+   // ticks and the panel edits it there; Transport runs in beats, so this is
+   // the one place the two meet. Called after every loop edit and after
+   // anything replaces the model wholesale (load, undo, New) - otherwise the
+   // loop the user saved comes back as a band on screen playback ignores.
+   void PublishArrangeLoop()
    {
-      Transport& tr = Transport::Instance();
-      LegacyArrange::ToLegacyStreams(gArrange, (double)tr.Tempo(),
-                                     &ArrangeUidToIndex, nullptr, gArrangeStreams);
-      gArrangeMirroredRevision = gArrange.revision;
-      gArrangeMirroredTempo = tr.Tempo();
+      const Arrange::LoopRange& loop = gArrange.settings.loop;
+      Transport::Instance().SetLoop(loop.enabled, Arrange::TicksToBeats(loop.start),
+                                    Arrange::TicksToBeats(loop.end));
+   }
 
-      // The loop is model state (ticks) that the panel still edits in seconds.
-      // Anything that replaces the model - load, undo, New - has to re-seat
-      // both the panel's seconds and Transport's beats, or the loop the user
-      // saved comes back as a band on screen that playback ignores.
-      const double secPerBeat = 60.0 / (double)tr.Tempo();
-      gArrangeLoopEnabled = gArrange.settings.loop.enabled;
-      gArrangeLoopStartSec = Arrange::TicksToBeats(gArrange.settings.loop.start) * secPerBeat;
-      gArrangeLoopEndSec = Arrange::TicksToBeats(gArrange.settings.loop.end) * secPerBeat;
-      tr.SetLoop(gArrangeLoopEnabled, Arrange::TicksToBeats(gArrange.settings.loop.start),
-                 Arrange::TicksToBeats(gArrange.settings.loop.end));
+   // Every loop edit (toggle, the toolbar fields, ruler Shift-drag, ruler
+   // right-click). The loop is model state, so a change bumps revision like
+   // any other direct field edit - revision is the one change signal - and
+   // dirties the document; then Transport hears about it. Not an undo step,
+   // same as before WP5b.
+   void ArrangeSetLoop(bool enabled, Arrange::Tick start, Arrange::Tick end)
+   {
+      start = std::max<Arrange::Tick>(0, start);
+      end = std::max(end, start);
+      Arrange::LoopRange& loop = gArrange.settings.loop;
+      if (loop.enabled == enabled && loop.start == start && loop.end == end)
+         return;
+      loop.enabled = enabled;
+      loop.start = start;
+      loop.end = end;
+      gArrange.revision++;
+      gPatchDirty = true;
+      PublishArrangeLoop();
+   }
+
+   // The loop in seconds at the live tempo - for the seconds-native panel
+   // geometry and the render range, which stays in seconds until WP7.
+   double ArrangeLoopStartSec()
+   {
+      return Arrange::TicksToSeconds(gArrange.settings.loop.start, (double)Transport::Instance().Tempo());
+   }
+   double ArrangeLoopEndSec()
+   {
+      return Arrange::TicksToSeconds(gArrange.settings.loop.end, (double)Transport::Instance().Tempo());
    }
 
    // Arrange::Model <-> Patch::Data. Straight field copies in both directions:
@@ -6786,6 +6831,7 @@ namespace
       gn.spawnX = x;
       gn.spawnY = y;
       gNodes.push_back(std::move(gn));
+      NoteNodeAppended();
       return &gNodes.back();
    }
 
@@ -26428,34 +26474,31 @@ namespace
    // clips (no live source node) contribute nothing - the same rule the audio
    // scheduler applies (RebuildAudioTopology's `scheduled` loop).
    //
-   // Reads the legacy mirror, not gArrange, for the same reason the audio
-   // scheduler does: until WP5 deletes the bridge, gArrangeStreams is the
-   // UI's live truth and gArrange is only synced at save/undo boundaries, so
-   // reading the model here would show an in-progress drag one sync late.
-   // Clip seconds convert to beats at the live tempo, so the playhead is
-   // Transport::Beats() - the axis the audio envelope uses.
+   // Reads gArrange directly (WP5b). Clip ticks convert to beats with no
+   // tempo, so the playhead is Transport::Beats() - the axis the audio
+   // envelope uses - and a tempo change moves nothing.
    void CollectArrangeVideoLayers(double beat, std::vector<ArrangeVideoLayer>& out)
    {
       out.clear();
-      const double beatsPerSec = std::max(1.0, (double)Transport::Instance().Tempo()) / 60.0;
-      for (size_t si = gArrangeStreams.size(); si-- > 0;)
+      for (size_t li = gArrange.lanes.size(); li-- > 0;)
       {
-         const LegacyArrange::StreamRecord& st = gArrangeStreams[si];
-         if (st.type != Patch::kStreamVideo)
+         const Arrange::Lane& lane = gArrange.lanes[li];
+         if (lane.type != Arrange::kLaneVideo)
             continue;
-         for (const LegacyArrange::ClipRecord& c : st.clips)
+         for (const Arrange::Clip& c : lane.clips)
          {
-            const double startBeat = c.startSeconds * beatsPerSec;
-            const double endBeat = (c.startSeconds + c.lengthSeconds) * beatsPerSec;
-            if (!(beat >= startBeat && beat < endBeat))
+            const double startBeat = Arrange::TicksToBeats(c.start);
+            if (startBeat > beat)
+               break; // clips are sorted by start; nothing later can cover `beat`
+            if (!(beat < Arrange::TicksToBeats(c.End())))
                continue;
             // Lanes never overlap, so this is the lane's only candidate
             // whether or not it turns out to be usable.
-            if (c.enabled && c.srcIndex >= 0)
+            if (c.enabled && c.srcUid != 0)
             {
-               GraphNode* gn = FindNodeByIndex(c.srcIndex);
+               GraphNode* gn = FindNodeByUid(c.srcUid);
                if (gn != nullptr && gn->node != nullptr)
-                  out.push_back({ gn, c.srcOutput, st.blendMode, std::clamp(st.opacity, 0.0f, 1.0f) });
+                  out.push_back({ gn, c.srcOutput, lane.blendMode, std::clamp(lane.opacity, 0.0f, 1.0f) });
             }
             break;
          }
@@ -27051,7 +27094,7 @@ namespace
       gArrange.nextId = std::max(gArrange.nextId, liveNextId);
       gArrange.settings.loop = liveLoop;
       // Restoring the snapshot is itself a change of what is on screen, and
-      // revision must only climb (the mirror and the audio rebuild key on it).
+      // revision must only climb (the audio rebuild keys on it).
       gArrange.revision = liveRevision + 1;
 
       switch (d.mode)
@@ -27082,7 +27125,6 @@ namespace
          default:
             break;
       }
-      RefreshArrangeMirror();
       return true;
    }
 
@@ -27203,19 +27245,10 @@ namespace
       // targets) is re-resolved here; one that no longer exists clears.
       ArrangePruneSelection();
 
-      // uid -> node, once per draw: clip labels, the offline test and the
-      // render popup's resolution probe all look nodes up by uid.
-      std::unordered_map<uint64_t, GraphNode*> arrangeNodeByUid;
-      arrangeNodeByUid.reserve(gNodes.size());
-      for (GraphNode& gn : gNodes)
-         arrangeNodeByUid[gn.uid] = &gn;
-      auto nodeForUid = [&](uint64_t uid) -> GraphNode*
-      {
-         if (uid == 0)
-            return nullptr;
-         auto it = arrangeNodeByUid.find(uid);
-         return it == arrangeNodeByUid.end() ? nullptr : it->second;
-      };
+      // Clip labels, the offline test and the render popup's resolution probe
+      // all look nodes up by uid - through the global per-frame map (WP5b),
+      // which this panel used to build its own private copy of every draw.
+      auto nodeForUid = [](uint64_t uid) -> GraphNode* { return FindNodeByUid(uid); };
 
       // Assign Node picker alert banner - mirrors the performance matrix's
       // own "Assigning to '...'" banner (gPerfAssigningElemIdx) for the same
@@ -27314,19 +27347,10 @@ namespace
       // unbounded during a stall. This block now only *publishes* the loop;
       // Transport wraps at its own block boundary, within one audio block.
       //
-      // The panel still edits the loop in seconds (WP5 moves the UI to ticks),
-      // so the conversion happens here, at the boundary, using the tempo the
-      // loop was drawn against.
-      {
-         const double beatsPerSec = (double)tr.Tempo() / 60.0;
-         tr.SetLoop(gArrangeLoopEnabled, gArrangeLoopStartSec * beatsPerSec,
-                    gArrangeLoopEndSec * beatsPerSec);
-         // The model owns the loop for save/load; ticks, not seconds, so it
-         // survives a tempo change with its bar positions intact.
-         gArrange.settings.loop.enabled = gArrangeLoopEnabled;
-         gArrange.settings.loop.start = Arrange::BeatsToTicks(gArrangeLoopStartSec * beatsPerSec);
-         gArrange.settings.loop.end = Arrange::BeatsToTicks(gArrangeLoopEndSec * beatsPerSec);
-      }
+      // The panel edits gArrange.settings.loop in ticks (WP5b) and every edit
+      // publishes through ArrangeSetLoop; this re-publish is an idempotent
+      // backstop, never a model write.
+      PublishArrangeLoop();
 
       // Timeline shortcuts, only while the panel owns the keyboard and no
       // text field is taking input. Each acts on gArrangeSel (ids; a grouped
@@ -27471,10 +27495,10 @@ namespace
             ImGui::BeginDisabled(gOfflineRender.active);
             if (ImGui::Button(renderLabel, ImVec2(renderBtnW, 0.0f)))
             {
-               if (gArrangeLoopEnabled && gArrangeLoopEndSec > gArrangeLoopStartSec)
+               if (gArrange.settings.loop.enabled && gArrange.settings.loop.end > gArrange.settings.loop.start)
                {
-                  sArrangeRenderStartSec = gArrangeLoopStartSec;
-                  sArrangeRenderEndSec = gArrangeLoopEndSec;
+                  sArrangeRenderStartSec = ArrangeLoopStartSec();
+                  sArrangeRenderEndSec = ArrangeLoopEndSec();
                }
                else
                {
@@ -27517,13 +27541,13 @@ namespace
                   sArrangeRenderStartSec = 0.0;
                   sArrangeRenderEndSec = std::max(1.0, arrangeEndSec);
                }
-               if (gArrangeLoopEnabled && gArrangeLoopEndSec > gArrangeLoopStartSec)
+               if (gArrange.settings.loop.enabled && gArrange.settings.loop.end > gArrange.settings.loop.start)
                {
                   ImGui::SameLine();
                   if (ImGui::SmallButton("Loop Region"))
                   {
-                     sArrangeRenderStartSec = gArrangeLoopStartSec;
-                     sArrangeRenderEndSec = gArrangeLoopEndSec;
+                     sArrangeRenderStartSec = ArrangeLoopStartSec();
+                     sArrangeRenderEndSec = ArrangeLoopEndSec();
                   }
                }
 
@@ -27714,27 +27738,31 @@ namespace
          // Shift+drag on the ruler sets - these fields just set it directly
          // instead of dragging it out by hand.
          ImGui::SameLine();
-         const bool loopWasOn = gArrangeLoopEnabled; // see snapWasOn above
+         const Arrange::LoopRange loopNow = gArrange.settings.loop; // the loop as of this frame
+         const bool loopWasOn = loopNow.enabled; // see snapWasOn above
          if (loopWasOn)
          {
             ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(16, 185, 129, 255));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(5, 150, 105, 255));
          }
          if (ImGui::Button("##arrangeloopbtn", ImVec2(30, 0)))
-            gArrangeLoopEnabled = !gArrangeLoopEnabled;
+            ArrangeSetLoop(!loopNow.enabled, loopNow.start, loopNow.end);
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             const float iconSize = (bmax.y - bmin.y) * 0.55f;
             Tabler::DrawRefresh(ImGui::GetWindowDrawList(), center, iconSize,
-               gArrangeLoopEnabled ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+               gArrange.settings.loop.enabled ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
          }
          if (loopWasOn)
             ImGui::PopStyleColor(2);
          if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Loop playback within the region below.\nShift+drag the ruler to set a region, or type start/end.");
 
+         // The fields show and take M:SS at the live tempo; the loop itself
+         // stays in ticks, so it keeps its bars across a tempo change.
+         const double loopBpm = (double)tr.Tempo();
          // Parses "M:SS" or a bare seconds value, same accepted formats
          // either field has always taken - shared so the two fields can't
          // drift into different parsing rules.
@@ -27755,19 +27783,19 @@ namespace
             static bool loopStartEditing = false;
             if (!loopStartEditing)
             {
-               const int mm = (int)(gArrangeLoopStartSec / 60.0);
-               const double ss = gArrangeLoopStartSec - (double)mm * 60.0;
+               const double startSec = ArrangeLoopStartSec();
+               const int mm = (int)(startSec / 60.0);
+               const double ss = startSec - (double)mm * 60.0;
                snprintf(loopStartBuf, sizeof(loopStartBuf), "%d:%05.2f", mm, ss);
             }
             ImGui::SetNextItemWidth(70.0f);
             if (ImGui::InputText("##loopstart", loopStartBuf, sizeof(loopStartBuf), ImGuiInputTextFlags_EnterReturnsTrue))
             {
                const double parsedSec = parseTimeField(loopStartBuf);
-               if (parsedSec >= 0.0 && parsedSec < gArrangeLoopEndSec)
-               {
-                  gArrangeLoopStartSec = parsedSec;
-                  gArrangeLoopEnabled = true;
-               }
+               const Arrange::LoopRange& loop = gArrange.settings.loop;
+               const Arrange::Tick parsedTick = Arrange::SecondsToTicks(parsedSec, loopBpm);
+               if (parsedSec >= 0.0 && parsedTick < loop.end)
+                  ArrangeSetLoop(true, parsedTick, loop.end);
                loopStartEditing = false;
             }
             else
@@ -27785,18 +27813,20 @@ namespace
             static bool loopBufEditing = false;
             if (!loopBufEditing)
             {
-               const int mm = (int)(gArrangeLoopEndSec / 60.0);
-               const double ss = gArrangeLoopEndSec - (double)mm * 60.0;
+               const double endSec = ArrangeLoopEndSec();
+               const int mm = (int)(endSec / 60.0);
+               const double ss = endSec - (double)mm * 60.0;
                snprintf(loopDurBuf, sizeof(loopDurBuf), "%d:%05.2f", mm, ss);
             }
             ImGui::SetNextItemWidth(70.0f);
             if (ImGui::InputText("##loopend", loopDurBuf, sizeof(loopDurBuf), ImGuiInputTextFlags_EnterReturnsTrue))
             {
                const double parsedSec = parseTimeField(loopDurBuf);
-               if (parsedSec > gArrangeLoopStartSec)
+               const Arrange::LoopRange& loop = gArrange.settings.loop;
+               const Arrange::Tick parsedTick = Arrange::SecondsToTicks(parsedSec, loopBpm);
+               if (parsedSec >= 0.0 && parsedTick > loop.start)
                {
-                  gArrangeLoopEndSec = parsedSec;
-                  gArrangeLoopEnabled = true;
+                  ArrangeSetLoop(true, loop.start, parsedTick);
                   gArrangeFitViewToLoopPending = true;
                }
                loopBufEditing = false;
@@ -27892,11 +27922,13 @@ namespace
             if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
             {
                gArrange.settings.dockSide = 0;
+               gArrange.revision++; // a model field like any other (WP5b)
                gPatchDirty = true;
             }
             if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
             {
                gArrange.settings.dockSide = 1;
+               gArrange.revision++;
                gPatchDirty = true;
             }
             ImGui::EndPopup();
@@ -27949,8 +27981,9 @@ namespace
       if (gArrangeFitViewToLoopPending)
       {
          gArrangeFitViewToLoopPending = false;
-         if (gArrangeLoopEndSec > 0.05)
-            gArrangePixelsPerSecond = std::clamp((float)(rulerWidth * 0.92 / gArrangeLoopEndSec), 10.0f, 1000.0f);
+         const double loopEndSec = ArrangeLoopEndSec();
+         if (loopEndSec > 0.05)
+            gArrangePixelsPerSecond = std::clamp((float)(rulerWidth * 0.92 / loopEndSec), 10.0f, 1000.0f);
       }
       const float pps = gArrangePixelsPerSecond;
 
@@ -27995,9 +28028,10 @@ namespace
          {
             gArrangeShiftDraggingLoop = true;
             const float ax = ImGui::GetIO().MousePos.x;
-            gArrangeLoopDragAnchorSec = std::max(0.0, gArrangeScrollSeconds + (double)(ax - rulerStartX) / pps);
+            double anchorSec = std::max(0.0, gArrangeScrollSeconds + (double)(ax - rulerStartX) / pps);
             if (gArrangeSnapToGrid)
-               gArrangeLoopDragAnchorSec = ArrangeNearestBeatSec(gArrangeLoopDragAnchorSec, minorSec);
+               anchorSec = ArrangeNearestBeatSec(anchorSec, minorSec);
+            gArrangeLoopDragAnchorTick = Arrange::SecondsToTicks(anchorSec, (double)Transport::Instance().Tempo());
          }
          else
          {
@@ -28012,8 +28046,11 @@ namespace
          double cur = std::max(0.0, gArrangeScrollSeconds + (double)(mx - rulerStartX) / pps);
          if (gArrangeSnapToGrid)
             cur = ArrangeNearestBeatSec(cur, minorSec);
-         gArrangeLoopStartSec = std::min(gArrangeLoopDragAnchorSec, cur);
-         gArrangeLoopEndSec = std::max(gArrangeLoopDragAnchorSec, cur);
+         // Armed state is left alone mid-drag and settled on release below.
+         // ArrangeSetLoop is a no-op while the mouse holds still.
+         const Arrange::Tick curTick = Arrange::SecondsToTicks(cur, (double)Transport::Instance().Tempo());
+         ArrangeSetLoop(gArrange.settings.loop.enabled, std::min(gArrangeLoopDragAnchorTick, curTick),
+                        std::max(gArrangeLoopDragAnchorTick, curTick));
       }
       else if (gArrangeDraggingPlayhead || ImGui::IsItemActive())
       {
@@ -28026,13 +28063,14 @@ namespace
       if (gArrangeShiftDraggingLoop && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
       {
          gArrangeShiftDraggingLoop = false;
-         gArrangeLoopEnabled = (gArrangeLoopEndSec - gArrangeLoopStartSec) > 0.05;
+         const Arrange::LoopRange& loop = gArrange.settings.loop;
+         ArrangeSetLoop((ArrangeLoopEndSec() - ArrangeLoopStartSec()) > 0.05, loop.start, loop.end);
       }
       // Right-click the ruler while a loop region is armed to drop it.
       const bool mouseInRuler = mouse.x >= rulerPos.x && mouse.x < rulerPos.x + rulerSize.x &&
                                 mouse.y >= rulerPos.y && mouse.y < rulerPos.y + rulerSize.y;
-      if (mouseInRuler && gArrangeLoopEnabled && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
-         gArrangeLoopEnabled = false;
+      if (mouseInRuler && gArrange.settings.loop.enabled && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+         ArrangeSetLoop(false, gArrange.settings.loop.start, gArrange.settings.loop.end);
 
       // Draw ruler background and tick marks
       const bool isLight = IsThemeLight();
@@ -28993,13 +29031,14 @@ namespace
       }
 
       // Draw loop region band (armed or mid-Shift+drag) behind everything
-      // else. gArrangeLoopStartSec/EndSec already hold the live preview
-      // range while gArrangeShiftDraggingLoop is true (set above, in the
-      // ruler-drag handling), so there is nothing extra to compute here.
-      if (gArrangeLoopEnabled || gArrangeShiftDraggingLoop)
+      // else. gArrange.settings.loop already holds the live preview range
+      // while gArrangeShiftDraggingLoop is true (set above, in the ruler-drag
+      // handling), so there is nothing extra to compute here beyond the
+      // ticks -> seconds step the panel geometry needs.
+      if (gArrange.settings.loop.enabled || gArrangeShiftDraggingLoop)
       {
-         const double bandStart = gArrangeLoopStartSec;
-         const double bandEnd = gArrangeLoopEndSec;
+         const double bandStart = ArrangeLoopStartSec();
+         const double bandEnd = ArrangeLoopEndSec();
          if (bandEnd > startSec && bandStart < endSec)
          {
             const float bx0 = rulerStartX + (float)((std::max(bandStart, startSec) - startSec) * pps);
@@ -32480,50 +32519,6 @@ namespace
       }
    };
 
-   // Everything the timeline audio schedule is built from, folded into one
-   // number: the mode, the tempo (the legacy mirror is still in seconds until
-   // WP5, so bpm is part of the conversion), and every audio clip's identity,
-   // placement, fades, gain and enabled flag, plus its lane's gain.
-   //
-   // A fingerprint rather than a revision counter deliberately. The
-   // arrangement panel edits gArrangeStreams from roughly 190 call sites; any
-   // one of them forgetting to bump a counter would silently reintroduce
-   // exactly the bug WP3 exists to kill (an edit you cannot hear until
-   // something else rebuilds). This cannot be bypassed, and it costs one pass
-   // over the clips per frame.
-   uint64_t ArrangeAudioScheduleHash()
-   {
-      auto mix = [](uint64_t h, uint64_t v)
-      { h ^= v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2); return h; };
-      auto mixd = [&](uint64_t h, double v)
-      { uint64_t bits; static_assert(sizeof(bits) == sizeof(v), ""); memcpy(&bits, &v, sizeof(bits)); return mix(h, bits); };
-
-      uint64_t h = 0xC0FFEEull;
-      h = mix(h, gAudioMode == AudioMode::Timeline ? 1ull : 2ull);
-      h = mix(h, (gOfflineRender.active && gOfflineRender.arrangeDriven) ? 3ull : 4ull);
-      h = mixd(h, (double)Transport::Instance().Tempo());
-      for (const auto& stream : gArrangeStreams)
-      {
-         if (stream.type != Patch::kStreamAudio)
-            continue;
-         h = mix(h, stream.id);
-         h = mixd(h, (double)stream.gainDb);
-         for (const auto& c : stream.clips)
-         {
-            h = mix(h, c.srcUid);
-            h = mix(h, (uint64_t)(uint32_t)c.srcIndex);
-            h = mix(h, (uint64_t)(uint32_t)c.srcOutput);
-            h = mix(h, c.enabled ? 1ull : 0ull);
-            h = mixd(h, c.startSeconds);
-            h = mixd(h, c.lengthSeconds);
-            h = mixd(h, (double)c.fadeInSec);
-            h = mixd(h, (double)c.fadeOutSec);
-            h = mixd(h, (double)c.gainDb);
-         }
-      }
-      return h;
-   }
-
    // ---- timeline terminal PDC (overhaul WP3) -----------------------------
    //
    // A timeline clip terminal has no AudioCaptureRing to hang its delay-
@@ -32545,10 +32540,20 @@ namespace
       bool usedThisRebuild = false;
    };
    std::unordered_map<uint64_t, ArrangeTerminalComp> gArrangeTerminalComp;
-   // ArrangeAudioScheduleHash() as of the currently published topology.
-   // The sentinel differs from any real hash so the first frame always builds.
-   uint64_t gArrangeAudioScheduleBuiltHash = ~0ull;
-   bool gArrangeAudioScheduleEverBuilt = false;
+   // What the currently published topology was built from (WP5b). The audio
+   // schedule is a pure function of gArrange (lanes, clips - in ticks, so
+   // tempo is not an input: windows are in beats and the audio thread turns
+   // beats into samples at the live bpm) and of whether timeline routing is
+   // on. RebuildAudioTopology records both every time it runs, whoever calls
+   // it; ArrangeAudioRebuildIfStale compares them once a frame.
+   //
+   // UINT64_MAX is "never built": revision starts at 0 and only climbs, so
+   // it can never equal the sentinel and the first frame always builds.
+   uint64_t gArrangeAudioBuiltRevision = UINT64_MAX;
+   bool gArrangeAudioBuiltRouting = false;
+   // Every RebuildAudioTopology that got past gDeferAudioRebuild. Fixtures
+   // read it to prove an edit costs exactly one rebuild and an idle frame none.
+   unsigned long long gAudioTopologyRebuildCount = 0;
 
    CompensationDelay& ArrangeTerminalCompensation(uint64_t laneId, uint64_t srcUid, int srcOutput)
    {
@@ -32588,6 +32593,14 @@ namespace
       }
    }
 
+   // Timeline routing: the arrangement's audio clips feed the device and
+   // every canvas Audio Out is bypassed. The mode, plus an arrangement-driven
+   // offline render, which is Timeline by definition.
+   bool ArrangeTimelineRoutingActive()
+   {
+      return gAudioMode == AudioMode::Timeline || (gOfflineRender.active && gOfflineRender.arrangeDriven);
+   }
+
    void RebuildAudioTopology()
    {
       if (gDeferAudioRebuild)
@@ -32605,8 +32618,7 @@ namespace
       // definition) - not on the panel being open and not on the transport
       // playing. Pausing silences the sum in RunTopology instead, which
       // leaves the topology, the PDC state and the node graph untouched.
-      const bool timelineRouting = (gAudioMode == AudioMode::Timeline) ||
-                                   (gOfflineRender.active && gOfflineRender.arrangeDriven);
+      const bool timelineRouting = ArrangeTimelineRoutingActive();
 
       // Every enabled, assigned clip on every audio lane - the WHOLE
       // arrangement, not the ones under the playhead. Grouped into one
@@ -32615,7 +32627,7 @@ namespace
       // scheduled once and its five onsets are sample-accurate.
       struct ScheduledTerminal
       {
-         uint64_t laneId; uint64_t srcUid; int srcIndex; int srcOutput;
+         uint64_t laneId; uint64_t srcUid; int srcOutput;
          float laneGain;
          std::vector<ClipWindow> windows;
       };
@@ -32623,49 +32635,47 @@ namespace
       std::vector<ClipWindow> clipWindows;
       if (timelineRouting)
       {
-         // Legacy streams are still the UI's live truth until WP5, so the
-         // seconds -> beats conversion happens here with the transport's
-         // current tempo. That is why a tempo change is a rebuild trigger:
-         // once the bridge is gone the model's ticks convert directly and
-         // the trigger goes with it.
-         const double bpm = std::max(1.0, (double)Transport::Instance().Tempo());
-         const double beatsPerSec = bpm / 60.0;
+         // Straight off the model (WP5b): ticks convert to beats with no
+         // tempo, so a tempo change does not touch the schedule at all.
          std::unordered_map<std::string, size_t> indexOfKey;
-         for (const auto& stream : gArrangeStreams)
+         for (const Arrange::Lane& lane : gArrange.lanes)
          {
-            if (stream.type != Patch::kStreamAudio)
+            if (lane.type != Arrange::kLaneAudio)
                continue;
-            const float streamLinear = std::pow(10.0f, stream.gainDb / 20.0f);
-            for (const auto& c : stream.clips)
+            const float laneLinear = std::pow(10.0f, lane.gainDb / 20.0f);
+            for (const Arrange::Clip& c : lane.clips)
             {
-               // An offline clip (node deleted, or never assigned) and a
-               // disabled clip are both silent. `enabled` was not read at all
-               // before WP3, so disabling an audio clip changed nothing you
-               // could hear.
-               if (c.srcIndex < 0 || !c.enabled || c.lengthSeconds <= 0.0)
+               // An offline clip (srcUid 0: node deleted, or never assigned)
+               // and a disabled clip are both silent. `enabled` was not read
+               // at all before WP3, so disabling an audio clip changed nothing
+               // you could hear. A uid that no longer resolves is dropped at
+               // terminal creation below.
+               if (c.srcUid == 0 || !c.enabled || c.length <= 0)
                   continue;
                char keyBuf[80];
                snprintf(keyBuf, sizeof(keyBuf), "%llu/%llu/%d",
-                        (unsigned long long)stream.id, (unsigned long long)c.srcUid, c.srcOutput);
+                        (unsigned long long)lane.id, (unsigned long long)c.srcUid, c.srcOutput);
                const std::string key(keyBuf);
                auto it = indexOfKey.find(key);
                if (it == indexOfKey.end())
                {
                   it = indexOfKey.emplace(key, scheduled.size()).first;
-                  scheduled.push_back({ stream.id, c.srcUid, c.srcIndex, c.srcOutput, streamLinear, {} });
+                  scheduled.push_back({ lane.id, c.srcUid, c.srcOutput, laneLinear, {} });
                }
                ClipWindow w;
-               w.startBeat = c.startSeconds * beatsPerSec;
-               w.endBeat = (c.startSeconds + c.lengthSeconds) * beatsPerSec;
-               w.fadeInBeats = (double)c.fadeInSec * beatsPerSec;
-               w.fadeOutBeats = (double)c.fadeOutSec * beatsPerSec;
+               w.startBeat = Arrange::TicksToBeats(c.start);
+               w.endBeat = Arrange::TicksToBeats(c.End());
+               w.fadeInBeats = Arrange::TicksToBeats(c.fadeIn);
+               w.fadeOutBeats = Arrange::TicksToBeats(c.fadeOut);
                w.gain = std::pow(10.0f, c.gainDb / 20.0f);
                scheduled[it->second].windows.push_back(w);
             }
          }
-         // Sort each terminal's windows and mark the abutting edges. WP1's
-         // model forbids overlap on a lane, but this runs off the legacy
-         // mirror, so an overlap here is clamped rather than trusted.
+         // Sort each terminal's windows and mark the abutting edges. The
+         // model forbids overlap on a lane and keeps it sorted, so this is a
+         // no-op on a valid model - kept because RunTopology's cursor walk
+         // stalls on an unsorted array, and one malformed load should not be
+         // able to silence a lane.
          for (ScheduledTerminal& st : scheduled)
          {
             std::sort(st.windows.begin(), st.windows.end(),
@@ -32750,13 +32760,10 @@ namespace
       // into OutputNode's CaptureRing by pumpOfflineAudio.
       for (ScheduledTerminal& st : scheduled)
       {
-         // Node indices restart at 1 on NewPatch, so they are reused; a uid
-         // never is. The index is only consulted for a clip that has no uid
-         // at all (a legacy clip mid-session, before its first save), never
-         // as a fallback for a uid that failed to resolve - that would bind
-         // the clip to whatever node happens to hold the recycled index.
-         GraphNode* activeGn = st.srcUid != 0 ? FindNodeByUid(st.srcUid)
-                                              : FindNodeByIndex(st.srcIndex);
+         // By uid only. Node indices restart at 1 on NewPatch and are reused;
+         // a uid never is, so an unresolvable uid is silence, never a
+         // fallback to whatever node now holds a recycled index.
+         GraphNode* activeGn = FindNodeByUid(st.srcUid);
          if (activeGn == nullptr || activeGn->node == nullptr)
             continue;
          INode* resolved = ResolvedAudioSource(activeGn->node.get());
@@ -33031,12 +33038,35 @@ namespace
       topology.clipWindows = std::move(clipWindows);
       topology.numBuffers = nextBufferIndex;
       AudioEngine::Instance().SetTopology(std::move(topology));
-      // The topology just published is the one the schedule revision
-      // describes, so the main loop's trigger below stops firing until
-      // something else marks it dirty.
-      gArrangeAudioScheduleBuiltHash = ArrangeAudioScheduleHash();
-      gArrangeAudioScheduleEverBuilt = true;
+      // The topology just published describes this revision and this
+      // routing, so ArrangeAudioRebuildIfStale stays quiet until one moves -
+      // whichever of the ~40 graph-edit call sites got here first.
+      gArrangeAudioBuiltRevision = gArrange.revision;
+      gArrangeAudioBuiltRouting = timelineRouting;
+      gAudioTopologyRebuildCount++;
       ReapArrangeTerminalCompensation();
+   }
+
+   // The main loop's once-a-frame audio trigger (WP5b). gArrange.revision is
+   // the one change signal for the arrangement: every model op and every
+   // direct field edit bumps it, so there is no per-site dirty flag to forget
+   // and nothing to hash. The only other input the schedule has is the
+   // routing (mode, or an arrangement-driven offline render), OR'd in here.
+   // Graph changes are not polled: every one of them already calls
+   // RebuildAudioTopology directly, which records both values above.
+   // Tempo is deliberately absent - see gArrangeAudioBuiltRevision.
+   // Offline render owns its own rebuilds, so the trigger stands down while
+   // one runs. Returns whether it rebuilt.
+   bool ArrangeAudioRebuildIfStale()
+   {
+      if (gOfflineRender.active)
+         return false;
+      if (gArrange.revision == gArrangeAudioBuiltRevision &&
+          ArrangeTimelineRoutingActive() == gArrangeAudioBuiltRouting)
+         return false;
+      const unsigned long long before = gAudioTopologyRebuildCount;
+      RebuildAudioTopology();
+      return gAudioTopologyRebuildCount != before;
    }
 
    // Single choke point for turning the audio engine on. Every call site that
@@ -33382,8 +33412,9 @@ namespace
       // The link comes back through the undo entry PushUndoCheckpoint pushed
       // above: it snapshots gArrange with srcUid intact, and the node's uid
       // is persisted, so undo restores both ends (WP5 owner decision).
-      if (Arrange::ClearSource(gArrange, victim->uid))
-         RefreshArrangeMirror();
+      // ClearSource bumps revision when it touched a clip; the topology
+      // rebuild at the end of this function records it.
+      Arrange::ClearSource(gArrange, victim->uid);
       // A timeline gesture in flight rebuilds gArrange from its snapshot;
       // clear the source there too or the next drag frame re-links the clip
       // to a node that no longer exists.
@@ -33422,6 +33453,7 @@ namespace
       gNodes.erase(std::remove_if(gNodes.begin(), gNodes.end(),
                                   [index](const GraphNode& g) { return g.index == index; }),
                    gNodes.end());
+      InvalidateNodeByUid(); // every node after the victim moved down a slot
 
       // After, not before: victim is still in gNodes up to the erase() just
       // above, and rebuilding earlier would publish a topology that can
@@ -34092,9 +34124,8 @@ namespace
          data.globals.push_back({ g.name, g.expr });
       data.performance = gPerfElements;
       data.perfLayout = gPerfLayout;
-      // gArrange is the source of truth (WP5); gArrangeStreams is a derived
-      // mirror and is never folded back in here - doing so would let a stale
-      // mirror overwrite model edits the mirror has not caught up with yet.
+      // gArrange is the only arrangement state there is (WP5b deleted the
+      // seconds mirror), loop included.
       ArrangeModelToPatchData(gArrange, data);
       data.transport.bpm = Transport::Instance().Tempo();
       data.transport.timeSigNum = Transport::Instance().TimeSigNumerator();
@@ -34612,7 +34643,7 @@ namespace
          const uint64_t id = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
          Arrange::FindLane(gArrange, id)->name = "Audio " + std::to_string(i + 1);
       }
-      SyncLegacyFromArrange();
+      PublishArrangeLoop();
    }
 
    void NewPatch()
@@ -34637,6 +34668,7 @@ namespace
       while (!gNodeViewports.empty())
          gRetiredViewports.push_back(gNodeViewports.extract(gNodeViewports.begin()));
       gNodes.clear();
+      InvalidateNodeByUid();
       gLinks.clear();
       gModHistory.clear();
       Modulation::Instance().Clear();
@@ -34647,7 +34679,6 @@ namespace
       // clearing here is what makes a recording actually disappear when you
       // undo past the point it was made.
       GestureRecorder::Instance().Clear();
-      gArrangeStreams.clear();
       {
          // nextId and revision are counters, not content: they carry across
          // the reset (ApplyPatchData relies on nextId surviving this for its
@@ -35738,7 +35769,11 @@ namespace
          // only lossless option - the clip goes offline rather than silently
          // attaching to a different node.
          if (rec.uid != 0 && FindNodeByUid(rec.uid) == nullptr)
+         {
+            const uint64_t mintedUid = spawned->uid;
             spawned->uid = rec.uid;
+            NoteNodeUidChanged(mintedUid, spawned);
+         }
          spawned->showParams = rec.showParams;
          spawned->node->bypassed = rec.bypassed;
          spawned->showMiniViewport = rec.showMiniViewport;
@@ -35957,7 +35992,17 @@ namespace
       // for the file case carrying the previous document's mark forward just
       // starts the new document's ids higher, which costs nothing.
       gArrange.nextId = std::max(gArrange.nextId, priorArrangeNextId);
-      SyncLegacyFromArrange();
+
+      // Transport before the rebuild (WP3 debt, closed in WP5b): anything the
+      // rebuild reads off the transport must see the loaded document's tempo
+      // and meter, not the previous document's. Clip windows themselves are
+      // in beats and do not depend on it, but the ordering is the one that
+      // cannot go stale when something that does is added.
+      Transport::Instance().SetTempo(data.transport.bpm);
+      Transport::Instance().SetTimeSignature(data.transport.timeSigNum, data.transport.timeSigDen);
+      Transport::Instance().SetKey(data.transport.key);
+      Transport::Instance().SetScale(data.transport.scale);
+      PublishArrangeLoop();
 
       // Once, after every node and cable above is wired, not once per audio
       // cable while loading - a per-cable rebuild here could call
@@ -35965,11 +36010,6 @@ namespace
       // replayed in file order, not source-before-destination order) isn't
       // guaranteed.
       RebuildAudioTopology();
-
-      Transport::Instance().SetTempo(data.transport.bpm);
-      Transport::Instance().SetTimeSignature(data.transport.timeSigNum, data.transport.timeSigDen);
-      Transport::Instance().SetKey(data.transport.key);
-      Transport::Instance().SetScale(data.transport.scale);
 
       if (outRemap != nullptr)
          *outRemap = remap;
@@ -36653,13 +36693,13 @@ namespace
       // the persisted nextId exists to prevent. Same rule as gNextNodeUid.
       gArrange.nextId = std::max(gArrange.nextId, current.nextId);
       // revision is a change counter, not content: it only ever climbs, so
-      // anything keyed on it (the legacy mirror, WP5b's audio rebuild) sees
+      // anything keyed on it (the audio rebuild, WP5b) sees
       // an undo as the change it is instead of a revision it already built.
       gArrange.revision = current.revision + 1;
       // Where the panel docks is a view choice, not an edit - undo leaves it.
       gArrange.settings.dockSide = current.settings.dockSide;
       e.arrange = std::move(current);
-      SyncLegacyFromArrange();
+      PublishArrangeLoop();
       // A clip drag or popup edit that was mid-gesture is now describing a
       // model that no longer exists.
       gArrangeGestureOpen = false;
@@ -56252,22 +56292,15 @@ int main(int argc, char** argv)
       PollAudioRecovery();
 
       // Timeline audio schedule: rebuild the topology only when the schedule
-      // itself changed - mode, an arrangement edit, or tempo, all folded into
-      // ArrangeAudioScheduleHash() - at most once a frame. This replaced a
-      // per-frame std::set<int> of the clips under the playhead, whose diff
-      // rebuilt the topology at every clip boundary: that is what made the
-      // second of two adjacent clips of one node silent (the set never
-      // changed, so the stale single-clip window stayed), made onsets land a
-      // UI frame late, and reset PDC at every boundary. One topology now
-      // covers the whole arrangement, and clip boundaries never rebuild.
-      //
-      // The hash reads the legacy mirror, so bring it up to date first - a
-      // no-op unless gArrange's revision or the tempo moved (WP5a; WP5b keys
-      // this on gArrange.revision directly and drops the mirror).
-      RefreshArrangeMirror();
-      if (!gOfflineRender.active &&
-          (!gArrangeAudioScheduleEverBuilt || ArrangeAudioScheduleHash() != gArrangeAudioScheduleBuiltHash))
-         RebuildAudioTopology();
+      // itself changed, at most once a frame - see ArrangeAudioRebuildIfStale
+      // for what counts. This replaced a per-frame std::set<int> of the clips
+      // under the playhead, whose diff rebuilt the topology at every clip
+      // boundary: that is what made the second of two adjacent clips of one
+      // node silent (the set never changed, so the stale single-clip window
+      // stayed), made onsets land a UI frame late, and reset PDC at every
+      // boundary. One topology now covers the whole arrangement, and clip
+      // boundaries never rebuild.
+      ArrangeAudioRebuildIfStale();
 
       // Update-checker worker handoff - once a frame, main thread only.
       UpdateCheck::Poll();
@@ -57129,6 +57162,7 @@ int main(int argc, char** argv)
                   if (ImGui::Combo("Dock", &dockSide, "Bottom\0Top\0") && dockSide != gArrange.settings.dockSide)
                   {
                      gArrange.settings.dockSide = dockSide;
+                     gArrange.revision++; // a model field like any other (WP5b)
                      gPatchDirty = true;
                   }
                   ImGui::SetNextItemWidth(150);
@@ -59561,11 +59595,14 @@ int main(int argc, char** argv)
          bool allOk = true;
 
          // Every section drives Arrange::Model directly - that is the point of
-         // WP1. gArrangeStreams is only touched where a section is deliberately
-         // exercising the legacy UI bridge.
+         // WP1. Resetting keeps revision climbing (WP5b: it is the only change
+         // signal, so a model that rewinds it could land back on the value the
+         // audio topology was last built at and never rebuild).
          auto seedModel = [](Arrange::Model& m, int videoLanes, int audioLanes)
          {
+            const uint64_t rev = m.revision;
             m = Arrange::Model();
+            m.revision = rev + 1;
             for (int i = 0; i < videoLanes; i++) Arrange::AddLane(m, Arrange::kLaneVideo);
             for (int i = 0; i < audioLanes; i++) Arrange::AddLane(m, Arrange::kLaneAudio);
          };
@@ -59857,7 +59894,6 @@ int main(int argc, char** argv)
                m.settings.loop.end = Arrange::kTicksPerBar * 4;
                m.settings.renderFps = 30;
                const uint64_t savedNextId = m.nextId;
-               SyncLegacyFromArrange();
 
                const std::string path = TmpPath("arrange_selftest_tick.inf");
                SavePatchTo(path);
@@ -59944,14 +59980,12 @@ int main(int argc, char** argv)
                c.srcUid = cubeUid;
                uint64_t clipId = 0;
                Arrange::PlaceOverwrite(gArrange, gArrange.lanes[0].id, c, &clipId);
-               SyncLegacyFromArrange();
 
                // A timeline-only gesture: the entry must not respawn the graph
                // on undo, so the node's pointer identity survives it.
                const GraphNode* before = FindNodeByUid(cubeUid);
                PushArrangeUndo();
                Arrange::MoveClips(gArrange, { clipId }, Arrange::kTicksPerBar, 0);
-               SyncLegacyFromArrange();
                eOk = eOk && gArrange.lanes[0].clips[0].start == Arrange::kTicksPerBar;
 
                Undo();
@@ -59991,8 +60025,16 @@ int main(int argc, char** argv)
          // --- F. File->New clears the model --------------------------------
          {
             NewPatch();
-            const bool fOk = gArrange.lanes.size() == gArrangeStreams.size() &&
-                             gArrange.markers.empty() &&
+            // New seeds the default four video + four audio lanes, empty.
+            int videoLanes = 0, audioLanes = 0;
+            size_t clips = 0;
+            for (const Arrange::Lane& l : gArrange.lanes)
+            {
+               (l.type == Arrange::kLaneVideo ? videoLanes : audioLanes)++;
+               clips += l.clips.size();
+            }
+            const bool fOk = gArrange.lanes.size() == 8 && videoLanes == 4 && audioLanes == 4 &&
+                             clips == 0 && gArrange.markers.empty() &&
                              Arrange::ArrangementEnd(gArrange) == 0;
             printf("arrange new patch: %s\n", fOk ? "OK" : "FAIL");
             allOk = allOk && fOk;
@@ -60050,7 +60092,6 @@ int main(int argc, char** argv)
             c.srcUid = cube ? cube->uid : 0;
             Arrange::PlaceOverwrite(gArrange, gArrange.lanes[0].id, c);
             Arrange::AddMarker(gArrange, Arrange::kPPQ, "m");
-            SyncLegacyFromArrange();
 
             nlohmann::json j = PatchJson::ToJson(BuildPatchData());
             const bool hOk = j.contains("streams") && j["streams"].is_array() &&
@@ -60083,6 +60124,7 @@ int main(int argc, char** argv)
             Arrange::Clip clone = gArrange.lanes[0].clips[0];
             clone.start = Arrange::kTicksPerBar * 2;
             gArrange.lanes[0].clips.push_back(clone);   // same id, deliberately
+            gArrange.revision++;                         // a direct edit is still a change
             Arrange::Normalize(gArrange);
             std::string why;
             bool iOk = gArrange.lanes[0].clips.size() == 2 &&
@@ -60091,14 +60133,12 @@ int main(int argc, char** argv)
 
             // (2) nextId only ever climbs. Snapshot, spend an id, undo, and
             // the next id handed out must still be a fresh one.
-            SyncLegacyFromArrange();
             PushArrangeUndo();
             uint64_t spentId = 0;
             Arrange::Clip extra;
             extra.start = Arrange::kTicksPerBar * 8;
             extra.length = Arrange::kTicksPerBar;
             Arrange::PlaceOverwrite(gArrange, laneId, extra, &spentId);
-            SyncLegacyFromArrange();
             Undo();
             iOk = iOk && spentId != 0 && gArrange.nextId > spentId;
 
@@ -60337,7 +60377,7 @@ int main(int argc, char** argv)
       // no matter how loaded the machine is.
       //
       // Everything here goes through the REAL RebuildAudioTopology over the
-      // real gArrangeStreams, not a hand-built topology: the bugs WP3 fixes
+      // real gArrange model, not a hand-built topology: the bugs WP3 fixes
       // all lived in what that function decided to put in the topology, so a
       // fixture that built its own would test nothing.
       if (getenv("INFINITE_ARRANGEAUDIOTEST") != nullptr && frameId == 4)
@@ -60366,24 +60406,36 @@ int main(int argc, char** argv)
             const uint64_t oscUid = oscGn->uid;
             const int oscIndex = oscGn->index;
 
-            // One audio lane, clips filled in per section.
-            gArrangeStreams.clear();
-            LegacyArrange::StreamRecord lane;
-            lane.id = 1;
-            lane.type = Patch::kStreamAudio;
-            lane.name = "A1";
-            gArrangeStreams.push_back(lane);
+            // One audio lane, clips filled in per section. Built straight into
+            // gArrange (WP5b); revision keeps climbing across the reset so the
+            // rebuild trigger never sees it rewind onto an old built value.
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            const uint64_t laneId = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+            Arrange::FindLane(gArrange, laneId)->name = "A1";
+            (void)oscIndex;
 
+            auto clearClips = [&]()
+            {
+               std::vector<uint64_t> ids;
+               for (const Arrange::Clip& c : Arrange::FindLane(gArrange, laneId)->clips)
+                  ids.push_back(c.id);
+               Arrange::Delete(gArrange, ids);
+            };
             auto addClip = [&](double startBeat, double lengthBeats, bool enabled)
             {
-               LegacyArrange::ClipRecord c;
-               c.startSeconds = startBeat * 60.0 / kBpm;
-               c.lengthSeconds = lengthBeats * 60.0 / kBpm;
-               c.srcIndex = oscIndex;
+               Arrange::Clip c;
+               c.start = Arrange::BeatsToTicks(startBeat);
+               c.length = Arrange::BeatsToTicks(lengthBeats);
                c.srcUid = oscUid;
                c.enabled = enabled;
-               gArrangeStreams[0].clips.push_back(c);
+               Arrange::PlaceOverwrite(gArrange, laneId, c);
             };
+            // Rebuilds the per-frame trigger fired while a render ran - it is
+            // called once per block, so crossing a clip boundary with it
+            // running is exactly the "a boundary must never rebuild" check.
+            int staleRebuildsDuringRender = 0;
 
             gAudioMode = AudioMode::Timeline;
             tr.SetTempo((float)kBpm);
@@ -60431,8 +60483,11 @@ int main(int argc, char** argv)
 
                std::vector<float> out;
                out.reserve((size_t)kBlock * (size_t)numBlocks);
+               staleRebuildsDuringRender = 0;
                for (int b = 0; b < numBlocks; b++)
                {
+                  if (ArrangeAudioRebuildIfStale())
+                     staleRebuildsDuringRender++;
                   AudioEngine::Instance().ProcessOffline(buffer);
                   out.insert(out.end(), chan0.begin(), chan0.end());
                }
@@ -60457,7 +60512,7 @@ int main(int argc, char** argv)
             // changed across the seam, so no rebuild happened and the stale
             // single-clip window silenced everything after the first clip.
             {
-               gArrangeStreams[0].clips.clear();
+               clearClips();
                addClip(0.0, 2.0, true);
                addClip(2.0, 2.0, true);
                const std::vector<float> x = render(0.0, 800); // 800*256 = 204800 samples = 4.27 beats
@@ -60467,15 +60522,18 @@ int main(int argc, char** argv)
                // The seam itself: abutting windows skip the declick, so the
                // signal must run straight through rather than dip to silence.
                const float seam = peakOverBeats(x, 0.0, 1.98, 2.02);
-               const bool aOk = first > 0.05f && second > 0.05f && seam > 0.05f;
-               printf("arrange audio abutting clips: %s (first %.4f, second %.4f, seam %.4f)\n",
-                      aOk ? "OK" : "FAIL", first, second, seam);
+               // Two clip boundaries crossed (beat 2 and beat 4) with the
+               // per-frame trigger polled every block: zero rebuilds.
+               const bool aOk = first > 0.05f && second > 0.05f && seam > 0.05f &&
+                                staleRebuildsDuringRender == 0;
+               printf("arrange audio abutting clips: %s (first %.4f, second %.4f, seam %.4f, boundary rebuilds %d)\n",
+                      aOk ? "OK" : "FAIL", first, second, seam, staleRebuildsDuringRender);
                allOk = allOk && aOk;
             }
 
             // --- B. Onset lands on the scheduled sample --------------------
             {
-               gArrangeStreams[0].clips.clear();
+               clearClips();
                addClip(2.0, 2.0, true);
                const std::vector<float> x = render(0.0, 800);
 
@@ -60496,7 +60554,7 @@ int main(int argc, char** argv)
             // --- C. A disabled clip is silent -------------------------------
             // `enabled` was not read by the audio path at all before WP3.
             {
-               gArrangeStreams[0].clips.clear();
+               clearClips();
                addClip(0.0, 4.0, false);
                const std::vector<float> x = render(0.0, 400);
                const float peak = peakOverBeats(x, 0.0, 0.0, 2.0);
@@ -60507,7 +60565,7 @@ int main(int argc, char** argv)
 
             // --- D. Paused in Timeline mode is silent -----------------------
             {
-               gArrangeStreams[0].clips.clear();
+               clearClips();
                addClip(0.0, 4.0, true);
                tr.SetPlaying(false);
                const std::vector<float> x = render(0.0, 200);
@@ -60523,7 +60581,7 @@ int main(int argc, char** argv)
             // is identical on both sides of the seek, so nothing rebuilt and
             // clip B played silence.
             {
-               gArrangeStreams[0].clips.clear();
+               clearClips();
                addClip(0.0, 2.0, true);
                addClip(4.0, 2.0, true);
                render(0.5, 100);                     // land inside clip A
@@ -60540,7 +60598,7 @@ int main(int argc, char** argv)
             // the topology), the block after the rebuild must continue the
             // same envelope rather than restart it.
             {
-               gArrangeStreams[0].clips.clear();
+               clearClips();
                addClip(0.0, 8.0, true);
                RebuildAudioTopology();
                cookAll();
@@ -60560,20 +60618,30 @@ int main(int argc, char** argv)
                buffer.numChannels = 2;
                buffer.numFrames = kBlock;
 
+               // The rebuild goes through the same per-frame trigger the main
+               // loop runs (WP5b: revision is the only change signal). It is
+               // polled before every block, so the 39 blocks without an edit
+               // are 39 no-op frames: exactly one rebuild over the whole run,
+               // and the edit moves revision by exactly one.
                float beforePeak = 0.0f, afterPeak = 0.0f;
+               const unsigned long long rebuildsBefore = gAudioTopologyRebuildCount;
+               uint64_t otherLane = 0;
+               bool bumpedOnce = false, noOpFrameQuiet = false;
+               int triggered = 0;
                for (int b = 0; b < 40; b++)
                {
                   if (b == 20)
                   {
                      // An edit on a *different* lane - the clip under the
                      // playhead is untouched.
-                     LegacyArrange::StreamRecord other;
-                     other.id = 2;
-                     other.type = Patch::kStreamAudio;
-                     other.name = "A2";
-                     gArrangeStreams.push_back(other);
-                     RebuildAudioTopology();
+                     const uint64_t rev = gArrange.revision;
+                     otherLane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+                     bumpedOnce = gArrange.revision == rev + 1;
                   }
+                  if (ArrangeAudioRebuildIfStale())
+                     triggered++;
+                  if (b == 20)
+                     noOpFrameQuiet = !ArrangeAudioRebuildIfStale(); // same frame again: nothing changed
                   AudioEngine::Instance().ProcessOffline(buffer);
                   for (int i = 0; i < kBlock; i++)
                   {
@@ -60581,12 +60649,14 @@ int main(int argc, char** argv)
                      if (b == 20) afterPeak = std::max(afterPeak, std::fabs(chan0[i]));
                   }
                }
+               const unsigned long long rebuilds = gAudioTopologyRebuildCount - rebuildsBefore;
                const bool fOk = beforePeak > 0.05f && afterPeak > 0.05f &&
-                                std::fabs(afterPeak - beforePeak) < 0.25f * beforePeak;
-               printf("arrange audio rebuild mid-clip: %s (before %.4f, after %.4f)\n",
-                      fOk ? "OK" : "FAIL", beforePeak, afterPeak);
+                                std::fabs(afterPeak - beforePeak) < 0.25f * beforePeak &&
+                                bumpedOnce && triggered == 1 && rebuilds == 1 && noOpFrameQuiet;
+               printf("arrange audio rebuild mid-clip: %s (before %.4f, after %.4f, revision +1 %d, rebuilds %llu over 40 polled frames, no-op frame quiet %d)\n",
+                      fOk ? "OK" : "FAIL", beforePeak, afterPeak, (int)bumpedOnce, rebuilds, (int)noOpFrameQuiet);
                allOk = allOk && fOk;
-               gArrangeStreams.resize(1);
+               Arrange::RemoveLane(gArrange, otherLane);
             }
 
             // --- G. Mode resets to Canvas on New and on Open ---------------
@@ -60630,7 +60700,6 @@ int main(int argc, char** argv)
          tr.SetOfflineMode(false);
          tr.SetPlaying(true);
          gAudioMode = savedMode;
-         gArrangeStreams.clear();
          if (hadEngine)
          {
             std::string startErr;
@@ -60654,7 +60723,7 @@ int main(int argc, char** argv)
          bool allOk = true;
          Transport& tr = Transport::Instance();
          tr.SetTempo(120.0f);
-         tr.Seek(0.0); // commits the tempo; clip seconds convert at it
+         tr.Seek(0.0); // commits the tempo (clips are in ticks, so it only fixes the clock)
          const double kBeat = 1.0; // the instant every check composites at
 
          const int kSize = 64;
@@ -60688,22 +60757,29 @@ int main(int argc, char** argv)
          if (spawned)
          {
             // Lane 0 is the TOP lane in the panel, lane 1 the one below it.
-            gArrangeStreams.clear();
+            // Built straight into gArrange (WP5b); revision keeps climbing
+            // across the reset so nothing watching it sees a rewind.
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            uint64_t clipIds[2] = { 0, 0 };
             for (int l = 0; l < 2; l++)
             {
-               LegacyArrange::StreamRecord lane;
-               lane.id = (uint64_t)(l + 1);
-               lane.type = Patch::kStreamVideo;
-               lane.name = l == 0 ? "V1" : "V2";
-               LegacyArrange::ClipRecord c;
-               c.startSeconds = 0.0;
-               c.lengthSeconds = 2.0; // beats [0, 4) at 120 bpm
-               c.srcIndex = l == 0 ? redIndex : blueIndex;
-               c.srcUid = FindNodeByIndex(c.srcIndex)->uid;
-               lane.clips.push_back(c);
-               gArrangeStreams.push_back(lane);
+               const uint64_t laneId = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+               Arrange::FindLane(gArrange, laneId)->name = l == 0 ? "V1" : "V2";
+               Arrange::Clip c;
+               c.start = 0;
+               c.length = Arrange::BeatsToTicks(4.0); // beats [0, 4)
+               c.srcUid = FindNodeByIndex(l == 0 ? redIndex : blueIndex)->uid;
+               Arrange::PlaceOverwrite(gArrange, laneId, c, &clipIds[l]);
             }
-            LegacyArrange::ClipRecord& top = gArrangeStreams[0].clips[0];
+            const uint64_t topId = clipIds[0];
+            const uint64_t bottomId = clipIds[1];
+            auto setTopSource = [&](uint64_t uid)
+            {
+               Arrange::FindClip(gArrange, topId)->srcUid = uid;
+               gArrange.revision++;
+            };
 
             int cookFrame = 2000000;
             auto cookAll = [&]()
@@ -60737,47 +60813,47 @@ int main(int argc, char** argv)
             allOk = allOk && aOk;
 
             // --- B. Model opacity is honoured (no UI) ---------------------
-            gArrangeStreams[0].opacity = 0.5f;
+            gArrange.lanes[0].opacity = 0.5f;
+            gArrange.revision++;
             compositeAndRead(px);
             const bool bOk = px[0] > 100 && px[0] < 155 && px[2] > 100 && px[2] < 155;
             printf("arrange video lane opacity: %s (rgb %d,%d,%d)\n", bOk ? "OK" : "FAIL", px[0], px[1], px[2]);
             allOk = allOk && bOk;
-            gArrangeStreams[0].opacity = 1.0f;
+            gArrange.lanes[0].opacity = 1.0f;
+            gArrange.revision++;
 
             // --- C. A disabled clip is skipped ----------------------------
-            top.enabled = false;
+            Arrange::SetEnabled(gArrange, { topId }, Arrange::kDisable);
             compositeAndRead(px);
             const int countDisabled = CountActiveArrangeVideoClips(kBeat);
             const bool cOk = px[2] > 200 && px[0] < 40 && countDisabled == 1;
             printf("arrange video disabled clip skipped: %s (rgb %d,%d,%d, active %d)\n",
                    cOk ? "OK" : "FAIL", px[0], px[1], px[2], countDisabled);
             allOk = allOk && cOk;
-            top.enabled = true;
+            Arrange::SetEnabled(gArrange, { topId }, Arrange::kEnable);
 
             // --- D. An unassigned clip is skipped -------------------------
-            top.srcIndex = -1;
-            top.srcUid = 0;
+            setTopSource(0);
             compositeAndRead(px);
             const bool dOk = px[2] > 200 && px[0] < 40 && CountActiveArrangeVideoClips(kBeat) == 1;
             printf("arrange video unassigned clip skipped: %s (rgb %d,%d,%d)\n", dOk ? "OK" : "FAIL", px[0], px[1], px[2]);
             allOk = allOk && dOk;
 
             // --- E. Nothing usable -> opaque black ------------------------
-            gArrangeStreams[1].clips[0].enabled = false;
+            Arrange::SetEnabled(gArrange, { bottomId }, Arrange::kDisable);
             compositeAndRead(px);
             const bool eOk = px[0] < 10 && px[1] < 10 && px[2] < 10 && px[3] > 245 &&
                              CountActiveArrangeVideoClips(kBeat) == 0;
             printf("arrange video nothing active clears black: %s (rgba %d,%d,%d,%d)\n",
                    eOk ? "OK" : "FAIL", px[0], px[1], px[2], px[3]);
             allOk = allOk && eOk;
-            gArrangeStreams[1].clips[0].enabled = true;
+            Arrange::SetEnabled(gArrange, { bottomId }, Arrange::kEnable);
 
             // --- F. Geometry clip: zero FBO allocations over 100 frames ---
             // Two targets at different sizes composite the same geometry
             // clip every frame, the shape of a render running under an open
             // monitor - per-target keying is what keeps them from thrashing.
-            top.srcIndex = cubeIndex;
-            top.srcUid = cubeUid;
+            setTopSource(cubeUid);
             ArrangeCompositeTarget t2{ 91 };
             const size_t panelViewportsBefore = gPanelViewports.size();
             auto geomFrame = [&]()
@@ -60802,7 +60878,7 @@ int main(int argc, char** argv)
             allOk = allOk && fOk;
 
             // --- G. Unused geometry viewports are evicted -----------------
-            top.enabled = false;
+            Arrange::SetEnabled(gArrange, { topId }, Arrange::kDisable);
             for (uint64_t f = 0; f < kArrangeGeomEvictFrames; f++)
                geomFrame();
             const bool stillThere = gArrangeGeomViewports.count({ cubeUid, 90 }) == 1;
@@ -76737,6 +76813,10 @@ int main(int argc, char** argv)
          glfwMakeContextCurrent(window);
 
       ++frameId;
+      // The uid map is rebuilt at most once a frame on first use (WP5b), so a
+      // gNodes mutation that did not report in is stale for one frame at most
+      // - and FindNodeByUid's own storage/size check catches most of those.
+      InvalidateNodeByUid();
 
       // Patch shortcuts. Handled outside the node editor so its own Cmd/Ctrl-key
       // bindings do not swallow them, and gated on no text field having focus

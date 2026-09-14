@@ -194,8 +194,8 @@ entry if a refactor makes it stale.
   not `GetMappingTransform()`, with no comment explaining why.
 
 - **Arrange timeline video** fans out across four places in `main.cpp`: lane
-  order and the skip rules live only in `CollectArrangeVideoLayers` (reads the
-  legacy `gArrangeStreams` mirror until WP5), geometry clips render through
+  order and the skip rules live only in `CollectArrangeVideoLayers` (reads
+  `gArrange` directly since WP5b, ticks to beats, `srcUid` via `FindNodeByUid`), geometry clips render through
   their own `gArrangeGeomViewports` cache keyed by (node uid, target slot) —
   never `gPanelViewports` — and the monitor is composited by
   `CompositeArrangeMonitorIfRequested()` right after the main cook loop, not
@@ -203,6 +203,27 @@ entry if a refactor makes it stale.
   `CompositeArrangeTimelineVideo(gArrangeRenderTarget, ...)` from the pump at
   the top of the loop. A change to "what the timeline shows" that edits only
   the panel lambda misses all of these.
+
+- **`FindNodeByUid` is a per-frame hash map** (`gNodeByUid`, `main.cpp`
+  ~5499-5570), not a scan. It is kept honest at four sites: `SpawnNode`
+  calls `NoteNodeAppended()` (~6834), `RemoveNodeByIndex` and `NewPatch` call
+  `InvalidateNodeByUid()` (~33456, ~34671), `ApplyPatchData`'s uid restore
+  calls `NoteNodeUidChanged` (~35775), and the main loop invalidates once per
+  frame (~76819). The lookup also rebuilds itself if `gNodes`' storage or size
+  moved, and it rechecks the hit's uid. Code that writes `GraphNode::uid` or
+  reshapes `gNodes` anywhere else must call one of these. `FindNodeByIndex` is
+  still a separate linear scan.
+- **The timeline audio topology is keyed on `gArrange.revision`.**
+  `ArrangeAudioRebuildIfStale()` (~33060) compares the revision and routing
+  (`ArrangeTimelineRoutingActive`) with what `RebuildAudioTopology` (~32604)
+  last recorded (~33044). The main loop calls it (~56303) and it stands down
+  during offline render, which rebuilds directly. So **every edit of a
+  `gArrange` field must bump `revision`**, including direct field writes that
+  bypass the `Arrange::` ops. If it doesn't, the audio thread keeps the old
+  clip schedule and nothing fails. Tempo is deliberately not an input, because
+  clip windows are in beats. The loop (`gArrange.settings.loop`, ticks)
+  reaches `Transport` only through `PublishArrangeLoop()`/`ArrangeSetLoop()`
+  (~5663-5690).
 
 ## Adding to this map
 
