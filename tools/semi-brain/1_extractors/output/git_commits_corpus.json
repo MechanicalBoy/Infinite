@@ -1,5 +1,428 @@
 [
   {
+    "hash": "9874b80451aa6573f53932850a27e19227a01d9a",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:39:41 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'claude/model-foundation-training-dfd467'",
+      "description": "Merge branch 'claude/model-foundation-training-dfd467'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'claude/model-foundation-training-dfd467'"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "f1f595d882397e9b55e23f04f6f64f335834bd88",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:39:21 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): sync generated corpus files",
+      "description": "sync generated corpus files",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): sync generated corpus files"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 464 ++++++++++-----------\n 2 files changed, 248 insertions(+), 232 deletions(-)"
+  },
+  {
+    "hash": "1d7b950e6bb430c0a0236c37b39781fc134cb6ed",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:39:09 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): update extractor corpora and training datasets",
+      "description": "update extractor corpora and training datasets",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): update extractor corpora and training datasets"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    | 171 ++++++++\n .../1_extractors/output/recovered_docs_corpus.json | 460 ++++++++++-----------\n .../output/skills_and_invariants_corpus.json       |   2 +-\n .../3_datasets/train_dpo_preference.jsonl          |   2 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 154 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 154 +++----\n 6 files changed, 564 insertions(+), 379 deletions(-)"
+  },
+  {
+    "hash": "33e4e931c547540252d82c933ae96efd9ff0109f",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:38:59 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "audio",
+      "title": "Merge branch 'feature/linux-step-04-vst3'",
+      "description": "Merge branch 'feature/linux-step-04-vst3'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'feature/linux-step-04-vst3'"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "e4adf3306825bf6609ee6e782b26ce301cfa2efb",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:34:28 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "arrange",
+      "title": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7' and fix arrange UI playhead, loop band, file-music icon, and trackpad scroll",
+      "description": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7' and fix arrange UI playhead, loop band, file-music icon, and trackpad scroll",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7' and fix arrange UI playhead, loop band, file-music icon, and trackpad scroll"
+    },
+    "stat": "src/core/TablerIcons.h                             |  34 ++\n src/main.cpp                                       |  16 +-\n .../1_extractors/output/git_commits_corpus.json    |  76 ++++\n .../1_extractors/output/recovered_docs_corpus.json | 472 ++++++++++-----------\n .../output/skills_and_invariants_corpus.json       |   2 +-\n .../3_datasets/train_dpo_preference.jsonl          |   1 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 152 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 152 +++----\n 8 files changed, 511 insertions(+), 394 deletions(-)"
+  },
+  {
+    "hash": "987e474085fd04fa64c2ddf090ab958caded0c48",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:32:55 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'",
+      "description": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "614eb95a31d60428a57f1e4514b0025f1fdb8054",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:12:55 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Arrange panel: dock menu on toolbar, loop/playhead full-height, header corner fill, toolbar icon cleanup",
+      "description": "Arrange panel: dock menu on toolbar, loop/playhead full-height, header corner fill, toolbar icon cleanup",
+      "bullets": [
+        "The dock context menu (viewport left/right, timeline top/bottom) was",
+        "The loop-highlight band and playhead line stopped dead at the last",
+        "The header-column corner above the ruler/first track was left",
+        "Reset Row Heights moved next to the Inspector toggle (both act on"
+      ],
+      "body": "only reachable by right-clicking the viewport monitor, which is off\nby default - right-clicking the toolbar now opens the same menu.\nreal track instead of reaching the filled empty-track region added\npreviously; both now extend to the same bottom.\nunstyled (blank) next to the filled ruler bar - now filled to match.\nheader/row layout); Inspector's icon swapped from the list glyph to\nsliders so the two adjacent icons no longer look alike.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Arrange panel: dock menu on toolbar, loop/playhead full-height, header corner fill, toolbar icon cleanup\n\n- The dock context menu (viewport left/right, timeline top/bottom) was\n  only reachable by right-clicking the viewport monitor, which is off\n  by default - right-clicking the toolbar now opens the same menu.\n- The loop-highlight band and playhead line stopped dead at the last\n  real track instead of reaching the filled empty-track region added\n  previously; both now extend to the same bottom.\n- The header-column corner above the ruler/first track was left\n  unstyled (blank) next to the filled ruler bar - now filled to match.\n- Reset Row Heights moved next to the Inspector toggle (both act on\n  header/row layout); Inspector's icon swapped from the list glyph to\n  sliders so the two adjacent icons no longer look alike.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/main.cpp | 176 +++++++++++++++++++++++++++++++++++------------------------\n 1 file changed, 105 insertions(+), 71 deletions(-)"
+  },
+  {
+    "hash": "750a7ed64a9e8ea05b0beb96088149dee6c830b3",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:57:01 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Fill empty track region below last lane with the same row stripes",
+      "description": "Fill empty track region below last lane with the same row stripes",
+      "bullets": [],
+      "body": "The dead space under the last track only had faint gridlines over the\npanel's raw background, while real rows alternate between two subtle\ntinted stripes - the contrast made it read as cut off / restricted by\ntrack count. Extend the same alternating stripe fill into that region.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Fill empty track region below last lane with the same row stripes\n\nThe dead space under the last track only had faint gridlines over the\npanel's raw background, while real rows alternate between two subtle\ntinted stripes - the contrast made it read as cut off / restricted by\ntrack count. Extend the same alternating stripe fill into that region.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/main.cpp | 16 +++++++++++++++-\n 1 file changed, 15 insertions(+), 1 deletion(-)"
+  },
+  {
+    "hash": "20f64d6831b7f9b29a984be8c9aee64341600bad",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:36:40 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Restore Solo/Mute/Pan/Gain/Opacity mix strip to the track header row",
+      "description": "Restore Solo/Mute/Pan/Gain/Opacity mix strip to the track header row",
+      "bullets": [],
+      "body": "Per user feedback, put the inline mix strip back on the header row\ninstead of inspector-only (it was moved out in the earlier declutter\npass, but that made quick per-track adjustments too many clicks away).\nIt now scales to the row's resizable height rather than a fixed one,\nand hides itself if a row is shrunk below its own height. Kept the\ninspector's copy too, so both surfaces work.\nUpdate the timeline-arrangement-architecture skill doc to match.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Restore Solo/Mute/Pan/Gain/Opacity mix strip to the track header row\n\nPer user feedback, put the inline mix strip back on the header row\ninstead of inspector-only (it was moved out in the earlier declutter\npass, but that made quick per-track adjustments too many clicks away).\nIt now scales to the row's resizable height rather than a fixed one,\nand hides itself if a row is shrunk below its own height. Kept the\ninspector's copy too, so both surfaces work.\n\nUpdate the timeline-arrangement-architecture skill doc to match.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".../timeline-arrangement-architecture/SKILL.md     | 18 +++--\n src/main.cpp                                       | 87 +++++++++++++++++++---\n 2 files changed, 91 insertions(+), 14 deletions(-)"
+  },
+  {
+    "hash": "9f2b39315c6c8670c65aa0f5a27a3e1f523c3207",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:31:48 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'feature/eq-filter-shift-drag-q'",
+      "description": "Merge branch 'feature/eq-filter-shift-drag-q'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'feature/eq-filter-shift-drag-q'"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "370a9557179a72bb4db25eff247cd7f97115542d",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:31:45 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "audio-ui",
+      "title": "feat(audio-ui): add Shift-drag Q to EQ curve and fix WTDRAG viewport framing",
+      "description": "add Shift-drag Q to EQ curve and fix WTDRAG viewport framing",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(audio-ui): add Shift-drag Q to EQ curve and fix WTDRAG viewport framing"
+    },
+    "stat": "src/main.cpp                                       | 180 ++++----\n .../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 452 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 147 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 147 +++----\n 5 files changed, 462 insertions(+), 480 deletions(-)"
+  },
+  {
+    "hash": "45747dc3c82c999f96060efa8f8b44fc0853918e",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:25:17 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "arrange",
+      "title": "Arrange timeline: fix dead grid below tracks, floor row-height drag at default, add reset-heights toggle",
+      "description": "Arrange timeline: fix dead grid below tracks, floor row-height drag at default, add reset-heights toggle",
+      "bullets": [
+        "Vertical beat/bar gridlines now continue past the last track into the",
+        "Row-height drag-resize can no longer shrink below the original 30px",
+        "Added a toolbar toggle (next to the viewport button) that resets every"
+      ],
+      "body": "empty scroll area instead of stopping dead (only faint horizontal row\nguides carried on before), so the timeline reads as one continuous grid\nregardless of track count.\nrow height, only grow up to the existing 160px cap.\ntrack's height back to default in one click; disabled when nothing is\nresized.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Arrange timeline: fix dead grid below tracks, floor row-height drag at default, add reset-heights toggle\n\n- Vertical beat/bar gridlines now continue past the last track into the\n  empty scroll area instead of stopping dead (only faint horizontal row\n  guides carried on before), so the timeline reads as one continuous grid\n  regardless of track count.\n- Row-height drag-resize can no longer shrink below the original 30px\n  row height, only grow up to the existing 160px cap.\n- Added a toolbar toggle (next to the viewport button) that resets every\n  track's height back to default in one click; disabled when nothing is\n  resized.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/main.cpp | 49 +++++++++++++++++++++++++++++++++++++++++++++++--\n 1 file changed, 47 insertions(+), 2 deletions(-)"
+  },
+  {
+    "hash": "83744de3104a6645bb35a1576a81a75a1f12ece4",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:00:02 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'",
+      "description": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'",
+      "bullets": [],
+      "body": "Timeline/Arrange UX fixes: remove per-clip bounce/render, always-on\nretrigger, live BPM sync display, resizable track rows, viewport off by\ndefault, inspector double-click toggle, decluttered track header.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'\n\nTimeline/Arrange UX fixes: remove per-clip bounce/render, always-on\nretrigger, live BPM sync display, resizable track rows, viewport off by\ndefault, inspector double-click toggle, decluttered track header.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "839816270c9b55d5fc8e56a392faf9a9f3d9e37b",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 22:50:20 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "arrange",
+      "title": "Timeline/Arrange UX fixes: remove per-clip bounce, always-retrigger, live BPM sync display, resizable rows, viewport off by default, inspector toggle, decluttered track header",
+      "description": "Timeline/Arrange UX fixes: remove per-clip bounce, always-retrigger, live BPM sync display, resizable rows, viewport off by default, inspector toggle, decluttered track header",
+      "bullets": [
+        "Remove individual-clip \"Bounce to Sample\" / \"Bounce / Render Clip\" entirely",
+        "Remove the per-clip retrigger-vs-continuous trigger-mode UI; retrigger is",
+        "Clamp the loop-region highlight band to the actual track count.",
+        "Allow resizing each track row's height by dragging its border, with",
+        "Size the timeline grid/canvas to the tracks instead of leaving dead",
+        "Default snap division to 1/4.",
+        "Fix double-clicking empty timeline space creating a new clip that",
+        "Default the Arrange panel's monitor/viewport preview to off.",
+        "Make double-clicking an already-open inspector selection toggle it",
+        "Remove inline opacity/Solo/Mute/Gain/Pan controls from the track header",
+        "Update the timeline-arrangement-architecture skill to match."
+      ],
+      "body": "(menu items, inspector button, backing functions, clip-scoped render\njob fields and global scope set); Render Track/Group untouched.\nnow always on. Sync-to-Tempo shows a live read-only BPM while synced and\nonly exposes the manual field when sync is off.\nwaveform rendering scaled to match.\nspace below them.\nwrongly reused the nearest existing clip's source node.\nclosed instead of just re-opening the same selection.\nrow; those settings now live only in the docked inspector.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Timeline/Arrange UX fixes: remove per-clip bounce, always-retrigger, live BPM sync display, resizable rows, viewport off by default, inspector toggle, decluttered track header\n\n- Remove individual-clip \"Bounce to Sample\" / \"Bounce / Render Clip\" entirely\n  (menu items, inspector button, backing functions, clip-scoped render\n  job fields and global scope set); Render Track/Group untouched.\n- Remove the per-clip retrigger-vs-continuous trigger-mode UI; retrigger is\n  now always on. Sync-to-Tempo shows a live read-only BPM while synced and\n  only exposes the manual field when sync is off.\n- Clamp the loop-region highlight band to the actual track count.\n- Allow resizing each track row's height by dragging its border, with\n  waveform rendering scaled to match.\n- Size the timeline grid/canvas to the tracks instead of leaving dead\n  space below them.\n- Default snap division to 1/4.\n- Fix double-clicking empty timeline space creating a new clip that\n  wrongly reused the nearest existing clip's source node.\n- Default the Arrange panel's monitor/viewport preview to off.\n- Make double-clicking an already-open inspector selection toggle it\n  closed instead of just re-opening the same selection.\n- Remove inline opacity/Solo/Mute/Gain/Pan controls from the track header\n  row; those settings now live only in the docked inspector.\n- Update the timeline-arrangement-architecture skill to match.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".../timeline-arrangement-architecture/SKILL.md     |  76 ++-\n src/arrange/ArrangeModel.h                         |   3 +-\n src/core/Patch.cpp                                 |  10 +\n src/core/Patch.h                                   |   1 +\n src/main.cpp                                       | 729 ++++++---------------\n 5 files changed, 266 insertions(+), 553 deletions(-)"
+  },
+  {
+    "hash": "9e98fc51323576a2f4de0d14f6a7a275d552690c",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 22:39:14 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): CI test with a real plugin, host hardening sweep (P4 tasks 4.4/4.5)",
+      "description": "CI test with a real plugin, host hardening sweep (P4 tasks 4.4/4.5)",
+      "bullets": [
+        "after* dlclose()'ing the module, calling the plugin's virtual release() into"
+      ],
+      "body": "Adds real end-to-end VST3 fixtures against DPF's \"Parameters\" example and a\ndeliberately-broken plugin: scan/load/render/param/state round trip\n(VST3SCANTEST), editor-open-under-Xvfb screenshot (VST3EDITORSHOTTEST), and\nout-of-process crash/blocklist survival (VST3BLOCKLISTTEST), all wired into\nthe media Xvfb group and CI.\nTesting against a real plugin surfaced a genuine host bug: DescribeVST3Bundle\nin PluginVST3Linux.cpp released its IPtr<IPluginFactory>/IPtr<IPluginFactory2>\nalready-unmapped memory (a use-after-unload SIGSEGV on every real VST3 scan).\nFixed by nulling both IPtrs before unload.\nAlso: PluginScanner::DefaultVST3Folders() extracted so the test scans the\nsame folder list production code uses; INFINITE_SYSINFO extended with VST3\nfolder/scan/blocklist counts; known-test-failures-linux.txt's VST3SCANTEST\nentry removed (now passing) and PLUGINSCANTEST's reason corrected (it only\never tested macOS AudioUnits, not VST3, so it's architecturally inapplicable\non Linux rather than a stubbed P4 gap - flagged for whoever owns the \"zero\nP0-P4 baseline entries\" exit criterion).\nVerified independently in the local arm64 container: --fast 31/0/0, --group\nmedia 6/0/2-known-xfail (run twice, no flakiness), vst3-editor.png confirmed\na real non-blank 512x512 capture, no __linux__ leakage into src/nodes/.\nSurge XT (JUCE tier) is SHA256-verified but never actually scanned; x86_64\nCI has not run this branch.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(linux): CI test with a real plugin, host hardening sweep (P4 tasks 4.4/4.5)\n\nAdds real end-to-end VST3 fixtures against DPF's \"Parameters\" example and a\ndeliberately-broken plugin: scan/load/render/param/state round trip\n(VST3SCANTEST), editor-open-under-Xvfb screenshot (VST3EDITORSHOTTEST), and\nout-of-process crash/blocklist survival (VST3BLOCKLISTTEST), all wired into\nthe media Xvfb group and CI.\n\nTesting against a real plugin surfaced a genuine host bug: DescribeVST3Bundle\nin PluginVST3Linux.cpp released its IPtr<IPluginFactory>/IPtr<IPluginFactory2>\n*after* dlclose()'ing the module, calling the plugin's virtual release() into\nalready-unmapped memory (a use-after-unload SIGSEGV on every real VST3 scan).\nFixed by nulling both IPtrs before unload.\n\nAlso: PluginScanner::DefaultVST3Folders() extracted so the test scans the\nsame folder list production code uses; INFINITE_SYSINFO extended with VST3\nfolder/scan/blocklist counts; known-test-failures-linux.txt's VST3SCANTEST\nentry removed (now passing) and PLUGINSCANTEST's reason corrected (it only\never tested macOS AudioUnits, not VST3, so it's architecturally inapplicable\non Linux rather than a stubbed P4 gap - flagged for whoever owns the \"zero\nP0-P4 baseline entries\" exit criterion).\n\nVerified independently in the local arm64 container: --fast 31/0/0, --group\nmedia 6/0/2-known-xfail (run twice, no flakiness), vst3-editor.png confirmed\na real non-blank 512x512 capture, no __linux__ leakage into src/nodes/.\nSurge XT (JUCE tier) is SHA256-verified but never actually scanned; x86_64\nCI has not run this branch.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".claude/skills/run-infinite-hygiene/driver.sh      |   7 +-\n .../known-test-failures-linux.txt                  |  18 +-\n .github/workflows/build.yml                        |  42 +++\n docs/plans/linux/README.md                         |   2 +-\n src/audio/PluginScanner.cpp                        |  73 ++--\n src/audio/PluginScanner.h                          |   9 +\n src/core/SysInfo.cpp                               |  25 ++\n src/main.cpp                                       | 410 +++++++++++++++++++++\n src/platform/linux/PluginVST3Linux.cpp             |  14 +\n tools/linux/build-broken-plugin.sh                 |  65 ++++\n tools/linux/deps-apt.sh                            |   1 +\n tools/linux/test-plugins.sh                        | 166 +++++++++\n tools/linux/xvfb-harness.sh                        |   4 +\n 13 files changed, 797 insertions(+), 39 deletions(-)\n create mode 100755 tools/linux/build-broken-plugin.sh\n create mode 100755 tools/linux/test-plugins.sh"
+  },
+  {
+    "hash": "7bef990af605aafd7cdbb176e9c86227ab15c1b3",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 20:00:11 2026 +0530",
+    "parsed_message": {
+      "type": "build",
+      "scope": "global",
+      "title": "build: update website Infinite.dmg and sync datasets",
+      "description": "update website Infinite.dmg and sync datasets",
+      "bullets": [],
+      "body": "",
+      "raw": "build: update website Infinite.dmg and sync datasets"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 460 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 149 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 149 +++----\n website/assets/Infinite.dmg                        | Bin 11939286 -> 12023921 bytes\n 5 files changed, 396 insertions(+), 378 deletions(-)"
+  },
+  {
+    "hash": "f04c9eaef6cc85bf7e5296ce0f35d29ffafcc085",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:54:33 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): sync corpus and datasets with latest commits",
+      "description": "sync corpus and datasets with latest commits",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): sync corpus and datasets with latest commits"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 456 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 147 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 147 +++----\n 4 files changed, 392 insertions(+), 374 deletions(-)"
+  },
+  {
+    "hash": "7f2bcc305fd8b801b13a0484e914b41aae318b81",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:51:55 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): sync updated corpus and SFT/DPO datasets",
+      "description": "sync updated corpus and SFT/DPO datasets",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): sync updated corpus and SFT/DPO datasets"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 448 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 154 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 154 +++----\n 4 files changed, 396 insertions(+), 376 deletions(-)"
+  },
+  {
+    "hash": "d81ec3eae1b66fb73d7b6f3b756e4fabfeca8288",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:51:28 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): finalize corpus and dataset sync",
+      "description": "finalize corpus and dataset sync",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): finalize corpus and dataset sync"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 472 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 143 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 143 +++----\n 4 files changed, 396 insertions(+), 378 deletions(-)"
+  },
+  {
+    "hash": "dfca5bae6d56b4322fbdbb818db77f26e2cb8010",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:51:15 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): sync dataset artifacts",
+      "description": "sync dataset artifacts",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): sync dataset artifacts"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 468 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 147 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 147 +++----\n 4 files changed, 398 insertions(+), 380 deletions(-)"
+  },
+  {
+    "hash": "14ff384fb1005af6abfac3049832fa6cd1936d7b",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:51:04 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): sync commits corpus",
+      "description": "sync commits corpus",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): sync commits corpus"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json          | 16 ++++++++++++++++\n 1 file changed, 16 insertions(+)"
+  },
+  {
+    "hash": "f939b681ea99fc6516583544085a7a2a0f059fbe",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:50:46 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "semi-brain",
+      "title": "feat(semi-brain): complete extractor and dataset generation",
+      "description": "complete extractor and dataset generation",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(semi-brain): complete extractor and dataset generation"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    | 723 +++++++++++++++++++++\n .../1_extractors/output/recovered_docs_corpus.json | 452 ++++++-------\n .../output/skills_and_invariants_corpus.json       |  12 +-\n .../3_datasets/train_dpo_preference.jsonl          |   6 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 198 +++---\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 198 +++---\n 6 files changed, 1203 insertions(+), 386 deletions(-)"
+  },
+  {
+    "hash": "0f2b5b039d782b1ce17788f246ffe5699be45bfe",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:50:19 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "semi-brain",
+      "title": "feat(semi-brain): add Semi-Brain cognitive twin skill and toolkit",
+      "description": "add Semi-Brain cognitive twin skill and toolkit",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(semi-brain): add Semi-Brain cognitive twin skill and toolkit"
+    },
+    "stat": ".claude/skills/semi-brain/SKILL.md                 |     64 +\n AGENTS.md                                          |      1 +\n tools/semi-brain/1_extractors/build_ast_graph.py   |    229 +\n tools/semi-brain/1_extractors/index_codebase.py    |    170 +\n .../1_extractors/ingest_build_your_own_x.py        |    124 +\n tools/semi-brain/1_extractors/mine_git_history.py  |    129 +\n .../1_extractors/output/ast_symbol_graph.json      | 128744 ++++++++++++++++++\n .../output/build_your_own_x_corpus.json            |   1004 +\n .../1_extractors/output/git_commits_corpus.json    |  13848 ++\n .../1_extractors/output/knowledge_index.db         |    Bin 0 -> 24190976 bytes\n .../1_extractors/output/recovered_docs_corpus.json |    554 +\n .../output/skills_and_invariants_corpus.json       |    365 +\n .../1_extractors/parse_skills_and_rules.py         |     57 +\n tools/semi-brain/1_extractors/recover_git_docs.py  |     59 +\n .../2_distilled_brain/categorization_matrix.md     |     68 +\n .../2_distilled_brain/choice_tree_evaluator.md     |     67 +\n .../first_principles_blueprints.md                 |    174 +\n .../2_distilled_brain/system1_taste_and_priors.md  |     50 +\n .../2_distilled_brain/system2_systems_logic.md     |     65 +\n .../semi-brain/3_datasets/compile_training_data.py |    223 +\n tools/semi-brain/3_datasets/mlx_data/train.jsonl   |   1023 +\n tools/semi-brain/3_datasets/mlx_data/valid.jsonl   |    114 +\n tools/semi-brain/3_datasets/prepare_mlx_dataset.py |     80 +\n .../3_datasets/train_dpo_preference.jsonl          |     86 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl |   1137 +\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl |   1137 +\n tools/semi-brain/4_engine/brain_core.py            |    306 +\n tools/semi-brain/4_engine/install_hooks.sh         |     37 +\n tools/semi-brain/4_engine/local_router.py          |     70 +\n tools/semi-brain/4_engine/retriever.py             |    161 +\n .../4_engine/router_adapter/adapter_config.json    |     40 +\n tools/semi-brain/4_engine/semi_brain_cli.py        |    137 +\n tools/semi-brain/4_engine/sync_brain.py            |     78 +\n tools/semi-brain/4_engine/train_router.py          |     48 +\n tools/semi-brain/5_evals/benchmark_suite.json      |    212 +\n tools/semi-brain/5_evals/run_evals.py              |    146 +\n 36 files changed, 150807 insertions(+)\n create mode 100644 .claude/skills/semi-brain/SKILL.md\n create mode 100644 tools/semi-brain/1_extractors/build_ast_graph.py\n create mode 100644 tools/semi-brain/1_extractors/index_codebase.py\n create mode 100644 tools/semi-brain/1_extractors/ingest_build_your_own_x.py\n create mode 100644 tools/semi-brain/1_extractors/mine_git_history.py\n create mode 100644 tools/semi-brain/1_extractors/output/ast_symbol_graph.json\n create mode 100644 tools/semi-brain/1_extractors/output/build_your_own_x_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/git_commits_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/knowledge_index.db\n create mode 100644 tools/semi-brain/1_extractors/output/recovered_docs_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/skills_and_invariants_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/parse_skills_and_rules.py\n create mode 100644 tools/semi-brain/1_extractors/recover_git_docs.py\n create mode 100644 tools/semi-brain/2_distilled_brain/categorization_matrix.md\n create mode 100644 tools/semi-brain/2_distilled_brain/choice_tree_evaluator.md\n create mode 100644 tools/semi-brain/2_distilled_brain/first_principles_blueprints.md\n create mode 100644 tools/semi-brain/2_distilled_brain/system1_taste_and_priors.md\n create mode 100644 tools/semi-brain/2_distilled_brain/system2_systems_logic.md\n create mode 100644 tools/semi-brain/3_datasets/compile_training_data.py\n create mode 100644 tools/semi-brain/3_datasets/mlx_data/train.jsonl\n create mode 100644 tools/semi-brain/3_datasets/mlx_data/valid.jsonl\n create mode 100644 tools/semi-brain/3_datasets/prepare_mlx_dataset.py\n create mode 100644 tools/semi-brain/3_datasets/train_dpo_preference.jsonl\n create mode 100644 tools/semi-brain/3_datasets/train_sft_alpaca.jsonl\n create mode 100644 tools/semi-brain/3_datasets/train_sft_sharegpt.jsonl\n create mode 100644 tools/semi-brain/4_engine/brain_core.py\n create mode 100644 tools/semi-brain/4_engine/install_hooks.sh\n create mode 100644 tools/semi-brain/4_engine/local_router.py\n create mode 100644 tools/semi-brain/4_engine/retriever.py\n create mode 100644 tools/semi-brain/4_engine/router_adapter/adapter_config.json\n create mode 100644 tools/semi-brain/4_engine/semi_brain_cli.py\n create mode 100644 tools/semi-brain/4_engine/sync_brain.py\n create mode 100644 tools/semi-brain/4_engine/train_router.py\n create mode 100644 tools/semi-brain/5_evals/benchmark_suite.json\n create mode 100644 tools/semi-brain/5_evals/run_evals.py"
+  },
+  {
+    "hash": "d1686c6cef21fa195df578bc6e07184b07b8e583",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 17:51:35 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): implement VST3 X11 plugin editors (P4 task 4.3)",
+      "description": "implement VST3 X11 plugin editors (P4 task 4.3)",
+      "bullets": [],
+      "body": "Ports the editor-window path from PluginVST3Win.cpp to X11: opens a\ntop-level window sized from IPlugView::getSize(), sets WM_NAME +\nWM_DELETE_WINDOW, and embeds the plugin's view via\nkPlatformTypeX11EmbedWindowID. Adds one process-wide\nSteinberg::Linux::IRunLoop, exposed both through the host IPlugFrame\n(for editors) and through HostApplication's host-context queryInterface\n(so a plugin can register fd/timer handlers via IPluginFactory3::\nsetHostContext with no editor open at all - JUCE/DPF both rely on this).\nPluginVST3PumpEditorEvents pumps the run loop then drains X11 events for\nour windows with a 4ms wall-clock budget, handling WM_DELETE_WINDOW and\nresize (ConfigureNotify -> onSize). Every plugin-facing call routes\nthrough the existing RunPluginCallGuarded sigsetjmp/siglongjmp crash\nguard. main.cpp's frame-loop pump call sites no longer gate on\nAnyPluginEditorOpen(), since factory-context timers need servicing even\nwith no editor open (verified this is a no-op cost when idle on macOS/\nWindows too - CFRunLoopRunInMode(..., 0.0, ...) and PeekMessageW both\nreturn immediately with nothing queued).\nUses a dedicated X11 connection (XOpenDisplay), not GLFW's own\n(glfwGetX11Display): GLFW's frame-loop pump unconditionally drains its\nconnection's entire event queue every frame and silently discards\nevents for windows it doesn't own (verified against the vendored GLFW\nsource, x11_window.c's processEvent/_glfwPollEventsX11). Sharing the\nconnection would mean GLFW eats every editor-window event before this\ncode ever runs, since glfwPollEvents() runs earlier in the same frame\niteration - breaking window-close and live resize. A second connection\navoids the conflict; X11 window ids are server-side and connection-\nagnostic, so IPlugView::attached() still embeds correctly.\nCMakeLists.txt links X11 into the Infinite target only (not\ninfinite-vst3-scanner, which stays headless for out-of-process\nscanning) - verified via ldd.\nVerified: clean container build (both targets), xvfb-harness.sh --fast\nrun twice with the same 5 failures both times, all pre-existing per\nknown-test-failures-linux.txt (AUDIOLIFECYCLETEST/AUDIORECOVERYTEST\ncontainer timing flakes, GROUPTEST unrelated pre-existing issue,\nPLUGINSCANTEST/AUDIOPARAMSWEEPTEST - the latter fails on ALSA card\nenumeration in this container run, unrelated to VST3/editor code, no\ncode path touched by this change). No new regressions.\nStill open within P4: task 4.4 (CI test with a real downloaded plugin -\nthe editor path above is implemented but unexercised end-to-end without\none) and task 4.5 (sweep/cleanup).\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(linux): implement VST3 X11 plugin editors (P4 task 4.3)\n\nPorts the editor-window path from PluginVST3Win.cpp to X11: opens a\ntop-level window sized from IPlugView::getSize(), sets WM_NAME +\nWM_DELETE_WINDOW, and embeds the plugin's view via\nkPlatformTypeX11EmbedWindowID. Adds one process-wide\nSteinberg::Linux::IRunLoop, exposed both through the host IPlugFrame\n(for editors) and through HostApplication's host-context queryInterface\n(so a plugin can register fd/timer handlers via IPluginFactory3::\nsetHostContext with no editor open at all - JUCE/DPF both rely on this).\nPluginVST3PumpEditorEvents pumps the run loop then drains X11 events for\nour windows with a 4ms wall-clock budget, handling WM_DELETE_WINDOW and\nresize (ConfigureNotify -> onSize). Every plugin-facing call routes\nthrough the existing RunPluginCallGuarded sigsetjmp/siglongjmp crash\nguard. main.cpp's frame-loop pump call sites no longer gate on\nAnyPluginEditorOpen(), since factory-context timers need servicing even\nwith no editor open (verified this is a no-op cost when idle on macOS/\nWindows too - CFRunLoopRunInMode(..., 0.0, ...) and PeekMessageW both\nreturn immediately with nothing queued).\n\nUses a dedicated X11 connection (XOpenDisplay), not GLFW's own\n(glfwGetX11Display): GLFW's frame-loop pump unconditionally drains its\nconnection's entire event queue every frame and silently discards\nevents for windows it doesn't own (verified against the vendored GLFW\nsource, x11_window.c's processEvent/_glfwPollEventsX11). Sharing the\nconnection would mean GLFW eats every editor-window event before this\ncode ever runs, since glfwPollEvents() runs earlier in the same frame\niteration - breaking window-close and live resize. A second connection\navoids the conflict; X11 window ids are server-side and connection-\nagnostic, so IPlugView::attached() still embeds correctly.\n\nCMakeLists.txt links X11 into the Infinite target only (not\ninfinite-vst3-scanner, which stays headless for out-of-process\nscanning) - verified via ldd.\n\nVerified: clean container build (both targets), xvfb-harness.sh --fast\nrun twice with the same 5 failures both times, all pre-existing per\nknown-test-failures-linux.txt (AUDIOLIFECYCLETEST/AUDIORECOVERYTEST\ncontainer timing flakes, GROUPTEST unrelated pre-existing issue,\nPLUGINSCANTEST/AUDIOPARAMSWEEPTEST - the latter fails on ALSA card\nenumeration in this container run, unrelated to VST3/editor code, no\ncode path touched by this change). No new regressions.\n\nStill open within P4: task 4.4 (CI test with a real downloaded plugin -\nthe editor path above is implemented but unexercised end-to-end without\none) and task 4.5 (sweep/cleanup).\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "CMakeLists.txt                         |  21 +-\n src/main.cpp                           |  16 +-\n src/platform/linux/PluginVST3Linux.cpp | 761 ++++++++++++++++++++++++++++++++-\n 3 files changed, 764 insertions(+), 34 deletions(-)"
+  },
+  {
+    "hash": "6b90bbfec2fe263a683f0206c137bf8be77badbf",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 17:46:17 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Add GLUtil to compositing_2d subsystem anchor symbols",
+      "description": "Add GLUtil to compositing_2d subsystem anchor symbols",
+      "bullets": [],
+      "body": "CASE_07/CASE_18 target GLUtil but the compositing_2d anchor list only\nhad FilterDef/INode, so the namespace-extraction fix (previous commit)\nnever got a chance to inject it there even though GLUtil now resolves\nagainst the AST graph. One-line addition, validated by re-running evals:\nAST Symbol & Caller Precision 59.4% -> 62.8%, aggregate 86.5% -> 87.4%.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Add GLUtil to compositing_2d subsystem anchor symbols\n\nCASE_07/CASE_18 target GLUtil but the compositing_2d anchor list only\nhad FilterDef/INode, so the namespace-extraction fix (previous commit)\nnever got a chance to inject it there even though GLUtil now resolves\nagainst the AST graph. One-line addition, validated by re-running evals:\nAST Symbol & Caller Precision 59.4% -> 62.8%, aggregate 86.5% -> 87.4%.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 460 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 147 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 147 +++----\n tools/semi-brain/4_engine/brain_core.py            |   2 +-\n 5 files changed, 395 insertions(+), 377 deletions(-)"
+  },
+  {
     "hash": "5e993818a0866d19995908cf5547744d303168a1",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
@@ -50,6 +473,22 @@
       "raw": "Add semi-brain: extractor pipeline, distilled schemas, trained router, evals\n\nCognitive-twin tooling for Infinite: AST/git/docs/skills extractors feeding\nan 8,070-row hybrid FTS5+dense SQLite index, distilled System1/System2\nreasoning schemas, SFT+DPO training datasets, a brain_core.py reasoning\nengine, and a 30-case benchmark suite.\n\n- Trained the local Qwen2.5-0.5B-Instruct LoRA router for real (previous\n  attempt had only saved a config, never actual adapter weights) via\n  mlx_lm.lora; had to drop to batch-size=1 + --grad-checkpoint to fit the\n  8GB unified-memory Metal budget without OOM. Val loss 4.35 -> 1.03.\n- Fixed AST Symbol & Caller Precision (51.1% -> 57.8%, aggregate 84.4% ->\n  86.1%) by grounding a per-subsystem anchor-symbol table in brain_core.py:\n  architecturally load-bearing symbols (ParamMailbox, INode, ...) that own\n  the invariant behind most bugs in a subsystem but are rarely named in the\n  bug report's own words, so the lexical scorer never found them. Anchors\n  only inject if they still resolve against the live AST graph, so a\n  rename/removal is a silent no-op rather than a fabricated citation.\n- Evaluated swapping the retriever's dense embedding model to a code-tuned\n  one (jinaai/jina-embeddings-v2-base-code) and measured a regression\n  (57.8% -> 54.4%): 86% of the indexed corpus (ast_symbol rows) has no\n  actual code in its embedded text, just a templated one-line description,\n  so a code-contrastive model has no edge there. Reverted to bge-small-en."
     },
     "stat": ".claude/skills/semi-brain/SKILL.md                 |     64 +\n AGENTS.md                                          |      1 +\n tools/semi-brain/1_extractors/build_ast_graph.py   |    229 +\n tools/semi-brain/1_extractors/index_codebase.py    |    170 +\n .../1_extractors/ingest_build_your_own_x.py        |    124 +\n tools/semi-brain/1_extractors/mine_git_history.py  |    129 +\n .../1_extractors/output/ast_symbol_graph.json      | 128744 ++++++++++++++++++\n .../output/build_your_own_x_corpus.json            |   1004 +\n .../1_extractors/output/git_commits_corpus.json    |  13848 ++\n .../1_extractors/output/knowledge_index.db         |    Bin 0 -> 23457792 bytes\n .../1_extractors/output/recovered_docs_corpus.json |    554 +\n .../output/skills_and_invariants_corpus.json       |    365 +\n .../1_extractors/parse_skills_and_rules.py         |     57 +\n tools/semi-brain/1_extractors/recover_git_docs.py  |     59 +\n .../2_distilled_brain/categorization_matrix.md     |     68 +\n .../2_distilled_brain/choice_tree_evaluator.md     |     67 +\n .../first_principles_blueprints.md                 |    174 +\n .../2_distilled_brain/system1_taste_and_priors.md  |     50 +\n .../2_distilled_brain/system2_systems_logic.md     |     65 +\n .../semi-brain/3_datasets/compile_training_data.py |    223 +\n tools/semi-brain/3_datasets/mlx_data/train.jsonl   |   1023 +\n tools/semi-brain/3_datasets/mlx_data/valid.jsonl   |    114 +\n tools/semi-brain/3_datasets/prepare_mlx_dataset.py |     80 +\n .../3_datasets/train_dpo_preference.jsonl          |     86 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl |   1137 +\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl |   1137 +\n tools/semi-brain/4_engine/brain_core.py            |    348 +\n tools/semi-brain/4_engine/install_hooks.sh         |     37 +\n tools/semi-brain/4_engine/local_router.py          |     70 +\n tools/semi-brain/4_engine/retriever.py             |    161 +\n .../4_engine/router_adapter/adapter_config.json    |     40 +\n .../4_engine/router_adapter/adapters.safetensors   |    Bin 0 -> 5877295 bytes\n tools/semi-brain/4_engine/semi_brain_cli.py        |    137 +\n tools/semi-brain/4_engine/sync_brain.py            |     78 +\n tools/semi-brain/4_engine/train_router.py          |     50 +\n tools/semi-brain/5_evals/benchmark_suite.json      |    212 +\n tools/semi-brain/5_evals/run_evals.py              |    146 +\n 37 files changed, 150851 insertions(+)\n create mode 100644 .claude/skills/semi-brain/SKILL.md\n create mode 100644 tools/semi-brain/1_extractors/build_ast_graph.py\n create mode 100644 tools/semi-brain/1_extractors/index_codebase.py\n create mode 100644 tools/semi-brain/1_extractors/ingest_build_your_own_x.py\n create mode 100644 tools/semi-brain/1_extractors/mine_git_history.py\n create mode 100644 tools/semi-brain/1_extractors/output/ast_symbol_graph.json\n create mode 100644 tools/semi-brain/1_extractors/output/build_your_own_x_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/git_commits_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/knowledge_index.db\n create mode 100644 tools/semi-brain/1_extractors/output/recovered_docs_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/skills_and_invariants_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/parse_skills_and_rules.py\n create mode 100644 tools/semi-brain/1_extractors/recover_git_docs.py\n create mode 100644 tools/semi-brain/2_distilled_brain/categorization_matrix.md\n create mode 100644 tools/semi-brain/2_distilled_brain/choice_tree_evaluator.md\n create mode 100644 tools/semi-brain/2_distilled_brain/first_principles_blueprints.md\n create mode 100644 tools/semi-brain/2_distilled_brain/system1_taste_and_priors.md\n create mode 100644 tools/semi-brain/2_distilled_brain/system2_systems_logic.md\n create mode 100644 tools/semi-brain/3_datasets/compile_training_data.py\n create mode 100644 tools/semi-brain/3_datasets/mlx_data/train.jsonl\n create mode 100644 tools/semi-brain/3_datasets/mlx_data/valid.jsonl\n create mode 100644 tools/semi-brain/3_datasets/prepare_mlx_dataset.py\n create mode 100644 tools/semi-brain/3_datasets/train_dpo_preference.jsonl\n create mode 100644 tools/semi-brain/3_datasets/train_sft_alpaca.jsonl\n create mode 100644 tools/semi-brain/3_datasets/train_sft_sharegpt.jsonl\n create mode 100644 tools/semi-brain/4_engine/brain_core.py\n create mode 100644 tools/semi-brain/4_engine/install_hooks.sh\n create mode 100644 tools/semi-brain/4_engine/local_router.py\n create mode 100644 tools/semi-brain/4_engine/retriever.py\n create mode 100644 tools/semi-brain/4_engine/router_adapter/adapter_config.json\n create mode 100644 tools/semi-brain/4_engine/router_adapter/adapters.safetensors\n create mode 100644 tools/semi-brain/4_engine/semi_brain_cli.py\n create mode 100644 tools/semi-brain/4_engine/sync_brain.py\n create mode 100644 tools/semi-brain/4_engine/train_router.py\n create mode 100644 tools/semi-brain/5_evals/benchmark_suite.json\n create mode 100644 tools/semi-brain/5_evals/run_evals.py"
+  },
+  {
+    "hash": "ad73983b73f3d89eefd625a00ab2dc5ff5219708",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 17:04:35 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): implement VST3 plugin scan/load/render/state host",
+      "description": "implement VST3 plugin scan/load/render/state host",
+      "bullets": [],
+      "body": "Ports the Windows VST3 host (PluginVST3Win.cpp) to Linux: bundle discovery\nin $HOME/.vst3, /usr/lib/vst3 and /usr/local/lib/vst3 (single-file and\nContents/<arch>-linux/*.so bundle layouts), dlopen-based module loading,\nout-of-process scanning via a new infinite-vst3-scanner binary with the\nsame crash-sentinel/blocklist safety as Windows, and parameter/MIDI/state\nsave-restore/latency plumbing through the shared PluginVST3.h interface.\nEditor windows (X11/IRunLoop, phase-04-vst3.md task 4.3) are explicitly\ndeferred - PluginVST3OpenEditor stays a documented P4 stub. Verified via\ntools/linux/local.sh build (clean) and xvfb-harness.sh --fast: only the\nalready-baselined P4-stub tests (PLUGINSCANTEST, PLUGINDRAGTEST,\nVST3SCANTEST, AUDIOUITEST) and pre-existing flakes/GROUPTEST fail - no\nregressions.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(linux): implement VST3 plugin scan/load/render/state host\n\nPorts the Windows VST3 host (PluginVST3Win.cpp) to Linux: bundle discovery\nin $HOME/.vst3, /usr/lib/vst3 and /usr/local/lib/vst3 (single-file and\nContents/<arch>-linux/*.so bundle layouts), dlopen-based module loading,\nout-of-process scanning via a new infinite-vst3-scanner binary with the\nsame crash-sentinel/blocklist safety as Windows, and parameter/MIDI/state\nsave-restore/latency plumbing through the shared PluginVST3.h interface.\n\nEditor windows (X11/IRunLoop, phase-04-vst3.md task 4.3) are explicitly\ndeferred - PluginVST3OpenEditor stays a documented P4 stub. Verified via\ntools/linux/local.sh build (clean) and xvfb-harness.sh --fast: only the\nalready-baselined P4-stub tests (PLUGINSCANTEST, PLUGINDRAGTEST,\nVST3SCANTEST, AUDIOUITEST) and pre-existing flakes/GROUPTEST fail - no\nregressions.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "CMakeLists.txt                                 |   92 +-\n src/audio/PluginScanner.cpp                    |    9 +\n src/platform/linux/PluginHandleInternalLinux.h |   40 +\n src/platform/linux/PluginHostLinux.cpp         |  387 ++-\n src/platform/linux/PluginVST3Linux.cpp         | 3007 ++++++++++++++++++++++++\n src/scanner_main_linux.cpp                     |   53 +\n 6 files changed, 3536 insertions(+), 52 deletions(-)\n create mode 100644 src/platform/linux/PluginHandleInternalLinux.h\n create mode 100644 src/platform/linux/PluginVST3Linux.cpp\n create mode 100644 src/scanner_main_linux.cpp"
   },
   {
     "hash": "4daf932ee11a4aaa36a4c559da95ff83c0074d34",

@@ -1457,7 +1457,10 @@ void Render3DNode::CookIfNeeded(int frameId)
    // timestamp - so a take always redraws, matching NodeViewport's fix.
    SceneSignature sceneSig = BuildSceneSignature();
    if (mHasSceneBuilt && sceneSig == mSceneBuilt && !Transport::Instance().IsOfflineMode())
+   {
+      mLastUploads = 0;
       return;
+   }
    mSceneBuilt = sceneSig;
    mHasSceneBuilt = true;
    NodeWorkCounter()++;
