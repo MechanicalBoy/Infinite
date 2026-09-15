@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""
+index_codebase.py
+Builds a high-speed SQLite Hybrid Search Index (FTS5 BM25 + FastEmbed Dense Vectors):
+1. AST C++ Code Symbols & Signatures (from ast_symbol_graph.json)
+2. Git Commits & Historical Fixes (from git_commits_corpus.json)
+3. Recovered Historical Design Plans & Prompts (from recovered_docs_corpus.json)
+4. Specialized Invariant Skills (from skills_and_invariants_corpus.json)
+5. From-Scratch Blueprints (from build_your_own_x_corpus.json)
+"""
+
+import sqlite3
+import json
+import os
+import struct
+import numpy as np
+from pathlib import Path
+from fastembed import TextEmbedding
+
+EXTRACTORS_OUT = Path(__file__).resolve().parent / "output"
+DB_FILE = EXTRACTORS_OUT / "knowledge_index.db"
+
+def serialize_vector(vec: np.ndarray) -> bytes:
+    """Pack float32 vector into binary bytes."""
+    return struct.pack(f"{len(vec)}f", *vec)
+
+def build_hybrid_index():
+    EXTRACTORS_OUT.mkdir(parents=True, exist_ok=True)
+    if DB_FILE.exists():
+        DB_FILE.unlink()
+        
+    print(f"Initializing SQLite database at: {DB_FILE}")
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    
+    # 1. Create FTS5 table for BM25 keyword search
+    cur.execute("""
+        CREATE VIRTUAL TABLE fts_documents USING fts5(
+            doc_id UNINDEXED,
+            category,
+            title,
+            content,
+            filepath UNINDEXED
+        );
+    """)
+    
+    # 2. Create Dense Embeddings table
+    cur.execute("""
+        CREATE TABLE vector_documents (
+            doc_id TEXT PRIMARY KEY,
+            category TEXT,
+            title TEXT,
+            snippet TEXT,
+            filepath TEXT,
+            embedding BLOB
+        );
+    """)
+    
+    print("Loading extracted corpora...")
+    commits = []
+    if (EXTRACTORS_OUT / "git_commits_corpus.json").exists():
+        with open(EXTRACTORS_OUT / "git_commits_corpus.json", "r", encoding="utf-8") as f:
+            commits = json.load(f)
+            
+    ast_data = {}
+    if (EXTRACTORS_OUT / "ast_symbol_graph.json").exists():
+        with open(EXTRACTORS_OUT / "ast_symbol_graph.json", "r", encoding="utf-8") as f:
+            ast_data = json.load(f)
+            
+    docs = []
+    if (EXTRACTORS_OUT / "recovered_docs_corpus.json").exists():
+        with open(EXTRACTORS_OUT / "recovered_docs_corpus.json", "r", encoding="utf-8") as f:
+            docs = json.load(f)
+            
+    skills = []
+    if (EXTRACTORS_OUT / "skills_and_invariants_corpus.json").exists():
+        with open(EXTRACTORS_OUT / "skills_and_invariants_corpus.json", "r", encoding="utf-8") as f:
+            skills = json.load(f)
+            
+    byox = []
+    if (EXTRACTORS_OUT / "build_your_own_x_corpus.json").exists():
+        with open(EXTRACTORS_OUT / "build_your_own_x_corpus.json", "r", encoding="utf-8") as f:
+            byox = json.load(f)
+            
+    # Prepare documents for indexing
+    documents = [] # list of (doc_id, category, title, content, snippet, filepath)
+    
+    # A. Skills
+    for s in skills:
+        name = s.get("name", "")
+        content = s.get("content", "")
+        doc_id = f"skill::{name}"
+        documents.append((doc_id, "skill", f"Skill: {name}", content, content[:300], s.get("path", "")))
+        
+    # B. Recovered Design Plans
+    for d in docs:
+        path = d.get("path", "")
+        content = d.get("content", "")
+        doc_id = f"plan::{path}"
+        documents.append((doc_id, "design_plan", f"Design Plan: {path}", content, content[:300], path))
+        
+    # C. Git Commits (filter for meaningful commits)
+    for c in commits:
+        chash = c.get("hash", "")[:8]
+        msg = c.get("parsed_message", {})
+        title = msg.get("title", "")
+        body = msg.get("body", "")
+        bullets = " ".join(msg.get("bullets", []))
+        full_text = f"{title}\n{body}\n{bullets}"
+        doc_id = f"commit::{chash}"
+        documents.append((doc_id, "git_commit", f"Commit [{chash}]: {title}", full_text, full_text[:300], ""))
+        
+    # D. Key AST Symbols
+    symbols = ast_data.get("symbols", {})
+    for sym_name, sym_meta in symbols.items():
+        doc_id = f"ast::{sym_name}"
+        file_path = sym_meta.get("file", "")
+        kind = sym_meta.get("kind", "")
+        subsys = sym_meta.get("subsystem", "")
+        text = f"C++ {kind} {sym_name} in {file_path} subsystem {subsys}"
+        documents.append((doc_id, "ast_symbol", f"Symbol: {sym_name}", text, text, file_path))
+        
+    # E. BYOX Blueprints
+    for b in byox:
+        cat = b.get("category", "")
+        for t in b.get("tutorials", []):
+            doc_id = f"byox::{t['title']}"
+            text = f"First Principles {cat}: {t['title']} in {t['language']}"
+            documents.append((doc_id, "byox_blueprint", f"Blueprint: {t['title']}", text, text, t.get("url", "")))
+            
+    print(f"Total documents prepared for hybrid index: {len(documents)}")
+    
+    # 1. Insert FTS BM25 data
+    print("Populating FTS5 BM25 index...")
+    for doc_id, category, title, content, snippet, filepath in documents:
+        cur.execute(
+            "INSERT INTO fts_documents (doc_id, category, title, content, filepath) VALUES (?, ?, ?, ?, ?)",
+            (doc_id, category, title, content, filepath)
+        )
+    conn.commit()
+    
+    # 2. Compute Dense Embeddings using FastEmbed
+    print("Computing FastEmbed dense embeddings (CPU ONNX)...")
+    embed_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    
+    # Batch embedding for speed
+    batch_size = 256
+    all_texts = [d[2] + " " + d[4] for d in documents] # Embed title + snippet
+    
+    embedded_count = 0
+    for i in range(0, len(all_texts), batch_size):
+        batch_texts = all_texts[i:i+batch_size]
+        batch_docs = documents[i:i+batch_size]
+        
+        vectors = list(embed_model.embed(batch_texts))
+        for doc_tuple, vec in zip(batch_docs, vectors):
+            doc_id, category, title, content, snippet, filepath = doc_tuple
+            cur.execute(
+                "INSERT INTO vector_documents (doc_id, category, title, snippet, filepath, embedding) VALUES (?, ?, ?, ?, ?, ?)",
+                (doc_id, category, title, snippet, filepath, serialize_vector(vec))
+            )
+        embedded_count += len(batch_docs)
+        print(f"Embedded {embedded_count}/{len(documents)} documents...")
+        
+    conn.commit()
+    conn.close()
+    print(f"✅ SQLite Hybrid Knowledge Index built successfully at: {DB_FILE}")
+
+if __name__ == "__main__":
+    build_hybrid_index()
