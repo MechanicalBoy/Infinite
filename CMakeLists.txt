@@ -511,6 +511,7 @@ set(LINUX_SOURCES
     src/platform/linux/TextLinux.cpp
     src/platform/linux/CrashHandlerLinux.cpp
     src/platform/linux/AudioDeviceLinux.cpp
+    src/platform/linux/MiniaudioImpl.cpp
     src/platform/linux/MidiLinux.cpp
     src/platform/linux/MediaLinux.cpp
     src/platform/linux/CameraLinux.cpp
@@ -597,8 +598,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
     pkg_check_modules(FREETYPE REQUIRED freetype2)
+    # ALSA (libasound2-dev, see tools/linux/deps-apt.sh) backs the sequencer
+    # MIDI implementation in MidiLinux.cpp (snd_seq_*) - linked directly,
+    # unlike miniaudio's audio backends, which are dlopen()'d at runtime (see
+    # MiniaudioImpl.cpp's header comment). ALSA has no equivalent
+    # runtime-probing API for the sequencer, and every desktop Linux target
+    # this app ships to has libasound itself present even when no PCM
+    # hardware does - it's the kernel-level ABI PipeWire/PulseAudio's own
+    # sequencer bridges implement against, not an optional add-on package.
+    pkg_check_modules(ALSA REQUIRED alsa)
     target_sources(Infinite PRIVATE ${LINUX_SOURCES})
-    target_include_directories(Infinite PRIVATE ${FONTCONFIG_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
+    target_include_directories(Infinite PRIVATE
+        ${FONTCONFIG_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS} ${ALSA_INCLUDE_DIRS}
+        external/miniaudio
+    )
+    target_link_libraries(Infinite PRIVATE ${ALSA_LIBRARIES})
 endif()
 
 target_include_directories(Infinite PRIVATE

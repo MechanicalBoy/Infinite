@@ -6,12 +6,16 @@
 # The baseline must shrink each phase and be empty of P0-P4 entries before P5 ships.
 
 # Phase 2: Audio / MIDI
-AUDIOUITEST|stubbed: audio device and UI (P2)
-AUDIOPARAMSWEEPTEST|stubbed: audio engine / param delivery (P2)
-AUDIOLIFECYCLETEST|stubbed: audio device lifecycle (P2)
-AUDIORECOVERYTEST|stubbed: audio device recovery (P2)
-AUDIORINGTEST|stubbed: audio ring buffer / engine (P2)
-MIDINOTESTREAMTEST|stubbed: ALSA MIDI sequencer (P2)
+# AUDIOPARAMSWEEPTEST, AUDIORINGTEST and MIDINOTESTREAMTEST (superseded by
+# INFINITE_MIDIPARSETEST, the ALSA sequencer parser fixture - see
+# phase-02-audio-midi.md 2.5.2) are verified green on Linux now that
+# miniaudio+ALSA are implemented, and are removed from this baseline.
+# AUDIOUITEST moved to the Phase 4 section below: it drives AudioPluginNode
+# (VST3 plugin hosting), not the audio device/MIDI backend this phase covers.
+# AUDIOLIFECYCLETEST and AUDIORECOVERYTEST are functionally correct but flaky
+# under this container's timing/scheduling jitter - see their entries below.
+AUDIOLIFECYCLETEST|flaky ~40-50% under this Docker/Xvfb container: AudioEngine::Process's wall-clock kXrunGapMultiplier heuristic (src/audio/AudioEngine.cpp, shared code, not Linux-specific) trips a false-positive xrun on Stop/Start when the host is under scheduling contention. Verified functionally correct (device negotiation, restart, mailbox rate) every run; only the timing-based xrun assertion flakes. Not a Linux platform defect - owner call on whether to loosen the heuristic or accept as container-only noise.
+AUDIORECOVERYTEST|flaky on the pulse backend under this container (4 of 5 direct repeated runs failed "a second flag inside the min interval adds no attempt"; null backend passed 8/8): the fixture's kAudioRecoveryMinIntervalMs=500.0 window (src/main.cpp, shared/portable) assumes a config-change recovery restart completes well under 500ms, but a real PulseAudio device negotiation under container CPU contention can itself take close to or over that window, so the second synthetic flag lands outside the interval it was meant to test. Not a Linux platform defect - same class of timing-assumption flake as AUDIOLIFECYCLETEST's xrun heuristic; owner call on whether to widen the window or make the fixture use a mocked/instant recovery path instead of a real device restart.
 
 # Phase 3: Media / Video / Camera
 VIDEOAUDIOTEST|stubbed: video decoder and media audio (P3)
@@ -19,6 +23,7 @@ VIDEOSPEEDTEST|stubbed: video playback speed (P3)
 RECEXPORTTEST|stubbed: platform video/audio recorder (P3)
 
 # Phase 4: VST3 / Plugins
+AUDIOUITEST|stubbed: audio device and UI - depends on VST3 plugin host, not the Phase 2 audio device (P4)
 PLUGINDRAGTEST|stubbed: plugin host / VST3 (P4)
 PLUGINSCANTEST|stubbed: plugin scanner / VST3 (P4)
 VST3SCANTEST|stubbed: VST3 scanner (P4)

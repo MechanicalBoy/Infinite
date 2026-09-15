@@ -20,6 +20,7 @@
 
 #include "WinCommon.h"
 
+#include "../common/AudioAnalysis.h"
 #include "dsp/PortableFft.h"
 
 #include <audioclient.h>
@@ -1129,9 +1130,9 @@ namespace
 
    struct AnalyserEngine : CaptureEngineBase
    {
-      static constexpr int kFftLog2 = 10;
-      static constexpr int kFftSize = 1 << kFftLog2;
-      static constexpr int kBins = kFftSize / 2;
+      static constexpr int kFftLog2 = AudioAnalysisCommon::kFftLog2;
+      static constexpr int kFftSize = AudioAnalysisCommon::kFftSize;
+      static constexpr int kBins = AudioAnalysisCommon::kBins;
 
       PortableFft::RealFft fft;
       float window[kFftSize] = {};
@@ -1154,120 +1155,22 @@ namespace
          PortableFft::HannWindowNorm(window, kFftSize);
       }
 
+      // Ring accumulation + FFT/band/onset math live in
+      // ../common/AudioAnalysis.h, shared with Linux, so the two platforms
+      // can't independently drift on the formulas (see that header's comment
+      // for the four-way divergence this used to hide).
       void OnFrames(const float* interleaved, int frames) override
       {
-         const int chs = std::max(1, channels);
          const float g = gain.load(std::memory_order_relaxed);
-
-         for (int i = 0; i < frames; i++)
-         {
-            // Mix down to mono for the spectrum; RMS/peak track the same mix.
-            float mono = 0.0f;
-            for (int c = 0; c < chs; c++)
-               mono += interleaved[(size_t)i * chs + c];
-            mono *= g / (float)chs;
-
-            ring[ringFill] = mono;
-            ringFill++;
-
-            if (ringFill >= kFftSize)
-            {
-               ringFill = 0;
-               RunAnalysis();
-            }
-         }
-      }
-
-      void RunAnalysis()
-      {
-         float rms = 0.0f, peak = 0.0f;
-         float spectrum[kBins] = {};
-
-         // Window + forward transform.
-         float windowed[kFftSize];
-         for (int i = 0; i < kFftSize; i++)
-            windowed[i] = ring[i] * window[i];
-
-         float real[kBins], imag[kBins];
-         fft.Forward(windowed, kFftLog2, real, imag);
-         const float norm = 2.0f / (float)kFftSize;
-         for (int k = 0; k < kBins; k++)
-            spectrum[k] = std::sqrt(real[k] * real[k] + imag[k] * imag[k]) * norm;
-
-         for (int i = 0; i < kFftSize; i++)
-         {
-            const float v = ring[i];
-            rms += v * v;
-            peak = std::max(peak, std::fabs(v));
-         }
-         rms = std::sqrt(rms / (float)kFftSize);
-
-         // Spectral flux onset, same shape as the file-source analyser.
-         float flux = 0.0f;
-         for (int k = 0; k < kBins; k++)
-            flux += std::max(0.0f, spectrum[k] - prevMagnitude[k]);
-         const bool onset = flux > prevFlux * 1.6f && flux > 0.02f;
-         prevFlux = prevFlux * 0.7f + flux * 0.3f;
-         std::memcpy(prevMagnitude, spectrum, sizeof(prevMagnitude));
-
-         // Band and summary energies.
-         //
-         // Every formula below is deliberately transcribed from
-         // Platform.mm's ProcessInto() rather than tuned independently:
-         // both paths run the same 1024-point FFT with the same
-         // norm = 2/kFftSize, so identical formulas over identical bin
-         // magnitudes are identical outputs by construction. Four separate
-         // divergences used to live here, none of which crashed or logged,
-         // and all of which silently made a Windows user's audio-reactive
-         // patch respond differently to the same sound:
-         //
-         //   1. low/mid/high came from fixed band INDICES, resolving to
-         //      ~20-106 / ~106-373 / ~1982-4571 Hz. The "mid" band was bass,
-         //      missing the whole vocal range, and "high" had no cymbals or
-         //      air. The low weights also summed to 1.5, not 1.0, scaling it
-         //      up by half again on top.
-         //   2. bands[] used a linear clamp(v * 4) where macOS uses the
-         //      compressive shape() below. They cross at v = 0.75 and diverge
-         //      badly everywhere real signals live - at v = 0.01 macOS reads
-         //      0.35 and Windows read 0.04.
-         //   3. the band ladder stopped at min(16000, nyquist) where macOS
-         //      runs to nyquist, so at 48 kHz every band boundary sat at a
-         //      different frequency on the two platforms.
-         //   4. low/mid/high/rms/peak were left raw - AudioRead()'s
-         //      smoothing loop only ever touched bands[] - so on Windows they
-         //      jittered where macOS glides. That half is fixed in AudioRead.
-         const double nyquist = sampleRate * 0.5;
-
-         // Mean bin magnitude across a frequency span. Matches Platform.mm's
-         // rangeEnergy lambda exactly, inclusive `hi` and all.
-         auto rangeEnergy = [&](double fromHz, double toHz) {
-            const int lo = std::max(1, (int)(fromHz / nyquist * kBins));
-            const int hi = std::min(kBins - 1, (int)(toHz / nyquist * kBins));
-            float sum = 0.0f; int count = 0;
-            for (int i = lo; i <= hi; i++) { sum += spectrum[i]; count++; }
-            return count > 0 ? sum / (float)count : 0.0f;
-         };
-
-         // Magnitudes are tiny; a compressive curve maps them into a usable
-         // 0..1. Same curve as Platform.mm.
-         auto shape = [](float v) { return std::min(1.0f, std::sqrt(v * 12.0f)); };
-
          Platform::AudioLevels next;
-         next.rms = std::min(1.0f, rms * 3.0f);
-         next.peak = std::min(1.0f, peak);
-         for (int b = 0; b < Platform::kAudioBands; b++)
+         bool changed = false;
+         AudioAnalysisCommon::PushFrames(interleaved, frames, channels, g, sampleRate, ring, ringFill,
+                                         fft, window, prevMagnitude, prevFlux, next, changed);
+         if (changed)
          {
-            const double loHz = 20.0 * std::pow(nyquist / 20.0, (double)b / Platform::kAudioBands);
-            const double hiHz = 20.0 * std::pow(nyquist / 20.0, (double)(b + 1) / Platform::kAudioBands);
-            next.bands[b] = shape(rangeEnergy(loHz, hiHz));
+            std::lock_guard<std::mutex> lock(levelsMutex);
+            levels = next;
          }
-         next.low = shape(rangeEnergy(20.0, 250.0));
-         next.mid = shape(rangeEnergy(250.0, 2000.0));
-         next.high = shape(rangeEnergy(2000.0, 16000.0));
-         next.onset = onset;
-
-         std::lock_guard<std::mutex> lock(levelsMutex);
-         levels = next;
       }
    };
 
