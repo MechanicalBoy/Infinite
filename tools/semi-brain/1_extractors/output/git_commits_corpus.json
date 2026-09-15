@@ -1,5 +1,21 @@
 [
   {
+    "hash": "f939b681ea99fc6516583544085a7a2a0f059fbe",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:50:46 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "semi-brain",
+      "title": "feat(semi-brain): complete extractor and dataset generation",
+      "description": "complete extractor and dataset generation",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(semi-brain): complete extractor and dataset generation"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    | 723 +++++++++++++++++++++\n .../1_extractors/output/recovered_docs_corpus.json | 452 ++++++-------\n .../output/skills_and_invariants_corpus.json       |  12 +-\n .../3_datasets/train_dpo_preference.jsonl          |   6 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 198 +++---\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 198 +++---\n 6 files changed, 1203 insertions(+), 386 deletions(-)"
+  },
+  {
     "hash": "0f2b5b039d782b1ce17788f246ffe5699be45bfe",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
