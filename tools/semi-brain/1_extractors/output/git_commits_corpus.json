@@ -1,5 +1,21 @@
 [
   {
+    "hash": "26d560c4e12e62d492c060e9cea037e65fa0a1ca",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 17:33:56 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Refresh semi-brain corpora/datasets and re-train router adapter",
+      "description": "Refresh semi-brain corpora/datasets and re-train router adapter",
+      "bullets": [],
+      "body": "Re-ran the extractor pipeline (picks up commits since the last snapshot)\nand regenerated the SFT/DPO training splits, then re-trained the router\nLoRA adapter on the refreshed data (Iter 300, val loss 1.029). Re-ran the\nbenchmark suite to confirm the anchor-symbol AST precision fix still holds\non the refreshed corpus: AST Symbol & Caller Precision 57.8%, aggregate\n86.1%.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Refresh semi-brain corpora/datasets and re-train router adapter\n\nRe-ran the extractor pipeline (picks up commits since the last snapshot)\nand regenerated the SFT/DPO training splits, then re-trained the router\nLoRA adapter on the refreshed data (Iter 300, val loss 1.029). Re-ran the\nbenchmark suite to confirm the anchor-symbol AST precision fix still holds\non the refreshed corpus: AST Symbol & Caller Precision 57.8%, aggregate\n86.1%.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    | 727 +++++++++++++++++++++\n .../1_extractors/output/recovered_docs_corpus.json | 464 ++++++-------\n .../output/skills_and_invariants_corpus.json       |  12 +-\n .../3_datasets/train_dpo_preference.jsonl          |   7 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 208 +++---\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 208 +++---\n 6 files changed, 1224 insertions(+), 402 deletions(-)"
+  },
+  {
     "hash": "6070ed90b02c1469879ea073b850849f1a8ea343",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
