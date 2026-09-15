@@ -3,6 +3,10 @@ set -euo pipefail
 
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-artifacts-linux}"
 mkdir -p "$ARTIFACTS_DIR"
+# Exported so INFINITE_VST3EDITORSHOTTEST (src/main.cpp, task 4.4) writes its
+# screenshot into the same directory this script collects artifacts from,
+# even when a caller overrides ARTIFACTS_DIR away from the default.
+export ARTIFACTS_DIR
 
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe

@@ -38,6 +38,7 @@ apt-get install -y --no-install-recommends \
   kmod \
   file \
   imagemagick \
+  xdotool \
   ca-certificates \
   fonts-dejavu-core
 

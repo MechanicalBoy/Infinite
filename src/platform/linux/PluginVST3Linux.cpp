@@ -1090,6 +1090,20 @@ namespace Platform
          }
       }
 
+      // Release our references to the factory *before* dlclose()'ing the
+      // module. IPtr<>'s destructor calls the plugin's virtual release(),
+      // which is code that lives inside the .so; if that call happens after
+      // UnloadVST3Module() below has already unmapped it (factory/factory2
+      // would otherwise be destroyed when this function returns, which is
+      // after the dlclose() call), it's a use-after-unload into freed
+      // memory - reliably a SIGSEGV, reproduced against a real VST3 plugin
+      // (DPF's "Info" example) during Phase 4 task 4.4 CI-test work. This is
+      // our bug (ordering), not the plugin's - Tier 1 per
+      // .claude/skills/plugin-host-hardening, fixed here rather than
+      // contained.
+      factory2 = nullptr;
+      factory = nullptr;
+
       UnloadVST3Module(module);
       ClearSentinel();
       return foundAny;

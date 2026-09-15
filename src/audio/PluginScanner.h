@@ -71,6 +71,15 @@ public:
    void SaveFoldersToDisk() const;
    void SaveIndexToDisk() const;
 
+   // The per-OS standard VST3 search folders (Windows: %COMMONPROGRAMFILES%\VST3
+   // + %LOCALAPPDATA%\Programs\Common\VST3; Linux: $HOME/.vst3, /usr/lib/vst3,
+   // /usr/local/lib/vst3; macOS: /Library/Audio/Plug-Ins/VST3 +
+   // ~/Library/Audio/Plug-Ins/VST3), followed by any caller-supplied extra
+   // user folders not already in that list. Extracted out of StartScan so a
+   // test driver (INFINITE_VST3SCANTEST) can scan through the exact same
+   // folder list production code does, rather than hardcoding a path.
+   static std::vector<std::string> DefaultVST3Folders(const std::vector<std::string>& userFolders = {});
+
 private:
    void ScanThreadMain(std::vector<std::string> vst3Folders);
 
