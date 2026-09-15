@@ -265,6 +265,13 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          if (blockStartBeat >= windows[pitchCursor].startBeat && blockStartBeat < windows[pitchCursor].endBeat)
          {
             terminal.sourceNode->SetClipPitchOverride(windows[pitchCursor].pitch);
+            // BPM sync (step 3): ratio computed fresh every block from the
+            // CURRENT project tempo (this same `bpm` local, not a value
+            // cached at topology-build time) so a live tempo edit takes
+            // effect immediately - see ClipWindow::sampleBpm's own comment.
+            const float tempoRatioLive = windows[pitchCursor].sampleBpm > 0.0f
+               ? (float)(bpm / (double)windows[pitchCursor].sampleBpm) : 1.0f;
+            terminal.sourceNode->SetClipRateOverride(tempoRatioLive);
 
             // Exact seek: only for a Sample (see ClipWindow::sampleDropped's
             // comment - a live Audio Clip stays on the onset-only retrigger
@@ -288,7 +295,13 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
                const double elapsedSeconds =
                   std::max(0.0, (blockStartBeat - windows[pitchCursor].startBeat) * 60.0 / bpm);
                const double pitchRatio = std::pow(2.0, (double)windows[pitchCursor].pitch / 12.0);
-               terminal.sourceNode->SeekToClipOffset(elapsedSeconds * pitchRatio);
+               // BPM sync (step 3) also warps the source-seconds-per-real-
+               // second rate, exactly like pitch does - a synced Sample must
+               // seek to the same scaled offset pitch already required, or a
+               // scrub/retrigger lands on the wrong source-file position.
+               // Same live (not baked) ratio as the SetClipRateOverride push
+               // just above.
+               terminal.sourceNode->SeekToClipOffset(elapsedSeconds * pitchRatio * (double)tempoRatioLive);
             }
          }
       }

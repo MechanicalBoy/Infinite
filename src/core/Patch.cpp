@@ -362,6 +362,14 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
       for (const ClipRecord& c : s.clips)
          if (c.sampleDropped)
             file << "clipsample " << i << " " << c.id << " 1\n";
+      // BPM sync (step 3): only written for a Sample with a non-default
+      // sampleBpm or a real sourceDurationSeconds, same append-only,
+      // own-line convention as clipretrigger/clipsample above - an older
+      // reader just skips a tag it doesn't know.
+      for (const ClipRecord& c : s.clips)
+         if (c.sampleDropped && (c.sampleBpm != 120.0f || c.sourceDurationSeconds != 0.0f))
+            file << "clipbpm " << i << " " << c.id << " " << FloatToString(c.sampleBpm) << " "
+                 << FloatToString(c.sourceDurationSeconds) << "\n";
    }
    for (const MarkerRecord& mk : data.markers)
       file << "marker " << mk.id << " " << mk.posTick << " " << mk.color << " " << EscapeLine(mk.name) << "\n";
@@ -883,6 +891,24 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
             for (ClipRecord& c : outData.streams[streamIdx].clips)
                if (c.id == clipId)
                   c.sampleDropped = (sampleVal != 0);
+         }
+      }
+      else if (tag == "clipbpm")
+      {
+         int streamIdx = -1;
+         uint64_t clipId = 0;
+         float sampleBpm = 120.0f, sourceDurationSeconds = 0.0f;
+         if (in >> streamIdx >> clipId >> sampleBpm >> sourceDurationSeconds &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() && clipId != 0)
+         {
+            if (!std::isfinite(sampleBpm) || sampleBpm <= 0.0f) sampleBpm = 120.0f;
+            if (!std::isfinite(sourceDurationSeconds) || sourceDurationSeconds < 0.0f) sourceDurationSeconds = 0.0f;
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+               {
+                  c.sampleBpm = sampleBpm;
+                  c.sourceDurationSeconds = sourceDurationSeconds;
+               }
          }
       }
       else if (tag == "cliptick")

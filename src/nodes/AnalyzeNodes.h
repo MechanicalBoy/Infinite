@@ -221,6 +221,14 @@ public:
    // decode step. Takes ownership of `decoded`.
    bool OpenFromDecoded(const std::string& path, Platform::SampleBuffer* decoded);
 
+   // The decoded buffer handed to OpenFromDecoded/Open, non-owning (ownership
+   // passes to the audio thread's SampleSlot). Only valid to read synchronously
+   // right after a load - the Arrange panel's static-waveform computation is
+   // the sole intended caller (ArrangePollMediaImports, immediately after
+   // OpenFromDecoded returns). Never guaranteed to still point at the node's
+   // *current* buffer after a later reload/reassign.
+   const Platform::SampleBuffer* Buffer() const { return mBuffer; }
+
    void Play();
    void Pause();
    void Restart();
@@ -277,6 +285,7 @@ private:
    bool mLoaded = false;
    double mDuration = 0.0;
    int mLastCookFrame = -1;
+   Platform::SampleBuffer* mBuffer = nullptr; // non-owning, see Buffer()'s comment
 };
 
 // --- Audio Analyze ------------------------------------------------------

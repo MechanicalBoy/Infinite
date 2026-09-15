@@ -109,6 +109,19 @@ struct ClipWindow
    // up like a real instrument the way the user expects "only clips are
    // supposed to be live" to mean.
    bool   sampleDropped = false;
+   // Audio-Sample-only BPM sync (step 3): the clip's own Arrange::Clip::
+   // sampleBpm when syncToTempo is on, 0 for every other window (Audio Clip,
+   // video, or a Sample with sync off - "Free" plays at the file's native
+   // rate). Deliberately NOT baked into a ready-made ratio at topology-build
+   // time: tempo changes do not bump gArrange.revision or trigger a topology
+   // rebuild (see ArrangeAudioRebuildIfStale's "Tempo is deliberately
+   // absent" comment - ticks are tempo-invariant everywhere else in this
+   // model), so a ratio computed here would go stale on a live tempo edit.
+   // RunTopology instead divides the CURRENT project tempo (read fresh every
+   // block, same as its existing `bpm` local) by this field every block, so
+   // a tempo change takes effect on the very next block like a real "sync"
+   // feature must, without needing a topology rebuild.
+   float  sampleBpm    = 0.0f;
 };
 
 // One connected Audio Out: the pooled buffer its source writes into, and
