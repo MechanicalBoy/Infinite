@@ -318,6 +318,11 @@ namespace Patch
       // edit able to recompute `length` losslessly without re-decoding.
       float  sampleBpm             = 120.0f;
       float  sourceDurationSeconds = 0.0f;
+      // Audio-Sample-only (see Arrange::Clip::sourceOffsetSeconds's own
+      // comment). 0 default so a patch saved before this field existed
+      // loads with every Sample reading from the file's own beginning,
+      // exactly like it always has.
+      float  sourceOffsetSeconds   = 0.0f;
    };
 
    struct StreamRecord

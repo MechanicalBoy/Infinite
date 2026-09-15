@@ -292,7 +292,13 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             // Sample whose clip pitch isn't 0.
             if (discontinuity && windows[pitchCursor].sampleDropped)
             {
-               const double elapsedSeconds =
+               // sourceOffsetSeconds folds in how far into the source file
+               // this window's clip itself starts (non-zero only for a
+               // Sample created by splitting another one - see
+               // ClipWindow::sourceOffsetSeconds's own comment), so the
+               // seek lands at the right point in the file rather than
+               // always relative to the file's own beginning.
+               const double elapsedSeconds = windows[pitchCursor].sourceOffsetSeconds +
                   std::max(0.0, (blockStartBeat - windows[pitchCursor].startBeat) * 60.0 / bpm);
                const double pitchRatio = std::pow(2.0, (double)windows[pitchCursor].pitch / 12.0);
                // BPM sync (step 3) also warps the source-seconds-per-real-

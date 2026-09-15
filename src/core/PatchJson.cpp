@@ -139,7 +139,8 @@ namespace PatchJson
                {"retrigger", c.retrigger},
                {"sampleDropped", c.sampleDropped},
                {"sampleBpm", c.sampleBpm},
-               {"sourceDurationSeconds", c.sourceDurationSeconds}
+               {"sourceDurationSeconds", c.sourceDurationSeconds},
+               {"sourceOffsetSeconds", c.sourceOffsetSeconds}
             });
          }
          out["streams"].push_back({
