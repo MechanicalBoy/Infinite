@@ -868,12 +868,47 @@ public:
       mMonitor.store(monitor, std::memory_order_relaxed);
    }
 
-   // Main thread. Transport control - plain atomics, no mailbox needed since
-   // these are one-shot requests/flags rather than smoothed audio params.
+   // Transport control - plain atomics, no mailbox needed since these are
+   // one-shot requests/flags rather than smoothed audio params. Called from
+   // the main thread (Play/Pause/Restart on AudioFileNode) or, via
+   // RequestRetrigger() below, from the audio thread itself
+   // (AudioEngine::RunTopology's Arrangement Timeline retrigger lookahead) -
+   // safe either way since it is just an atomic store.
    void RequestPlay() { mPlaying.store(true, std::memory_order_relaxed); }
    void RequestPause() { mPlaying.store(false, std::memory_order_relaxed); }
    void RequestRestart() { mRestartRequested.store(true, std::memory_order_release); }
    bool IsPlaying() const { return mPlaying.load(std::memory_order_relaxed); }
+
+   // Arrangement Timeline retrigger: seeking back to frame 0 is exactly what
+   // Restart already does, so this clip-driven trigger reuses it rather than
+   // adding a second flag.
+   void RequestRetrigger() override { RequestRestart(); }
+
+   // Arrangement Timeline per-clip pitch: pushed straight to the same
+   // mailbox slot PushParams uses, deliberately NOT touching mPitchSemitones
+   // (that atomic mirrors the node's own canvas pitch knob - folding a
+   // transient clip override into it would make a later PrepareToPlay reseed
+   // the mailbox with a stale per-clip value instead of the node's real
+   // default). ParamMailbox::Push is documented main-thread-only, but this
+   // callsite is audio-thread, same as RequestRetrigger() above and
+   // RequestRestart()'s own dual-caller contract just above it - a plain
+   // atomic store race with CookIfNeeded's own push is, at worst, one
+   // block's pitch briefly reverting to the node's canvas value, inaudible
+   // under the mailbox's per-block smoothing.
+   void SetClipPitchOverride(float semitones) override { mMailbox.Push(kFilePitchParam, semitones); }
+
+   // Arrangement Timeline exact seek (Audio Sample only - see
+   // AudioNode::SeekToClipOffset's own comment): stashes the requested
+   // offset in file seconds for ProcessBlock to consume at the top of its
+   // next block, converting to frames there (once the active buffer's own
+   // rate is known) rather than here, since this can be called from the
+   // audio thread with no safe access to mActiveBuffer's rate at this point.
+   // -1.0 is the sentinel for "no pending seek" - a real offset is always
+   // >= 0, so this can never collide with a genuine request.
+   void SeekToClipOffset(double seconds) override
+   {
+      mSeekRequestSeconds.store(seconds, std::memory_order_release);
+   }
 
    // Main thread. mFramePos and mActiveFileSampleRate are only ever written
    // by the audio thread and read here - 64-bit/double atomics are
@@ -922,6 +957,14 @@ public:
       {
          mPos = 0.0;
          mFramePos.store(0, std::memory_order_relaxed);
+      }
+
+      const double seekSeconds = mSeekRequestSeconds.exchange(-1.0, std::memory_order_acq_rel);
+      if (seekSeconds >= 0.0 && mActiveBuffer != nullptr)
+      {
+         const double fileRate = mActiveBuffer->sampleRate > 0.0 ? mActiveBuffer->sampleRate : mSampleRate;
+         mPos = std::clamp(seekSeconds * fileRate, 0.0, (double)mActiveBuffer->numFrames);
+         mFramePos.store((int64_t)mPos, std::memory_order_relaxed);
       }
 
       const bool loop = mLoop.load(std::memory_order_relaxed);
@@ -1002,6 +1045,7 @@ private:
 
    std::atomic<bool> mPlaying { false };
    std::atomic<bool> mRestartRequested { false };
+   std::atomic<double> mSeekRequestSeconds { -1.0 }; // see SeekToClipOffset
    std::atomic<int64_t> mFramePos { 0 };
    double mPos = 0.0; // audio-thread-only playback cursor, in frames
 

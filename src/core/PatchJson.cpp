@@ -132,9 +132,12 @@ namespace PatchJson
                {"pan", c.pan},
                {"pitch", c.pitch},
                {"syncToTempo", c.syncToTempo},
+               {"opacity", c.opacity},
                {"colorBrightness", c.colorBrightness},
                {"colorContrast", c.colorContrast},
-               {"colorSaturation", c.colorSaturation}
+               {"colorSaturation", c.colorSaturation},
+               {"retrigger", c.retrigger},
+               {"sampleDropped", c.sampleDropped}
             });
          }
          out["streams"].push_back({

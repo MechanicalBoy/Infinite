@@ -1,11 +1,14 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "INode.h"
 #include "Platform.h"
+#include "Transport.h"
 
 class VideoAudioNode;
 
@@ -55,6 +58,46 @@ public:
    const std::string& LoadedPath() const { return mLoadedPath; }
    double Duration() const { return mDuration; }
    double Position() const { return mPosition; }
+
+   // Arrangement Timeline exact seek (Video Sample only - see
+   // ArrangeSeekVideoSampleSources in main.cpp): jumps straight to `seconds`
+   // into the source instead of the free-running wall-clock-delta advance
+   // CookIfNeeded normally does. Also resets mLastTransportSeconds to "now"
+   // so THIS frame's CookIfNeeded (which always runs after this call - see
+   // the caller) computes a near-zero delta and doesn't immediately nudge
+   // the position away from what was just set. Main thread only, called
+   // once per frame from the same loop that drives CookIfNeeded - never
+   // from the audio thread (unlike AudioNode::SeekToClipOffset, which is).
+   void SeekTo(double seconds)
+   {
+      mPosition = seconds;
+      mLastTransportSeconds = Transport::Instance().Seconds();
+   }
+
+   // Arrangement Timeline sync for a Video Sample (see
+   // ArrangeSeekVideoSampleSources in main.cpp), called every frame while its
+   // clip is under the playhead - playing OR paused, so dragging the playhead
+   // while stopped seeks the picture too. Unlike SeekTo, this does NOT reset
+   // the position unconditionally: it wraps `targetSeconds` into the same
+   // trim/loop window CookIfNeeded computes (WrapPosition) and only calls
+   // SeekTo when that differs from the current position by more than one
+   // frame's worth (kSyncEpsilonSeconds). During ordinary continuous playback
+   // the two already agree every frame (CookIfNeeded's own wall-clock delta
+   // already tracks it exactly), so this is a no-op then - forcing an
+   // unconditional absolute reset every frame instead (an earlier version of
+   // this code did) fights Platform::VideoFrameAt's forward-resume fast path
+   // with sub-frame floating-point jitter, which was making Video Sample
+   // playback stutter/hang. A real discontinuity - a scrub, a loop wrap the
+   // delta hasn't caught up to yet, or a fresh Play landing mid-clip - is
+   // exactly when the wrapped target and the current position diverge, which
+   // is what actually needs a hard seek.
+   void SyncToArrangement(double targetSeconds)
+   {
+      const double wrapped = WrapPosition(targetSeconds);
+      constexpr double kSyncEpsilonSeconds = 1.0 / 24.0; // ~ one frame at a typical rate
+      if (std::abs(wrapped - mPosition) > kSyncEpsilonSeconds)
+         SeekTo(wrapped);
+   }
    // Test-only instrumentation: counts successful Platform::VideoFrameAt
    // calls, so a self-test can tell "position advanced but the displayed
    // frame didn't" (a real freeze) apart from "position legitimately didn't
@@ -92,6 +135,7 @@ public:
 private:
    void EnsurePlaceholder();
    void LoadAudioTrack(const std::string& path);
+   double WrapPosition(double raw) const;
 
    Platform::VideoHandle* mVideo = nullptr;
    unsigned int mTex = 0;

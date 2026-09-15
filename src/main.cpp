@@ -973,6 +973,11 @@ namespace
       // "Render Group"). Only meaningful when videoSource is Timeline or
       // None - a canvas take isn't a lane concept, so it always ignores this.
       std::vector<uint64_t> laneScope;
+      // Non-zero for a "Bounce to Sample" take ("Bounce Clip", the clip
+      // right-click item): the clip to replace in place once this job
+      // finishes, via ArrangeApplyClipBounceResult. 0 for every other job
+      // (Render Track/Group/whole-project), which just write a file and stop.
+      uint64_t bounceClipId = 0;
    };
 
    // Read by RebuildAudioTopology's arrangement lane loop and by
@@ -5836,7 +5841,10 @@ namespace
                 ca.srcOutput != cb.srcOutput || ca.fadeIn != cb.fadeIn || ca.fadeOut != cb.fadeOut ||
                 ca.gainDb != cb.gainDb || ca.enabled != cb.enabled || ca.groupId != cb.groupId || ca.name != cb.name ||
                 ca.colorR != cb.colorR || ca.colorG != cb.colorG || ca.colorB != cb.colorB ||
-                ca.blendMode != cb.blendMode)
+                ca.blendMode != cb.blendMode || ca.pan != cb.pan || ca.pitch != cb.pitch ||
+                ca.opacity != cb.opacity || ca.colorBrightness != cb.colorBrightness ||
+                ca.colorContrast != cb.colorContrast || ca.colorSaturation != cb.colorSaturation ||
+                ca.retrigger != cb.retrigger)
                return false;
          }
       }
@@ -6157,9 +6165,12 @@ namespace
             r.blendMode = c.blendMode;
             r.pitch = c.pitch;
             r.syncToTempo = c.syncToTempo;
+            r.opacity = c.opacity;
             r.colorBrightness = c.colorBrightness;
             r.colorContrast = c.colorContrast;
             r.colorSaturation = c.colorSaturation;
+            r.retrigger = c.retrigger;
+            r.sampleDropped = c.sampleDropped;
             s.clips.push_back(std::move(r));
          }
          data.streams.push_back(std::move(s));
@@ -6215,6 +6226,7 @@ namespace
       a.renderAudioSource = m.settings.renderAudioSource;
       a.renderVideoSource = m.settings.renderVideoSource;
       a.renderFolder = m.settings.renderFolder;
+      a.importSyncToTempo = m.settings.importSyncToTempo;
    }
 
    // `resolveLegacy` maps a pre-uid patch's saved node index to the uid of the
@@ -6267,9 +6279,12 @@ namespace
             clip.pan = c.pan;
             clip.pitch = c.pitch;
             clip.syncToTempo = c.syncToTempo;
+            clip.opacity = c.opacity;
             clip.colorBrightness = c.colorBrightness;
             clip.colorContrast = c.colorContrast;
             clip.colorSaturation = c.colorSaturation;
+            clip.retrigger = c.retrigger;
+            clip.sampleDropped = c.sampleDropped;
             lane.clips.push_back(std::move(clip));
          }
          m.lanes.push_back(std::move(lane));
@@ -6317,6 +6332,7 @@ namespace
       m.settings.renderAudioSource = a.renderAudioSource;
       m.settings.renderVideoSource = a.renderVideoSource;
       m.settings.renderFolder = a.renderFolder;
+      m.settings.importSyncToTempo = a.importSyncToTempo;
 
       // Legacy patches carry no ids at all; Normalize mints them and, either
       // way, re-seats nextId above everything present. Without that clamp a
@@ -22896,6 +22912,7 @@ namespace
          ModCheckbox("audible", &n->monitor);
          ModSlider("volume", &n->volume, 0.0f, 1.0f);
          ModSlider("gain", &n->gain, 0.1f, 16.0f);
+         ModSlider("pitch", &n->pitch, -24.0f, 24.0f);
 
          const Platform::AudioLevels& lv = n->Levels();
          ImGui::Text("level "); ImGui::SameLine();
@@ -27249,7 +27266,7 @@ namespace
             {
                GraphNode* gn = FindNodeByUid(c.srcUid);
                if (gn != nullptr && gn->node != nullptr)
-                  out.push_back({ gn, c.srcOutput, c.blendMode, std::clamp(lane.opacity, 0.0f, 1.0f),
+                  out.push_back({ gn, c.srcOutput, c.blendMode, std::clamp(lane.opacity * c.opacity, 0.0f, 1.0f),
                                   c.id, c.colorBrightness, c.colorContrast, c.colorSaturation });
             }
             break;
@@ -27264,6 +27281,72 @@ namespace
       if (outFrontTitle != nullptr && !sLayers.empty())
          *outFrontTitle = NodeTitle(*sLayers.back().gn);
       return (int)sLayers.size();
+   }
+
+   // Arrangement Timeline exact seek for Video Samples - the video-side
+   // counterpart of AudioEngine::RunTopology's per-block audio seek
+   // lookahead (see ClipWindow::sampleDropped's comment there), but run on
+   // the main thread instead: video has no audio-thread block cadence, and
+   // VideoSourceNode::CookIfNeeded runs once per frame from a flat, always-
+   // on `gNodes` loop with no reachability filter and no idea which
+   // arrangement clip (if any) it belongs to (see the cartographer
+   // investigation this was built from - main.cpp's `gn.node->CookIfNeeded`
+   // loop runs unconditionally before CompositeArrangeMonitorIfRequested /
+   // CompositeArrangeTimelineVideo each frame, in both the realtime loop and
+   // the offline render pump).
+   //
+   // Must be called BEFORE that per-frame CookIfNeeded loop, every frame,
+   // for every Video Sample clip currently under the playhead: unlike the
+   // audio path this pushes the exact position unconditionally rather than
+   // only on a detected discontinuity, because on the main thread (not
+   // real-time-block-constrained) recomputing "elapsed timeline seconds
+   // since this window's onset" every frame is cheap and mathematically
+   // identical to CookIfNeeded's own wall-clock-delta accumulation during
+   // ordinary continuous playback - so it never fights normal playback, and
+   // it also transparently fixes VideoSourceNode::CookIfNeeded's own
+   // backward-delta-clamped-to-zero bug for these clips, since a backward
+   // playhead move is just another exact position here, not a delta.
+   // A live Video Clip (sampleDropped == false) is left on CookIfNeeded's
+   // existing wall-clock free-run, unchanged, per the "only clips are
+   // supposed to be live" distinction.
+   // Runs every frame regardless of play state - see
+   // VideoSourceNode::SyncToArrangement's own comment for why that's safe
+   // now (it only actually seeks on a genuine discontinuity), and why that
+   // matters: scrubbing the playhead while paused has to move the picture
+   // too, not just while transport is running.
+   void ArrangeSeekVideoSampleSources(double beat)
+   {
+      const double bpm = std::max(1.0, (double)Transport::Instance().Tempo());
+      for (const Arrange::Lane& lane : gArrange.lanes)
+      {
+         if (lane.type != Arrange::kLaneVideo)
+            continue;
+         for (const Arrange::Clip& c : lane.clips)
+         {
+            const double startBeat = Arrange::TicksToBeats(c.start);
+            if (startBeat > beat)
+               break; // clips are sorted by start; nothing later can cover `beat`
+            if (!(beat < Arrange::TicksToBeats(c.End())))
+               continue;
+            if (c.sampleDropped && c.enabled && c.srcUid != 0)
+            {
+               GraphNode* gn = FindNodeByUid(c.srcUid);
+               if (auto* vid = gn != nullptr ? dynamic_cast<VideoSourceNode*>(gn->node.get()) : nullptr)
+               {
+                  // Elapsed timeline seconds since the clip's onset, scaled by
+                  // the node's own `speed` (a real playback-rate control, the
+                  // same as VCR varispeed) - unlike Sync to Tempo, `speed`
+                  // really does change how many source-seconds pass per
+                  // timeline-second, so leaving it out would seek to the
+                  // wrong frame for any Sample with speed != 1.
+                  const double elapsedSeconds = std::max(0.0, (beat - startBeat) * 60.0 / bpm);
+                  const double offsetSeconds = elapsedSeconds * (double)vid->speed;
+                  vid->SyncToArrangement(vid->trimStart + offsetSeconds);
+               }
+            }
+            break;
+         }
+      }
    }
 
    // The lane blend program, compiled once with its uniform locations.
@@ -28059,14 +28142,9 @@ namespace
       return true;
    }
 
-   // Shift+N on the header column: adds a new track after the current row-
-   // selection anchor (or at the end if nothing is selected). Defaults to
-   // Audio, the common case - Video is still one right-click "Add Track"
-   // away. A free function (not the "##arrangeaddtrackpopup" lambda further
-   // down in DrawArrangePanelContent) because the keyboard block runs before
-   // that lambda's declaration and before any PushID(laneScope) is
-   // established, so its popup id would not match from here.
-   bool ArrangeAddTrackShortcut()
+   // Shift+J (Video) / Shift+K (Audio) on the timeline: adds a new track after the
+   // current row-selection anchor (or at the end if nothing is selected).
+   bool ArrangeAddTrackShortcut(bool isVideo)
    {
       int insertAfter = -1;
       if (gArrangeRowSelAnchor != 0)
@@ -28077,13 +28155,14 @@ namespace
       uint64_t newId = 0;
       if (!ArrangeEdit([&]()
           {
+             const int laneType = isVideo ? Arrange::kLaneVideo : Arrange::kLaneAudio;
              int n = 1;
              for (const Arrange::Lane& l : gArrange.lanes)
-                if (l.type == Arrange::kLaneAudio) n++;
+                if (l.type == laneType) n++;
              const int at = (insertAfter < 0 || insertAfter >= (int)gArrange.lanes.size()) ? -1 : insertAfter + 1;
-             newId = Arrange::AddLane(gArrange, Arrange::kLaneAudio, at);
+             newId = Arrange::AddLane(gArrange, laneType, at);
              if (Arrange::Lane* l = Arrange::FindLane(gArrange, newId))
-                l->name = "Audio " + std::to_string(n);
+                l->name = (isVideo ? "Video " : "Audio ") + std::to_string(n);
           }))
          return false;
       gArrangeRowSel.clear();
@@ -28425,7 +28504,11 @@ namespace
       return ArrangeEdit([&]()
       {
          Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
-         if (c == nullptr || (c->srcUid == uid && c->srcOutput == out))
+         // An Audio/Video Sample owns the private node its own drag-drop
+         // import created - repointing it at another node would defeat the
+         // whole point of a sample (see sampleDropped's doc comment in
+         // ArrangeModel.h). Only Audio/Video Clip can be reassigned.
+         if (c == nullptr || c->sampleDropped || (c->srcUid == uid && c->srcOutput == out))
             return;
          c->srcUid = uid;
          c->srcOutput = out;
@@ -28547,6 +28630,175 @@ namespace
       const Arrange::Tick t = (Arrange::Tick)(bar - 1) * perBar + (Arrange::Tick)(beat - 1) * Arrange::kPPQ +
                               (Arrange::Tick)(six - 1) * (Arrange::kPPQ / 4);
       return std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+   }
+
+   // Arrangement slider with smooth dragging, double-click to edit text,
+   // hover-to-type (starts editing immediately upon typing any number/sign/dot),
+   // and standard Ctrl+Click.
+   //
+   // A plain click's *first* frame can't tell whether a second click is about
+   // to follow (ImGui only reports IsMouseDoubleClicked() on the second
+   // click), so a single click can't be allowed to immediately SetActiveID +
+   // snap the value the way vanilla SliderBehavior does - that snap would
+   // commit a spurious edit a frame before the double-click is recognized and
+   // opens the text box. Instead a fresh click is held as "pending" until
+   // either the mouse drags past the threshold (genuine drag - activate now,
+   // from the current position), the double-click window elapses (genuine
+   // single click - activate now), or a second click arrives first (genuine
+   // double-click - go straight to text input, no drag ever activated).
+   struct ArrangeSliderPendingClick
+   {
+      bool waiting = false;
+      double downTime = 0.0;
+      ImVec2 downPos = ImVec2(0, 0);
+   };
+   static std::unordered_map<ImGuiID, ArrangeSliderPendingClick> sArrangeSliderPending;
+
+   bool ArrangeSliderFloat(const char* label, float* v, float v_min, float v_max, const char* format = "%.2f", ImGuiSliderFlags flags = 0)
+   {
+      ImGuiWindow* window = ImGui::GetCurrentWindow();
+      if (window->SkipItems)
+         return false;
+
+      ImGuiContext& g = *GImGui;
+      const ImGuiStyle& style = g.Style;
+      const ImGuiID id = window->GetID(label);
+      const float w = ImGui::CalcItemWidth();
+
+      const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
+      const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, label_size.y + style.FramePadding.y * 2.0f));
+      const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
+
+      const bool temp_input_allowed = (flags & ImGuiSliderFlags_NoInput) == 0;
+      ImGui::ItemSize(total_bb, style.FramePadding.y);
+      if (!ImGui::ItemAdd(total_bb, id, &frame_bb, temp_input_allowed ? ImGuiItemFlags_Inputable : 0))
+         return false;
+
+      if (format == NULL)
+         format = "%.3f";
+
+      const bool hovered = ImGui::ItemHoverable(frame_bb, id, g.LastItemData.InFlags);
+      bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive(id);
+      if (!temp_input_is_active)
+      {
+         ArrangeSliderPendingClick& pending = sArrangeSliderPending[id];
+
+         const bool doubleClicked = hovered && ImGui::IsMouseDoubleClicked(0);
+         const bool freshClick = hovered && !doubleClicked && ImGui::IsMouseClicked(0, ImGuiInputFlags_None, id);
+
+         // Only fires when NO widget anywhere holds ActiveId, so hovering a
+         // slider can never steal keystrokes from another field being typed
+         // into (e.g. a name box in the same panel).
+         bool keyPressedOnHover = false;
+         if (hovered && temp_input_allowed && g.ActiveId == 0)
+         {
+            for (int n = 0; n < g.IO.InputQueueCharacters.Size; n++)
+            {
+               const ImWchar c = g.IO.InputQueueCharacters[n];
+               if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.')
+               {
+                  keyPressedOnHover = true;
+                  break;
+               }
+            }
+         }
+
+         bool activateDrag = false;
+         if (doubleClicked)
+         {
+            pending.waiting = false;
+            ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
+            temp_input_is_active = true;
+         }
+         else if (keyPressedOnHover || (g.NavActivateId == id && (g.NavActivateFlags & ImGuiActivateFlags_PreferInput)))
+         {
+            pending.waiting = false;
+            // InputTextEx only claims ActiveId when it sees a real mouse click
+            // or NavActivateId==id+PreferInput this frame - hovering and typing
+            // has neither, so without this TempInputText's "we expect it to
+            // take the active id" assert aborts the app (crash report
+            // 2026-09-15 084740/084805/084826). Fake the nav-activation request
+            // so InputTextEx's init_make_active sees it exactly like a real one.
+            if (keyPressedOnHover)
+            {
+               g.NavActivateId = id;
+               g.NavActivateFlags = ImGuiActivateFlags_PreferInput;
+            }
+            temp_input_is_active = true;
+         }
+         else if (freshClick && g.IO.KeyCtrl)
+         {
+            // Ctrl+Click is unambiguous - no need to wait out the double-click window.
+            pending.waiting = false;
+            ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
+            temp_input_is_active = true;
+         }
+         else if (freshClick)
+         {
+            pending.waiting = true;
+            pending.downTime = g.Time;
+            pending.downPos = g.IO.MousePos;
+         }
+         else if (pending.waiting)
+         {
+            const float dx = g.IO.MousePos.x - pending.downPos.x;
+            const float dy = g.IO.MousePos.y - pending.downPos.y;
+            const bool movedPastThreshold = (dx * dx + dy * dy) > (g.IO.MouseDragThreshold * g.IO.MouseDragThreshold);
+            const bool doubleClickWindowElapsed = (g.Time - pending.downTime) > g.IO.MouseDoubleClickTime;
+            if (ImGui::IsMouseDown(0) ? (movedPastThreshold || doubleClickWindowElapsed) : doubleClickWindowElapsed)
+            {
+               pending.waiting = false;
+               ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
+               activateDrag = true;
+            }
+         }
+         else if (g.NavActivateId == id)
+         {
+            activateDrag = true;
+         }
+
+         if (activateDrag && !temp_input_is_active)
+         {
+            ImGui::SetActiveID(id, window);
+            ImGui::SetFocusID(id, window);
+            ImGui::FocusWindow(window);
+            g.ActiveIdUsingNavDirMask |= (1 << ImGuiDir_Left) | (1 << ImGuiDir_Right);
+         }
+      }
+
+      if (temp_input_is_active)
+      {
+         const bool is_clamp_input = (flags & ImGuiSliderFlags_AlwaysClamp) != 0;
+         return ImGui::TempInputScalar(frame_bb, id, label, ImGuiDataType_Float, v, format,
+                                       is_clamp_input ? &v_min : NULL, is_clamp_input ? &v_max : NULL);
+      }
+
+      // Draw frame
+      const ImU32 frame_col = ImGui::GetColorU32(g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+      ImGui::RenderNavHighlight(frame_bb, id);
+      ImGui::RenderFrame(frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding);
+
+      // Slider behavior
+      ImRect grab_bb;
+      const bool value_changed = ImGui::SliderBehavior(frame_bb, id, ImGuiDataType_Float, v, &v_min, &v_max, format, flags, &grab_bb);
+      if (value_changed)
+         ImGui::MarkItemEdited(id);
+
+      // Render grab
+      if (grab_bb.Max.x > grab_bb.Min.x)
+         window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, ImGui::GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), style.GrabRounding);
+
+      // Display value
+      char value_buf[64];
+      const char* value_buf_end = value_buf + ImGui::DataTypeFormatString(value_buf, IM_ARRAYSIZE(value_buf), ImGuiDataType_Float, v, format);
+      if (g.LogEnabled)
+         ImGui::LogSetNextTextDecoration("{", "}");
+      ImGui::RenderTextClipped(frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
+
+      if (label_size.x > 0.0f)
+         ImGui::RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y), label);
+
+      return value_changed;
    }
 
    // ---- render-range and render-target helpers (WP7) ------------------------
@@ -28813,6 +29065,8 @@ namespace
          c.srcUid = spawned->uid;
          c.name = spawned->typeName;
          c.importPending = true;
+         c.sampleDropped = true;
+         c.syncToTempo = gArrange.settings.importSyncToTempo;
          Arrange::PlaceOverwrite(gArrange, laneId, c, &clipId);
       });
       if (clipId == 0)
@@ -28987,6 +29241,121 @@ namespace
       job.status = kArrangeJobQueued;
       gArrangeRenderQueue.insert(gArrangeRenderQueue.begin(), job);
       gArrangeRenderQueueRunning = true;
+   }
+
+   // Builds a job scoped to exactly one clip's own [start, End()) window on
+   // its own lane - "Bounce Clip" (clip right-click, Audio/Video Clip only).
+   // Unlike ArrangeBuildLaneScopedRenderJob (always the whole timeline, used
+   // by Render Track/Group), this narrows both the tick range AND the lane
+   // scope to the one clip, so the lane-scoped audio/video passes render
+   // precisely that clip's own window and nothing else sharing its lane.
+   // Returns an empty-path job (caller checks job.bounceClipId/path) if the
+   // clip can't be found.
+   ArrangeRenderJob ArrangeBuildClipBounceRenderJob(uint64_t clipId)
+   {
+      ArrangeRenderJob job;
+      const Arrange::Loc loc = Arrange::Find(gArrange, clipId);
+      const Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+      if (!loc.Valid() || c == nullptr)
+         return job;
+
+      const Arrange::Lane& lane = gArrange.lanes[loc.lane];
+      const bool isVideoLane = lane.type == Arrange::kLaneVideo;
+
+      job.rangeKind = kArrangeRangeCustom;
+      job.startTick = c->start;
+      job.endTick = c->End();
+      job.width = gArrange.settings.renderWidth;
+      job.height = gArrange.settings.renderHeight;
+      job.fps = gArrange.settings.renderFps;
+      job.sampleRate = (int)llround(ArrangeRenderActiveSampleRate());
+      job.laneScope = { lane.id };
+      job.audioSource = kArrangeAudioTimeline;
+      job.videoSource = isVideoLane ? kArrangeVideoTimeline : kArrangeVideoNone;
+      job.format = isVideoLane ? (gArrange.settings.renderFormat == 1 ? 1 : 0) : 2;
+      job.canvasVideoUid = 0;
+      job.bounceClipId = clipId;
+
+      std::string folder = gArrange.settings.renderFolder;
+      if (folder.empty())
+      {
+         const std::string home = AppPaths::HomeDir();
+         folder = home.empty() ? std::string(".") : home + "/Desktop";
+      }
+      while (!folder.empty() && (folder.back() == '/' || folder.back() == '\\'))
+         folder.pop_back();
+      std::string safeName = c->name.empty() ? std::string("Clip") : c->name;
+      for (char& ch : safeName)
+         if (ch == '/' || ch == '\\') ch = '_';
+      const char* ext = isVideoLane ? (gArrange.settings.renderFormat == 1 ? ".mov" : ".mp4") : ".wav";
+      job.path = ArrangeRenderUniquePath(folder + "/" + safeName + " (Bounce)" + ext);
+      return job;
+   }
+
+   // Completion side of "Bounce Clip": once a bounce job's file lands
+   // (ArrangeRenderQueueTick calls this the instant its job goes Done),
+   // spawns a private source node for it and repoints the original clip at
+   // it as a Sample - same shape as ArrangeImportMediaFile's drag-drop path
+   // (SpawnNode's own undo checkpoint, then a separate ArrangeEdit for the
+   // clip fields; not merged into one atomic step, deliberately kept
+   // consistent with that existing, already-shipped two-step undo rather
+   // than inventing new undo-suppression plumbing this codebase doesn't
+   // have), except the clip already exists in place - its start/length are
+   // left untouched, only srcUid/srcOutput/sampleDropped/importPending
+   // change. The async decode/adopt afterward is the exact same
+   // ArrangePendingImport + ArrangePollMediaImports path a dropped file
+   // uses, since the rendered file still needs decoding into an in-memory
+   // buffer/handle before the new node can play it.
+   void ArrangeApplyClipBounceResult(const ArrangeRenderJob& job)
+   {
+      const Arrange::Loc loc = Arrange::Find(gArrange, job.bounceClipId);
+      if (!loc.Valid())
+         return; // clip deleted while the bounce was rendering - leave the file, nothing to attach it to
+
+      Arrange::ImportMediaKind kind;
+      if (!ArrangeMediaKindForPath(job.path, kind))
+         return;
+
+      const bool isAudioKind = kind == Arrange::ImportMediaKind::Audio;
+      const char* typeName = isAudioKind ? "Audio File" : "Video";
+      const char* category = isAudioKind ? "Modulators" : "Source";
+      const ImVec2 spawnPos = FindFreeSpawnPosition(gViewCenterCanvas);
+      GraphNode* spawned = SpawnNode(typeName, category, spawnPos.x, spawnPos.y);
+      if (spawned == nullptr)
+         return;
+
+      uint64_t clipId = 0;
+      ArrangeEdit([&]()
+      {
+         Arrange::Clip* c = Arrange::FindClip(gArrange, job.bounceClipId);
+         if (c == nullptr)
+            return;
+         c->srcUid = spawned->uid;
+         c->srcOutput = 0;
+         c->sampleDropped = true;
+         c->importPending = true;
+         c->syncToTempo = gArrange.settings.importSyncToTempo;
+         clipId = job.bounceClipId;
+         gArrange.revision++;
+      });
+      if (clipId == 0)
+      {
+         RemoveNodeByIndex(spawned->index);
+         return;
+      }
+
+      ArrangePendingImport pending;
+      pending.jobId = Arrange::GetMediaImportManager().StartImport(job.path, kind);
+      pending.clipId = clipId;
+      pending.nodeUid = spawned->uid;
+      pending.kind = kind;
+      gArrangePendingImports.push_back(pending);
+
+      gArrangeSel = { clipId };
+      gArrangeSelAnchor = clipId;
+      gArrangeFlashClipId = clipId;
+      gArrangeFlashStart = ImGui::GetTime();
+      gPatchDirty = true;
    }
 
    void DrawArrangePanelContent()
@@ -29175,8 +29544,10 @@ namespace
             if (gArrangeRowSel.empty() || !ArrangeGroupRowSelection())
                ArrangeGroupSelection();
          }
-         else if (!cmd && kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_N, false))
-            ArrangeAddTrackShortcut();
+         else if (!cmd && kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_J, false))
+            ArrangeAddTrackShortcut(true);
+         else if (!cmd && kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_K, false))
+            ArrangeAddTrackShortcut(false);
          else if (!cmd && !kio.KeyAlt &&
                   (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)))
             ArrangeToggleEnabledSelection();
@@ -29259,6 +29630,34 @@ namespace
             // Only a failure explains itself on hover; the label says the rest.
             if (ImGui::IsItemHovered() && !gAudioStartError.empty() && !engineOn)
                ImGui::SetTooltip("%s", gAudioStartError.c_str());
+            ImGui::SetCursorScreenPos(savedCursor);
+
+            // Bitwig/Ableton-style standing default for new Samples (drag-drop
+            // import and Bounce to Sample both stamp the clip they create with
+            // this instead of always defaulting to on) - a toolbar toggle
+            // rather than a per-drop dialog, since drag-drop import is an
+            // instant, non-modal action here. Existing clips are unaffected;
+            // this only decides what a NEW Sample starts out as - the
+            // post-hoc "Sync to Tempo" checkbox in Clip Settings still edits
+            // any individual clip afterward.
+            const char* syncLabel = gArrange.settings.importSyncToTempo ? "New Samples: Sync to Tempo" : "New Samples: Free";
+            const float syncBtnW = ImGui::CalcTextSize(syncLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
+            const ImVec2 syncBtnPos(audioBtnPos.x - syncBtnW - 8.0f, panelOrigin.y + 2.0f);
+            ImGui::SetCursorScreenPos(syncBtnPos);
+            ImGui::PushStyleColor(ImGuiCol_Button, gArrange.settings.importSyncToTempo
+               ? (arrangeToolbarLight ? ImVec4(0.20f, 0.62f, 0.34f, 1.0f) : ImVec4(0.16f, 0.52f, 0.28f, 1.0f))
+               : (arrangeToolbarLight ? ImVec4(0.80f, 0.82f, 0.87f, 1.0f) : ImVec4(0.30f, 0.30f, 0.34f, 1.0f)));
+            ImGui::PushStyleColor(ImGuiCol_Text, gArrange.settings.importSyncToTempo
+               ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+               : (arrangeToolbarLight ? ImVec4(0.12f, 0.14f, 0.20f, 1.0f) : ImVec4(0.92f, 0.94f, 0.98f, 1.0f)));
+            if (ImGui::Button(syncLabel, ImVec2(syncBtnW, 0.0f)))
+            {
+               gArrange.settings.importSyncToTempo = !gArrange.settings.importSyncToTempo;
+               gPatchDirty = true;
+            }
+            ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip("Default for new Audio/Video Samples (drag & drop, Bounce to Sample).\nDoes not change existing clips.");
             ImGui::SetCursorScreenPos(savedCursor);
 
             // Render, pinned just left of Start/Stop Audio - exports the
@@ -29349,7 +29748,7 @@ namespace
 
             const char* renderLabel = ArrangeRenderBusy() ? "Rendering..." : "Render";
             const float renderBtnW = ImGui::CalcTextSize(renderLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
-            const ImVec2 renderBtnPos(audioBtnPos.x - renderBtnW - 8.0f, panelOrigin.y + 2.0f);
+            const ImVec2 renderBtnPos(syncBtnPos.x - renderBtnW - 8.0f, panelOrigin.y + 2.0f);
             ImGui::SetCursorScreenPos(renderBtnPos);
             ImGui::BeginDisabled(ArrangeRenderBusy());
             if (ImGui::Button(renderLabel, ImVec2(renderBtnW, 0.0f)))
@@ -29929,11 +30328,13 @@ namespace
          if (ImGui::Button("##clipsettingstoggle", ImVec2(30, 0)))
             gArrangeClipSettingsPanelOpen = !gArrangeClipSettingsPanelOpen;
          ImGui::PopStyleColor();
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Clip / Track Inspector");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            Tabler::DrawSliders(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
+            Tabler::DrawList(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
@@ -31610,6 +32011,27 @@ namespace
                }
             }
 
+            // Fade-in / Fade-out visual overlay
+            if (clip.fadeIn > 0 || clip.fadeOut > 0)
+            {
+               dl->PushClipRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), true);
+               if (clip.fadeIn > 0)
+               {
+                  const float fInX = tickToX(clip.start + clip.fadeIn);
+                  dl->AddTriangleFilled(ImVec2(clipX0, cTop), ImVec2(clipX0, cBottom), ImVec2(fInX, cTop),
+                                        IM_COL32(0, 0, 0, 50));
+                  dl->AddLine(ImVec2(clipX0, cBottom), ImVec2(fInX, cTop), IM_COL32(255, 255, 255, 150), 1.5f);
+               }
+               if (clip.fadeOut > 0)
+               {
+                  const float fOutX = tickToX(clip.End() - clip.fadeOut);
+                  dl->AddTriangleFilled(ImVec2(fOutX, cTop), ImVec2(clipX1, cBottom), ImVec2(clipX1, cTop),
+                                        IM_COL32(0, 0, 0, 50));
+                  dl->AddLine(ImVec2(fOutX, cTop), ImVec2(clipX1, cBottom), IM_COL32(255, 255, 255, 150), 1.5f);
+               }
+               dl->PopClipRect();
+            }
+
             dl->AddRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), clipBorderCol, 4.0f, 0,
                         isSelected ? 2.5f : (grouped ? 1.8f : 1.2f));
 
@@ -31717,15 +32139,7 @@ namespace
          if (mouseInLane && !clipHoveredAny && ImGui::IsWindowHovered())
          {
             const ImGuiIO& lio = ImGui::GetIO();
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
-                !gArrangeBladeOn && !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
-            {
-               gArrangeSel.clear();
-               gArrangeSelAnchor = 0;
-               gArrangeRowSel.clear();
-               gArrangeRowSelAnchor = 0;
-            }
-            else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
             {
                AddAssignedClipAt(laneId, gridSnap(xToTick(mouse.x)));
             }
@@ -31736,6 +32150,14 @@ namespace
                gArrangeMarquee.anchor = mouse;
                gArrangeMarquee.current = mouse;
                gArrangeMarquee.baseSel = gArrangeSel;
+            }
+            else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
+                !gArrangeBladeOn && !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
+            {
+               gArrangeSel.clear();
+               gArrangeSelAnchor = 0;
+               gArrangeRowSel.clear();
+               gArrangeRowSelAnchor = 0;
             }
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
             {
@@ -32003,7 +32425,7 @@ namespace
 
                float gainDb = cp->gainDb;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Gain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
+               if (ArrangeSliderFloat("Gain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32015,7 +32437,7 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float pan = cp->pan;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Pan", &pan, -1.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Pan", &pan, -1.0f, 1.0f, "%.2f"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32027,10 +32449,15 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float pitch = cp->pitch;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Pitch", &pitch, -24.0f, 24.0f, "%.1f st"))
+               if (ArrangeSliderFloat("Pitch", &pitch, -24.0f, 24.0f, "%.1f st"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
+                  // Pushed per-block onto the terminal's own sourceNode by
+                  // RunTopology's lookahead (ClipWindow::pitch), not written
+                  // here directly - a node can be the source of more than one
+                  // clip, and writing straight to it would make one clip's
+                  // pitch edit audible on every other clip sharing that node.
                   cp->pitch = std::clamp(pitch, -24.0f, 24.0f);
                   gArrange.revision++;
                }
@@ -32049,7 +32476,43 @@ namespace
 
                ImGui::Separator();
             }
-            else if (ctxSelectionSingleType && ctxLaneType != Arrange::kLaneAudio && ImGui::BeginMenu("Compositing"))
+            else if (ctxSelectionSingleType && ctxLaneType == Arrange::kLaneVideo)
+            {
+               Arrange::Tick nt = 0;
+               if (tickField("Fade In", cp->fadeIn, 0, cp->length, true, &nt))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->fadeIn = std::clamp<Arrange::Tick>(nt, 0, cp->length);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+               cp = Arrange::FindClip(gArrange, cid);
+               if (tickField("Fade Out", cp->fadeOut, 0, cp->length, true, &nt))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->fadeOut = std::clamp<Arrange::Tick>(nt, 0, cp->length);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               cp = Arrange::FindClip(gArrange, cid);
+               float opacity = cp->opacity;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ArrangeSliderFloat("Opacity", &opacity, 0.0f, 1.0f, "%.2f"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->opacity = std::clamp(opacity, 0.0f, 1.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               ImGui::Separator();
+            }
+
+            if (ctxSelectionSingleType && ctxLaneType != Arrange::kLaneAudio && ImGui::BeginMenu("Compositing"))
             {
                // How this clip lays over the lanes below it. Applies to every
                // selected video clip, like Color Tint.
@@ -32088,7 +32551,7 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float brightness = cp->colorBrightness;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32100,7 +32563,7 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float contrast = cp->colorContrast;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32112,7 +32575,7 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float saturation = cp->colorSaturation;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Saturation", &saturation, 0.0f, 2.0f, "%.2f"))
+               if (ArrangeSliderFloat("Saturation", &saturation, 0.0f, 2.0f, "%.2f"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32156,9 +32619,29 @@ namespace
                ImGui::EndMenu();
             }
 
-            if (ImGui::MenuItem("Assign Node..."))
+            // Audio/Video Sample clips own a private node from the media
+            // import that made them - repointing one at a different node
+            // would defeat the whole point of a sample (see sampleDropped's
+            // doc comment in ArrangeModel.h). Only Audio/Video Clip can be
+            // reassigned.
+            cp = Arrange::FindClip(gArrange, cid);
+            if (cp != nullptr && !cp->sampleDropped && ImGui::MenuItem("Assign Node..."))
             {
                gArrangeAssigningClipId = cid;
+               ImGui::CloseCurrentPopup();
+            }
+
+            // Renders just this clip's own window down to a file and
+            // repoints it at the result as a Sample - the opposite of
+            // "Assign Node...", for the same reason: only a live Audio/Video
+            // Clip has anything to bounce (a Sample already IS one).
+            cp = Arrange::FindClip(gArrange, cid);
+            if (cp != nullptr && !cp->sampleDropped && cp->srcUid != 0 &&
+                ImGui::MenuItem("Bounce to Sample", nullptr, false, !ArrangeRenderBusy()))
+            {
+               ArrangeRenderJob job = ArrangeBuildClipBounceRenderJob(cid);
+               if (job.bounceClipId != 0 && !job.path.empty())
+                  ArrangeCommitLaneScopedRenderJob(job);
                ImGui::CloseCurrentPopup();
             }
 
@@ -35437,6 +35920,8 @@ namespace
          // Arrangement Timeline - these fire only while the timeline panel
          // owns the keyboard (click inside it) and no text field is active;
          // the canvas's own Cmd+C/V/D/G and Delete stand down meanwhile.
+         { "Arrangement Timeline", "Add Video Track", "Shift+J", "Add a new video track below the selected track" },
+         { "Arrangement Timeline", "Add Audio Track", "Shift+K", "Add a new audio track below the selected track" },
          { "Arrangement Timeline", "Copy / Paste Clips", MODKEY "+C / V", "Copy the selected clips; paste at the playhead on the last-clicked clip's lane" },
          { "Arrangement Timeline", "Duplicate Clips", MODKEY "+D / Shift+D", "Copy the selected block right after itself" },
          { "Arrangement Timeline", "Split at Playhead", MODKEY "+E", "Cut every selected clip the playhead passes through" },
@@ -36071,6 +36556,13 @@ namespace
    // it can never equal the sentinel and the first frame always builds.
    uint64_t gArrangeAudioBuiltRevision = UINT64_MAX;
    bool gArrangeAudioBuiltRouting = false;
+   // Clip ids whose Retrigger flag was suppressed at the last rebuild because
+   // their source node is also used by a clip on another lane - one physical
+   // node has only one playback position, so two lanes retriggering it
+   // independently would stomp each other (see RebuildAudioTopology's
+   // `lanesPerSrc` pass). Read by the Clip Settings panel to show an inline
+   // warning next to the Trigger dropdown instead of silently no-op'ing.
+   std::set<uint64_t> gArrangeRetriggerConflictClipIds;
    // Every RebuildAudioTopology that got past gDeferAudioRebuild. Fixtures
    // read it to prove an edit costs exactly one rebuild and an idle frame none.
    unsigned long long gAudioTopologyRebuildCount = 0;
@@ -36207,16 +36699,51 @@ namespace
                w.fadeInBeats = Arrange::TicksToBeats(c.fadeIn);
                w.fadeOutBeats = Arrange::TicksToBeats(c.fadeOut);
                w.gain = std::pow(10.0f, c.gainDb / 20.0f);
-               // Per-clip pan, same equal-power/sqrt(2) convention as the
-               // lane pan below - was computed and stored on Clip::pan but
-               // never actually reached the mixer (only lane.pan did), so
-               // the clip settings panel's Pan slider was silently a no-op.
-               DspMath::EqualPowerPan(std::clamp(c.pan, -1.0f, 1.0f), w.panL, w.panR);
+               w.pitch = c.pitch;
+               // Mirrors the model so RunTopology's exact-seek lookahead can
+               // gate on it without reaching into gArrange from the audio
+               // thread - see ClipWindow::sampleDropped's own comment.
+               w.sampleDropped = c.sampleDropped;
+               // Retrigger is an Audio Sample-only feature (Clip Settings
+               // hides the control for every other category) - a stray
+               // `retrigger=true` left over from a patch saved before this
+               // restriction existed must not resurrect the behavior.
+               w.retrigger = c.retrigger && c.sampleDropped;
+               // Combined track pan + clip pan with equal-power scaling.
+               // Combining them here prevents the track balance from muting opposite-panned clips.
+               const float combinedPan = std::clamp(c.pan + lane.pan, -1.0f, 1.0f);
+               DspMath::EqualPowerPan(combinedPan, w.panL, w.panR);
                w.panL *= (float)M_SQRT2;
                w.panR *= (float)M_SQRT2;
                scheduled[it->second].windows.push_back(w);
             }
          }
+         // A retrigger clip needs its node to itself: RunTopology's retrigger
+         // lookahead seeks the node's own playback position, and a node fed
+         // to more than one lane has only one such position for both to
+         // fight over. Rather than let two lanes silently stomp each other's
+         // onset, suppress the retrigger (fall back to timeline-continuous
+         // for that window) whenever its srcUid turns out to be scheduled on
+         // more than one lane, and record the affected clips so the UI can
+         // say why.
+         gArrangeRetriggerConflictClipIds.clear();
+         std::unordered_map<uint64_t, std::set<uint64_t>> lanesPerSrc;
+         for (const ScheduledTerminal& st : scheduled)
+            lanesPerSrc[st.srcUid].insert(st.laneId);
+         for (ScheduledTerminal& st : scheduled)
+         {
+            if (lanesPerSrc[st.srcUid].size() <= 1)
+               continue;
+            for (ClipWindow& w : st.windows)
+            {
+               if (w.retrigger)
+               {
+                  w.retrigger = false;
+                  gArrangeRetriggerConflictClipIds.insert(w.clipId);
+               }
+            }
+         }
+
          // Sort each terminal's windows and mark the abutting edges. The
          // model forbids overlap on a lane and keeps it sorted, so this is a
          // no-op on a valid model - kept because RunTopology's cursor walk
@@ -36322,6 +36849,7 @@ namespace
          AudioTerminal term;
          term.bufferIndex = idx;
          term.gain = 1.0f; // clip gain rides on the window, lane gain on laneGain
+         term.sourceNode = AudioNodeOfAny(resolved);
          term.laneGain = st.laneGain;
          term.lanePanL = st.lanePanL;
          term.lanePanR = st.lanePanR;
@@ -37235,9 +37763,13 @@ namespace
          const Arrange::Loc cloc = Arrange::Find(gArrange, clipId);
          const Arrange::Lane* owningLane = cloc.Valid() ? &gArrange.lanes[cloc.lane] : nullptr;
          const bool isVideo = owningLane != nullptr && owningLane->type == Arrange::kLaneVideo;
+         const bool isSample = clip->sampleDropped;
 
          // Header: Title + Close [X]
-         ImGui::TextUnformatted(isVideo ? "Video Clip" : "Audio Clip");
+         const char* clipKindLabel = isVideo
+            ? (isSample ? "Video Sample" : "Video Clip")
+            : (isSample ? "Audio Sample" : "Audio Clip");
+         ImGui::TextUnformatted(clipKindLabel);
          ImGui::SameLine(availW - 18.0f);
          if (DrawCloseBtn())
             gArrangeClipSettingsPanelOpen = false;
@@ -37315,6 +37847,39 @@ namespace
             });
          }
 
+         // Retrigger is an Audio Sample-only concept: a manually-patched
+         // clip's source may be shared/reused elsewhere on the canvas in
+         // ways the timeline can't see, and video has no equivalent audio-
+         // thread mechanism at all - so Audio Clip/Video Clip/Video Sample
+         // don't see this section.
+         if (isSample && !isVideo)
+         {
+            ImGui::Spacing();
+            ImGui::TextDisabled("Playback & Trigger");
+            const char* trigModes[] = { "Timeline (Continuous)", "Retrigger on Enter" };
+            int curTrig = clip->retrigger ? 1 : 0;
+            ImGui::SetNextItemWidth(fieldW);
+            if (ImGui::Combo("Trigger##cliptrigger", &curTrig, trigModes, 2))
+            {
+               ArrangeEdit([&]() {
+                  if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+                  {
+                     c->retrigger = (curTrig == 1);
+                     gArrange.revision++;
+                  }
+               });
+            }
+            if (clip->retrigger && gArrangeRetriggerConflictClipIds.count(clipId))
+            {
+               ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + fieldW);
+               ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f),
+                  "This clip's source is also used on another lane, so it can't be retriggered "
+                  "independently - playing as Timeline (Continuous) instead. Give it its own node "
+                  "(Duplicate) to retrigger it.");
+               ImGui::PopTextWrapPos();
+            }
+         }
+
          ImGui::Spacing();
          ImGui::Separator();
 
@@ -37344,9 +37909,22 @@ namespace
                ImGui::EndCombo();
             }
 
+            float opacity = clip->opacity;
+            ImGui::SetNextItemWidth(fieldW);
+            if (ArrangeSliderFloat("Opacity##clipop", &opacity, 0.0f, 1.0f, "%.2f"))
+            {
+               ArrangeEdit([&]() {
+                  if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+                  {
+                     c->opacity = std::clamp(opacity, 0.0f, 1.0f);
+                     gArrange.revision++;
+                  }
+               });
+            }
+
             float brightness = clip->colorBrightness;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Bright##clipbright", &brightness, -1.0f, 1.0f, "%.2f"))
+            if (ArrangeSliderFloat("Bright##clipbright", &brightness, -1.0f, 1.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
@@ -37359,7 +37937,7 @@ namespace
 
             float contrast = clip->colorContrast;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Contrast##clipcont", &contrast, -1.0f, 1.0f, "%.2f"))
+            if (ArrangeSliderFloat("Contrast##clipcont", &contrast, -1.0f, 1.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
@@ -37372,7 +37950,7 @@ namespace
 
             float saturation = clip->colorSaturation;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Sat##clipsat", &saturation, 0.0f, 2.0f, "%.2f"))
+            if (ArrangeSliderFloat("Sat##clipsat", &saturation, 0.0f, 2.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
@@ -37388,7 +37966,7 @@ namespace
             ImGui::TextDisabled("Audio Adjustments");
             float gainDb = clip->gainDb;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Gain##clipgain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
+            if (ArrangeSliderFloat("Gain##clipgain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
@@ -37401,12 +37979,31 @@ namespace
 
             float pan = clip->pan;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Pan##clippan", &pan, -1.0f, 1.0f, "%.2f"))
+            if (ArrangeSliderFloat("Pan##clippan", &pan, -1.0f, 1.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                   {
-                     c->pan = pan;
+                     c->pan = std::clamp(pan, -1.0f, 1.0f);
+                     gArrange.revision++;
+                  }
+               });
+            }
+
+            float pitch = clip->pitch;
+            ImGui::SetNextItemWidth(fieldW);
+            if (ArrangeSliderFloat("Pitch##clippitch", &pitch, -24.0f, 24.0f, "%+.1f st"))
+            {
+               ArrangeEdit([&]() {
+                  if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+                  {
+                     // Pushed per-block onto the terminal's own sourceNode by
+                     // RunTopology's lookahead (ClipWindow::pitch), not
+                     // written here directly - a node can be the source of
+                     // more than one clip, and writing straight to it would
+                     // make one clip's pitch edit audible on every other
+                     // clip sharing that node.
+                     c->pitch = std::clamp(pitch, -24.0f, 24.0f);
                      gArrange.revision++;
                   }
                });
@@ -37436,25 +38033,44 @@ namespace
          {
             ImGui::Text("Node: %s", NodeTitle(*srcNode).c_str());
             ImGui::TextDisabled("Type: %s", srcNode->typeName.c_str());
-            if (ImGui::Button("Assign Different Node...", ImVec2(-FLT_MIN, 0)))
-               gArrangeAssigningClipId = clipId;
-            if (ImGui::Button("Clear Source", ImVec2(-FLT_MIN, 0)))
+            // A Sample owns the private node its own drag-drop import
+            // created - repointing or clearing that would defeat the whole
+            // point of a sample (see sampleDropped's doc comment in
+            // ArrangeModel.h). Only Audio/Video Clip can be reassigned.
+            if (!isSample)
             {
-               ArrangeEdit([&]() {
-                  if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
-                  {
-                     c->srcUid = 0;
-                     c->srcOutput = 0;
-                     gArrange.revision++;
-                  }
-               });
+               if (ImGui::Button("Assign Different Node...", ImVec2(-FLT_MIN, 0)))
+                  gArrangeAssigningClipId = clipId;
+               if (ImGui::Button("Clear Source", ImVec2(-FLT_MIN, 0)))
+               {
+                  ArrangeEdit([&]() {
+                     if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+                     {
+                        c->srcUid = 0;
+                        c->srcOutput = 0;
+                        gArrange.revision++;
+                     }
+                  });
+               }
+               ImGui::BeginDisabled(ArrangeRenderBusy());
+               if (ImGui::Button("Bounce to Sample", ImVec2(-FLT_MIN, 0)))
+               {
+                  ArrangeRenderJob job = ArrangeBuildClipBounceRenderJob(clipId);
+                  if (job.bounceClipId != 0 && !job.path.empty())
+                     ArrangeCommitLaneScopedRenderJob(job);
+               }
+               ImGui::EndDisabled();
             }
          }
-         else
+         else if (!isSample)
          {
             ImGui::TextDisabled("(unassigned)");
             if (ImGui::Button("Assign Node...", ImVec2(-FLT_MIN, 0)))
                gArrangeAssigningClipId = clipId;
+         }
+         else
+         {
+            ImGui::TextDisabled("(missing - sample's source node was deleted)");
          }
       }
       else if (gArrangeSel.size() > 1)
@@ -37619,7 +38235,7 @@ namespace
 
                float gainDb = lane->gainDb;
                ImGui::SetNextItemWidth(fieldW);
-               if (ImGui::SliderFloat("Gain##trackgain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
+               if (ArrangeSliderFloat("Gain##trackgain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
                {
                   ArrangeEdit([&]() {
                      if (Arrange::Lane* l = Arrange::FindLane(gArrange, rowId))
@@ -37629,7 +38245,7 @@ namespace
 
                float pan = lane->pan;
                ImGui::SetNextItemWidth(fieldW);
-               if (ImGui::SliderFloat("Pan##trackpan", &pan, -1.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Pan##trackpan", &pan, -1.0f, 1.0f, "%.2f"))
                {
                   ArrangeEdit([&]() {
                      if (Arrange::Lane* l = Arrange::FindLane(gArrange, rowId))
@@ -37642,7 +38258,7 @@ namespace
                ImGui::TextDisabled("Video Track Controls");
                float opacity = lane->opacity;
                ImGui::SetNextItemWidth(fieldW);
-               if (ImGui::SliderFloat("Opacity##trackop", &opacity, 0.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Opacity##trackop", &opacity, 0.0f, 1.0f, "%.2f"))
                {
                   ArrangeEdit([&]() {
                      if (Arrange::Lane* l = Arrange::FindLane(gArrange, rowId))
@@ -37974,6 +38590,8 @@ namespace
          job->status = cancelled ? kArrangeJobCancelled : kArrangeJobDone;
          if (cancelled)
             job->message = "cancelled";
+         else if (job->bounceClipId != 0)
+            ArrangeApplyClipBounceResult(*job);
       }
       gArrangeRenderActiveJobId = 0;
    }
@@ -38098,6 +38716,8 @@ namespace
                job->status = cancelled ? kArrangeJobCancelled : kArrangeJobDone;
                if (cancelled)
                   job->message = "cancelled";
+               else if (job->bounceClipId != 0)
+                  ArrangeApplyClipBounceResult(*job);
             }
          }
          gArrangeRenderActiveJobId = 0;
@@ -61158,6 +61778,10 @@ int main(int argc, char** argv)
                Transport::Instance().SetOfflineVideoTime(videoSec);
                ApplyModulationAndPalette(frameId);
 
+               // Must run before the cook loop just below - see
+               // ArrangeSeekVideoSampleSources's own comment for why.
+               ArrangeSeekVideoSampleSources(Transport::Instance().Beats());
+
                for (GraphNode& gn : gNodes)
                   gn.node->CookIfNeeded(frameId);
 
@@ -78753,7 +79377,7 @@ int main(int argc, char** argv)
       // button drives - routed through StartAudioEngine rather than
       // AudioEngine::Start() so a patch loaded while the engine was off gets
       // re-prepared at the device's rate (see StartAudioEngine's comment).
-      if (!typing && shiftOnly && ImGui::IsKeyPressed(ImGuiKey_K, false))
+      if (!typing && !gArrangeFocused && shiftOnly && ImGui::IsKeyPressed(ImGuiKey_K, false))
       {
          if (AudioEngine::Instance().SampleRate() > 0.0)
          {
@@ -82951,6 +83575,10 @@ int main(int argc, char** argv)
             glfwSetWindowShouldClose(window, GLFW_TRUE);
          }
       }
+
+      // Must run before the cook loop just below - see
+      // ArrangeSeekVideoSampleSources's own comment for why.
+      ArrangeSeekVideoSampleSources(Transport::Instance().Beats());
 
       for (GraphNode& gn : gNodes)
          gn.node->CookIfNeeded(frameId);

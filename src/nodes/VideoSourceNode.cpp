@@ -327,6 +327,42 @@ AudioNode* VideoSourceNode::GetAudioNode()
    return mAudioNode.get();
 }
 
+// Clamps/wraps a raw position into the effective trim/loop window, same math
+// CookIfNeeded has always used for its own delta-accumulated position -
+// factored out so SyncToArrangement can compare against it too.
+double VideoSourceNode::WrapPosition(double raw) const
+{
+   double effStart = std::clamp((double)trimStart, 0.0, mDuration > 0.0 ? mDuration : (double)trimStart);
+   double effEnd = (trimEnd <= 0.0f || (double)trimEnd > mDuration) ? mDuration : (double)trimEnd;
+   if (mDuration > 0.0 && effEnd - effStart < 0.001)
+   {
+      // Degenerate/inverted trim window - fall back to full clip rather than
+      // divide-by-near-zero in fmod below.
+      effStart = 0.0;
+      effEnd = mDuration;
+   }
+
+   if (mDuration > 0.0)
+   {
+      const double range = effEnd - effStart;
+      if (loop)
+      {
+         raw = effStart + std::fmod(raw - effStart, range);
+         if (raw < effStart)
+            raw += range; // fmod keeps the sign of the dividend
+      }
+      else
+      {
+         raw = std::clamp(raw, effStart, effEnd);
+      }
+   }
+   else
+   {
+      raw = std::max(raw, (double)trimStart);
+   }
+   return raw;
+}
+
 void VideoSourceNode::CookIfNeeded(int frameId)
 {
    if (mLastCookFrame == frameId)
@@ -351,39 +387,7 @@ void VideoSourceNode::CookIfNeeded(int frameId)
    if (delta < 0.0)
       delta = 0.0;
    mLastTransportSeconds = now;
-   mPosition += delta * (double)speed;
-
-   // Effective trim window for this cook. Guarded against degenerate/inverted
-   // ranges since trimStart/trimEnd are modulatable and can be driven to any
-   // value at runtime.
-   double effStart = std::clamp((double)trimStart, 0.0, mDuration > 0.0 ? mDuration : (double)trimStart);
-   double effEnd = (trimEnd <= 0.0f || (double)trimEnd > mDuration) ? mDuration : (double)trimEnd;
-   if (mDuration > 0.0 && effEnd - effStart < 0.001)
-   {
-      // Degenerate/inverted trim window - fall back to full clip rather than
-      // divide-by-near-zero in fmod below.
-      effStart = 0.0;
-      effEnd = mDuration;
-   }
-
-   if (mDuration > 0.0)
-   {
-      double range = effEnd - effStart;
-      if (loop)
-      {
-         mPosition = effStart + std::fmod(mPosition - effStart, range);
-         if (mPosition < effStart)
-            mPosition += range; // fmod keeps the sign of the dividend
-      }
-      else
-      {
-         mPosition = std::clamp(mPosition, effStart, effEnd);
-      }
-   }
-   else
-   {
-      mPosition = std::max(mPosition, (double)trimStart);
-   }
+   mPosition = WrapPosition(mPosition + delta * (double)speed);
 
    // Published for the audio half to read - see VideoAudioNode's class
    // comment. Written every cook, whether or not this node currently has an

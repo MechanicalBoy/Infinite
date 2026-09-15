@@ -87,9 +87,19 @@ namespace Arrange
       // Video/image only. Basic color grade, consumed by the compositor as a
       // per-clip shader pass. Defaults are a no-op so every clip that
       // predates this field renders identically.
+      float    opacity         = 1.0f;  // video only, 0..1, 1 = fully opaque
       float    colorBrightness = 0.0f;  // -1..1, 0 = no change
       float    colorContrast   = 0.0f;  // -1..1, 0 = no change
       float    colorSaturation = 1.0f;  // 0..2, 1 = no change
+      bool     retrigger       = true;  // true = retrigger source on playhead/marker enter, false = timeline continuous
+
+      // True only for a clip created by ArrangeImportMediaFile (dropping a
+      // media file onto the timeline, which spawns its own private source
+      // node) - "Audio/Video Sample" in the Clip Settings panel and the only
+      // category allowed to retrigger. False for a clip whose srcUid points
+      // at a node the user patched in manually ("Audio/Video Clip"), even if
+      // that node happens to be an AudioFileNode/VideoSourceNode.
+      bool     sampleDropped   = false;
 
       // Runtime-only: true while a dropped media file's async decode
       // (ArrangeMediaImport.h) hasn't landed yet. Deliberately not read or
@@ -178,6 +188,15 @@ namespace Arrange
       int   renderAudioSource = -1; // -1 = follow the monitoring mode
       int   renderVideoSource = -1; // -1 = auto
       std::string renderFolder;
+      // Bitwig/Ableton-style import default: the Sync to Tempo value a new
+      // Sample clip is stamped with the moment it's created - drag-drop
+      // import (ArrangeImportMediaFile) and Bounce to Sample
+      // (ArrangeApplyClipBounceResult) both read this instead of hardcoding
+      // true, so the decision is made once, up front, rather than requiring
+      // a trip to Clip Settings' checkbox after the fact for every drop.
+      // Still just a per-clip default - Clip::syncToTempo remains freely
+      // editable per clip afterward.
+      bool  importSyncToTempo = true;
    };
 
    struct Model
