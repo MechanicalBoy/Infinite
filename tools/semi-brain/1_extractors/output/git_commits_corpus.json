@@ -1,5 +1,21 @@
 [
   {
+    "hash": "7f2bcc305fd8b801b13a0484e914b41aae318b81",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:51:55 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): sync updated corpus and SFT/DPO datasets",
+      "description": "sync updated corpus and SFT/DPO datasets",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): sync updated corpus and SFT/DPO datasets"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 448 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 154 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 154 +++----\n 4 files changed, 396 insertions(+), 376 deletions(-)"
+  },
+  {
     "hash": "d81ec3eae1b66fb73d7b6f3b756e4fabfeca8288",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
