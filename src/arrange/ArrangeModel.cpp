@@ -172,6 +172,8 @@ void Normalize(Model& m)
          clip.pan = std::clamp(clip.pan, -1.0f, 1.0f);
          if (!std::isfinite(clip.pitch)) clip.pitch = 0.0f;
          clip.pitch = std::clamp(clip.pitch, -24.0f, 24.0f);
+         if (!std::isfinite(clip.opacity)) clip.opacity = 1.0f;
+         clip.opacity = std::clamp(clip.opacity, 0.0f, 1.0f);
          if (!std::isfinite(clip.colorBrightness)) clip.colorBrightness = 0.0f;
          clip.colorBrightness = std::clamp(clip.colorBrightness, -1.0f, 1.0f);
          if (!std::isfinite(clip.colorContrast)) clip.colorContrast = 0.0f;

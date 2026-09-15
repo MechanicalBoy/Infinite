@@ -303,9 +303,11 @@ namespace Patch
       // to-end-of-line name and nothing can be appended after it).
       float  pitch   = 0.0f;    // audio only, semitones, +/-24
       bool   syncToTempo = true; // audio only
+      float  opacity = 1.0f;    // video/image only, 0..1, 1 = fully opaque
       float  colorBrightness = 0.0f; // video/image only, -1..1, 0 = no change
       float  colorContrast   = 0.0f; // video/image only, -1..1, 0 = no change
       float  colorSaturation = 1.0f; // video/image only, 0..2, 1 = no change
+      bool   retrigger       = true;
    };
 
    struct StreamRecord

@@ -6157,9 +6157,11 @@ namespace
             r.blendMode = c.blendMode;
             r.pitch = c.pitch;
             r.syncToTempo = c.syncToTempo;
+            r.opacity = c.opacity;
             r.colorBrightness = c.colorBrightness;
             r.colorContrast = c.colorContrast;
             r.colorSaturation = c.colorSaturation;
+            r.retrigger = c.retrigger;
             s.clips.push_back(std::move(r));
          }
          data.streams.push_back(std::move(s));
@@ -6267,9 +6269,11 @@ namespace
             clip.pan = c.pan;
             clip.pitch = c.pitch;
             clip.syncToTempo = c.syncToTempo;
+            clip.opacity = c.opacity;
             clip.colorBrightness = c.colorBrightness;
             clip.colorContrast = c.colorContrast;
             clip.colorSaturation = c.colorSaturation;
+            clip.retrigger = c.retrigger;
             lane.clips.push_back(std::move(clip));
          }
          m.lanes.push_back(std::move(lane));
@@ -22896,6 +22900,7 @@ namespace
          ModCheckbox("audible", &n->monitor);
          ModSlider("volume", &n->volume, 0.0f, 1.0f);
          ModSlider("gain", &n->gain, 0.1f, 16.0f);
+         ModSlider("pitch", &n->pitch, -24.0f, 24.0f);
 
          const Platform::AudioLevels& lv = n->Levels();
          ImGui::Text("level "); ImGui::SameLine();
@@ -27249,7 +27254,7 @@ namespace
             {
                GraphNode* gn = FindNodeByUid(c.srcUid);
                if (gn != nullptr && gn->node != nullptr)
-                  out.push_back({ gn, c.srcOutput, c.blendMode, std::clamp(lane.opacity, 0.0f, 1.0f),
+                  out.push_back({ gn, c.srcOutput, c.blendMode, std::clamp(lane.opacity * c.opacity, 0.0f, 1.0f),
                                   c.id, c.colorBrightness, c.colorContrast, c.colorSaturation });
             }
             break;
@@ -28059,14 +28064,9 @@ namespace
       return true;
    }
 
-   // Shift+N on the header column: adds a new track after the current row-
-   // selection anchor (or at the end if nothing is selected). Defaults to
-   // Audio, the common case - Video is still one right-click "Add Track"
-   // away. A free function (not the "##arrangeaddtrackpopup" lambda further
-   // down in DrawArrangePanelContent) because the keyboard block runs before
-   // that lambda's declaration and before any PushID(laneScope) is
-   // established, so its popup id would not match from here.
-   bool ArrangeAddTrackShortcut()
+   // Shift+J (Video) / Shift+K (Audio) on the timeline: adds a new track after the
+   // current row-selection anchor (or at the end if nothing is selected).
+   bool ArrangeAddTrackShortcut(bool isVideo)
    {
       int insertAfter = -1;
       if (gArrangeRowSelAnchor != 0)
@@ -28077,13 +28077,14 @@ namespace
       uint64_t newId = 0;
       if (!ArrangeEdit([&]()
           {
+             const int laneType = isVideo ? Arrange::kLaneVideo : Arrange::kLaneAudio;
              int n = 1;
              for (const Arrange::Lane& l : gArrange.lanes)
-                if (l.type == Arrange::kLaneAudio) n++;
+                if (l.type == laneType) n++;
              const int at = (insertAfter < 0 || insertAfter >= (int)gArrange.lanes.size()) ? -1 : insertAfter + 1;
-             newId = Arrange::AddLane(gArrange, Arrange::kLaneAudio, at);
+             newId = Arrange::AddLane(gArrange, laneType, at);
              if (Arrange::Lane* l = Arrange::FindLane(gArrange, newId))
-                l->name = "Audio " + std::to_string(n);
+                l->name = (isVideo ? "Video " : "Audio ") + std::to_string(n);
           }))
          return false;
       gArrangeRowSel.clear();
@@ -28547,6 +28548,108 @@ namespace
       const Arrange::Tick t = (Arrange::Tick)(bar - 1) * perBar + (Arrange::Tick)(beat - 1) * Arrange::kPPQ +
                               (Arrange::Tick)(six - 1) * (Arrange::kPPQ / 4);
       return std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
+   }
+
+   // Arrangement slider with smooth dragging, double-click to edit text,
+   // hover-to-type (starts editing immediately upon typing any number/sign/dot),
+   // and standard Ctrl+Click.
+   bool ArrangeSliderFloat(const char* label, float* v, float v_min, float v_max, const char* format = "%.2f", ImGuiSliderFlags flags = 0)
+   {
+      ImGuiWindow* window = ImGui::GetCurrentWindow();
+      if (window->SkipItems)
+         return false;
+
+      ImGuiContext& g = *GImGui;
+      const ImGuiStyle& style = g.Style;
+      const ImGuiID id = window->GetID(label);
+      const float w = ImGui::CalcItemWidth();
+
+      const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
+      const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, label_size.y + style.FramePadding.y * 2.0f));
+      const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
+
+      const bool temp_input_allowed = (flags & ImGuiSliderFlags_NoInput) == 0;
+      ImGui::ItemSize(total_bb, style.FramePadding.y);
+      if (!ImGui::ItemAdd(total_bb, id, &frame_bb, temp_input_allowed ? ImGuiItemFlags_Inputable : 0))
+         return false;
+
+      if (format == NULL)
+         format = "%.3f";
+
+      const bool hovered = ImGui::ItemHoverable(frame_bb, id, g.LastItemData.InFlags);
+      bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive(id);
+      if (!temp_input_is_active)
+      {
+         const bool clicked = hovered && ImGui::IsMouseClicked(0, ImGuiInputFlags_None, id);
+         const bool doubleClicked = hovered && ImGui::IsMouseDoubleClicked(0);
+         bool keyPressedOnHover = false;
+         if (hovered && temp_input_allowed && g.ActiveId != id)
+         {
+            for (int n = 0; n < g.IO.InputQueueCharacters.Size; n++)
+            {
+               const ImWchar c = g.IO.InputQueueCharacters[n];
+               if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.')
+               {
+                  keyPressedOnHover = true;
+                  break;
+               }
+            }
+         }
+
+         const bool make_active = (clicked || doubleClicked || keyPressedOnHover || g.NavActivateId == id);
+         if (make_active && clicked)
+            ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
+         if (make_active && temp_input_allowed)
+         {
+            if ((clicked && g.IO.KeyCtrl) || doubleClicked || keyPressedOnHover ||
+                (g.NavActivateId == id && (g.NavActivateFlags & ImGuiActivateFlags_PreferInput)))
+            {
+               temp_input_is_active = true;
+            }
+         }
+
+         if (make_active && !temp_input_is_active)
+         {
+            ImGui::SetActiveID(id, window);
+            ImGui::SetFocusID(id, window);
+            ImGui::FocusWindow(window);
+            g.ActiveIdUsingNavDirMask |= (1 << ImGuiDir_Left) | (1 << ImGuiDir_Right);
+         }
+      }
+
+      if (temp_input_is_active)
+      {
+         const bool is_clamp_input = (flags & ImGuiSliderFlags_AlwaysClamp) != 0;
+         return ImGui::TempInputScalar(frame_bb, id, label, ImGuiDataType_Float, v, format,
+                                       is_clamp_input ? &v_min : NULL, is_clamp_input ? &v_max : NULL);
+      }
+
+      // Draw frame
+      const ImU32 frame_col = ImGui::GetColorU32(g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+      ImGui::RenderNavHighlight(frame_bb, id);
+      ImGui::RenderFrame(frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding);
+
+      // Slider behavior
+      ImRect grab_bb;
+      const bool value_changed = ImGui::SliderBehavior(frame_bb, id, ImGuiDataType_Float, v, &v_min, &v_max, format, flags, &grab_bb);
+      if (value_changed)
+         ImGui::MarkItemEdited(id);
+
+      // Render grab
+      if (grab_bb.Max.x > grab_bb.Min.x)
+         window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, ImGui::GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), style.GrabRounding);
+
+      // Display value
+      char value_buf[64];
+      const char* value_buf_end = value_buf + ImGui::DataTypeFormatString(value_buf, IM_ARRAYSIZE(value_buf), ImGuiDataType_Float, v, format);
+      if (g.LogEnabled)
+         ImGui::LogSetNextTextDecoration("{", "}");
+      ImGui::RenderTextClipped(frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
+
+      if (label_size.x > 0.0f)
+         ImGui::RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y), label);
+
+      return value_changed;
    }
 
    // ---- render-range and render-target helpers (WP7) ------------------------
@@ -29175,8 +29278,10 @@ namespace
             if (gArrangeRowSel.empty() || !ArrangeGroupRowSelection())
                ArrangeGroupSelection();
          }
-         else if (!cmd && kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_N, false))
-            ArrangeAddTrackShortcut();
+         else if (!cmd && kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_J, false))
+            ArrangeAddTrackShortcut(true);
+         else if (!cmd && kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_K, false))
+            ArrangeAddTrackShortcut(false);
          else if (!cmd && !kio.KeyAlt &&
                   (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)))
             ArrangeToggleEnabledSelection();
@@ -29929,11 +30034,13 @@ namespace
          if (ImGui::Button("##clipsettingstoggle", ImVec2(30, 0)))
             gArrangeClipSettingsPanelOpen = !gArrangeClipSettingsPanelOpen;
          ImGui::PopStyleColor();
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Clip / Track Inspector");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            Tabler::DrawSliders(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
+            Tabler::DrawList(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
@@ -31610,6 +31717,27 @@ namespace
                }
             }
 
+            // Fade-in / Fade-out visual overlay
+            if (clip.fadeIn > 0 || clip.fadeOut > 0)
+            {
+               dl->PushClipRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), true);
+               if (clip.fadeIn > 0)
+               {
+                  const float fInX = tickToX(clip.start + clip.fadeIn);
+                  dl->AddTriangleFilled(ImVec2(clipX0, cTop), ImVec2(clipX0, cBottom), ImVec2(fInX, cTop),
+                                        IM_COL32(0, 0, 0, 50));
+                  dl->AddLine(ImVec2(clipX0, cBottom), ImVec2(fInX, cTop), IM_COL32(255, 255, 255, 150), 1.5f);
+               }
+               if (clip.fadeOut > 0)
+               {
+                  const float fOutX = tickToX(clip.End() - clip.fadeOut);
+                  dl->AddTriangleFilled(ImVec2(fOutX, cTop), ImVec2(clipX1, cBottom), ImVec2(clipX1, cTop),
+                                        IM_COL32(0, 0, 0, 50));
+                  dl->AddLine(ImVec2(fOutX, cTop), ImVec2(clipX1, cBottom), IM_COL32(255, 255, 255, 150), 1.5f);
+               }
+               dl->PopClipRect();
+            }
+
             dl->AddRect(ImVec2(cLeft, cTop), ImVec2(cRight, cBottom), clipBorderCol, 4.0f, 0,
                         isSelected ? 2.5f : (grouped ? 1.8f : 1.2f));
 
@@ -31717,15 +31845,7 @@ namespace
          if (mouseInLane && !clipHoveredAny && ImGui::IsWindowHovered())
          {
             const ImGuiIO& lio = ImGui::GetIO();
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
-                !gArrangeBladeOn && !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
-            {
-               gArrangeSel.clear();
-               gArrangeSelAnchor = 0;
-               gArrangeRowSel.clear();
-               gArrangeRowSelAnchor = 0;
-            }
-            else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
             {
                AddAssignedClipAt(laneId, gridSnap(xToTick(mouse.x)));
             }
@@ -31736,6 +31856,14 @@ namespace
                gArrangeMarquee.anchor = mouse;
                gArrangeMarquee.current = mouse;
                gArrangeMarquee.baseSel = gArrangeSel;
+            }
+            else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
+                !gArrangeBladeOn && !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
+            {
+               gArrangeSel.clear();
+               gArrangeSelAnchor = 0;
+               gArrangeRowSel.clear();
+               gArrangeRowSelAnchor = 0;
             }
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
             {
@@ -32003,7 +32131,7 @@ namespace
 
                float gainDb = cp->gainDb;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Gain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
+               if (ArrangeSliderFloat("Gain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32015,7 +32143,7 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float pan = cp->pan;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Pan", &pan, -1.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Pan", &pan, -1.0f, 1.0f, "%.2f"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32027,11 +32155,18 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float pitch = cp->pitch;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Pitch", &pitch, -24.0f, 24.0f, "%.1f st"))
+               if (ArrangeSliderFloat("Pitch", &pitch, -24.0f, 24.0f, "%.1f st"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
                   cp->pitch = std::clamp(pitch, -24.0f, 24.0f);
+                  if (GraphNode* gn = FindNodeByUid(cp->srcUid))
+                  {
+                     if (auto* af = dynamic_cast<AudioFileNode*>(gn->node.get()))
+                        af->pitch = cp->pitch;
+                     else if (auto* sm = dynamic_cast<SamplerNode*>(gn->node.get()))
+                        sm->pitch = cp->pitch;
+                  }
                   gArrange.revision++;
                }
                fieldGestureEnd();
@@ -32049,7 +32184,43 @@ namespace
 
                ImGui::Separator();
             }
-            else if (ctxSelectionSingleType && ctxLaneType != Arrange::kLaneAudio && ImGui::BeginMenu("Compositing"))
+            else if (ctxSelectionSingleType && ctxLaneType == Arrange::kLaneVideo)
+            {
+               Arrange::Tick nt = 0;
+               if (tickField("Fade In", cp->fadeIn, 0, cp->length, true, &nt))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->fadeIn = std::clamp<Arrange::Tick>(nt, 0, cp->length);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+               cp = Arrange::FindClip(gArrange, cid);
+               if (tickField("Fade Out", cp->fadeOut, 0, cp->length, true, &nt))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->fadeOut = std::clamp<Arrange::Tick>(nt, 0, cp->length);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               cp = Arrange::FindClip(gArrange, cid);
+               float opacity = cp->opacity;
+               ImGui::SetNextItemWidth(160.0f);
+               if (ArrangeSliderFloat("Opacity", &opacity, 0.0f, 1.0f, "%.2f"))
+               {
+                  fieldGesture(true);
+                  cp = Arrange::FindClip(gArrange, cid);
+                  cp->opacity = std::clamp(opacity, 0.0f, 1.0f);
+                  gArrange.revision++;
+               }
+               fieldGestureEnd();
+
+               ImGui::Separator();
+            }
+
+            if (ctxSelectionSingleType && ctxLaneType != Arrange::kLaneAudio && ImGui::BeginMenu("Compositing"))
             {
                // How this clip lays over the lanes below it. Applies to every
                // selected video clip, like Color Tint.
@@ -32088,7 +32259,7 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float brightness = cp->colorBrightness;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32100,7 +32271,7 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float contrast = cp->colorContrast;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -32112,7 +32283,7 @@ namespace
                cp = Arrange::FindClip(gArrange, cid);
                float saturation = cp->colorSaturation;
                ImGui::SetNextItemWidth(160.0f);
-               if (ImGui::SliderFloat("Saturation", &saturation, 0.0f, 2.0f, "%.2f"))
+               if (ArrangeSliderFloat("Saturation", &saturation, 0.0f, 2.0f, "%.2f"))
                {
                   fieldGesture(true);
                   cp = Arrange::FindClip(gArrange, cid);
@@ -35437,6 +35608,8 @@ namespace
          // Arrangement Timeline - these fire only while the timeline panel
          // owns the keyboard (click inside it) and no text field is active;
          // the canvas's own Cmd+C/V/D/G and Delete stand down meanwhile.
+         { "Arrangement Timeline", "Add Video Track", "Shift+J", "Add a new video track below the selected track" },
+         { "Arrangement Timeline", "Add Audio Track", "Shift+K", "Add a new audio track below the selected track" },
          { "Arrangement Timeline", "Copy / Paste Clips", MODKEY "+C / V", "Copy the selected clips; paste at the playhead on the last-clicked clip's lane" },
          { "Arrangement Timeline", "Duplicate Clips", MODKEY "+D / Shift+D", "Copy the selected block right after itself" },
          { "Arrangement Timeline", "Split at Playhead", MODKEY "+E", "Cut every selected clip the playhead passes through" },
@@ -36207,11 +36380,11 @@ namespace
                w.fadeInBeats = Arrange::TicksToBeats(c.fadeIn);
                w.fadeOutBeats = Arrange::TicksToBeats(c.fadeOut);
                w.gain = std::pow(10.0f, c.gainDb / 20.0f);
-               // Per-clip pan, same equal-power/sqrt(2) convention as the
-               // lane pan below - was computed and stored on Clip::pan but
-               // never actually reached the mixer (only lane.pan did), so
-               // the clip settings panel's Pan slider was silently a no-op.
-               DspMath::EqualPowerPan(std::clamp(c.pan, -1.0f, 1.0f), w.panL, w.panR);
+               w.retrigger = c.retrigger;
+               // Combined track pan + clip pan with equal-power scaling.
+               // Combining them here prevents the track balance from muting opposite-panned clips.
+               const float combinedPan = std::clamp(c.pan + lane.pan, -1.0f, 1.0f);
+               DspMath::EqualPowerPan(combinedPan, w.panL, w.panR);
                w.panL *= (float)M_SQRT2;
                w.panR *= (float)M_SQRT2;
                scheduled[it->second].windows.push_back(w);
@@ -37316,6 +37489,22 @@ namespace
          }
 
          ImGui::Spacing();
+         ImGui::TextDisabled("Playback & Trigger");
+         const char* trigModes[] = { "Timeline (Continuous)", "Retrigger on Enter" };
+         int curTrig = clip->retrigger ? 1 : 0;
+         ImGui::SetNextItemWidth(fieldW);
+         if (ImGui::Combo("Trigger##cliptrigger", &curTrig, trigModes, 2))
+         {
+            ArrangeEdit([&]() {
+               if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+               {
+                  c->retrigger = (curTrig == 1);
+                  gArrange.revision++;
+               }
+            });
+         }
+
+         ImGui::Spacing();
          ImGui::Separator();
 
          if (isVideo)
@@ -37344,9 +37533,22 @@ namespace
                ImGui::EndCombo();
             }
 
+            float opacity = clip->opacity;
+            ImGui::SetNextItemWidth(fieldW);
+            if (ArrangeSliderFloat("Opacity##clipop", &opacity, 0.0f, 1.0f, "%.2f"))
+            {
+               ArrangeEdit([&]() {
+                  if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+                  {
+                     c->opacity = std::clamp(opacity, 0.0f, 1.0f);
+                     gArrange.revision++;
+                  }
+               });
+            }
+
             float brightness = clip->colorBrightness;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Bright##clipbright", &brightness, -1.0f, 1.0f, "%.2f"))
+            if (ArrangeSliderFloat("Bright##clipbright", &brightness, -1.0f, 1.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
@@ -37359,7 +37561,7 @@ namespace
 
             float contrast = clip->colorContrast;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Contrast##clipcont", &contrast, -1.0f, 1.0f, "%.2f"))
+            if (ArrangeSliderFloat("Contrast##clipcont", &contrast, -1.0f, 1.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
@@ -37372,7 +37574,7 @@ namespace
 
             float saturation = clip->colorSaturation;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Sat##clipsat", &saturation, 0.0f, 2.0f, "%.2f"))
+            if (ArrangeSliderFloat("Sat##clipsat", &saturation, 0.0f, 2.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
@@ -37388,7 +37590,7 @@ namespace
             ImGui::TextDisabled("Audio Adjustments");
             float gainDb = clip->gainDb;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Gain##clipgain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
+            if (ArrangeSliderFloat("Gain##clipgain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
@@ -37401,12 +37603,32 @@ namespace
 
             float pan = clip->pan;
             ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::SliderFloat("Pan##clippan", &pan, -1.0f, 1.0f, "%.2f"))
+            if (ArrangeSliderFloat("Pan##clippan", &pan, -1.0f, 1.0f, "%.2f"))
             {
                ArrangeEdit([&]() {
                   if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                   {
-                     c->pan = pan;
+                     c->pan = std::clamp(pan, -1.0f, 1.0f);
+                     gArrange.revision++;
+                  }
+               });
+            }
+
+            float pitch = clip->pitch;
+            ImGui::SetNextItemWidth(fieldW);
+            if (ArrangeSliderFloat("Pitch##clippitch", &pitch, -24.0f, 24.0f, "%+.1f st"))
+            {
+               ArrangeEdit([&]() {
+                  if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+                  {
+                     c->pitch = std::clamp(pitch, -24.0f, 24.0f);
+                     if (GraphNode* gn = FindNodeByUid(c->srcUid))
+                     {
+                        if (auto* af = dynamic_cast<AudioFileNode*>(gn->node.get()))
+                           af->pitch = c->pitch;
+                        else if (auto* sm = dynamic_cast<SamplerNode*>(gn->node.get()))
+                           sm->pitch = c->pitch;
+                     }
                      gArrange.revision++;
                   }
                });
@@ -37619,7 +37841,7 @@ namespace
 
                float gainDb = lane->gainDb;
                ImGui::SetNextItemWidth(fieldW);
-               if (ImGui::SliderFloat("Gain##trackgain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
+               if (ArrangeSliderFloat("Gain##trackgain", &gainDb, -60.0f, 12.0f, "%.1f dB"))
                {
                   ArrangeEdit([&]() {
                      if (Arrange::Lane* l = Arrange::FindLane(gArrange, rowId))
@@ -37629,7 +37851,7 @@ namespace
 
                float pan = lane->pan;
                ImGui::SetNextItemWidth(fieldW);
-               if (ImGui::SliderFloat("Pan##trackpan", &pan, -1.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Pan##trackpan", &pan, -1.0f, 1.0f, "%.2f"))
                {
                   ArrangeEdit([&]() {
                      if (Arrange::Lane* l = Arrange::FindLane(gArrange, rowId))
@@ -37642,7 +37864,7 @@ namespace
                ImGui::TextDisabled("Video Track Controls");
                float opacity = lane->opacity;
                ImGui::SetNextItemWidth(fieldW);
-               if (ImGui::SliderFloat("Opacity##trackop", &opacity, 0.0f, 1.0f, "%.2f"))
+               if (ArrangeSliderFloat("Opacity##trackop", &opacity, 0.0f, 1.0f, "%.2f"))
                {
                   ArrangeEdit([&]() {
                      if (Arrange::Lane* l = Arrange::FindLane(gArrange, rowId))
@@ -78753,7 +78975,7 @@ int main(int argc, char** argv)
       // button drives - routed through StartAudioEngine rather than
       // AudioEngine::Start() so a patch loaded while the engine was off gets
       // re-prepared at the device's rate (see StartAudioEngine's comment).
-      if (!typing && shiftOnly && ImGui::IsKeyPressed(ImGuiKey_K, false))
+      if (!typing && !gArrangeFocused && shiftOnly && ImGui::IsKeyPressed(ImGuiKey_K, false))
       {
          if (AudioEngine::Instance().SampleRate() > 0.0)
          {

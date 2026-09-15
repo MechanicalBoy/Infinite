@@ -435,15 +435,46 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          }
          terminal.windowCursor = cursor;
 
-         for (int ch = 0; ch < numChannels; ch++)
+         if (numChannels >= 2)
          {
-            const float laneChPan =
-               numChannels < 2 ? 1.0f : ch == 0 ? terminal.lanePanL : ch == 1 ? terminal.lanePanR : 1.0f;
-            const float* clipChPan = numChannels < 2 ? nullptr : ch == 0 ? sPanLScratch : ch == 1 ? sPanRScratch : nullptr;
             for (int i = 0; i < numFrames; i++)
             {
-               const float chGain = gain * laneChPan * (clipChPan != nullptr ? clipChPan[i] : 1.0f);
-               deviceBuffer.channels[ch][i] += src.channels[ch][i] * chGain * sEnvScratch[i];
+               const float env = sEnvScratch[i];
+               if (env <= 0.0f)
+                  continue;
+               const float pL = sPanLScratch[i];
+               const float pR = sPanRScratch[i];
+               const float inL = src.channels[0][i];
+               const float inR = src.channels[1][i];
+
+               float outL = inL * pL;
+               float outR = inR * pR;
+               if (pL > 1.0f && pR < 1.0f)
+               {
+                  const float fold = (1.0f - pR);
+                  outL = (inL + inR * fold * 0.5f) * (pL / (1.0f + fold * 0.5f));
+               }
+               else if (pR > 1.0f && pL < 1.0f)
+               {
+                  const float fold = (1.0f - pL);
+                  outR = (inR + inL * fold * 0.5f) * (pR / (1.0f + fold * 0.5f));
+               }
+
+               deviceBuffer.channels[0][i] += outL * gain * env;
+               deviceBuffer.channels[1][i] += outR * gain * env;
+            }
+            for (int ch = 2; ch < numChannels; ch++)
+            {
+               for (int i = 0; i < numFrames; i++)
+                  deviceBuffer.channels[ch][i] += src.channels[ch][i] * gain * sEnvScratch[i];
+            }
+         }
+         else
+         {
+            for (int ch = 0; ch < numChannels; ch++)
+            {
+               for (int i = 0; i < numFrames; i++)
+                  deviceBuffer.channels[ch][i] += src.channels[ch][i] * gain * sEnvScratch[i];
             }
          }
       }
