@@ -31674,11 +31674,9 @@ namespace
             dl->AddLine(ImVec2(lineX, curY), ImVec2(lineX, curY + rowH), IM_COL32(255, 255, 255, 24), 1.0f);
          }
 
-         // Track header mix strip (Solo/Mute/Pan/Gain, opacity) was removed
-         // for clutter (declutter pass) - those controls live in the Track
-         // inspector (double-click the row) instead. Kept at 0 so the name
-         // box below still reflows to fill the freed width.
-         const float kMixStripW = 0.0f;
+         // Old full sizes for mixer controls
+         const float kMixCtl = 18.0f, kMixGap = 3.0f;
+         const float kMixStripW = kMixCtl * 4.0f + kMixGap * 3.0f; // 81px
          const bool isVideoForName = lane.type == Arrange::kLaneVideo;
 
          const float contentStartX = headerStartX + 4.0f + (float)laneDepth * kGroupIndent;
@@ -31751,12 +31749,83 @@ namespace
             }
          }
 
-         // Mix strip (Solo/Mute/Pan/Gain/Opacity) removed from the track
-         // header row for clutter - those live in the Track inspector now
-         // (double-click the row). laneSilenced still needs mute/solo state
-         // for drawing the row itself.
+         // Mix strip positioned at the right of the header column
+         ImGui::SetCursorScreenPos(ImVec2(rulerStartX - kMixStripW - 4.0f, curY + (rowH - kMixCtl) * 0.5f));
          const bool isVideo = lane.type == Arrange::kLaneVideo;
          const bool laneSilenced = !isVideo && (lane.mute || (anyLaneSolo && !lane.solo));
+         if (rowH >= kMixCtl + 4.0f)
+         {
+            const ImU32 mixFill = IM_COL32(16, 185, 129, 255);
+            auto mixGesture = [&](bool changed, const std::function<void()>& apply)
+            {
+               if (ImGui::IsItemActivated())
+               {
+                  ArrangeGestureBegin();
+                  gArrangeMixGestureLaneId = laneId;
+               }
+               if (changed)
+               {
+                  if (!gArrangeGestureOpen)
+                     ArrangeGestureBegin();
+                  apply();
+                  gArrange.revision++;
+               }
+               if (ImGui::IsItemDeactivated() && gArrangeMixGestureLaneId == laneId)
+               {
+                  ArrangeGestureEnd();
+                  gArrangeMixGestureLaneId = 0;
+               }
+            };
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+            if (!isVideo)
+            {
+               bool solo = lane.solo;
+               mixGesture(AudioSoloButton("S##lanesolo", &solo, kMixCtl, kMixCtl), [&] { lane.solo = solo; });
+               ImGui::SameLine(0.0f, kMixGap);
+               bool mute = lane.mute;
+               mixGesture(AudioMuteButton("M##lanemute", &mute, kMixCtl, kMixCtl), [&] { lane.mute = mute; });
+               ImGui::SameLine(0.0f, kMixGap);
+               float pan = lane.pan;
+               const bool panChanged = BipolarKnobFloat("##lanepan", &pan, -1.0f, 1.0f, "%.2f", kMixCtl, mixFill,
+                                                        false, 0.0f, -1, -1, false, 0.0f, 0.0f, false,
+                                                        /*resetOnDoubleClick=*/true);
+               mixGesture(panChanged, [&] { lane.pan = pan; });
+               if (ImGui::IsItemActive())
+               {
+                  if (std::fabs(lane.pan) < 0.005f)
+                     ImGui::SetTooltip("C");
+                  else
+                     ImGui::SetTooltip("%s %d", lane.pan < 0.0f ? "L" : "R", (int)std::lround(std::fabs(lane.pan) * 100.0f));
+               }
+               ImGui::SameLine(0.0f, kMixGap);
+               float gainDb = lane.gainDb;
+               bool gainChanged = KnobFloat("##lanegain", &gainDb, -60.0f, 12.0f, "%.1f dB", kMixCtl, mixFill, false);
+               if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gainDb != 0.0f)
+               {
+                  gainDb = 0.0f;
+                  gainChanged = true;
+               }
+               mixGesture(gainChanged, [&] { lane.gainDb = gainDb; });
+               if (ImGui::IsItemActive())
+                  ImGui::SetTooltip("%.1f dB", lane.gainDb);
+            }
+            else
+            {
+               float pct = lane.opacity * 100.0f;
+               ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, (kMixCtl - ImGui::GetFontSize()) * 0.5f));
+               ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+               ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 6.0f);
+               ImGui::PushStyleColor(ImGuiCol_SliderGrab, IM_COL32(139, 92, 246, 255));
+               ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(160, 120, 250, 255));
+               ImGui::SetNextItemWidth(kMixStripW);
+               const bool opChanged = ImGui::SliderFloat("##laneopacity", &pct, 0.0f, 100.0f, "%.0f%%",
+                                                         ImGuiSliderFlags_AlwaysClamp);
+               ImGui::PopStyleColor(2);
+               ImGui::PopStyleVar(3);
+               mixGesture(opChanged, [&] { lane.opacity = std::clamp(pct / 100.0f, 0.0f, 1.0f); });
+            }
+            ImGui::PopStyleVar();
+         }
 
          // Clips on this lane first, so clip buttons take priority over empty
          // lane clicks. Each clip is a copy: nothing in this loop reshapes
