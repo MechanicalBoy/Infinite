@@ -81287,6 +81287,7 @@ int main(int argc, char** argv)
          // AlwaysUseWindowPadding is needed alongside Border now.
          ImGui::BeginChild("##nodepanel", ImVec2(kNodePanelWidth, graphHeight),
                            ImGuiChildFlags_Border | ImGuiChildFlags_AlwaysUseWindowPadding);
+         PopDockedPanelStyle();
          // Same hairline as every other panel boundary. This panel has no
          // resize grip to hang it off, so it draws the seam on its own left
          // edge - the side that faces the canvas, since it is always the
@@ -81573,7 +81574,6 @@ int main(int argc, char** argv)
          ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
          ImGui::EndChild();
          ImGui::PopStyleVar();
-         PopDockedPanelStyle();
       }
 
       // Bottom-docked viewport panel: a fresh, full-width row below the
