@@ -296,11 +296,8 @@ set(SYPHON_DIR external/syphon)
 set(SPOUT_DIR external/spout2/SPOUTSDK/SpoutGL)
 
 if(INFINITE_ENABLE_VST3 AND NOT APPLE AND NOT WIN32)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        set(INFINITE_ENABLE_VST3 OFF CACHE BOOL "" FORCE)
-        message(STATUS "VST3 on Linux lands in P4")
-    else()
-        message(FATAL_ERROR "INFINITE_ENABLE_VST3 is only wired up on macOS and Windows right now; "
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "INFINITE_ENABLE_VST3 is only wired up on macOS, Windows and Linux right now; "
                             "this platform's layer reports plugin hosting as unavailable.")
     endif()
 endif()
@@ -960,6 +957,91 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES"
                 "$<TARGET_FILE_DIR:Infinite>/licenses/"
         COMMENT "Copying FFmpeg/x264 third-party licence texts next to Infinite")
+
+    if(INFINITE_ENABLE_VST3)
+        # Linux VST3 hosting: src/platform/linux/PluginVST3Linux.cpp mirrors
+        # PluginVST3Win.cpp's structure (out-of-process scanning + crash-safety
+        # sentinel/blocklist under AppPaths::AppSupportDir(), dlopen instead of
+        # LoadLibraryExW). Editors (X11/IRunLoop) are P4.3 and not built here -
+        # PluginVST3OpenEditor is a documented stub in PluginVST3Linux.cpp.
+        #
+        # X11 is deliberately NOT linked in this pass (judgment call, per
+        # phase-04-vst3.md task 4.1): nothing in P4.1/4.2 touches Xlib -
+        # there is no editor window, no IPlugView/IPlugFrame hosting, and no
+        # IRunLoop. Linking libX11 now with zero callers would be dead
+        # weight carried until 4.3 actually opens a display connection.
+        # `libx11-dev` is already in tools/linux/deps-apt.sh, so 4.3 only
+        # needs to add `target_link_libraries(Infinite PRIVATE X11)` here
+        # alongside its editor source files - no new system dependency to
+        # introduce at that point.
+        target_compile_definitions(Infinite PRIVATE INFINITE_ENABLE_VST3=1)
+        target_include_directories(Infinite PRIVATE
+            ${VST3_SDK_DIR}
+            ${VST3_SDK_DIR}/pluginterfaces
+            ${VST3_SDK_DIR}/public.sdk
+        )
+        target_sources(Infinite PRIVATE
+            src/platform/linux/PluginVST3Linux.cpp
+            ${VST3_SDK_DIR}/pluginterfaces/base/coreiids.cpp
+            ${VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp
+            ${VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp
+        )
+
+        # Out-of-process scanner helper, mirroring infinite-vst3-scanner.exe on
+        # Windows: a disposable process that probes one bundle (or a batch) at
+        # a time so a crashing or hanging plugin only costs a dead child.
+        # Links PlatformLinux.cpp (for ExecutablePath/AppSupportDir/etc, which
+        # PluginVST3Linux.cpp calls into) and its SubjectMaskOnnx.cpp partner
+        # (PlatformLinux.cpp forwards the matting entry points there), the same
+        # way the Windows scanner target pulls in PlatformWin.cpp + ONNX.
+        add_executable(infinite-vst3-scanner
+            src/scanner_main_linux.cpp
+            src/platform/linux/PluginVST3Linux.cpp
+            src/platform/linux/PlatformLinux.cpp
+            src/platform/common/SubjectMaskOnnx.cpp
+            ${NODE_EDITOR_DIR}/crude_json.cpp
+            external/tinyfiledialogs/tinyfiledialogs.c
+            ${VST3_SDK_DIR}/pluginterfaces/base/coreiids.cpp
+            ${VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp
+            ${VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp
+        )
+        target_include_directories(infinite-vst3-scanner PRIVATE
+            src src/core src/nodes src/platform src/audio
+            ${IMGUI_DIR} ${IMGUI_DIR}/backends ${IMGUI_DIR}/misc/cpp
+            ${NODE_EDITOR_DIR}
+            ${STB_DIR}
+            external/json
+            external/shine
+            external/tinyfiledialogs
+            ${VST3_SDK_DIR}
+            ${VST3_SDK_DIR}/pluginterfaces
+            ${VST3_SDK_DIR}/public.sdk
+            "${ONNXRUNTIME_INCLUDE_DIR}"
+        )
+        target_compile_definitions(infinite-vst3-scanner PRIVATE
+            INFINITE_ENABLE_VST3=1
+            INFINITE_VST3_SCANNER=1
+        )
+        # dlopen()/dlclose() for the VST3 module itself (PluginVST3Linux.cpp)
+        # and for PlatformLinux.cpp's own optional-library probing (libcurl,
+        # etc - see linux-parity skill trap 3.4).
+        target_link_libraries(infinite-vst3-scanner PRIVATE
+            Threads::Threads
+            ${CMAKE_DL_LIBS}
+            m
+            "${ONNXRUNTIME_LIB}"
+        )
+        set_target_properties(infinite-vst3-scanner PROPERTIES
+            BUILD_RPATH_USE_ORIGIN ON
+            INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib"
+        )
+        add_dependencies(Infinite infinite-vst3-scanner)
+        add_custom_command(TARGET Infinite POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                    "$<TARGET_FILE:infinite-vst3-scanner>"
+                    "$<TARGET_FILE_DIR:Infinite>/infinite-vst3-scanner"
+            COMMENT "Copying scanner helper next to Infinite")
+    endif()
 endif()
 
 # imgui-node-editor 0.9.1 ships its own GetKeyIndex() shim, which collides with

@@ -99,6 +99,15 @@ void PluginScanner::StartScan(const std::string& folder)
          vst3Folders.push_back(std::string(common) + "\\VST3");
       if (const char* localAppData = getenv("LOCALAPPDATA"))
          vst3Folders.push_back(std::string(localAppData) + "\\Programs\\Common\\VST3");
+#elif defined(__linux__)
+      // The three locations phase-04-vst3.md defines for Linux: a per-user
+      // folder plus the two system-wide FHS locations (the second covers
+      // packages installed outside the distro's package manager).
+      const char* home = getenv("HOME");
+      if (home != nullptr)
+         vst3Folders.push_back(std::string(home) + "/.vst3");
+      vst3Folders.push_back("/usr/lib/vst3");
+      vst3Folders.push_back("/usr/local/lib/vst3");
 #else
       vst3Folders.push_back("/Library/Audio/Plug-Ins/VST3");
       const char* home = getenv("HOME");
