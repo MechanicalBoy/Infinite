@@ -979,6 +979,12 @@ namespace
       // finishes, via ArrangeApplyClipBounceResult. 0 for every other job
       // (Render Track/Group/whole-project), which just write a file and stop.
       uint64_t bounceClipId = 0;
+      // Empty = every clip on the scoped lanes. Non-empty narrows the take to
+      // exactly these clip ids ("Bounce / Render Clip"), which laneScope alone
+      // cannot do: a bounce's time range spans the selected clips, and any
+      // OTHER clip sitting on the same lane inside that span would otherwise
+      // be rendered into the bounce alongside them.
+      std::vector<uint64_t> clipScope;
    };
 
    // Read by RebuildAudioTopology's arrangement lane loop and by
@@ -986,6 +992,9 @@ namespace
    // otherwise. A global flag rather than a threaded parameter because both
    // are also called every frame for live playback, far from any render job.
    std::unordered_set<uint64_t> gArrangeRenderActiveLaneScope;
+   // Same contract one level down, for clip-scoped takes. Empty means "every
+   // clip on the lanes that passed gArrangeRenderActiveLaneScope".
+   std::unordered_set<uint64_t> gArrangeRenderActiveClipScope;
 
    // The timeline's own render target. Never a canvas node: an arrangement
    // take composites its lanes onto this node's FBO and nothing else, so it
@@ -27273,6 +27282,10 @@ namespace
                break; // clips are sorted by start; nothing later can cover `beat`
             if (!(beat < Arrange::TicksToBeats(c.End())))
                continue;
+            // See the audio path: a clip-scoped take renders only the clips it
+            // was given, not the lane's other clips inside the same range.
+            if (!gArrangeRenderActiveClipScope.empty() && !gArrangeRenderActiveClipScope.count(c.id))
+               continue;
             // Lanes never overlap, so this is the lane's only candidate
             // whether or not it turns out to be usable.
             if (c.enabled && c.srcUid != 0 && Arrange::LaneEffectivelyEnabled(gArrange, lane))
@@ -28877,16 +28890,33 @@ namespace
       outH = 1080;
    }
 
-   // Every Output node on the canvas, in index order, for the video-source
-   // picker. uid, not index: a job outlives an undo that renumbers indices.
-   void ArrangeRenderCollectOutputNodes(std::vector<std::pair<uint64_t, std::string>>& out)
+   // How many enabled, resolvable video clips a range actually covers. Decides
+   // whether a timeline take writes a movie or a WAV, and is the whole of the
+   // render dialog's source logic now that the Audio/Video source dropdowns
+   // are gone. A free function, not a lambda in the popup, so the self-test
+   // below exercises the code that ships rather than a copy of it.
+   int ArrangeRenderVideoClipsInRange(Arrange::Tick a, Arrange::Tick b)
    {
-      out.clear();
-      for (GraphNode& gn : gNodes)
+      int n = 0;
+      for (const Arrange::Lane& l : gArrange.lanes)
       {
-         if (dynamic_cast<OutputNode*>(gn.node.get()) != nullptr)
-            out.emplace_back(gn.uid, NodeTitle(gn));
+         if (l.type != Arrange::kLaneVideo)
+            continue;
+         for (const Arrange::Clip& c : l.clips)
+            if (c.enabled && c.srcUid != 0 && c.End() > a && c.start < b && FindNodeByUid(c.srcUid) != nullptr)
+               n++;
       }
+      return n;
+   }
+
+   // The timeline Render dialog's sources. Audio is always the timeline - the
+   // dialog renders the arrangement, and a canvas take is the Output node's
+   // own record button. Video follows the range: a movie when there is
+   // something to draw, a WAV when there is not.
+   int ArrangeRenderEffectiveAudioSource() { return kArrangeAudioTimeline; }
+   int ArrangeRenderEffectiveVideoSource(Arrange::Tick a, Arrange::Tick b)
+   {
+      return ArrangeRenderVideoClipsInRange(a, b) > 0 ? kArrangeVideoTimeline : kArrangeVideoNone;
    }
 
    // "name.mp4" -> "name (2).mp4", counting up past anything already on disk
@@ -29265,6 +29295,7 @@ namespace
          const Arrange::Clip* cp = Arrange::FindClip(gArrange, cid);
          if (!cp) continue;
          laneSet.insert(gArrange.lanes[loc.lane].id);
+         job.clipScope.push_back(cid);
          if (gArrange.lanes[loc.lane].type == Arrange::kLaneVideo)
             hasVideo = true;
          if (first)
@@ -29279,10 +29310,8 @@ namespace
             job.endTick = std::max(job.endTick, (int64_t)cp->End());
          }
       }
-      if (first)
-      {
-         job.endTick = Arrange::kPPQ * 4;
-      }
+      // Nothing resolvable: leave the range empty so the job fails visibly in
+      // the render queue rather than quietly writing a file of silence.
       job.laneScope.assign(laneSet.begin(), laneSet.end());
       job.width = gArrange.settings.renderWidth;
       job.height = gArrange.settings.renderHeight;
@@ -29754,30 +29783,17 @@ namespace
             static std::string sArrangeRenderFileName = "infinite_timeline";
             static int sArrangeRenderMarkerA = 0;
             static int sArrangeRenderMarkerB = 1;
-            static uint64_t sArrangeRenderCanvasUid = 0;
             static ArrangeRenderJob sArrangePendingJob;
             static bool sArrangePendingStartNow = false;
             static bool sArrangeOpenOverwrite = false;
 
             const Arrange::Tick renderableEnd = ArrangeRenderableEndTick();
 
-            std::vector<std::pair<uint64_t, std::string>> renderOutputNodes;
-            ArrangeRenderCollectOutputNodes(renderOutputNodes);
-
             // Is there anything for a timeline *video* source to draw in a
             // given range? Decides the video source's default and whether
             // "Timeline clips" is offered at all.
-            auto rangeHasVideoClips = [&](Arrange::Tick a, Arrange::Tick b) -> int {
-               int n = 0;
-               for (const Arrange::Lane& l : gArrange.lanes)
-               {
-                  if (l.type != Arrange::kLaneVideo)
-                     continue;
-                  for (const Arrange::Clip& c : l.clips)
-                     if (c.enabled && c.srcUid != 0 && c.End() > a && c.start < b && FindNodeByUid(c.srcUid) != nullptr)
-                        n++;
-               }
-               return n;
+            auto rangeHasVideoClips = [](Arrange::Tick a, Arrange::Tick b) -> int {
+               return ArrangeRenderVideoClipsInRange(a, b);
             };
 
             // The range the current settings describe, in ticks.
@@ -29792,13 +29808,11 @@ namespace
             // -1 means "decide at draw time", which is what makes the default
             // track the monitoring mode instead of freezing whatever it was
             // when the patch was saved ("render what you hear", WP7 #6b).
-            auto effectiveAudioSource = [&]() -> int {
-               return kArrangeAudioTimeline;
+            auto effectiveAudioSource = []() -> int {
+               return ArrangeRenderEffectiveAudioSource();
             };
             auto effectiveVideoSource = [&]() -> int {
-               if (rangeHasVideoClips(rangeA, rangeB) > 0)
-                  return kArrangeVideoTimeline;
-               return kArrangeVideoNone;
+               return ArrangeRenderEffectiveVideoSource(rangeA, rangeB);
             };
 
             auto renderExtension = [&]() -> const char* {
@@ -30009,7 +30023,11 @@ namespace
                   job.endTick = rangeB;
                   job.audioSource = effectiveAudioSource();
                   job.videoSource = effectiveVideoSource();
-                  job.canvasVideoUid = sArrangeRenderCanvasUid;
+                  // Always 0: this modal renders the timeline. The canvas
+                  // Output-node take is the Output node's own record button,
+                  // not a source choice hidden inside the timeline's render
+                  // dialog - which is what the removed dropdowns were.
+                  job.canvasVideoUid = 0;
                   job.width = rset.renderWidth;
                   job.height = rset.renderHeight;
                   job.fps = rset.renderFps;
@@ -30057,10 +30075,10 @@ namespace
                   }
                };
 
-               const bool canRender = !(effectiveAudioSource() == kArrangeAudioNone &&
-                                        effectiveVideoSource() == kArrangeVideoNone) &&
-                                      !sArrangeRenderFileName.empty() &&
-                                      !(effectiveVideoSource() == kArrangeVideoCanvas && renderOutputNodes.empty());
+               // effectiveAudioSource() is always Timeline here, so there is
+               // always an audio stream to write; only the filename can be
+               // missing.
+               const bool canRender = !sArrangeRenderFileName.empty();
                ImGui::BeginDisabled(!canRender || ArrangeRenderBusy());
                if (ImGui::Button("Render Now", ImVec2(110, 0)))
                {
@@ -36719,6 +36737,11 @@ namespace
                // terminal creation below.
                if (c.srcUid == 0 || !c.enabled || c.length <= 0)
                   continue;
+               // A clip-scoped take ("Bounce / Render Clip") renders only the
+               // clips that were asked for, not every clip its time range
+               // happens to cross on the same lane.
+               if (!gArrangeRenderActiveClipScope.empty() && !gArrangeRenderActiveClipScope.count(c.id))
+                  continue;
                char keyBuf[80];
                snprintf(keyBuf, sizeof(keyBuf), "%llu/%llu/%d",
                         (unsigned long long)lane.id, (unsigned long long)c.srcUid, c.srcOutput);
@@ -37348,9 +37371,17 @@ namespace
          const bool isVideo = l.type == Arrange::kLaneVideo;
          if (isVideo ? !wantVideo : !wantAudio)
             continue;
+         // Honour the same scopes the schedulers do, or a scoped take gets
+         // refused over a camera it was never going to cook: a "Render Track"
+         // over a lane it isn't rendering, a "Bounce Clip" over a neighbouring
+         // clip that merely shares the lane and the range.
+         if (!gArrangeRenderActiveLaneScope.empty() && !gArrangeRenderActiveLaneScope.count(l.id))
+            continue;
          for (const Arrange::Clip& c : l.clips)
          {
             if (!c.enabled || c.srcUid == 0)
+               continue;
+            if (!gArrangeRenderActiveClipScope.empty() && !gArrangeRenderActiveClipScope.count(c.id))
                continue;
             if (c.End() <= startTick || c.start >= endTick) // half-open, same as the scheduler
                continue;
@@ -38487,6 +38518,7 @@ namespace
       gArrangeWavRender.timelineAudio = false;
       gArrangeWavRender.cancelRequested = false;
       gArrangeRenderActiveLaneScope.clear();
+      gArrangeRenderActiveClipScope.clear();
       RebuildAudioTopology();
    }
 
@@ -38508,6 +38540,7 @@ namespace
          if (!StartAudioEngine(gAudioStartError))
          {
             gArrangeRenderActiveLaneScope.clear();
+            gArrangeRenderActiveClipScope.clear();
             ArrangeRenderFailJob(job, "no audio device (" + gAudioStartError + ")");
             return false;
          }
@@ -38522,6 +38555,7 @@ namespace
       if (!(rate > 0.0))
       {
          gArrangeRenderActiveLaneScope.clear();
+         gArrangeRenderActiveClipScope.clear();
          ArrangeRenderFailJob(job, "no audio device");
          return false;
       }
@@ -38532,6 +38566,7 @@ namespace
          if (deviceWasRunningBefore)
             StartAudioEngine(gAudioStartError);
          gArrangeRenderActiveLaneScope.clear();
+         gArrangeRenderActiveClipScope.clear();
          ArrangeRenderFailJob(job, "could not create " + job.path);
          return false;
       }
@@ -38663,7 +38698,9 @@ namespace
       // Empty scope (the common case: whole-project Render) leaves both
       // RebuildAudioTopology and CollectArrangeVideoLayers unfiltered.
       gArrangeRenderActiveLaneScope.clear();
+      gArrangeRenderActiveClipScope.clear();
       gArrangeRenderActiveLaneScope.insert(job.laneScope.begin(), job.laneScope.end());
+      gArrangeRenderActiveClipScope.insert(job.clipScope.begin(), job.clipScope.end());
 
       if (job.videoSource == kArrangeVideoNone)
          return ArrangeWavRenderBegin(job, startSec, endSec);
@@ -38714,6 +38751,7 @@ namespace
          gOfflineRender.timelineVideo = false;
          gOfflineRender.timelineAudio = false;
          gArrangeRenderActiveLaneScope.clear();
+         gArrangeRenderActiveClipScope.clear();
          ArrangeRenderFailJob(job, rn->RecordStatus().empty() ? "could not start the take" : rn->RecordStatus());
          return false;
       }
@@ -61956,6 +61994,7 @@ int main(int argc, char** argv)
             gOfflineRender.timelineAudio = false;
             gOfflineRender.node = nullptr;
             gArrangeRenderActiveLaneScope.clear();
+            gArrangeRenderActiveClipScope.clear();
             RebuildAudioTopology();
          }
       }
@@ -67720,26 +67759,93 @@ int main(int argc, char** argv)
             printf("arrange render source matrix: %s\n", dOk ? "OK" : "FAIL");
             allOk = allOk && dOk;
 
-            // --- E. The default audio source follows the Timeline toggle ---
-            // -1 in the settings means "decide when the popup draws" (#6b), so
-            // the same patch renders what the user is currently hearing.
-            gArrange.settings.renderAudioSource = -1;
-            auto defaultAudioSource = []() {
-               return gArrange.settings.renderAudioSource >= 0
-                         ? std::clamp(gArrange.settings.renderAudioSource, 0, 2)
-                         : (gAudioMode == AudioMode::Timeline ? kArrangeAudioTimeline : kArrangeAudioCanvas);
-            };
-            const int defCanvas = defaultAudioSource();
-            gAudioMode = AudioMode::Timeline;
-            const int defTimeline = defaultAudioSource();
-            gArrange.settings.renderAudioSource = kArrangeAudioCanvas; // an explicit choice sticks
-            const int defPinned = defaultAudioSource();
+            // --- E. The render dialog's sources --------------------------
+            // The Audio/Video source dropdowns are gone: a timeline take is
+            // always timeline audio, and it is a movie exactly when the range
+            // covers video clips, otherwise a WAV. Calls the shipping helpers
+            // rather than a local copy of their logic - the previous version
+            // of this test asserted on a private lambda, so it kept passing
+            // after the behaviour it described had been deleted.
+            bool eOk = true;
+            // Audio never follows the monitoring mode any more.
             gAudioMode = AudioMode::Canvas;
-            const bool eOk = defCanvas == kArrangeAudioCanvas && defTimeline == kArrangeAudioTimeline &&
-                             defPinned == kArrangeAudioCanvas;
-            printf("arrange render default audio source: %s\n", eOk ? "OK" : "FAIL");
-            allOk = allOk && eOk;
+            eOk = eOk && ArrangeRenderEffectiveAudioSource() == kArrangeAudioTimeline;
+            gAudioMode = AudioMode::Timeline;
+            eOk = eOk && ArrangeRenderEffectiveAudioSource() == kArrangeAudioTimeline;
+            gAudioMode = AudioMode::Canvas;
+            // And the deprecated pinned setting no longer overrides it.
+            gArrange.settings.renderAudioSource = kArrangeAudioCanvas;
+            eOk = eOk && ArrangeRenderEffectiveAudioSource() == kArrangeAudioTimeline;
             gArrange.settings.renderAudioSource = -1;
+            // Video follows the range. The fixture built above has no video
+            // lane, so every range is audio-only; a range that covers nothing
+            // is audio-only whatever the project holds.
+            gArrange.settings.renderVideoSource = kArrangeVideoCanvas; // also ignored now
+            eOk = eOk && ArrangeRenderEffectiveVideoSource(0, 0) == kArrangeVideoNone;
+            eOk = eOk && ArrangeRenderEffectiveVideoSource(0, Arrange::kPPQ * 64) ==
+                             (ArrangeRenderVideoClipsInRange(0, Arrange::kPPQ * 64) > 0
+                                  ? kArrangeVideoTimeline
+                                  : kArrangeVideoNone);
+            gArrange.settings.renderVideoSource = -1;
+            printf("arrange render effective sources: %s\n", eOk ? "OK" : "FAIL");
+            allOk = allOk && eOk;
+
+            // --- E2. A clip-scoped take renders only its own clips ---------
+            // "Bounce / Render Clip" bounds the range to the selected clips,
+            // but a range is not a scope: another clip on the SAME lane inside
+            // that span would be rendered into the bounce alongside it unless
+            // the schedulers filter by clip id too. Drives the shipping
+            // collector rather than re-deriving the predicate here.
+            {
+               Arrange::Clip extra;
+               extra.start = Arrange::BeatsToTicks(8.0);
+               extra.length = Arrange::BeatsToTicks(4.0);
+               extra.srcUid = rampUid;
+               Arrange::PlaceOverwrite(gArrange, vLane, extra);
+
+               uint64_t firstClipId = 0, extraClipId = 0;
+               if (const Arrange::Lane* vl = Arrange::FindLane(gArrange, vLane))
+               {
+                  for (const Arrange::Clip& c : vl->clips)
+                  {
+                     if (c.start == 0) firstClipId = c.id;
+                     else if (c.start == Arrange::BeatsToTicks(8.0)) extraClipId = c.id;
+                  }
+               }
+               bool e2Ok = firstClipId != 0 && extraClipId != 0;
+
+               // The builder scopes to exactly the clips it was handed, and
+               // bounds the range to their extent.
+               const ArrangeRenderJob scoped =
+                  ArrangeBuildClipScopedRenderJob({ extraClipId }, "bouncecheck");
+               e2Ok = e2Ok && scoped.clipScope.size() == 1 && scoped.clipScope[0] == extraClipId;
+               e2Ok = e2Ok && scoped.laneScope.size() == 1 && scoped.laneScope[0] == vLane;
+               e2Ok = e2Ok && scoped.startTick == Arrange::BeatsToTicks(8.0) &&
+                      scoped.endTick == Arrange::BeatsToTicks(12.0);
+
+               // With that scope live, the video collector must see the scoped
+               // clip and NOT its lane-mate, at beats each one covers.
+               gArrangeRenderActiveLaneScope.clear();
+               gArrangeRenderActiveClipScope.clear();
+               gArrangeRenderActiveLaneScope.insert(scoped.laneScope.begin(), scoped.laneScope.end());
+               gArrangeRenderActiveClipScope.insert(scoped.clipScope.begin(), scoped.clipScope.end());
+
+               std::vector<ArrangeVideoLayer> layers;
+               CollectArrangeVideoLayers(9.0, layers);
+               e2Ok = e2Ok && layers.size() == 1;
+               CollectArrangeVideoLayers(3.0, layers);   // inside the lane-mate only
+               e2Ok = e2Ok && layers.empty();
+
+               // Lane scope alone (what "Render Track" uses) still takes both.
+               gArrangeRenderActiveClipScope.clear();
+               CollectArrangeVideoLayers(3.0, layers);
+               e2Ok = e2Ok && layers.size() == 1;
+
+               gArrangeRenderActiveLaneScope.clear();
+               Arrange::Delete(gArrange, { extraClipId });
+               printf("arrange render clip scope: %s\n", e2Ok ? "OK" : "FAIL");
+               allOk = allOk && e2Ok;
+            }
 
             // --- F. Queue mechanics ----------------------------------------
             const std::string tmpDir = std::filesystem::temp_directory_path().string();

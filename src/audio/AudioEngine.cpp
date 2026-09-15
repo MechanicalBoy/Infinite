@@ -239,7 +239,12 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
                terminal.sourceNode->RequestRetrigger();
             cursor++;
          }
-         terminal.windowCursor = cursor;
+         // Clamped, not stored raw: the walk above exits at `numWindows` once
+         // the playhead passes the last clip, and the render pass below treats
+         // an out-of-range cursor as "start over at 0" - which would then cost
+         // a full forward walk of the lane every block for the rest of the
+         // timeline, exactly the O(1) property this cursor exists to provide.
+         terminal.windowCursor = std::clamp(cursor, 0, terminal.numWindows - 1);
 
          // Per-clip pitch (Audio Clip and Audio Sample alike): pushed to the
          // terminal's own sourceNode every block the playhead is inside a
