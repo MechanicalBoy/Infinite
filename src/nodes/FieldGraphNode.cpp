@@ -77,19 +77,19 @@ const std::vector<FieldGraphNode::Preset>& FieldGraphNode::Presets()
         "place(osc, 80, 0)\n" },
       { "Chladni Sand Synth",
         "pixel = emit(\"Field Pixel\", 0)\n"
-        "sand = emit(\"Field Element\", 1)\n"
-        "synth = emit(\"Field Sample\", 2)\n"
+        "sand = emit(\"Field Modifier\", 1)\n"
+        "synth = emit(\"Field Effect\", 2)\n"
         "place(pixel, -320, -180)\n"
         "place(sand, -320, 180)\n"
         "place(synth, 80, 0)\n" },
       { "Bass Ribbon Mirror Bundle",
-        "audio = emit(\"Field Sample\", 0)\n"
-        "geo = emit(\"Field Element\", 1)\n"
+        "audio = emit(\"Field Effect\", 0)\n"
+        "geo = emit(\"Field Modifier\", 1)\n"
         "place(audio, -280, 0)\n"
         "place(geo, 80, 0)\n" },
       { "Boundary Chime Bundle",
-        "sensor = emit(\"Field Element\", 0)\n"
-        "chime = emit(\"Field Sample\", 1)\n"
+        "sensor = emit(\"Field Modifier\", 0)\n"
+        "chime = emit(\"Field Effect\", 1)\n"
         "place(sensor, -280, 0)\n"
         "place(chime, 80, 0)\n" }
    };
