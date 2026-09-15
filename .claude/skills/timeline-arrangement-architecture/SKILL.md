@@ -1,0 +1,287 @@
+---
+name: timeline-arrangement-architecture
+description: Map of how Infinite's Timeline/Arrangement system actually works today - the single Clip/Lane/TrackGroup data model, how clips are drawn and composited, what settings each selection kind exposes, real vs. informal type distinctions (sample vs clip), grouping/nesting, the playback/playhead call paths for audio and video, retriggering, per-sample stretch/BPM, signal application order, and why the waveform is always live-drawn rather than cached from disk. Use before planning or reviewing any change to src/arrange/ or the Arrange panel in main.cpp, when asked "how does the timeline work", "what does a clip/track/group actually store", "does X exist for the timeline yet", or when deciding where a new timeline feature belongs.
+---
+
+Paths below are relative to the repo root (`/Users/namansoni/infinte`). Everything here was
+verified against code (file:line) as of commit `83fd442` (post "Arrangement overhaul",
+`101c874`). Where something the codebase's own docs/UI implies does **not** actually exist,
+it's called out explicitly — don't assume otherwise.
+
+## The data model (read this first)
+
+Everything below hangs off one file: `src/arrange/ArrangeModel.h` (~390 lines, read it whole
+before touching Arrange code).
+
+```
+Arrange::Model
+ ├─ lanes: vector<Lane>            ("tracks")
+ │   └─ clips: vector<Clip>        (sorted, non-overlapping per lane)
+ ├─ trackGroups: vector<TrackGroup>  (parentGroupId chains -> real recursive nesting)
+ ├─ markers
+ ├─ settings
+ └─ revision                       (bumped on every edit; the dirty/rebuild signal)
+```
+
+- **`Clip`** (`ArrangeModel.h:57-104`) is the **only** clip struct. There is no `AudioClip`,
+  `VideoClip`, `AudioSample`, or `VideoSample` type anywhere in the codebase. Fields are just
+  commented "audio only" / "video only" (`pan`/`pitch`/`syncToTempo`/`retrigger` at 74-94 are
+  audio-only; `blendMode`/`opacity`/`colorBrightness/Contrast/Saturation` at 71,90-93 are
+  video-only). A clip's effective type comes transitively from its owning `Lane::type`.
+- **`Lane`** ("track", `ArrangeModel.h:106-121`): id, `type` (`kLaneVideo`/`kLaneAudio`,
+  line 52), per-type settings (`opacity`/`gainDb`/`pan`/`mute`/`solo`), `groupId`,
+  `colorR/G/B`, `clips`.
+- **`TrackGroup`** (`ArrangeModel.h:131-139`): named/colored container for lanes *and other
+  track groups* via `parentGroupId` (0 = top level). **No collapsed-render suppression** —
+  `collapsed` is a stored UI field but never hides a subtree from drawing (comment,
+  `ArrangeModel.h:129-130`).
+- Storage is **flat vectors** throughout (`Model::lanes`, `Model::trackGroups`) — nesting is
+  expressed only through id links (`parentGroupId`, `Clip::groupId`), not a tree of pointers.
+- Persisted in `Patch::Data` as `streams`/`markers`/`trackGroups`/`arrangeSettings`
+  (`src/core/Patch.h:375-393`). `ArrangeSettingsRecord` (`Patch.h:355-373`) deliberately omits
+  "audio mode" — the app always starts in Canvas mode; that flag must never round-trip.
+
+## 1. Rendering
+
+No dedicated `TimelineView`/`ArrangePanel` class — it's monolithic inside `main.cpp`:
+
+| What | Function | Location |
+|---|---|---|
+| Whole panel (ruler, rows, clips, drag, marquee, keys) | `DrawArrangePanelContent()` | `main.cpp:29247` |
+| Docking wrapper (4 orientation call sites) | `DrawArrangePanelDocked` | `main.cpp:32902` (called from `63452, 63470, 81786, 82111`) |
+| Group header row | `DrawArrangeGroupHeaderRow` lambda | `main.cpp:31030` |
+| Per-clip rect/waveform/thumbnail | inline in the panel loop | `main.cpp:~31600-31800` |
+| Settings/inspector panel | `DrawArrangeClipSettingsChild(panelW)` | `main.cpp:37460-38148` |
+
+**Video compositing is a separate concern from UI chrome** — it happens once per frame after
+the normal cook loop, not inside the panel draw call:
+`CollectArrangeVideoLayers` (`main.cpp:27247`) → `CompositeArrangeTimelineVideo`
+(`main.cpp:27361`) → `ArrangeComposeShader()` (`main.cpp:27292-27350`, hand-written GLSL blend/
+grade shader) → `CompositeArrangeMonitorIfRequested()` (`main.cpp:27522`, called from the main
+loop at `main.cpp:83461`). This is a known "fans out across several places" hotspot — see
+`codebase-navigation`.
+
+**Color/render settings that actually exist:**
+- Clip tint: `Clip::colorR/G/B` + `hasTint` flag, palette swatches in inspector
+  (`main.cpp:37799-37810`, applied at draw time `31700-31706`).
+- Type default palette (not user-editable): video = purple, audio = green
+  (`main.cpp:31701-31706`, exact ARGB values there).
+- Muted/offline: desaturated grey + diagonal hatch (`main.cpp:31707-31727`,
+  `DrawArrangeHatch` at `28467`).
+- Group accent stripe/border: `ArrangeGroupColor(groupId, alpha)` (`main.cpp:28455`).
+- Track-group color: `TrackGroup::color`, set via `RecolorTrackGroup` (`main.cpp:38094-38099`).
+- Waveform color: **hardcoded**, not a setting — `IM_COL32(255,255,255,115)` normal / `...,60`
+  muted (`main.cpp:31741`).
+- Video grade ("Bright"/"Contrast"/"Sat" in inspector) → `Clip::colorBrightness/Contrast/
+  Saturation`, applied in-shader via `uGrade` (`main.cpp:27321-27323`).
+
+**No "bounce color" exists.** The recent `83fd442`/`cae4444` "clip-bounce" commits are about
+render/export **scope** (which clips a Bounce/Render job includes —
+`gArrangeRenderActiveClipScope`, `main.cpp:36478, 27266, 38217`), not a color property.
+
+## 2. Categorization — "sample" vs "clip" is informal, not a type
+
+There is **one** clip struct for both audio and video. The one real enum,
+`Arrange::LaneType { kLaneVideo, kLaneAudio }` (`ArrangeModel.h:52`), lives on the lane, not
+the clip.
+
+Drag-drop media import classifies by `Arrange::ImportMediaKind { Audio, Video, Image }`
+(`src/arrange/ArrangeMediaImport.h:22`), used only to pick which **node type** to spawn:
+
+| Drop kind | Spawned node | Class |
+|---|---|---|
+| Audio | `"Audio File"` | `AudioFileNode` (`src/nodes/AnalyzeNodes.h:193`) |
+| Video | `"Video"` | `VideoSourceNode` (`src/nodes/VideoSourceNode.h:20`) |
+| Image | `"Image Source"` | — |
+
+`SamplerNode` (`src/nodes/SamplerNode.h:51`) exists and is used elsewhere in the graph, but
+**drag-drop import never spawns it** — confirmed, every `ArrangeImportMediaFile` path only
+calls `SpawnNode("Audio File", ...)` (`main.cpp:28984-28987`). The inspector's pitch control
+does special-case both (`dynamic_cast<AudioFileNode*>` / `<SamplerNode*>`,
+`main.cpp:37786-37789`), so a clip's `srcUid` can point at either.
+
+**Conclusion:** "audio clip" and "audio sample" are the same object (an `Arrange::Clip` on an
+audio lane). Same for video. Build any future UI/feature language around **lane type + clip**,
+not a nonexistent sample/clip split — unless you're deliberately introducing that split, in
+which case this is the place it needs to land.
+
+## 3. Per-selection-kind settings
+
+All defined in one function, branching on selection kind:
+`DrawArrangeClipSettingsChild` (`main.cpp:37460-38148`).
+
+| Selection | Fields | Where |
+|---|---|---|
+| Single clip (both) | Name, Active/Bypassed, Start, Length, Fade In/Out, Trigger mode (Timeline / Retrigger), Color Tint, Source Node assign/clear | `37556-37840` |
+| + video only | Blend mode, Opacity, Bright, Contrast, Sat | `37669-37746` |
+| + audio only | Gain (dB), Pan, Pitch (semitones, live into node) | `37747-37795` |
+| Multi-clip | Bulk rename, bulk Active/Bypassed, bulk tint, conditional Ungroup, Delete Selected | `37841-37935` |
+| Track (lane) | Name, Active/Bypassed, audio: Solo/Mute/Gain/Pan, video: Opacity, Track Tint, Duplicate/Delete | `37936-38065` |
+| Track Group | Name, Active/Bypassed, Group Color, Add Video/Audio Track, Ungroup (Keep Tracks), Delete Group+Tracks | `38066-38131` |
+| Nothing selected | placeholder text | `38137-38145` |
+
+A nested track group's own record is an identical `TrackGroup` — parent nesting adds no extra
+fields.
+
+## 4. Grouping / nesting — two independent mechanisms
+
+```
+Clip group (flat)              Track group (recursive)
+  Clip.groupId ─┐                TrackGroup.parentGroupId
+                ├─ dissolves        │
+                │  at ≤1 member     ├── TrackGroup (child)
+  Clip.groupId ─┘                   │     └── Lane
+                                    └── Lane
+```
+
+- **Clip group**: flat, a clip belongs to ≤1 group, auto-dissolves at ≤1 remaining member
+  (`ArrangeModel.h:258-260`). Ops: `Group`/`Ungroup`/`RemoveFromGroup`/`ClipsInGroup`/
+  `TrimGroupEdge`/`ScaleGroup` (`ArrangeModel.h:261-272`).
+- **Track group**: real recursive nesting, never auto-dissolves (only pruned when a whole
+  subtree is empty, `ArrangeModel.h:127-129`). Traversal: `TrackGroupChildren(parentGroupId)`
+  returns one level of interleaved lanes+child-groups (`ArrangeModel.h:349-358`); callers
+  recurse manually — there's no single "give me the whole tree" call. `GroupAncestors`/
+  `GroupDepth`/`LanesInTrackGroupRecursive` (`326-335`) support ancestor queries.
+  `LaneEffectivelyEnabled` (`343-348`) is the **one place the whole ancestor chain is read
+  together** — a disabled ancestor group must silence a lane even if the lane itself looks
+  enabled. Any new "is this lane active" check must go through this, not re-derive it.
+
+## 5. Playback / playhead engine
+
+**Video**: per frame, `CollectArrangeVideoLayers(beat, out)` (`main.cpp:27247`) walks video
+lanes back-to-front, finds the one clip per lane covering `beat` (from `Transport::Beats()`),
+resolves `GraphNode* gn = FindNodeByUid(c.srcUid)`, then `CompositeArrangeTimelineVideo`
+(`27361`) pulls either:
+- an `IGeometrySource` → rendered into a pooled `NodeViewport` (`gArrangeGeomViewports`,
+  `main.cpp:26925-26949`), or
+- an ordinary image node → `gn->node->GetOutputTexture(...)`, whatever the node's own
+  `CookIfNeeded` already produced this frame in the normal cook loop.
+
+**Key fact:** the Arrange clip never drives the video source's position — `VideoSourceNode`
+reads **global `Transport` time** directly (see `VideoSourceNode.h:12-14`). The clip only
+decides *whether* that node's current frame is shown at this beat, not *which* frame the node
+decodes.
+
+**Audio**: `RebuildAudioTopology()` (`main.cpp:36409+`) turns every enabled audio-clip into a
+`ClipWindow` (start/end beat, gain, fades, pan, retrigger flag — `src/audio/AudioEngine.h:69`)
+grouped by `AudioTerminal` (one per lane+srcUid+srcOutput). Per block,
+`AudioEngine::RunTopology` (`AudioEngine.cpp:171-559`) does:
+
+```
+1. Retrigger pass   (206-236)  — seek source node if a window onset is in this block
+2. Node cook loop   (257-304)  — source node free-runs, writes its own output buffer
+3. Terminal summation (325-558) — gain × fade × declick envelope, then pan, then sum
+```
+
+The source node has **no idea** it's being played by a timeline clip unless retriggered —
+gating/mixing all happens downstream, in step 3.
+
+## 6. Retriggering
+
+Real, and **not restricted to a "Sample" type** in the data model — `Clip::retrigger`
+(`ArrangeModel.h:94`) is a plain per-clip bool on any audio-lane clip. It only does something
+useful when the source node can be seeked (`AudioFileNode`/`SamplerNode` respond to
+`RequestRetrigger()`); for a generative/live source it's a harmless no-op.
+
+- **Conflict guard**: two lanes sharing one source node can't retrigger independently (one
+  playback position, two consumers). `RebuildAudioTopology` detects
+  `lanesPerSrc[srcUid].size() > 1` and force-disables `retrigger` on those windows, surfacing
+  the affected clips via `gArrangeRetriggerConflictClipIds` (`main.cpp:36508-36532`) as an
+  inline inspector warning (`37656-37664`). **Video has no equivalent conflict guard** — see
+  Known gaps below.
+- **Engine mechanics**: `AudioEngine.cpp:193-236`, retrigger fires only when a window's
+  `startBeat` falls **inside the current block** — see Known gaps for what this means on a
+  hard seek.
+
+## 7. Per-sample stretch / BPM
+
+| Question | Answer |
+|---|---|
+| Can a video be time-stretched? | Only a flat-rate speed multiplier, `VideoSourceNode::speed` (`VideoSourceNode.h:68`, default 1.0, serialized via `VisitParams`). **Per-node only** — the Arrange clip inspector doesn't expose it; must select the node on the canvas. No pitch-preserving/optical-flow stretch exists. |
+| Can an audio sample sync its internal BPM to project tempo? | **No.** `Clip::syncToTempo` (`ArrangeModel.h:74-86`) is a one-time length calculation at drop time only — never revisited on a later tempo change, never resamples/stretches. No `sourceBpm`/`fileBpm`/`detectBpm`/time-stretch field exists anywhere in `src/`. |
+| What audio pitch control *does* exist? | `Clip::pitch` (±24 semitones) pushed live into `AudioFileNode::pitch`/`SamplerNode::pitch`. This is **varispeed** (rate changes with pitch, turntable-style), not independent pitch-shift — applied in `AudioFilePlayerAudioNode`'s per-sample read: `pitchRatio = 2^(pitch/12); mPos += mPlaybackRate * pitchRatio` (`src/nodes/AnalyzeNodes.cpp:944-956`). |
+
+## 8. Settings application order
+
+**Audio** (`AudioEngine::RunTopology`, `AudioEngine.cpp:171-559`):
+
+```
+node's own source DSP (incl. varispeed pitch, baked in during cook)
+  -> clip gain x fade x declick envelope        (w.gain, 436-450)
+  -> clip pan combined with lane pan             (equal-power, built at topology time, main.cpp:36499-36504)
+  -> lane/terminal flat gain                     (346, 508-509)
+  -> summed into device buffer
+```
+
+**Video** (`CompositeArrangeTimelineVideo` / `ArrangeComposeShader`,
+`main.cpp:27361-27424, 27297-27350`):
+
+```
+node's own render (any internal grading it does itself)
+  -> clip color grade: brightness -> contrast -> saturation  (uGrade, 27321-27323)
+  -> blend against accumulated base via Clip::blendMode, opacity = lane.opacity * clip.opacity
+     (lane-by-lane, back to front)
+```
+
+## 9. Waveform display — always live, never cached from disk
+
+There is **no static/precomputed peak-file path at all**, even for a fully-decoded on-disk
+sample. `ArrangeClipWave` (`main.cpp:26962-26992`) is filled exclusively by the audio thread
+as the clip actually plays:
+
+```
+AudioEngine::RunTopology writes peaks per block (AudioEngine.cpp:454-479)
+  -> lock-free ring, AudioEngine::ClipPeaks()
+  -> drained once per frame by ArrangeSyncClipVisuals() (main.cpp:27128-27222)
+  -> gArrangeClipWaves (main.cpp:26986)
+```
+
+Explicit design intent, from the header comment (`main.cpp:26958-26961`): "Never saved and
+never pre-decoded: a clip's source is a live node, not a file, so there is nothing to read
+ahead of the playhead. A clip that has not been played yet draws a flat centre line." This is
+true regardless of whether the underlying `AudioFileNode` already has the whole file decoded
+in memory — **the timeline never reads that buffer directly for drawing.** A freshly-dropped,
+never-played clip shows a flat line until the transport has passed over it once.
+
+**Scrubbing** is real but ruler-only (not click-on-clip): `ArrangeScrubBegin/Update/End/Cancel`
+(`main.cpp:6020-6041`) move a ghost playhead during drag, then call `ArrangeSeekTick` →
+`Transport::Instance().SeekBeats(...)` (`6013-6016`) once, on release. This only **relocates**
+the playhead — it does not itself start playback; if already playing, `RunTopology` continues
+naturally from the new beat next block. Applies uniformly to audio and video, since both read
+from the same `Transport` beat.
+
+If you're asked to add pre-decoded/static waveform rendering, this is the boundary to change:
+either populate `gArrangeClipWaves` from the source node's already-decoded buffer up front
+(for `AudioFileNode`/`SamplerNode` specifically — they're the only two with a full buffer
+available ahead of the playhead), or add a second, source-agnostic "has cached peaks" path
+that live-fills only fall back to when no cache exists.
+
+## Known gaps (not bugs, but real holes worth flagging before building on top)
+
+1. **Retrigger-on-hard-seek is unverified.** The retrigger pass only fires when a window's own
+   `startBeat` is inside the *current* block (`AudioEngine.cpp:223-227`). A hard seek (Home/
+   End/marker jump/ruler scrub) landing *inside* a `retrigger=true` clip, not at its start, may
+   not retrigger it — the source node could keep stale position until the next natural window
+   boundary. Confirm at runtime before relying on "retrigger always fires correctly after a
+   seek."
+2. **Video has no cross-lane conflict guard.** `VideoSourceNode` reads the global `Transport`
+   position, not a clip-relative one. Two clips on different lanes (or the same clip moved
+   without moving its node) pointing at the same video node would show the same absolute-time
+   frame — audio has `gArrangeRetriggerConflictClipIds` to warn about this class of problem;
+   video has no equivalent.
+3. **Video decode internals not traced here** (`VideoSourceNode::CookIfNeeded`,
+   `Platform::VideoFrameAt` on macOS/Windows) — only the Arrange-clip → node's-cooked-texture
+   boundary is confirmed. Read `src/nodes/VideoSourceNode.cpp` +
+   `src/platform/Platform.mm` / `src/platform/win/MediaWin.cpp` before touching decode timing.
+
+## Where to look when...
+
+| Task | Start here |
+|---|---|
+| Add a clip/lane/group field | `src/arrange/ArrangeModel.h` struct + `Patch.h` persistence record + `DrawArrangeClipSettingsChild` inspector UI |
+| Change how a clip is drawn | `DrawArrangePanelContent`, `main.cpp:~31600-31800` |
+| Change video compositing/blend | `ArrangeComposeShader`, `main.cpp:27292-27350` |
+| Change audio clip envelope/pan/gain | `AudioEngine::RunTopology` terminal pass, `AudioEngine.cpp:325-558` |
+| Add per-clip video speed control to the UI | expose `VideoSourceNode::speed` in `DrawArrangeClipSettingsChild`'s video branch, `main.cpp:37669-37746` |
+| Add real BPM-sync/time-stretch | new territory — no existing hook to extend; decide resample-on-tempo-change vs. one-shot like `syncToTempo` |
+| Add static/cached waveform peaks | `ArrangeClipWave`/`gArrangeClipWaves` fill path, `main.cpp:26951-27222` |
