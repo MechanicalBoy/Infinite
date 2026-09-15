@@ -84470,9 +84470,14 @@ int main(int argc, char** argv)
       // and it runs after glfwPollEvents() with the run loop otherwise
       // unserviced - see local-prompts/02-plugin-editor-lag.md. Pump it here
       // so a hosted plugin's editor window (the app's only real NSWindow)
-      // doesn't sit starved for the length of a heavy cook.
-      if (Platform::AnyPluginEditorOpen())
-         Platform::PumpPluginEditorEvents();
+      // doesn't sit starved for the length of a heavy cook. Called
+      // unconditionally, not gated on AnyPluginEditorOpen(): on Linux (task
+      // 4.3) a plugin can register IRunLoop timers through the
+      // factory-context host object with no editor open at all, and those
+      // still need servicing every frame. Cheap when idle on every
+      // platform - macOS's CFRunLoopRunInMode(..., 0.0, ...) and Windows'
+      // PeekMessageW(nullptr, ...) are both no-ops with nothing queued.
+      Platform::PumpPluginEditorEvents();
 
       // Top-level idle gate: NodeWorkCounter() only advances when some node
       // actually redid real work this frame (FilterNode's RunShaderPass,
@@ -84672,8 +84677,9 @@ int main(int argc, char** argv)
 
       // glfwSwapBuffers blocks on vsync - dead time for AppKit to service a
       // hosted plugin's editor window. See local-prompts/02-plugin-editor-lag.md.
-      if (Platform::AnyPluginEditorOpen())
-         Platform::PumpPluginEditorEvents();
+      // Unconditional for the same reason as the call above (Linux
+      // factory-context IRunLoop timers with no editor open).
+      Platform::PumpPluginEditorEvents();
 
       // Projector output: blit this frame's cooked result of each open
       // window's node into that window. Runs after the editor's own swap so

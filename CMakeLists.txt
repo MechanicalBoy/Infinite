@@ -962,18 +962,16 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         # Linux VST3 hosting: src/platform/linux/PluginVST3Linux.cpp mirrors
         # PluginVST3Win.cpp's structure (out-of-process scanning + crash-safety
         # sentinel/blocklist under AppPaths::AppSupportDir(), dlopen instead of
-        # LoadLibraryExW). Editors (X11/IRunLoop) are P4.3 and not built here -
-        # PluginVST3OpenEditor is a documented stub in PluginVST3Linux.cpp.
+        # LoadLibraryExW). Editors (X11/IRunLoop, task 4.3) open a top-level
+        # X11 window and attach the plugin's IPlugView to it, backed by one
+        # process-wide Steinberg::Linux::IRunLoop - see the file header
+        # comment in PluginVST3Linux.cpp for the full picture.
         #
-        # X11 is deliberately NOT linked in this pass (judgment call, per
-        # phase-04-vst3.md task 4.1): nothing in P4.1/4.2 touches Xlib -
-        # there is no editor window, no IPlugView/IPlugFrame hosting, and no
-        # IRunLoop. Linking libX11 now with zero callers would be dead
-        # weight carried until 4.3 actually opens a display connection.
-        # `libx11-dev` is already in tools/linux/deps-apt.sh, so 4.3 only
-        # needs to add `target_link_libraries(Infinite PRIVATE X11)` here
-        # alongside its editor source files - no new system dependency to
-        # introduce at that point.
+        # X11 is linked into the Infinite target only, not
+        # infinite-vst3-scanner below: scanning is out-of-process and
+        # headless (phase-04-vst3.md task 4.5's judgment call) and never
+        # opens a display connection, so linking X11 there would be dead
+        # weight. `libx11-dev` is already in tools/linux/deps-apt.sh.
         target_compile_definitions(Infinite PRIVATE INFINITE_ENABLE_VST3=1)
         target_include_directories(Infinite PRIVATE
             ${VST3_SDK_DIR}
@@ -986,6 +984,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             ${VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp
             ${VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp
         )
+        target_link_libraries(Infinite PRIVATE X11)
 
         # Out-of-process scanner helper, mirroring infinite-vst3-scanner.exe on
         # Windows: a disposable process that probes one bundle (or a batch) at

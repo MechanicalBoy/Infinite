@@ -9,17 +9,24 @@
 // CreateProcessW/pipes and dlopen/dlsym/dlclose standing in for
 // LoadLibraryExW/GetProcAddress/FreeLibrary.
 //
-// Deliberately NOT ported in this phase (task 4.3, X11 editors):
-//   - PluginVST3OpenEditor is a documented stub returning false. No
-//     IPlugView/IPlugFrame/IRunLoop hosting, no editor window, no
-//     content-scale plumbing. PluginVST3State therefore carries no editor
-//     fields at all - there is nothing for 4.3 to conflict with; it adds
-//     fields and functions, it does not need to remove any of this phase's
-//     work.
-//   - The crash guard (RunPluginCallGuarded, POSIX sigsetjmp/siglongjmp,
-//     ported unchanged from PluginVST3.mm) is wired up for state
-//     save/restore only, exactly as on Windows and macOS - editor calls will
-//     route through it too once 4.3 lands.
+// Task 4.3 (X11 editors) is implemented below, near the end of this file:
+// PluginVST3OpenEditor creates a top-level X11 window and attaches the
+// plugin's IPlugView to it via kPlatformTypeX11EmbedWindowID, backed by one
+// process-wide Steinberg::Linux::IRunLoop exposed through both paths the
+// VST3 Linux spec requires (HostPlugFrame::queryInterface for editors, and
+// HostApplication::queryInterface - the host-context object passed to
+// IPluginFactory3::setHostContext - for factory-context timers with no
+// editor open at all). The GLFW/X11-touching parts of this (the editor
+// window plumbing, HostRunLoop, HostPlugFrame) are guarded by
+// `#if !defined(INFINITE_VST3_SCANNER)`: this file is also compiled into
+// infinite-vst3-scanner (CMakeLists.txt), which is deliberately not linked
+// against GLFW or X11 (scanning is out-of-process and headless - see
+// phase-04-vst3.md task 4.5's judgment call) and never calls any of the
+// editor entry points, so it gets the original stub bodies instead. The
+// crash guard (RunPluginCallGuarded, POSIX sigsetjmp/siglongjmp, ported
+// unchanged from PluginVST3.mm) now also wraps every editor-facing plugin
+// call (createView/getSize/attached/onSize/removed/setContentScaleFactor/
+// setFrame), not just state save/restore.
 
 #include "PluginVST3.h"
 
@@ -1197,6 +1204,17 @@ namespace
    // Host Application Context - identical to PluginVST3.mm/PluginVST3Win.cpp.
    // ------------------------------------------------------------------------
 
+#if !defined(INFINITE_VST3_SCANNER)
+   // Forward declaration only - the concrete HostRunLoop class is defined
+   // further down in this same anonymous namespace (guarded by
+   // INFINITE_VST3_SCANNER, same as this forward declaration), alongside the
+   // rest of the X11 editor plumbing. Declared here as the interface type
+   // (not the concrete HostRunLoop type, which is still incomplete at this
+   // point) so HostApplication::queryInterface below can call it without
+   // needing HostRunLoop's full definition.
+   Steinberg::Linux::IRunLoop* SharedRunLoop();
+#endif
+
    class HostApplication : public Steinberg::Vst::IHostApplication
    {
    public:
@@ -1209,6 +1227,16 @@ namespace
             *obj = this;
             return Steinberg::kResultOk;
          }
+#if !defined(INFINITE_VST3_SCANNER)
+         // Path (b) of the Linux run-loop spec (task 4.3): the host-context
+         // object passed to IPluginFactory3::setHostContext (see
+         // PluginVST3Create below) must also answer IRunLoop, so a plugin
+         // can register fd handlers/timers with no editor open at all -
+         // JUCE and DPF both rely on this. Not available in the out-of-
+         // process scanner build (headless, no GLFW/X11 linked).
+         if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Linux::IRunLoop::iid))
+            return SharedRunLoop()->queryInterface(iid, obj);
+#endif
          *obj = nullptr;
          return Steinberg::kNoInterface;
       }
@@ -1870,6 +1898,300 @@ namespace
 
 namespace Platform
 {
+   namespace
+   {
+      // Defined far below (near the state save/restore section), forward
+      // declared here so HostRunLoop::Pump can route every onFDIsSet/onTimer
+      // dispatch through the same crash guard used for state calls and
+      // (later) editor calls - "every plugin-editor-facing call must go
+      // through RunPluginCallGuarded", no second crash-guard mechanism.
+      // Reachable as the qualified name Platform::RunPluginCallGuarded from
+      // the anonymous namespace below regardless of this forward
+      // declaration's own anonymous-namespace nesting.
+      bool RunPluginCallGuarded(const char* what, PluginHandle* h, const std::function<void()>& fn);
+   }
+}
+
+// GLFW/X11-native headers pull in Xlib's macro-heavy legacy API
+// (#define None/Success/Bool/True/False/Status/... as bare preprocessor
+// tokens) - included this late in the file, after everything above that
+// could collide with those names (ProbeOutcome::Success, in the scanning
+// section near the top, is the one that actually would), rather than up
+// with the rest of the includes. See the file header comment for why this
+// whole region is guarded by INFINITE_VST3_SCANNER.
+#if !defined(INFINITE_VST3_SCANNER)
+#define GLFW_EXPOSE_NATIVE_X11
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+#include <X11/Xutil.h>
+#include <poll.h>
+
+namespace
+{
+   // ------------------------------------------------------------------------
+   // Editor windows (task 4.3) - X11 embedding of a plugin's IPlugView, plus
+   // the one process-wide Steinberg::Linux::IRunLoop the VST3 Linux spec
+   // requires (docs/plans/linux/phase-04-vst3.md 4.3; see also
+   // https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Provide+A+Runloop+On+Linux/Index.html).
+   // Exposed through both paths the spec calls for: HostPlugFrame's
+   // queryInterface (for editors, via IPlugView::setFrame) below, and
+   // HostApplication's queryInterface (the host-context object passed to
+   // IPluginFactory3::setHostContext at instantiation - see PluginVST3Create
+   // above) so a plugin can register fd handlers/timers with no editor open
+   // at all, which JUCE and DPF both do. All registration and dispatch
+   // happens on the main thread only, from PluginVST3PumpEditorEvents further
+   // down - never a background poll() thread.
+   // ------------------------------------------------------------------------
+
+   // Process-wide X11 display, opened once, ALWAYS on our own dedicated
+   // connection (XOpenDisplay(nullptr), which uses $DISPLAY - reaching
+   // XWayland transparently when GLFW itself is on native Wayland).
+   //
+   // Deliberately NOT glfwGetX11Display() even when GLFW is on X11: that
+   // would share GLFW's own connection, and GLFW's frame-loop pump
+   // (_glfwPollEventsX11 in x11_window.c) does `while (XPending) {
+   // XNextEvent(...); processEvent(...); }` every frame, unconditionally
+   // draining the ENTIRE connection's event queue - including events for
+   // windows it doesn't own. Its per-event window lookup (XFindContext)
+   // fails for our editor window (GLFW never registered it), and on that
+   // failure processEvent() just returns, silently discarding the event.
+   // Since glfwPollEvents() runs once at the top of the frame loop, before
+   // PluginVST3PumpEditorEvents() runs later in the same iteration, sharing
+   // the connection would mean GLFW eats every one of our editor window's
+   // events (WM_DELETE_WINDOW, ConfigureNotify) before we ever see them -
+   // verified by reading the vendored GLFW source, not assumed. A second,
+   // independent connection sidesteps this entirely: X11 windows are
+   // server-side objects with connection-agnostic ids, so creating ours on
+   // one connection and having the plugin's IPlugView::attached() embed
+   // into it via that same numeric xid works regardless of which
+   // connection selected input on it.
+   Display* SharedX11Display(std::string* outError)
+   {
+      static Display* sDisplay = XOpenDisplay(nullptr);
+      if (sDisplay == nullptr && outError != nullptr)
+         *outError = "plugin editors need X11/XWayland";
+      return sDisplay;
+   }
+
+   Atom WmDeleteWindowAtom(Display* display)
+   {
+      static Atom atom = XInternAtom(display, "WM_DELETE_WINDOW", False);
+      return atom;
+   }
+
+   // ---- IRunLoop ------------------------------------------------------
+   // Single process-wide instance, shared by every hosted plugin - the spec
+   // is explicit that this must be one run loop, not one per plugin/editor.
+   // registerEventHandler/registerTimer can be called from a plugin's own
+   // callback (re-arming a timer from onTimer is common), so Pump() below
+   // snapshots before dispatching rather than iterating the live maps.
+   class HostRunLoop : public Steinberg::Linux::IRunLoop
+   {
+   public:
+      Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid, void** obj) override
+      {
+         if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Linux::IRunLoop::iid) ||
+             Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::FUnknown::iid))
+         {
+            addRef();
+            *obj = this;
+            return Steinberg::kResultOk;
+         }
+         *obj = nullptr;
+         return Steinberg::kNoInterface;
+      }
+
+      Steinberg::uint32 PLUGIN_API addRef() override { return ++mRefCount; }
+      Steinberg::uint32 PLUGIN_API release() override { return --mRefCount; }
+
+      Steinberg::tresult PLUGIN_API registerEventHandler(Steinberg::Linux::IEventHandler* handler,
+                                                         Steinberg::Linux::FileDescriptor fd) override
+      {
+         if (handler == nullptr)
+            return Steinberg::kInvalidArgument;
+         std::lock_guard<std::mutex> lock(mMutex);
+         mEventHandlers[fd] = handler;
+         return Steinberg::kResultOk;
+      }
+
+      Steinberg::tresult PLUGIN_API unregisterEventHandler(Steinberg::Linux::IEventHandler* handler) override
+      {
+         if (handler == nullptr)
+            return Steinberg::kInvalidArgument;
+         std::lock_guard<std::mutex> lock(mMutex);
+         for (auto it = mEventHandlers.begin(); it != mEventHandlers.end();)
+         {
+            if (it->second == handler)
+               it = mEventHandlers.erase(it);
+            else
+               ++it;
+         }
+         return Steinberg::kResultOk;
+      }
+
+      Steinberg::tresult PLUGIN_API registerTimer(Steinberg::Linux::ITimerHandler* handler,
+                                                  Steinberg::Linux::TimerInterval milliseconds) override
+      {
+         if (handler == nullptr)
+            return Steinberg::kInvalidArgument;
+         std::lock_guard<std::mutex> lock(mMutex);
+         TimerEntry& entry = mTimers[handler];
+         entry.intervalMs = milliseconds;
+         entry.nextFire = std::chrono::steady_clock::now() + std::chrono::milliseconds((long long)milliseconds);
+         return Steinberg::kResultOk;
+      }
+
+      Steinberg::tresult PLUGIN_API unregisterTimer(Steinberg::Linux::ITimerHandler* handler) override
+      {
+         if (handler == nullptr)
+            return Steinberg::kInvalidArgument;
+         std::lock_guard<std::mutex> lock(mMutex);
+         mTimers.erase(handler);
+         return Steinberg::kResultOk;
+      }
+
+      // Main-thread only, called every frame from PluginVST3PumpEditorEvents
+      // regardless of whether any editor is open (factory-context timers
+      // have no editor). Returns true if something fired.
+      bool Pump()
+      {
+         bool any = false;
+
+         std::vector<std::pair<int, Steinberg::IPtr<Steinberg::Linux::IEventHandler>>> handlersSnapshot;
+         {
+            std::lock_guard<std::mutex> lock(mMutex);
+            handlersSnapshot.reserve(mEventHandlers.size());
+            for (auto& kv : mEventHandlers)
+               handlersSnapshot.emplace_back(kv.first, kv.second);
+         }
+         if (!handlersSnapshot.empty())
+         {
+            std::vector<pollfd> fds;
+            fds.reserve(handlersSnapshot.size());
+            for (auto& kv : handlersSnapshot)
+               fds.push_back(pollfd { kv.first, POLLIN, 0 });
+            if (poll(fds.data(), (nfds_t)fds.size(), 0) > 0)
+            {
+               for (size_t i = 0; i < fds.size(); i++)
+               {
+                  if (fds[i].revents & (POLLIN | POLLHUP | POLLERR))
+                  {
+                     any = true;
+                     Steinberg::Linux::IEventHandler* eh = handlersSnapshot[i].second;
+                     const int fd = fds[i].fd;
+                     Platform::RunPluginCallGuarded("onFDIsSet", nullptr, [&] { eh->onFDIsSet(fd); });
+                  }
+               }
+            }
+         }
+
+         std::vector<Steinberg::IPtr<Steinberg::Linux::ITimerHandler>> due;
+         const auto now = std::chrono::steady_clock::now();
+         {
+            std::lock_guard<std::mutex> lock(mMutex);
+            for (auto& kv : mTimers)
+            {
+               if (kv.second.nextFire <= now)
+               {
+                  due.push_back(kv.first);
+                  kv.second.nextFire = now + std::chrono::milliseconds((long long)kv.second.intervalMs);
+               }
+            }
+         }
+         for (auto& t : due)
+         {
+            any = true;
+            Steinberg::Linux::ITimerHandler* th = t;
+            Platform::RunPluginCallGuarded("onTimer", nullptr, [&] { th->onTimer(); });
+         }
+
+         return any;
+      }
+
+   private:
+      struct TimerEntry
+      {
+         Steinberg::Linux::TimerInterval intervalMs = 0;
+         std::chrono::steady_clock::time_point nextFire;
+      };
+
+      std::atomic<uint32_t> mRefCount { 1 };
+      std::mutex mMutex;
+      std::map<Steinberg::Linux::FileDescriptor, Steinberg::IPtr<Steinberg::Linux::IEventHandler>> mEventHandlers;
+      std::map<Steinberg::Linux::ITimerHandler*, TimerEntry> mTimers;
+   };
+
+   // The concrete singleton. Kept as its own accessor (rather than folded
+   // into SharedRunLoop() below) because PluginVST3PumpEditorEvents, far
+   // below, needs the concrete Pump() method - which isn't part of the
+   // abstract Steinberg::Linux::IRunLoop interface SharedRunLoop() hands out
+   // to plugins/HostApplication.
+   HostRunLoop* HostRunLoopInstance()
+   {
+      static HostRunLoop* instance = new HostRunLoop();
+      return instance;
+   }
+
+   Steinberg::Linux::IRunLoop* SharedRunLoop()
+   {
+      return HostRunLoopInstance();
+   }
+
+   // Main-thread only, called every frame from PluginVST3PumpEditorEvents -
+   // fires due fd/timer callbacks whether or not any editor is currently
+   // open (factory-context timers have none).
+   bool PumpHostRunLoop()
+   {
+      return HostRunLoopInstance()->Pump();
+   }
+
+   // Host-side IPlugFrame - lets a resizable plugin GUI ask us to resize its
+   // window, and (per the Linux run-loop spec) hands out the shared
+   // IRunLoop to any editor that queries for it.
+   class HostPlugFrame : public Steinberg::IPlugFrame
+   {
+   public:
+      explicit HostPlugFrame(Platform::PluginHandle* handle) : mHandle(handle) {}
+
+      Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid, void** obj) override
+      {
+         if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::IPlugFrame::iid) ||
+             Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::FUnknown::iid))
+         {
+            addRef();
+            *obj = this;
+            return Steinberg::kResultOk;
+         }
+         if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Linux::IRunLoop::iid))
+            return SharedRunLoop()->queryInterface(iid, obj);
+         *obj = nullptr;
+         return Steinberg::kNoInterface;
+      }
+
+      Steinberg::uint32 PLUGIN_API addRef() override { return ++mRefCount; }
+      Steinberg::uint32 PLUGIN_API release() override
+      {
+         if (--mRefCount == 0)
+         {
+            delete this;
+            return 0;
+         }
+         return mRefCount;
+      }
+
+      Steinberg::tresult PLUGIN_API resizeView(Steinberg::IPlugView* view, Steinberg::ViewRect* newSize) override;
+
+      void detach() { mHandle = nullptr; }
+
+   private:
+      std::atomic<uint32_t> mRefCount { 1 };
+      Platform::PluginHandle* mHandle = nullptr;
+   };
+}
+#endif // !INFINITE_VST3_SCANNER
+
+namespace Platform
+{
    // ------------------------------------------------------------------------
    // Internal VST3 state - Linux equivalent of PluginVST3Win.cpp's
    // PluginVST3State. Same shape minus the editor-window fields entirely (no
@@ -1929,6 +2251,20 @@ namespace Platform
       // Set once a crash guard catches this instance faulting inside
       // getState/setState. See RunPluginCallGuarded below.
       std::atomic<bool> stateCallsUnstable { false };
+
+#if !defined(INFINITE_VST3_SCANNER)
+      // Editor state (task 4.3). Guarded the same as the rest of the X11
+      // plumbing: HostPlugFrame only exists under this guard, and so does
+      // the ::Window typedef (from X11/Xlib.h, only included here) - the
+      // scanner build never opens an editor, so it carries none of this.
+      Steinberg::IPtr<Steinberg::IPlugView> plugView;
+      Steinberg::IPtr<HostPlugFrame> plugFrame;
+      ::Window editorWindow = 0;
+      std::atomic<bool> editorOpen { false };
+      bool canResize = false;
+      bool resizingFromPlugin = false;
+      std::atomic<bool> editorUnstable { false };
+#endif
    };
 
    // Defined further down, alongside the rest of the crash-guard machinery;
@@ -1951,6 +2287,167 @@ namespace
       mHandle->vst3->learnedAddress.store((unsigned long long)id, std::memory_order_relaxed);
       mHandle->vst3->learnedValid.store(true, std::memory_order_release);
    }
+
+#if !defined(INFINITE_VST3_SCANNER)
+   // ------------------------------------------------------------------------
+   // Editor window plumbing (task 4.3). Windows equivalent: the block right
+   // above PluginVST3OpenEditor in PluginVST3Win.cpp (gWinOpenPluginEditorCount,
+   // ApplyEditorContentScale, HostPlugFrame::resizeView). Defined here,
+   // after PluginVST3State's full definition (above), rather than inside the
+   // GLFW/X11 anonymous namespace next to HostPlugFrame's class body,
+   // because both need PluginVST3State to be complete.
+   // ------------------------------------------------------------------------
+
+   // Process-wide count of open plugin editor windows, kept in lockstep with
+   // every PluginVST3State's editorOpen flag (see SetPluginEditorOpenLinux
+   // below) so PluginVST3AnyEditorOpen() is a cheap atomic read rather than a
+   // walk over every handle.
+   std::atomic<int> gLinuxOpenPluginEditorCount { 0 };
+
+   void SetPluginEditorOpenLinux(Platform::PluginHandle* h, bool open)
+   {
+      if (h == nullptr || h->vst3 == nullptr)
+         return;
+      bool was = h->vst3->editorOpen.exchange(open, std::memory_order_acq_rel);
+      if (was == open)
+         return;
+      if (open)
+         gLinuxOpenPluginEditorCount.fetch_add(1, std::memory_order_relaxed);
+      else
+         gLinuxOpenPluginEditorCount.fetch_sub(1, std::memory_order_relaxed);
+   }
+
+   // Process-wide registry of every open editor's X11 window id, so
+   // PluginVST3PumpEditorEvents (which drains XPending()/XNextEvent() for
+   // the shared display, not per-window) can map an incoming XEvent's
+   // .xany.window back to the PluginHandle it belongs to. Guarded by the
+   // same mutex as the HostRunLoop's own maps would be, but kept separate
+   // since it's a different lifetime concern (window existence, not fd/timer
+   // registration).
+   std::mutex gEditorWindowsMutex;
+   std::map<::Window, Platform::PluginHandle*> gEditorWindows;
+
+   void RegisterEditorWindow(::Window xid, Platform::PluginHandle* h)
+   {
+      std::lock_guard<std::mutex> lock(gEditorWindowsMutex);
+      gEditorWindows[xid] = h;
+   }
+
+   void UnregisterEditorWindow(::Window xid)
+   {
+      std::lock_guard<std::mutex> lock(gEditorWindowsMutex);
+      gEditorWindows.erase(xid);
+   }
+
+   // GLFW monitor content scale stands in for the per-monitor DPI query
+   // Windows uses (EditorDpiForWindow) - Linux/X11 has no equivalent "which
+   // monitor is this window mostly on, and what's its scale" primitive
+   // exposed to us directly, and the app's own GLFWwindow* handle isn't
+   // reachable from this file, so the primary monitor's content scale is
+   // the best available signal (matches what a single-monitor or
+   // uniformly-scaled multi-monitor desktop reports; a per-monitor-scaled
+   // desktop would need real querying of the editor window's actual
+   // monitor, which XRandR can do but isn't wired up this phase).
+   void ApplyEditorContentScale(Platform::PluginHandle* h)
+   {
+      if (h == nullptr || h->vst3 == nullptr || !h->vst3->plugView)
+         return;
+      Platform::PluginVST3State* v = h->vst3;
+
+      float scaleX = 1.0f, scaleY = 1.0f;
+      if (GLFWmonitor* monitor = glfwGetPrimaryMonitor())
+         glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
+      const float scale = scaleX > 0.0f ? scaleX : 1.0f;
+
+      Platform::RunPluginCallGuarded("setContentScaleFactor", h, [&] {
+         Steinberg::IPlugViewContentScaleSupport* scaleSupport = nullptr;
+         if (v->plugView->queryInterface(Steinberg::IPlugViewContentScaleSupport::iid,
+                                         (void**)&scaleSupport) == Steinberg::kResultOk &&
+             scaleSupport != nullptr)
+         {
+            scaleSupport->setContentScaleFactor(scale);
+            scaleSupport->release();
+         }
+      });
+   }
+
+   // Out-of-line: HostPlugFrame is defined in the GLFW/X11 anonymous
+   // namespace above, before PluginVST3State existed; this needs the full
+   // PluginVST3State (for editorWindow/plugView), so it's defined down here
+   // instead, same split Windows uses.
+   Steinberg::tresult PLUGIN_API HostPlugFrame::resizeView(Steinberg::IPlugView* view, Steinberg::ViewRect* newSize)
+   {
+      if (mHandle == nullptr || mHandle->vst3 == nullptr || newSize == nullptr)
+         return Steinberg::kResultFalse;
+      Platform::PluginVST3State* v = mHandle->vst3;
+      // Editor may already be gone (window closed, or this call landed
+      // after teardown) - the plugin's timer can fire against
+      // half-torn-down state.
+      if (v->editorWindow == 0 || v->plugView != view)
+         return Steinberg::kResultFalse;
+
+      const int width = newSize->right - newSize->left;
+      const int height = newSize->bottom - newSize->top;
+      if (width <= 0 || height <= 0)
+         return Steinberg::kResultFalse;
+
+      Display* display = SharedX11Display(nullptr);
+      if (display == nullptr)
+         return Steinberg::kResultFalse;
+
+      v->resizingFromPlugin = true;
+      XResizeWindow(display, v->editorWindow, (unsigned int)width, (unsigned int)height);
+      XFlush(display);
+
+      // Per IPlugFrame::resizeView's own doc comment: the host must call
+      // IPlugView::onSize() after handling the resize.
+      const bool ok = Platform::RunPluginCallGuarded("onSize", mHandle, [&] { view->onSize(newSize); });
+      v->resizingFromPlugin = false;
+      if (!ok)
+      {
+         v->editorUnstable.store(true, std::memory_order_relaxed);
+         return Steinberg::kResultFalse;
+      }
+      return Steinberg::kResultTrue;
+   }
+
+   // Full teardown: removed() while the window is still alive (same
+   // ordering PluginVST3CloseEditor/PluginVST3Destroy use on Windows/macOS -
+   // a plugin's GUI timer can be armed the instant attached() returns, so
+   // detaching before destroying the window avoids a callback landing on a
+   // window that no longer exists), then unregister and destroy the X11
+   // window itself. Safe to call on a handle with no editor open.
+   void CloseEditorAndDestroyWindow(Platform::PluginHandle* h)
+   {
+      if (h == nullptr || h->vst3 == nullptr)
+         return;
+      Platform::PluginVST3State* v = h->vst3;
+
+      if (v->plugView)
+      {
+         Platform::RunPluginCallGuarded("removed", h, [&] { v->plugView->removed(); });
+         v->plugView = nullptr;
+      }
+      if (v->plugFrame)
+      {
+         v->plugFrame->detach();
+         v->plugFrame = nullptr;
+      }
+
+      SetPluginEditorOpenLinux(h, false);
+
+      if (v->editorWindow != 0)
+      {
+         UnregisterEditorWindow(v->editorWindow);
+         if (Display* display = SharedX11Display(nullptr))
+         {
+            XDestroyWindow(display, v->editorWindow);
+            XFlush(display);
+         }
+         v->editorWindow = 0;
+      }
+   }
+#endif // !INFINITE_VST3_SCANNER
 
    using GetPluginFactoryProc = Steinberg::IPluginFactory* (*)();
    // Matches VST3's module_linux.cpp: bool PLUGIN_API ModuleEntry(void*),
@@ -2511,6 +3008,14 @@ namespace Platform
 
       PluginVST3State* v = h->vst3;
 
+#if !defined(INFINITE_VST3_SCANNER)
+      // Tear down the editor window (if any) before anything else - it may
+      // hold callbacks into componentHandler/controller below, and
+      // CloseEditorAndDestroyWindow's own removed()-then-destroy ordering
+      // depends on those still being valid.
+      CloseEditorAndDestroyWindow(h);
+#endif
+
       if (v->compToCtrlProxy)
       {
          v->compToCtrlProxy->DisconnectFromSource();
@@ -2792,9 +3297,10 @@ namespace Platform
    // PluginVST3.mm's equivalent section (Windows uses SEH instead; Linux has
    // the same signal model as macOS). Same discipline: narrow, synchronous
    // calls with no in-flight audio riding on them. Deliberately not used
-   // around process(). This phase only has state save/restore to guard -
-   // there is no editor to open yet (PluginVST3OpenEditor is a stub below);
-   // 4.3 wires editor calls through this same guard.
+   // around process(). Used for state save/restore below, and (task 4.3)
+   // for every editor-facing plugin call further down this file
+   // (createView/getSize/canResize/setFrame/attached/removed/onSize/
+   // setContentScaleFactor) plus HostRunLoop's onFDIsSet/onTimer dispatch.
    // ------------------------------------------------------------------------
    namespace
    {
@@ -2846,15 +3352,232 @@ namespace Platform
    }
 
    // ------------------------------------------------------------------------
-   // Editor Window - not implemented this phase (task 4.3, X11/IRunLoop).
-   // Every entry point below is a documented stub; PluginVST3State carries
-   // no editor fields for 4.3 to remove or reconcile with, only to add to.
+   // Editor Window (task 4.3, X11). Every plugin-facing call below goes
+   // through RunPluginCallGuarded (see above) - no second crash-guard
+   // mechanism, per phase-04-vst3.md 4.3.
    // ------------------------------------------------------------------------
+
+#if !defined(INFINITE_VST3_SCANNER)
+
+   bool PluginVST3OpenEditor(PluginHandle* h, std::string& outError)
+   {
+      if (h == nullptr || h->vst3 == nullptr || !h->vst3->controller || h->state != PluginLoadState::Ready)
+      {
+         outError = "plugin not loaded";
+         return false;
+      }
+      PluginVST3State* v = h->vst3;
+
+      if (v->editorUnstable.load(std::memory_order_relaxed))
+      {
+         outError = "plugin's editor crashed previously and is disabled for this session";
+         return false;
+      }
+
+      if (v->editorWindow != 0)
+      {
+         Display* display = SharedX11Display(&outError);
+         if (display == nullptr)
+            return false;
+         XMapRaised(display, v->editorWindow);
+         XFlush(display);
+         SetPluginEditorOpenLinux(h, true);
+         return true;
+      }
+
+      Display* display = SharedX11Display(&outError);
+      if (display == nullptr)
+         return false;
+
+      if (!v->plugView)
+      {
+         Steinberg::IPlugView* view = nullptr;
+         if (!RunPluginCallGuarded("createView", h,
+                [&] { view = v->controller->createView(Steinberg::Vst::ViewType::kEditor); }))
+         {
+            v->editorUnstable.store(true, std::memory_order_relaxed);
+            outError = "plugin crashed creating its editor view";
+            return false;
+         }
+         if (view == nullptr)
+         {
+            outError = "plugin has no custom GUI editor";
+            return false;
+         }
+         v->plugView = Steinberg::owned(view);
+      }
+
+      Steinberg::ViewRect rect = {};
+      if (!RunPluginCallGuarded("getSize", h, [&] { v->plugView->getSize(&rect); }))
+      {
+         v->editorUnstable.store(true, std::memory_order_relaxed);
+         outError = "plugin crashed sizing its editor view";
+         return false;
+      }
+      int width = rect.right - rect.left;
+      int height = rect.bottom - rect.top;
+      if (width < 120 || height < 80)
+      {
+         width = 640;
+         height = 420;
+      }
+
+      bool canResize = false;
+      RunPluginCallGuarded("canResize", h, [&] { canResize = v->plugView->canResize() == Steinberg::kResultTrue; });
+
+      const int screen = DefaultScreen(display);
+      ::Window xid = XCreateSimpleWindow(display, RootWindow(display, screen), 0, 0, (unsigned int)width,
+                                         (unsigned int)height, 0, BlackPixel(display, screen),
+                                         WhitePixel(display, screen));
+      if (xid == 0)
+      {
+         outError = "failed to create editor window";
+         return false;
+      }
+
+      XStoreName(display, xid, h->desc.name.c_str());
+
+      Atom wmDelete = WmDeleteWindowAtom(display);
+      XSetWMProtocols(display, xid, &wmDelete, 1);
+
+      XSizeHints hints = {};
+      hints.flags = PMinSize | (canResize ? 0 : PMaxSize);
+      hints.min_width = canResize ? 1 : width;
+      hints.min_height = canResize ? 1 : height;
+      hints.max_width = width;
+      hints.max_height = height;
+      XSetWMNormalHints(display, xid, &hints);
+
+      XSelectInput(display, xid, StructureNotifyMask);
+
+      RegisterEditorWindow(xid, h);
+
+      // Spec requires setFrame() before attached() - it is how a plugin with
+      // a resizable GUI learns who to ask for a resize.
+      if (!v->plugFrame)
+         v->plugFrame = Steinberg::owned(new HostPlugFrame(h));
+      if (!RunPluginCallGuarded("setFrame", h, [&] { v->plugView->setFrame(v->plugFrame); }))
+      {
+         v->editorUnstable.store(true, std::memory_order_relaxed);
+         outError = "plugin crashed setting its editor frame";
+         UnregisterEditorWindow(xid);
+         XDestroyWindow(display, xid);
+         XFlush(display);
+         return false;
+      }
+
+      v->editorWindow = xid;
+      v->canResize = canResize;
+
+      // Host owns content scaling and must tell the plugin before attached()
+      // so it builds its GUI at the right size in the first place.
+      ApplyEditorContentScale(h);
+
+      if (!RunPluginCallGuarded("attached", h, [&] {
+             v->plugView->attached(reinterpret_cast<void*>(static_cast<uintptr_t>(xid)),
+                                   Steinberg::kPlatformTypeX11EmbedWindowID);
+          }))
+      {
+         v->editorUnstable.store(true, std::memory_order_relaxed);
+         outError = "plugin crashed opening its editor";
+         // The plugin may already have installed GUI timers/observers by
+         // this point - removed() first while the window is still alive,
+         // then tear down the window, not the reverse.
+         RunPluginCallGuarded("removed", h, [&] { v->plugView->removed(); });
+         v->plugView = nullptr;
+         v->editorWindow = 0;
+         UnregisterEditorWindow(xid);
+         XDestroyWindow(display, xid);
+         XFlush(display);
+         return false;
+      }
+
+      XMapRaised(display, xid);
+      XFlush(display);
+      SetPluginEditorOpenLinux(h, true);
+      return true;
+   }
+
+   void PluginVST3CloseEditor(PluginHandle* h)
+   {
+      CloseEditorAndDestroyWindow(h);
+   }
+
+   bool PluginVST3EditorIsOpen(PluginHandle* h)
+   {
+      return h != nullptr && h->vst3 != nullptr && h->vst3->editorOpen.load(std::memory_order_acquire);
+   }
+
+   bool PluginVST3AnyEditorOpen()
+   {
+      return gLinuxOpenPluginEditorCount.load(std::memory_order_relaxed) > 0;
+   }
+
+   // Called every frame regardless of whether any editor is open (factory-
+   // context IRunLoop timers exist with no editor). Order: fd/timer
+   // dispatch first, then drain pending X11 events for our own windows,
+   // bounded by a wall-clock budget rather than a fixed handler-count cap
+   // (yabridge/JUCE editors can emit thousands of events on a GUI change).
+   bool PluginVST3PumpEditorEvents()
+   {
+      bool any = PumpHostRunLoop();
+
+      Display* display = SharedX11Display(nullptr);
+      if (display == nullptr)
+         return any;
+
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+      while (XPending(display) > 0)
+      {
+         XEvent event;
+         XNextEvent(display, &event);
+         any = true;
+
+         PluginHandle* h = nullptr;
+         {
+            std::lock_guard<std::mutex> lock(gEditorWindowsMutex);
+            auto it = gEditorWindows.find(event.xany.window);
+            if (it != gEditorWindows.end())
+               h = it->second;
+         }
+         if (h == nullptr || h->vst3 == nullptr)
+         {
+            if (std::chrono::steady_clock::now() >= deadline)
+               break;
+            continue;
+         }
+         PluginVST3State* v = h->vst3;
+
+         if (event.type == ClientMessage &&
+             (Atom)event.xclient.data.l[0] == WmDeleteWindowAtom(display))
+         {
+            CloseEditorAndDestroyWindow(h);
+         }
+         else if (event.type == ConfigureNotify && v->plugView && v->canResize && !v->resizingFromPlugin)
+         {
+            const int width = event.xconfigure.width;
+            const int height = event.xconfigure.height;
+            if (width > 0 && height > 0)
+            {
+               Steinberg::ViewRect newSize(0, 0, width, height);
+               if (!RunPluginCallGuarded("onSize", h, [&] { v->plugView->onSize(&newSize); }))
+                  v->editorUnstable.store(true, std::memory_order_relaxed);
+            }
+         }
+
+         if (std::chrono::steady_clock::now() >= deadline)
+            break;
+      }
+
+      return any;
+   }
+
+#else // INFINITE_VST3_SCANNER - headless scanner build, never opens an editor.
 
    bool PluginVST3OpenEditor(PluginHandle* h, std::string& outError)
    {
       (void)h;
-      outError = "plugin editors not yet supported on Linux (P4)";
+      outError = "plugin editors are not available in the scanner process";
       return false;
    }
 
@@ -2878,6 +3601,8 @@ namespace Platform
    {
       return false;
    }
+
+#endif // !INFINITE_VST3_SCANNER
 
    // ------------------------------------------------------------------------
    // State Save & Restore
