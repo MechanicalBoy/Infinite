@@ -47,8 +47,22 @@ AUDIORECOVERYTEST|flaky on the pulse backend under this container (4 of 5 direct
 # Phase 4: VST3 / Plugins
 AUDIOUITEST|stubbed: audio device and UI - depends on VST3 plugin host, not the Phase 2 audio device (P4)
 PLUGINDRAGTEST|stubbed: plugin host / VST3 (P4)
-PLUGINSCANTEST|stubbed: plugin scanner / VST3 (P4)
-VST3SCANTEST|stubbed: VST3 scanner (P4)
+# PLUGINSCANTEST (RunPluginScanTest() in src/main.cpp) only ever exercised
+# Apple's AudioUnit host path (Platform::EnumerateAudioUnits against
+# au:aufx:dely:appl) - it has never tested VST3 on any platform, including
+# Linux, despite living in the "P4: VST3" section. AU does not exist on
+# Linux at all, so this is not a stubbed-pending-Linux-work case like its
+# neighbors above; it is architecturally impossible to make this pass on
+# Linux without inventing an AU host, which is out of scope. VST3SCANTEST
+# (below this entry until Phase 4 task 4.4, now passing and removed) is the
+# real Linux VST3 scanner test this entry's old text was easy to mistake it
+# for. Left in intentionally - flagging for whichever session owns the
+# Phase 4 exit criteria: if "zero P0-P4 entries in this file" is a hard
+# requirement, this line cannot be satisfied by more Linux work; it needs
+# either an explicit exception for format-inapplicability entries, or
+# RunPluginScanTest() itself to be reworked to also cover VST3 (a
+# non-trivial change to already-shipped test code, not attempted here).
+PLUGINSCANTEST|not a Linux gap - AU-only test (Platform::EnumerateAudioUnits), architecturally inapplicable on Linux, not "stubbed pending Linux work"
 
 # Other pre-existing test quirks shared with macOS
 GROUPTEST|"after ungroup: ... member freed" sub-check fails — pre-existing and unrelated to Linux port

@@ -68,6 +68,42 @@ void PluginScanner::RemoveFolder(const std::string& path)
    Platform::SetVST3SearchFolders(mFolders);
 }
 
+std::vector<std::string> PluginScanner::DefaultVST3Folders(const std::vector<std::string>& userFolders)
+{
+   std::vector<std::string> vst3Folders;
+#if defined(_WIN32)
+   // The two locations the VST3 spec defines on Windows. The system-wide one
+   // under %COMMONPROGRAMFILES% is where most installers drop plugins; the
+   // per-user %LOCALAPPDATA%\Programs\Common\VST3 one only exists if an
+   // installer (or the user) created it, but plenty of vendors now default
+   // to it, so scanning only the first is what made a machine full of VST3s
+   // still come up empty. Both are walked; a missing folder is a harmless
+   // no-op in the directory walk.
+   if (const char* common = getenv("COMMONPROGRAMFILES"))
+      vst3Folders.push_back(std::string(common) + "\\VST3");
+   if (const char* localAppData = getenv("LOCALAPPDATA"))
+      vst3Folders.push_back(std::string(localAppData) + "\\Programs\\Common\\VST3");
+#elif defined(__linux__)
+   // The three locations phase-04-vst3.md defines for Linux: a per-user
+   // folder plus the two system-wide FHS locations (the second covers
+   // packages installed outside the distro's package manager).
+   const char* home = getenv("HOME");
+   if (home != nullptr)
+      vst3Folders.push_back(std::string(home) + "/.vst3");
+   vst3Folders.push_back("/usr/lib/vst3");
+   vst3Folders.push_back("/usr/local/lib/vst3");
+#else
+   vst3Folders.push_back("/Library/Audio/Plug-Ins/VST3");
+   const char* home = getenv("HOME");
+   if (home != nullptr)
+      vst3Folders.push_back(std::string(home) + "/Library/Audio/Plug-Ins/VST3");
+#endif
+   for (const std::string& userFolder : userFolders)
+      if (std::find(vst3Folders.begin(), vst3Folders.end(), userFolder) == vst3Folders.end())
+         vst3Folders.push_back(userFolder);
+   return vst3Folders;
+}
+
 void PluginScanner::StartScan(const std::string& folder)
 {
    if (mScanning.exchange(true, std::memory_order_relaxed))
@@ -79,36 +115,12 @@ void PluginScanner::StartScan(const std::string& folder)
    mFound.store(0, std::memory_order_relaxed);
 
    // VST3 folders to walk this scan: either the one folder the caller asked
-   // for, or the standard macOS locations plus every user-added folder.
+   // for, or the standard per-OS locations plus every user-added folder.
    std::vector<std::string> vst3Folders;
    if (!folder.empty())
-   {
       vst3Folders.push_back(folder);
-   }
    else
-   {
-#if defined(_WIN32)
-      // The two locations the VST3 spec defines on Windows. The system-wide one
-      // under %COMMONPROGRAMFILES% is where most installers drop plugins; the
-      // per-user %LOCALAPPDATA%\Programs\Common\VST3 one only exists if an
-      // installer (or the user) created it, but plenty of vendors now default
-      // to it, so scanning only the first is what made a machine full of VST3s
-      // still come up empty. Both are walked; a missing folder is a harmless
-      // no-op in the directory walk.
-      if (const char* common = getenv("COMMONPROGRAMFILES"))
-         vst3Folders.push_back(std::string(common) + "\\VST3");
-      if (const char* localAppData = getenv("LOCALAPPDATA"))
-         vst3Folders.push_back(std::string(localAppData) + "\\Programs\\Common\\VST3");
-#else
-      vst3Folders.push_back("/Library/Audio/Plug-Ins/VST3");
-      const char* home = getenv("HOME");
-      if (home != nullptr)
-         vst3Folders.push_back(std::string(home) + "/Library/Audio/Plug-Ins/VST3");
-#endif
-      for (const std::string& userFolder : mFolders)
-         if (std::find(vst3Folders.begin(), vst3Folders.end(), userFolder) == vst3Folders.end())
-            vst3Folders.push_back(userFolder);
-   }
+      vst3Folders = DefaultVST3Folders(mFolders);
 
    mScanThread = std::thread(&PluginScanner::ScanThreadMain, this, std::move(vst3Folders));
 }

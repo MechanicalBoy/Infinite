@@ -58551,6 +58551,405 @@ int RunPluginScanTest()
    return 0;
 }
 
+#if INFINITE_ENABLE_VST3
+// ====================================================== INFINITE_VST3SCANTEST
+//
+// The VST3 analog of RunPluginScanTest() above: headless proof that the
+// cross-platform VST3 host layer (Platform::EnumerateVST3Plugins /
+// PluginCreate / PluginPoll / PluginPrepare / PluginRender / parameters /
+// state) works end to end against a real, on-disk .vst3 bundle. Unlike
+// RunPluginScanTest, which is deliberately AU/Objective-C-boundary-specific
+// (see its own header comment) and therefore macOS-only, this fixture is
+// genuine shared/cross-platform test code - it is gated on
+// INFINITE_ENABLE_VST3, not on any __linux__/_WIN32/__APPLE__ - because
+// Platform::EnumerateVST3Plugins and friends are real implementations on
+// all three platforms as of P4.
+//
+// Folder list comes from PluginScanner::DefaultVST3Folders(), the exact
+// same helper StartScan() uses for a real production scan, so this test
+// finds plugins the same way a user's own scan would rather than
+// hardcoding a path.
+//
+// Requires at least one real, loadable VST3 plugin already installed in one
+// of those folders (see tools/linux/test-plugins.sh, which installs a small
+// pinned open-source plugin into $HOME/.vst3 for exactly this purpose). If
+// none is found, this prints a SKIP verdict rather than FAIL - an empty
+// plugin folder is a legitimate, if untested, machine state, not a host bug
+// - matching PLUGINSCANTEST's grep contract (run-infinite-hygiene's driver
+// requires a "OK"/"PASS"/"SKIP"-suffixed verdict line to exist at all).
+int RunVST3ScanTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+   bool ok = true;
+
+   const std::vector<std::string> folders = PluginScanner::DefaultVST3Folders();
+   std::vector<Platform::PluginDesc> plugins;
+   Platform::EnumerateVST3Plugins(folders, plugins);
+   printf("VST3SCAN enumerate: %d plugin(s) across %d folder(s)\n", (int)plugins.size(), (int)folders.size());
+   if (plugins.empty())
+   {
+      printf("VST3SCANTEST SKIP (no VST3 plugin installed in: ");
+      for (const std::string& f : folders)
+         printf("%s; ", f.c_str());
+      printf(")\n");
+      return 0;
+   }
+
+   // Prefer an effect (has both an input and output audio bus, so the
+   // pass-through-signal assertion below is meaningful); an instrument-only
+   // plugin still exercises load/prepare/param/state, just not "processes a
+   // driven signal", so it remains an acceptable fallback.
+   const Platform::PluginDesc* chosen = nullptr;
+   for (const Platform::PluginDesc& d : plugins)
+      if (!d.acceptsNotes)
+      {
+         chosen = &d;
+         break;
+      }
+   if (chosen == nullptr)
+      chosen = &plugins.front();
+   printf("VST3SCAN chosen: %s [%s] (%s)\n", chosen->name.c_str(), chosen->identifier.c_str(),
+          chosen->path.c_str());
+
+   const double kRate = 48000.0;
+   const int kFrames = 512;
+   Platform::PluginHandle* handle = Platform::PluginCreate(*chosen, kRate, kFrames);
+
+   std::string error;
+   Platform::PluginLoadState state = Platform::PluginLoadState::Pending;
+   for (int i = 0; i < 600 && state == Platform::PluginLoadState::Pending; i++)
+   {
+      state = Platform::PluginPoll(handle, error);
+      if (state == Platform::PluginLoadState::Pending)
+         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+   }
+   const bool loaded = state == Platform::PluginLoadState::Ready;
+   printf("VST3SCAN instantiate: %s  %s\n", loaded ? "ready" : error.c_str(), loaded ? "OK" : "FAIL");
+   ok = ok && loaded;
+
+   if (loaded)
+   {
+      std::string prepError;
+      const bool prepared = Platform::PluginPrepare(handle, kRate, kFrames, prepError);
+      printf("VST3SCAN prepare: %s  %s\n", prepared ? "ok" : prepError.c_str(), prepared ? "OK" : "FAIL");
+      ok = ok && prepared;
+
+      std::vector<float> inL(kFrames), inR(kFrames), outL(kFrames), outR(kFrames);
+      for (int i = 0; i < kFrames; i++)
+      {
+         const float v = 0.5f * sinf(2.0f * (float)M_PI * 440.0f * (float)i / (float)kRate);
+         inL[i] = v;
+         inR[i] = v;
+      }
+      const float* inPtrs[2] = { inL.data(), inR.data() };
+      float* outPtrs[2] = { outL.data(), outR.data() };
+      Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames);
+
+      float peak = 0.0f;
+      for (int i = 0; i < kFrames; i++)
+         peak = std::max(peak, std::fabs(outL[i]));
+      // Only "not silent" is asserted here (not "differs from input" as
+      // PLUGINSCANTEST does) - an instrument-only plugin fallback has no
+      // input bus at all and would legitimately echo silence back for a
+      // dry passthrough default, whereas total silence with a driven 440Hz
+      // tone means render never ran.
+      const bool notSilent = peak > 1.0e-4f;
+      printf("VST3SCAN render: peak=%.5f  %s\n", peak, notSilent ? "OK" : "FAIL");
+      ok = ok && notSilent;
+
+      const int paramCount = Platform::PluginParameterCount(handle);
+      printf("VST3SCAN parameters: %d  %s\n", paramCount, paramCount > 0 ? "OK" : "FAIL");
+      ok = ok && paramCount > 0;
+
+      // Zero latency is a legitimate value for most effects - what this
+      // proves is that the call reaches a live plugin instance at all
+      // rather than reading off a null/uninitialized handle, so the
+      // verdict is "didn't crash / returned a sane non-negative value".
+      const int latencySamples = Platform::PluginLatencySamples(handle);
+      const bool latencySane = latencySamples >= 0;
+      printf("VST3SCAN latency: %d samples  %s\n", latencySamples, latencySane ? "OK" : "FAIL");
+      ok = ok && latencySane;
+
+      if (paramCount > 0)
+      {
+         // Index (paramCount - 1), not 0: confirmed in this session that at
+         // least one real-world VST3 wrapper (DPF, which every currently
+         // pinned small-tier CI fixture is built with - see
+         // tools/linux/test-plugins.sh) always prepends its own read-only
+         // host-info parameters (e.g. "Buffer Size", sample rate, latency)
+         // ahead of the plugin's own parameters, so index 0 is reliably a
+         // meta-parameter whose setter is a no-op there - not a bug in our
+         // host, just a bad index choice for this class of fixture. The
+         // last index is the plugin's own parameter for every DPF-built
+         // plugin, and remains a legitimate ordinary parameter for
+         // non-DPF plugins (e.g. Surge XT), so this doesn't narrow what the
+         // assertions below actually prove.
+         // Use the exact endpoints (min/max), not fractional 0.25/0.75
+         // in-between values: confirmed in this session that a real plugin
+         // parameter can be boolean-hinted (an on/off switch) and quantize
+         // any in-between value to its nearest endpoint on read-back, which
+         // a fractional-value assertion would misreport as "doesn't
+         // round-trip". The exact min/max endpoints round-trip correctly
+         // for both boolean and continuous parameters alike.
+         Platform::PluginParamInfo info;
+         const bool gotInfo = Platform::PluginParameterInfo(handle, paramCount - 1, info);
+         const float target = info.maxValue;
+         Platform::PluginSetParameter(handle, info.address, target);
+         float readBack = 0.0f;
+         const bool gotValue = Platform::PluginGetParameter(handle, info.address, readBack);
+         const bool roundTrips = gotInfo && gotValue &&
+                                 std::fabs(readBack - target) <= (info.maxValue - info.minValue) * 1.0e-3f;
+         printf("VST3SCAN param '%s' set %.4f read %.4f  %s\n", info.displayName.c_str(), target, readBack,
+                roundTrips ? "OK" : "FAIL");
+         ok = ok && roundTrips;
+
+         std::string saved;
+         const bool savedOk = Platform::PluginSaveState(handle, saved);
+         const float moved = info.minValue;
+         Platform::PluginSetParameter(handle, info.address, moved);
+         const bool restoredOk = Platform::PluginRestoreState(handle, saved);
+         float afterRestore = 0.0f;
+         Platform::PluginGetParameter(handle, info.address, afterRestore);
+         // Whether a parameter value actually survives getState/setState is
+         // a property of the plugin, not something the VST3 spec (or our
+         // host) guarantees: confirmed in this session against DPF's
+         // "Parameters" example, whose getState/setState only persists its
+         // own declared custom-state keys (it declares zero of them) and
+         // never touches automatable-parameter values at all - by design,
+         // those are meant to be restored by the host's own automation
+         // data, not the plugin's state blob. So the pass/fail bar here is
+         // what our host actually promises: the save/restore round trip
+         // itself succeeds and produces non-empty data without crashing.
+         // Whether the specific parameter value came back is reported for
+         // visibility but does not gate the verdict.
+         const bool stateMechanismOk = savedOk && !saved.empty() && restoredOk;
+         const bool valueRestored =
+            std::fabs(afterRestore - target) <= (info.maxValue - info.minValue) * 1.0e-3f;
+         printf("VST3SCAN state: %d bytes, param back to %.4f (was moved to %.4f, value-restored=%s)  %s\n",
+                (int)saved.size(), afterRestore, moved, valueRestored ? "yes" : "no (plugin-dependent, not asserted)",
+                stateMechanismOk ? "OK" : "FAIL");
+         ok = ok && stateMechanismOk;
+      }
+   }
+
+   Platform::PluginDestroy(handle);
+   printf("VST3SCAN destroy: done  OK\n");
+
+   printf("%s\n", ok ? "VST3SCANTEST OK" : "VST3SCANTEST FAIL");
+   return 0;
+}
+#if defined(__linux__)
+// ============================================= INFINITE_VST3EDITORSHOTTEST
+//
+// Linux-only (unlike VST3SCANTEST above): opens a real plugin's editor under
+// Xvfb, pumps frames through PumpPluginEditorEvents the same way main.cpp's
+// per-frame loop does (task 4.3 requires this run whether or not an editor
+// is open, so this exercises the exact call every other frame makes too),
+// then captures the X11 window with ImageMagick's `import` and writes
+// artifacts-linux/vst3-editor.png. Pass = the process found a plugin with an
+// editor, the window appeared, the capture is non-blank, and the editor
+// closed cleanly.
+//
+// The X11 window id is looked up by title via `xdotool search --name`
+// rather than adding a production accessor to PluginVST3.h for one test -
+// PluginVST3Linux.cpp's RegisterEditorWindow already calls
+// XStoreName(display, xid, h->desc.name.c_str()) (task 4.3), so every
+// editor window's WM_NAME is already the plugin's own display name, which
+// is a stable, already-public thing to search on.
+int RunVST3EditorShotTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+
+   const std::vector<std::string> folders = PluginScanner::DefaultVST3Folders();
+   std::vector<Platform::PluginDesc> plugins;
+   Platform::EnumerateVST3Plugins(folders, plugins);
+   if (plugins.empty())
+   {
+      printf("VST3EDITORSHOTTEST SKIP (no VST3 plugin installed)\n");
+      return 0;
+   }
+   const Platform::PluginDesc& chosen = plugins.front();
+   printf("VST3EDITORSHOT chosen: %s\n", chosen.name.c_str());
+
+   Platform::PluginHandle* handle = Platform::PluginCreate(chosen, 48000.0, 512);
+   std::string error;
+   Platform::PluginLoadState state = Platform::PluginLoadState::Pending;
+   for (int i = 0; i < 600 && state == Platform::PluginLoadState::Pending; i++)
+   {
+      state = Platform::PluginPoll(handle, error);
+      if (state == Platform::PluginLoadState::Pending)
+         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+   }
+   if (state != Platform::PluginLoadState::Ready)
+   {
+      printf("VST3EDITORSHOT instantiate: %s  FAIL\n", error.c_str());
+      printf("VST3EDITORSHOTTEST FAIL\n");
+      Platform::PluginDestroy(handle);
+      return 0;
+   }
+   std::string prepError;
+   Platform::PluginPrepare(handle, 48000.0, 512, prepError);
+
+   std::string editorError;
+   const bool openRequested = Platform::PluginOpenEditor(handle, editorError);
+   printf("VST3EDITORSHOT open request: %s  %s\n", openRequested ? "sent" : editorError.c_str(),
+          openRequested ? "OK" : "FAIL");
+   bool ok = openRequested;
+
+   // Pump ~120 frames the same way main.cpp's per-frame loop does, giving the
+   // editor time to attach, size itself and draw at least one frame.
+   for (int i = 0; i < 120 && ok; i++)
+   {
+      Platform::PumpPluginEditorEvents();
+      std::this_thread::sleep_for(std::chrono::milliseconds(16));
+   }
+
+   // Find the X11 window xdotool sees for this plugin's WM_NAME.
+   std::string windowId;
+   if (ok)
+   {
+      std::string cmd = "xdotool search --name '" + chosen.name + "' 2>/dev/null | head -1";
+      if (FILE* pipe = popen(cmd.c_str(), "r"))
+      {
+         char buf[128];
+         if (fgets(buf, sizeof(buf), pipe) != nullptr)
+            windowId = buf;
+         pclose(pipe);
+      }
+      while (!windowId.empty() && (windowId.back() == '\n' || windowId.back() == '\r'))
+         windowId.pop_back();
+      const bool foundWindow = !windowId.empty();
+      printf("VST3EDITORSHOT window: %s  %s\n", foundWindow ? windowId.c_str() : "not found",
+             foundWindow ? "OK" : "FAIL");
+      ok = ok && foundWindow;
+   }
+
+   std::string shotPath;
+   if (ok)
+   {
+      const char* artifactsDir = getenv("ARTIFACTS_DIR");
+      std::string dir = artifactsDir != nullptr ? artifactsDir : "artifacts-linux";
+      std::filesystem::create_directories(dir);
+      shotPath = dir + "/vst3-editor.png";
+      const std::string cmd = "import -window " + windowId + " '" + shotPath + "' 2>/dev/null";
+      const int rc = std::system(cmd.c_str());
+      const bool captured = rc == 0 && std::filesystem::exists(shotPath) &&
+                            std::filesystem::file_size(shotPath) > 0;
+      printf("VST3EDITORSHOT capture: %s (rc=%d)  %s\n", shotPath.c_str(), rc, captured ? "OK" : "FAIL");
+      ok = ok && captured;
+
+      // Non-blank check: a `import` capture of a window that never actually
+      // mapped any content is still a valid, uniformly-colored PNG. Ask
+      // ImageMagick for the number of unique colors; 1 means blank.
+      if (captured)
+      {
+         const std::string colorsCmd = "convert '" + shotPath + "' -format %k info: 2>/dev/null";
+         std::string colorsOut;
+         if (FILE* pipe = popen(colorsCmd.c_str(), "r"))
+         {
+            char buf[64];
+            if (fgets(buf, sizeof(buf), pipe) != nullptr)
+               colorsOut = buf;
+            pclose(pipe);
+         }
+         const int uniqueColors = colorsOut.empty() ? 0 : std::atoi(colorsOut.c_str());
+         const bool nonBlank = uniqueColors > 1;
+         printf("VST3EDITORSHOT non-blank: %d unique color(s)  %s\n", uniqueColors, nonBlank ? "OK" : "FAIL");
+         ok = ok && nonBlank;
+      }
+   }
+
+   Platform::PluginCloseEditor(handle);
+   // One more pump so the close request (removed()/window teardown) is
+   // actually processed rather than left pending when the process exits.
+   Platform::PumpPluginEditorEvents();
+   const bool stillOpen = Platform::AnyPluginEditorOpen();
+   printf("VST3EDITORSHOT close: stillOpen=%d  %s\n", (int)stillOpen, !stillOpen ? "OK" : "FAIL");
+   ok = ok && !stillOpen;
+
+   Platform::PluginDestroy(handle);
+   printf("%s\n", ok ? "VST3EDITORSHOTTEST OK" : "VST3EDITORSHOTTEST FAIL");
+   return 0;
+}
+
+// ========================================== INFINITE_VST3BLOCKLISTTEST
+//
+// Exercises the crash-sentinel/blocklist mechanism ported in P4's 4.2 commit
+// against a deliberately broken .vst3 (its ModuleEntry calls abort() - see
+// tools/linux/build-broken-plugin.sh) through the real, production scan
+// path (Platform::EnumerateVST3Plugins - the same call StartScan makes),
+// not a hand-rolled shortcut. Fixture folder comes from
+// INFINITE_VST3_BROKEN_PLUGIN_DIR, which the CI step points at a directory
+// containing only the broken bundle so the assertions below are unambiguous.
+int RunVST3BlocklistTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+   bool ok = true;
+
+   const char* fixtureDir = getenv("INFINITE_VST3_BROKEN_PLUGIN_DIR");
+   if (fixtureDir == nullptr || fixtureDir[0] == '\0')
+   {
+      printf("VST3BLOCKLISTTEST SKIP (INFINITE_VST3_BROKEN_PLUGIN_DIR not set)\n");
+      return 0;
+   }
+
+   Platform::ClearVST3Blocklist();
+
+   const std::vector<std::string> folders = { std::string(fixtureDir) };
+   std::vector<Platform::PluginDesc> plugins;
+
+   const auto t0 = std::chrono::steady_clock::now();
+   Platform::EnumerateVST3Plugins(folders, plugins);
+   const auto t1 = std::chrono::steady_clock::now();
+   const double firstScanMs =
+      std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(t1 - t0).count();
+
+   // We got here at all: the app process did not crash even though the
+   // scanned bundle's ModuleEntry aborts - that is the headline assertion,
+   // and simply reaching this printf proves it (an abort() in the
+   // out-of-process scan child kills only that child).
+   printf("VST3BLOCKLIST scan survived: describe found %d plugin(s) in %.1fms  OK\n", (int)plugins.size(),
+          firstScanMs);
+
+   const std::vector<std::string> blocklist = Platform::VST3Blocklist();
+   bool blocklisted = false;
+   for (const std::string& b : blocklist)
+      if (b.find(fixtureDir) != std::string::npos)
+         blocklisted = true;
+   printf("VST3BLOCKLIST after scan 1: %d entr(y/ies), broken bundle present=%d  %s\n", (int)blocklist.size(),
+          (int)blocklisted, blocklisted ? "OK" : "FAIL");
+   ok = ok && blocklisted;
+
+   // Second scan of the same fixture folder: a blocklisted bundle must be
+   // skipped, not re-probed. There is no public per-bundle "did we spawn a
+   // child" hook, so this checks the two invariants that are observable from
+   // here: the blocklist entry persists unchanged, and the second scan
+   // finishes fast - skipping a spawn+dlopen+abort()+wait cycle is at least
+   // an order of magnitude quicker than paying for it, so this is a
+   // meaningful (if indirect) proof of "skipped", not just "still crash-free".
+   plugins.clear();
+   const auto t2 = std::chrono::steady_clock::now();
+   Platform::EnumerateVST3Plugins(folders, plugins);
+   const auto t3 = std::chrono::steady_clock::now();
+   const double secondScanMs =
+      std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(t3 - t2).count();
+
+   const std::vector<std::string> blocklist2 = Platform::VST3Blocklist();
+   bool stillBlocklisted = false;
+   for (const std::string& b : blocklist2)
+      if (b.find(fixtureDir) != std::string::npos)
+         stillBlocklisted = true;
+   const bool notReattempted = secondScanMs <= std::max(50.0, firstScanMs * 0.5);
+   printf("VST3BLOCKLIST after scan 2: %.1fms (was %.1fms), still blocklisted=%d  %s\n", secondScanMs,
+          firstScanMs, (int)stillBlocklisted, (stillBlocklisted && notReattempted) ? "OK" : "FAIL");
+   ok = ok && stillBlocklisted && notReattempted;
+
+   printf("%s\n", ok ? "VST3BLOCKLISTTEST OK" : "VST3BLOCKLISTTEST FAIL");
+   return 0;
+}
+#endif // defined(__linux__)
+#endif // INFINITE_ENABLE_VST3
+
 // ====================================================== INFINITE_AUTOSAVEMARKERTEST
 //
 // The four cases where the crash-detection logic actually breaks (see
@@ -59581,6 +59980,17 @@ int main(int argc, char** argv)
 
    if (getenv("INFINITE_PLUGINSCANTEST") != nullptr)
       return RunPluginScanTest();
+
+#if INFINITE_ENABLE_VST3
+   if (getenv("INFINITE_VST3SCANTEST") != nullptr)
+      return RunVST3ScanTest();
+#if defined(__linux__)
+   if (getenv("INFINITE_VST3EDITORSHOTTEST") != nullptr)
+      return RunVST3EditorShotTest();
+   if (getenv("INFINITE_VST3BLOCKLISTTEST") != nullptr)
+      return RunVST3BlocklistTest();
+#endif
+#endif
 
    if (getenv("INFINITE_AUTOSAVEMARKERTEST") != nullptr)
       return RunAutosaveMarkerTest();
@@ -84247,9 +84657,14 @@ int main(int argc, char** argv)
       // and it runs after glfwPollEvents() with the run loop otherwise
       // unserviced - see local-prompts/02-plugin-editor-lag.md. Pump it here
       // so a hosted plugin's editor window (the app's only real NSWindow)
-      // doesn't sit starved for the length of a heavy cook.
-      if (Platform::AnyPluginEditorOpen())
-         Platform::PumpPluginEditorEvents();
+      // doesn't sit starved for the length of a heavy cook. Called
+      // unconditionally, not gated on AnyPluginEditorOpen(): on Linux (task
+      // 4.3) a plugin can register IRunLoop timers through the
+      // factory-context host object with no editor open at all, and those
+      // still need servicing every frame. Cheap when idle on every
+      // platform - macOS's CFRunLoopRunInMode(..., 0.0, ...) and Windows'
+      // PeekMessageW(nullptr, ...) are both no-ops with nothing queued.
+      Platform::PumpPluginEditorEvents();
 
       // Top-level idle gate: NodeWorkCounter() only advances when some node
       // actually redid real work this frame (FilterNode's RunShaderPass,
@@ -84449,8 +84864,9 @@ int main(int argc, char** argv)
 
       // glfwSwapBuffers blocks on vsync - dead time for AppKit to service a
       // hosted plugin's editor window. See local-prompts/02-plugin-editor-lag.md.
-      if (Platform::AnyPluginEditorOpen())
-         Platform::PumpPluginEditorEvents();
+      // Unconditional for the same reason as the call above (Linux
+      // factory-context IRunLoop timers with no editor open).
+      Platform::PumpPluginEditorEvents();
 
       // Projector output: blit this frame's cooked result of each open
       // window's node into that window. Runs after the editor's own swap so

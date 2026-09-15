@@ -251,9 +251,51 @@ jobs:
       - name: Headless self-tests
         run: ./.github/scripts/headless-tests.sh build-linux/Infinite
 
+      # Task 4.4: a small, real Linux VST3 (DISTRHO's "Info" DPF example,
+      # built from source at a pinned commit - see tools/linux/test-plugins.sh
+      # for why DPF's own repo is used instead of the DPF-Examples repo named
+      # in phase-04-vst3.md, which no longer exists under that name) so
+      # VST3SCANTEST etc. below have a real plugin to find instead of
+      # SKIPping every run. Cached on the pinned DPF commit so most runs
+      # reuse the built bundle instead of rebuilding it from source.
+      - name: Cache VST3 test plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.vst3
+          # Bump the DPF/Surge pins in tools/linux/test-plugins.sh and this
+          # key changes with them (grep'd straight out of the script so the
+          # two can never drift apart silently).
+          key: linux-vst3-test-plugins-${{ hashFiles('tools/linux/test-plugins.sh') }}
+
+      - name: Install small VST3 test plugin (DPF "Info" example)
+        run: tools/linux/test-plugins.sh --small
+
+      # Surge XT (~330MB, JUCE) is the meaningful editor-threading proof per
+      # 4.3's IRunLoop note, but too large/slow to fetch on every push - only
+      # phase-tip runs (main) and manual dispatch pay for it. The cache step
+      # above still applies, so a same-day rerun on main is fast.
+      - name: Install full VST3 test plugin (Surge XT)
+        if: matrix.compiler == 'clang' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+        run: tools/linux/test-plugins.sh --full
+
+      - name: Build deliberately broken VST3 fixture
+        run: |
+          mkdir -p /tmp/vst3-broken-fixture
+          tools/linux/build-broken-plugin.sh /tmp/vst3-broken-fixture
+          echo "INFINITE_VST3_BROKEN_PLUGIN_DIR=/tmp/vst3-broken-fixture" >> "$GITHUB_ENV"
+
       - name: Virtual display Xvfb tests & screenshot smoke
         run: |
           tools/linux/xvfb-harness.sh --fast
+
+      # media group carries VST3SCANTEST / VST3EDITORSHOTTEST /
+      # VST3BLOCKLISTTEST (task 4.4) plus the pre-existing plugin/media drag
+      # fixtures. Clang-only, same reasoning as the ui/3d/compositing group
+      # below - one toolchain is enough to pay for the slow drag fixtures.
+      - name: Virtual display Xvfb VST3 / media tests
+        if: matrix.compiler == 'clang'
+        run: |
+          tools/linux/xvfb-harness.sh --group media
 
       # --fast is the pre-commit smoke tier and covers almost no rendering.
       # These three groups are where the port's actual risk lives: the editor

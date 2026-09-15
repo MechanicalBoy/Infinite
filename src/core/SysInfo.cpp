@@ -1,4 +1,5 @@
 #include "SysInfo.h"
+#include "audio/PluginScanner.h"
 #include "core/gl3.h"
 #include "platform/Platform.h"
 
@@ -112,6 +113,30 @@ namespace SysInfo
       std::printf("MIDI ports: %s\n", Platform::MidiDeviceSummary().c_str());
       if (!midiWasRunning)
          Platform::MidiStop();
+
+      // VST3 hosting - portable across all three platforms (declared and
+      // implemented on macOS/Windows/Linux; a no-op that returns empty when
+      // built with INFINITE_ENABLE_VST3=OFF), so this section carries no
+      // platform #if of its own, matching the audio/MIDI sections above.
+      // Folders and the live scan count use PluginScanner::DefaultVST3Folders
+      // / Platform::EnumerateVST3Plugins directly rather than a cached index,
+      // for the same "read-only live probe" reason the audio/MIDI sections
+      // above do a short-lived probe instead of trusting a stale cache.
+      {
+         const std::vector<std::string> folders = PluginScanner::DefaultVST3Folders();
+         std::printf("VST3 search folders: %d\n", (int)folders.size());
+         for (const std::string& f : folders)
+            std::printf("  - %s\n", f.c_str());
+
+         std::vector<Platform::PluginDesc> vst3Found;
+         Platform::EnumerateVST3Plugins(folders, vst3Found);
+         std::printf("VST3 plugins found (scan count): %d\n", (int)vst3Found.size());
+
+         const std::vector<std::string> blocklist = Platform::VST3Blocklist();
+         std::printf("VST3 blocklist count: %d\n", (int)blocklist.size());
+         for (const std::string& b : blocklist)
+            std::printf("  - %s\n", b.c_str());
+      }
 
       std::printf("======================================================\n");
       std::fflush(stdout);
