@@ -1570,6 +1570,12 @@ namespace Platform
             hr = outType->SetUINT32(MF_MT_INTERLACE_MODE,
                                     (UINT32)MFVideoInterlace_Progressive);
          if (SUCCEEDED(hr))
+            hr = outType->SetUINT32(MF_MT_VIDEO_PRIMARIES, (UINT32)MFVideoPrimaries_BT709);
+         if (SUCCEEDED(hr))
+            hr = outType->SetUINT32(MF_MT_TRANSFER_FUNCTION, (UINT32)MFVideoTransFunc_709);
+         if (SUCCEEDED(hr))
+            hr = outType->SetUINT32(MF_MT_YUV_MATRIX, (UINT32)MFVideoTransferMatrix_BT709);
+         if (SUCCEEDED(hr))
             hr = rec->writer->AddStream(outType, &rec->videoStreamId);
 
          if (SUCCEEDED(hr))
@@ -1578,6 +1584,14 @@ namespace Platform
             hr = inType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
          if (SUCCEEDED(hr))
             hr = inType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
+         if (SUCCEEDED(hr))
+            hr = inType->SetUINT32(MF_MT_VIDEO_PRIMARIES, (UINT32)MFVideoPrimaries_BT709);
+         if (SUCCEEDED(hr))
+            hr = inType->SetUINT32(MF_MT_TRANSFER_FUNCTION, (UINT32)MFVideoTransFunc_709);
+         if (SUCCEEDED(hr))
+            hr = inType->SetUINT32(MF_MT_YUV_MATRIX, (UINT32)MFVideoTransferMatrix_BT709);
+         if (SUCCEEDED(hr))
+            hr = inType->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, (UINT32)MFNominalRange_0_255);
          if (SUCCEEDED(hr))
             hr = inType->SetUINT64(MF_MT_FRAME_SIZE,
                                    ((UINT64)rec->width << 32) | (UINT32)rec->height);

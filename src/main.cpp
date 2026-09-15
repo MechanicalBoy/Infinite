@@ -29142,6 +29142,69 @@ namespace
       return job;
    }
 
+   // Scopes rendering to a specific set of clips, bounding the time range to
+   // exactly the clips' active extent (min start to max end) on their owning lanes.
+   ArrangeRenderJob ArrangeBuildClipScopedRenderJob(const std::vector<uint64_t>& clipIds, const std::string& baseName)
+   {
+      ArrangeRenderJob job;
+      job.rangeKind = kArrangeRangeCustom;
+      job.startTick = 0;
+      job.endTick = 0;
+      bool first = true;
+      std::unordered_set<uint64_t> laneSet;
+      bool hasVideo = false;
+
+      for (uint64_t cid : clipIds)
+      {
+         const Arrange::Loc loc = Arrange::Find(gArrange, cid);
+         if (!loc.Valid()) continue;
+         const Arrange::Clip* cp = Arrange::FindClip(gArrange, cid);
+         if (!cp) continue;
+         laneSet.insert(gArrange.lanes[loc.lane].id);
+         if (gArrange.lanes[loc.lane].type == Arrange::kLaneVideo)
+            hasVideo = true;
+         if (first)
+         {
+            job.startTick = cp->start;
+            job.endTick = cp->End();
+            first = false;
+         }
+         else
+         {
+            job.startTick = std::min(job.startTick, (int64_t)cp->start);
+            job.endTick = std::max(job.endTick, (int64_t)cp->End());
+         }
+      }
+      if (first)
+      {
+         job.endTick = Arrange::kPPQ * 4;
+      }
+      job.laneScope.assign(laneSet.begin(), laneSet.end());
+      job.width = gArrange.settings.renderWidth;
+      job.height = gArrange.settings.renderHeight;
+      job.fps = gArrange.settings.renderFps;
+      job.sampleRate = (int)llround(ArrangeRenderActiveSampleRate());
+      job.audioSource = kArrangeAudioTimeline;
+      job.canvasVideoUid = 0;
+      job.videoSource = hasVideo ? kArrangeVideoTimeline : kArrangeVideoNone;
+      job.format = hasVideo ? (gArrange.settings.renderFormat == 1 ? 1 : 0) : 2;
+
+      std::string folder = gArrange.settings.renderFolder;
+      if (folder.empty())
+      {
+         const std::string home = AppPaths::HomeDir();
+         folder = home.empty() ? std::string(".") : home + "/Desktop";
+      }
+      while (!folder.empty() && (folder.back() == '/' || folder.back() == '\\'))
+         folder.pop_back();
+      std::string safeName = baseName;
+      for (char& ch : safeName)
+         if (ch == '/' || ch == '\\') ch = '_';
+      const char* ext = hasVideo ? (gArrange.settings.renderFormat == 1 ? ".mov" : ".mp4") : ".wav";
+      job.path = ArrangeRenderUniquePath(folder + "/" + safeName + ext);
+      return job;
+   }
+
    // Queues a lane-scoped job ahead of anything already parked - same
    // "Render Now" semantics as the main panel's button.
    void ArrangeCommitLaneScopedRenderJob(ArrangeRenderJob job)
@@ -29483,16 +29546,12 @@ namespace
             // track the monitoring mode instead of freezing whatever it was
             // when the patch was saved ("render what you hear", WP7 #6b).
             auto effectiveAudioSource = [&]() -> int {
-               if (rset.renderAudioSource >= 0)
-                  return std::clamp(rset.renderAudioSource, 0, 2);
-               return gAudioMode == AudioMode::Timeline ? kArrangeAudioTimeline : kArrangeAudioCanvas;
+               return kArrangeAudioTimeline;
             };
             auto effectiveVideoSource = [&]() -> int {
-               if (rset.renderVideoSource >= 0)
-                  return std::clamp(rset.renderVideoSource, 0, 2);
                if (rangeHasVideoClips(rangeA, rangeB) > 0)
                   return kArrangeVideoTimeline;
-               return renderOutputNodes.empty() ? kArrangeVideoNone : kArrangeVideoCanvas;
+               return kArrangeVideoNone;
             };
 
             auto renderExtension = [&]() -> const char* {
@@ -29605,90 +29664,46 @@ namespace
 
                ImGui::Separator();
 
-               // ---- Sources (WP7 #1 / #6b) ----
-               ImGui::TextDisabled("Audio source:");
-               ImGui::SetNextItemWidth(150.0f);
-               int audioSrcUi = rset.renderAudioSource < 0 ? effectiveAudioSource() : rset.renderAudioSource;
-               if (ImGui::Combo("##arrAudioSrc", &audioSrcUi, "Timeline clips\0Canvas output\0None\0"))
-               {
-                  rset.renderAudioSource = audioSrcUi;
-                  gPatchDirty = true;
-               }
-
-               ImGui::TextDisabled("Video source:");
-               ImGui::SetNextItemWidth(150.0f);
-               int videoSrcUi = rset.renderVideoSource < 0 ? effectiveVideoSource() : rset.renderVideoSource;
-               if (ImGui::Combo("##arrVideoSrc", &videoSrcUi, "Timeline clips\0Canvas Output node\0None (audio only)\0"))
-               {
-                  rset.renderVideoSource = videoSrcUi;
-                  gPatchDirty = true;
-               }
-               if (effectiveVideoSource() == kArrangeVideoCanvas)
-               {
-                  if (renderOutputNodes.empty())
-                  {
-                     ImGui::TextDisabled("(no Output node on the canvas)");
-                  }
-                  else if (renderOutputNodes.size() > 1)
-                  {
-                     int pick = 0;
-                     for (int i = 0; i < (int)renderOutputNodes.size(); i++)
-                        if (renderOutputNodes[(size_t)i].first == sArrangeRenderCanvasUid)
-                           pick = i;
-                     std::string items;
-                     for (const auto& o : renderOutputNodes)
-                     {
-                        items += o.second;
-                        items.push_back('\0');
-                     }
-                     items.push_back('\0');
-                     ImGui::SetNextItemWidth(150.0f);
-                     if (ImGui::Combo("##arrCanvasOut", &pick, items.c_str()))
-                        sArrangeRenderCanvasUid = renderOutputNodes[(size_t)pick].first;
-                  }
-                  if (sArrangeRenderCanvasUid == 0 && !renderOutputNodes.empty())
-                     sArrangeRenderCanvasUid = renderOutputNodes.front().first;
-               }
-
-               ImGui::Separator();
-
                const bool audioOnly = effectiveVideoSource() == kArrangeVideoNone;
 
                // ---- Resolution / fps (video jobs only) ----
-               ImGui::BeginDisabled(audioOnly);
-               ImGui::TextDisabled("Resolution:");
-               static int sArrangeRenderResPreset = 0; // 0=Match Clips, 1..4 fixed, 5=Custom
-               int detectedClipW = 0, detectedClipH = 0;
-               ArrangeRenderDetectClipSize(detectedClipW, detectedClipH);
-               const char* kResPresets[] = { "Match Clips", "1080p", "4K", "720p", "Vertical", "Custom" };
-               ImGui::SetNextItemWidth(120.0f);
-               if (ImGui::Combo("##arrResPreset", &sArrangeRenderResPreset, kResPresets, IM_ARRAYSIZE(kResPresets)))
+               if (!audioOnly)
                {
-                  if (sArrangeRenderResPreset == 0) { rset.renderWidth = detectedClipW; rset.renderHeight = detectedClipH; }
-                  else if (sArrangeRenderResPreset == 1) { rset.renderWidth = 1920; rset.renderHeight = 1080; }
-                  else if (sArrangeRenderResPreset == 2) { rset.renderWidth = 3840; rset.renderHeight = 2160; }
-                  else if (sArrangeRenderResPreset == 3) { rset.renderWidth = 1280; rset.renderHeight = 720; }
-                  else if (sArrangeRenderResPreset == 4) { rset.renderWidth = 1080; rset.renderHeight = 1920; }
-                  gPatchDirty = true;
-               }
-               ImGui::SameLine();
-               ImGui::SetNextItemWidth(60.0f);
-               if (ImGui::InputInt("##arrResW", &rset.renderWidth, 0, 0))
-                  gPatchDirty = true;
-               ImGui::SameLine(0.0f, 4.0f);
-               ImGui::TextDisabled("x");
-               ImGui::SameLine(0.0f, 4.0f);
-               ImGui::SetNextItemWidth(60.0f);
-               if (ImGui::InputInt("##arrResH", &rset.renderHeight, 0, 0))
-                  gPatchDirty = true;
-               rset.renderWidth = std::clamp(rset.renderWidth, 16, 7680);
-               rset.renderHeight = std::clamp(rset.renderHeight, 16, 4320);
+                  ImGui::TextDisabled("Resolution:");
+                  static int sArrangeRenderResPreset = 0; // 0=Match Clips, 1..4 fixed, 5=Custom
+                  int detectedClipW = 0, detectedClipH = 0;
+                  ArrangeRenderDetectClipSize(detectedClipW, detectedClipH);
+                  const char* kResPresets[] = { "Match Clips", "1080p", "4K", "720p", "Vertical", "Custom" };
+                  ImGui::SetNextItemWidth(120.0f);
+                  if (ImGui::Combo("##arrResPreset", &sArrangeRenderResPreset, kResPresets, IM_ARRAYSIZE(kResPresets)))
+                  {
+                     if (sArrangeRenderResPreset == 0) { rset.renderWidth = detectedClipW; rset.renderHeight = detectedClipH; }
+                     else if (sArrangeRenderResPreset == 1) { rset.renderWidth = 1920; rset.renderHeight = 1080; }
+                     else if (sArrangeRenderResPreset == 2) { rset.renderWidth = 3840; rset.renderHeight = 2160; }
+                     else if (sArrangeRenderResPreset == 3) { rset.renderWidth = 1280; rset.renderHeight = 720; }
+                     else if (sArrangeRenderResPreset == 4) { rset.renderWidth = 1080; rset.renderHeight = 1920; }
+                     gPatchDirty = true;
+                  }
+                  ImGui::SameLine();
+                  ImGui::SetNextItemWidth(60.0f);
+                  if (ImGui::InputInt("##arrResW", &rset.renderWidth, 0, 0))
+                     gPatchDirty = true;
+                  ImGui::SameLine(0.0f, 4.0f);
+                  ImGui::TextDisabled("x");
+                  ImGui::SameLine(0.0f, 4.0f);
+                  ImGui::SetNextItemWidth(60.0f);
+                  if (ImGui::InputInt("##arrResH", &rset.renderHeight, 0, 0))
+                     gPatchDirty = true;
+                  rset.renderWidth = std::clamp(rset.renderWidth, 16, 7680);
+                  rset.renderHeight = std::clamp(rset.renderHeight, 16, 4320);
 
-               ImGui::SetNextItemWidth(90.0f);
-               if (ImGui::InputInt("fps##arrRenderFps", &rset.renderFps))
-                  gPatchDirty = true;
-               rset.renderFps = std::clamp(rset.renderFps, 1, 240);
-               ImGui::EndDisabled();
+                  ImGui::SetNextItemWidth(90.0f);
+                  if (ImGui::InputInt("fps##arrRenderFps", &rset.renderFps))
+                     gPatchDirty = true;
+                  rset.renderFps = std::clamp(rset.renderFps, 1, 240);
+
+                  ImGui::Separator();
+               }
 
                ImGui::Separator();
 
@@ -32428,6 +32443,16 @@ namespace
                ArrangeGroupSelection();
             if (ImGui::MenuItem("Ungroup", MODKEY "+Shift+G", false, ArrangeCanUngroupSelection()))
                ArrangeUngroupSelection();
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Bounce / Render Clip", nullptr, false, !ArrangeRenderBusy()))
+            {
+               std::vector<uint64_t> sel = ArrangeSelectionIds();
+               if (sel.empty()) sel.push_back(cid);
+               const std::string clipTitle = !cp->name.empty() ? cp->name : (ctxNode != nullptr ? NodeTitle(*ctxNode) : "Clip");
+               ArrangeRenderJob job = ArrangeBuildClipScopedRenderJob(sel, clipTitle);
+               ArrangeCommitLaneScopedRenderJob(job);
+            }
          }
          ImGui::EndPopup();
       }

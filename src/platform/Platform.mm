@@ -415,6 +415,7 @@ namespace Platform
    {
       double pts = 0.0;
       std::vector<unsigned char> pixels;
+      uint64_t lastAccess = 0;
    };
 
    struct VideoHandle
@@ -426,16 +427,18 @@ namespace Platform
       int width = 0;
       int height = 0;
       double duration = 0.0;
+      double nominalFps = 30.0;
       double currentPts = -1.0;  // presentation time of the frame we last handed out
+      double readerPts = -1.0;   // presentation time the reader last decoded
       double nextPts = -1.0;     // pts of the decoded-but-not-yet-current frame
       std::vector<unsigned char> pending; // that frame's pixels
       bool finished = false;
 
-      // Frames decoded while recovering from a backward seek (reverse playback),
-      // kept around so the next several reverse steps don't each pay for a fresh
-      // reader rebuild + partial-GOP redecode. FIFO by pts, capped by byte size.
-      std::deque<CachedVideoFrame> frameCache;
+      // Multi-region LRU frame cache across seek/scrub points.
+      // Capped by total bytes (512 MB).
+      std::vector<CachedVideoFrame> frameCache;
       size_t cacheBytes = 0;
+      uint64_t accessCounter = 0;
       static constexpr size_t kMaxCacheBytes = 512 * 1024 * 1024;
    };
 
@@ -475,7 +478,7 @@ namespace Platform
             return false;
          }
          h->finished = false;
-         h->currentPts = -1.0;
+         h->readerPts = fromSeconds;
          h->nextPts = -1.0;
          return true;
       }
@@ -532,47 +535,91 @@ namespace Platform
          return true;
       }
 
-      // Appends a decoded frame to the reverse-playback cache, evicting the
-      // oldest entries (FIFO) to stay under the byte cap.
+      // Appends a decoded frame to the LRU cache, evicting the least-recently used
+      // frames when exceeding the byte cap.
       void PushCacheFrame(VideoHandle* h, double pts, const std::vector<unsigned char>& pixels)
       {
          const size_t frameBytes = pixels.size();
          if (frameBytes == 0 || frameBytes > VideoHandle::kMaxCacheBytes)
             return;
 
-         if (!h->frameCache.empty() && pts <= h->frameCache.back().pts + 0.0001)
-            return; // avoid duplicate timestamps
+         h->accessCounter++;
 
-         h->frameCache.push_back({pts, pixels});
+         for (auto& f : h->frameCache)
+         {
+            if (std::abs(f.pts - pts) < 0.001)
+            {
+               f.lastAccess = h->accessCounter;
+               return;
+            }
+         }
+
+         h->frameCache.push_back({ pts, pixels, h->accessCounter });
          h->cacheBytes += frameBytes;
 
          while (h->cacheBytes > VideoHandle::kMaxCacheBytes && !h->frameCache.empty())
          {
-            h->cacheBytes -= h->frameCache.front().pixels.size();
-            h->frameCache.pop_front();
+            size_t lruIdx = 0;
+            uint64_t minAccess = h->frameCache[0].lastAccess;
+            for (size_t i = 1; i < h->frameCache.size(); i++)
+            {
+               if (h->frameCache[i].lastAccess < minAccess)
+               {
+                  minAccess = h->frameCache[i].lastAccess;
+                  lruIdx = i;
+               }
+            }
+            h->cacheBytes -= h->frameCache[lruIdx].pixels.size();
+            h->frameCache.erase(h->frameCache.begin() + lruIdx);
          }
       }
 
-      // Serves a request directly from the reverse-playback cache when possible.
+      // Serves a request directly from the LRU cache when possible.
       bool TryUseCache(VideoHandle* h, double seconds, std::vector<unsigned char>& outPixels)
       {
          if (h->frameCache.empty())
             return false;
-         if (seconds < h->frameCache.front().pts - 0.01 || seconds > h->frameCache.back().pts + 0.04)
-            return false; // outside cached span
 
+         const double frameDur = (h->nominalFps > 0.0) ? (1.0 / h->nominalFps) : 0.0333;
          const CachedVideoFrame* best = nullptr;
-         for (auto it = h->frameCache.rbegin(); it != h->frameCache.rend(); ++it)
+         double minDiff = 1e9;
+         size_t bestIdx = 0;
+
+         for (size_t i = 0; i < h->frameCache.size(); i++)
          {
-            if (it->pts <= seconds + 0.001)
+            const auto& f = h->frameCache[i];
+            const double diff = seconds - f.pts;
+            if (diff >= -0.002 && diff < (frameDur * 1.25 + 0.01))
             {
-               best = &(*it);
-               break;
+               if (diff < minDiff)
+               {
+                  minDiff = diff;
+                  best = &f;
+                  bestIdx = i;
+               }
             }
          }
-         if (best == nullptr)
-            best = &h->frameCache.front();
 
+         if (best == nullptr)
+         {
+            for (size_t i = 0; i < h->frameCache.size(); i++)
+            {
+               const auto& f = h->frameCache[i];
+               const double absDiff = std::abs(seconds - f.pts);
+               if (absDiff < 0.025 && absDiff < minDiff)
+               {
+                  minDiff = absDiff;
+                  best = &f;
+                  bestIdx = i;
+               }
+            }
+         }
+
+         if (best == nullptr)
+            return false;
+
+         h->accessCounter++;
+         h->frameCache[bestIdx].lastAccess = h->accessCounter;
          outPixels = best->pixels;
          h->currentPts = best->pts;
          return true;
@@ -1307,6 +1354,9 @@ namespace Platform
          h->width = (int)std::abs(size.width);
          h->height = (int)std::abs(size.height);
          h->duration = CMTimeGetSeconds([asset duration]);
+         h->nominalFps = [h->track nominalFrameRate];
+         if (h->nominalFps <= 0.0)
+            h->nominalFps = 30.0;
 
          if (!StartReader(h, 0.0, outError))
          {
@@ -1348,18 +1398,18 @@ namespace Platform
 
       @autoreleasepool
       {
-         // 1. If the target frame is in the reverse/scrub cache, serve it immediately!
+         // 1. If the target frame is in the LRU cache (from recent playback or scrubbing), serve immediately!
          if (TryUseCache(handle, seconds, outPixels))
             return true;
 
          // 2. Cache miss: check if existing reader can legitimately decode forward to `seconds`.
          // The reader is only valid for forward decoding if it exists, is not finished,
-         // is positioned before `seconds`, and is within 1.0s of `seconds`.
+         // is positioned at or before `seconds`, and is within 1.0s forward.
          const bool canResumeForward = (handle->reader != nil) &&
                                        (!handle->finished) &&
-                                       (handle->currentPts >= 0.0) &&
-                                       (handle->currentPts <= seconds) &&
-                                       (seconds <= handle->currentPts + 1.0);
+                                       (handle->readerPts >= 0.0) &&
+                                       (handle->readerPts <= seconds) &&
+                                       (seconds <= handle->readerPts + 1.0);
 
          if (!canResumeForward)
          {
@@ -1368,14 +1418,13 @@ namespace Platform
                [handle->reader cancelReading];
             handle->reader = nil;
             handle->output = nil;
-            handle->frameCache.clear();
-            handle->cacheBytes = 0;
+            // NOTE: Do NOT clear handle->frameCache! Retain cached frames across seeks.
 
-            // When moving backward, look back to populate upcoming reverse frames.
-            // When jumping forward, seek directly to `seconds`.
+            // Look back slightly when moving backward to populate upcoming reverse frames.
+            // Bounded to 0.5s so rapid seeks/scrubs don't stall the frame budget.
             double startFrom = seconds;
-            if (handle->currentPts < 0.0 || seconds < handle->currentPts)
-               startFrom = std::max(0.0, seconds - kReverseLookbackSeconds);
+            if (handle->readerPts < 0.0 || seconds < handle->readerPts)
+               startFrom = std::max(0.0, seconds - 0.5);
 
             if (!StartReader(handle, startFrom, err))
                return false;
@@ -1390,21 +1439,27 @@ namespace Platform
                if (!DecodeNext(handle))
                   break;
             }
-            if (handle->nextPts > seconds)
+            if (handle->nextPts > seconds && produced)
                break;
 
             outPixels = handle->pending;
             handle->currentPts = handle->nextPts;
+            handle->readerPts = handle->nextPts;
             handle->nextPts = -1.0;
             produced = true;
 
-            // Cache every decoded frame so reverse playback and scrubbing can reuse it
+            // Cache every decoded frame into the persistent LRU cache
             PushCacheFrame(handle, handle->currentPts, outPixels);
+
+            if (handle->currentPts >= seconds - 0.001)
+               break;
          }
 
          if (!produced && !handle->pending.empty())
          {
             outPixels = handle->pending;
+            handle->currentPts = handle->nextPts >= 0.0 ? handle->nextPts : seconds;
+            handle->readerPts = handle->currentPts;
             produced = true;
          }
 
@@ -1929,6 +1984,10 @@ namespace Platform
             }
             CVPixelBufferUnlockBaseAddress(buffer, 0);
 
+            CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
+            CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
+            CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
+
             const long long frame = h->frameIndex.load(std::memory_order_relaxed);
             CMTime when = CMTimeMake(frame, h->fps);
             BOOL ok = NO;
@@ -2027,6 +2086,11 @@ namespace Platform
             AVVideoCodecKey  : AVVideoCodecTypeH264,
             AVVideoWidthKey  : @(width),
             AVVideoHeightKey : @(height),
+            AVVideoColorPropertiesKey : @{
+               AVVideoColorPrimariesKey : AVVideoColorPrimaries_ITU_R_709_2,
+               AVVideoTransferFunctionKey : AVVideoTransferFunction_ITU_R_709_2,
+               AVVideoYCbCrMatrixKey : AVVideoYCbCrMatrix_ITU_R_709_2
+            },
             AVVideoCompressionPropertiesKey : @{
                AVVideoAverageBitRateKey : @(avgBitRate),
                AVVideoProfileLevelKey   : AVVideoProfileLevelH264HighAutoLevel,
@@ -2040,11 +2104,13 @@ namespace Platform
          NSDictionary* attrs = @{
             (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA),
             (id)kCVPixelBufferWidthKey           : @(width),
-            (id)kCVPixelBufferHeightKey          : @(height)
+            (id)kCVPixelBufferHeightKey          : @(height),
+            (id)kCVPixelBufferCGImageCompatibilityKey : @YES,
+            (id)kCVPixelBufferCGBitmapContextCompatibilityKey : @YES
          };
          AVAssetWriterInputPixelBufferAdaptor* adaptor =
             [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input
-                                                                          sourcePixelBufferAttributes:attrs];
+                                                                           sourcePixelBufferAttributes:attrs];
 
          if (![writer canAddInput:input])
          {

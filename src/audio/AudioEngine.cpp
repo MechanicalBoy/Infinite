@@ -226,6 +226,7 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
                terminal.sourceNode->RequestRetrigger();
             cursor++;
          }
+         terminal.windowCursor = cursor;
       }
    }
 
