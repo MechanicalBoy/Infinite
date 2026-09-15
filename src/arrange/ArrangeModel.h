@@ -84,6 +84,21 @@ namespace Arrange
       // length calculation. Never revisited on a later tempo change: ticks
       // are already tempo-invariant everywhere else in this model.
       bool     syncToTempo = true;
+      // Audio-Sample-only (0/unused for an Audio Clip and for video). The
+      // file's own/assumed BPM: defaults to the project tempo at drop time,
+      // which exactly reproduces the old silent "file's BPM == project's
+      // BPM at drop time" assumption syncToTempo used to bake into `length`
+      // once and never revisit. Freely editable afterward in Clip Settings;
+      // editing it recomputes `length` inline (see the BPM field's edit
+      // handler in main.cpp) rather than only mattering at import time, so
+      // a wrong initial guess can be corrected losslessly.
+      float    sampleBpm = 120.0f;
+      // Audio-Sample-only. The decoded file's own natural duration in
+      // seconds, captured once at import (or at Bounce to Sample) and never
+      // touched afterward - persisted so a later sampleBpm edit can
+      // recompute `length` losslessly without re-decoding the file:
+      // length_ticks = sourceDurationSeconds * (sampleBpm / 60) * kPPQ.
+      float    sourceDurationSeconds = 0.0f;
       // Video/image only. Basic color grade, consumed by the compositor as a
       // per-clip shader pass. Defaults are a no-op so every clip that
       // predates this field renders identically.

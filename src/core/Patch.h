@@ -313,6 +313,11 @@ namespace Patch
       // "Audio/Video Sample" in the Clip Settings panel, and the only
       // category the UI lets retrigger.
       bool   sampleDropped   = false;
+      // Audio-Sample-only BPM sync (step 3 - see Arrange::Clip's own
+      // comments). sourceDurationSeconds is what makes a later sampleBpm
+      // edit able to recompute `length` losslessly without re-decoding.
+      float  sampleBpm             = 120.0f;
+      float  sourceDurationSeconds = 0.0f;
    };
 
    struct StreamRecord
