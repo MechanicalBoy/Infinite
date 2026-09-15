@@ -111,6 +111,20 @@ bits from every saved patch.
 `field-testing` §3 requires the frame-domain golden values to match at
 `double` precision and the pixel-domain ones to match within a stated epsilon.
 
+### 3b. Constant folding must be lane-aware, not scalar-shaped
+
+Real bug: a vector Literal node (`vec3(1.0, 0.2, 0.2)`) also stores
+`numberValue = vecValues[0]` for reporting convenience. The `x*0`/`x*1`/`+0`/
+`-0` identity folds and the both-literals-arithmetic fold read that scalar
+field without checking the node's rank/lane count, so a vector literal whose
+*first* component happened to be `0.0` or `1.0` got treated as the scalar
+identity and silently dropped — collapsing `eyes * vec3(1.0, 0.2, 0.2)` down
+to just `eyes`, leaving a stale vector type on the surviving node. Any fold
+rule written against "is this operand a literal 0/1" must check every lane of
+a vector/rank>1 literal, not just the convenience scalar mirror, before it
+applies. This is the same bug shape as an untyped IR field being read without
+checking the domain/rank tag next to it — see the type+domain pairing in §5.
+
 ## 4. The AST node set
 
 Small on purpose. If a construct cannot be expressed with these, it probably

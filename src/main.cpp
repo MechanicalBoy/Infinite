@@ -23227,6 +23227,8 @@ namespace
       // picked from an input rather than authored here, since editing colour
       // and shading now lives on the dedicated Material node.
       ModSliderInt("material from input", &n->materialFrom, 0, JoinGeometryNode::kSlots - 1);
+      if (n->mode == JoinGeometryNode::kMerge)
+         ModCheckbox("keep input colours", &n->keepInputColours);
    }
 
    void DrawSwitcher3DParams(Switcher3DNode* n)
@@ -72960,6 +72962,7 @@ int main(int argc, char** argv)
             Mat4 GetModelMatrix() const override { return wrapped->GetModelMatrix(); }
             Material GetMaterial() const override { return material; }
             unsigned int GetSurfaceTexture() override { return wrapped->GetSurfaceTexture(); }
+            MappingTransform GetMappingTransform() const override { return wrapped->GetMappingTransform(); }
          };
 
          GeometryNode probeMesh;
@@ -73334,7 +73337,7 @@ int main(int argc, char** argv)
             return true;
          };
 
-         struct Result { std::string name; bool ok; bool skip; const char* skipReason; };
+         struct Result { std::string name; bool ok; bool skip; const char* skipReason; std::string note; };
          std::vector<Result> results;
 
          // Colourless-in-colourless-out AND coloured-in-coloured-out, for a
@@ -73380,32 +73383,116 @@ int main(int argc, char** argv)
          checkMeshForwarding("MappingNode", &mapNode);
 
          // JoinGeometryNode's kMerge is NOT a plain forwarding passthrough:
-         // D4 (commit df55bf1) deliberately made a merge always append one
-         // colour triple per vertex, falling back to the input's *material*
-         // colour when that input carries no vertexColor of its own - so a
-         // colourless-in probe legitimately comes out "coloured" (with the
-         // probe's default material colour, not manufactured white). That's
-         // by design, not the generic "colourless stays colourless" contract
-         // checkMeshForwarding assumes, so this gets its own check instead.
+         // a merge only bakes per-vertex colour when it genuinely has more
+         // than one colour to carry - some input already has real vertex
+         // colour, or the inputs' albedos differ (see the bakePerInputColour
+         // decision in JoinGeometryNode::RebuildIfNeeded, UtilityNodes.cpp).
+         // A colourless merge with nothing to distinguish must come out
+         // colourless, same as the generic "colourless stays colourless"
+         // contract checkMeshForwarding asserts elsewhere - a merge that
+         // unconditionally filled vertexColor from its inputs' material
+         // albedo regardless of that decision was a real bug: two merges
+         // feeding a third through Material nodes rendered the first merge's
+         // manufactured colour and ignored the Material nodes entirely
+         // (`join -> material(red) -> join -> render` came out white).
          {
-            meshProbe.colourful = false;
-            JoinGeometryNode joinNode; joinNode.mode = JoinGeometryNode::kMerge; joinNode.inputs[0] = &meshProbe;
-            cook(&joinNode);
-            const Mesh& fromColourless = joinNode.GetMesh();
-            const Material probeMat = meshProbe.GetMaterial();
-            bool fallbackOk = meshColour(fromColourless);
-            if (fallbackOk)
-               for (size_t i = 0; i < fromColourless.vertices.size() && fallbackOk; i++)
-               {
-                  if (std::fabs(fromColourless.vertexColor[i * 3 + 0] - probeMat.color[0]) > 1e-3f) fallbackOk = false;
-                  if (std::fabs(fromColourless.vertexColor[i * 3 + 1] - probeMat.color[1]) > 1e-3f) fallbackOk = false;
-                  if (std::fabs(fromColourless.vertexColor[i * 3 + 2] - probeMat.color[2]) > 1e-3f) fallbackOk = false;
-               }
-            results.push_back({ "JoinGeometryNode (colourless-in, material fallback)", fallbackOk, false, nullptr });
+            struct ColourAlbedoProbeSource : public IGeometrySource
+            {
+               IGeometrySource* wrapped = nullptr;
+               Material material;
+               const Mesh& GetMesh() override { return wrapped->GetMesh(); }
+               unsigned long long MeshRevision() override { return wrapped->MeshRevision(); }
+               Mat4 GetModelMatrix() const override { return wrapped->GetModelMatrix(); }
+               Material GetMaterial() const override { return material; }
+               unsigned int GetSurfaceTexture() override { return wrapped->GetSurfaceTexture(); }
+               MappingTransform GetMappingTransform() const override { return wrapped->GetMappingTransform(); }
+            };
 
-            meshProbe.colourful = true;
-            cook(&joinNode);
-            results.push_back({ "JoinGeometryNode (coloured-in)", meshRgbOk(joinNode.GetMesh()), false, nullptr });
+            ColourAlbedoProbeSource probeRed;
+            probeRed.wrapped = &probeMesh;
+            probeRed.material.color[0] = 0.9f; probeRed.material.color[1] = 0.1f; probeRed.material.color[2] = 0.1f;
+
+            // Same albedo on both inputs: nothing to carry per-vertex, so the
+            // merge must stay colourless - this is the exact shape of the
+            // reported bug (a colourless mesh coming out "coloured").
+            JoinGeometryNode joinSame;
+            joinSame.mode = JoinGeometryNode::kMerge;
+            joinSame.inputs[0] = &probeRed;
+            joinSame.inputs[1] = &probeRed;
+            cook(&joinSame);
+            const bool sameOk = !meshColour(joinSame.GetMesh());
+            results.push_back({ "JoinGeometryNode (equal albedos)", sameOk, false, nullptr,
+                                 sameOk ? "" : "invented vertexColor from equal-albedo inputs" });
+
+            // Two inputs whose albedos genuinely differ is the case merge's
+            // per-input colour exists for, so here vertexColor *must* appear
+            // - and must carry each input's own colour, not one shared
+            // albedo.
+            ColourAlbedoProbeSource probeBlue;
+            probeBlue.wrapped = &probeMesh;
+            probeBlue.material.color[0] = 0.1f; probeBlue.material.color[1] = 0.1f; probeBlue.material.color[2] = 0.9f;
+
+            JoinGeometryNode joinDiff;
+            joinDiff.mode = JoinGeometryNode::kMerge;
+            joinDiff.inputs[0] = &probeRed;
+            joinDiff.inputs[1] = &probeBlue;
+            cook(&joinDiff);
+            const Mesh& mixed = joinDiff.GetMesh();
+            bool mixedOk = mixed.HasVertexColor();
+            std::string mixedNote = mixedOk ? "" : "dropped per-input colour when albedos differ";
+            if (mixedOk)
+            {
+               // First vertex belongs to input 0 (red), last to input 1 (blue).
+               const size_t last = mixed.vertices.size() - 1;
+               const bool firstRed = mixed.vertexColor[0] > 0.5f && mixed.vertexColor[2] < 0.5f;
+               const bool lastBlue = mixed.vertexColor[last * 3 + 2] > 0.5f && mixed.vertexColor[last * 3 + 0] < 0.5f;
+               if (!firstRed || !lastBlue)
+               {
+                  mixedOk = false;
+                  mixedNote = "merged parts did not keep their own colours";
+               }
+               // Colour now lives in the vertices, so the reported albedo has
+               // to be neutral or the shader multiplies materialFrom's colour
+               // in a second time and tints the other part by it.
+               const Material joined = joinDiff.GetMaterial();
+               if (mixedOk && (joined.color[0] < 0.99f || joined.color[1] < 0.99f || joined.color[2] < 0.99f))
+               {
+                  mixedOk = false;
+                  mixedNote = "baked per-input colour but still reports a tinted albedo";
+               }
+            }
+            results.push_back({ "JoinGeometryNode (differing albedos)", mixedOk, false, nullptr, mixedNote });
+
+            // The exact shape the user hit: merge -> material -> merge. The
+            // downstream material must still decide the colour.
+            JoinGeometryNode innerA, innerB;
+            innerA.mode = JoinGeometryNode::kMerge; innerA.inputs[0] = &probeRed;
+            innerB.mode = JoinGeometryNode::kMerge; innerB.inputs[0] = &probeRed;
+            MaterialNode whiteMat, redMat;
+            whiteMat.input = &innerA;
+            whiteMat.color[0] = whiteMat.color[1] = whiteMat.color[2] = 1.0f;
+            redMat.input = &innerB;
+            redMat.color[0] = 0.9f; redMat.color[1] = 0.05f; redMat.color[2] = 0.05f;
+            JoinGeometryNode outer;
+            outer.mode = JoinGeometryNode::kMerge;
+            outer.inputs[0] = &whiteMat;
+            outer.inputs[1] = &redMat;
+            cook(&outer);
+            const Mesh& nested = outer.GetMesh();
+            bool nestedOk = nested.HasVertexColor();
+            std::string nestedNote = nestedOk ? "" : "nested merge lost the downstream materials entirely";
+            if (nestedOk)
+            {
+               const size_t last = nested.vertices.size() - 1;
+               const bool firstWhite = nested.vertexColor[0] > 0.9f && nested.vertexColor[2] > 0.9f;
+               const bool lastRed = nested.vertexColor[last * 3 + 0] > 0.5f && nested.vertexColor[last * 3 + 2] < 0.5f;
+               if (!firstWhite || !lastRed)
+               {
+                  nestedOk = false;
+                  nestedNote = "downstream Material colour was ignored by the outer merge";
+               }
+            }
+            results.push_back({ "JoinGeometryNode (merge -> material -> merge)", nestedOk, false, nullptr, nestedNote });
          }
 
          MergeByDistanceNode mergeNode; mergeNode.input = &meshProbe; mergeNode.threshold = 0.0f;
@@ -73620,7 +73707,7 @@ int main(int argc, char** argv)
                printf("  [SKIP] %-40s — %s\n", r.name.c_str(), r.skipReason);
                continue;
             }
-            printf("  [%s] %-40s\n", r.ok ? "pass" : "FAIL", r.name.c_str());
+            printf("  [%s] %-44s %s\n", r.ok ? "pass" : "FAIL", r.name.c_str(), r.note.c_str());
             if (!r.ok)
                allOk = false;
          }

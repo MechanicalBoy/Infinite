@@ -577,6 +577,11 @@ public:
    // call, so it can only have one material; this picks which.
    int materialFrom = 0;
    bool inheritMaterial = true;
+   // Merge mode only: carry each input's own colour as per-vertex colour
+   // rather than collapsing the whole merged mesh to materialFrom's colour.
+   // Default on, since "each part keeps its own colour" is what most people
+   // expect a merge to do; off reproduces the old single-material look.
+   bool keepInputColours = true;
 
    float posX = 0.0f, posY = 0.0f, posZ = 0.0f;
    float uniformScale = 1.0f;
@@ -615,6 +620,7 @@ public:
    {
       v.Int("mode", mode);
       v.Int("materialFrom", materialFrom); v.Bool("inherit", inheritMaterial);
+      v.Bool("keepInputColours", keepInputColours);
       v.Float("posX", posX); v.Float("posY", posY); v.Float("posZ", posZ);
       v.Float("scale", uniformScale);
       v.Color("color", color); v.Float("metallic", metallic);
@@ -642,10 +648,22 @@ private:
    Mat4 mBuiltGroupMatrices[kSlots];
    size_t mBuiltInstanceCounts[kSlots] = { 0, 0, 0, 0 };
    int mBuiltMode = -1;
+   bool mBuiltKeepInputColours = true;
    // The transforms are baked into the merged vertices, so a change to one has
    // to trigger a rebuild exactly like a change to a mesh would. Keying only on
    // the mesh stamp meant moving or scaling an input did nothing at all.
    Mat4 mBuiltMatrices[kSlots];
+   // Same reasoning for albedo: merge bakes each input's colour into the
+   // merged vertices, and no upstream node bumps MeshRevision() when only its
+   // material changed (MaterialNode forwards its input's stamp verbatim), so
+   // without this a colour picker upstream of a merge moved nothing at all.
+   float mBuiltAlbedos[kSlots][3] = {};
+   // Set by RebuildIfNeeded: true when the merged vertices carry each input's
+   // absolute colour, which means GetMaterial() must report a neutral albedo
+   // so the shader's uBaseColor * vVertexColor product reproduces each part
+   // exactly rather than tinting every part by whichever input materialFrom
+   // happens to point at.
+   bool mBakedPerInputColour = false;
    int mLastCookFrame = -1;
    mutable unsigned long long mMaterialRevision = 0;
    mutable size_t mLastMaterialHash = 0;

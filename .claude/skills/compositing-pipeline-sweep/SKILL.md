@@ -1,6 +1,6 @@
 ---
 name: compositing-pipeline-sweep
-description: Sweep Infinite's 2D / compositing image pipeline for bugs on both macOS and Windows - every node cooking a real texture, bypass passing through untouched, cook memoization holding under fan-out, ImageCable pulls carrying the right frame id, colour/palette extraction, and idle-frame caching. Use when a 2D node was added or changed (Blend, Layer Stack, Switcher, Filter, Curves, Feedback, Trails, Reaction Diffusion, Resynth, Fit, Ramp, Palette, Remove Background), when an image comes out black, stale, doubled or wrong-sized, when bypass leaves a node's effect on, when the same patch looks different depending on how many cables leave a node, or before a release as a 2D-pipeline regression gate.
+description: Sweep Infinite's 2D / compositing image pipeline for bugs on both macOS and Windows - every node cooking a real texture, bypass passing through untouched, cook memoization holding under fan-out, ImageCable pulls carrying the right frame id, colour/palette extraction, correct source-over alpha compositing, and idle-frame caching. Use when a 2D node was added or changed (Blend, Layer Stack, Switcher, Filter, Curves, Feedback, Trails, Reaction Diffusion, Resynth, Fit, Ramp, Palette, Remove Background), when an image comes out black, stale, doubled or wrong-sized, when bypass leaves a node's effect on, when the same patch looks different depending on how many cables leave a node, when transparent edges fringe black/dark or stacked semi-transparent layers don't add up correctly, or before a release as a 2D-pipeline regression gate.
 ---
 
 Paths below are relative to the repo root (`/Users/namansoni/infinte`).
@@ -48,6 +48,23 @@ Three properties make this correct, and each has its own check below:
 3. **Bypass is transparent.** A bypassed node must hand its input straight
    through, both in what downstream reads and in what `ImageCable::Resolved()`
    walks to.
+4. **Alpha compositing uses the real source-over formula, not an ad hoc
+   mix.** `BlendNode` and `LayerStackNode` both used to feed `blendMode()`
+   the *unpremultiplied* backdrop colour directly and combine alpha with
+   `max(a.a, b.a)`. Where the backdrop was transparent, the blend function
+   read whatever colour sat under alpha 0 (usually black), so Multiply/
+   Darken/Burn etc. produced black fringes around transparent edges — and
+   stacking two 50%-opacity layers gave `0.5` instead of the correct
+   `0.75`. The fix is the standard source-over composite: source coverage
+   `as`, `cs = mix(source.rgb, blended, backdrop.a)` (mode degrades to
+   Normal as backdrop alpha → 0), `ar = as + backdrop.a*(1-as)`, and
+   `cr = (cs*as + backdrop.rgb*backdrop.a*(1-as)) / ar` guarded for `ar~0`.
+   Any new blend-mode or compositing node must be checked against this
+   formula rather than a bespoke `mix(...)`/`max(...)` — verify algebraically
+   that the fully-opaque-over-opaque case reduces to the old
+   `mix(a, blended, uMix) ` result (bit-identical), since that's the common
+   case every existing patch depends on; only partial-alpha cases should
+   change.
 
 ## Rule 2 is the one that bites
 

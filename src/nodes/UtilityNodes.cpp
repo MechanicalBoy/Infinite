@@ -200,6 +200,15 @@ void JoinGeometryNode::RebuildIfNeeded()
       return true;
    };
 
+   // Fetched once per input and reused by the dirty check, the bake decision
+   // and the build loop below. Joins nest, so an input's GetMaterial() can
+   // walk a whole upstream chain of its own - asking three times per rebuild
+   // multiplies that walk by three at every level.
+   Material inputMaterials[kSlots];
+   for (int i = 0; i < kSlots; i++)
+      if (inputs[i] != nullptr)
+         inputMaterials[i] = inputs[i]->GetMaterial();
+
    bool dirty = false;
    for (int i = 0; i < kSlots; i++)
    {
@@ -211,19 +220,80 @@ void JoinGeometryNode::RebuildIfNeeded()
       const std::vector<Mat4>* xformsPtr = instancer ? &ResolveInstanceTransforms(inputs[i], instancer) : nullptr;
       const size_t instCount = xformsPtr ? xformsPtr->size() : 0;
       const unsigned long long matRev = inputs[i] ? inputs[i]->MaterialRevision() : 0;
+      const Material& inputMat = inputMaterials[i];
 
       if (mBuiltInputs[i] != (const void*)inputs[i] || mBuiltRevisions[i] != rev ||
           mBuiltInstancers[i] != (const void*)instancer || mBuiltInstRevisions[i] != instRev ||
           !(mBuiltGroupMatrices[i] == groupMatrix) || mBuiltInstanceCounts[i] != instCount ||
-          !sameMatrix(mBuiltMatrices[i], matrix) || mBuiltMaterialRev[i] != matRev)
+          !sameMatrix(mBuiltMatrices[i], matrix) || mBuiltMaterialRev[i] != matRev ||
+          mBuiltAlbedos[i][0] != inputMat.color[0] || mBuiltAlbedos[i][1] != inputMat.color[1] ||
+          mBuiltAlbedos[i][2] != inputMat.color[2])
          dirty = true;
    }
    if (mBuiltMode != mode)
+      dirty = true;
+   if (mBuiltKeepInputColours != keepInputColours)
       dirty = true;
    if (!dirty)
       return;
 
    mCache = Mesh();
+
+   // Decide up front whether this merge needs per-vertex colour at all.
+   //
+   // Baking colour is not free: a mesh that carries vertexColor is one the
+   // render shader multiplies into uBaseColor forever after
+   // (`base = toLinear(uBaseColor) * vInstanceColor * vVertexColor`,
+   // Geometry3DNodes.cpp), and there is no way for a later node to tell
+   // colour someone authored apart from filler a previous merge invented. A
+   // merge that unconditionally filled vertexColor from its inputs' default
+   // material therefore froze every *downstream* Material node out: join ->
+   // material(red) -> join rendered white, because the second join saw the
+   // first join's manufactured white and treated it as authored colour.
+   //
+   // So only bake when the merge genuinely has more than one colour to carry:
+   // some input already has real per-vertex colour, or the inputs' albedos
+   // actually differ. Otherwise leave vertexColor empty and let the single
+   // material speak for the whole mesh, exactly as it did before merge grew
+   // per-input colour.
+   bool anyAuthoredColour = false;
+   bool albedosDiffer = false;
+   bool haveFirstAlbedo = false;
+   float firstAlbedo[3] = { 0.0f, 0.0f, 0.0f };
+   for (int i = 0; i < kSlots; i++)
+   {
+      if (inputs[i] == nullptr)
+         continue;
+      const Mesh& probe = inputs[i]->GetMesh();
+      if (probe.Empty())
+         continue;
+
+      if (probe.HasVertexColor())
+         anyAuthoredColour = true;
+      // RealizeInstances paints per-instance colour onto a colourless stamp,
+      // so an instanced input contributes authored colour even when its own
+      // mesh carries none (Mesh.cpp, the instanceColors branch).
+      if (InstanceOnPointsNode* inst = FindInstancer(inputs[i]))
+         if (inst->InstanceColors().size() >= 3)
+            anyAuthoredColour = true;
+
+      const Material& mat = inputMaterials[i];
+      if (!haveFirstAlbedo)
+      {
+         firstAlbedo[0] = mat.color[0];
+         firstAlbedo[1] = mat.color[1];
+         firstAlbedo[2] = mat.color[2];
+         haveFirstAlbedo = true;
+      }
+      else if (mat.color[0] != firstAlbedo[0] || mat.color[1] != firstAlbedo[1] ||
+               mat.color[2] != firstAlbedo[2])
+      {
+         albedosDiffer = true;
+      }
+   }
+   const bool bakePerInputColour =
+      (mode == kMerge) && keepInputColours && (anyAuthoredColour || albedosDiffer);
+
    bool haveFirst = false;
    for (int i = 0; i < kSlots; i++)
    {
@@ -237,6 +307,9 @@ void JoinGeometryNode::RebuildIfNeeded()
       mBuiltGroupMatrices[i] = instancer ? inputs[i]->GetInstanceGroupMatrix() : Mat4::Identity();
       const std::vector<Mat4>* xformsPtr = instancer ? &ResolveInstanceTransforms(inputs[i], instancer) : nullptr;
       mBuiltInstanceCounts[i] = xformsPtr ? xformsPtr->size() : 0;
+      mBuiltAlbedos[i][0] = inputMaterials[i].color[0];
+      mBuiltAlbedos[i][1] = inputMaterials[i].color[1];
+      mBuiltAlbedos[i][2] = inputMaterials[i].color[2];
 
       if (inputs[i] == nullptr)
          continue;
@@ -264,30 +337,32 @@ void JoinGeometryNode::RebuildIfNeeded()
          for (unsigned int idx : placed.indices)
             mCache.indices.push_back(base + idx);
 
-         // D4 (geometry-domains audit, Phase 4): a merge always preserves
-         // input colour now - always append exactly one colour triple per
-         // vertex of this input, so mCache.vertexColor stays index-aligned
-         // with mCache.vertices no matter which inputs did or didn't already
-         // carry their own vertex colour. Appending only when non-empty (the
-         // old behaviour, previously gated behind an opt-in checkbox) let a
-         // colourless input's vertices silently inherit whatever came from a
-         // different input at the same offset, or dropped colour for the
-         // whole mesh once sizes no longer lined up with
-         // Mesh::HasVertexColor() - that lossy-by-default behaviour is
-         // exactly the bug this audit was started to fix.
-         if (placed.HasVertexColor())
+         if (bakePerInputColour)
          {
-            mCache.vertexColor.insert(mCache.vertexColor.end(), placed.vertexColor.begin(), placed.vertexColor.end());
-         }
-         else
-         {
-            const Material inputMat = inputs[i]->GetMaterial();
+            // Always append exactly one colour triple per vertex of this
+            // input, so mCache.vertexColor stays index-aligned with
+            // mCache.vertices no matter which inputs did or didn't already
+            // carry their own vertex colour - appending only when non-empty
+            // (the original behaviour) let a colourless input's vertices
+            // silently inherit whatever came from a different input at the
+            // same offset, or dropped colour for the whole mesh once sizes no
+            // longer lined up with Mesh::HasVertexColor().
+            //
+            // What is baked is each input's *absolute* rendered colour
+            // (its own vertex colour times its own albedo), and GetMaterial()
+            // reports a neutral albedo to match. Carrying the raw vertex
+            // colour instead and letting materialFrom's albedo multiply it
+            // would tint every other input by whichever material the dropdown
+            // happens to point at, so a red input merged into a blue one came
+            // out black.
+            const Material& inputMat = inputMaterials[i];
+            const bool hadColour = placed.HasVertexColor();
+            mCache.vertexColor.reserve(mCache.vertexColor.size() + placed.vertices.size() * 3);
             for (size_t vIdx = 0; vIdx < placed.vertices.size(); vIdx++)
-            {
-               mCache.vertexColor.push_back(inputMat.color[0]);
-               mCache.vertexColor.push_back(inputMat.color[1]);
-               mCache.vertexColor.push_back(inputMat.color[2]);
-            }
+               for (int c = 0; c < 3; c++)
+                  mCache.vertexColor.push_back(
+                     hadColour ? placed.vertexColor[vIdx * 3 + c] * inputMat.color[c]
+                               : inputMat.color[c]);
          }
       }
       else if (!haveFirst)
@@ -306,6 +381,8 @@ void JoinGeometryNode::RebuildIfNeeded()
       }
    }
    mBuiltMode = mode;
+   mBuiltKeepInputColours = keepInputColours;
+   mBakedPerInputColour = bakePerInputColour;
    mMeshRevision = NextMeshRevision();
 }
 
@@ -355,14 +432,31 @@ Material JoinGeometryNode::GetMaterial() const
          if (inputs[i] != nullptr)
             return inputs[i]->GetMaterial();
    }
+   // The merged vertices may carry each input's absolute colour, and only
+   // RebuildIfNeeded knows whether they do. Render3D reads GetMaterial() when
+   // it builds its draw signature, which can happen before it ever asks for
+   // the mesh, so settle the cache here rather than reporting a stale albedo
+   // for a frame. Same const_cast idiom TriangleCount() already uses above.
+   const_cast<JoinGeometryNode*>(this)->RebuildIfNeeded();
+   const bool neutralAlbedo = mBakedPerInputColour;
+
    if (inheritMaterial)
    {
       const int pick = std::max(0, std::min(materialFrom, kSlots - 1));
-      if (inputs[pick] != nullptr)
-         return inputs[pick]->GetMaterial();
-      for (int i = 0; i < kSlots; i++)
-         if (inputs[i] != nullptr)
-            return inputs[i]->GetMaterial();
+      IGeometrySource* from = inputs[pick];
+      if (from == nullptr)
+         for (int i = 0; i < kSlots && from == nullptr; i++)
+            from = inputs[i];
+      if (from != nullptr)
+      {
+         Material inherited = from->GetMaterial();
+         // Colour is already in the vertices; leaving materialFrom's albedo in
+         // uBaseColor as well would multiply it in twice and tint every other
+         // part by it.
+         if (neutralAlbedo)
+            inherited.color[0] = inherited.color[1] = inherited.color[2] = 1.0f;
+         return inherited;
+      }
    }
 
    Material m;
