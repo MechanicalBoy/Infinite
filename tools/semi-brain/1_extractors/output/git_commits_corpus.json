@@ -1,5 +1,309 @@
 [
   {
+    "hash": "0f2b5b039d782b1ce17788f246ffe5699be45bfe",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 19:50:19 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "semi-brain",
+      "title": "feat(semi-brain): add Semi-Brain cognitive twin skill and toolkit",
+      "description": "add Semi-Brain cognitive twin skill and toolkit",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(semi-brain): add Semi-Brain cognitive twin skill and toolkit"
+    },
+    "stat": ".claude/skills/semi-brain/SKILL.md                 |     64 +\n AGENTS.md                                          |      1 +\n tools/semi-brain/1_extractors/build_ast_graph.py   |    229 +\n tools/semi-brain/1_extractors/index_codebase.py    |    170 +\n .../1_extractors/ingest_build_your_own_x.py        |    124 +\n tools/semi-brain/1_extractors/mine_git_history.py  |    129 +\n .../1_extractors/output/ast_symbol_graph.json      | 128744 ++++++++++++++++++\n .../output/build_your_own_x_corpus.json            |   1004 +\n .../1_extractors/output/git_commits_corpus.json    |  13848 ++\n .../1_extractors/output/knowledge_index.db         |    Bin 0 -> 24190976 bytes\n .../1_extractors/output/recovered_docs_corpus.json |    554 +\n .../output/skills_and_invariants_corpus.json       |    365 +\n .../1_extractors/parse_skills_and_rules.py         |     57 +\n tools/semi-brain/1_extractors/recover_git_docs.py  |     59 +\n .../2_distilled_brain/categorization_matrix.md     |     68 +\n .../2_distilled_brain/choice_tree_evaluator.md     |     67 +\n .../first_principles_blueprints.md                 |    174 +\n .../2_distilled_brain/system1_taste_and_priors.md  |     50 +\n .../2_distilled_brain/system2_systems_logic.md     |     65 +\n .../semi-brain/3_datasets/compile_training_data.py |    223 +\n tools/semi-brain/3_datasets/mlx_data/train.jsonl   |   1023 +\n tools/semi-brain/3_datasets/mlx_data/valid.jsonl   |    114 +\n tools/semi-brain/3_datasets/prepare_mlx_dataset.py |     80 +\n .../3_datasets/train_dpo_preference.jsonl          |     86 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl |   1137 +\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl |   1137 +\n tools/semi-brain/4_engine/brain_core.py            |    306 +\n tools/semi-brain/4_engine/install_hooks.sh         |     37 +\n tools/semi-brain/4_engine/local_router.py          |     70 +\n tools/semi-brain/4_engine/retriever.py             |    161 +\n .../4_engine/router_adapter/adapter_config.json    |     40 +\n tools/semi-brain/4_engine/semi_brain_cli.py        |    137 +\n tools/semi-brain/4_engine/sync_brain.py            |     78 +\n tools/semi-brain/4_engine/train_router.py          |     48 +\n tools/semi-brain/5_evals/benchmark_suite.json      |    212 +\n tools/semi-brain/5_evals/run_evals.py              |    146 +\n 36 files changed, 150807 insertions(+)\n create mode 100644 .claude/skills/semi-brain/SKILL.md\n create mode 100644 tools/semi-brain/1_extractors/build_ast_graph.py\n create mode 100644 tools/semi-brain/1_extractors/index_codebase.py\n create mode 100644 tools/semi-brain/1_extractors/ingest_build_your_own_x.py\n create mode 100644 tools/semi-brain/1_extractors/mine_git_history.py\n create mode 100644 tools/semi-brain/1_extractors/output/ast_symbol_graph.json\n create mode 100644 tools/semi-brain/1_extractors/output/build_your_own_x_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/git_commits_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/knowledge_index.db\n create mode 100644 tools/semi-brain/1_extractors/output/recovered_docs_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/output/skills_and_invariants_corpus.json\n create mode 100644 tools/semi-brain/1_extractors/parse_skills_and_rules.py\n create mode 100644 tools/semi-brain/1_extractors/recover_git_docs.py\n create mode 100644 tools/semi-brain/2_distilled_brain/categorization_matrix.md\n create mode 100644 tools/semi-brain/2_distilled_brain/choice_tree_evaluator.md\n create mode 100644 tools/semi-brain/2_distilled_brain/first_principles_blueprints.md\n create mode 100644 tools/semi-brain/2_distilled_brain/system1_taste_and_priors.md\n create mode 100644 tools/semi-brain/2_distilled_brain/system2_systems_logic.md\n create mode 100644 tools/semi-brain/3_datasets/compile_training_data.py\n create mode 100644 tools/semi-brain/3_datasets/mlx_data/train.jsonl\n create mode 100644 tools/semi-brain/3_datasets/mlx_data/valid.jsonl\n create mode 100644 tools/semi-brain/3_datasets/prepare_mlx_dataset.py\n create mode 100644 tools/semi-brain/3_datasets/train_dpo_preference.jsonl\n create mode 100644 tools/semi-brain/3_datasets/train_sft_alpaca.jsonl\n create mode 100644 tools/semi-brain/3_datasets/train_sft_sharegpt.jsonl\n create mode 100644 tools/semi-brain/4_engine/brain_core.py\n create mode 100644 tools/semi-brain/4_engine/install_hooks.sh\n create mode 100644 tools/semi-brain/4_engine/local_router.py\n create mode 100644 tools/semi-brain/4_engine/retriever.py\n create mode 100644 tools/semi-brain/4_engine/router_adapter/adapter_config.json\n create mode 100644 tools/semi-brain/4_engine/semi_brain_cli.py\n create mode 100644 tools/semi-brain/4_engine/sync_brain.py\n create mode 100644 tools/semi-brain/4_engine/train_router.py\n create mode 100644 tools/semi-brain/5_evals/benchmark_suite.json\n create mode 100644 tools/semi-brain/5_evals/run_evals.py"
+  },
+  {
+    "hash": "4daf932ee11a4aaa36a4c559da95ff83c0074d34",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:25:16 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge origin/main (reconcile pushed retriggering merge with local main)",
+      "description": "Merge origin/main (reconcile pushed retriggering merge with local main)",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge origin/main (reconcile pushed retriggering merge with local main)"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "ca32fd27847dffc27539daf27c35992e66660589",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:25:01 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Add timeline-arrangement-architecture skill",
+      "description": "Add timeline-arrangement-architecture skill",
+      "bullets": [],
+      "body": "Reference doc for the Arrange/Timeline data model and the Sample/Clip\nsplit, kept alongside the code it describes.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Add timeline-arrangement-architecture skill\n\nReference doc for the Arrange/Timeline data model and the Sample/Clip\nsplit, kept alongside the code it describes.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".../timeline-arrangement-architecture/SKILL.md     | 287 +++++++++++++++++++++\n 1 file changed, 287 insertions(+)\n create mode 100644 .claude/skills/timeline-arrangement-architecture/SKILL.md"
+  },
+  {
+    "hash": "79456ea10e848b4d076d58cc17663d845e9327d6",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:23:22 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Merge branch 'feature/arrange-sample-source-offset'",
+      "description": "Merge branch 'feature/arrange-sample-source-offset'",
+      "bullets": [],
+      "body": "Adds Clip::sourceOffsetSeconds so a Sample clip knows where in its\ndecoded source buffer its audio starts. Fixes Split() (and the identical\nbug shape in CarveRange, used by overwrite-drop/duplicate-with-overlap)\nto derive the right half's offset correctly, fixes the static waveform\nto slice the peak array to the clip's actual source window instead of\nstretching the whole file across every Sample clip, and threads the\noffset through AudioEngine's retrigger/seek elapsedSeconds computation.\nPersisted in both patch formats with a safe zero default for old patches.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Merge branch 'feature/arrange-sample-source-offset'\n\nAdds Clip::sourceOffsetSeconds so a Sample clip knows where in its\ndecoded source buffer its audio starts. Fixes Split() (and the identical\nbug shape in CarveRange, used by overwrite-drop/duplicate-with-overlap)\nto derive the right half's offset correctly, fixes the static waveform\nto slice the peak array to the clip's actual source window instead of\nstretching the whole file across every Sample clip, and threads the\noffset through AudioEngine's retrigger/seek elapsedSeconds computation.\nPersisted in both patch formats with a safe zero default for old patches.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "8ec89676120b18b32a7adfabf8a92f8034bde91a",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:21:11 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Persist Clip::sourceOffsetSeconds",
+      "description": "Persist Clip::sourceOffsetSeconds",
+      "bullets": [],
+      "body": "Same treatment already given to sampleBpm/sourceDurationSeconds: a new\n\"clipsrcoffset\" append-only text-patch tag (0 default, so a patch saved\nbefore this field existed loads with every Sample reading from the\nfile's own beginning, unchanged), the matching ClipRecord field, and\nthe JSON export field.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Persist Clip::sourceOffsetSeconds\n\nSame treatment already given to sampleBpm/sourceDurationSeconds: a new\n\"clipsrcoffset\" append-only text-patch tag (0 default, so a patch saved\nbefore this field existed loads with every Sample reading from the\nfile's own beginning, unchanged), the matching ClipRecord field, and\nthe JSON export field.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/core/Patch.cpp     | 20 ++++++++++++++++++++\n src/core/Patch.h       |  5 +++++\n src/core/PatchJson.cpp |  3 ++-\n 3 files changed, 27 insertions(+), 1 deletion(-)"
+  },
+  {
+    "hash": "f703f84106d3a24b5ed95956b9a8dd2d64008911",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:21:07 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "field",
+      "title": "Fix Sample split waveform/seek with a source-offset field",
+      "description": "Fix Sample split waveform/seek with a source-offset field",
+      "bullets": [],
+      "body": "A split Sample clip's right half kept srcUid but had no way to know\nwhere in the source file its own audio actually starts, so its static\nwaveform restretched the whole decoded file across its rect (showing\nthe file's start again instead of continuing the left half's shape)\nand AudioEngine's retrigger/seek math always seeked relative to the\nfile's own beginning.\nAdd Clip::sourceOffsetSeconds (Sample-only): how far into the decoded\nsource buffer a clip's audio starts. Split() derives it for the right\nhalf from the cut point converted ticks -> seconds via the clip's own\nsampleBpm (tempo-invariant by construction). CarveRange - the same\nimplicit-split shape used by PlaceOverwrite and DuplicateBlock - gets\nthe identical treatment for both its \"strictly contains\" and \"overlaps\nright edge\" cases.\nPlumb the field through ClipWindow (AudioEngine.h/.cpp) so the exact-\nseek lookahead folds it into elapsedSeconds before the existing pitch/\ntempo-ratio scaling, and through ArrangeComputeSampleStaticWave (main.cpp)\nso the static-waveform cache slices peaks to a clip's own sub-range of\nthe decoded file instead of the whole thing - triggered at import time\n(offset 0) and now also at both Split call sites via the new\nArrangeRefreshSampleStaticWave helper.\nAudit: TrimEdge/TrimGroupEdge share the same start-edge-moves shape but\nare out of this fix's scope - flagged as a follow-up task rather than\nfolded in here.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Fix Sample split waveform/seek with a source-offset field\n\nA split Sample clip's right half kept srcUid but had no way to know\nwhere in the source file its own audio actually starts, so its static\nwaveform restretched the whole decoded file across its rect (showing\nthe file's start again instead of continuing the left half's shape)\nand AudioEngine's retrigger/seek math always seeked relative to the\nfile's own beginning.\n\nAdd Clip::sourceOffsetSeconds (Sample-only): how far into the decoded\nsource buffer a clip's audio starts. Split() derives it for the right\nhalf from the cut point converted ticks -> seconds via the clip's own\nsampleBpm (tempo-invariant by construction). CarveRange - the same\nimplicit-split shape used by PlaceOverwrite and DuplicateBlock - gets\nthe identical treatment for both its \"strictly contains\" and \"overlaps\nright edge\" cases.\n\nPlumb the field through ClipWindow (AudioEngine.h/.cpp) so the exact-\nseek lookahead folds it into elapsedSeconds before the existing pitch/\ntempo-ratio scaling, and through ArrangeComputeSampleStaticWave (main.cpp)\nso the static-waveform cache slices peaks to a clip's own sub-range of\nthe decoded file instead of the whole thing - triggered at import time\n(offset 0) and now also at both Split call sites via the new\nArrangeRefreshSampleStaticWave helper.\n\nAudit: TrimEdge/TrimGroupEdge share the same start-edge-moves shape but\nare out of this fix's scope - flagged as a follow-up task rather than\nfolded in here.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/arrange/ArrangeModel.cpp |  20 ++++++-\n src/arrange/ArrangeModel.h   |  10 ++++\n src/audio/AudioEngine.cpp    |   8 ++-\n src/audio/AudioEngine.h      |   8 +++\n src/main.cpp                 | 125 +++++++++++++++++++++++++++++++++++--------\n 5 files changed, 148 insertions(+), 23 deletions(-)"
+  },
+  {
+    "hash": "7e381d3af36bf39048e91745e20134bd06481214",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:04:50 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Merge branch 'feature/audio-sample-clip-distinction'",
+      "description": "Merge branch 'feature/audio-sample-clip-distinction'",
+      "bullets": [],
+      "body": "Adds a real Audio Sample / Audio Clip distinction to the Arrangement\nTimeline: static (once-computed) waveforms for dropped-media Samples vs.\nlive waveforms for patched Clips, middle-click scrub on Sample clips,\neditable per-Sample BPM with live tempo-ratio playback rate override\n(varispeed, not pitch-preserving time-stretch), corrected retrigger/seek\noffset math accounting for the new tempo ratio, and removal of the\n\"New Samples: Sync to Tempo\" toolbar toggle in favor of always-synced\nnew Samples.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Merge branch 'feature/audio-sample-clip-distinction'\n\nAdds a real Audio Sample / Audio Clip distinction to the Arrangement\nTimeline: static (once-computed) waveforms for dropped-media Samples vs.\nlive waveforms for patched Clips, middle-click scrub on Sample clips,\neditable per-Sample BPM with live tempo-ratio playback rate override\n(varispeed, not pitch-preserving time-stretch), corrected retrigger/seek\noffset math accounting for the new tempo ratio, and removal of the\n\"New Samples: Sync to Tempo\" toolbar toggle in favor of always-synced\nnew Samples.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "03c100f6179679019fee8e3d92c7ddd3c2a4dfd7",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:03:36 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "ui",
+      "title": "Static Sample waveforms, Sample BPM UI, and click-to-scrub",
+      "description": "Static Sample waveforms, Sample BPM UI, and click-to-scrub",
+      "bullets": [],
+      "body": "Step 2: Audio Samples now draw a static peak array computed once at\nimport/bounce time from the fully-decoded source buffer\n(ArrangeComputeSampleStaticWave, called from ArrangePollMediaImports\nright after OpenFromDecoded/before length is set), stretched linearly\nacross the clip regardless of BPM warp. Stored in a new\ngArrangeSampleStaticWaves map, kept mutually exclusive per clip id with\nthe existing gArrangeClipWaves live-fill cache (Audio Clip, unchanged).\nBecause ArrangeApplyClipBounceResult sets sampleDropped=true before\nrouting through the same pending-import/poll path a drag-drop import\nuses, \"Bounce to Sample\" gets the static wave and sourceDurationSeconds\nfor free, with no separate bounce-specific code.\nStep 2: click-to-scrub on a Sample's body, reusing the ruler's\nArrangeScrubBegin/Update/End and xToTick/gridSnap conversion. Bound to\nmiddle-click rather than any left-click combination, since every\nleft-click gesture on a clip (plain, Alt, Cmd/Ctrl, Shift, on the body\nor an edge) is already claimed by select/drag/trim/group-scale/blade -\nthis is purely additive. gArrangeScrubButton tracks which button drives\nthe current scrub so the ruler's own release/continuation logic works\nfor either source without the two colliding.\nStep 3: \"Sample BPM\" field (with a relocated, isSample-gated \"Sync to\nTempo\" checkbox) in the docked Clip Settings panel's Audio Sample\nbranch, editing sampleBpm and recomputing length from the persisted\nsourceDurationSeconds via ArrangeEdit. Same fields added to the\nright-click context menu, gated on sampleDropped - it previously showed\nan ungated \"Sync to Tempo\" checkbox that silently applied to a\nmanually-patched Audio Clip too (step 5 consistency-sweep finding).\nStep 5: verified the multi-select bulk-edit panel has no gain/pan/\npitch/BPM controls at all, so a mixed Sample+Clip selection can't leak\nBPM edits onto a Clip; verified the retrigger-conflict guard is\nunaffected and still Sample-only.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Static Sample waveforms, Sample BPM UI, and click-to-scrub\n\nStep 2: Audio Samples now draw a static peak array computed once at\nimport/bounce time from the fully-decoded source buffer\n(ArrangeComputeSampleStaticWave, called from ArrangePollMediaImports\nright after OpenFromDecoded/before length is set), stretched linearly\nacross the clip regardless of BPM warp. Stored in a new\ngArrangeSampleStaticWaves map, kept mutually exclusive per clip id with\nthe existing gArrangeClipWaves live-fill cache (Audio Clip, unchanged).\nBecause ArrangeApplyClipBounceResult sets sampleDropped=true before\nrouting through the same pending-import/poll path a drag-drop import\nuses, \"Bounce to Sample\" gets the static wave and sourceDurationSeconds\nfor free, with no separate bounce-specific code.\n\nStep 2: click-to-scrub on a Sample's body, reusing the ruler's\nArrangeScrubBegin/Update/End and xToTick/gridSnap conversion. Bound to\nmiddle-click rather than any left-click combination, since every\nleft-click gesture on a clip (plain, Alt, Cmd/Ctrl, Shift, on the body\nor an edge) is already claimed by select/drag/trim/group-scale/blade -\nthis is purely additive. gArrangeScrubButton tracks which button drives\nthe current scrub so the ruler's own release/continuation logic works\nfor either source without the two colliding.\n\nStep 3: \"Sample BPM\" field (with a relocated, isSample-gated \"Sync to\nTempo\" checkbox) in the docked Clip Settings panel's Audio Sample\nbranch, editing sampleBpm and recomputing length from the persisted\nsourceDurationSeconds via ArrangeEdit. Same fields added to the\nright-click context menu, gated on sampleDropped - it previously showed\nan ungated \"Sync to Tempo\" checkbox that silently applied to a\nmanually-patched Audio Clip too (step 5 consistency-sweep finding).\n\nStep 5: verified the multi-select bulk-edit panel has no gain/pan/\npitch/BPM controls at all, so a mixed Sample+Clip selection can't leak\nBPM edits onto a Clip; verified the retrigger-conflict guard is\nunaffected and still Sample-only.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/main.cpp | 282 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++---\n 1 file changed, 268 insertions(+), 14 deletions(-)"
+  },
+  {
+    "hash": "4a207ea0dc5bce050c8ea8707941ae47cb2497a9",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:03:20 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "audio",
+      "title": "Add live BPM-sync rate override for Audio Samples",
+      "description": "Add live BPM-sync rate override for Audio Samples",
+      "bullets": [],
+      "body": "Step 3's playback side. New AudioNode::SetClipRateOverride(ratio),\nmirroring SetClipPitchOverride, applied in AudioFilePlayerAudioNode's\nper-sample varispeed read alongside the existing pitch ratio via a new\nParamMailbox slot. Adds AudioFileNode::Buffer() so the arrange layer can\nread the decoded source for its static waveform (step 2).\nClipWindow gains sampleBpm (0 when not synced) instead of a ratio baked\nat topology-rebuild time: tempo changes deliberately never trigger a\ntopology rebuild (ticks are tempo-invariant across the model), so a\nbaked ratio would go stale on a live tempo edit. RunTopology instead\ncomputes tempo/sampleBpm fresh every block from the live project tempo\nit already reads, and pushes that through SetClipRateOverride.\nStep 4: the discontinuity-gated SeekToClipOffset's elapsedSeconds is\nnow also scaled by this same live ratio, alongside the existing\npitchRatio scaling, so a retrigger seeks to the tempo-corrected offset\ninstead of the file's native-speed offset.\nSamplerNode is intentionally not touched: ArrangeImportMediaFile and\nArrangeApplyClipBounceResult only ever spawn an \"Audio File\" node for\nan Arrange audio clip, so SamplerNode can never be a clip's\nterminal.sourceNode - AudioNode::SetClipRateOverride's default no-op is\nalready correct there, and adding an unreachable override would be\ndead code.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Add live BPM-sync rate override for Audio Samples\n\nStep 3's playback side. New AudioNode::SetClipRateOverride(ratio),\nmirroring SetClipPitchOverride, applied in AudioFilePlayerAudioNode's\nper-sample varispeed read alongside the existing pitch ratio via a new\nParamMailbox slot. Adds AudioFileNode::Buffer() so the arrange layer can\nread the decoded source for its static waveform (step 2).\n\nClipWindow gains sampleBpm (0 when not synced) instead of a ratio baked\nat topology-rebuild time: tempo changes deliberately never trigger a\ntopology rebuild (ticks are tempo-invariant across the model), so a\nbaked ratio would go stale on a live tempo edit. RunTopology instead\ncomputes tempo/sampleBpm fresh every block from the live project tempo\nit already reads, and pushes that through SetClipRateOverride.\n\nStep 4: the discontinuity-gated SeekToClipOffset's elapsedSeconds is\nnow also scaled by this same live ratio, alongside the existing\npitchRatio scaling, so a retrigger seeks to the tempo-corrected offset\ninstead of the file's native-speed offset.\n\nSamplerNode is intentionally not touched: ArrangeImportMediaFile and\nArrangeApplyClipBounceResult only ever spawn an \"Audio File\" node for\nan Arrange audio clip, so SamplerNode can never be a clip's\nterminal.sourceNode - AudioNode::SetClipRateOverride's default no-op is\nalready correct there, and adding an unreachable override would be\ndead code.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/audio/AudioEngine.cpp  | 15 ++++++++++++++-\n src/audio/AudioEngine.h    | 13 +++++++++++++\n src/audio/AudioNode.h      | 12 ++++++++++++\n src/nodes/AnalyzeNodes.cpp | 27 ++++++++++++++++++++++++++-\n src/nodes/AnalyzeNodes.h   |  9 +++++++++\n 5 files changed, 74 insertions(+), 2 deletions(-)"
+  },
+  {
+    "hash": "d9f2d90e3cc596f1cc563ac878934ffb8180bd66",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 15:03:09 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Add Sample BPM/duration fields to Clip and persist them",
+      "description": "Add Sample BPM/duration fields to Clip and persist them",
+      "bullets": [],
+      "body": "Builds on the existing Arrange::Clip::sampleDropped Sample/Clip split\n(not reintroducing it): adds sampleBpm and sourceDurationSeconds to\nClip for step 3's real BPM sync, wired through the model<->Patch record\nconversion, the text-format patch reader/writer (new \"clipbpm\" tag),\nand the debug JSON export.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Add Sample BPM/duration fields to Clip and persist them\n\nBuilds on the existing Arrange::Clip::sampleDropped Sample/Clip split\n(not reintroducing it): adds sampleBpm and sourceDurationSeconds to\nClip for step 3's real BPM sync, wired through the model<->Patch record\nconversion, the text-format patch reader/writer (new \"clipbpm\" tag),\nand the debug JSON export.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/arrange/ArrangeModel.h | 15 +++++++++++++++\n src/core/Patch.cpp         | 26 ++++++++++++++++++++++++++\n src/core/Patch.h           |  5 +++++\n src/core/PatchJson.cpp     |  4 +++-\n 4 files changed, 49 insertions(+), 1 deletion(-)"
+  },
+  {
+    "hash": "fa6b8f286d2eb3ebcae9196f28d8d7d00d4b2ffa",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 14:33:54 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Remove New Samples: Sync to Tempo toolbar toggle",
+      "description": "Remove New Samples: Sync to Tempo toolbar toggle",
+      "bullets": [],
+      "body": "The per-drop default (Arrange::Settings::importSyncToTempo) stays as a\nfield and keeps driving import/bounce default (still true), but the\ntoolbar UI to flip it is removed per spec - only the per-clip Sync to\nTempo checkbox in Clip Settings edits it now. Restored the Render\nbutton's anchor to sit directly off the Timeline Audio button now that\nthe button between them is gone.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Remove New Samples: Sync to Tempo toolbar toggle\n\nThe per-drop default (Arrange::Settings::importSyncToTempo) stays as a\nfield and keeps driving import/bounce default (still true), but the\ntoolbar UI to flip it is removed per spec - only the per-clip Sync to\nTempo checkbox in Clip Settings edits it now. Restored the Render\nbutton's anchor to sit directly off the Timeline Audio button now that\nthe button between them is gone.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/main.cpp | 30 +-----------------------------\n 1 file changed, 1 insertion(+), 29 deletions(-)"
+  },
+  {
+    "hash": "79e5cc552f4160c2f957874a20f9a7da0bc3d6f9",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 13:33:13 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'feature/linux-step-03-media'",
+      "description": "Merge branch 'feature/linux-step-03-media'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'feature/linux-step-03-media'"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "1234c30c5d141c25ce3dc019f555468da4072c73",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 13:33:04 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "audio",
+      "title": "Merge branch 'feature/linux-step-02-audio-midi'",
+      "description": "Merge branch 'feature/linux-step-02-audio-midi'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'feature/linux-step-02-audio-midi'"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "1083a1f5c3829d1f1acb7bba015c6ea5f65f3d44",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 13:32:58 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'feature/linux-step-01-desktop'",
+      "description": "Merge branch 'feature/linux-step-01-desktop'",
+      "bullets": [],
+      "body": "# Conflicts:\n#\tsrc/main.cpp",
+      "raw": "Merge branch 'feature/linux-step-01-desktop'\n\n# Conflicts:\n#\tsrc/main.cpp"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "a1074a20e12794079be56f4e0da0fb36cd079a1d",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 13:31:36 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "core",
+      "title": "Merge branch 'bugfix/scrub-bounce-color-followups'",
+      "description": "Merge branch 'bugfix/scrub-bounce-color-followups'",
+      "bullets": [],
+      "body": "# Conflicts:\n#\tsrc/audio/AudioEngine.cpp\n#\tsrc/main.cpp",
+      "raw": "Merge branch 'bugfix/scrub-bounce-color-followups'\n\n# Conflicts:\n#\tsrc/audio/AudioEngine.cpp\n#\tsrc/main.cpp"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "63a39039003e7d5fa66f35530a7d7e2f93f07c0f",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 13:30:23 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Merge branch 'claude/timeline-arrangement-retriggering-34b97c'",
+      "description": "Merge branch 'claude/timeline-arrangement-retriggering-34b97c'",
+      "bullets": [],
+      "body": "# Conflicts:\n#\tsrc/audio/AudioEngine.cpp",
+      "raw": "Merge branch 'claude/timeline-arrangement-retriggering-34b97c'\n\n# Conflicts:\n#\tsrc/audio/AudioEngine.cpp"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "6003838df4d05e814022d34847dba6f773d8b5d6",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 13:29:03 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "field",
+      "title": "Merge branch 'bugfix/note-switcher-slot-mod-recording-expression'",
+      "description": "Merge branch 'bugfix/note-switcher-slot-mod-recording-expression'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'bugfix/note-switcher-slot-mod-recording-expression'"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "906acfacfa635919e220b85f72d7756e92624cc1",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 13:28:58 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "render3d",
+      "title": "Merge branch 'bugfix/join-geometry-manufactured-vertex-colour'",
+      "description": "Merge branch 'bugfix/join-geometry-manufactured-vertex-colour'",
+      "bullets": [],
+      "body": "# Conflicts:\n#\tsrc/main.cpp\n#\tsrc/nodes/UtilityNodes.cpp",
+      "raw": "Merge branch 'bugfix/join-geometry-manufactured-vertex-colour'\n\n# Conflicts:\n#\tsrc/main.cpp\n#\tsrc/nodes/UtilityNodes.cpp"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "e2b8258765fc18a5198abec605a04e7d099f457b",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 13:14:46 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'feature/architecture-md-anchors'",
+      "description": "Merge branch 'feature/architecture-md-anchors'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'feature/architecture-md-anchors'"
+    },
+    "stat": ""
+  },
+  {
     "hash": "83fd442a0fa66428ab3e4eeb44036a4ddf413e8b",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
@@ -30,6 +334,111 @@
       "raw": "Fix timeline scrub FPS drops, sample/track bouncing, and export color management"
     },
     "stat": "src/audio/AudioEngine.cpp     |   1 +\n src/main.cpp                  | 191 ++++++++++++++++++++++++------------------\n src/platform/Platform.mm      | 136 ++++++++++++++++++++++--------\n src/platform/win/MediaWin.cpp |  14 ++++\n 4 files changed, 224 insertions(+), 118 deletions(-)"
+  },
+  {
+    "hash": "57e63447ffa27a6aa16ff3d48b6db5dd066203de",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 11:53:42 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Merge branch 'claude/timeline-arrangement-retriggering-34b97c'",
+      "description": "Merge branch 'claude/timeline-arrangement-retriggering-34b97c'",
+      "bullets": [],
+      "body": "Gates Arrangement Timeline Video/Audio Sample seeks on real discontinuities\ninstead of forcing an absolute seek every frame, fixing scrub-related\nstutter/hangs and wiring up clip retriggering.",
+      "raw": "Merge branch 'claude/timeline-arrangement-retriggering-34b97c'\n\nGates Arrangement Timeline Video/Audio Sample seeks on real discontinuities\ninstead of forcing an absolute seek every frame, fixing scrub-related\nstutter/hangs and wiring up clip retriggering."
+    },
+    "stat": ""
+  },
+  {
+    "hash": "b4e9a5102b5276d3abd2785c67cc512d45031ff0",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 11:52:58 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "arrange",
+      "title": "fix(arrange): gate Arrangement Sample seeks on real discontinuities",
+      "description": "gate Arrangement Sample seeks on real discontinuities",
+      "bullets": [
+        "VideoSourceNode: factor the trim/loop wrap math out of CookIfNeeded into",
+        "AudioEngine: detect per-block discontinuities against a persisted",
+        "Wire up Arrangement clip retriggering and related model/patch plumbing"
+      ],
+      "body": "Video Samples and Audio Samples on the Arrangement Timeline now only hard-seek\ntheir underlying source when the arrangement's target position actually\ndiverges from where the node's own clock already is (a scrub, a loop wrap not\nyet caught up, or a fresh Play landing mid-clip), instead of forcing an\nabsolute seek every frame. Continuous playback lets each node's normal\nwall-clock/block-accumulated position tracking do the work, which stops the\nsub-frame jitter that was fighting Platform::VideoFrameAt's forward-resume\nfast path and causing stutter/hangs during ordinary playback.\nWrapPosition(), and add SyncToArrangement()/SeekTo() so the Arrangement\nTimeline can compare against the same wrapped position and only reset when\nit differs by more than one frame (VideoSourceNode.h, VideoSourceNode.cpp).\nmLastBlockEndBeat and only call SeekToClipOffset on sampleDropped windows\nwhen a real discontinuity is present (AudioEngine.h/.cpp, AnalyzeNodes.cpp).\n(ArrangeModel.h, Patch.cpp/.h, PatchJson.cpp, AudioNode.h, SamplerNode.cpp,\nWavetableSynthCore.h, main.cpp).\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "fix(arrange): gate Arrangement Sample seeks on real discontinuities\n\nVideo Samples and Audio Samples on the Arrangement Timeline now only hard-seek\ntheir underlying source when the arrangement's target position actually\ndiverges from where the node's own clock already is (a scrub, a loop wrap not\nyet caught up, or a fresh Play landing mid-clip), instead of forcing an\nabsolute seek every frame. Continuous playback lets each node's normal\nwall-clock/block-accumulated position tracking do the work, which stops the\nsub-frame jitter that was fighting Platform::VideoFrameAt's forward-resume\nfast path and causing stutter/hangs during ordinary playback.\n\n- VideoSourceNode: factor the trim/loop wrap math out of CookIfNeeded into\n  WrapPosition(), and add SyncToArrangement()/SeekTo() so the Arrangement\n  Timeline can compare against the same wrapped position and only reset when\n  it differs by more than one frame (VideoSourceNode.h, VideoSourceNode.cpp).\n- AudioEngine: detect per-block discontinuities against a persisted\n  mLastBlockEndBeat and only call SeekToClipOffset on sampleDropped windows\n  when a real discontinuity is present (AudioEngine.h/.cpp, AnalyzeNodes.cpp).\n- Wire up Arrangement clip retriggering and related model/patch plumbing\n  (ArrangeModel.h, Patch.cpp/.h, PatchJson.cpp, AudioNode.h, SamplerNode.cpp,\n  WavetableSynthCore.h, main.cpp).\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/arrange/ArrangeModel.h     |  17 ++\n src/audio/AudioEngine.cpp      |  59 ++++++\n src/audio/AudioEngine.h        |  22 +++\n src/audio/AudioNode.h          |  28 +++\n src/core/Patch.cpp             |  28 +++\n src/core/Patch.h               |   6 +\n src/core/PatchJson.cpp         |   3 +-\n src/main.cpp                   | 410 +++++++++++++++++++++++++++++++++++------\n src/nodes/AnalyzeNodes.cpp     |  35 ++++\n src/nodes/SamplerNode.cpp      |  12 ++\n src/nodes/VideoSourceNode.cpp  |  70 +++----\n src/nodes/VideoSourceNode.h    |  44 +++++\n src/nodes/WavetableSynthCore.h |  32 +++-\n 13 files changed, 676 insertions(+), 90 deletions(-)"
+  },
+  {
+    "hash": "eca67b88dc7483f9fead2a45fffe915eddc5c702",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 09:38:25 2026 +0530",
+    "parsed_message": {
+      "type": "docs",
+      "scope": "linux",
+      "title": "docs(linux): update Phase 3 status with real verified/not-verified split",
+      "description": "update Phase 3 status with real verified/not-verified split",
+      "bullets": [],
+      "body": "Phase 3 exit criteria are partially met: RECEXPORTTEST, RECSYNCTEST,\nVIDEOAUDIOTEST, VIDEOSPEEDTEST and the new CAMERACONVTEST all pass in\nthe container/Xvfb environment, the GPL_CODECS=OFF (LGPL) build links\nno libx264 and cleanly refuses H.264, and macOS regression is\nconfirmed zero via a real run-infinite-hygiene --fast (30/30) plus\nav-sync-sweep. Not yet done: a real v4l2loopback camera e2e (no\n/dev/video* or loadable v4l2loopback module in this container) and\ntools/linux/record.sh producing a real showcase.mp4 with ffprobe\noutput - documented honestly rather than left implied-done.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "docs(linux): update Phase 3 status with real verified/not-verified split\n\nPhase 3 exit criteria are partially met: RECEXPORTTEST, RECSYNCTEST,\nVIDEOAUDIOTEST, VIDEOSPEEDTEST and the new CAMERACONVTEST all pass in\nthe container/Xvfb environment, the GPL_CODECS=OFF (LGPL) build links\nno libx264 and cleanly refuses H.264, and macOS regression is\nconfirmed zero via a real run-infinite-hygiene --fast (30/30) plus\nav-sync-sweep. Not yet done: a real v4l2loopback camera e2e (no\n/dev/video* or loadable v4l2loopback module in this container) and\ntools/linux/record.sh producing a real showcase.mp4 with ffprobe\noutput - documented honestly rather than left implied-done.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "docs/plans/linux/README.md | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "hash": "3b68ac001bc0cdcf7dedf09f7ad40f668548865f",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 09:36:22 2026 +0530",
+    "parsed_message": {
+      "type": "test",
+      "scope": "linux",
+      "title": "test(linux): wire CameraLinux's YUYV/MJPEG converters into INFINITE_CAMERACONVTEST",
+      "description": "wire CameraLinux's YUYV/MJPEG converters into INFINITE_CAMERACONVTEST",
+      "bullets": [],
+      "body": "CameraLinux.cpp already exposed YuyvToRgbaForTest/MjpegToRgbaForTest\n\"for INFINITE_CAMERACONVTEST in main.cpp\" per its own file comment, but\nnothing actually called them - no camera self-test existed anywhere in\nmain.cpp yet. Adds RunCameraConvTest(), gated __linux__: builds a\nsynthetic 2x2 YUYV buffer and checks the converted color is a\nrecognizable red, then round-trips a synthetic solid-color image\nthrough stb_image_write's in-memory JPEG encoder and CameraLinux's own\nMJPEG decoder, checking the recovered color survives JPEG's lossy\ncompression within a generous tolerance. This is the only way to\nexercise the MJPEG-format webcam path without a real camera device -\nneither CI nor any container here has one.\nVerified: INFINITE_CAMERACONVTEST=1 passes on Linux (both YUYV and\nMJPEG sub-checks); macOS build still compiles clean with the new\n__linux__-gated code inert.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "test(linux): wire CameraLinux's YUYV/MJPEG converters into INFINITE_CAMERACONVTEST\n\nCameraLinux.cpp already exposed YuyvToRgbaForTest/MjpegToRgbaForTest\n\"for INFINITE_CAMERACONVTEST in main.cpp\" per its own file comment, but\nnothing actually called them - no camera self-test existed anywhere in\nmain.cpp yet. Adds RunCameraConvTest(), gated __linux__: builds a\nsynthetic 2x2 YUYV buffer and checks the converted color is a\nrecognizable red, then round-trips a synthetic solid-color image\nthrough stb_image_write's in-memory JPEG encoder and CameraLinux's own\nMJPEG decoder, checking the recovered color survives JPEG's lossy\ncompression within a generous tolerance. This is the only way to\nexercise the MJPEG-format webcam path without a real camera device -\nneither CI nor any container here has one.\n\nVerified: INFINITE_CAMERACONVTEST=1 passes on Linux (both YUYV and\nMJPEG sub-checks); macOS build still compiles clean with the new\n__linux__-gated code inert.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/main.cpp | 91 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n 1 file changed, 91 insertions(+)"
+  },
+  {
+    "hash": "5d287c9ebd99d16a8236dd9f49ca320cca4aa130",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 09:08:29 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "linux",
+      "title": "fix(linux): add reverse-playback frame cache to MediaLinux's decoder",
+      "description": "add reverse-playback frame cache to MediaLinux's decoder",
+      "bullets": [
+        "VideoHandle gains a `frameCache` (FIFO by pts, capped at 256MB).",
+        "Every frame VideoFrameAt delivers (forward or backward) is cached.",
+        "VideoFrameAt serves a request from the cache when the ready queue has",
+        "VideoThreadMain skips the seek entirely when a backward jump is"
+      ],
+      "body": "INFINITE_VIDEOSPEEDTEST was failing because every single-frame reverse\nor fast-scrub step triggered a full av_seek_frame + avcodec_flush_buffers\non MediaLinux's decode thread - the thread's jumpedBackward check fires\non every step during reverse playback since the target position keeps\nmoving behind the last delivered frame.\nInitially suspected a Linux-specific GOP misconfiguration (a 2-second\nGOP meant a short test clip could have only one keyframe). Shrinking\ngop_size to fps/4 was tested and disproved that: the x264 log confirmed\nthe encoder config changed (keyint 7 vs 60, 9 I-frames vs 1), but\nFrameUpdateCount got *worse*, not better - the dominant cost is the\nseek/flush itself, not redecode distance from the nearest keyframe.\nReverted the GOP change.\nChecked what macOS does for the same problem: Platform.mm already has a\npurpose-built reverse-playback frame cache (kReverseLookbackSeconds,\nframeCache, PushCacheFrame/TryUseCache) with a comment describing this\nexact stutter (\"too small and reverse stutters on a rebuild almost\nevery frame\"). Windows's MediaWin.cpp has no equivalent and reseeks on\nevery backward step same as Linux did, but gets away with it via\nMedia Foundation's hardware-accelerated seek. This confirms a reverse-\nframe cache is a genuine, already-proven cross-platform requirement for\na software decoder, not a Linux-only quick fix - so this ports macOS's\nexisting design rather than inventing new architecture:\nnothing new for it, before ever touching the decode thread.\nalready covered by the cache, and on a real backward seek, seeks\nkReverseLookbackSeconds behind the target (not exactly to it) so the\nframes decoded on the way there repopulate the cache and buy several\nmore reverse steps before the next real seek.\nVerified via 3 consecutive runs in the Xvfb/Docker environment:\nFrameUpdateCount for reverse went from 3-8/60 to 24-30/60, forward from\n0-5/60 to 13-60/60, both now clearing the >30 threshold every run.\nVIDEOAUDIOTEST and RECEXPORTTEST re-confirmed unaffected (still pass).\nUpdates known-test-failures-linux.txt: both VIDEOAUDIOTEST and\nVIDEOSPEEDTEST are fixed, no longer P3 gaps.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "fix(linux): add reverse-playback frame cache to MediaLinux's decoder\n\nINFINITE_VIDEOSPEEDTEST was failing because every single-frame reverse\nor fast-scrub step triggered a full av_seek_frame + avcodec_flush_buffers\non MediaLinux's decode thread - the thread's jumpedBackward check fires\non every step during reverse playback since the target position keeps\nmoving behind the last delivered frame.\n\nInitially suspected a Linux-specific GOP misconfiguration (a 2-second\nGOP meant a short test clip could have only one keyframe). Shrinking\ngop_size to fps/4 was tested and disproved that: the x264 log confirmed\nthe encoder config changed (keyint 7 vs 60, 9 I-frames vs 1), but\nFrameUpdateCount got *worse*, not better - the dominant cost is the\nseek/flush itself, not redecode distance from the nearest keyframe.\nReverted the GOP change.\n\nChecked what macOS does for the same problem: Platform.mm already has a\npurpose-built reverse-playback frame cache (kReverseLookbackSeconds,\nframeCache, PushCacheFrame/TryUseCache) with a comment describing this\nexact stutter (\"too small and reverse stutters on a rebuild almost\nevery frame\"). Windows's MediaWin.cpp has no equivalent and reseeks on\nevery backward step same as Linux did, but gets away with it via\nMedia Foundation's hardware-accelerated seek. This confirms a reverse-\nframe cache is a genuine, already-proven cross-platform requirement for\na software decoder, not a Linux-only quick fix - so this ports macOS's\nexisting design rather than inventing new architecture:\n\n- VideoHandle gains a `frameCache` (FIFO by pts, capped at 256MB).\n- Every frame VideoFrameAt delivers (forward or backward) is cached.\n- VideoFrameAt serves a request from the cache when the ready queue has\n  nothing new for it, before ever touching the decode thread.\n- VideoThreadMain skips the seek entirely when a backward jump is\n  already covered by the cache, and on a real backward seek, seeks\n  kReverseLookbackSeconds behind the target (not exactly to it) so the\n  frames decoded on the way there repopulate the cache and buy several\n  more reverse steps before the next real seek.\n\nVerified via 3 consecutive runs in the Xvfb/Docker environment:\nFrameUpdateCount for reverse went from 3-8/60 to 24-30/60, forward from\n0-5/60 to 13-60/60, both now clearing the >30 threshold every run.\nVIDEOAUDIOTEST and RECEXPORTTEST re-confirmed unaffected (still pass).\n\nUpdates known-test-failures-linux.txt: both VIDEOAUDIOTEST and\nVIDEOSPEEDTEST are fixed, no longer P3 gaps.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".../known-test-failures-linux.txt                  |  23 +++-\n src/platform/linux/MediaLinux.cpp                  | 136 ++++++++++++++++++++-\n 2 files changed, 155 insertions(+), 4 deletions(-)"
+  },
+  {
+    "hash": "dbf7e63f967666bf92fe6ee3a04072a90f55e1db",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 09:08:16 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "test",
+      "title": "fix(test): correct VIDEOAUDIOTEST's hardcoded expected audio duration",
+      "description": "correct VIDEOAUDIOTEST's hardcoded expected audio duration",
+      "bullets": [],
+      "body": "The test asserted the recorded audio track was ~1.5s (the file-audio\ntone clip's own length), but all three platforms' recorders\n(Platform.mm's AppendAudioUpToLocked, MediaWin.cpp's and\nMediaLinux.cpp's WriteFileAudioTrack) deliberately loop a shorter\nfile-audio source to fill the *video's* full recorded duration when\nAudioFileNode::loop is true (its default) - confirmed identical\nintent in all three implementations. The test's own fixture never\ndisables looping, so on every platform the real recorded audio is\n~2.0s (60 frames / 30fps), not 1.5s.\nThis was never a Linux bug: it surfaced here only because the Linux\nport is the first time this test exercised a real recorder end to\nend. Compare against the actual recorded video duration instead of a\nhardcoded constant.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "fix(test): correct VIDEOAUDIOTEST's hardcoded expected audio duration\n\nThe test asserted the recorded audio track was ~1.5s (the file-audio\ntone clip's own length), but all three platforms' recorders\n(Platform.mm's AppendAudioUpToLocked, MediaWin.cpp's and\nMediaLinux.cpp's WriteFileAudioTrack) deliberately loop a shorter\nfile-audio source to fill the *video's* full recorded duration when\nAudioFileNode::loop is true (its default) - confirmed identical\nintent in all three implementations. The test's own fixture never\ndisables looping, so on every platform the real recorded audio is\n~2.0s (60 frames / 30fps), not 1.5s.\n\nThis was never a Linux bug: it surfaced here only because the Linux\nport is the first time this test exercised a real recorder end to\nend. Compare against the actual recorded video duration instead of a\nhardcoded constant.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/main.cpp | 12 +++++++++++-\n 1 file changed, 11 insertions(+), 1 deletion(-)"
   },
   {
     "hash": "00acd4b06b130894602bc5893e556cefdfc3e8f3",
@@ -128,6 +537,89 @@
     "stat": "src/nodes/FieldGraphNode.cpp | 12 ++++++------\n 1 file changed, 6 insertions(+), 6 deletions(-)"
   },
   {
+    "hash": "cecd38597d65bcb40a13c1b725d5241af2d3aff6",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 08:28:46 2026 +0530",
+    "parsed_message": {
+      "type": "test",
+      "scope": "linux",
+      "title": "test(linux): un-gate RECEXPORTTEST now that the recorder is real",
+      "description": "un-gate RECEXPORTTEST now that the recorder is real",
+      "bullets": [],
+      "body": "headless-tests.sh's Linux branch skipped INFINITE_RECEXPORTTEST with\n\"Linux recorder lands in P3\" - now that MediaLinux.cpp has a real\nrecorder and the decode-side livelock is fixed, run check_verdict on\nLinux the same as the non-Darwin (Windows) branch.\nAlso refreshes known-test-failures-linux.txt: removes the now-stale\n\"stubbed\" RECEXPORTTEST entry, and updates VIDEOAUDIOTEST/VIDEOSPEEDTEST\nwith their real current failure modes now that they exercise a real\ndecoder/recorder instead of a stub (a duration-check mismatch and a\nreverse/fast-forward frame-update shortfall, respectively - see that\nfile for details).\nVerified via a full headless-tests.sh run under Xvfb/Docker: \"All\nheadless self-tests passed.\"\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "test(linux): un-gate RECEXPORTTEST now that the recorder is real\n\nheadless-tests.sh's Linux branch skipped INFINITE_RECEXPORTTEST with\n\"Linux recorder lands in P3\" - now that MediaLinux.cpp has a real\nrecorder and the decode-side livelock is fixed, run check_verdict on\nLinux the same as the non-Darwin (Windows) branch.\n\nAlso refreshes known-test-failures-linux.txt: removes the now-stale\n\"stubbed\" RECEXPORTTEST entry, and updates VIDEOAUDIOTEST/VIDEOSPEEDTEST\nwith their real current failure modes now that they exercise a real\ndecoder/recorder instead of a stub (a duration-check mismatch and a\nreverse/fast-forward frame-update shortfall, respectively - see that\nfile for details).\n\nVerified via a full headless-tests.sh run under Xvfb/Docker: \"All\nheadless self-tests passed.\"\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".../skills/run-infinite-hygiene/known-test-failures-linux.txt    | 9 ++++++---\n .github/scripts/headless-tests.sh                                | 3 ---\n 2 files changed, 6 insertions(+), 6 deletions(-)"
+  },
+  {
+    "hash": "02e5b40bec0398deedd5c882144008efc35af9c6",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 08:28:39 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): report FFmpeg/codec info in SysInfo on Linux",
+      "description": "report FFmpeg/codec info in SysInfo on Linux",
+      "bullets": [],
+      "body": "Extends SysInfo.cpp so the Linux build surfaces its FFmpeg build\n(GPL vs LGPL codec set) the same way macOS/Windows report their media\nbackend, for diagnostics parity.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(linux): report FFmpeg/codec info in SysInfo on Linux\n\nExtends SysInfo.cpp so the Linux build surfaces its FFmpeg build\n(GPL vs LGPL codec set) the same way macOS/Windows report their media\nbackend, for diagnostics parity.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/core/SysInfo.cpp | 23 +++++++++++++++++++++++\n 1 file changed, 23 insertions(+)"
+  },
+  {
+    "hash": "d3b7ab2877cb5397948f3c13451b82799100dfb0",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 08:28:39 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): implement V4L2 camera capture in CameraLinux.cpp",
+      "description": "implement V4L2 camera capture in CameraLinux.cpp",
+      "bullets": [],
+      "body": "Real V4L2-backed device enumeration and frame capture (YUYV/MJPEG to\nRGBA conversion) for Linux, replacing the P3 stub.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(linux): implement V4L2 camera capture in CameraLinux.cpp\n\nReal V4L2-backed device enumeration and frame capture (YUYV/MJPEG to\nRGBA conversion) for Linux, replacing the P3 stub.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/platform/linux/CameraLinux.cpp | 418 +++++++++++++++++++++++++++++++++++--\n 1 file changed, 406 insertions(+), 12 deletions(-)"
+  },
+  {
+    "hash": "1585bf776a97f9868e839c1145b721e98d21a5ce",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 08:28:34 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): implement video decode and recorder in MediaLinux.cpp",
+      "description": "implement video decode and recorder in MediaLinux.cpp",
+      "bullets": [
+        "Set AVCodecContext::pkt_timebase before avcodec_open2() so",
+        "The real root cause: the decode thread's backward-seek detection"
+      ],
+      "body": "Real FFmpeg/libx264-backed VideoOpen/VideoFrameAt/RecorderStart/\nRecorderAppend(Audio)/RecorderStop for Linux, replacing the P3 stubs.\nIncludes two correctness fixes found while chasing RunRecExportTest\nreporting 35-54 spurious video \"flash onsets\" instead of the expected 5:\nframe->best_effort_timestamp's B-frame reorder math uses the right\ntimebase.\ncompared the caller's requested target against its own readahead\nbuffer-ahead progress (a thread-local decode-head position) instead of\nagainst what had actually been delivered to the caller. Since the\nreadahead queue intentionally decodes ahead of the consumer by design,\nthis made every normal readahead cycle look like the caller seeking\nbackward, forcing an av_seek_frame + avcodec_flush_buffers + queue-clear\non nearly every loop iteration - a livelock that could never make real\nforward progress in a clip with no interior keyframes near the target.\nFixed by judging the backward-seek check against\nVideoHandle::deliveredSeconds (the position actually handed to the\ncaller via VideoFrameAt), and made that field a std::atomic<double>\nsince it's written by one thread and read by another.\nVerified via three consecutive clean INFINITE_RECEXPORTTEST runs (0ms\ndrift/offset/lead on every one of the 5 audio/video markers) and a full\nheadless-tests.sh pass under Xvfb.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(linux): implement video decode and recorder in MediaLinux.cpp\n\nReal FFmpeg/libx264-backed VideoOpen/VideoFrameAt/RecorderStart/\nRecorderAppend(Audio)/RecorderStop for Linux, replacing the P3 stubs.\n\nIncludes two correctness fixes found while chasing RunRecExportTest\nreporting 35-54 spurious video \"flash onsets\" instead of the expected 5:\n\n- Set AVCodecContext::pkt_timebase before avcodec_open2() so\n  frame->best_effort_timestamp's B-frame reorder math uses the right\n  timebase.\n- The real root cause: the decode thread's backward-seek detection\n  compared the caller's requested target against its own readahead\n  buffer-ahead progress (a thread-local decode-head position) instead of\n  against what had actually been delivered to the caller. Since the\n  readahead queue intentionally decodes ahead of the consumer by design,\n  this made every normal readahead cycle look like the caller seeking\n  backward, forcing an av_seek_frame + avcodec_flush_buffers + queue-clear\n  on nearly every loop iteration - a livelock that could never make real\n  forward progress in a clip with no interior keyframes near the target.\n  Fixed by judging the backward-seek check against\n  VideoHandle::deliveredSeconds (the position actually handed to the\n  caller via VideoFrameAt), and made that field a std::atomic<double>\n  since it's written by one thread and read by another.\n\nVerified via three consecutive clean INFINITE_RECEXPORTTEST runs (0ms\ndrift/offset/lead on every one of the 5 audio/video markers) and a full\nheadless-tests.sh pass under Xvfb.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/platform/linux/MediaLinux.cpp | 1276 +++++++++++++++++++++++++++++++++++--\n 1 file changed, 1227 insertions(+), 49 deletions(-)"
+  },
+  {
+    "hash": "ab2099de3090539ecfd61f1c2f8e38ed8c7631ff",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 08:28:25 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "media",
+      "title": "feat(media): add FFmpeg audio-decode hook seam for non-Apple platforms",
+      "description": "add FFmpeg audio-decode hook seam for non-Apple platforms",
+      "bullets": [],
+      "body": "MediaDecodePortable.cpp's shared decode path gains a small hookable seam\n(FfmpegAudioDecodeHook.h) so Linux's Platform::DecodeVideoAudioTrackToBuffer\ncan reuse the existing cross-platform decode logic instead of duplicating it.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(media): add FFmpeg audio-decode hook seam for non-Apple platforms\n\nMediaDecodePortable.cpp's shared decode path gains a small hookable seam\n(FfmpegAudioDecodeHook.h) so Linux's Platform::DecodeVideoAudioTrackToBuffer\ncan reuse the existing cross-platform decode logic instead of duplicating it.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/platform/common/FfmpegAudioDecodeHook.h | 21 +++++++++++++++++++++\n src/platform/common/MediaDecodePortable.cpp | 18 +++++++++++++++++-\n 2 files changed, 38 insertions(+), 1 deletion(-)\n create mode 100644 src/platform/common/FfmpegAudioDecodeHook.h"
+  },
+  {
     "hash": "fc49eb27912b9648c362a3ead40c338024ff4beb",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
@@ -224,6 +716,56 @@
     "stat": ".claude/skills/audio-node-sweep/SKILL.md | 33 ++++++++++++++++++++++++++++++++\n src/nodes/NoteNodes.h                    | 16 ++++++++++++++++\n src/platform/Platform.mm                 |  5 +++++\n 3 files changed, 54 insertions(+)"
   },
   {
+    "hash": "74f1b7a4af90f76e22c301c55fa2007da41bc1f4",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 07:38:39 2026 +0530",
+    "parsed_message": {
+      "type": "build",
+      "scope": "linux",
+      "title": "build(linux): vendor FFmpeg for video decode/recorder/camera (Phase 3)",
+      "description": "vendor FFmpeg for video decode/recorder/camera (Phase 3)",
+      "bullets": [],
+      "body": "Adds INFINITE_ENABLE_GPL_CODECS (default ON on Linux), gating between BtbN's\nprebuilt GPL FFmpeg+libx264 (H.264 recording) and LGPL FFmpeg (decode/playback\nonly, no bundled H.264 encoder) - same FetchContent pattern already used for\nONNX Runtime. Pins exact upstream FFmpeg 8.1 and x264 source tarballs+SHA256\nin THIRD_PARTY_NOTICES to satisfy the GPL section 6 source-offer obligation,\nwhich falls on this project as distributor of the compiled binary rather than\non BtbN. LICENSE documents the resulting GPLv3 consequence and the\nGPL_CODECS=OFF/VST3=OFF combination that keeps a Linux build plain MIT.\nLicence texts (FFmpeg GPLv3/GPLv2/LGPLv2.1, x264's GPLv2-or-later) are vendored\nunder third_party/ and copied next to the built binary in the same commit as\nthe CMake link, per the licence decision in docs/plans/linux/phase-03-media.md.\nNo code yet links against these libraries - src/platform/linux/MediaLinux.cpp\nand CameraLinux.cpp remain P3 stubs, landing in follow-up commits.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "build(linux): vendor FFmpeg for video decode/recorder/camera (Phase 3)\n\nAdds INFINITE_ENABLE_GPL_CODECS (default ON on Linux), gating between BtbN's\nprebuilt GPL FFmpeg+libx264 (H.264 recording) and LGPL FFmpeg (decode/playback\nonly, no bundled H.264 encoder) - same FetchContent pattern already used for\nONNX Runtime. Pins exact upstream FFmpeg 8.1 and x264 source tarballs+SHA256\nin THIRD_PARTY_NOTICES to satisfy the GPL section 6 source-offer obligation,\nwhich falls on this project as distributor of the compiled binary rather than\non BtbN. LICENSE documents the resulting GPLv3 consequence and the\nGPL_CODECS=OFF/VST3=OFF combination that keeps a Linux build plain MIT.\n\nLicence texts (FFmpeg GPLv3/GPLv2/LGPLv2.1, x264's GPLv2-or-later) are vendored\nunder third_party/ and copied next to the built binary in the same commit as\nthe CMake link, per the licence decision in docs/plans/linux/phase-03-media.md.\n\nNo code yet links against these libraries - src/platform/linux/MediaLinux.cpp\nand CameraLinux.cpp remain P3 stubs, landing in follow-up commits.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "CMakeLists.txt                      | 126 ++++++-\n LICENSE                             |  22 ++\n THIRD_PARTY_NOTICES                 |  94 +++++\n third_party/ffmpeg/COPYING.GPLv2    | 339 ++++++++++++++++++\n third_party/ffmpeg/COPYING.GPLv3    | 674 ++++++++++++++++++++++++++++++++++++\n third_party/ffmpeg/COPYING.LGPLv2.1 | 502 +++++++++++++++++++++++++++\n third_party/x264/COPYING            |  81 +++++\n 7 files changed, 1837 insertions(+), 1 deletion(-)\n create mode 100644 THIRD_PARTY_NOTICES\n create mode 100644 third_party/ffmpeg/COPYING.GPLv2\n create mode 100644 third_party/ffmpeg/COPYING.GPLv3\n create mode 100644 third_party/ffmpeg/COPYING.LGPLv2.1\n create mode 100644 third_party/x264/COPYING"
+  },
+  {
+    "hash": "e81a69d96a80aab0d005e4cd1a1c089c2ffeba56",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 07:24:05 2026 +0530",
+    "parsed_message": {
+      "type": "docs",
+      "scope": "linux",
+      "title": "docs(linux): mark Phase 2 complete in the master plan status table",
+      "description": "mark Phase 2 complete in the master plan status table",
+      "bullets": [
+        "group audio both backends + macOS regression check + SysInfo"
+      ],
+      "body": "Records what was actually verified (arm64 local build + --fast +\ndiagnostics) versus what remains unverified (x86_64 CI, real audio/MIDI\nhardware), matching the P0/P1 rows' style, and notes the AUDIOPARAMSWEEPTEST\nfinding in NoteNodes.cpp as pre-existing and out of this phase's scope.",
+      "raw": "docs(linux): mark Phase 2 complete in the master plan status table\n\nRecords what was actually verified (arm64 local build + --fast +\n--group audio both backends + macOS regression check + SysInfo\ndiagnostics) versus what remains unverified (x86_64 CI, real audio/MIDI\nhardware), matching the P0/P1 rows' style, and notes the AUDIOPARAMSWEEPTEST\nfinding in NoteNodes.cpp as pre-existing and out of this phase's scope."
+    },
+    "stat": "docs/plans/linux/README.md | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "hash": "303893908933052b152cd71bc586f110bbefdc73",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 07:23:42 2026 +0530",
+    "parsed_message": {
+      "type": "test",
+      "scope": "linux",
+      "title": "test(linux): also baseline AUDIORECOVERYTEST's pulse-backend timing flake",
+      "description": "also baseline AUDIORECOVERYTEST's pulse-backend timing flake",
+      "bullets": [],
+      "body": "Direct repeated execution (4 of 5 runs) showed AUDIORECOVERYTEST failing\n\"a second flag inside the min interval adds no attempt\" on the pulse\nbackend: kAudioRecoveryMinIntervalMs=500.0 (src/main.cpp, shared code)\nassumes a recovery restart finishes well under 500ms, but a real\nPulseAudio device negotiation under this container's CPU contention can\ntake close to or over that window. Same class of timing-assumption\nflake as AUDIOLIFECYCLETEST's xrun heuristic, not a Linux Platform::\ndefect. Re-verified via `tools/linux/local.sh test --group audio`: both\nbackend passes now report all checks green, with the flaky tests\ncorrectly caught as documented xfail/stale-baseline noise rather than\nhard failures.",
+      "raw": "test(linux): also baseline AUDIORECOVERYTEST's pulse-backend timing flake\n\nDirect repeated execution (4 of 5 runs) showed AUDIORECOVERYTEST failing\n\"a second flag inside the min interval adds no attempt\" on the pulse\nbackend: kAudioRecoveryMinIntervalMs=500.0 (src/main.cpp, shared code)\nassumes a recovery restart finishes well under 500ms, but a real\nPulseAudio device negotiation under this container's CPU contention can\ntake close to or over that window. Same class of timing-assumption\nflake as AUDIOLIFECYCLETEST's xrun heuristic, not a Linux Platform::\ndefect. Re-verified via `tools/linux/local.sh test --group audio`: both\nbackend passes now report all checks green, with the flaky tests\ncorrectly caught as documented xfail/stale-baseline noise rather than\nhard failures."
+    },
+    "stat": ".../run-infinite-hygiene/known-test-failures-linux.txt | 18 ++++++++++--------\n 1 file changed, 10 insertions(+), 8 deletions(-)"
+  },
+  {
     "hash": "7bbd998de8abadc75ce7ea60d17de61be323eec2",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
@@ -254,6 +796,86 @@
       "raw": "fix(search): fix PushStyleVar stack imbalance crash on opening search panel"
     },
     "stat": "src/main.cpp | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "hash": "89b212677396d5359a14a3e8aac1aeb565b56b08",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 00:58:38 2026 +0530",
+    "parsed_message": {
+      "type": "test",
+      "scope": "linux",
+      "title": "test(linux): shrink Phase 2 known-failures baseline, retag AUDIOUITEST",
+      "description": "shrink Phase 2 known-failures baseline, retag AUDIOUITEST",
+      "bullets": [],
+      "body": "AUDIOPARAMSWEEPTEST, AUDIORECOVERYTEST, AUDIORINGTEST and\nMIDINOTESTREAMTEST (superseded by MIDIPARSETEST) are verified green on\nLinux via repeated direct execution now that miniaudio+ALSA are\nimplemented, so they're removed from the Phase 2 baseline.\nAUDIOLIFECYCLETEST stays, with an updated reason: 3 of 5 direct\nrepeated runs failed \"Stop/Start cycle adds no xrun\", traced to\nAudioEngine::Process's wall-clock kXrunGapMultiplier heuristic\n(src/audio/AudioEngine.cpp, shared/portable code) tripping under this\ncontainer's scheduling jitter - a real flake, not a Linux Platform::\ndefect, and not something this branch should tune unilaterally since\nit's shared with macOS/Windows. AUDIOUITEST moves to the Phase 4\nsection: it drives AudioPluginNode (VST3 plugin hosting), not the\nPhase 2 audio device/MIDI backend.",
+      "raw": "test(linux): shrink Phase 2 known-failures baseline, retag AUDIOUITEST\n\nAUDIOPARAMSWEEPTEST, AUDIORECOVERYTEST, AUDIORINGTEST and\nMIDINOTESTREAMTEST (superseded by MIDIPARSETEST) are verified green on\nLinux via repeated direct execution now that miniaudio+ALSA are\nimplemented, so they're removed from the Phase 2 baseline.\nAUDIOLIFECYCLETEST stays, with an updated reason: 3 of 5 direct\nrepeated runs failed \"Stop/Start cycle adds no xrun\", traced to\nAudioEngine::Process's wall-clock kXrunGapMultiplier heuristic\n(src/audio/AudioEngine.cpp, shared/portable code) tripping under this\ncontainer's scheduling jitter - a real flake, not a Linux Platform::\ndefect, and not something this branch should tune unilaterally since\nit's shared with macOS/Windows. AUDIOUITEST moves to the Phase 4\nsection: it drives AudioPluginNode (VST3 plugin hosting), not the\nPhase 2 audio device/MIDI backend."
+    },
+    "stat": ".../run-infinite-hygiene/known-test-failures-linux.txt    | 15 +++++++++------\n 1 file changed, 9 insertions(+), 6 deletions(-)"
+  },
+  {
+    "hash": "b3a161ae76776939ecdf9b5bbc99f02eba4732f0",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 00:58:31 2026 +0530",
+    "parsed_message": {
+      "type": "test",
+      "scope": "linux",
+      "title": "test(linux): wire MIDIPARSETEST into driver.sh, double-run audio group",
+      "description": "wire MIDIPARSETEST into driver.sh, double-run audio group",
+      "bullets": [],
+      "body": "Adds MIDIPARSETEST:1 to TIER1_CHECKS, GROUP_AUDIO and FULL_TESTS\nconditionally on $OS=Linux, so macOS/Windows runs of the shared driver\nnever set an env var their binary doesn't recognise. xvfb-harness.sh\nnow runs the audio group twice (INFINITE_AUDIO_BACKEND=null, then\n=pulse against a throwaway PulseAudio null sink) to cover both\nsupported backends, and logs whether /dev/snd/seq is present so a\nmissing sequencer device reads as a documented container limitation\nrather than a silent skip.",
+      "raw": "test(linux): wire MIDIPARSETEST into driver.sh, double-run audio group\n\nAdds MIDIPARSETEST:1 to TIER1_CHECKS, GROUP_AUDIO and FULL_TESTS\nconditionally on $OS=Linux, so macOS/Windows runs of the shared driver\nnever set an env var their binary doesn't recognise. xvfb-harness.sh\nnow runs the audio group twice (INFINITE_AUDIO_BACKEND=null, then\n=pulse against a throwaway PulseAudio null sink) to cover both\nsupported backends, and logs whether /dev/snd/seq is present so a\nmissing sequencer device reads as a documented container limitation\nrather than a silent skip."
+    },
+    "stat": ".claude/skills/run-infinite-hygiene/driver.sh | 16 ++++++++\n tools/linux/xvfb-harness.sh                   | 56 ++++++++++++++++++++++++++-\n 2 files changed, 71 insertions(+), 1 deletion(-)"
+  },
+  {
+    "hash": "ac908b4690a8b8e13b09ccddcd654daf9c8d1228",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 00:58:26 2026 +0530",
+    "parsed_message": {
+      "type": "test",
+      "scope": "linux",
+      "title": "test(linux): add INFINITE_MIDIPARSETEST for ALSA sequencer event parsing",
+      "description": "add INFINITE_MIDIPARSETEST for ALSA sequencer event parsing",
+      "bullets": [],
+      "body": "Exercises HandleSeqEvent() with synthetic snd_seq_event_t's (note\non/off, velocity-0-as-off) via PlatformLinuxTestHooks, needing no real\nMIDI hardware or /dev/snd/seq. Seeds a throwaway warm-up note before\ncapturing the baseline ring cursor: MidiReadNotesSince treats cursor==0\nas \"fresh consumer, fast-forward, don't replay history\" (same sentinel\nconvention as MidiWin.cpp's ReadNotesSince), so a real starting position\nof 0 is otherwise indistinguishable from that sentinel and the test\nwould misreport the ring as empty.",
+      "raw": "test(linux): add INFINITE_MIDIPARSETEST for ALSA sequencer event parsing\n\nExercises HandleSeqEvent() with synthetic snd_seq_event_t's (note\non/off, velocity-0-as-off) via PlatformLinuxTestHooks, needing no real\nMIDI hardware or /dev/snd/seq. Seeds a throwaway warm-up note before\ncapturing the baseline ring cursor: MidiReadNotesSince treats cursor==0\nas \"fresh consumer, fast-forward, don't replay history\" (same sentinel\nconvention as MidiWin.cpp's ReadNotesSince), so a real starting position\nof 0 is otherwise indistinguishable from that sentinel and the test\nwould misreport the ring as empty."
+    },
+    "stat": "src/main.cpp | 189 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n 1 file changed, 189 insertions(+)"
+  },
+  {
+    "hash": "74648f0579f0d48f34b6be4f09d9d2cdc4782610",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 00:58:21 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): add audio/MIDI diagnostics to SysInfo",
+      "description": "add audio/MIDI diagnostics to SysInfo",
+      "bullets": [],
+      "body": "Reports enumerated audio device count and MIDI input port status,\nmatching the existing macOS/Windows SysInfo audio section so INFINITE_SYSINFO\noutput is comparable across platforms.",
+      "raw": "feat(linux): add audio/MIDI diagnostics to SysInfo\n\nReports enumerated audio device count and MIDI input port status,\nmatching the existing macOS/Windows SysInfo audio section so INFINITE_SYSINFO\noutput is comparable across platforms."
+    },
+    "stat": "src/core/SysInfo.cpp | 26 ++++++++++++++++++++++++++\n 1 file changed, 26 insertions(+)"
+  },
+  {
+    "hash": "baf7e2db1da553cc1f4e962dc0a2b1b8e72aaace",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 00:58:17 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): implement audio device and MIDI backends via miniaudio + ALSA",
+      "description": "implement audio device and MIDI backends via miniaudio + ALSA",
+      "bullets": [],
+      "body": "Vendors miniaudio (pinned v0.11.25) with dlopen-based backend loading\n(PulseAudio -> ALSA -> JACK -> Null, overridable via\nINFINITE_AUDIO_BACKEND) for AudioDeviceLinux.cpp, and adds MidiLinux.cpp\non the ALSA sequencer (libasound, linked directly via pkg-config, not\ndlopen'd). Extracts shared xrun/level analysis into\nAudioAnalysisCommon:: (src/platform/common/AudioAnalysis.h) and switches\nAudioDeviceWin.cpp to use it, removing ~110 lines of duplicated logic.\nWires the new sources and ALSA pkg-config into CMakeLists.txt.",
+      "raw": "feat(linux): implement audio device and MIDI backends via miniaudio + ALSA\n\nVendors miniaudio (pinned v0.11.25) with dlopen-based backend loading\n(PulseAudio -> ALSA -> JACK -> Null, overridable via\nINFINITE_AUDIO_BACKEND) for AudioDeviceLinux.cpp, and adds MidiLinux.cpp\non the ALSA sequencer (libasound, linked directly via pkg-config, not\ndlopen'd). Extracts shared xrun/level analysis into\nAudioAnalysisCommon:: (src/platform/common/AudioAnalysis.h) and switches\nAudioDeviceWin.cpp to use it, removing ~110 lines of duplicated logic.\nWires the new sources and ALSA pkg-config into CMakeLists.txt."
+    },
+    "stat": "CMakeLists.txt                          |    16 +-\n external/miniaudio/miniaudio.h          | 95887 ++++++++++++++++++++++++++++++\n src/platform/common/AudioAnalysis.h     |   150 +\n src/platform/linux/AudioDeviceLinux.cpp |   866 +-\n src/platform/linux/MidiLinux.cpp        |   695 +-\n src/platform/linux/MidiParseTestHooks.h |    16 +\n src/platform/linux/MiniaudioImpl.cpp    |    39 +\n src/platform/win/AudioDeviceWin.cpp     |   125 +-\n 8 files changed, 97578 insertions(+), 216 deletions(-)\n create mode 100644 external/miniaudio/miniaudio.h\n create mode 100644 src/platform/common/AudioAnalysis.h\n create mode 100644 src/platform/linux/MidiParseTestHooks.h\n create mode 100644 src/platform/linux/MiniaudioImpl.cpp"
   },
   {
     "hash": "9ebc9ffe5d64ea230a320d7bd1b781e02d81c0c1",
@@ -857,6 +1479,38 @@
       "raw": "Merge branch 'main' into feature/linux-step-01-followups\n\n# Conflicts:\n#\tsrc/platform/linux/PlatformLinux.cpp"
     },
     "stat": ""
+  },
+  {
+    "hash": "e0c39c52d46d19867f52dfee1e535a1e9de24b14",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Mon Sep 14 13:26:28 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'main' into feature/linux-step-01-desktop",
+      "description": "Merge branch 'main' into feature/linux-step-01-desktop",
+      "bullets": [],
+      "body": "# Conflicts:\n#\tsrc/platform/linux/PlatformLinux.cpp",
+      "raw": "Merge branch 'main' into feature/linux-step-01-desktop\n\n# Conflicts:\n#\tsrc/platform/linux/PlatformLinux.cpp"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "80a423457a6fe7a0e4881f72e1d9ab5473ca50bd",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Mon Sep 14 13:25:05 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "linux",
+      "title": "feat(linux): set window icon and hide Syphon/Spout nodes on Linux",
+      "description": "set window icon and hide Syphon/Spout nodes on Linux",
+      "bullets": [],
+      "body": "Syphon/Spout is macOS/Windows-only texture sharing; on Linux the nodes\nstay registered (so existing patches still load) but are hidden from\nthe Add menu/search and their params panel explains why. Window icon\nnow goes through a shared SetWindowIcon() that loads the bundled PNG\nvia stb_image and glfwSetWindowIcon on Linux, mirroring the existing\nWindows resource-icon path. Adds INFINITE_SYPHONPATCHTEST verifying a\npatch with both nodes round-trips and instantiates safely.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(linux): set window icon and hide Syphon/Spout nodes on Linux\n\nSyphon/Spout is macOS/Windows-only texture sharing; on Linux the nodes\nstay registered (so existing patches still load) but are hidden from\nthe Add menu/search and their params panel explains why. Window icon\nnow goes through a shared SetWindowIcon() that loads the bundled PNG\nvia stb_image and glfwSetWindowIcon on Linux, mirroring the existing\nWindows resource-icon path. Adds INFINITE_SYPHONPATCHTEST verifying a\npatch with both nodes round-trips and instantiates safely.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "CMakeLists.txt |   5 +-\n src/main.cpp   | 214 +++++++++++++++++++++++++++++++++++++++++++++------------\n 2 files changed, 173 insertions(+), 46 deletions(-)"
   },
   {
     "hash": "101c8747189facf09f9ee13c61cba0524745dc28",
@@ -1687,6 +2341,22 @@
     "stat": "CMakeLists.txt                                |    2 +\n docs/plans/arrangement/wp1-model-core-plan.md |   81 ++\n src/arrange/ArrangeLegacy.cpp                 |   92 ++\n src/arrange/ArrangeLegacy.h                   |   82 ++\n src/arrange/ArrangeModel.cpp                  |  792 ++++++++++++++++\n src/arrange/ArrangeModel.h                    |  226 +++++\n src/core/GraphNode.h                          |    8 +\n src/core/Patch.cpp                            |  221 ++++-\n src/core/Patch.h                              |   93 +-\n src/core/PatchJson.cpp                        |   60 +-\n src/main.cpp                                  | 1233 ++++++++++++++++++-------\n 11 files changed, 2512 insertions(+), 378 deletions(-)\n create mode 100644 docs/plans/arrangement/wp1-model-core-plan.md\n create mode 100644 src/arrange/ArrangeLegacy.cpp\n create mode 100644 src/arrange/ArrangeLegacy.h\n create mode 100644 src/arrange/ArrangeModel.cpp\n create mode 100644 src/arrange/ArrangeModel.h"
   },
   {
+    "hash": "83fe054b44bbcd5a0b29698341f0ac5c2c3a4ae8",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Sun Sep 13 17:43:29 2026 +0530",
+    "parsed_message": {
+      "type": "docs",
+      "scope": "global",
+      "title": "docs: replace ARCHITECTURE.md line ranges with grepable symbol anchors",
+      "description": "replace ARCHITECTURE.md line ranges with grepable symbol anchors",
+      "bullets": [],
+      "body": "main.cpp has grown from ~9,146 to ~71,000 lines since this doc was\nwritten, making every cited line range wrong. Replace each range with\na function/global name verified to exist via grep, drop rows for code\nthat no longer exists, and add rows for systems missing from the doc:\nthe Field node system, the modulation-matrix and performance-matrix\ndocked panels, the shortcuts window, and the arrangement timeline's\ndata model. Also document the Windows platform layer (src/platform/win)\nand its one-abstraction-plus-two-implementations rule alongside the\nmacOS side, per .claude/skills/windows-parity.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "docs: replace ARCHITECTURE.md line ranges with grepable symbol anchors\n\nmain.cpp has grown from ~9,146 to ~71,000 lines since this doc was\nwritten, making every cited line range wrong. Replace each range with\na function/global name verified to exist via grep, drop rows for code\nthat no longer exists, and add rows for systems missing from the doc:\nthe Field node system, the modulation-matrix and performance-matrix\ndocked panels, the shortcuts window, and the arrangement timeline's\ndata model. Also document the Windows platform layer (src/platform/win)\nand its one-abstraction-plus-two-implementations rule alongside the\nmacOS side, per .claude/skills/windows-parity.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "ARCHITECTURE.md | 247 +++++++++++++++++++++++++++++++++++---------------------\n 1 file changed, 156 insertions(+), 91 deletions(-)"
+  },
+  {
     "hash": "181e1c1b15b81c09ea968a89e43933ba664c1fbc",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
@@ -1829,6 +2499,24 @@
       "raw": "fix(perf-matrix): remove Copy/Paste/Duplicate/Delete from control context menu\n\nMulti-select delete via this menu only removed one control instead of\nall selected ones, and static analysis of PerfDeleteSelection/\ngPerfSelection turned up no defect explaining the live repro. Rather\nthan chase an unreproducible bug in code that traces correctly on\npaper, drop batch copy/paste/duplicate/delete from the control\nright-click menu entirely per product decision.\n\nCmd+C/Cmd+V/Shift+D/Del keyboard shortcuts for the performance matrix\nare unaffected - they route through the same underlying functions via\na separate handler and were left in place.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
     },
     "stat": "src/main.cpp | 41 -----------------------------------------\n 1 file changed, 41 deletions(-)"
+  },
+  {
+    "hash": "c9055464c09c75bbf99c49da9694c20c444ba627",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 11 22:00:16 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "mod",
+      "title": "fix(mod): stop ModSliderInt from stomping expression/recording writes",
+      "description": "stop ModSliderInt from stomping expression/recording writes",
+      "bullets": [
+        "value changed for some other reason. That guard is source-agnostic -"
+      ],
+      "body": "ModSliderInt reseeded its backing proxy float from the node's *value\nevery frame unless Modulation::IsModulated() was true, but IsModulated\nonly detects a wired modulation cable - it doesn't see an active\nexpression or gesture/mod-recorder playback driving the same param.\nSince the UI draw pass runs before ApplyModulationAndPalette applies\nthose each frame, any expression/recording write got stomped by the\nnext frame's reseed before the audio thread ever saw it, so params\ndriven this way (e.g. NoteSwitcherNode's manual slot) appeared frozen\nwhile a wired LFO on the same control worked fine.\nModKnobInt already had the correct fix for this, for an unrelated\nreason (it needs to preserve its drag accumulator across frames): it\ntracks the last value it wrote back itself and only reseeds when\ncable, expression, or recording all look the same to it - so porting\nit into ModSliderInt fixes the shared helper for every caller at once,\nincluding SwitcherNode's and Switcher3DNode's manual-slot sliders,\nwhich had the identical latent bug.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "fix(mod): stop ModSliderInt from stomping expression/recording writes\n\nModSliderInt reseeded its backing proxy float from the node's *value\nevery frame unless Modulation::IsModulated() was true, but IsModulated\nonly detects a wired modulation cable - it doesn't see an active\nexpression or gesture/mod-recorder playback driving the same param.\nSince the UI draw pass runs before ApplyModulationAndPalette applies\nthose each frame, any expression/recording write got stomped by the\nnext frame's reseed before the audio thread ever saw it, so params\ndriven this way (e.g. NoteSwitcherNode's manual slot) appeared frozen\nwhile a wired LFO on the same control worked fine.\n\nModKnobInt already had the correct fix for this, for an unrelated\nreason (it needs to preserve its drag accumulator across frames): it\ntracks the last value it wrote back itself and only reseeds when\n*value changed for some other reason. That guard is source-agnostic -\ncable, expression, or recording all look the same to it - so porting\nit into ModSliderInt fixes the shared helper for every caller at once,\nincluding SwitcherNode's and Switcher3DNode's manual-slot sliders,\nwhich had the identical latent bug.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/main.cpp | 16 +++++++++++++---\n 1 file changed, 13 insertions(+), 3 deletions(-)"
   },
   {
     "hash": "9c8d70904e81ffe58380a89cb0a9f77a1c418a0f",
@@ -2306,6 +2994,41 @@
       "raw": "Fix WTDRAGTEST order-dependency: isolate its node-editor settings file\n\nWTDRAGTEST shared the real Infinite.json node-editor SettingsFile with\nevery other self-test. Earlier UI-group tests leave a non-default\npan/zoom in that file, and phase 3 of WTDRAGTEST's drag (the filter\nenvelope attack handle) moves the mouse by a fixed screen-pixel delta\nthat assumes 1.0 zoom - a leftover zoom shrinks that delta in canvas\nspace enough to read as no change at all, so the sub-check only fails\nwhen the test runs after others, never standalone.\n\nGive WTDRAGTEST its own throwaway settings path, reset before use,\nmatching the same pattern INFINITE_DRAGTEST already uses for exactly\nthis reason.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
     },
     "stat": "src/main.cpp | 15 +++++++++++++++\n 1 file changed, 15 insertions(+)"
+  },
+  {
+    "hash": "21a1345ff65623199cd2898a251829b60656747f",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 9 21:29:12 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "render3d",
+      "title": "Fix Join Geometry merge discarding a downstream Material's colour",
+      "description": "Fix Join Geometry merge discarding a downstream Material's colour",
+      "bullets": [],
+      "body": "Two independent defects, both in JoinGeometryNode's merge path.\n1. Manufactured vertex colour. The merge filled Mesh::vertexColor from\neach input's material albedo unconditionally, even when every input was\ncolourless. vertexColor and Material::color are two independent inputs\nto the same shader product (base = uBaseColor * vInstanceColor *\nvVertexColor), but only vertexColor travels inside the mesh, and\nnothing downstream can tell manufactured filler apart from authored\ncolour. So `join -> material(red) -> join -> render` rendered the inner\njoin's manufactured white and ignored the Material entirely - the outer\njoin saw HasVertexColor() and took the \"input already has colour\"\nbranch. The merge now bakes colour only when there is real colour to\npreserve: some input carries authored vertexColor or per-instance\ncolour, or the inputs' albedos actually differ. When it does bake, it\nbakes each input's absolute colour and GetMaterial() reports a neutral\nalbedo, so the shader product reproduces each part exactly instead of\ntinting every part by whichever input materialFrom points at.\nRegression from d135d88, shipped in v0.3.4.\n2. Invisible material invalidation. The dirty check tracked MeshRevision,\nmatrices, instancers, mode and keepInputColours - not the input\nmaterials it was baking. IGeometrySource has no MaterialRevision(), and\nMaterialNode::MeshRevision() forwards its input's stamp verbatim, so a\ncolour change upstream of a merge could never invalidate the baked\ncolours; dragging the picker moved nothing at all. Input albedo is now\npart of the dirty check (mBuiltAlbedos), and the per-input GetMaterial()\ncalls are fetched once per rebuild rather than three times, since joins\nnest and that walk multiplies at every level.\nAdds COLOURSWEEPTEST: a probe source with a fixed material feeds every\ngeometry-consuming node type and asserts none of them invent vertexColor\nfor a colourless mesh, plus three targeted Join checks including the exact\nreported patch. Reverting either fix fails it.\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>",
+      "raw": "Fix Join Geometry merge discarding a downstream Material's colour\n\nTwo independent defects, both in JoinGeometryNode's merge path.\n\n1. Manufactured vertex colour. The merge filled Mesh::vertexColor from\n   each input's material albedo unconditionally, even when every input was\n   colourless. vertexColor and Material::color are two independent inputs\n   to the same shader product (base = uBaseColor * vInstanceColor *\n   vVertexColor), but only vertexColor travels inside the mesh, and\n   nothing downstream can tell manufactured filler apart from authored\n   colour. So `join -> material(red) -> join -> render` rendered the inner\n   join's manufactured white and ignored the Material entirely - the outer\n   join saw HasVertexColor() and took the \"input already has colour\"\n   branch. The merge now bakes colour only when there is real colour to\n   preserve: some input carries authored vertexColor or per-instance\n   colour, or the inputs' albedos actually differ. When it does bake, it\n   bakes each input's absolute colour and GetMaterial() reports a neutral\n   albedo, so the shader product reproduces each part exactly instead of\n   tinting every part by whichever input materialFrom points at.\n   Regression from d135d88, shipped in v0.3.4.\n\n2. Invisible material invalidation. The dirty check tracked MeshRevision,\n   matrices, instancers, mode and keepInputColours - not the input\n   materials it was baking. IGeometrySource has no MaterialRevision(), and\n   MaterialNode::MeshRevision() forwards its input's stamp verbatim, so a\n   colour change upstream of a merge could never invalidate the baked\n   colours; dragging the picker moved nothing at all. Input albedo is now\n   part of the dirty check (mBuiltAlbedos), and the per-input GetMaterial()\n   calls are fetched once per rebuild rather than three times, since joins\n   nest and that walk multiplies at every level.\n\nAdds COLOURSWEEPTEST: a probe source with a fixed material feeds every\ngeometry-consuming node type and asserts none of them invent vertexColor\nfor a colourless mesh, plus three targeted Join checks including the exact\nreported patch. Reverting either fix fails it.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+    },
+    "stat": ".claude/skills/geometry-transform-sweep/SKILL.md  |  72 ++++++++-\n .claude/skills/geometry-transform-sweep/driver.sh |  10 ++\n src/main.cpp                                      | 176 ++++++++++++++++++++++\n src/nodes/UtilityNodes.cpp                        | 139 ++++++++++++++---\n src/nodes/UtilityNodes.h                          |  11 ++\n 5 files changed, 383 insertions(+), 25 deletions(-)"
+  },
+  {
+    "hash": "5afe5b5b401765c16f0b170a58b9a4f1484e370e",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 9 21:28:59 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "core",
+      "title": "Skills: record two recurring bug shapes from the fix history",
+      "description": "Skills: record two recurring bug shapes from the fix history",
+      "bullets": [
+        "field-compiler \u00a73b: a vector Literal mirrors vecValues[0] into",
+        "compositing-pipeline-sweep check 4: the source-over alpha formula the"
+      ],
+      "body": "Reviewed the bug-fix commits of the last two weeks for repeating shapes and\nencoded the two that were not already written down anywhere:\nnumberValue, so an identity fold (x*0, x*1, +0, -0) that reads that\nscalar without checking lane count folds away a real vec3.\nblend path must use, versus the mix()/max() shape it used to have that\nblack-fringed every transparent edge.\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>",
+      "raw": "Skills: record two recurring bug shapes from the fix history\n\nReviewed the bug-fix commits of the last two weeks for repeating shapes and\nencoded the two that were not already written down anywhere:\n\n- field-compiler \u00a73b: a vector Literal mirrors vecValues[0] into\n  numberValue, so an identity fold (x*0, x*1, +0, -0) that reads that\n  scalar without checking lane count folds away a real vec3.\n- compositing-pipeline-sweep check 4: the source-over alpha formula the\n  blend path must use, versus the mix()/max() shape it used to have that\n  black-fringed every transparent edge.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+    },
+    "stat": ".claude/skills/compositing-pipeline-sweep/SKILL.md | 19 ++++++++++++++++++-\n .claude/skills/field-compiler/SKILL.md             | 14 ++++++++++++++\n 2 files changed, 32 insertions(+), 1 deletion(-)"
   },
   {
     "hash": "053eab5e74f5aa3600c954cff49edcfee7a93187",
