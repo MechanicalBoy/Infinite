@@ -370,6 +370,12 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
          if (c.sampleDropped && (c.sampleBpm != 120.0f || c.sourceDurationSeconds != 0.0f))
             file << "clipbpm " << i << " " << c.id << " " << FloatToString(c.sampleBpm) << " "
                  << FloatToString(c.sourceDurationSeconds) << "\n";
+      // Split-derived source offset: own tag, same append-only convention -
+      // only written when non-zero (i.e. the clip is a split-off right
+      // half) so an unsplit Sample's patch line stays exactly as it was.
+      for (const ClipRecord& c : s.clips)
+         if (c.sampleDropped && c.sourceOffsetSeconds != 0.0f)
+            file << "clipsrcoffset " << i << " " << c.id << " " << FloatToString(c.sourceOffsetSeconds) << "\n";
    }
    for (const MarkerRecord& mk : data.markers)
       file << "marker " << mk.id << " " << mk.posTick << " " << mk.color << " " << EscapeLine(mk.name) << "\n";
@@ -909,6 +915,20 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
                   c.sampleBpm = sampleBpm;
                   c.sourceDurationSeconds = sourceDurationSeconds;
                }
+         }
+      }
+      else if (tag == "clipsrcoffset")
+      {
+         int streamIdx = -1;
+         uint64_t clipId = 0;
+         float sourceOffsetSeconds = 0.0f;
+         if (in >> streamIdx >> clipId >> sourceOffsetSeconds &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() && clipId != 0)
+         {
+            if (!std::isfinite(sourceOffsetSeconds) || sourceOffsetSeconds < 0.0f) sourceOffsetSeconds = 0.0f;
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+                  c.sourceOffsetSeconds = sourceOffsetSeconds;
          }
       }
       else if (tag == "cliptick")
