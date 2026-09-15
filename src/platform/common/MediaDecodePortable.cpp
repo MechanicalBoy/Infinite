@@ -16,6 +16,7 @@
 
 #include "../Platform.h"
 #include "PathOpen.h"
+#include "FfmpegAudioDecodeHook.h"
 
 // Declarations only: STB_IMAGE_IMPLEMENTATION already lives in
 // EnvironmentNode.cpp (it owns the HDRI loader there too), so defining it
@@ -51,6 +52,8 @@
 
 namespace
 {
+   Platform::FfmpegAudioDecodeFn gFfmpegAudioDecodeHook = nullptr;
+
    constexpr int kMaxDecodeChannels = 2; // SampleBuffer is stereo by contract
 
    // Split an interleaved decode buffer into SampleBuffer's planar layout
@@ -1089,13 +1092,26 @@ namespace Platform
       if (ext == "aiff" || ext == "aif")
          return DecodeAiff(path, outBuffer, outError);
 
-      if (ext == "m4a" || ext == "m4b" || ext == "caf" || ext == "ogg")
+      if (ext == "m4a" || ext == "m4b" || ext == "caf" || ext == "ogg" || ext == "opus")
       {
+         // On Linux, MediaLinux.cpp registers an FFmpeg-based fallback here
+         // (FFmpeg's avformat/avcodec can demux/decode all of these, unlike
+         // dr_libs). On Windows the hook is never registered - AVFoundation
+         // was macOS-only anyway, so this container set was already
+         // unsupported there before Linux existed.
+         if (gFfmpegAudioDecodeHook != nullptr)
+            return gFfmpegAudioDecodeHook(path, outBuffer, outError);
+
          outError = ext + " decoding requires AVFoundation and is not supported on this platform";
          return false;
       }
 
       outError = "unsupported audio format";
       return false;
+   }
+
+   void SetFfmpegAudioDecodeHook(FfmpegAudioDecodeFn fn)
+   {
+      gFfmpegAudioDecodeHook = fn;
    }
 }
