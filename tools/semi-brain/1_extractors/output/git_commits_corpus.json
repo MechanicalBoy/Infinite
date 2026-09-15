@@ -1,5 +1,21 @@
 [
   {
+    "hash": "1d7b950e6bb430c0a0236c37b39781fc134cb6ed",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:39:09 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): update extractor corpora and training datasets",
+      "description": "update extractor corpora and training datasets",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): update extractor corpora and training datasets"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    | 171 ++++++++\n .../1_extractors/output/recovered_docs_corpus.json | 460 ++++++++++-----------\n .../output/skills_and_invariants_corpus.json       |   2 +-\n .../3_datasets/train_dpo_preference.jsonl          |   2 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 154 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 154 +++----\n 6 files changed, 564 insertions(+), 379 deletions(-)"
+  },
+  {
     "hash": "33e4e931c547540252d82c933ae96efd9ff0109f",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
