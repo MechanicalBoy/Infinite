@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #if defined(_WIN32)
    #include <windows.h>
@@ -20,6 +21,12 @@
 #endif
 
 #if defined(__linux__)
+#include "platform/Platform.h"
+extern "C"
+{
+#include <libavcodec/avcodec.h>
+#include <libavutil/avutil.h>
+}
 namespace Platform { extern bool HasGuiDialogHelper(); }
 #endif
 
@@ -64,6 +71,22 @@ namespace SysInfo
       std::printf("GLSL Version: %s\n", glslVersion ? (const char*)glslVersion : "null");
 #if defined(__linux__)
       std::printf("Dialog helper: %s\n", Platform::HasGuiDialogHelper() ? "yes" : "no (zenity/kdialog missing)");
+      std::printf("FFmpeg (libavutil): %s\n", av_version_info());
+#if defined(INFINITE_ENABLE_GPL_CODECS)
+      std::printf("H.264 encoder: %s\n", avcodec_find_encoder_by_name("libx264") != nullptr
+                                             ? "libx264 (present)" : "libx264 (MISSING)");
+#else
+      std::printf("H.264 encoder: none (INFINITE_ENABLE_GPL_CODECS=OFF)\n");
+#endif
+      std::printf("AAC encoder: %s\n", avcodec_find_encoder(AV_CODEC_ID_AAC) != nullptr
+                                          ? "present" : "MISSING");
+      {
+         const std::vector<Platform::CameraDeviceInfo> cams = Platform::CameraListDevices();
+         std::printf("Cameras found: %zu\n", cams.size());
+         for (const auto& cam : cams)
+            std::printf("  - %s (%s)%s\n", cam.localizedName.c_str(), cam.uniqueId.c_str(),
+                       cam.isDefault ? " [default]" : "");
+      }
 #endif
       std::printf("======================================================\n");
       std::fflush(stdout);
