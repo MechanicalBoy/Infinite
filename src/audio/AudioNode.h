@@ -82,6 +82,19 @@ public:
    }
    virtual void Reset() {}
 
+   // Arrangement Timeline retrigger (main.cpp's RunTopology lookahead pass):
+   // requests that this node seek its own playback position back to the
+   // start the next time it cooks, without otherwise disturbing its
+   // configuration. Called from the audio thread, immediately before the
+   // node's own ProcessBlockMulti for that same block - so it must be a
+   // lock-free, same-thread-safe request (an atomic flag consumed at the top
+   // of ProcessBlock, the way AudioFilePlayerAudioNode::RequestRestart()
+   // already works), never a blocking or allocating operation. No-op by
+   // default: only node types with their own internal playback position
+   // (a sample player, a phase-based generator) need to override it, and a
+   // node with none is unaffected by a clip asking to retrigger it.
+   virtual void RequestRetrigger() {}
+
    // Samples of latency this node's own processing adds (lookahead,
    // oversampling, a hosted plugin's reported latency, ...) at whatever rate
    // it was last PrepareToPlay'd at. 0 (the default) for the overwhelming

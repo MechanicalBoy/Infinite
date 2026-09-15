@@ -868,12 +868,21 @@ public:
       mMonitor.store(monitor, std::memory_order_relaxed);
    }
 
-   // Main thread. Transport control - plain atomics, no mailbox needed since
-   // these are one-shot requests/flags rather than smoothed audio params.
+   // Transport control - plain atomics, no mailbox needed since these are
+   // one-shot requests/flags rather than smoothed audio params. Called from
+   // the main thread (Play/Pause/Restart on AudioFileNode) or, via
+   // RequestRetrigger() below, from the audio thread itself
+   // (AudioEngine::RunTopology's Arrangement Timeline retrigger lookahead) -
+   // safe either way since it is just an atomic store.
    void RequestPlay() { mPlaying.store(true, std::memory_order_relaxed); }
    void RequestPause() { mPlaying.store(false, std::memory_order_relaxed); }
    void RequestRestart() { mRestartRequested.store(true, std::memory_order_release); }
    bool IsPlaying() const { return mPlaying.load(std::memory_order_relaxed); }
+
+   // Arrangement Timeline retrigger: seeking back to frame 0 is exactly what
+   // Restart already does, so this clip-driven trigger reuses it rather than
+   // adding a second flag.
+   void RequestRetrigger() override { RequestRestart(); }
 
    // Main thread. mFramePos and mActiveFileSampleRate are only ever written
    // by the audio thread and read here - 64-bit/double atomics are

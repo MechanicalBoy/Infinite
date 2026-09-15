@@ -5836,7 +5836,10 @@ namespace
                 ca.srcOutput != cb.srcOutput || ca.fadeIn != cb.fadeIn || ca.fadeOut != cb.fadeOut ||
                 ca.gainDb != cb.gainDb || ca.enabled != cb.enabled || ca.groupId != cb.groupId || ca.name != cb.name ||
                 ca.colorR != cb.colorR || ca.colorG != cb.colorG || ca.colorB != cb.colorB ||
-                ca.blendMode != cb.blendMode)
+                ca.blendMode != cb.blendMode || ca.pan != cb.pan || ca.pitch != cb.pitch ||
+                ca.opacity != cb.opacity || ca.colorBrightness != cb.colorBrightness ||
+                ca.colorContrast != cb.colorContrast || ca.colorSaturation != cb.colorSaturation ||
+                ca.retrigger != cb.retrigger)
                return false;
          }
       }
@@ -28553,6 +28556,25 @@ namespace
    // Arrangement slider with smooth dragging, double-click to edit text,
    // hover-to-type (starts editing immediately upon typing any number/sign/dot),
    // and standard Ctrl+Click.
+   //
+   // A plain click's *first* frame can't tell whether a second click is about
+   // to follow (ImGui only reports IsMouseDoubleClicked() on the second
+   // click), so a single click can't be allowed to immediately SetActiveID +
+   // snap the value the way vanilla SliderBehavior does - that snap would
+   // commit a spurious edit a frame before the double-click is recognized and
+   // opens the text box. Instead a fresh click is held as "pending" until
+   // either the mouse drags past the threshold (genuine drag - activate now,
+   // from the current position), the double-click window elapses (genuine
+   // single click - activate now), or a second click arrives first (genuine
+   // double-click - go straight to text input, no drag ever activated).
+   struct ArrangeSliderPendingClick
+   {
+      bool waiting = false;
+      double downTime = 0.0;
+      ImVec2 downPos = ImVec2(0, 0);
+   };
+   static std::unordered_map<ImGuiID, ArrangeSliderPendingClick> sArrangeSliderPending;
+
    bool ArrangeSliderFloat(const char* label, float* v, float v_min, float v_max, const char* format = "%.2f", ImGuiSliderFlags flags = 0)
    {
       ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -28580,10 +28602,16 @@ namespace
       bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive(id);
       if (!temp_input_is_active)
       {
-         const bool clicked = hovered && ImGui::IsMouseClicked(0, ImGuiInputFlags_None, id);
+         ArrangeSliderPendingClick& pending = sArrangeSliderPending[id];
+
          const bool doubleClicked = hovered && ImGui::IsMouseDoubleClicked(0);
+         const bool freshClick = hovered && !doubleClicked && ImGui::IsMouseClicked(0, ImGuiInputFlags_None, id);
+
+         // Only fires when NO widget anywhere holds ActiveId, so hovering a
+         // slider can never steal keystrokes from another field being typed
+         // into (e.g. a name box in the same panel).
          bool keyPressedOnHover = false;
-         if (hovered && temp_input_allowed && g.ActiveId != id)
+         if (hovered && temp_input_allowed && g.ActiveId == 0)
          {
             for (int n = 0; n < g.IO.InputQueueCharacters.Size; n++)
             {
@@ -28596,19 +28624,50 @@ namespace
             }
          }
 
-         const bool make_active = (clicked || doubleClicked || keyPressedOnHover || g.NavActivateId == id);
-         if (make_active && clicked)
-            ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
-         if (make_active && temp_input_allowed)
+         bool activateDrag = false;
+         if (doubleClicked)
          {
-            if ((clicked && g.IO.KeyCtrl) || doubleClicked || keyPressedOnHover ||
-                (g.NavActivateId == id && (g.NavActivateFlags & ImGuiActivateFlags_PreferInput)))
+            pending.waiting = false;
+            ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
+            temp_input_is_active = true;
+         }
+         else if (keyPressedOnHover || (g.NavActivateId == id && (g.NavActivateFlags & ImGuiActivateFlags_PreferInput)))
+         {
+            pending.waiting = false;
+            temp_input_is_active = true;
+         }
+         else if (freshClick && g.IO.KeyCtrl)
+         {
+            // Ctrl+Click is unambiguous - no need to wait out the double-click window.
+            pending.waiting = false;
+            ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
+            temp_input_is_active = true;
+         }
+         else if (freshClick)
+         {
+            pending.waiting = true;
+            pending.downTime = g.Time;
+            pending.downPos = g.IO.MousePos;
+         }
+         else if (pending.waiting)
+         {
+            const float dx = g.IO.MousePos.x - pending.downPos.x;
+            const float dy = g.IO.MousePos.y - pending.downPos.y;
+            const bool movedPastThreshold = (dx * dx + dy * dy) > (g.IO.MouseDragThreshold * g.IO.MouseDragThreshold);
+            const bool doubleClickWindowElapsed = (g.Time - pending.downTime) > g.IO.MouseDoubleClickTime;
+            if (ImGui::IsMouseDown(0) ? (movedPastThreshold || doubleClickWindowElapsed) : doubleClickWindowElapsed)
             {
-               temp_input_is_active = true;
+               pending.waiting = false;
+               ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
+               activateDrag = true;
             }
          }
+         else if (g.NavActivateId == id)
+         {
+            activateDrag = true;
+         }
 
-         if (make_active && !temp_input_is_active)
+         if (activateDrag && !temp_input_is_active)
          {
             ImGui::SetActiveID(id, window);
             ImGui::SetFocusID(id, window);
@@ -36244,6 +36303,13 @@ namespace
    // it can never equal the sentinel and the first frame always builds.
    uint64_t gArrangeAudioBuiltRevision = UINT64_MAX;
    bool gArrangeAudioBuiltRouting = false;
+   // Clip ids whose Retrigger flag was suppressed at the last rebuild because
+   // their source node is also used by a clip on another lane - one physical
+   // node has only one playback position, so two lanes retriggering it
+   // independently would stomp each other (see RebuildAudioTopology's
+   // `lanesPerSrc` pass). Read by the Clip Settings panel to show an inline
+   // warning next to the Trigger dropdown instead of silently no-op'ing.
+   std::set<uint64_t> gArrangeRetriggerConflictClipIds;
    // Every RebuildAudioTopology that got past gDeferAudioRebuild. Fixtures
    // read it to prove an edit costs exactly one rebuild and an idle frame none.
    unsigned long long gAudioTopologyRebuildCount = 0;
@@ -36390,6 +36456,32 @@ namespace
                scheduled[it->second].windows.push_back(w);
             }
          }
+         // A retrigger clip needs its node to itself: RunTopology's retrigger
+         // lookahead seeks the node's own playback position, and a node fed
+         // to more than one lane has only one such position for both to
+         // fight over. Rather than let two lanes silently stomp each other's
+         // onset, suppress the retrigger (fall back to timeline-continuous
+         // for that window) whenever its srcUid turns out to be scheduled on
+         // more than one lane, and record the affected clips so the UI can
+         // say why.
+         gArrangeRetriggerConflictClipIds.clear();
+         std::unordered_map<uint64_t, std::set<uint64_t>> lanesPerSrc;
+         for (const ScheduledTerminal& st : scheduled)
+            lanesPerSrc[st.srcUid].insert(st.laneId);
+         for (ScheduledTerminal& st : scheduled)
+         {
+            if (lanesPerSrc[st.srcUid].size() <= 1)
+               continue;
+            for (ClipWindow& w : st.windows)
+            {
+               if (w.retrigger)
+               {
+                  w.retrigger = false;
+                  gArrangeRetriggerConflictClipIds.insert(w.clipId);
+               }
+            }
+         }
+
          // Sort each terminal's windows and mark the abutting edges. The
          // model forbids overlap on a lane and keeps it sorted, so this is a
          // no-op on a valid model - kept because RunTopology's cursor walk
@@ -36495,6 +36587,7 @@ namespace
          AudioTerminal term;
          term.bufferIndex = idx;
          term.gain = 1.0f; // clip gain rides on the window, lane gain on laneGain
+         term.sourceNode = AudioNodeOfAny(resolved);
          term.laneGain = st.laneGain;
          term.lanePanL = st.lanePanL;
          term.lanePanR = st.lanePanR;
@@ -37502,6 +37595,15 @@ namespace
                   gArrange.revision++;
                }
             });
+         }
+         if (clip->retrigger && gArrangeRetriggerConflictClipIds.count(clipId))
+         {
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + fieldW);
+            ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f),
+               "This clip's source is also used on another lane, so it can't be retriggered "
+               "independently - playing as Timeline (Continuous) instead. Give it its own node "
+               "(Duplicate) to retrigger it.");
+            ImGui::PopTextWrapPos();
          }
 
          ImGui::Spacing();
