@@ -342,6 +342,8 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
       // name, so nothing can be appended after it.
       if (s.mute || s.solo)
          file << "streammix " << i << " " << (s.mute ? 1 : 0) << " " << (s.solo ? 1 : 0) << "\n";
+      if (s.rowHeight != 0.0f)
+         file << "streamrowheight " << i << " " << FloatToString(s.rowHeight) << "\n";
       for (const ClipRecord& c : s.clips)
          if (c.blendMode > 0)
             file << "clipblend " << i << " " << c.id << " " << c.blendMode << "\n";
@@ -806,6 +808,14 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
             outData.streams[streamIdx].mute = mute != 0;
             outData.streams[streamIdx].solo = solo != 0;
          }
+      }
+      else if (tag == "streamrowheight")
+      {
+         int streamIdx = -1;
+         float rowHeight = 0.0f;
+         if (in >> streamIdx >> rowHeight && streamIdx >= 0 && streamIdx < (int)outData.streams.size() &&
+             std::isfinite(rowHeight))
+            outData.streams[streamIdx].rowHeight = rowHeight;
       }
       else if (tag == "clipblend")
       {

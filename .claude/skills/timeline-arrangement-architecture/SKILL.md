@@ -5,8 +5,39 @@ description: Map of how Infinite's Timeline/Arrangement system actually works to
 
 Paths below are relative to the repo root (`/Users/namansoni/infinte`). Everything here was
 verified against code (file:line) as of commit `83fd442` (post "Arrangement overhaul",
-`101c874`). Where something the codebase's own docs/UI implies does **not** actually exist,
-it's called out explicitly — don't assume otherwise.
+`101c874`), then updated for the `timeline-arrangement-improvements` pass (branch
+`claude/timeline-arrangement-improvements-81c7c7`, see below). Where something the codebase's
+own docs/UI implies does **not** actually exist, it's called out explicitly — don't assume
+otherwise. Line numbers throughout may have drifted a bit further since (they've already
+shifted by ~340 lines from the bounce-removal alone) — treat them as approximate anchors, not
+exact addresses; grep the function/symbol name first.
+
+**What changed in the `timeline-arrangement-improvements` pass**, since the sections below
+still describe the *post*-change state as current fact rather than calling out the diff:
+- Individual-clip "Bounce to Sample" / "Bounce / Render Clip" is **gone entirely** (menu items,
+  inspector button, `ArrangeBuildClipScopedRenderJob`/`ArrangeBuildClipBounceRenderJob`/
+  `ArrangeApplyClipBounceResult`, the `bounceClipId`/`clipScope` job fields,
+  `gArrangeRenderActiveClipScope`). "Render Track" and "Render Group"
+  (`laneScope`/`gArrangeRenderActiveLaneScope`/`ArrangeCommitLaneScopedRenderJob`) are untouched
+  and still the only render/export entry points.
+- The per-clip "Trigger mode (Timeline / Retrigger)" UI row is **removed** from the inspector.
+  `Clip::retrigger` (`ArrangeModel.h:119`) still exists and still defaults `true`, but nothing
+  in the UI writes `false` to it anymore — every clip retriggers.
+- Sync-to-Tempo's BPM field is now **read-only while synced** (shows the live project tempo
+  number, no editable box) and only becomes an editable "Sample BPM" drag field when sync is
+  off — see §7.
+- The track header row no longer shows inline Opacity/Solo/Mute/Gain/Pan controls — those moved
+  to the docked inspector only (§3's "Track (lane)" row). The main row is name + color + a few
+  structural controls only.
+- Track rows are user-resizable (drag a row's bottom border); waveform rendering scales to the
+  resized row height instead of a fixed pixel height.
+- The Arrange panel's monitor/viewport preview (`gArrangeShowViewport`) now **defaults off**.
+- Double-clicking an already-open clip/track/group inspector now **closes** it (toggle) instead
+  of just re-opening the same selection.
+- Clip-source routing (assign/reassign/clear, gain/pan/pitch, audio topology) was audited
+  end-to-end and confirmed **already fully generic** via `IAudioSource`/virtual dispatch — see
+  §6's note on retrigger/pitch/rate being deliberately opt-in per node type, which is the only
+  place behavior legitimately varies by concrete node type.
 
 ## The data model (read this first)
 
@@ -75,9 +106,12 @@ loop at `main.cpp:83461`). This is a known "fans out across several places" hots
 - Video grade ("Bright"/"Contrast"/"Sat" in inspector) → `Clip::colorBrightness/Contrast/
   Saturation`, applied in-shader via `uGrade` (`main.cpp:27321-27323`).
 
-**No "bounce color" exists.** The recent `83fd442`/`cae4444` "clip-bounce" commits are about
-render/export **scope** (which clips a Bounce/Render job includes —
-`gArrangeRenderActiveClipScope`, `main.cpp:36478, 27266, 38217`), not a color property.
+**No "bounce color" exists, and no per-clip bounce/render exists anymore either.** The
+`83fd442`/`cae4444` "clip-bounce" commits (clip-scoped render/export, via
+`gArrangeRenderActiveClipScope`) were fully removed in the `timeline-arrangement-improvements`
+pass — Bounce to Sample and Bounce/Render Clip are gone from both the context menu and the
+inspector. "Render Track" and "Render Group" (`gArrangeRenderActiveLaneScope`) are the only
+render/export scopes left.
 
 ## 2. Categorization — "sample" vs "clip" is informal, not a type
 
@@ -110,15 +144,15 @@ which case this is the place it needs to land.
 All defined in one function, branching on selection kind:
 `DrawArrangeClipSettingsChild` (`main.cpp:37460-38148`).
 
-| Selection | Fields | Where |
+| Selection | Fields | Where (approximate, re-grep before trusting) |
 |---|---|---|
-| Single clip (both) | Name, Active/Bypassed, Start, Length, Fade In/Out, Trigger mode (Timeline / Retrigger), Color Tint, Source Node assign/clear | `37556-37840` |
-| + video only | Blend mode, Opacity, Bright, Contrast, Sat | `37669-37746` |
-| + audio only | Gain (dB), Pan, Pitch (semitones, live into node) | `37747-37795` |
-| Multi-clip | Bulk rename, bulk Active/Bypassed, bulk tint, conditional Ungroup, Delete Selected | `37841-37935` |
-| Track (lane) | Name, Active/Bypassed, audio: Solo/Mute/Gain/Pan, video: Opacity, Track Tint, Duplicate/Delete | `37936-38065` |
-| Track Group | Name, Active/Bypassed, Group Color, Add Video/Audio Track, Ungroup (Keep Tracks), Delete Group+Tracks | `38066-38131` |
-| Nothing selected | placeholder text | `38137-38145` |
+| Single clip (both) | Name, Active/Bypassed, Start, Length, Fade In/Out, Color Tint, Source Node assign/clear. **No Trigger mode row** — retrigger is implicit and always on, not user-facing. | `~37556-37840` |
+| + video only | Blend mode, Opacity, Bright, Contrast, Sat | `~37669-37746` |
+| + audio only | Gain (dB), Pan, Pitch (semitones, live into node), Tempo Sync (Sample only — live BPM readout while synced, editable "Sample BPM" only while sync is off) | `~37747-37795` |
+| Multi-clip | Bulk rename, bulk Active/Bypassed, bulk tint, conditional Ungroup, Delete Selected | `~37841-37935` |
+| Track (lane) | Name, Active/Bypassed, audio: Solo/Mute/Gain/Pan, video: Opacity, Track Tint, Duplicate/Delete. **This is now the only place these per-track controls live** — the track header row in the panel itself no longer shows them inline. | `~37936-38065` |
+| Track Group | Name, Active/Bypassed, Group Color, Add Video/Audio Track, Ungroup (Keep Tracks), Delete Group+Tracks | `~38066-38131` |
+| Nothing selected | placeholder text | `~38137-38145` |
 
 A nested track group's own record is an identical `TrackGroup` — parent nesting adds no extra
 fields.
@@ -198,7 +232,7 @@ useful when the source node can be seeked (`AudioFileNode`/`SamplerNode` respond
 | Question | Answer |
 |---|---|
 | Can a video be time-stretched? | Only a flat-rate speed multiplier, `VideoSourceNode::speed` (`VideoSourceNode.h:68`, default 1.0, serialized via `VisitParams`). **Per-node only** — the Arrange clip inspector doesn't expose it; must select the node on the canvas. No pitch-preserving/optical-flow stretch exists. |
-| Can an audio sample sync its internal BPM to project tempo? | **No.** `Clip::syncToTempo` (`ArrangeModel.h:74-86`) is a one-time length calculation at drop time only — never revisited on a later tempo change, never resamples/stretches. No `sourceBpm`/`fileBpm`/`detectBpm`/time-stretch field exists anywhere in `src/`. |
+| Can an audio sample sync its internal BPM to project tempo? | **No.** `Clip::syncToTempo` (`ArrangeModel.h:74-86`) is a one-time length calculation at drop time only — never revisited on a later tempo change, never resamples/stretches. No `sourceBpm`/`fileBpm`/`detectBpm`/time-stretch field exists anywhere in `src/`. When sync is on, the inspector shows the live current project tempo (a read-only mirror of `Transport::Instance().Tempo()`, not the frozen `sampleBpm`) since that's what `SetClipRateOverride`'s ratio actually warps toward; the editable "Sample BPM" field only appears when sync is off. |
 | What audio pitch control *does* exist? | `Clip::pitch` (±24 semitones) pushed live into `AudioFileNode::pitch`/`SamplerNode::pitch`. This is **varispeed** (rate changes with pitch, turntable-style), not independent pitch-shift — applied in `AudioFilePlayerAudioNode`'s per-sample read: `pitchRatio = 2^(pitch/12); mPos += mPlaybackRate * pitchRatio` (`src/nodes/AnalyzeNodes.cpp:944-956`). |
 
 ## 8. Settings application order
@@ -258,6 +292,20 @@ that live-fills only fall back to when no cache exists.
 
 ## Known gaps (not bugs, but real holes worth flagging before building on top)
 
+0. **Clip-source routing is NOT gated by node type — confirmed, not a gap.** An audit of the
+   full pipeline (compatibility gates `IsNodeAudioCompatible`/`IsNodeVideoCompatible`, manual +
+   context-menu assignment, output-slot selection, gain/pan/pitch writes,
+   `RebuildAudioTopology`, `AudioEngine::RunTopology`) found it is already fully general via
+   `IAudioSource` and C++ virtual dispatch, with no hardcoded restriction to any concrete node
+   type anywhere in that path. The only place behavior legitimately varies by node type is the
+   optional `RequestRetrigger()`/`SetClipPitchOverride()`/`SetClipRateOverride()`/
+   `SeekToClipOffset()` hooks on `AudioNode` (`src/audio/AudioNode.h:83-136`) — no-op by default,
+   overridden only by `AudioFileNode`, `SamplerNode` (pitch only), and `WavetableSynthCore`
+   (pitch only) — because a node with no internal playback position has nothing to retrigger or
+   pitch-shift. That's deliberate, documented, opt-in architecture, not a routing bug. Don't
+   re-investigate this from scratch; if a future report says "routing only works for node X",
+   the actual bug is more likely in that specific node's own `IAudioSource`/compatibility
+   plumbing, not the shared pipeline.
 1. **Retrigger-on-hard-seek is unverified.** The retrigger pass only fires when a window's own
    `startBeat` is inside the *current* block (`AudioEngine.cpp:223-227`). A hard seek (Home/
    End/marker jump/ruler scrub) landing *inside* a `retrigger=true` clip, not at its start, may

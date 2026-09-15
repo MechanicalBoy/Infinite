@@ -344,6 +344,7 @@ namespace Patch
       bool  solo      = false;  // audio only
       std::string name;         // empty = auto ("V1", "A2", ...) - label derived by the UI
       float colorR = 0.0f, colorG = 0.0f, colorB = 0.0f;
+      float rowHeight = 0.0f;   // 0 = default; new field, older patches load at the default height
       std::vector<ClipRecord> clips;
    };
 
