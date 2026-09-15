@@ -472,6 +472,23 @@ namespace Tabler
       dl->PathStroke(col, ImDrawFlags_Closed, stroke);
    }
 
+   // Tabler: list (3 bullets on left, 3 horizontal bars on right)
+   inline void DrawList(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.2f, 1.6f * s);
+      const float dotR = ImMax(1.1f, 1.4f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      const float ys[3] = { 6.0f, 12.0f, 18.0f };
+      for (int i = 0; i < 3; ++i)
+      {
+         dl->AddCircleFilled(P(5.5f, ys[i]), dotR, col);
+         dl->AddLine(P(9.5f, ys[i]), P(19.0f, ys[i]), col, stroke);
+      }
+   }
+
    // Tabler: adjustments-horizontal / sliders
    inline void DrawSliders(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
    {

@@ -353,6 +353,12 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
          if (c.colorBrightness != 0.0f || c.colorContrast != 0.0f || c.colorSaturation != 1.0f)
             file << "clipgrade " << i << " " << c.id << " " << FloatToString(c.colorBrightness) << " "
                  << FloatToString(c.colorContrast) << " " << FloatToString(c.colorSaturation) << "\n";
+      for (const ClipRecord& c : s.clips)
+         if (c.opacity != 1.0f)
+            file << "clipopacity " << i << " " << c.id << " " << FloatToString(c.opacity) << "\n";
+      for (const ClipRecord& c : s.clips)
+         if (!c.retrigger)
+            file << "clipretrigger " << i << " " << c.id << " 0\n";
    }
    for (const MarkerRecord& mk : data.markers)
       file << "marker " << mk.id << " " << mk.posTick << " " << mk.color << " " << EscapeLine(mk.name) << "\n";
@@ -825,6 +831,35 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
                   c.colorBrightness = std::clamp(brightness, -1.0f, 1.0f);
                   c.colorContrast = std::clamp(contrast, -1.0f, 1.0f);
                   c.colorSaturation = std::clamp(saturation, 0.0f, 2.0f);
+               }
+         }
+      }
+      else if (tag == "clipopacity")
+      {
+         int streamIdx = -1;
+         uint64_t clipId = 0;
+         float opacity = 1.0f;
+         if (in >> streamIdx >> clipId >> opacity &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() && clipId != 0)
+         {
+            if (!std::isfinite(opacity)) opacity = 1.0f;
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+                  c.opacity = std::clamp(opacity, 0.0f, 1.0f);
+         }
+      }
+      else if (tag == "clipretrigger")
+      {
+         int streamIdx = -1;
+         uint64_t clipId = 0;
+         int retriggerVal = 1;
+         if (in >> streamIdx >> clipId >> retriggerVal &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() && clipId != 0)
+         {
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+               {
+                  c.retrigger = (retriggerVal != 0);
                }
          }
       }

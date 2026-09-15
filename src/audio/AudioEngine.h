@@ -95,6 +95,7 @@ struct ClipWindow
    // of dipping every boundary.
    bool   abutsPrev    = false;
    bool   abutsNext    = false;
+   bool   retrigger    = true;
 };
 
 // One connected Audio Out: the pooled buffer its source writes into, and

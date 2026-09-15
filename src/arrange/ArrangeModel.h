@@ -87,9 +87,11 @@ namespace Arrange
       // Video/image only. Basic color grade, consumed by the compositor as a
       // per-clip shader pass. Defaults are a no-op so every clip that
       // predates this field renders identically.
+      float    opacity         = 1.0f;  // video only, 0..1, 1 = fully opaque
       float    colorBrightness = 0.0f;  // -1..1, 0 = no change
       float    colorContrast   = 0.0f;  // -1..1, 0 = no change
       float    colorSaturation = 1.0f;  // 0..2, 1 = no change
+      bool     retrigger       = true;  // true = retrigger source on playhead/marker enter, false = timeline continuous
 
       // Runtime-only: true while a dropped media file's async decode
       // (ArrangeMediaImport.h) hasn't landed yet. Deliberately not read or
