@@ -632,6 +632,11 @@ namespace
    constexpr int kFileVolumeParam = 0;
    constexpr int kFileGainParam = 1;
    constexpr int kFilePitchParam = 2; // semitones - see AudioFileNode::pitch
+   // BPM-sync rate ratio (Arrangement Timeline step 3), 1.0 = native rate.
+   // Only ever pushed by SetClipRateOverride (Audio Sample windows); the
+   // node's own canvas UI has no control for this, so PrepareToPlay seeds it
+   // straight to 1.0 rather than from a member atomic like volume/gain/pitch.
+   constexpr int kFileTempoRatioParam = 3;
 
    constexpr int kAnalysisFftLog2 = 10; // 1024-point FFT, same size Platform.mm's live analyser used
    constexpr int kAnalysisFftSize = 1 << kAnalysisFftLog2;
@@ -847,6 +852,7 @@ public:
       mMailbox.SetImmediate(kFileVolumeParam, mVolume.load(std::memory_order_relaxed));
       mMailbox.SetImmediate(kFileGainParam, mGain.load(std::memory_order_relaxed));
       mMailbox.SetImmediate(kFilePitchParam, mPitchSemitones.load(std::memory_order_relaxed));
+      mMailbox.SetImmediate(kFileTempoRatioParam, 1.0f);
    }
 
    // Main thread only. Hands over ownership of a freshly decoded buffer.
@@ -896,6 +902,12 @@ public:
    // block's pitch briefly reverting to the node's canvas value, inaudible
    // under the mailbox's per-block smoothing.
    void SetClipPitchOverride(float semitones) override { mMailbox.Push(kFilePitchParam, semitones); }
+
+   // Arrangement Timeline per-clip BPM sync (step 3): same push-only,
+   // never-touches-the-node's-own-member pattern as SetClipPitchOverride
+   // just above - a node can be shared by several clips, only one of which
+   // may be tempo-synced.
+   void SetClipRateOverride(float ratio) override { mMailbox.Push(kFileTempoRatioParam, ratio); }
 
    // Arrangement Timeline exact seek (Audio Sample only - see
    // AudioNode::SeekToClipOffset's own comment): stashes the requested
@@ -982,12 +994,18 @@ public:
          // at. Smoothed like volume/gain so a live pitch edit from the
          // Arrange clip settings panel doesn't zipper.
          const float pitchRatio = powf(2.0f, mMailbox.SmoothedValue(kFilePitchParam) / 12.0f);
+         // BPM sync (step 3): a tempo-synced Audio Sample's read rate is
+         // additionally scaled by currentProjectTempo/sampleBpm, smoothed
+         // the same as pitch so a live tempo/BPM-field edit doesn't zipper.
+         // 1.0 (no-op) for every non-Sample/non-synced window - see
+         // SetClipRateOverride's own comment.
+         const float tempoRatio = mMailbox.SmoothedValue(kFileTempoRatioParam);
 
          float raw = 0.0f;
          if (hasBuffer && mPlaying.load(std::memory_order_relaxed))
          {
             raw = ReadSample(*mActiveBuffer, mPos);
-            mPos += mPlaybackRate * pitchRatio;
+            mPos += mPlaybackRate * pitchRatio * tempoRatio;
             if (mPos >= mActiveBuffer->numFrames)
             {
                if (loop)
@@ -1209,6 +1227,13 @@ bool AudioFileNode::OpenFromDecoded(const std::string& path, Platform::SampleBuf
       mAudioNode = std::make_unique<AudioFilePlayerAudioNode>();
 
    mDuration = decoded->sampleRate > 0.0 ? (double)decoded->numFrames / decoded->sampleRate : 0.0;
+   // Non-owning: ownership of `decoded` passes to the audio thread via
+   // PushBuffer/SampleSlot below, which may eventually retire-and-delete it
+   // on a later reload. Buffer() exists only for the Arrange panel's static
+   // waveform computation, which reads it synchronously right here (via
+   // ArrangePollMediaImports, immediately after this call returns) - never
+   // stashed and dereferenced later.
+   mBuffer = decoded;
    mAudioNode->PushBuffer(decoded);
    mAudioNode->PushParams(volume, gain, attack, release, loop, monitor, pitch);
    mAudioNode->RequestRestart();
