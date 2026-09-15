@@ -177,8 +177,14 @@ namespace Arrange
       int   renderRangeKind = 0;  // 0 = whole, 1 = loop, 2 = markers, 3 = custom
       Tick  renderRangeStart = 0;
       Tick  renderRangeEnd   = 0;
-      int   renderAudioSource = -1; // -1 = follow the monitoring mode
-      int   renderVideoSource = -1; // -1 = auto
+      // Deprecated (kept only so old patches keep round-tripping, and so the
+      // positional binary stream in Patch.cpp keeps its field order). The
+      // timeline's Render dialog no longer offers a source choice: it renders
+      // the timeline, with video when the range holds video clips and a WAV
+      // when it does not. Nothing reads these any more - do not reintroduce a
+      // reader without also restoring the UI that sets them.
+      int   renderAudioSource = -1;
+      int   renderVideoSource = -1;
       std::string renderFolder;
    };
 

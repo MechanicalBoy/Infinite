@@ -1,7 +1,10 @@
 #include "Platform.h"
 #include "PluginVST3.h"
+#include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
+#include <mutex>
 
 #import <objc/runtime.h>
 #import <Cocoa/Cocoa.h>
@@ -406,10 +409,17 @@ namespace Platform
 {
    // How far behind the requested time a backward-seek reader rebuild starts
    // decoding from. Every frame between (seconds - this) and seconds lands in
-   // frameCache (see VideoFrameAt), so this is directly how many seconds of
-   // continued reverse playback one rebuild buys before the next one - too
-   // small and reverse stutters on a rebuild almost every frame.
-   constexpr double kReverseLookbackSeconds = 2.0;
+   // the frame cache (see VideoFrameAt), so this is directly how many seconds
+   // of continued reverse playback one rebuild buys before the next one.
+   //
+   // Deliberately short: the rebuild decodes that whole span synchronously on
+   // the calling thread, so a long lookback is a visible hitch every time a
+   // scrub changes direction. It used to be 2.0s, which bought smoother
+   // reverse at the cost of the scrub stalls this budget exists to stop. The
+   // cache surviving across seeks is what makes 0.5s enough now - the frames
+   // one rebuild decodes are exactly the ones the next few reverse steps ask
+   // for, and they are still there when asked.
+   constexpr double kReverseLookbackSeconds = 0.5;
 
    struct CachedVideoFrame
    {
@@ -428,19 +438,52 @@ namespace Platform
       int height = 0;
       double duration = 0.0;
       double nominalFps = 30.0;
-      double currentPts = -1.0;  // presentation time of the frame we last handed out
+      // Presentation time of the frame we last handed out. Bookkeeping only -
+      // reader resumption is decided by readerPts below, because a cache hit
+      // moves what the caller sees without moving the reader head at all.
+      double currentPts = -1.0;
       double readerPts = -1.0;   // presentation time the reader last decoded
       double nextPts = -1.0;     // pts of the decoded-but-not-yet-current frame
       std::vector<unsigned char> pending; // that frame's pixels
       bool finished = false;
 
-      // Multi-region LRU frame cache across seek/scrub points.
-      // Capped by total bytes (512 MB).
+      // Multi-region LRU frame cache across seek/scrub points. The byte
+      // budget is global (see gVideoCacheBytes), not per handle; cacheBytes
+      // is this handle's share of it, tracked so VideoClose can give it back.
       std::vector<CachedVideoFrame> frameCache;
       size_t cacheBytes = 0;
-      uint64_t accessCounter = 0;
-      static constexpr size_t kMaxCacheBytes = 512 * 1024 * 1024;
    };
+
+   // ---- decode cache budget, shared by every open video ---------------------
+   //
+   // One budget for the whole app rather than one per handle: a cache that is
+   // never cleared (which is the point - that is what makes rapid scrubbing
+   // back and forth cheap) would otherwise grow to its ceiling once per open
+   // clip, so a four-clip project would sit on 2 GB of decoded frames.
+   // Handles register here so eviction can take the globally least-recently
+   // used frame instead of only the least-recently used one of whichever
+   // handle happened to ask.
+   constexpr size_t kMaxVideoCacheBytes = 512 * 1024 * 1024;
+   // Per-handle entry ceiling, on top of the byte budget. Frames are found and
+   // evicted by linear scan, which is nothing at 1080p (~60 frames fills the
+   // whole budget) but would become real work for a small clip, where tens of
+   // thousands of frames fit inside the same bytes.
+   constexpr size_t kMaxVideoCacheFramesPerHandle = 512;
+
+   size_t gVideoCacheBytes = 0;
+   // Monotonic access stamp, global so LRU is comparable across handles.
+   uint64_t gVideoCacheClock = 0;
+   std::vector<VideoHandle*> gVideoHandles;
+
+   // Guards every touch of the three above AND of any handle's frameCache.
+   // Needed because the budget is shared: eviction reaches into a handle the
+   // calling thread does not own, and video decoding is not single-threaded -
+   // ArrangeMediaImport opens a dropped clip and pulls its first frame on a
+   // worker while VideoSourceNode is cooking other clips on the main thread.
+   // Per-handle state that eviction never touches (reader, pending, the pts
+   // fields) stays unguarded, as it was: one handle is still only ever
+   // decoded from one thread at a time.
+   std::mutex gVideoCacheMutex;
 
    namespace
    {
@@ -535,48 +578,95 @@ namespace Platform
          return true;
       }
 
-      // Appends a decoded frame to the LRU cache, evicting the least-recently used
-      // frames when exceeding the byte cap.
+      // Drops one frame from a handle's cache, keeping both the handle's share
+      // and the global total in step.
+      void DropCacheFrameAt(VideoHandle* h, size_t idx)
+      {
+         const size_t bytes = h->frameCache[idx].pixels.size();
+         h->cacheBytes -= bytes;
+         gVideoCacheBytes -= bytes;
+         h->frameCache.erase(h->frameCache.begin() + (long)idx);
+      }
+
+      // Evicts this handle's own least-recently used frame.
+      void DropHandleLru(VideoHandle* h)
+      {
+         if (h->frameCache.empty())
+            return;
+         size_t lruIdx = 0;
+         uint64_t oldest = h->frameCache[0].lastAccess;
+         for (size_t i = 1; i < h->frameCache.size(); i++)
+         {
+            if (h->frameCache[i].lastAccess < oldest)
+            {
+               oldest = h->frameCache[i].lastAccess;
+               lruIdx = i;
+            }
+         }
+         DropCacheFrameAt(h, lruIdx);
+      }
+
+      // Evicts globally-least-recently-used frames, across all open videos,
+      // until the shared budget is met again.
+      void EvictVideoCacheToBudget()
+      {
+         while (gVideoCacheBytes > kMaxVideoCacheBytes)
+         {
+            VideoHandle* victim = nullptr;
+            size_t victimIdx = 0;
+            uint64_t oldest = UINT64_MAX;
+            for (VideoHandle* vh : gVideoHandles)
+            {
+               for (size_t i = 0; i < vh->frameCache.size(); i++)
+               {
+                  if (vh->frameCache[i].lastAccess < oldest)
+                  {
+                     oldest = vh->frameCache[i].lastAccess;
+                     victim = vh;
+                     victimIdx = i;
+                  }
+               }
+            }
+            if (victim == nullptr)
+               break; // nothing left to give back; the budget is not reachable
+            DropCacheFrameAt(victim, victimIdx);
+         }
+      }
+
+      // Appends a decoded frame to the LRU cache, evicting the least-recently
+      // used frames - anywhere in the app - to stay inside the shared budget.
       void PushCacheFrame(VideoHandle* h, double pts, const std::vector<unsigned char>& pixels)
       {
          const size_t frameBytes = pixels.size();
-         if (frameBytes == 0 || frameBytes > VideoHandle::kMaxCacheBytes)
+         if (frameBytes == 0 || frameBytes > kMaxVideoCacheBytes)
             return;
 
-         h->accessCounter++;
+         std::lock_guard<std::mutex> lock(gVideoCacheMutex);
+         const uint64_t stamp = ++gVideoCacheClock;
 
          for (auto& f : h->frameCache)
          {
             if (std::abs(f.pts - pts) < 0.001)
             {
-               f.lastAccess = h->accessCounter;
+               f.lastAccess = stamp;
                return;
             }
          }
 
-         h->frameCache.push_back({ pts, pixels, h->accessCounter });
-         h->cacheBytes += frameBytes;
+         while (h->frameCache.size() >= kMaxVideoCacheFramesPerHandle)
+            DropHandleLru(h);
 
-         while (h->cacheBytes > VideoHandle::kMaxCacheBytes && !h->frameCache.empty())
-         {
-            size_t lruIdx = 0;
-            uint64_t minAccess = h->frameCache[0].lastAccess;
-            for (size_t i = 1; i < h->frameCache.size(); i++)
-            {
-               if (h->frameCache[i].lastAccess < minAccess)
-               {
-                  minAccess = h->frameCache[i].lastAccess;
-                  lruIdx = i;
-               }
-            }
-            h->cacheBytes -= h->frameCache[lruIdx].pixels.size();
-            h->frameCache.erase(h->frameCache.begin() + lruIdx);
-         }
+         h->frameCache.push_back({ pts, pixels, stamp });
+         h->cacheBytes += frameBytes;
+         gVideoCacheBytes += frameBytes;
+
+         EvictVideoCacheToBudget();
       }
 
       // Serves a request directly from the LRU cache when possible.
       bool TryUseCache(VideoHandle* h, double seconds, std::vector<unsigned char>& outPixels)
       {
+         std::lock_guard<std::mutex> lock(gVideoCacheMutex);
          if (h->frameCache.empty())
             return false;
 
@@ -602,11 +692,18 @@ namespace Platform
 
          if (best == nullptr)
          {
+            // Nearest-frame fallback. Asymmetric on purpose: serving a frame
+            // slightly BEHIND the request is just a held frame, but serving
+            // one AHEAD shows the future, so the forward side is held to half
+            // a frame rather than the 25 ms the backward side gets.
+            const double aheadTol = std::min(0.025, frameDur * 0.5);
             for (size_t i = 0; i < h->frameCache.size(); i++)
             {
                const auto& f = h->frameCache[i];
-               const double absDiff = std::abs(seconds - f.pts);
-               if (absDiff < 0.025 && absDiff < minDiff)
+               const double delta = seconds - f.pts;   // < 0 means f is ahead
+               const double absDiff = std::abs(delta);
+               const double tol = (delta >= 0.0) ? 0.025 : aheadTol;
+               if (absDiff < tol && absDiff < minDiff)
                {
                   minDiff = absDiff;
                   best = &f;
@@ -618,8 +715,7 @@ namespace Platform
          if (best == nullptr)
             return false;
 
-         h->accessCounter++;
-         h->frameCache[bestIdx].lastAccess = h->accessCounter;
+         h->frameCache[bestIdx].lastAccess = ++gVideoCacheClock;
          outPixels = best->pixels;
          h->currentPts = best->pts;
          return true;
@@ -1363,6 +1459,10 @@ namespace Platform
             delete h;
             return nullptr;
          }
+         {
+            std::lock_guard<std::mutex> lock(gVideoCacheMutex);
+            gVideoHandles.push_back(h);
+         }
          return h;
       }
    }
@@ -1379,6 +1479,15 @@ namespace Platform
          handle->output = nil;
          handle->track = nil;
          handle->asset = nil;
+      }
+      // Give this handle's frames back to the shared budget, and take it out
+      // of the registry, before it is freed - eviction on another thread must
+      // never reach a handle that is on its way out.
+      {
+         std::lock_guard<std::mutex> lock(gVideoCacheMutex);
+         gVideoCacheBytes -= std::min(gVideoCacheBytes, handle->cacheBytes);
+         gVideoHandles.erase(std::remove(gVideoHandles.begin(), gVideoHandles.end(), handle),
+                             gVideoHandles.end());
       }
       delete handle;
    }
@@ -1421,10 +1530,9 @@ namespace Platform
             // NOTE: Do NOT clear handle->frameCache! Retain cached frames across seeks.
 
             // Look back slightly when moving backward to populate upcoming reverse frames.
-            // Bounded to 0.5s so rapid seeks/scrubs don't stall the frame budget.
             double startFrom = seconds;
             if (handle->readerPts < 0.0 || seconds < handle->readerPts)
-               startFrom = std::max(0.0, seconds - 0.5);
+               startFrom = std::max(0.0, seconds - kReverseLookbackSeconds);
 
             if (!StartReader(handle, startFrom, err))
                return false;
@@ -1457,9 +1565,15 @@ namespace Platform
 
          if (!produced && !handle->pending.empty())
          {
+            // The reader gave us nothing new (end of file, or a sample with no
+            // image buffer). Hand back the last frame we do have, but leave
+            // readerPts alone: the reader head did not move, and recording it
+            // at `seconds` would make the next call resume forward decoding
+            // from a position the reader is not actually at, handing out past
+            // frames as current ones.
             outPixels = handle->pending;
-            handle->currentPts = handle->nextPts >= 0.0 ? handle->nextPts : seconds;
-            handle->readerPts = handle->currentPts;
+            if (handle->nextPts >= 0.0)
+               handle->currentPts = handle->nextPts;
             produced = true;
          }
 

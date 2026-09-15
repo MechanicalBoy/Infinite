@@ -367,6 +367,8 @@ namespace Patch
       int   renderSampleRate = 48000, renderFormat = 0;
       int   renderRangeKind = 0;
       int64_t renderRangeStart = 0, renderRangeEnd = 0;
+      // Deprecated; see ArrangeModel.h. Serialized for file-format
+      // compatibility only.
       int   renderAudioSource = -1, renderVideoSource = -1;
       std::string renderFolder;
    };

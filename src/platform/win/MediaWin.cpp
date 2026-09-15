@@ -1584,12 +1584,18 @@ namespace Platform
             hr = inType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
          if (SUCCEEDED(hr))
             hr = inType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
+         // Colorimetry of the RGB we hand in. MF_MT_YUV_MATRIX is deliberately
+         // NOT set here: this type is MFVideoFormat_RGB32, which has no YUV
+         // matrix, and SetInputMediaType can reject the unexpected attribute -
+         // which would silently abort the whole recorder setup through the
+         // SUCCEEDED(hr) chain below. The matrix belongs on outType only.
+         // MFNominalRange_0_255 says our RGB is full range, so the converter
+         // maps it to the encoder's studio-range luma rather than assuming it
+         // was already 16-235 and crushing it a second time.
          if (SUCCEEDED(hr))
             hr = inType->SetUINT32(MF_MT_VIDEO_PRIMARIES, (UINT32)MFVideoPrimaries_BT709);
          if (SUCCEEDED(hr))
             hr = inType->SetUINT32(MF_MT_TRANSFER_FUNCTION, (UINT32)MFVideoTransFunc_709);
-         if (SUCCEEDED(hr))
-            hr = inType->SetUINT32(MF_MT_YUV_MATRIX, (UINT32)MFVideoTransferMatrix_BT709);
          if (SUCCEEDED(hr))
             hr = inType->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, (UINT32)MFNominalRange_0_255);
          if (SUCCEEDED(hr))
