@@ -96,6 +96,19 @@ struct ClipWindow
    bool   abutsPrev    = false;
    bool   abutsNext    = false;
    bool   retrigger    = true;
+   // Semitones, for any Audio Clip or Audio Sample window (Video windows leave
+   // this at 0). Pushed to the terminal's sourceNode every block this window
+   // is active (see RunTopology) rather than written onto the node itself:
+   // the node can be shared by several clips, and a node member would make
+   // one clip's pitch edit audible on all of them.
+   float  pitch        = 0.0f;
+   // True only for an Audio Sample window (Arrange::Clip::sampleDropped) -
+   // mirrors the model field so RunTopology's exact-seek lookahead can gate
+   // on it without touching the model from the audio thread. A live Audio
+   // Clip window leaves this false: it stays onset-only retrigger, ramping
+   // up like a real instrument the way the user expects "only clips are
+   // supposed to be live" to mean.
+   bool   sampleDropped = false;
 };
 
 // One connected Audio Out: the pooled buffer its source writes into, and
@@ -349,6 +362,15 @@ private:
    // `deviceBuffer`. A null `list` (nothing published yet) or a topology with
    // no terminals (no audio reaches an Audio Out) just silences deviceBuffer.
    void RunTopology(ProcessList* list, AudioBuffer& deviceBuffer);
+
+   // Audio-thread-only (RunTopology never runs concurrently with itself):
+   // the beat the previous block ended on, so this block can tell a genuine
+   // discontinuity (a timeline scrub/seek, a loop wrap, a fresh Play landing
+   // mid-clip) apart from ordinary continuous playback - see RunTopology's
+   // exact-seek lookahead. Sentinel -1e18 means "no previous block yet",
+   // which is itself treated as a discontinuity so the very first block
+   // after Play still snaps a Sample to its exact position.
+   double mLastBlockEndBeat = -1e18;
 
    std::atomic<double> mSampleRate { 0.0 };
    std::atomic<uint64_t> mXrunCount { 0 };

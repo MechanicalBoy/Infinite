@@ -156,6 +156,18 @@ public:
       mMailbox.Push(kPingpongParam, pingpong ? 1.0f : 0.0f);
    }
 
+   // Arrangement Timeline per-clip pitch: pushed straight to the same mailbox
+   // slot PushParams uses, deliberately NOT touching mPitch (that atomic
+   // mirrors the node's own canvas pitch knob - folding a transient clip
+   // override into it would make a later PrepareToPlay reseed the mailbox
+   // with a stale per-clip value instead of the node's real default).
+   // ParamMailbox::Push is documented main-thread-only, but this callsite is
+   // audio-thread, same as RequestRetrigger()'s dual-caller contract - a
+   // plain atomic store race with PushParams's own push is, at worst, one
+   // block's pitch briefly reverting to the node's canvas value, inaudible
+   // under the mailbox's per-block smoothing.
+   void SetClipPitchOverride(float semitones) override { mMailbox.Push(kPitchParam, semitones); }
+
    MeterRing& PlayheadRing() { return mPlayheadRing; }
 
    void GetVisualSnapshot(SamplerVoiceSnapshot& out)

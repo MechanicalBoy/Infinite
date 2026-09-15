@@ -308,6 +308,11 @@ namespace Patch
       float  colorContrast   = 0.0f; // video/image only, -1..1, 0 = no change
       float  colorSaturation = 1.0f; // video/image only, 0..2, 1 = no change
       bool   retrigger       = true;
+      // True only for a clip created by dropping a media file onto the
+      // timeline (as opposed to one whose srcUid was patched in manually) -
+      // "Audio/Video Sample" in the Clip Settings panel, and the only
+      // category the UI lets retrigger.
+      bool   sampleDropped   = false;
    };
 
    struct StreamRecord
@@ -369,6 +374,7 @@ namespace Patch
       int64_t renderRangeStart = 0, renderRangeEnd = 0;
       int   renderAudioSource = -1, renderVideoSource = -1;
       std::string renderFolder;
+      bool  importSyncToTempo = true; // see Arrange::Settings::importSyncToTempo
    };
 
    struct Data
