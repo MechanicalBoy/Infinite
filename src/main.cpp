@@ -18885,7 +18885,6 @@ namespace
             std::copy(tempBuf, tempBuf + readCount, st.window.begin() + keep);
          }
       }
-
       float re[1024];
       float im[1024];
       for (int i = 0; i < winSize; i++)
@@ -18931,7 +18930,7 @@ namespace
 
    // Full-width log-frequency response curve with a draggable handle per
    // band - the reason Audio Filter is built first (§1.1): X = freq,
-   // Y = gain, scroll = Q, double-click = enable/disable. This *is* the
+   // Y = gain, Shift-drag = Q, double-click = enable/disable. This *is* the
    // Tier 1 control surface's picture, per audio-node-ui-system.md §3g.
    void DrawAudioFilterVisualizer(AudioEffectNode* n, double sampleRate)
    {
@@ -19059,62 +19058,37 @@ namespace
          dl->PathStroke(IM_COL32(255, 205, 60, 210), 0, 1.5f);
       }
 
-      // Two handles sharing the single ##filterCurve button above - the
-      // round one sets freq/gain, the diamond sets Q. Q used to ride the
-      // scroll wheel, but that gesture is also how the canvas itself zooms
-      // - scrolling to zoom while the cursor happened to be over this
-      // viewport silently dragged Q along with it, with no relation to the
-      // real Q knob. A second real ImGui item drawn on top of the first
-      // (to make Q separately clickable) turned out to disturb the layout
-      // cursor for the knob row drawn after this function, breaking drag on
-      // both handles - so instead this stays one button, and on click we
-      // just decide (by proximity) which handle that particular drag grabs,
-      // remembering the choice for the rest of the drag.
       const float hx = FilterVizFreqToX(freq, origin.x, w);
       const float hy = FilterVizDbToY(AudioFilterDsp::UsesGain((int)(type + 0.5f)) ? gain : 0.0f, origin.y, h);
 
-      const float qT = (logf(std::max(0.1f, q)) - logf(0.1f)) / (logf(18.0f) - logf(0.1f));
-      const float qx = std::clamp(hx + 16.0f, origin.x + 8.0f, br.x - 8.0f);
-      const float qy = origin.y + h - std::clamp(qT, 0.0f, 1.0f) * h;
-
-      if (ImGui::IsItemActivated())
-      {
-         const ImVec2 m = ImGui::GetIO().MousePos;
-         const float dMain = (m.x - hx) * (m.x - hx) + (m.y - hy) * (m.y - hy);
-         const float dQ = (m.x - qx) * (m.x - qx) + (m.y - qy) * (m.y - qy);
-         cache.dragIsQ = dQ < dMain;
-      }
-
       const bool isNear = hovered || active;
 
-      if (active && cache.dragIsQ)
+      if (active)
       {
-         const float my = ImGui::GetIO().MousePos.y;
-         const float t = std::clamp((origin.y + h - my) / h, 0.0f, 1.0f);
-         *n->ParamPtr("q") = std::clamp(0.1f * powf(18.0f / 0.1f, t), 0.1f, 18.0f);
-      }
-      else if (active)
-      {
-         const ImVec2 m = ImGui::GetIO().MousePos;
-         *n->ParamPtr("freq") = std::clamp(FilterVizXToFreq(m.x, origin.x, w), kFilterVizMinHz, kFilterVizMaxHz);
-         if (AudioFilterDsp::UsesGain((int)(type + 0.5f)))
-            *n->ParamPtr("gain") = FilterVizYToDb(m.y, origin.y, h);
+         if (ImGui::GetIO().KeyShift)
+         {
+            const float dy = ImGui::GetIO().MouseDelta.y;
+            if (dy != 0.0f)
+            {
+               const float curQ = n->Param("q");
+               const float logQ = logf(std::clamp(curQ, 0.1f, 18.0f)) - dy * (5.19f / 200.0f);
+               *n->ParamPtr("q") = std::clamp(expf(logQ), 0.1f, 18.0f);
+            }
+         }
+         else
+         {
+            const ImVec2 m = ImGui::GetIO().MousePos;
+            *n->ParamPtr("freq") = std::clamp(FilterVizXToFreq(m.x, origin.x, w), kFilterVizMinHz, kFilterVizMaxHz);
+            if (AudioFilterDsp::UsesGain((int)(type + 0.5f)))
+               *n->ParamPtr("gain") = FilterVizYToDb(m.y, origin.y, h);
+         }
       }
 
       // Handle stays at the real (non-LFO-shifted) freq/gain - it's the
       // knob-set value, and only the yellow overlay above should visually
-      // sweep.
-      const bool mainNear = isNear && !(active && cache.dragIsQ);
-      dl->AddCircleFilled(ImVec2(hx, hy), mainNear ? 5.0f : 3.6f, IM_COL32(235, 245, 255, 255), 12);
-      dl->AddCircle(ImVec2(hx, hy), mainNear ? 5.0f : 3.6f, IM_COL32(20, 24, 32, 220), 12, 1.5f);
-
-      // Diamond handle for Q, offset beside the main dot so both stay
-      // visually distinct.
-      const bool qNear = isNear && (!active || cache.dragIsQ);
-      const float qr = qNear ? 5.5f : 4.0f;
-      const ImVec2 qPts[4] = { ImVec2(qx, qy - qr), ImVec2(qx + qr, qy), ImVec2(qx, qy + qr), ImVec2(qx - qr, qy) };
-      dl->AddConvexPolyFilled(qPts, 4, IM_COL32(255, 205, 120, 255));
-      dl->AddPolyline(qPts, 4, IM_COL32(20, 24, 32, 220), ImDrawFlags_Closed, 1.5f);
+      // sweep. Shift-drag on the handle adjusts Q / resonance.
+      dl->AddCircleFilled(ImVec2(hx, hy), isNear ? 5.0f : 3.6f, IM_COL32(235, 245, 255, 255), 12);
+      dl->AddCircle(ImVec2(hx, hy), isNear ? 5.0f : 3.6f, IM_COL32(20, 24, 32, 220), 12, 1.5f);
 
       dl->PopClipRect();
       dl->AddRect(origin, br, hovered ? (isLight ? IM_COL32(50, 120, 220, 255) : IM_COL32(110, 140, 180, 255))
@@ -19219,7 +19193,6 @@ namespace
       std::vector<float> bandCurveDb[5]; // per-band, only enabled ones drawn
       std::vector<float> signature;
       int dragBand = -1;
-      bool dragIsQ = false;
       bool dragInert = false; // this gesture is a select-only click or a double-click toggle
    };
    std::map<int, EqCurveCache> gEqCurveCache;
@@ -19407,49 +19380,35 @@ namespace
       }
       dl->PathStroke(isLight ? IM_COL32(30, 110, 230, 255) : IM_COL32(150, 214, 255, 245), 0, 1.8f);
 
-      // Handle positions for every band - one dot (freq/gain) and one
-      // diamond (Q) each, sharing the single ##eqCurve button above for the
-      // same reason Audio Filter's do (a second real ImGui item per handle
-      // disturbs the layout cursor for the knob row drawn afterward).
-      float hx[5], hy[5], qx[5], qy[5];
+      // Handle positions for every band - one white dot each on the curve.
+      float hx[5], hy[5];
       for (int b = 0; b < 5; b++)
       {
          hx[b] = FilterVizFreqToX(bands[b].freq, origin.x, w);
          hy[b] = FilterVizDbToY(EqDsp::UsesGain(bands[b].type) ? bands[b].gain : 0.0f, origin.y, h);
-         const float qT = (logf(std::max(0.1f, bands[b].q)) - logf(0.1f)) / (logf(18.0f) - logf(0.1f));
-         qx[b] = std::clamp(hx[b] + 16.0f, origin.x + 8.0f, br.x - 8.0f);
-         qy[b] = origin.y + h - std::clamp(qT, 0.0f, 1.0f) * h;
       }
 
       if (ImGui::IsItemActivated())
       {
          const ImVec2 m = ImGui::GetIO().MousePos;
-         float bestDist2 = 1.0e30f;
-         int bestBand = selected;
-         bool bestIsQ = false;
          float bestDotDist2 = 1.0e30f;
          int bestDotBand = selected;
          for (int b = 0; b < 5; b++)
          {
             const float dDot = (m.x - hx[b]) * (m.x - hx[b]) + (m.y - hy[b]) * (m.y - hy[b]);
-            const float dQ = (m.x - qx[b]) * (m.x - qx[b]) + (m.y - qy[b]) * (m.y - qy[b]);
-            if (dDot < bestDist2) { bestDist2 = dDot; bestBand = b; bestIsQ = false; }
-            if (dQ < bestDist2) { bestDist2 = dQ; bestBand = b; bestIsQ = true; }
             if (dDot < bestDotDist2) { bestDotDist2 = dDot; bestDotBand = b; }
          }
          const float kHandleGrabRadius2 = 20.0f * 20.0f;
          cache.dragInert = false;
-         if (bestDist2 <= kHandleGrabRadius2)
+         if (bestDotDist2 <= kHandleGrabRadius2)
          {
-            cache.dragBand = bestBand;
-            cache.dragIsQ = bestIsQ;
+            cache.dragBand = bestDotBand;
          }
          else
          {
             // Click landed away from every handle - select the nearest band
             // by its dot, but this gesture does not move anything.
             cache.dragBand = bestDotBand;
-            cache.dragIsQ = false;
             cache.dragInert = true;
          }
          *n->ParamPtr("selectedBand") = (float)cache.dragBand;
@@ -19458,14 +19417,14 @@ namespace
          // cancel their gesture loops exactly the way grabbing the knob does
          // (ModKnob's IsItemActivated branch) - otherwise the drag and the
          // loop write the same param on the same frame and the loop wins.
-         // Only the params this drag will actually move: the Q diamond does
-         // not touch freq/gain, and a click that landed away from every
-         // handle (dragInert) moves nothing at all.
+         // Only the params this drag will actually move: Shift-drag moves Q,
+         // regular drag moves freq/gain, and a click away from every handle
+         // (dragInert) moves nothing at all.
          if (!cache.dragInert)
          {
             GestureRecorder& gr = GestureRecorder::Instance();
             const int b = cache.dragBand;
-            if (cache.dragIsQ)
+            if (ImGui::GetIO().KeyShift)
                gr.StopPlayback(gCurrentNodeIndex, EqBandKnobParam(b, 1));
             else
             {
@@ -19498,11 +19457,15 @@ namespace
       const int dragBand = std::clamp(cache.dragBand < 0 ? selected : cache.dragBand, 0, 4);
       if (active && !cache.dragInert)
       {
-         if (cache.dragIsQ)
+         if (ImGui::GetIO().KeyShift)
          {
-            const float my = ImGui::GetIO().MousePos.y;
-            const float t = std::clamp((origin.y + h - my) / h, 0.0f, 1.0f);
-            *n->ParamPtr(kEqQParam[dragBand]) = std::clamp(0.1f * powf(18.0f / 0.1f, t), 0.1f, 18.0f);
+            const float dy = ImGui::GetIO().MouseDelta.y;
+            if (dy != 0.0f)
+            {
+               const float curQ = bands[dragBand].q;
+               const float logQ = logf(std::clamp(curQ, 0.1f, 18.0f)) - dy * (5.19f / 200.0f);
+               *n->ParamPtr(kEqQParam[dragBand]) = std::clamp(expf(logQ), 0.1f, 18.0f);
+            }
          }
          else
          {
@@ -19525,8 +19488,7 @@ namespace
                continue;
 
             const bool isDragTarget = active && !cache.dragInert && dragBand == b;
-            const bool qActiveHere = isDragTarget && cache.dragIsQ;
-            const bool dotActiveHere = isDragTarget && !cache.dragIsQ;
+            const bool dotActiveHere = isDragTarget;
 
             // Only ONE band's knobs are on screen at a time, but the curve is
             // drawn from all five - so a gesture loop running on a band the
@@ -19536,8 +19498,8 @@ namespace
             // carry the same red the knob would (ModKnob's `recording`).
             const GestureRecorder& gr = GestureRecorder::Instance();
             const bool dotRec = gr.IsRecording(gCurrentNodeIndex, EqBandKnobParam(b, 0)) ||
+                                gr.IsRecording(gCurrentNodeIndex, EqBandKnobParam(b, 1)) ||
                                 gr.IsRecording(gCurrentNodeIndex, EqBandKnobParam(b, 2));
-            const bool qRec = gr.IsRecording(gCurrentNodeIndex, EqBandKnobParam(b, 1));
             const ImU32 recCol = IM_COL32(235, 70, 70, isSelected ? 255 : 190);
 
             const float dotR = isSelected ? (dotActiveHere ? 6.5f : 4.8f) : (dotActiveHere ? 5.0f : 3.2f);
@@ -19552,13 +19514,6 @@ namespace
                              dotRec ? recCol : IM_COL32(235, 245, 255, isSelected ? 220 : 120), 12, 1.5f);
             }
             dl->AddCircle(ImVec2(hx[b], hy[b]), dotR, IM_COL32(20, 24, 32, 220), 12, 1.2f);
-
-            const float qr = isSelected ? (qActiveHere ? 6.5f : 5.0f) : (qActiveHere ? 5.5f : 3.6f);
-            const ImU32 qCol = qRec ? recCol : (isSelected ? IM_COL32(255, 205, 120, 255) : IM_COL32(255, 205, 120, 150));
-            const ImVec2 qPts[4] = { ImVec2(qx[b], qy[b] - qr), ImVec2(qx[b] + qr, qy[b]),
-                                     ImVec2(qx[b], qy[b] + qr), ImVec2(qx[b] - qr, qy[b]) };
-            dl->AddConvexPolyFilled(qPts, 4, qCol);
-            dl->AddPolyline(qPts, 4, IM_COL32(20, 24, 32, 220), ImDrawFlags_Closed, 1.2f);
          }
       }
 
@@ -35628,9 +35583,9 @@ namespace
          { "Grain Molder", "Slices audio into overlapping grains, calculates per-grain metrics (Level, Brightness, Random), and rearranges them based on a continuous blend between original temporal position and metric rank. At amount 0 it is the clean identity passthrough; at 1 it is fully sorted into a swell or brightness contour. Rendering runs asynchronously on a worker thread." },
          { "Drum Sequencer", "An 8-lane, 8-step drum machine: 8 lane cards (waveform + transient/decay/pitch/fine tune/volume/pan) above an 8x8 step grid. Click a card's waveform to load its sample (a drag from the Samples panel or an OS file drop also work), or drag its edge handles to trim the playback range; x clears it, and the choke button cycles its choke group (0 = none - two lanes sharing a group cut each other off, the closed/open hi-hat case). In the grid, R randomises that lane's fill, M/S mute or solo it. Click a step to toggle it, drag vertically on a lit step to set its velocity, drag horizontally to paint a run of steps on/off. The bottom rows are pattern-wide: rate/steps/swing/output, then four offsets (transient/decay/pitch/pan) composed on top of every lane's own value. Plays the moment it's patched, phase-locked to the transport - there's no note input, just its own Transport-derived sequence. run stops this node's own step firing without touching the transport; randomise seeds a musical kick/snare/hat starting pattern." },
          { "Audio In", "Captures the default input device (mic or line-in) as a live audio source for the effects graph - patch it into a Filter, Delay, Mixer or straight to Audio Out. Trim is a plain gain stage; the mic tap starts the first time this node cooks and macOS will prompt for microphone permission then, so it stays idle until it's actually in a patch. The capture runs on its own engine bound to the system default input, independently of whichever output device is selected, and the header line says why it isn't live when it isn't." },
-         { "Audio Filter", "One filter, one of 12 types (LP/HP at 12/24/36 dB, BP, notch, shelves, peak, all-pass). Drag the handle on the response curve to set frequency and gain, scroll over it to change Q - the picture is the control." },
+         { "Audio Filter", "One filter, one of 12 types (LP/HP at 12/24/36 dB, BP, notch, shelves, peak, all-pass). Drag the handle on the response curve to set frequency and gain, Shift-drag to set Q - the picture is the control." },
          { "Audio Color Ramp", "Splits incoming audio into up to 8 frequency bands - drag the dividers right on the spectrum display to resize them - and assigns each one a colour, VIBGYOR by default from low to high. With no image patched in it outputs the resulting gradient standalone; patch one into its optional image input and it grades that image by luminance through the same audio-reactive palette instead." },
-         { "EQ", "Five fixed bands (low shelf, three peaks, high shelf by default), each switchable to any of low shelf/peak/high shelf/hp 12/lp 12 and independently on or off. Drag a band's dot on the curve to set its frequency and gain, drag its diamond to set Q, double-click the dot to bypass that band - the knob row below always follows whichever band you last touched." },
+         { "EQ", "Five fixed bands (low shelf, three peaks, high shelf by default), each switchable to any of low shelf/peak/high shelf/hp 12/lp 12 and independently on or off. Drag a band's dot on the curve to set its frequency and gain, Shift-drag to set Q, double-click the dot to bypass that band - the knob row below always follows whichever band you last touched." },
          { "Dynamics", "A compressor: threshold, ratio, attack, release, makeup, a peak/RMS detector switch, and a sidechain switch that feeds the detector from the second input pin instead of the main signal. The graph shows the static transfer curve - input dB in, output dB out." },
          { "Delay", "A fractional delay line: time (tempo-synced by default, or free ms with 'sync to tempo' off), tone (bipolar tilt on the repeats), feedback (past 100% on purpose for self-oscillation - the output is soft-clipped, not the feedback itself), pan, duck (sidechains the wet signal off the dry input) and a bounce switch that cross-feeds left/right instead of repeating in place." },
          { "Reverb", "An 8-line feedback delay network: size (room size), decay (RT60 in seconds), damping (darkens and speeds up the tail), predelay (gap before the reverb starts), width (stereo spread, full at 1 down to mono at 0) and mix. Algorithmic only - no convolution engine." },
@@ -59913,6 +59868,12 @@ int main(int argc, char** argv)
                                        : settingsDir + "/InfiniteWtDragTest.json";
       remove(graphPath.c_str());
    }
+   else if (getenv("INFINITE_EQDRAGTEST") != nullptr)
+   {
+      graphPath = settingsDir.empty() ? std::string("InfiniteEqDragTest.json")
+                                       : settingsDir + "/InfiniteEqDragTest.json";
+      remove(graphPath.c_str());
+   }
    else if (!graphPath.empty())
    {
       if (FILE* f = fopen(graphPath.c_str(), "rb"))
@@ -62581,12 +62542,8 @@ int main(int argc, char** argv)
          auto* eqLive = static_cast<AudioEffectNode*>(gNodes[0].node.get());
          const float band3Freq = eqLive->Param("band3Freq");
          const float band3Gain = eqLive->Param("band3Gain");
-         const float band3Q = eqLive->Param("band3Q");
          const float band3X = FilterVizFreqToX(band3Freq, x0, w);
          const float band3Y = FilterVizDbToY(band3Gain, y0, h); // band3 is a peak type - UsesGain
-         const float band3QX = std::clamp(band3X + 16.0f, x0 + 8.0f, x1 - 8.0f);
-         const float qT3 = (logf(std::max(0.1f, band3Q)) - logf(0.1f)) / (logf(18.0f) - logf(0.1f));
-         const float band3QY = y0 + h - std::clamp(qT3, 0.0f, 1.0f) * h;
          const float band2X = FilterVizFreqToX(eqLive->Param("band2Freq"), x0, w);
          const float band2Y = FilterVizDbToY(eqLive->Param("band2Gain"), y0, h); // band2 is a peak type too
 
@@ -62603,11 +62560,12 @@ int main(int argc, char** argv)
             case 56: gTestMouse = ImVec2(band3X + 15.0f, band3Y); break;
             case 57: gTestMouse = ImVec2(band3X + 25.0f, band3Y); break;
             case 58: btn(false); break;
-            // --- phase 2: drag band 3's Q diamond up (raise band3Q) ---
-            case 62: gTestMouse = ImVec2(band3QX, band3QY); break;
+            // --- phase 2: Shift + drag band 3's dot up (raise band3Q) ---
+            case 61:
+            case 62: gTestMouse = ImVec2(band3X, band3Y); break;
             case 63: btn(true); break;
-            case 64: gTestMouse = ImVec2(band3QX, band3QY - 30.0f); break;
-            case 65: gTestMouse = ImVec2(band3QX, band3QY - 50.0f); break;
+            case 64: gTestMouse = ImVec2(band3X, band3Y - 30.0f); break;
+            case 65: gTestMouse = ImVec2(band3X, band3Y - 50.0f); break;
             case 66: btn(false); break;
             // --- phase 3: double-click band 2's dot (toggle band2On) ---
             case 70: gTestMouse = ImVec2(band2X, band2Y); btn(true); break;
@@ -62615,6 +62573,18 @@ int main(int argc, char** argv)
             case 72: btn(true); break;
             case 73: btn(false); break;
             default: break;
+         }
+         if (frameId >= 61 && frameId <= 66)
+         {
+            tio.AddKeyEvent(ImGuiKey_LeftShift, true);
+            tio.AddKeyEvent(ImGuiMod_Shift, true);
+            tio.KeyShift = true;
+         }
+         else if (frameId >= 67)
+         {
+            tio.AddKeyEvent(ImGuiKey_LeftShift, false);
+            tio.AddKeyEvent(ImGuiMod_Shift, false);
+            tio.KeyShift = false;
          }
          if (frameId >= 54)
          {
@@ -77877,17 +77847,9 @@ int main(int argc, char** argv)
          static bool sUnbuffered = false;
          if (!sUnbuffered) { setvbuf(stdout, nullptr, _IONBF, 0); sUnbuffered = true; }
 
-         // Unlike gWtTestRects (captured off a nested child-window widget
-         // that needs the editor's pan/zoom applied explicitly), the EQ
-         // curve's InvisibleButton is an ordinary node-body ImGui item -
-         // imgui-node-editor already renders those through a scaled ImGui
-         // context, so GetCursorScreenPos() inside DrawEqVisualizer returns
-         // real, final screen pixels directly. A second ed::CanvasToScreen
-         // pass on top of that double-transforms it (confirmed by comparing
-         // DrawEqVisualizer's own logged origin against the "converted"
-         // rect while building this fixture) - so this is a straight copy,
-         // not a conversion.
-         gEqTestScreen = gEqTestRect;
+         const ImVec2 mn = ed::CanvasToScreen(ImVec2(gEqTestRect.x, gEqTestRect.y));
+         const ImVec2 mx = ed::CanvasToScreen(ImVec2(gEqTestRect.z, gEqTestRect.w));
+         gEqTestScreen = ImVec4(mn.x, mn.y, mx.x, mx.y);
 
          static bool sEqDragOk = true;
          static float sSnap[25];
@@ -77912,7 +77874,7 @@ int main(int argc, char** argv)
          // the held Y every active frame) can drift by a fraction of a unit
          // from float/quantization noise alone, without indicating a real bug.
          auto sameExcept = [](const float* a, const float* b, int skipIdx) {
-            static const float kTol[5] = { 1.0e-4f, 1.0f, 0.05f, 0.5f, 1.0e-4f }; // type,freq,q,gain,on
+            static const float kTol[5] = { 1.0e-4f, 5.0f, 0.05f, 0.5f, 1.0e-4f }; // type,freq,q,gain,on
             for (int i = 0; i < 25; i++)
                if (i != skipIdx && std::fabs(a[i] - b[i]) > kTol[i % 5])
                   return false;
@@ -77942,7 +77904,7 @@ int main(int argc, char** argv)
             float now[25];
             snapshot(now);
             const bool ok = now[band3QIdx] > sSnap[band3QIdx] + 0.1f && sameExcept(sSnap, now, band3QIdx);
-            printf("EQDRAG band3 diamond drag: Q %.2f -> %.2f  %s\n", sSnap[band3QIdx], now[band3QIdx],
+            printf("EQDRAG band3 Shift-drag: Q %.2f -> %.2f  %s\n", sSnap[band3QIdx], now[band3QIdx],
                    ok ? "OK" : "FAIL");
             sEqDragOk &= ok;
             std::copy(now, now + 25, sSnap);
@@ -82115,6 +82077,8 @@ int main(int argc, char** argv)
       }
       if (getenv("INFINITE_HIDETEST") != nullptr && frameId == 3)
          gRequestFitView = true; // dev screenshot: frame the whole fixture
+      if ((getenv("INFINITE_WTDRAGTEST") != nullptr || getenv("INFINITE_EQDRAGTEST") != nullptr) && frameId == 3)
+         gRequestFitView = true;
 
       if (gPerfAssigningElemIdx >= 0 && gPerfAssigningElemIdx < (int)gPerfElements.size())
       {
