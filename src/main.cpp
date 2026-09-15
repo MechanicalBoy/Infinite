@@ -33184,7 +33184,21 @@ namespace
          const float emptyGridBottom = scrollTL.y + avail.y;
          if (emptyGridBottom > lanesContentBottom)
          {
-            dl->PushClipRect(ImVec2(rulerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
+            dl->PushClipRect(ImVec2(headerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
+            // Continue the same alternating row-background stripes the real
+            // lanes use (main.cpp laneBg above) so this region reads as more
+            // of the same timeline instead of a visually distinct flat-black
+            // void - it's still empty, but no longer looks "cut off".
+            {
+               size_t rowIdx = gArrange.lanes.size();
+               for (float gy = lanesContentBottom; gy < emptyGridBottom; gy += kLaneHeight, rowIdx++)
+               {
+                  const ImU32 stripeBg = (rowIdx % 2 == 0)
+                     ? (isLight ? IM_COL32(245, 245, 248, 255) : IM_COL32(24, 24, 28, 255))
+                     : (isLight ? IM_COL32(250, 250, 252, 255) : IM_COL32(28, 28, 32, 255));
+                  dl->AddRectFilled(ImVec2(headerStartX, gy), ImVec2(rulerStartX + rulerWidth, std::min(gy + kLaneHeight, emptyGridBottom)), stripeBg);
+               }
+            }
             // Vertical beat/bar lines: the same ones drawn through every track
             // row above, continued down so the timeline still reads as a grid
             // instead of stopping dead at the last track.
