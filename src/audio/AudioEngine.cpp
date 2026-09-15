@@ -190,6 +190,45 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
    const int numFrames = std::min(deviceBuffer.numFrames, kAudioMaxBlockFrames);
    const int numChannels = std::min(deviceBuffer.numChannels, kAudioMaxChannels);
 
+   // Arrangement Timeline retrigger: seek each clip's own node BEFORE it
+   // cooks this block. The per-terminal envelope loop further down only
+   // gates/fades whatever the node already wrote to its output buffer this
+   // block - it never touches the node's playback position - so a retrigger
+   // has to land here, ahead of the `order` cook loop below, or it would
+   // always be one block late.
+   //
+   // A window's onset only ever needs to fire once: the very first block
+   // whose [blockStartBeat, blockEndBeat) span contains its startBeat. Once
+   // blockStartBeat has advanced past it, the same check is naturally false
+   // on every later block for that window - no separate "already fired" flag
+   // needed. A loop wrap or a fresh Play from inside the window's own start
+   // revisits that same span and correctly retriggers again.
+   double runSampleRate = mSampleRate.load(std::memory_order_relaxed);
+   if (runSampleRate <= 0.0 && Transport::Instance().IsOfflineMode())
+      runSampleRate = Transport::Instance().AudioSampleRate();
+   if (runSampleRate > 0.0 && Transport::Instance().IsPlaying())
+   {
+      const double bpm = (double)Transport::Instance().Tempo();
+      const double beatsPerSample = bpm / (60.0 * runSampleRate);
+      const double blockStartBeat = Transport::Instance().BlockStartBeats();
+      const double blockEndBeat = blockStartBeat + (double)numFrames * beatsPerSample;
+      for (AudioTerminal& terminal : list->topology.terminalBufferIndices)
+      {
+         if (terminal.numWindows <= 0 || terminal.windowOffset < 0 || terminal.sourceNode == nullptr)
+            continue;
+         const ClipWindow* windows = list->topology.clipWindows.data() + terminal.windowOffset;
+         int cursor = std::clamp(terminal.windowCursor, 0, terminal.numWindows - 1);
+         while (cursor > 0 && blockStartBeat < windows[cursor].startBeat)
+            cursor--;
+         while (cursor < terminal.numWindows && windows[cursor].startBeat < blockEndBeat)
+         {
+            if (windows[cursor].retrigger && windows[cursor].startBeat >= blockStartBeat)
+               terminal.sourceNode->RequestRetrigger();
+            cursor++;
+         }
+      }
+   }
+
    // PDC scratch: a delayed-copy landing spot per input pin, reused node to
    // node (only one node's inputs are ever "in flight" at a time - the
    // buffer a pin's CompensationDelay writes into is fully consumed by

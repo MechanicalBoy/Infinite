@@ -126,6 +126,12 @@ struct AudioTerminal
    // longer silent and an onset no longer waits for a UI frame.
    int   windowOffset = -1;
    int   numWindows   = 0;
+   // The clip's own source node (main.cpp's RebuildAudioTopology resolves it
+   // from srcUid the same way it resolves `bufferIndex` above), so
+   // RunTopology's retrigger lookahead can call RequestRetrigger() on the
+   // right instance before it cooks. Null for a canvas Audio Out terminal -
+   // only Arrangement Timeline terminals (numWindows > 0) ever set it.
+   AudioNode* sourceNode = nullptr;
    float laneGain     = 1.0f;   // the lane's own gain, multiplied with each window's
                                 // (0 for a muted / solo-silenced lane: still scheduled,
                                 // so its live waveform keeps drawing)
