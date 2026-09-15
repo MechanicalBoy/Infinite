@@ -197,6 +197,39 @@ measurement window further:
   `mCommand` switch) that the generic rig never issues - the node stays in
   its idle state through the whole probe, so nothing downstream of that
   switch can ever be reached generically.
+- **The clock is frozen for the whole probe.** `Transport::Instance().Beats()`/
+  `Seconds()` only move via `AdvanceAudioClock` (real audio callbacks) or
+  `Tick()` (the main-thread frame loop while playing) - neither runs inside
+  `RunNoteWindow`/`warmUpAndAlter`, which call `AudioNode::ProcessBlock`
+  directly with no engine or app loop underneath. Any param a node only
+  consults when its own step/clock tick advances is unreachable by
+  construction: Arpeggiator's `mode`/`octaves`/`rateMode`/`rateBeats`/
+  `rateSeconds`/`gatePercent`/`stepGates` all live behind
+  `AudioArpeggiatorNode::ProcessBlock`'s `if (step != mLastStep)` gate, and
+  `mLastStep` never changes because `Transport::Instance().Beats()` never
+  changes. Confirmed by hand: `PushParams` stores every one of these into
+  its own atomic exactly like every passing param on this node, so this is
+  not a dropped mailbox push.
+- **Only one note inbox is ever wired.** `BuildRig` calls
+  `SetNoteInbox(firstNoteInputSlot, &rig.inbox, cursor)` once, so a node with
+  more than one note-input slot (Note Switcher's 4) always sees exactly one
+  connected source. Note Switcher's `rateMode`/`rateBeats`/`rateSeconds`
+  select between *multiple* connected slots and `manual`/`manualSlot` pick
+  one connected slot over another - all five are no-ops by construction
+  when `count == 1` (`AudioNoteSwitcherNode::ProcessBlock`: `if (manual ||
+  count == 1) activeSlot = ... connected[0]`), regardless of what the clock
+  or the manual flag say. Combined with the clock being frozen (above),
+  `rateMode`/`rateBeats`/`rateSeconds` are doubly unreachable here.
+- **The held test chord is already in the default scale.** `useGlobalScale`
+  (Note Filter, Note Transpose, Arpeggiator, Note Stack, Note Capturer, and
+  any future node with the same "snap incoming/outgoing notes to Transport's
+  key/scale" field) calls `MusicTime::SnapToScale(note, Key(), Scale(), ...)`
+  only when the flag is on. The rig's held note(s) - a single 69 or the
+  60/64/67 chord `PushHeldNoteOn` builds - are all diatonic to Transport's
+  default key (C) and scale (`MusicTime::kMajor`), so snapping is a no-op
+  whether the flag is true or false. This is a property of the fixed test
+  input, not the wiring - every occurrence stores straight into its own
+  atomic in `PushParams`/`CookIfNeeded` exactly like its sibling params.
 
 ## Manually trying combinations these sweeps do not cover
 

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "core/INode.h"
 #include "core/Modulation.h"
@@ -883,6 +885,20 @@ public:
    const char* InputLabel(int slot) const override { return slot == 0 ? "notes" : nullptr; }
    INode* BypassSource() override { return noteInput.GetSource(); }
    AudioNode* GetAudioNode() override;
+
+   // Each semitoneN only reaches the outbox when enabledN is on (see
+   // ProcessBlock's `if (!ens[v]) continue;`) - every voice starts disabled,
+   // so probing semitoneN in isolation from the node's spawn defaults is a
+   // structural no-op. See INode's SweepPrerequisitesFor comment.
+   std::vector<SweepParamPrereq> SweepPrerequisitesFor(const std::string& paramName) const override
+   {
+      for (int i = 0; i < kVoices; i++)
+      {
+         if (paramName == ("semi" + std::to_string(i)))
+            return { { "enabled" + std::to_string(i), 1.0f } };
+      }
+      return {};
+   }
 
    int  semitones[kVoices] = { 12, 7, 5, 3, -3, -5, -7, -12 };
    bool enabled[kVoices]   = { false, false, false, false, false, false, false, false };
