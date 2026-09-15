@@ -30184,6 +30184,41 @@ namespace
             tdl->AddLine(ImVec2(center.x - 3.5f, br.y + 2.5f), ImVec2(center.x + 3.5f, br.y + 2.5f), arrangeIconCol, 1.4f);
          }
 
+         // Reset Row Heights: any track drag-resized off the default row
+         // height (Lane::rowHeight != 0) snaps back to it. Icon is three
+         // equal-height bars to read as "even out the rows".
+         {
+            ImGui::SameLine();
+            bool anyResized = false;
+            for (const Arrange::Lane& lane : gArrange.lanes)
+               if (lane.rowHeight > 0.0f) { anyResized = true; break; }
+
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+            ImGui::BeginDisabled(!anyResized);
+            if (ImGui::Button("##arrangeresetrowh", ImVec2(30, 0)))
+            {
+               ArrangeEdit([&]() {
+                  for (Arrange::Lane& lane : gArrange.lanes)
+                     lane.rowHeight = 0.0f;
+               });
+            }
+            ImGui::EndDisabled();
+            ImGui::PopStyleColor();
+            const ImVec2 rbmin = ImGui::GetItemRectMin();
+            const ImVec2 rbmax = ImGui::GetItemRectMax();
+            const ImVec2 rcenter((rbmin.x + rbmax.x) * 0.5f, (rbmin.y + rbmax.y) * 0.5f);
+            ImDrawList* rdl = ImGui::GetWindowDrawList();
+            const float barW = 12.0f;
+            const ImU32 barCol = anyResized ? arrangeIconCol : (arrangeIconCol & 0x60FFFFFFu);
+            for (int bi = 0; bi < 3; bi++)
+            {
+               const float by = rcenter.y - 5.0f + (float)bi * 5.0f;
+               rdl->AddLine(ImVec2(rcenter.x - barW * 0.5f, by), ImVec2(rcenter.x + barW * 0.5f, by), barCol, 1.4f);
+            }
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip(anyResized ? "Reset all track heights to default" : "All tracks already at default height");
+         }
+
          // Play/Pause and Rewind as icon buttons, matching the main
          // Infinite toolbar's own transport controls (see the top toolbar's
          // "##transportrewind" a bit further down in this file) rather than
@@ -30399,7 +30434,7 @@ namespace
       const float kMarkerStripH = 14.0f; // marker flags (WP6), above the tick/label strip
       const float kRulerHeight = 40.0f;  // marker strip + the 26 px tick/label strip
       const float kLaneHeight = 30.0f;  // default/group row height; a lane can be drag-resized off this via Lane::rowHeight
-      const float kMinLaneHeight = 20.0f;
+      const float kMinLaneHeight = kLaneHeight;  // can't shrink below the original size, only grow
       const float kMaxLaneHeight = 160.0f;
       const float kGroupIndent = 8.0f;  // per nesting depth, in the header column
       auto laneEffectiveHeight = [&](const Arrange::Lane& lane) -> float
@@ -33080,8 +33115,18 @@ namespace
          const float emptyGridBottom = scrollTL.y + avail.y;
          if (emptyGridBottom > lanesContentBottom)
          {
-            const ImU32 emptyGridLine = isLight ? IM_COL32(0, 0, 0, 10) : IM_COL32(255, 255, 255, 9);
             dl->PushClipRect(ImVec2(rulerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
+            // Vertical beat/bar lines: the same ones drawn through every track
+            // row above, continued down so the timeline still reads as a grid
+            // instead of stopping dead at the last track.
+            for (const ArrangeGridLine& gl : arrangeGridLines)
+            {
+               const ImU32 gridCol = isLight
+                  ? IM_COL32(0, 0, 0, gl.isMajor ? 60 : 22)
+                  : IM_COL32(255, 255, 255, gl.isMajor ? 55 : 18);
+               dl->AddLine(ImVec2(gl.x, lanesContentBottom), ImVec2(gl.x, emptyGridBottom), gridCol, 1.0f);
+            }
+            const ImU32 emptyGridLine = isLight ? IM_COL32(0, 0, 0, 22) : IM_COL32(255, 255, 255, 18);
             for (float gy = lanesContentBottom + kLaneHeight; gy < emptyGridBottom; gy += kLaneHeight)
                dl->AddLine(ImVec2(rulerStartX, gy), ImVec2(rulerStartX + rulerWidth, gy), emptyGridLine, 1.0f);
             dl->PopClipRect();
