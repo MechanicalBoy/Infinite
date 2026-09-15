@@ -29670,6 +29670,8 @@ namespace
       }
 
       // ---- Toolbar ----
+      const float arrangeToolbarTop = ImGui::GetCursorScreenPos().y;
+      float arrangeToolbarBottom = arrangeToolbarTop;
       {
          const bool arrangeToolbarLight = IsThemeLight();
          const ImU32 arrangeIconCol = ImGui::GetColorU32(ImGuiCol_Text);
@@ -30318,7 +30320,46 @@ namespace
             Tabler::DrawFlag(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
          }
 
-         // Inspector / Clip Settings toggle
+         // Reset Row Heights: any track drag-resized off the default row
+         // height (Lane::rowHeight != 0) snaps back to it. Placed right next
+         // to the Inspector toggle below - both act on the header column/row
+         // layout, and are the two icons most likely to be reached for
+         // together.
+         ImGui::SameLine();
+         {
+            bool anyResized = false;
+            for (const Arrange::Lane& lane : gArrange.lanes)
+               if (lane.rowHeight > 0.0f) { anyResized = true; break; }
+
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+            ImGui::BeginDisabled(!anyResized);
+            if (ImGui::Button("##arrangeresetrowh", ImVec2(30, 0)))
+            {
+               ArrangeEdit([&]() {
+                  for (Arrange::Lane& lane : gArrange.lanes)
+                     lane.rowHeight = 0.0f;
+               });
+            }
+            ImGui::EndDisabled();
+            ImGui::PopStyleColor();
+            const ImVec2 rbmin = ImGui::GetItemRectMin();
+            const ImVec2 rbmax = ImGui::GetItemRectMax();
+            const ImVec2 rcenter((rbmin.x + rbmax.x) * 0.5f, (rbmin.y + rbmax.y) * 0.5f);
+            ImDrawList* rdl = ImGui::GetWindowDrawList();
+            const float barW = 12.0f;
+            const ImU32 barCol = anyResized ? arrangeIconCol : (arrangeIconCol & 0x60FFFFFFu);
+            for (int bi = 0; bi < 3; bi++)
+            {
+               const float by = rcenter.y - 5.0f + (float)bi * 5.0f;
+               rdl->AddLine(ImVec2(rcenter.x - barW * 0.5f, by), ImVec2(rcenter.x + barW * 0.5f, by), barCol, 1.4f);
+            }
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip(anyResized ? "Reset all track heights to default" : "All tracks already at default height");
+         }
+
+         // Inspector / Clip Settings toggle. Icon is the sliders/adjustments
+         // glyph rather than a plain list, so it reads distinctly from the
+         // Reset Row Heights bars icon right beside it.
          ImGui::SameLine();
          ImGui::PushStyleColor(ImGuiCol_Button, gArrangeClipSettingsPanelOpen
                                                     ? ImGui::GetColorU32(ImGuiCol_ButtonActive)
@@ -30332,13 +30373,51 @@ namespace
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            Tabler::DrawList(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
+            Tabler::DrawSliders(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
          // Audio" toggle pinned top-right above; engine power is the top
          // bar's Start/Stop Audio. Neither changes the other's state, except
          // that enabling timeline audio starts a stopped engine.
+         arrangeToolbarBottom = ImGui::GetCursorScreenPos().y;
+      }
+
+      // Right-click anywhere on the toolbar row (not just the viewport
+      // monitor, which is off by default and rarely visible) to reach the
+      // panel's own dock menu - viewport left/right, timeline top/bottom.
+      {
+         const ImVec2 mouse = ImGui::GetIO().MousePos;
+         const bool overToolbar = mouse.x >= panelOrigin.x && mouse.x < panelOrigin.x + panelSize.x &&
+                                  mouse.y >= arrangeToolbarTop && mouse.y < arrangeToolbarBottom;
+         if (overToolbar && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
+             ImGui::IsMouseReleased(ImGuiMouseButton_Right) && !ImGui::IsPopupOpen("##arrangedockctx"))
+            ImGui::OpenPopup("##arrangedockctx");
+      }
+      if (ImGui::BeginPopup("##arrangedockctx"))
+      {
+         if (ImGui::MenuItem("Dock Left", nullptr, !gArrangeViewportOnRight))
+            gArrangeViewportOnRight = false;
+         if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
+            gArrangeViewportOnRight = true;
+         // The whole timeline panel: bottom or top of the window (saved
+         // with the document, not undoable - same as View > Arrangement
+         // Timeline > Dock).
+         ImGui::Separator();
+         const bool panelTop = gArrange.settings.dockSide == 1;
+         if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
+         {
+            gArrange.settings.dockSide = 0;
+            gArrange.revision++; // a model field like any other (WP5b)
+            gPatchDirty = true;
+         }
+         if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
+         {
+            gArrange.settings.dockSide = 1;
+            gArrange.revision++;
+            gPatchDirty = true;
+         }
+         ImGui::EndPopup();
       }
 
       ImGui::Separator();
@@ -30354,7 +30433,7 @@ namespace
       const float kMarkerStripH = 14.0f; // marker flags (WP6), above the tick/label strip
       const float kRulerHeight = 40.0f;  // marker strip + the 26 px tick/label strip
       const float kLaneHeight = 30.0f;  // default/group row height; a lane can be drag-resized off this via Lane::rowHeight
-      const float kMinLaneHeight = 20.0f;
+      const float kMinLaneHeight = kLaneHeight;  // can't shrink below the original size, only grow
       const float kMaxLaneHeight = 160.0f;
       const float kGroupIndent = 8.0f;  // per nesting depth, in the header column
       auto laneEffectiveHeight = [&](const Arrange::Lane& lane) -> float
@@ -30449,34 +30528,12 @@ namespace
 
          ImGui::Dummy(monAvail);
 
-         // Right-click anywhere on the monitor to move it to the other side.
-         if (ImGui::IsWindowHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
-            ImGui::OpenPopup("##viewportdockctx");
-         if (ImGui::BeginPopup("##viewportdockctx"))
-         {
-            if (ImGui::MenuItem("Dock Left", nullptr, !gArrangeViewportOnRight))
-               gArrangeViewportOnRight = false;
-            if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
-               gArrangeViewportOnRight = true;
-            // The whole timeline panel: bottom or top of the window (saved
-            // with the document, not undoable - same as View > Arrangement
-            // Timeline > Dock).
-            ImGui::Separator();
-            const bool panelTop = gArrange.settings.dockSide == 1;
-            if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
-            {
-               gArrange.settings.dockSide = 0;
-               gArrange.revision++; // a model field like any other (WP5b)
-               gPatchDirty = true;
-            }
-            if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
-            {
-               gArrange.settings.dockSide = 1;
-               gArrange.revision++;
-               gPatchDirty = true;
-            }
-            ImGui::EndPopup();
-         }
+         // Right-click anywhere on the monitor to reach the same dock menu
+         // the toolbar's right-click also opens (see "##arrangedockctx"
+         // above, drawn once, unconditionally, right after the toolbar).
+         if (ImGui::IsWindowHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+             !ImGui::IsPopupOpen("##arrangedockctx"))
+            ImGui::OpenPopup("##arrangedockctx");
 
          ImGui::EndChild();
       };
@@ -30606,10 +30663,16 @@ namespace
       const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text, 0.80f);
       const ImU32 subTextCol = ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.80f);
 
+      // Header-column corner, level with the ruler (above the first track
+      // row) - otherwise blank/unstyled, reading as a hole next to the
+      // filled ruler bar it sits beside.
+      dl->AddRectFilled(ImVec2(headerStartX, rulerPos.y), ImVec2(rulerPos.x, kTickStripTop), markerStripBg);
+      dl->AddRectFilled(ImVec2(headerStartX, kTickStripTop), ImVec2(rulerPos.x, rulerPos.y + rulerSize.y), rulerBg);
+
       dl->AddRectFilled(rulerPos, ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), markerStripBg);
       dl->AddRectFilled(ImVec2(rulerPos.x, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y), rulerBg);
-      dl->AddLine(ImVec2(rulerPos.x, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), tickCol, 0.5f);
-      dl->AddLine(ImVec2(rulerPos.x, rulerPos.y + rulerSize.y), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
+      dl->AddLine(ImVec2(headerStartX, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), tickCol, 0.5f);
+      dl->AddLine(ImVec2(headerStartX, rulerPos.y + rulerSize.y), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
                   tickCol, 1.0f);
 
       // ---- ruler ticks and labels ----
@@ -30952,6 +31015,13 @@ namespace
       for (const auto& kv : arrangeGroupHeaderRelTop)
          groupHeaderRowTop[kv.first] = lanesTopY + kv.second;
       const float lanesContentBottom = lanesTopY + arrangeLanesRelBottom;
+      // How far down the timeline reads as "filled" - past the real lanes
+      // when the panel is taller than the track list, since that space is
+      // now itself striped/gridded to look like more timeline rather than
+      // dead space (see the empty-track-region fill below). The loop
+      // highlight band and playhead line should reach exactly this far too,
+      // not stop dead at the last real lane.
+      const float arrangeFullBottom = std::max(lanesContentBottom, scrollTL.y + avail.y);
       // Reverse lookup: which lane row (if any) a screen Y falls in. Returns
       // -1 past the end, so callers must clamp/guard same as before.
       auto laneRowAt = [&](float y) -> int
@@ -31594,11 +31664,9 @@ namespace
             dl->AddLine(ImVec2(lineX, curY), ImVec2(lineX, curY + rowH), IM_COL32(255, 255, 255, 24), 1.0f);
          }
 
-         // Track header mix strip (Solo/Mute/Pan/Gain, opacity) was removed
-         // for clutter (declutter pass) - those controls live in the Track
-         // inspector (double-click the row) instead. Kept at 0 so the name
-         // box below still reflows to fill the freed width.
-         const float kMixStripW = 0.0f;
+         // Old full sizes for mixer controls
+         const float kMixCtl = 18.0f, kMixGap = 3.0f;
+         const float kMixStripW = kMixCtl * 4.0f + kMixGap * 3.0f; // 81px
          const bool isVideoForName = lane.type == Arrange::kLaneVideo;
 
          const float contentStartX = headerStartX + 4.0f + (float)laneDepth * kGroupIndent;
@@ -31671,12 +31739,83 @@ namespace
             }
          }
 
-         // Mix strip (Solo/Mute/Pan/Gain/Opacity) removed from the track
-         // header row for clutter - those live in the Track inspector now
-         // (double-click the row). laneSilenced still needs mute/solo state
-         // for drawing the row itself.
+         // Mix strip positioned at the right of the header column
+         ImGui::SetCursorScreenPos(ImVec2(rulerStartX - kMixStripW - 4.0f, curY + (rowH - kMixCtl) * 0.5f));
          const bool isVideo = lane.type == Arrange::kLaneVideo;
          const bool laneSilenced = !isVideo && (lane.mute || (anyLaneSolo && !lane.solo));
+         if (rowH >= kMixCtl + 4.0f)
+         {
+            const ImU32 mixFill = IM_COL32(16, 185, 129, 255);
+            auto mixGesture = [&](bool changed, const std::function<void()>& apply)
+            {
+               if (ImGui::IsItemActivated())
+               {
+                  ArrangeGestureBegin();
+                  gArrangeMixGestureLaneId = laneId;
+               }
+               if (changed)
+               {
+                  if (!gArrangeGestureOpen)
+                     ArrangeGestureBegin();
+                  apply();
+                  gArrange.revision++;
+               }
+               if (ImGui::IsItemDeactivated() && gArrangeMixGestureLaneId == laneId)
+               {
+                  ArrangeGestureEnd();
+                  gArrangeMixGestureLaneId = 0;
+               }
+            };
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+            if (!isVideo)
+            {
+               bool solo = lane.solo;
+               mixGesture(AudioSoloButton("S##lanesolo", &solo, kMixCtl, kMixCtl), [&] { lane.solo = solo; });
+               ImGui::SameLine(0.0f, kMixGap);
+               bool mute = lane.mute;
+               mixGesture(AudioMuteButton("M##lanemute", &mute, kMixCtl, kMixCtl), [&] { lane.mute = mute; });
+               ImGui::SameLine(0.0f, kMixGap);
+               float pan = lane.pan;
+               const bool panChanged = BipolarKnobFloat("##lanepan", &pan, -1.0f, 1.0f, "%.2f", kMixCtl, mixFill,
+                                                        false, 0.0f, -1, -1, false, 0.0f, 0.0f, false,
+                                                        /*resetOnDoubleClick=*/true);
+               mixGesture(panChanged, [&] { lane.pan = pan; });
+               if (ImGui::IsItemActive())
+               {
+                  if (std::fabs(lane.pan) < 0.005f)
+                     ImGui::SetTooltip("C");
+                  else
+                     ImGui::SetTooltip("%s %d", lane.pan < 0.0f ? "L" : "R", (int)std::lround(std::fabs(lane.pan) * 100.0f));
+               }
+               ImGui::SameLine(0.0f, kMixGap);
+               float gainDb = lane.gainDb;
+               bool gainChanged = KnobFloat("##lanegain", &gainDb, -60.0f, 12.0f, "%.1f dB", kMixCtl, mixFill, false);
+               if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gainDb != 0.0f)
+               {
+                  gainDb = 0.0f;
+                  gainChanged = true;
+               }
+               mixGesture(gainChanged, [&] { lane.gainDb = gainDb; });
+               if (ImGui::IsItemActive())
+                  ImGui::SetTooltip("%.1f dB", lane.gainDb);
+            }
+            else
+            {
+               float pct = lane.opacity * 100.0f;
+               ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, (kMixCtl - ImGui::GetFontSize()) * 0.5f));
+               ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+               ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 6.0f);
+               ImGui::PushStyleColor(ImGuiCol_SliderGrab, IM_COL32(139, 92, 246, 255));
+               ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(160, 120, 250, 255));
+               ImGui::SetNextItemWidth(kMixStripW);
+               const bool opChanged = ImGui::SliderFloat("##laneopacity", &pct, 0.0f, 100.0f, "%.0f%%",
+                                                         ImGuiSliderFlags_AlwaysClamp);
+               ImGui::PopStyleColor(2);
+               ImGui::PopStyleVar(3);
+               mixGesture(opChanged, [&] { lane.opacity = std::clamp(pct / 100.0f, 0.0f, 1.0f); });
+            }
+            ImGui::PopStyleVar();
+         }
 
          // Clips on this lane first, so clip buttons take priority over empty
          // lane clicks. Each clip is a copy: nothing in this loop reshapes
@@ -32979,7 +33118,7 @@ namespace
          {
             const float bx0 = std::max(rulerStartX, tickToX(bl.start));
             const float bx1 = std::min(rulerStartX + rulerWidth, tickToX(bl.end));
-            const float bandBottom = lanesContentBottom + ImGui::GetScrollY();
+            const float bandBottom = arrangeFullBottom + ImGui::GetScrollY();
             const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 60) : IM_COL32(250, 204, 21, 40);
             const ImU32 bandBorder = IM_COL32(250, 204, 21, 200);
             // From the tick strip down: the marker strip above stays clear.
@@ -32994,8 +33133,7 @@ namespace
       // the real playhead stays put and a ghost follows the mouse; the
       // transport seeks once, on release (WP6).
       {
-         const float lineBottom =
-            std::max(lanesContentBottom + ImGui::GetScrollY(), pinnedTopY + avail.y);
+         const float lineBottom = arrangeFullBottom + ImGui::GetScrollY();
          const double playBeats = std::max(0.0, tr.Beats());
          if (playBeats >= startBeat && playBeats <= endBeat)
          {
@@ -33032,11 +33170,35 @@ namespace
       // guides at the same kLaneHeight spacing, all the way to the bottom
       // of the visible scroll area.
       {
-         const float emptyGridBottom = scrollTL.y + avail.y;
+         const float emptyGridBottom = arrangeFullBottom;
          if (emptyGridBottom > lanesContentBottom)
          {
-            const ImU32 emptyGridLine = isLight ? IM_COL32(0, 0, 0, 10) : IM_COL32(255, 255, 255, 9);
-            dl->PushClipRect(ImVec2(rulerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
+            dl->PushClipRect(ImVec2(headerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
+            // Continue the same alternating row-background stripes the real
+            // lanes use (main.cpp laneBg above) so this region reads as more
+            // of the same timeline instead of a visually distinct flat-black
+            // void - it's still empty, but no longer looks "cut off".
+            {
+               size_t rowIdx = gArrange.lanes.size();
+               for (float gy = lanesContentBottom; gy < emptyGridBottom; gy += kLaneHeight, rowIdx++)
+               {
+                  const ImU32 stripeBg = (rowIdx % 2 == 0)
+                     ? (isLight ? IM_COL32(245, 245, 248, 255) : IM_COL32(24, 24, 28, 255))
+                     : (isLight ? IM_COL32(250, 250, 252, 255) : IM_COL32(28, 28, 32, 255));
+                  dl->AddRectFilled(ImVec2(headerStartX, gy), ImVec2(rulerStartX + rulerWidth, std::min(gy + kLaneHeight, emptyGridBottom)), stripeBg);
+               }
+            }
+            // Vertical beat/bar lines: the same ones drawn through every track
+            // row above, continued down so the timeline still reads as a grid
+            // instead of stopping dead at the last track.
+            for (const ArrangeGridLine& gl : arrangeGridLines)
+            {
+               const ImU32 gridCol = isLight
+                  ? IM_COL32(0, 0, 0, gl.isMajor ? 60 : 22)
+                  : IM_COL32(255, 255, 255, gl.isMajor ? 55 : 18);
+               dl->AddLine(ImVec2(gl.x, lanesContentBottom), ImVec2(gl.x, emptyGridBottom), gridCol, 1.0f);
+            }
+            const ImU32 emptyGridLine = isLight ? IM_COL32(0, 0, 0, 22) : IM_COL32(255, 255, 255, 18);
             for (float gy = lanesContentBottom + kLaneHeight; gy < emptyGridBottom; gy += kLaneHeight)
                dl->AddLine(ImVec2(rulerStartX, gy), ImVec2(rulerStartX + rulerWidth, gy), emptyGridLine, 1.0f);
             dl->PopClipRect();

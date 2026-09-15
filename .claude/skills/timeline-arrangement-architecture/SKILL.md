@@ -26,11 +26,19 @@ still describe the *post*-change state as current fact rather than calling out t
 - Sync-to-Tempo's BPM field is now **read-only while synced** (shows the live project tempo
   number, no editable box) and only becomes an editable "Sample BPM" drag field when sync is
   off — see §7.
-- The track header row no longer shows inline Opacity/Solo/Mute/Gain/Pan controls — those moved
-  to the docked inspector only (§3's "Track (lane)" row). The main row is name + color + a few
-  structural controls only.
+- The track header row's inline Opacity/Solo/Mute/Gain/Pan mix strip was briefly moved to the
+  docked inspector only, then **restored** to the header row on user request — it lives in both
+  places now (the header strip for quick access, §3's "Track (lane)" inspector row for the full
+  set). The strip is vertically centered on the row's *effective* (possibly resized) height, not
+  a fixed one, and is skipped entirely if a row is shrunk below the strip's own height.
 - Track rows are user-resizable (drag a row's bottom border); waveform rendering scales to the
-  resized row height instead of a fixed pixel height.
+  resized row height instead of a fixed pixel height. Drag-resize is floored at the default
+  30px row height (`kMinLaneHeight == kLaneHeight`) — rows can only grow, not shrink below
+  default — capped at 160px. A toolbar toggle next to the viewport button resets every track
+  back to default height in one click.
+- Below the last track, the vertical beat/bar gridlines now continue into the empty scroll area
+  instead of stopping dead at the last row, so the timeline reads as one continuous grid
+  regardless of track count.
 - The Arrange panel's monitor/viewport preview (`gArrangeShowViewport`) now **defaults off**.
 - Double-clicking an already-open clip/track/group inspector now **closes** it (toggle) instead
   of just re-opening the same selection.
@@ -150,7 +158,7 @@ All defined in one function, branching on selection kind:
 | + video only | Blend mode, Opacity, Bright, Contrast, Sat | `~37669-37746` |
 | + audio only | Gain (dB), Pan, Pitch (semitones, live into node), Tempo Sync (Sample only — live BPM readout while synced, editable "Sample BPM" only while sync is off) | `~37747-37795` |
 | Multi-clip | Bulk rename, bulk Active/Bypassed, bulk tint, conditional Ungroup, Delete Selected | `~37841-37935` |
-| Track (lane) | Name, Active/Bypassed, audio: Solo/Mute/Gain/Pan, video: Opacity, Track Tint, Duplicate/Delete. **This is now the only place these per-track controls live** — the track header row in the panel itself no longer shows them inline. | `~37936-38065` |
+| Track (lane) | Name, Active/Bypassed, audio: Solo/Mute/Gain/Pan, video: Opacity, Track Tint, Duplicate/Delete. Duplicated by the header row's own mix strip (same fields, quick-access) — see §1's changelog note. | `~37936-38065` |
 | Track Group | Name, Active/Bypassed, Group Color, Add Video/Audio Track, Ungroup (Keep Tracks), Delete Group+Tracks | `~38066-38131` |
 | Nothing selected | placeholder text | `~38137-38145` |
 
