@@ -122,6 +122,14 @@ struct ClipWindow
    // a tempo change takes effect on the very next block like a real "sync"
    // feature must, without needing a topology rebuild.
    float  sampleBpm    = 0.0f;
+   // Audio-Sample-only (Arrange::Clip::sourceOffsetSeconds, straight copy at
+   // topology-build time): how far into the decoded source buffer this
+   // window's clip starts, in seconds. 0 for every non-Sample window and for
+   // a Sample that has never been split. RunTopology's exact-seek lookahead
+   // adds this to the elapsed-seconds-since-onset figure before applying the
+   // pitch/tempo-ratio scaling, so a Sample created by splitting another one
+   // seeks into the middle of the file instead of always restarting at 0.
+   float  sourceOffsetSeconds = 0.0f;
 };
 
 // One connected Audio Out: the pooled buffer its source writes into, and

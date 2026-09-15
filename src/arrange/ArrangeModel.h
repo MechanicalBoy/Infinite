@@ -99,6 +99,16 @@ namespace Arrange
       // recompute `length` losslessly without re-decoding the file:
       // length_ticks = sourceDurationSeconds * (sampleBpm / 60) * kPPQ.
       float    sourceDurationSeconds = 0.0f;
+      // Audio-Sample-only. How far into the decoded source buffer this
+      // clip's audio starts, in seconds. 0 for a freshly imported/bounced
+      // Sample (it starts at the file's own beginning); a Split() gives the
+      // right half a non-zero value derived from how far the cut point sits
+      // past the original clip's own offset (see Split's own comment) so a
+      // split Sample keeps reading the right part of the file instead of
+      // restarting at the beginning. Never touched afterward outside of
+      // another Split - a Sample BPM edit changes `length` but not where in
+      // the file playback starts.
+      float    sourceOffsetSeconds = 0.0f;
       // Video/image only. Basic color grade, consumed by the compositor as a
       // per-clip shader pass. Defaults are a no-op so every clip that
       // predates this field renders identically.

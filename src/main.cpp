@@ -6216,6 +6216,7 @@ namespace
             r.sampleDropped = c.sampleDropped;
             r.sampleBpm = c.sampleBpm;
             r.sourceDurationSeconds = c.sourceDurationSeconds;
+            r.sourceOffsetSeconds = c.sourceOffsetSeconds;
             s.clips.push_back(std::move(r));
          }
          data.streams.push_back(std::move(s));
@@ -6332,6 +6333,7 @@ namespace
             clip.sampleDropped = c.sampleDropped;
             clip.sampleBpm = c.sampleBpm;
             clip.sourceDurationSeconds = c.sourceDurationSeconds;
+            clip.sourceOffsetSeconds = c.sourceOffsetSeconds;
             lane.clips.push_back(std::move(clip));
          }
          m.lanes.push_back(std::move(lane));
@@ -27074,23 +27076,49 @@ namespace
       return (int)std::clamp<long long>(n, 0, kArrangeWaveMaxBuckets);
    }
 
-   // Step 2: the Audio Sample static waveform. Computed exactly once, from
-   // the fully-decoded source buffer, at import/bounce-adopt time (see
-   // ArrangePollMediaImports) - never touched again by playback, unlike
-   // gArrangeClipWaves' live per-block fill. The bucket count is the clip's
-   // length *at the moment of import* (its ticks-per-bucket resolution
-   // matches the live cache via kArrangeWaveBucketTicks), and the buckets
-   // are stretched linearly across the whole decoded buffer regardless of
-   // any later BPM warp - a later Sample BPM edit changes clip.length (and
-   // therefore how the draw loop maps ticks -> these same buckets) but does
-   // NOT recompute the buckets themselves, matching the spec's "stretched
-   // linearly ... regardless of BPM warp" requirement.
+   // Step 2: the Audio Sample static waveform. Computed from the fully-
+   // decoded source buffer - at import/bounce-adopt time for a freshly
+   // dropped Sample (see ArrangePollMediaImports), and again for both halves
+   // of a Split (see ArrangeSplitSelectionAt/ArrangeBladeSplitAt) since a
+   // split changes what sub-range of the file each half should show - never
+   // touched by playback itself, unlike gArrangeClipWaves' live per-block
+   // fill. The bucket count is the clip's own `length` (its ticks-per-bucket
+   // resolution matches the live cache via kArrangeWaveBucketTicks).
+   //
+   // Buckets are stretched linearly across only the clip's OWN sub-range of
+   // the decoded file - [sourceOffsetSeconds, sourceOffsetSeconds +
+   // windowSeconds), where windowSeconds is this clip's own duration
+   // converted back to source-file seconds via its sampleBpm (the same
+   // conversion Split uses to derive a split-off clip's sourceOffsetSeconds -
+   // see Arrange::Split's own comment). A clip that has never been split has
+   // sourceOffsetSeconds == 0 and windowSeconds spanning the whole file, so
+   // this reproduces the old whole-file behavior exactly for that case; a
+   // clip born from a Split instead shows only its own slice, so the right
+   // half continues the left half's waveform shape instead of restarting at
+   // the file's beginning.
    void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
                                         Arrange::Tick start, Arrange::Tick length,
+                                        float sampleBpm, float sourceOffsetSeconds,
                                         const Platform::SampleBuffer* buf)
    {
       const int buckets = ArrangeWaveBucketCount(length);
-      if (buckets <= 0 || buf == nullptr || buf->numFrames <= 0 || buf->channels <= 0)
+      if (buckets <= 0 || buf == nullptr || buf->numFrames <= 0 || buf->channels <= 0 ||
+          !(buf->sampleRate > 0.0))
+      {
+         gArrangeSampleStaticWaves.erase(clipId);
+         return;
+      }
+
+      const int frames = buf->numFrames;
+      const int channels = buf->channels;
+      const double windowSeconds = Arrange::TicksToSeconds(length, sampleBpm);
+      const long long subF0 = std::clamp<long long>(
+         (long long)std::llround((double)sourceOffsetSeconds * buf->sampleRate), 0, frames);
+      const long long subF1 = std::clamp<long long>(
+         (long long)std::llround(((double)sourceOffsetSeconds + windowSeconds) * buf->sampleRate),
+         subF0, frames);
+      const long long subFrames = subF1 - subF0;
+      if (subFrames <= 0)
       {
          gArrangeSampleStaticWaves.erase(clipId);
          return;
@@ -27106,15 +27134,13 @@ namespace
       w.maxv.assign((size_t)buckets, 0.0f);
       w.filled.assign((size_t)buckets, 1); // static: filled up-front, all at once
 
-      const int frames = buf->numFrames;
-      const int channels = buf->channels;
       for (int b = 0; b < buckets; ++b)
       {
-         // Linear stretch: bucket b covers [b, b+1)/buckets of the whole
-         // decoded file, independent of tempo/BPM - the file's own duration
-         // is the only axis here.
-         const long long f0 = ((long long)b * frames) / buckets;
-         const long long f1 = std::max<long long>(f0 + 1, ((long long)(b + 1) * frames) / buckets);
+         // Linear stretch: bucket b covers [b, b+1)/buckets of this clip's
+         // OWN sub-range [subF0, subF1) of the decoded file - not the whole
+         // file - so a split-off clip's buckets read the right slice.
+         const long long f0 = subF0 + ((long long)b * subFrames) / buckets;
+         const long long f1 = std::max<long long>(f0 + 1, subF0 + ((long long)(b + 1) * subFrames) / buckets);
          float mn = 0.0f, mx = 0.0f;
          for (long long f = f0; f < f1 && f < frames; ++f)
          {
@@ -27130,6 +27156,42 @@ namespace
       }
 
       gArrangeSampleStaticWaves[clipId] = std::move(w);
+   }
+
+   // Resolves the decoded source buffer behind an Arrange::Clip's srcUid, for
+   // recomputing a Sample's static waveform outside of import/bounce time
+   // (e.g. right after a Split - see the two call sites in
+   // ArrangeSplitSelectionAt/ArrangeBladeSplitAt). Null if the node is gone
+   // or isn't an AudioFileNode (an offline clip, or one manually patched to
+   // something else - neither should have sampleDropped set, but this stays
+   // defensive rather than assuming).
+   const Platform::SampleBuffer* ArrangeSampleBufferForSrcUid(uint64_t srcUid)
+   {
+      GraphNode* gn = FindNodeByUid(srcUid);
+      if (gn == nullptr) return nullptr;
+      AudioFileNode* afn = dynamic_cast<AudioFileNode*>(gn->node.get());
+      return afn != nullptr ? afn->Buffer() : nullptr;
+   }
+
+   // Recomputes the static-waveform cache entry for a Sample clip, looking
+   // up its own decoded buffer first. No-op (and clears any stale entry) for
+   // a clip that isn't an Audio Sample or whose source no longer resolves.
+   void ArrangeRefreshSampleStaticWave(uint64_t clipId)
+   {
+      Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+      if (c == nullptr || !c->sampleDropped)
+      {
+         gArrangeSampleStaticWaves.erase(clipId);
+         return;
+      }
+      const Platform::SampleBuffer* buf = ArrangeSampleBufferForSrcUid(c->srcUid);
+      if (buf == nullptr)
+      {
+         gArrangeSampleStaticWaves.erase(clipId);
+         return;
+      }
+      ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
+                                      c->sampleBpm, c->sourceOffsetSeconds, buf);
    }
 
    // ---- Clip thumbnails (WP8) ------------------------------------------
@@ -28007,7 +28069,15 @@ namespace
              {
                 uint64_t right = 0;
                 if (Arrange::Split(gArrange, id, tick, &right))
+                {
                    rights.push_back(right);
+                   // The left half's own static waveform (if it's a Sample)
+                   // is now stale - its buckets covered the pre-split length
+                   // - and the right half has no entry at all yet. See
+                   // ArrangeComputeSampleStaticWave's own comment.
+                   ArrangeRefreshSampleStaticWave(id);
+                   ArrangeRefreshSampleStaticWave(right);
+                }
              }
           }))
          return false;
@@ -28028,8 +28098,16 @@ namespace
              for (uint64_t id : ids)
              {
                 uint64_t right = 0;
-                if (Arrange::Split(gArrange, id, tick, &right) && gArrangeSel.count(id) != 0)
-                   rights.push_back(right);
+                if (Arrange::Split(gArrange, id, tick, &right))
+                {
+                   // Same static-waveform refresh as ArrangeSplitSelectionAt
+                   // above, regardless of whether the right half ends up
+                   // selected.
+                   ArrangeRefreshSampleStaticWave(id);
+                   ArrangeRefreshSampleStaticWave(right);
+                   if (gArrangeSel.count(id) != 0)
+                      rights.push_back(right);
+                }
              }
           }))
          return false;
@@ -29334,6 +29412,7 @@ namespace
             // Audio Clip keeps using the live-fill gArrangeClipWaves cache.
             if (pending.kind == Arrange::ImportMediaKind::Audio && c->sampleDropped && audioFileNode != nullptr)
                ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
+                                               c->sampleBpm, c->sourceOffsetSeconds,
                                                audioFileNode->Buffer());
             gArrange.revision++;
          }
@@ -36958,6 +37037,10 @@ namespace
                // (see ClipWindow::sampleBpm's own comment for why the ratio
                // itself is computed live in RunTopology, not here).
                w.sampleBpm = (c.sampleDropped && c.syncToTempo) ? c.sampleBpm : 0.0f;
+               // Straight copy - see ClipWindow::sourceOffsetSeconds's own
+               // comment. Meaningless (and left at 0) for anything that
+               // isn't a Sample, same gate as sampleDropped/sampleBpm above.
+               w.sourceOffsetSeconds = c.sampleDropped ? c.sourceOffsetSeconds : 0.0f;
                // Retrigger is an Audio Sample-only feature (Clip Settings
                // hides the control for every other category) - a stray
                // `retrigger=true` left over from a patch saved before this

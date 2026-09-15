@@ -48,10 +48,17 @@ namespace
             ClampFades(left);
             out.push_back(left);
 
+            // Same shape as Split() (this IS an implicit split, carved out
+            // by an overwrite/duplicate landing in the middle of an
+            // existing clip): the right piece continues reading the source
+            // file from where the carved-out middle left off, not from the
+            // original clip's own start again - see
+            // Clip::sourceOffsetSeconds's and Split's own comments.
             Clip right = c;
             right.id = m.NewId();
             right.start = b;
             right.length = e - b;
+            right.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(b - s, c.sampleBpm);
             ClampFades(right);
             out.push_back(right);
             continue;
@@ -63,7 +70,10 @@ namespace
             out.push_back(c);
             continue;
          }
-         // overlaps our right edge
+         // Overlaps our right edge: the surviving piece's own start moves
+         // forward to `b`, so (like TrimEdge's start-edge case) it now
+         // starts further into the source file too.
+         c.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(b - s, c.sampleBpm);
          c.start = b;
          c.length = e - b;
          ClampFades(c);
@@ -556,6 +566,14 @@ bool Split(Model& m, uint64_t id, Tick tick, uint64_t* outRightId)
    right.length = c.End() - tick;
    right.fadeIn = 0;                    // the cut is not a fade
    ClampFades(right);
+   // Audio-Sample-only: the right half continues reading the source file
+   // where the left half's own offset left off, plus however far past the
+   // original clip's start the cut point sits, converted from ticks to
+   // seconds at the file's own assumed tempo (sampleBpm) - NOT the project's
+   // current tempo, and independent of whether syncToTempo is on for this
+   // clip, since ticks are already tempo-invariant everywhere else in this
+   // model (see Clip::sourceOffsetSeconds's own comment).
+   right.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(tick - c.start, c.sampleBpm);
 
    c.length = tick - c.start;
    c.fadeOut = 0;
