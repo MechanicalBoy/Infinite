@@ -14,9 +14,12 @@ AUDIORINGTEST|stubbed: audio ring buffer / engine (P2)
 MIDINOTESTREAMTEST|stubbed: ALSA MIDI sequencer (P2)
 
 # Phase 3: Media / Video / Camera
-VIDEOAUDIOTEST|stubbed: video decoder and media audio (P3)
-VIDEOSPEEDTEST|stubbed: video playback speed (P3)
-RECEXPORTTEST|stubbed: platform video/audio recorder (P3)
+# RECEXPORTTEST is implemented and passing as of this phase (was a decode-side
+# livelock in MediaLinux.cpp's readahead backward-seek check comparing target
+# against the decode thread's own buffer-ahead progress instead of what was
+# actually delivered to the caller - fixed, see VideoHandle::deliveredSeconds).
+VIDEOAUDIOTEST|real decoder/recorder now; fails a duration check because the recorded audio track is ~2.0s (matches the 60-frame/30fps video) while the test expects ~1.5s (the tone clip's own length) - needs an owner decision on whether 1.5s or full-track-length is the correct expectation, and if 1.5s, why Linux's capture runs the headless render loop at real wall-clock 30fps pace (P3)
+VIDEOSPEEDTEST|real decoder/recorder now; reverse/fast-forward playback produces far fewer live frame updates than required (~8-12 of 60 vs >30 needed) because reverse stepping re-seeks to the nearest keyframe and redecodes forward to target on every single frame, and this short single-GOP clip has no interior keyframes or reverse-frame cache to make that cheap (P3)
 
 # Phase 4: VST3 / Plugins
 PLUGINDRAGTEST|stubbed: plugin host / VST3 (P4)
