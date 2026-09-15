@@ -150,6 +150,7 @@ namespace Arrange
       bool     solo      = false; // audio only; any soloed audio lane silences the unsoloed ones
       std::string name;           // empty = auto ("V1", "A2", ...)
       float    colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = default type accent
+      float    rowHeight = 0.0f;  // 0 = default row height; drag-resized via the row's bottom border
       std::vector<Clip> clips;    // always sorted by start, never overlapping
    };
 
@@ -192,7 +193,7 @@ namespace Arrange
    struct Settings
    {
       int   timeDisplay  = 0;     // 0 = Bars, 1 = Time
-      int   snapDivision = 16;    // grid denominator: 0 = off, 1 = bar, 4 = 1/4, 16 = 1/16, ... (WP6)
+      int   snapDivision = 4;     // grid denominator: 0 = off, 1 = bar, 4 = 1/4, 16 = 1/16, ... (WP6)
       bool  snapTriplet  = false; // x2/3 on divisions >= 2; ignored for bar/off
       float zoom         = 1.0f;  // pixels per beat multiplier
       float scroll       = 0.0f;  // leftmost visible beat
