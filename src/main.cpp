@@ -29715,6 +29715,8 @@ namespace
       }
 
       // ---- Toolbar ----
+      const float arrangeToolbarTop = ImGui::GetCursorScreenPos().y;
+      float arrangeToolbarBottom = arrangeToolbarTop;
       {
          const bool arrangeToolbarLight = IsThemeLight();
          const ImU32 arrangeIconCol = ImGui::GetColorU32(ImGuiCol_Text);
@@ -30184,41 +30186,6 @@ namespace
             tdl->AddLine(ImVec2(center.x - 3.5f, br.y + 2.5f), ImVec2(center.x + 3.5f, br.y + 2.5f), arrangeIconCol, 1.4f);
          }
 
-         // Reset Row Heights: any track drag-resized off the default row
-         // height (Lane::rowHeight != 0) snaps back to it. Icon is three
-         // equal-height bars to read as "even out the rows".
-         {
-            ImGui::SameLine();
-            bool anyResized = false;
-            for (const Arrange::Lane& lane : gArrange.lanes)
-               if (lane.rowHeight > 0.0f) { anyResized = true; break; }
-
-            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
-            ImGui::BeginDisabled(!anyResized);
-            if (ImGui::Button("##arrangeresetrowh", ImVec2(30, 0)))
-            {
-               ArrangeEdit([&]() {
-                  for (Arrange::Lane& lane : gArrange.lanes)
-                     lane.rowHeight = 0.0f;
-               });
-            }
-            ImGui::EndDisabled();
-            ImGui::PopStyleColor();
-            const ImVec2 rbmin = ImGui::GetItemRectMin();
-            const ImVec2 rbmax = ImGui::GetItemRectMax();
-            const ImVec2 rcenter((rbmin.x + rbmax.x) * 0.5f, (rbmin.y + rbmax.y) * 0.5f);
-            ImDrawList* rdl = ImGui::GetWindowDrawList();
-            const float barW = 12.0f;
-            const ImU32 barCol = anyResized ? arrangeIconCol : (arrangeIconCol & 0x60FFFFFFu);
-            for (int bi = 0; bi < 3; bi++)
-            {
-               const float by = rcenter.y - 5.0f + (float)bi * 5.0f;
-               rdl->AddLine(ImVec2(rcenter.x - barW * 0.5f, by), ImVec2(rcenter.x + barW * 0.5f, by), barCol, 1.4f);
-            }
-            if (ImGui::IsItemHovered())
-               ImGui::SetTooltip(anyResized ? "Reset all track heights to default" : "All tracks already at default height");
-         }
-
          // Play/Pause and Rewind as icon buttons, matching the main
          // Infinite toolbar's own transport controls (see the top toolbar's
          // "##transportrewind" a bit further down in this file) rather than
@@ -30398,7 +30365,46 @@ namespace
             Tabler::DrawFlag(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
          }
 
-         // Inspector / Clip Settings toggle
+         // Reset Row Heights: any track drag-resized off the default row
+         // height (Lane::rowHeight != 0) snaps back to it. Placed right next
+         // to the Inspector toggle below - both act on the header column/row
+         // layout, and are the two icons most likely to be reached for
+         // together.
+         ImGui::SameLine();
+         {
+            bool anyResized = false;
+            for (const Arrange::Lane& lane : gArrange.lanes)
+               if (lane.rowHeight > 0.0f) { anyResized = true; break; }
+
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+            ImGui::BeginDisabled(!anyResized);
+            if (ImGui::Button("##arrangeresetrowh", ImVec2(30, 0)))
+            {
+               ArrangeEdit([&]() {
+                  for (Arrange::Lane& lane : gArrange.lanes)
+                     lane.rowHeight = 0.0f;
+               });
+            }
+            ImGui::EndDisabled();
+            ImGui::PopStyleColor();
+            const ImVec2 rbmin = ImGui::GetItemRectMin();
+            const ImVec2 rbmax = ImGui::GetItemRectMax();
+            const ImVec2 rcenter((rbmin.x + rbmax.x) * 0.5f, (rbmin.y + rbmax.y) * 0.5f);
+            ImDrawList* rdl = ImGui::GetWindowDrawList();
+            const float barW = 12.0f;
+            const ImU32 barCol = anyResized ? arrangeIconCol : (arrangeIconCol & 0x60FFFFFFu);
+            for (int bi = 0; bi < 3; bi++)
+            {
+               const float by = rcenter.y - 5.0f + (float)bi * 5.0f;
+               rdl->AddLine(ImVec2(rcenter.x - barW * 0.5f, by), ImVec2(rcenter.x + barW * 0.5f, by), barCol, 1.4f);
+            }
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip(anyResized ? "Reset all track heights to default" : "All tracks already at default height");
+         }
+
+         // Inspector / Clip Settings toggle. Icon is the sliders/adjustments
+         // glyph rather than a plain list, so it reads distinctly from the
+         // Reset Row Heights bars icon right beside it.
          ImGui::SameLine();
          ImGui::PushStyleColor(ImGuiCol_Button, gArrangeClipSettingsPanelOpen
                                                     ? ImGui::GetColorU32(ImGuiCol_ButtonActive)
@@ -30412,13 +30418,51 @@ namespace
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            Tabler::DrawList(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
+            Tabler::DrawSliders(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
          // Audio" toggle pinned top-right above; engine power is the top
          // bar's Start/Stop Audio. Neither changes the other's state, except
          // that enabling timeline audio starts a stopped engine.
+         arrangeToolbarBottom = ImGui::GetCursorScreenPos().y;
+      }
+
+      // Right-click anywhere on the toolbar row (not just the viewport
+      // monitor, which is off by default and rarely visible) to reach the
+      // panel's own dock menu - viewport left/right, timeline top/bottom.
+      {
+         const ImVec2 mouse = ImGui::GetIO().MousePos;
+         const bool overToolbar = mouse.x >= panelOrigin.x && mouse.x < panelOrigin.x + panelSize.x &&
+                                  mouse.y >= arrangeToolbarTop && mouse.y < arrangeToolbarBottom;
+         if (overToolbar && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
+             ImGui::IsMouseReleased(ImGuiMouseButton_Right) && !ImGui::IsPopupOpen("##arrangedockctx"))
+            ImGui::OpenPopup("##arrangedockctx");
+      }
+      if (ImGui::BeginPopup("##arrangedockctx"))
+      {
+         if (ImGui::MenuItem("Dock Left", nullptr, !gArrangeViewportOnRight))
+            gArrangeViewportOnRight = false;
+         if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
+            gArrangeViewportOnRight = true;
+         // The whole timeline panel: bottom or top of the window (saved
+         // with the document, not undoable - same as View > Arrangement
+         // Timeline > Dock).
+         ImGui::Separator();
+         const bool panelTop = gArrange.settings.dockSide == 1;
+         if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
+         {
+            gArrange.settings.dockSide = 0;
+            gArrange.revision++; // a model field like any other (WP5b)
+            gPatchDirty = true;
+         }
+         if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
+         {
+            gArrange.settings.dockSide = 1;
+            gArrange.revision++;
+            gPatchDirty = true;
+         }
+         ImGui::EndPopup();
       }
 
       ImGui::Separator();
@@ -30529,34 +30573,12 @@ namespace
 
          ImGui::Dummy(monAvail);
 
-         // Right-click anywhere on the monitor to move it to the other side.
-         if (ImGui::IsWindowHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
-            ImGui::OpenPopup("##viewportdockctx");
-         if (ImGui::BeginPopup("##viewportdockctx"))
-         {
-            if (ImGui::MenuItem("Dock Left", nullptr, !gArrangeViewportOnRight))
-               gArrangeViewportOnRight = false;
-            if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
-               gArrangeViewportOnRight = true;
-            // The whole timeline panel: bottom or top of the window (saved
-            // with the document, not undoable - same as View > Arrangement
-            // Timeline > Dock).
-            ImGui::Separator();
-            const bool panelTop = gArrange.settings.dockSide == 1;
-            if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
-            {
-               gArrange.settings.dockSide = 0;
-               gArrange.revision++; // a model field like any other (WP5b)
-               gPatchDirty = true;
-            }
-            if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
-            {
-               gArrange.settings.dockSide = 1;
-               gArrange.revision++;
-               gPatchDirty = true;
-            }
-            ImGui::EndPopup();
-         }
+         // Right-click anywhere on the monitor to reach the same dock menu
+         // the toolbar's right-click also opens (see "##arrangedockctx"
+         // above, drawn once, unconditionally, right after the toolbar).
+         if (ImGui::IsWindowHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+             !ImGui::IsPopupOpen("##arrangedockctx"))
+            ImGui::OpenPopup("##arrangedockctx");
 
          ImGui::EndChild();
       };
@@ -30686,10 +30708,16 @@ namespace
       const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text, 0.80f);
       const ImU32 subTextCol = ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.80f);
 
+      // Header-column corner, level with the ruler (above the first track
+      // row) - otherwise blank/unstyled, reading as a hole next to the
+      // filled ruler bar it sits beside.
+      dl->AddRectFilled(ImVec2(headerStartX, rulerPos.y), ImVec2(rulerPos.x, kTickStripTop), markerStripBg);
+      dl->AddRectFilled(ImVec2(headerStartX, kTickStripTop), ImVec2(rulerPos.x, rulerPos.y + rulerSize.y), rulerBg);
+
       dl->AddRectFilled(rulerPos, ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), markerStripBg);
       dl->AddRectFilled(ImVec2(rulerPos.x, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y), rulerBg);
-      dl->AddLine(ImVec2(rulerPos.x, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), tickCol, 0.5f);
-      dl->AddLine(ImVec2(rulerPos.x, rulerPos.y + rulerSize.y), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
+      dl->AddLine(ImVec2(headerStartX, kTickStripTop), ImVec2(rulerPos.x + rulerSize.x, kTickStripTop), tickCol, 0.5f);
+      dl->AddLine(ImVec2(headerStartX, rulerPos.y + rulerSize.y), ImVec2(rulerPos.x + rulerSize.x, rulerPos.y + rulerSize.y),
                   tickCol, 1.0f);
 
       // ---- ruler ticks and labels ----
@@ -31032,6 +31060,13 @@ namespace
       for (const auto& kv : arrangeGroupHeaderRelTop)
          groupHeaderRowTop[kv.first] = lanesTopY + kv.second;
       const float lanesContentBottom = lanesTopY + arrangeLanesRelBottom;
+      // How far down the timeline reads as "filled" - past the real lanes
+      // when the panel is taller than the track list, since that space is
+      // now itself striped/gridded to look like more timeline rather than
+      // dead space (see the empty-track-region fill below). The loop
+      // highlight band and playhead line should reach exactly this far too,
+      // not stop dead at the last real lane.
+      const float arrangeFullBottom = std::max(lanesContentBottom, scrollTL.y + avail.y);
       // Reverse lookup: which lane row (if any) a screen Y falls in. Returns
       // -1 past the end, so callers must clamp/guard same as before.
       auto laneRowAt = [&](float y) -> int
@@ -33128,7 +33163,7 @@ namespace
          {
             const float bx0 = std::max(rulerStartX, tickToX(bl.start));
             const float bx1 = std::min(rulerStartX + rulerWidth, tickToX(bl.end));
-            const float bandBottom = lanesContentBottom + ImGui::GetScrollY();
+            const float bandBottom = arrangeFullBottom + ImGui::GetScrollY();
             const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 60) : IM_COL32(250, 204, 21, 40);
             const ImU32 bandBorder = IM_COL32(250, 204, 21, 200);
             // From the tick strip down: the marker strip above stays clear.
@@ -33143,8 +33178,7 @@ namespace
       // the real playhead stays put and a ghost follows the mouse; the
       // transport seeks once, on release (WP6).
       {
-         const float lineBottom =
-            std::max(lanesContentBottom + ImGui::GetScrollY(), pinnedTopY + avail.y);
+         const float lineBottom = arrangeFullBottom + ImGui::GetScrollY();
          const double playBeats = std::max(0.0, tr.Beats());
          if (playBeats >= startBeat && playBeats <= endBeat)
          {
@@ -33181,7 +33215,7 @@ namespace
       // guides at the same kLaneHeight spacing, all the way to the bottom
       // of the visible scroll area.
       {
-         const float emptyGridBottom = scrollTL.y + avail.y;
+         const float emptyGridBottom = arrangeFullBottom;
          if (emptyGridBottom > lanesContentBottom)
          {
             dl->PushClipRect(ImVec2(headerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
