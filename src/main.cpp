@@ -42918,6 +42918,7 @@ namespace
    }
 
    // Default extension for newly saved patches.
+
    //
    // Windows RESERVES ".inf" for Setup Information files - the driver/install
    // script format - so a .inf patch there shows up as "Setup Information",
