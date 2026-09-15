@@ -1,5 +1,21 @@
 [
   {
+    "hash": "5e993818a0866d19995908cf5547744d303168a1",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 17:43:32 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Extract C++ namespaces into the AST symbol graph",
+      "description": "Extract C++ namespaces into the AST symbol graph",
+      "bullets": [],
+      "body": "build_ast_graph.py previously walked namespace_definition bodies without\npushing the namespace name onto the scope stack, so namespace-scoped\nfree functions lost their qualifying prefix and namespaces themselves\n(Platform, GLUtil, etc.) never got a symbol entry at all. Gave\nnamespace_definition the same push/emit/recurse/pop treatment already\nused for class_specifier/struct_specifier. Anonymous namespaces recurse\nwithout pushing a scope name. Symbol count: 6,930 -> 7,279 (+79\nnamespace entries, plus corrected prefixes for functions inside them).\nRe-ran the eval suite after rebuilding the index: AST Symbol & Caller\nPrecision 57.8% -> 59.4%, aggregate 86.1% -> 86.5%. Smaller than the\nback-of-envelope estimate (~68-70%/89%) I gave beforehand \u2014 turned out\n\"Platform\" was already earning partial credit pre-fix because the\nscoring substring-matches against retrieved snippet text, and every\nindexed ast_symbol doc for that subsystem literally contains the word\n\"platform\" in its templated description, independent of whether the\nsymbol itself existed in the graph. The fix is still a net real gain\nand closes a genuine blind spot (namespace-scoped symbols/callers were\ninvisible to blast-radius queries before this).\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Extract C++ namespaces into the AST symbol graph\n\nbuild_ast_graph.py previously walked namespace_definition bodies without\npushing the namespace name onto the scope stack, so namespace-scoped\nfree functions lost their qualifying prefix and namespaces themselves\n(Platform, GLUtil, etc.) never got a symbol entry at all. Gave\nnamespace_definition the same push/emit/recurse/pop treatment already\nused for class_specifier/struct_specifier. Anonymous namespaces recurse\nwithout pushing a scope name. Symbol count: 6,930 -> 7,279 (+79\nnamespace entries, plus corrected prefixes for functions inside them).\n\nRe-ran the eval suite after rebuilding the index: AST Symbol & Caller\nPrecision 57.8% -> 59.4%, aggregate 86.1% -> 86.5%. Smaller than the\nback-of-envelope estimate (~68-70%/89%) I gave beforehand \u2014 turned out\n\"Platform\" was already earning partial credit pre-fix because the\nscoring substring-matches against retrieved snippet text, and every\nindexed ast_symbol doc for that subsystem literally contains the word\n\"platform\" in its templated description, independent of whether the\nsymbol itself existed in the graph. The fix is still a net real gain\nand closes a genuine blind spot (namespace-scoped symbols/callers were\ninvisible to blast-radius queries before this).\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "tools/semi-brain/1_extractors/build_ast_graph.py   |    27 +\n .../1_extractors/output/ast_symbol_graph.json      | 45984 +++++++++++--------\n .../1_extractors/output/git_commits_corpus.json    |    16 +\n .../1_extractors/output/knowledge_index.db         |   Bin 23457792 -> 24518656 bytes\n .../1_extractors/output/recovered_docs_corpus.json |   456 +-\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl |   155 +-\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl |   155 +-\n 7 files changed, 26183 insertions(+), 20610 deletions(-)"
+  },
+  {
     "hash": "26d560c4e12e62d492c060e9cea037e65fa0a1ca",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",

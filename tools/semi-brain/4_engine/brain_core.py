@@ -31,7 +31,7 @@ SUBSYSTEM_ANCHOR_SYMBOLS = {
     "arrange_timeline": ["Clip", "Patch"],
     "nodes": ["INode", "Modulation"],
     "core_system": ["Patch", "INode"],
-    "compositing_2d": ["FilterDef", "INode"],
+    "compositing_2d": ["FilterDef", "INode", "GLUtil"],
     "ui_shell": ["INode"],
     "platform": ["Platform"],
 }
