@@ -4825,6 +4825,11 @@ namespace Platform
    {
       return {};
    }
+
+   std::vector<std::string> UnsupportedPluginsSeen()
+   {
+      return {};
+   }
 #endif
 
    std::string ExecutablePath()
