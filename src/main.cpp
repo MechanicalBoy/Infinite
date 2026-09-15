@@ -29752,34 +29752,6 @@ namespace
                ImGui::SetTooltip("%s", gAudioStartError.c_str());
             ImGui::SetCursorScreenPos(savedCursor);
 
-            // Bitwig/Ableton-style standing default for new Samples (drag-drop
-            // import and Bounce to Sample both stamp the clip they create with
-            // this instead of always defaulting to on) - a toolbar toggle
-            // rather than a per-drop dialog, since drag-drop import is an
-            // instant, non-modal action here. Existing clips are unaffected;
-            // this only decides what a NEW Sample starts out as - the
-            // post-hoc "Sync to Tempo" checkbox in Clip Settings still edits
-            // any individual clip afterward.
-            const char* syncLabel = gArrange.settings.importSyncToTempo ? "New Samples: Sync to Tempo" : "New Samples: Free";
-            const float syncBtnW = ImGui::CalcTextSize(syncLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
-            const ImVec2 syncBtnPos(audioBtnPos.x - syncBtnW - 8.0f, panelOrigin.y + 2.0f);
-            ImGui::SetCursorScreenPos(syncBtnPos);
-            ImGui::PushStyleColor(ImGuiCol_Button, gArrange.settings.importSyncToTempo
-               ? (arrangeToolbarLight ? ImVec4(0.20f, 0.62f, 0.34f, 1.0f) : ImVec4(0.16f, 0.52f, 0.28f, 1.0f))
-               : (arrangeToolbarLight ? ImVec4(0.80f, 0.82f, 0.87f, 1.0f) : ImVec4(0.30f, 0.30f, 0.34f, 1.0f)));
-            ImGui::PushStyleColor(ImGuiCol_Text, gArrange.settings.importSyncToTempo
-               ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
-               : (arrangeToolbarLight ? ImVec4(0.12f, 0.14f, 0.20f, 1.0f) : ImVec4(0.92f, 0.94f, 0.98f, 1.0f)));
-            if (ImGui::Button(syncLabel, ImVec2(syncBtnW, 0.0f)))
-            {
-               gArrange.settings.importSyncToTempo = !gArrange.settings.importSyncToTempo;
-               gPatchDirty = true;
-            }
-            ImGui::PopStyleColor(2);
-            if (ImGui::IsItemHovered())
-               ImGui::SetTooltip("Default for new Audio/Video Samples (drag & drop, Bounce to Sample).\nDoes not change existing clips.");
-            ImGui::SetCursorScreenPos(savedCursor);
-
             // Render, pinned just left of Start/Stop Audio - exports the
             // arrangement's own timeline (every track's clips, composited
             // and stacked, over a selected time range) to a movie file.
@@ -29849,7 +29821,7 @@ namespace
 
             const char* renderLabel = ArrangeRenderBusy() ? "Rendering..." : "Render";
             const float renderBtnW = ImGui::CalcTextSize(renderLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f + 12.0f;
-            const ImVec2 renderBtnPos(syncBtnPos.x - renderBtnW - 8.0f, panelOrigin.y + 2.0f);
+            const ImVec2 renderBtnPos(audioBtnPos.x - renderBtnW - 8.0f, panelOrigin.y + 2.0f);
             ImGui::SetCursorScreenPos(renderBtnPos);
             ImGui::BeginDisabled(ArrangeRenderBusy());
             if (ImGui::Button(renderLabel, ImVec2(renderBtnW, 0.0f)))
