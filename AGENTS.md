@@ -9,6 +9,7 @@ Whenever working on tasks in this repository, **you must consult and follow the 
 
 | Skill | Category | Purpose | Path |
 |---|---|---|---|
+| `semi-brain` | Core | Cognitive twin, 9-question blast radius, invariant engine & continuous learning | `.claude/skills/semi-brain/SKILL.md` |
 | `field-language` | Field | Field language design/spec | `.claude/skills/field-language/SKILL.md` |
 | `field-compiler` | Field | Lexer/AST/IR pipeline, backends, domain inference | `.claude/skills/field-compiler/SKILL.md` |
 | `field-domains` | Field | Domain transfer operators (reduce/map/broadcast/resample/downsample) | `.claude/skills/field-domains/SKILL.md` |
