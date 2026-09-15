@@ -65,6 +65,18 @@ namespace WavetableSynthCore
    static_assert(kNumGlobalParams + kEngines * kNumEngineParams <= ParamMailbox::kMaxParams,
                  "Wavetable's smoothed params no longer fit one ParamMailbox");
 
+   // Arrangement Timeline per-clip pitch (AudioNode::SetClipPitchOverride,
+   // pushed from main.cpp's RunTopology lookahead pass): a dedicated slot one
+   // past PushParams's own range, so PushParams's per-UI-frame push (main
+   // thread) never stomps the per-block clip override (audio thread) back to
+   // 0 - unlike kPitchBend, which PushParams re-sends every frame and which
+   // already carries real pitch-bend-wheel semantics that a clip transpose
+   // has no business fighting with. Added to the same cents sum as
+   // kPitchBend in both the free-running and note-driven render paths below.
+   constexpr int kClipPitchParam = kNumGlobalParams + kEngines * kNumEngineParams;
+   static_assert(kClipPitchParam < ParamMailbox::kMaxParams,
+                 "Wavetable's clip-pitch slot no longer fits one ParamMailbox");
+
    // Golden-ratio phase seeds: deterministic per-unison-voice start offsets,
    // so `phaseRandomize` spreads the stack without needing PRNG state.
    constexpr float kVoicePhaseSeed[kMaxUnison] = {
@@ -256,6 +268,7 @@ public:
       mMailbox.PrepareToPlay(sampleRate);
       for (int i = 0; i < kNumGlobalParams + kEngines * kNumEngineParams; i++)
          mMailbox.SetImmediate(i, mFloatAtomics[i].load(std::memory_order_relaxed));
+      mMailbox.SetImmediate(kClipPitchParam, 0.0f);
 
       mFreeGlide.SetImmediate(mFloatAtomics[kFrequency].load(std::memory_order_relaxed));
       // Unity, not zero: at 0 the very first note would fade in over the
@@ -360,6 +373,7 @@ public:
          sm.glide = mMailbox.SmoothedValue(kGlide);
          sm.pitchBend = mMailbox.SmoothedValue(kPitchBend);
          sm.fmDepth = mMailbox.SmoothedValue(kFmDepth);
+         sm.clipPitch = mMailbox.SmoothedValue(kClipPitchParam);
          for (int e = 0; e < kEngines; e++)
          {
             sm.eng[e].position = std::clamp(mMailbox.SmoothedValue(EngineParamId(e, kEngPosition)), 0.0f, 1.0f);
@@ -414,7 +428,7 @@ public:
                   continue;
                }
                const float semitones = (float)(eng[e].octave * 12 + eng[e].semi) * 100.0f + sm.eng[e].fine +
-                                       sm.pitchBend * 100.0f;
+                                       sm.pitchBend * 100.0f + sm.clipPitch * 100.0f;
                // Carrier pitch (pre-FM) clamped to its own sane range first...
                const float carrierFreq = std::clamp(base * powf(2.0f, semitones / 1200.0f), 20.0f,
                                                     (float)mSampleRate * 0.45f);
@@ -475,7 +489,7 @@ public:
 
                   const float semitones = (float)(eng[e].octave * 12 + eng[e].semi) * 100.0f +
                                           sm.eng[e].fine + eng[e].pitchAmount * pitchEnv * 100.0f +
-                                          sm.pitchBend * 100.0f + v.bend * 100.0f;
+                                          sm.pitchBend * 100.0f + v.bend * 100.0f + sm.clipPitch * 100.0f;
                   // Carrier pitch (pre-FM) clamped to its own sane range
                   // first, then linear FM applied and clamped separately -
                   // see the free-running path's identical comment above.
@@ -608,6 +622,18 @@ public:
       }
    }
 
+   // Arrangement Timeline per-clip pitch: pushed to the dedicated
+   // kClipPitchParam slot (see its own comment above) rather than kPitchBend,
+   // so this never fights the node's real pitch-bend-wheel value or gets
+   // stomped back to 0 by PushParams's per-UI-frame push. ParamMailbox::Push
+   // is documented main-thread-only, but this callsite is audio-thread, same
+   // as AudioNode::RequestRetrigger()'s established dual-caller contract - a
+   // plain atomic store, at worst racing itself for one block.
+   void SetClipPitchOverride(float semitones) override
+   {
+      mMailbox.Push(WavetableSynthCore::kClipPitchParam, semitones);
+   }
+
    MeterRing& ScopeRing() { return mScopeRing; }
    int ActiveVoices() const { return mActiveVoices.load(std::memory_order_relaxed); }
 
@@ -635,7 +661,7 @@ private:
 
    struct SmoothedBlock
    {
-      float frequency, volume, mix, glide, pitchBend, fmDepth;
+      float frequency, volume, mix, glide, pitchBend, fmDepth, clipPitch;
       SmoothedEngine eng[WavetableSynthCore::kEngines];
    };
 

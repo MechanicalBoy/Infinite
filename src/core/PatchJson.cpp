@@ -136,7 +136,8 @@ namespace PatchJson
                {"colorBrightness", c.colorBrightness},
                {"colorContrast", c.colorContrast},
                {"colorSaturation", c.colorSaturation},
-               {"retrigger", c.retrigger}
+               {"retrigger", c.retrigger},
+               {"sampleDropped", c.sampleDropped}
             });
          }
          out["streams"].push_back({

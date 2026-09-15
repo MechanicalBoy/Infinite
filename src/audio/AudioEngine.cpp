@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 #include "core/Transport.h"
 #include "platform/Platform.h"
@@ -212,6 +213,18 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
       const double beatsPerSample = bpm / (60.0 * runSampleRate);
       const double blockStartBeat = Transport::Instance().BlockStartBeats();
       const double blockEndBeat = blockStartBeat + (double)numFrames * beatsPerSample;
+
+      // A genuine discontinuity - a scrub, a seek, a loop wrap, or a fresh
+      // Play landing mid-clip - as opposed to this block simply continuing
+      // where the last one left off. Half a sample's worth of beats of
+      // slack absorbs float error in the beat math; the sentinel initial
+      // value (see mLastBlockEndBeat's own comment) makes the very first
+      // block after Play count as a discontinuity too, so a Sample under
+      // the playhead at Play-time still snaps to its exact position instead
+      // of free-running from wherever its node last left off.
+      const bool discontinuity = std::abs(blockStartBeat - mLastBlockEndBeat) > beatsPerSample * 0.5;
+      mLastBlockEndBeat = blockEndBeat;
+
       for (AudioTerminal& terminal : list->topology.terminalBufferIndices)
       {
          if (terminal.numWindows <= 0 || terminal.windowOffset < 0 || terminal.sourceNode == nullptr)
@@ -227,6 +240,52 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             cursor++;
          }
          terminal.windowCursor = cursor;
+
+         // Per-clip pitch (Audio Clip and Audio Sample alike): pushed to the
+         // terminal's own sourceNode every block the playhead is inside a
+         // window, so a node shared by several clips plays each one at its
+         // own pitch instead of one clip's edit bleeding into every other
+         // clip that happens to share its source. Block-granular like the
+         // retrigger onset above - if this block spans a window boundary the
+         // whole block still renders at the window active at its start, one
+         // block's worth of a stale pitch at worst. A block with no window
+         // covering its start (a gap, or the playhead outside every clip)
+         // pushes nothing, leaving whatever the node's own canvas pitch cook
+         // last set - inaudible either way since nothing plays there.
+         int pitchCursor = std::clamp(terminal.windowCursor, 0, terminal.numWindows - 1);
+         while (pitchCursor > 0 && blockStartBeat < windows[pitchCursor].startBeat)
+            pitchCursor--;
+         while (pitchCursor + 1 < terminal.numWindows && blockStartBeat >= windows[pitchCursor].endBeat)
+            pitchCursor++;
+         if (blockStartBeat >= windows[pitchCursor].startBeat && blockStartBeat < windows[pitchCursor].endBeat)
+         {
+            terminal.sourceNode->SetClipPitchOverride(windows[pitchCursor].pitch);
+
+            // Exact seek: only for a Sample (see ClipWindow::sampleDropped's
+            // comment - a live Audio Clip stays on the onset-only retrigger
+            // above, ramping up like a real instrument), and only on a
+            // discontinuity - continuous playback already has the right
+            // position and must not be reset every block. The offset is
+            // elapsed timeline seconds since this window's own onset: beats
+            // are converted with the CURRENT tempo, so a tempo change is
+            // already folded in, and no separate BPM-mapping is needed since
+            // Sync to Tempo only ever affects a clip's placed length, never
+            // an actual playback-rate warp (see ArrangePollMediaImports).
+            // Pitch is a different story: AudioFilePlayerAudioNode implements
+            // it as varispeed (same "shift the read rate" model as
+            // SamplerNode's NoteToRate - see its ProcessBlock), so a pitched
+            // Sample consumes source-seconds faster or slower than real time.
+            // The elapsed-seconds-since-onset figure has to be scaled by that
+            // same ratio or the seek lands on the wrong source frame for any
+            // Sample whose clip pitch isn't 0.
+            if (discontinuity && windows[pitchCursor].sampleDropped)
+            {
+               const double elapsedSeconds =
+                  std::max(0.0, (blockStartBeat - windows[pitchCursor].startBeat) * 60.0 / bpm);
+               const double pitchRatio = std::pow(2.0, (double)windows[pitchCursor].pitch / 12.0);
+               terminal.sourceNode->SeekToClipOffset(elapsedSeconds * pitchRatio);
+            }
+         }
       }
    }
 
