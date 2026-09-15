@@ -74333,6 +74333,7 @@ int main(int argc, char** argv)
       if (getenv("INFINITE_VIDEOAUDIOTEST") != nullptr)
       {
          auto* out = static_cast<OutputNode*>(gNodes[1].node.get());
+         static int sVaRecordedFrames = 0;
          if (frameId == 2)
          {
             const bool started = out->StartRecording(TmpPath("infinite_videoaudiotest.mov"));
@@ -74341,6 +74342,7 @@ int main(int argc, char** argv)
          if (frameId == 62) // ~2 seconds at 30fps, comfortably past the 1.5s tone
          {
             const int frames = out->RecordedFrames();
+            sVaRecordedFrames = frames;
             out->StopRecording(); // blocks until AVAssetWriter finishes, so the file is complete by frame 64
             printf("recorded %d frames, status: %s\n", frames, out->RecordStatus().c_str());
          }
@@ -74393,7 +74395,15 @@ int main(int argc, char** argv)
             printf("tone check: 440Hz magnitude=%.1f vs 5000Hz control=%.1f  %s\n",
                    toneMag, noiseMag, toneOk ? "TONE PRESENT" : "TONE MISSING");
 
-            const double expectedDuration = 1.5;
+            // The recorded audio track's real length is the *video's* duration
+            // (60 frames / recordFps), not the 1.5s tone clip's own length:
+            // AudioFileNode::loop defaults to true, and all three platforms'
+            // recorders (Platform.mm's AppendAudioUpToLocked, MediaWin.cpp's
+            // and MediaLinux.cpp's WriteFileAudioTrack) deliberately loop a
+            // shorter file-audio source to fill the whole take rather than
+            // truncate it early - confirmed identical across all three while
+            // chasing a spurious Linux-only "1.5s" duration mismatch here.
+            const double expectedDuration = (double)sVaRecordedFrames / std::max(1, out->recordFps);
             const bool durationOk = decoded && std::fabs((double)buf.numFrames / std::max(1.0, buf.sampleRate) - expectedDuration) < 0.3;
 
             const bool ok = opened && video->HasAudio() && decoded && buf.channels >= 1 && durationOk && toneOk;
