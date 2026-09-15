@@ -1,5 +1,81 @@
 [
   {
+    "hash": "9f2b39315c6c8670c65aa0f5a27a3e1f523c3207",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:31:48 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'feature/eq-filter-shift-drag-q'",
+      "description": "Merge branch 'feature/eq-filter-shift-drag-q'",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'feature/eq-filter-shift-drag-q'"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "370a9557179a72bb4db25eff247cd7f97115542d",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:31:45 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "audio-ui",
+      "title": "feat(audio-ui): add Shift-drag Q to EQ curve and fix WTDRAG viewport framing",
+      "description": "add Shift-drag Q to EQ curve and fix WTDRAG viewport framing",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(audio-ui): add Shift-drag Q to EQ curve and fix WTDRAG viewport framing"
+    },
+    "stat": "src/main.cpp                                       | 180 ++++----\n .../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 452 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 147 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 147 +++----\n 5 files changed, 462 insertions(+), 480 deletions(-)"
+  },
+  {
+    "hash": "83744de3104a6645bb35a1576a81a75a1f12ece4",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 23:00:02 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "arrange",
+      "title": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'",
+      "description": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'",
+      "bullets": [],
+      "body": "Timeline/Arrange UX fixes: remove per-clip bounce/render, always-on\nretrigger, live BPM sync display, resizable track rows, viewport off by\ndefault, inspector double-click toggle, decluttered track header.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Merge branch 'claude/timeline-arrangement-improvements-81c7c7'\n\nTimeline/Arrange UX fixes: remove per-clip bounce/render, always-on\nretrigger, live BPM sync display, resizable track rows, viewport off by\ndefault, inspector double-click toggle, decluttered track header.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "839816270c9b55d5fc8e56a392faf9a9f3d9e37b",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Tue Sep 15 22:50:20 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "arrange",
+      "title": "Timeline/Arrange UX fixes: remove per-clip bounce, always-retrigger, live BPM sync display, resizable rows, viewport off by default, inspector toggle, decluttered track header",
+      "description": "Timeline/Arrange UX fixes: remove per-clip bounce, always-retrigger, live BPM sync display, resizable rows, viewport off by default, inspector toggle, decluttered track header",
+      "bullets": [
+        "Remove individual-clip \"Bounce to Sample\" / \"Bounce / Render Clip\" entirely",
+        "Remove the per-clip retrigger-vs-continuous trigger-mode UI; retrigger is",
+        "Clamp the loop-region highlight band to the actual track count.",
+        "Allow resizing each track row's height by dragging its border, with",
+        "Size the timeline grid/canvas to the tracks instead of leaving dead",
+        "Default snap division to 1/4.",
+        "Fix double-clicking empty timeline space creating a new clip that",
+        "Default the Arrange panel's monitor/viewport preview to off.",
+        "Make double-clicking an already-open inspector selection toggle it",
+        "Remove inline opacity/Solo/Mute/Gain/Pan controls from the track header",
+        "Update the timeline-arrangement-architecture skill to match."
+      ],
+      "body": "(menu items, inspector button, backing functions, clip-scoped render\njob fields and global scope set); Render Track/Group untouched.\nnow always on. Sync-to-Tempo shows a live read-only BPM while synced and\nonly exposes the manual field when sync is off.\nwaveform rendering scaled to match.\nspace below them.\nwrongly reused the nearest existing clip's source node.\nclosed instead of just re-opening the same selection.\nrow; those settings now live only in the docked inspector.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Timeline/Arrange UX fixes: remove per-clip bounce, always-retrigger, live BPM sync display, resizable rows, viewport off by default, inspector toggle, decluttered track header\n\n- Remove individual-clip \"Bounce to Sample\" / \"Bounce / Render Clip\" entirely\n  (menu items, inspector button, backing functions, clip-scoped render\n  job fields and global scope set); Render Track/Group untouched.\n- Remove the per-clip retrigger-vs-continuous trigger-mode UI; retrigger is\n  now always on. Sync-to-Tempo shows a live read-only BPM while synced and\n  only exposes the manual field when sync is off.\n- Clamp the loop-region highlight band to the actual track count.\n- Allow resizing each track row's height by dragging its border, with\n  waveform rendering scaled to match.\n- Size the timeline grid/canvas to the tracks instead of leaving dead\n  space below them.\n- Default snap division to 1/4.\n- Fix double-clicking empty timeline space creating a new clip that\n  wrongly reused the nearest existing clip's source node.\n- Default the Arrange panel's monitor/viewport preview to off.\n- Make double-clicking an already-open inspector selection toggle it\n  closed instead of just re-opening the same selection.\n- Remove inline opacity/Solo/Mute/Gain/Pan controls from the track header\n  row; those settings now live only in the docked inspector.\n- Update the timeline-arrangement-architecture skill to match.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".../timeline-arrangement-architecture/SKILL.md     |  76 ++-\n src/arrange/ArrangeModel.h                         |   3 +-\n src/core/Patch.cpp                                 |  10 +\n src/core/Patch.h                                   |   1 +\n src/main.cpp                                       | 729 ++++++---------------\n 5 files changed, 266 insertions(+), 553 deletions(-)"
+  },
+  {
     "hash": "7bef990af605aafd7cdbb176e9c86227ab15c1b3",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",

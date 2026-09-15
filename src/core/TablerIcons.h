@@ -525,6 +525,40 @@ namespace Tabler
       dl->AddLine(ImVec2(center.x - 4.5f * s, center.y + 7.0f * s), ImVec2(center.x + 4.5f * s, center.y + 7.0f * s), col, stroke);
    }
 
+   // Tabler: file-music / clip settings (file with folded top-right corner + audio waveform inside)
+   inline void DrawFileMusic(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.2f, 1.6f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      // Outer page outline with folded top-right corner
+      dl->PathClear();
+      dl->PathLineTo(P(14.0f, 3.0f));
+      dl->PathLineTo(P(5.0f, 3.0f));
+      dl->PathLineTo(P(5.0f, 21.0f));
+      dl->PathLineTo(P(19.0f, 21.0f));
+      dl->PathLineTo(P(19.0f, 8.0f));
+      dl->PathStroke(col, ImDrawFlags_None, stroke);
+
+      // Folded corner lines: (14, 3) -> (14, 8) -> (19, 8)
+      dl->PathClear();
+      dl->PathLineTo(P(14.0f, 3.0f));
+      dl->PathLineTo(P(14.0f, 8.0f));
+      dl->PathLineTo(P(19.0f, 8.0f));
+      dl->PathStroke(col, ImDrawFlags_None, stroke);
+
+      // Waveform bars inside the document (vertically centered, diamond envelope)
+      const float xs[5] = { 8.0f, 10.0f, 12.0f, 14.0f, 16.0f };
+      const float halfH[5] = { 1.5f, 3.5f, 5.5f, 3.5f, 1.5f };
+      const float cy = 13.5f;
+      for (int i = 0; i < 5; i++)
+      {
+         dl->AddLine(P(xs[i], cy - halfH[i]), P(xs[i], cy + halfH[i]), col, stroke);
+      }
+   }
+
    // Blank-icon-slot fallback: a crisp rounded rect with a subtle inner square
    // (matching Apple SF Symbols missing asset convention) so that any unset or
    // missing icon never silently leaves an empty rect.

@@ -29532,13 +29532,9 @@ namespace
          {
             zoomAroundMouse(wheel > 0.0f ? 1.15f : 0.87f);
          }
-         else if (std::abs(wheelH) > 0.001f)
+         else if (std::abs(wheelH) > 0.01f && std::abs(wheelH) > std::abs(wheel) * 0.5f)
          {
             gArrangeScrollBeats = std::max(0.0, gArrangeScrollBeats - (double)(wheelH * 40.0f / gArrangePixelsPerBeat));
-         }
-         else if (ImGui::GetIO().KeyShift && std::abs(wheel) > 0.001f)
-         {
-            gArrangeScrollBeats = std::max(0.0, gArrangeScrollBeats - (double)(wheel * 40.0f / gArrangePixelsPerBeat));
          }
       }
 
@@ -30373,7 +30369,7 @@ namespace
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            Tabler::DrawSliders(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
+            Tabler::DrawFileMusic(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
@@ -33106,6 +33102,8 @@ namespace
          ArrangeEdit([&]() { Arrange::RemoveLane(gArrange, laneToDelete); });
       }
 
+      const float fullTimelineBottom = std::max(lanesContentBottom, pinnedTopY + avail.y);
+
       // Draw loop region band (armed or mid-Shift+drag) behind everything
       // else. gArrange.settings.loop already holds the live preview range
       // while gArrangeShiftDraggingLoop is true (set above, in the ruler-drag
@@ -33118,7 +33116,7 @@ namespace
          {
             const float bx0 = std::max(rulerStartX, tickToX(bl.start));
             const float bx1 = std::min(rulerStartX + rulerWidth, tickToX(bl.end));
-            const float bandBottom = arrangeFullBottom + ImGui::GetScrollY();
+            const float bandBottom = fullTimelineBottom;
             const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 60) : IM_COL32(250, 204, 21, 40);
             const ImU32 bandBorder = IM_COL32(250, 204, 21, 200);
             // From the tick strip down: the marker strip above stays clear.
@@ -33133,7 +33131,7 @@ namespace
       // the real playhead stays put and a ghost follows the mouse; the
       // transport seeks once, on release (WP6).
       {
-         const float lineBottom = arrangeFullBottom + ImGui::GetScrollY();
+         const float lineBottom = fullTimelineBottom;
          const double playBeats = std::max(0.0, tr.Beats());
          if (playBeats >= startBeat && playBeats <= endBeat)
          {
@@ -33170,7 +33168,7 @@ namespace
       // guides at the same kLaneHeight spacing, all the way to the bottom
       // of the visible scroll area.
       {
-         const float emptyGridBottom = arrangeFullBottom;
+         const float emptyGridBottom = fullTimelineBottom;
          if (emptyGridBottom > lanesContentBottom)
          {
             dl->PushClipRect(ImVec2(headerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
