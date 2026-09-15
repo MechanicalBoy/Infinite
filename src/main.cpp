@@ -30124,25 +30124,33 @@ namespace
          // off the restored cursor, dragging every button after it (Play,
          // Rewind, Bars/Time) over there too.
          {
-            ImGui::PushStyleColor(ImGuiCol_Button, gArrangeShowViewport
-                                                       ? ImGui::GetColorU32(ImGuiCol_ButtonActive)
-                                                       : IM_COL32(0, 0, 0, 0));
+            const bool viewportWasOn = gArrangeShowViewport;
+            if (viewportWasOn)
+            {
+               ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+               ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AccentEmphasisPressed());
+            }
             if (ImGui::Button("##arrangeshowviewport", ImVec2(30, 0)))
                gArrangeShowViewport = !gArrangeShowViewport;
-            ImGui::PopStyleColor();
+            if (viewportWasOn)
+               ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip(viewportWasOn ? "Viewport Monitor: Visible" : "Toggle Viewport Monitor");
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            const bool hovered = ImGui::IsItemHovered();
+            const ImU32 icol = viewportWasOn ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
             ImDrawList* tdl = ImGui::GetWindowDrawList();
             const float bw = 13.0f, bh = 9.0f;
             ImVec2 tl(center.x - bw * 0.5f, center.y - bh * 0.5f - 1.0f);
             ImVec2 br(center.x + bw * 0.5f, center.y + bh * 0.5f - 1.0f);
-            if (gArrangeShowViewport)
-               tdl->AddRectFilled(tl, br, arrangeIconCol, 1.5f);
+            if (viewportWasOn)
+               tdl->AddRectFilled(tl, br, icol, 1.5f);
             else
-               tdl->AddRect(tl, br, arrangeIconCol, 1.5f, 0, 1.4f);
-            tdl->AddLine(ImVec2(center.x, br.y), ImVec2(center.x, br.y + 2.5f), arrangeIconCol, 1.4f);
-            tdl->AddLine(ImVec2(center.x - 3.5f, br.y + 2.5f), ImVec2(center.x + 3.5f, br.y + 2.5f), arrangeIconCol, 1.4f);
+               tdl->AddRect(tl, br, icol, 1.5f, 0, 1.4f);
+            tdl->AddLine(ImVec2(center.x, br.y), ImVec2(center.x, br.y + 2.5f), icol, 1.4f);
+            tdl->AddLine(ImVec2(center.x - 3.5f, br.y + 2.5f), ImVec2(center.x + 3.5f, br.y + 2.5f), icol, 1.4f);
          }
 
          // Play/Pause and Rewind as icon buttons, matching the main
@@ -30151,28 +30159,43 @@ namespace
          // plain text labels.
          ImGui::SameLine(0.0f, 14.0f);
          const bool arrangeIsPlaying = tr.IsPlaying();
+         if (arrangeIsPlaying)
+         {
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(16, 185, 129, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(5, 150, 105, 255));
+         }
          if (ImGui::Button("##arrangeplaybtn", ImVec2(30, 0)))
             tr.TogglePlay();
+         if (arrangeIsPlaying)
+            ImGui::PopStyleColor(2);
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(arrangeIsPlaying ? "Pause (Space)" : "Play (Space)");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             const float iconSize = (bmax.y - bmin.y) * 0.6f;
+            const bool hovered = ImGui::IsItemHovered();
+            const ImU32 icol = arrangeIsPlaying ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
             if (arrangeIsPlaying)
-               Tabler::DrawPlayerPause(ImGui::GetWindowDrawList(), center, iconSize, arrangeIconCol);
+               Tabler::DrawPlayerPause(ImGui::GetWindowDrawList(), center, iconSize, icol);
             else
-               Tabler::DrawPlayerPlay(ImGui::GetWindowDrawList(), center, iconSize, arrangeIconCol);
+               Tabler::DrawPlayerPlay(ImGui::GetWindowDrawList(), center, iconSize, icol);
          }
 
          ImGui::SameLine();
          if (ImGui::Button("##arrangerewindbtn", ImVec2(30, 0)))
             tr.Rewind();
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Return to Start (Enter)");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             const float iconSize = (bmax.y - bmin.y) * 0.72f;
-            Tabler::DrawPlayerRewind(ImGui::GetWindowDrawList(), center, iconSize, arrangeIconCol);
+            const bool hovered = ImGui::IsItemHovered();
+            const ImU32 icol = hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol;
+            Tabler::DrawPlayerRewind(ImGui::GetWindowDrawList(), center, iconSize, icol);
          }
 
          // Bars | Time: which unit the ruler, the clip popup and the loop
@@ -30190,11 +30213,16 @@ namespace
                   ImGui::SameLine();
                const bool on = shownUnit == u;
                if (on)
+               {
                   ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+                  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AccentEmphasisPressed());
+               }
                if (ImGui::Button(kUnitLabels[u], ImVec2(44.0f, 0.0f)))
                   ArrangeSetTimeDisplay(u);
                if (on)
-                  ImGui::PopStyleColor();
+                  ImGui::PopStyleColor(2);
+               if (ImGui::IsItemHovered())
+                  ImGui::SetTooltip(u == 0 ? "Switch display to Bars / Beats (BBT)" : "Switch display to Time (Minutes:Seconds)");
             }
             ImGui::PopStyleVar();
          }
@@ -30206,13 +30234,6 @@ namespace
          // move/trim, marker drags, the ruler scrub, the loop drag and the
          // arrow-key nudge.
          ImGui::SameLine(0.0f, 14.0f);
-         // Snapshot the pre-click state for the push/pop pair: the Button()
-         // call below can flip the snap mid-block, and popping based on the
-         // POST-click value would pop colors that were never pushed (toggling
-         // off->on this frame) or leak a push that's never popped (toggling
-         // on->off), corrupting the style stack for every widget drawn after
-         // it - which is what made the "+" buttons flash green on a loop/snap
-         // click.
          const bool snapWasOn = gArrange.settings.snapDivision > 0;
          if (snapWasOn)
          {
@@ -30226,16 +30247,19 @@ namespace
             else
                ArrangeSetSnap(std::max(1, gArrangeLastSnapDivision), gArrange.settings.snapTriplet);
          }
+         if (snapWasOn)
+            ImGui::PopStyleColor(2);
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(snapWasOn ? "Snap to Grid: On" : "Snap to Grid: Off");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             const float iconSize = (bmax.y - bmin.y) * 0.62f;
-            Tabler::DrawMagnet(ImGui::GetWindowDrawList(), center, iconSize,
-               snapWasOn ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+            const bool hovered = ImGui::IsItemHovered();
+            const ImU32 icol = snapWasOn ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+            Tabler::DrawMagnet(ImGui::GetWindowDrawList(), center, iconSize, icol);
          }
-         if (snapWasOn)
-            ImGui::PopStyleColor(2);
 
          // Grid division dropdown. The divisions are MusicTime's own
          // RateDivision entries (names and lengths from that one table -
@@ -30257,6 +30281,8 @@ namespace
             if (ImGui::Button(gridBtn, ImVec2(58.0f, 0.0f)))
                ImGui::OpenPopup("##arrgridpopup");
             PopDropdownStyle();
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip("Snap Grid Division");
             if (ImGui::BeginPopup("##arrgridpopup"))
             {
                for (const GridChoice& c : kGridChoices)
@@ -30281,16 +30307,19 @@ namespace
          }
          if (ImGui::Button("##arrangeloopbtn", ImVec2(30, 0)))
             ArrangeSetLoop(!loopNow.enabled, loopNow.start, loopNow.end);
+         if (loopWasOn)
+            ImGui::PopStyleColor(2);
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(loopWasOn ? "Loop Region: Enabled" : "Toggle Loop Region (Shift+drag on ruler)");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             const float iconSize = (bmax.y - bmin.y) * 0.55f;
-            Tabler::DrawRefresh(ImGui::GetWindowDrawList(), center, iconSize,
-               gArrange.settings.loop.enabled ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+            const bool hovered = ImGui::IsItemHovered();
+            const ImU32 icol = loopWasOn ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+            Tabler::DrawRefresh(ImGui::GetWindowDrawList(), center, iconSize, icol);
          }
-         if (loopWasOn)
-            ImGui::PopStyleColor(2);
 
          // Blade (scissors, B): while on, clicking a clip cuts it at the
          // mouse instead of selecting it; the cursor becomes the scissors.
@@ -30303,25 +30332,32 @@ namespace
          }
          if (ImGui::Button("##arrangebladebtn", ImVec2(30, 0)))
             gArrangeBladeOn = !gArrangeBladeOn;
+         if (bladeWasOn)
+            ImGui::PopStyleColor(2);
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(bladeWasOn ? "Blade Tool: Active (Click clip to cut)" : "Blade / Cut Tool (B)");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            Tabler::DrawScissors(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f,
-               bladeWasOn ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+            const bool hovered = ImGui::IsItemHovered();
+            const ImU32 icol = bladeWasOn ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+            Tabler::DrawScissors(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, icol);
          }
-         if (bladeWasOn)
-            ImGui::PopStyleColor(2);
 
          // Add Marker (M): drops one at the playhead, on the snap grid.
          ImGui::SameLine();
          if (ImGui::Button("##arrangemarkerbtn", ImVec2(30, 0)))
             ArrangeAddMarkerAtPlayhead();
+         if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Add Marker at Playhead (M)");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            Tabler::DrawFlag(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
+            const bool hovered = ImGui::IsItemHovered();
+            const ImU32 icol = hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol;
+            Tabler::DrawFlag(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, icol);
          }
 
          // Reset Row Heights: any track drag-resized off the default row
@@ -30335,7 +30371,6 @@ namespace
             for (const Arrange::Lane& lane : gArrange.lanes)
                if (lane.rowHeight > 0.0f) { anyResized = true; break; }
 
-            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
             ImGui::BeginDisabled(!anyResized);
             if (ImGui::Button("##arrangeresetrowh", ImVec2(30, 0)))
             {
@@ -30345,19 +30380,21 @@ namespace
                });
             }
             ImGui::EndDisabled();
-            ImGui::PopStyleColor();
             const ImVec2 rbmin = ImGui::GetItemRectMin();
             const ImVec2 rbmax = ImGui::GetItemRectMax();
             const ImVec2 rcenter((rbmin.x + rbmax.x) * 0.5f, (rbmin.y + rbmax.y) * 0.5f);
             ImDrawList* rdl = ImGui::GetWindowDrawList();
             const float barW = 12.0f;
-            const ImU32 barCol = anyResized ? arrangeIconCol : (arrangeIconCol & 0x60FFFFFFu);
+            const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+            const ImU32 barCol = anyResized
+               ? (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol)
+               : (arrangeIconCol & 0x60FFFFFFu);
             for (int bi = 0; bi < 3; bi++)
             {
                const float by = rcenter.y - 5.0f + (float)bi * 5.0f;
                rdl->AddLine(ImVec2(rcenter.x - barW * 0.5f, by), ImVec2(rcenter.x + barW * 0.5f, by), barCol, 1.4f);
             }
-            if (ImGui::IsItemHovered())
+            if (hovered)
                ImGui::SetTooltip(anyResized ? "Reset all track heights to default" : "All tracks already at default height");
          }
 
@@ -30365,19 +30402,25 @@ namespace
          // glyph rather than a plain list, so it reads distinctly from the
          // Reset Row Heights bars icon right beside it.
          ImGui::SameLine();
-         ImGui::PushStyleColor(ImGuiCol_Button, gArrangeClipSettingsPanelOpen
-                                                    ? ImGui::GetColorU32(ImGuiCol_ButtonActive)
-                                                    : IM_COL32(0, 0, 0, 0));
+         const bool inspectorWasOpen = gArrangeClipSettingsPanelOpen;
+         if (inspectorWasOpen)
+         {
+            ImGui::PushStyleColor(ImGuiCol_Button, AccentEmphasisSelected());
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AccentEmphasisPressed());
+         }
          if (ImGui::Button("##clipsettingstoggle", ImVec2(30, 0)))
             gArrangeClipSettingsPanelOpen = !gArrangeClipSettingsPanelOpen;
-         ImGui::PopStyleColor();
+         if (inspectorWasOpen)
+            ImGui::PopStyleColor(2);
          if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Clip / Track Inspector");
+            ImGui::SetTooltip(inspectorWasOpen ? "Clip / Track Inspector: Open" : "Toggle Clip / Track Inspector");
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            Tabler::DrawFileMusic(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, arrangeIconCol);
+            const bool hovered = ImGui::IsItemHovered();
+            const ImU32 icol = inspectorWasOpen ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+            Tabler::DrawFileMusic(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, icol);
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
