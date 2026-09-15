@@ -18,8 +18,27 @@ MIDINOTESTREAMTEST|stubbed: ALSA MIDI sequencer (P2)
 # livelock in MediaLinux.cpp's readahead backward-seek check comparing target
 # against the decode thread's own buffer-ahead progress instead of what was
 # actually delivered to the caller - fixed, see VideoHandle::deliveredSeconds).
-VIDEOAUDIOTEST|real decoder/recorder now; fails a duration check because the recorded audio track is ~2.0s (matches the 60-frame/30fps video) while the test expects ~1.5s (the tone clip's own length) - needs an owner decision on whether 1.5s or full-track-length is the correct expectation, and if 1.5s, why Linux's capture runs the headless render loop at real wall-clock 30fps pace (P3)
-VIDEOSPEEDTEST|real decoder/recorder now; reverse/fast-forward playback produces far fewer live frame updates than required (~8-12 of 60 vs >30 needed) because reverse stepping re-seeks to the nearest keyframe and redecodes forward to target on every single frame, and this short single-GOP clip has no interior keyframes or reverse-frame cache to make that cheap (P3)
+#
+# VIDEOAUDIOTEST is implemented and passing as of this phase. It was never a
+# Linux platform bug: WriteFileAudioTrack loops a shorter file-audio source to
+# fill the whole recorded video's duration on all three platforms (confirmed
+# byte-for-byte identical intent in Platform.mm's AppendAudioUpToLocked and
+# MediaWin.cpp's WriteFileAudioTrack), and AudioFileNode::loop defaults to
+# true - so the test's own hardcoded `expectedDuration = 1.5` (the tone
+# clip's own length) was simply wrong; fixed in src/main.cpp to compare
+# against the actual recorded video duration instead.
+#
+# VIDEOSPEEDTEST is implemented and passing as of this phase. Root cause:
+# every single-frame reverse/fast-scrub step re-seeks and pays
+# av_seek_frame/avcodec_flush_buffers overhead (confirmed via instrumentation
+# that a smaller GOP does not help - it made FrameUpdateCount worse despite
+# shrinking the redecode distance from the nearest keyframe). Fixed by
+# porting Platform.mm's existing reverse-playback frame cache design
+# (kReverseLookbackSeconds / frameCache / TryUseCache) to MediaLinux.cpp's
+# threaded decoder - macOS already needed this exact mechanism for smooth
+# reverse playback, confirming it is a genuine cross-platform requirement
+# for a software decoder without hardware seek acceleration, not a
+# Linux-specific misconfiguration.
 
 # Phase 4: VST3 / Plugins
 PLUGINDRAGTEST|stubbed: plugin host / VST3 (P4)

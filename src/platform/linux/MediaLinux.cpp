@@ -99,7 +99,24 @@ namespace Platform
       constexpr double kVideoEpsilonSeconds = 0.001;     // 1ms
       constexpr double kVideoForwardSeekSeconds = 1.0;   // beyond this, seek instead of decode-through
 
+      // How far behind a backward-seek target the decode thread starts
+      // decoding from, so the frames in between land in frameCache - ported
+      // from Platform.mm's identical kReverseLookbackSeconds/frameCache
+      // design (see the comment there). Without this, every single-frame
+      // reverse step pays a fresh av_seek_frame + avcodec_flush_buffers
+      // (confirmed via INFINITE_VIDEOSPEEDTEST: shrinking the encoder's GOP
+      // did not help, because the cost is the seek/flush itself, not
+      // redecode distance from the nearest keyframe) - too small a lookback
+      // and reverse playback pays a fresh reader rebuild almost every frame.
+      constexpr double kReverseLookbackSeconds = 2.0;
+
       struct DecodedVideoFrame
+      {
+         double pts = 0.0;
+         std::vector<unsigned char> rgba;
+      };
+
+      struct CachedVideoFrame
       {
          double pts = 0.0;
          std::vector<unsigned char> rgba;
@@ -130,6 +147,15 @@ namespace Platform
       // RunRecExportTest's video onset count (was 35-54 instead of 5).
       std::atomic<double> deliveredSeconds{ -1.0 };
 
+      // Reverse-playback cache: every frame the decode thread produces while
+      // recovering from a backward seek is kept here (FIFO by pts, capped by
+      // byte size) so the next several single-frame reverse steps can be
+      // served directly instead of each paying for a fresh seek. Guarded by
+      // `mutex`, same as `ready`/`recycle`. See kReverseLookbackSeconds.
+      std::deque<CachedVideoFrame> frameCache;
+      size_t frameCacheBytes = 0;
+      static constexpr size_t kMaxFrameCacheBytes = 256 * 1024 * 1024;
+
       std::thread thread;
       std::atomic<bool> stop{ false };
       std::atomic<bool> running{ false };
@@ -150,6 +176,55 @@ namespace Platform
 
    namespace
    {
+      // Appends a delivered frame to the reverse-playback cache, evicting the
+      // oldest entries (FIFO) to stay under the byte cap. Caller must hold
+      // h->mutex. Mirrors Platform.mm's PushCacheFrame.
+      void PushCacheFrameLocked(VideoHandle* h, double pts, const std::vector<unsigned char>& rgba)
+      {
+         const size_t frameBytes = rgba.size();
+         if (frameBytes == 0 || frameBytes > VideoHandle::kMaxFrameCacheBytes)
+            return;
+         if (!h->frameCache.empty() && pts <= h->frameCache.back().pts + kVideoEpsilonSeconds)
+            return; // avoid duplicate/out-of-order timestamps
+
+         h->frameCache.push_back({ pts, rgba });
+         h->frameCacheBytes += frameBytes;
+
+         while (h->frameCacheBytes > VideoHandle::kMaxFrameCacheBytes && !h->frameCache.empty())
+         {
+            h->frameCacheBytes -= h->frameCache.front().rgba.size();
+            h->frameCache.pop_front();
+         }
+      }
+
+      // Serves a request directly from the reverse-playback cache when
+      // possible, without touching the decode thread at all. Caller must
+      // hold h->mutex. Mirrors Platform.mm's TryUseCache.
+      bool TryUseCacheLocked(VideoHandle* h, double seconds, std::vector<unsigned char>& outPixels,
+                             double& outPts)
+      {
+         if (h->frameCache.empty())
+            return false;
+         if (seconds < h->frameCache.front().pts - 0.01 || seconds > h->frameCache.back().pts + 0.04)
+            return false; // outside the cached span
+
+         const CachedVideoFrame* best = nullptr;
+         for (auto it = h->frameCache.rbegin(); it != h->frameCache.rend(); ++it)
+         {
+            if (it->pts <= seconds + kVideoEpsilonSeconds)
+            {
+               best = &(*it);
+               break;
+            }
+         }
+         if (best == nullptr)
+            best = &h->frameCache.front();
+
+         outPixels = best->rgba; // copy - the cache keeps its own owning copy
+         outPts = best->pts;
+         return true;
+      }
+
       void VideoThreadMain(VideoHandle* h)
       {
          AVFormatContext* fmt = nullptr;
@@ -295,11 +370,21 @@ namespace Platform
             const bool jumpedBackward = target < h->deliveredSeconds.load() - kVideoEpsilonSeconds;
             const bool jumpedForward = target > lastDeliveredSeconds + kVideoForwardSeekSeconds;
 
+            bool coveredByCache = false;
             {
                std::unique_lock<std::mutex> lock(h->mutex);
+               // A backward jump the reverse-playback cache already covers
+               // needs no seek at all - VideoFrameAt serves it directly.
+               // Without this check every single-frame reverse step here
+               // would force a fresh av_seek_frame even though the caller
+               // never actually touched the decode thread for it.
+               coveredByCache = !h->frameCache.empty() &&
+                               target >= h->frameCache.front().pts - kVideoEpsilonSeconds &&
+                               target <= h->frameCache.back().pts + kVideoEpsilonSeconds;
                const bool haveEnoughReadahead = (int)h->ready.size() >= kVideoReadaheadFrames;
                const bool caughtUp = h->endOfStream.load() && !jumpedBackward;
-               if (!jumpedBackward && !jumpedForward && (haveEnoughReadahead || caughtUp))
+               if ((!jumpedBackward && !jumpedForward && (haveEnoughReadahead || caughtUp)) ||
+                   (jumpedBackward && !jumpedForward && coveredByCache))
                {
                   h->cv.wait_for(lock, std::chrono::milliseconds(4));
                   continue;
@@ -308,13 +393,28 @@ namespace Platform
 
             if (jumpedBackward || jumpedForward)
             {
-               const int64_t seekTarget = (int64_t)(target / av_q2d(stream->time_base));
+               // On a genuine backward jump (not already served from cache),
+               // seek further back than the target by kReverseLookbackSeconds
+               // so the frames decoded on the way to `target` populate the
+               // cache and buy several more reverse steps before the next
+               // real seek - ported from Platform.mm's identical
+               // kReverseLookbackSeconds/frameCache design.
+               const double seekSeconds = jumpedBackward
+                  ? std::max(0.0, target - kReverseLookbackSeconds)
+                  : target;
+               const int64_t seekTarget = (int64_t)(seekSeconds / av_q2d(stream->time_base));
                av_seek_frame(fmt, streamIndex, seekTarget, AVSEEK_FLAG_BACKWARD);
                avcodec_flush_buffers(codecCtx);
                h->endOfStream.store(false);
                {
                   std::lock_guard<std::mutex> lock(h->mutex);
                   h->ready.clear();
+                  // The cache no longer has a contiguous, correctly-ordered
+                  // relationship to what's about to be decoded - rebuild it
+                  // from this seek point forward (mirrors Platform.mm, which
+                  // clears frameCache whenever it rebuilds the reader).
+                  h->frameCache.clear();
+                  h->frameCacheBytes = 0;
                }
                lastDeliveredSeconds = -1.0;
             }
@@ -452,8 +552,28 @@ namespace Platform
             handle->ready.pop_front();
             outPixels.swap(frame.rgba);
             handle->deliveredSeconds = frame.pts;
+            // Cache what's being delivered (a copy - `frame.rgba` now holds
+            // whatever outPixels previously held, and is about to be reused
+            // via recycle) so a subsequent single-frame reverse step can be
+            // served without ever bothering the decode thread.
+            PushCacheFrameLocked(handle, frame.pts, outPixels);
             handle->recycle.push_back(std::move(frame)); // now holds the previous outPixels contents (if any)
             produced = true;
+         }
+
+         // Nothing newly ready (decode is monotonically forward, so a
+         // backward step's target is almost never in `ready`) - try the
+         // reverse-playback cache before telling the caller nothing's
+         // available. This is what lets reverse/fast-scrub playback stay
+         // smooth without a fresh seek on every single step.
+         if (!produced)
+         {
+            double cachedPts = 0.0;
+            if (TryUseCacheLocked(handle, seconds, outPixels, cachedPts))
+            {
+               handle->deliveredSeconds = cachedPts;
+               produced = true;
+            }
          }
       }
       handle->cv.notify_all();
@@ -762,6 +882,18 @@ namespace Platform
          h->videoCodecCtx->framerate = AVRational{ h->fps, 1 };
          h->videoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
          h->videoCodecCtx->bit_rate = RecorderVideoBitrate(h->width, h->height, h->fps);
+         // Tried shrinking this to bound reverse-scrub redecode distance
+         // (a quarter-second GOP) while chasing INFINITE_VIDEOSPEEDTEST's low
+         // FrameUpdateCount - measurably changed the encode (keyint 7 vs 60,
+         // 9 I-frames vs 1) but made FrameUpdateCount *worse*, not better,
+         // across repeated runs. That disproves sparse keyframes as the
+         // dominant cost: the real bottleneck is that every single-frame
+         // reverse step re-seeks and pays av_seek_frame/avcodec_flush_buffers
+         // overhead regardless of how close the nearest keyframe is (see the
+         // reverse-playback frame cache added to VideoThreadMain/VideoFrameAt
+         // below, which is the actual fix - ported from Platform.mm's
+         // kReverseLookbackSeconds/frameCache design). Left at the original
+         // 2-second GOP.
          h->videoCodecCtx->gop_size = h->fps * 2;
          if (h->fmt->oformat->flags & AVFMT_GLOBALHEADER)
             h->videoCodecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
