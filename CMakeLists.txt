@@ -182,6 +182,100 @@ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
 endif()
 
+# FFmpeg, for Platform::VideoOpen/RecorderStart/CameraOpen's decode/encode/mux
+# surface on Linux (src/platform/linux/MediaLinux.cpp) - macOS uses
+# AVFoundation and Windows uses Media Foundation, both OS-supplied; Linux has
+# no OS-supplied decoder/encoder, so this is the one platform where the app
+# itself bundles a codec library. Fetched as prebuilt shared libraries from
+# BtbN/FFmpeg-Builds, the same shape as the ONNX Runtime FetchContent above.
+#
+# ---- Licence decision (see docs/plans/linux/phase-03-media.md) -----------
+# INFINITE_ENABLE_GPL_CODECS gates which FFmpeg build is linked:
+#   ON  (default on Linux): the "-gpl-shared" build, compiled with
+#       --enable-gpl and libx264 linked in. This is what lets the recorder
+#       write H.264 video, matching macOS (VideoToolbox) and Windows (Media
+#       Foundation) - both OS-supplied H.264 encoders whose patent licence
+#       was paid by the OS vendor. Bundling x264 makes this project the
+#       distributor of an H.264 encoder for the first time on Linux; the
+#       reasoning for why that's still the right default (posture parity
+#       with OBS/Kdenlive/Shotcut/HandBrake/Blender, and why silently
+#       recording a worse file than macOS/Windows would itself be a defect)
+#       is in phase-03-media.md's "Licence decision" section, not repeated
+#       here. The resulting Infinite binary is GPLv3 - see LICENSE.
+#   OFF: the "-lgpl-shared" build, no --enable-gpl, no x264. Required to
+#       exist and to actually work (not just compile) for distros that
+#       cannot ship a bundled H.264 encoder (Fedora, RHEL, Flathub's main
+#       repo) - see LICENSE's promise about INFINITE_ENABLE_VST3=OFF, which
+#       this mirrors. RecorderStart's H.264 path is unavailable in this
+#       configuration; video decode/playback (no libx264 needed for that)
+#       still works, since decoding H.264 needs no patent-encumbered encoder.
+#
+# ---- Source offer (GPL section 6) -----------------------------------------
+# BtbN distributes prebuilt binaries only; the obligation to provide
+# corresponding source for a GPL-linked binary falls on whoever distributes
+# THAT BINARY - this project, not BtbN. So the exact upstream FFmpeg and
+# x264 SOURCE this build corresponds to is pinned here too, independent of
+# BtbN's own build pipeline, and documented in THIRD_PARTY_NOTICES:
+#   FFmpeg 8.1 source:  https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz
+#     SHA256 b072aed6871998cce9b36e7774033105ca29e33632be5b6347f3206898e0756a
+#   x264 source (stable branch, commit b35605ace3ddf7c1a5d67a2eb553f034aef41d55,
+#   the commit BtbN's n8.1 GPL build was built against):
+#     https://code.videolan.org/videolan/x264/-/archive/b35605ace3ddf7c1a5d67a2eb553f034aef41d55/x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz
+#     SHA256 cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9
+# These are documentation pins, not build inputs - this CMakeLists links the
+# prebuilt BtbN binaries above, it does not build FFmpeg/x264 from source.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    option(INFINITE_ENABLE_GPL_CODECS "Link GPL FFmpeg + libx264 for H.264 recording on Linux (OFF = LGPL FFmpeg, no H.264 encode)" ON)
+
+    set(FFMPEG_VERSION "n8.1")
+    set(FFMPEG_LINUX_ARCH "linux64")
+    set(FFMPEG_GPL_SHA256 "9c3319a2d5cafb0bc51c532dec0b35ff0c7c4c28fea0afb90c40a79832501647")
+    set(FFMPEG_LGPL_SHA256 "4fe9bc3b32bcb5bd0ce16f0035c16608baad018bacd8f0abc0942157dbdf52c2")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+        set(FFMPEG_LINUX_ARCH "linuxarm64")
+        set(FFMPEG_GPL_SHA256 "14c2caa732cf53ee1bc6d71e8991db54dcb9535f3bca636b40096aed3bd9fdc8")
+        set(FFMPEG_LGPL_SHA256 "082bd6b73e54506fd6edaf5f1098a8f004c03b8d354deeb83e80e5ff8c6b7044")
+    endif()
+
+    if(INFINITE_ENABLE_GPL_CODECS)
+        set(FFMPEG_LICENCE_TAG "gpl")
+        set(FFMPEG_SHA256 "${FFMPEG_GPL_SHA256}")
+    else()
+        set(FFMPEG_LICENCE_TAG "lgpl")
+        set(FFMPEG_SHA256 "${FFMPEG_LGPL_SHA256}")
+    endif()
+    set(FFMPEG_ARCHIVE_NAME "ffmpeg-${FFMPEG_VERSION}-latest-${FFMPEG_LINUX_ARCH}-${FFMPEG_LICENCE_TAG}-shared-8.1")
+
+    FetchContent_Declare(
+        ffmpeg_linux
+        URL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${FFMPEG_ARCHIVE_NAME}.tar.xz"
+        URL_HASH SHA256=${FFMPEG_SHA256}
+    )
+    FetchContent_MakeAvailable(ffmpeg_linux)
+
+    set(FFMPEG_INCLUDE_DIR "${ffmpeg_linux_SOURCE_DIR}/include")
+    set(FFMPEG_LIB_DIR "${ffmpeg_linux_SOURCE_DIR}/lib")
+    set(FFMPEG_LIBS
+        "${FFMPEG_LIB_DIR}/libavformat.so"
+        "${FFMPEG_LIB_DIR}/libavcodec.so"
+        "${FFMPEG_LIB_DIR}/libavutil.so"
+        "${FFMPEG_LIB_DIR}/libswscale.so"
+        "${FFMPEG_LIB_DIR}/libswresample.so"
+    )
+    # Every libav*.so.N / libsw*.so.N.M.P file, so the actual runtime .so's
+    # (not just the unversioned dev symlinks CMake links against) ship next to
+    # the binary - dlopen/ld.so at runtime resolves by soname, not by the
+    # unversioned name.
+    file(GLOB FFMPEG_SO_FILES
+        "${FFMPEG_LIB_DIR}/libavformat.so*"
+        "${FFMPEG_LIB_DIR}/libavcodec.so*"
+        "${FFMPEG_LIB_DIR}/libavutil.so*"
+        "${FFMPEG_LIB_DIR}/libswscale.so*"
+        "${FFMPEG_LIB_DIR}/libswresample.so*"
+    )
+    message(STATUS "Linux FFmpeg: ${FFMPEG_ARCHIVE_NAME} (INFINITE_ENABLE_GPL_CODECS=${INFINITE_ENABLE_GPL_CODECS})")
+endif()
+
 # VST3 plugin hosting backend. On by default: the Steinberg VST3 SDK is
 # GPLv3-or-proprietary, and linking it makes the distributed binary GPLv3
 # too (see LICENSE). Do not flip this default without the user's explicit
@@ -797,7 +891,7 @@ elseif(APPLE)
         ${SYPHON_DIR}/src
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_include_directories(Infinite PRIVATE "${ONNXRUNTIME_INCLUDE_DIR}")
+    target_include_directories(Infinite PRIVATE "${ONNXRUNTIME_INCLUDE_DIR}" "${FFMPEG_INCLUDE_DIR}")
     target_link_libraries(Infinite PRIVATE
         Threads::Threads
         ${CMAKE_DL_LIBS}
@@ -806,7 +900,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         ${FONTCONFIG_LIBRARIES}
         ${FREETYPE_LIBRARIES}
         "${ONNXRUNTIME_LIB}"
+        ${FFMPEG_LIBS}
     )
+    if(INFINITE_ENABLE_GPL_CODECS)
+        target_compile_definitions(Infinite PRIVATE INFINITE_ENABLE_GPL_CODECS=1)
+    endif()
     set_target_properties(Infinite PROPERTIES
         BUILD_RPATH_USE_ORIGIN ON
         INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib"
@@ -830,12 +928,38 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${ONNXRUNTIME_SO_FILES}
                 "$<TARGET_FILE_DIR:Infinite>/"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${FFMPEG_SO_FILES}
+                "$<TARGET_FILE_DIR:Infinite>/"
         COMMAND ${CMAKE_COMMAND} -E make_directory
                 "$<TARGET_FILE_DIR:Infinite>/assets/models"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/u2netp.onnx"
                 "$<TARGET_FILE_DIR:Infinite>/assets/models/u2netp.onnx"
         COMMENT "Copying bundled fonts, icon, ONNX Runtime libraries and model next to Infinite")
+    # THIRD_PARTY_NOTICES condition 3 / GPL source-offer condition 2: the
+    # FFmpeg and x264 licence texts ship inside the bundle wherever the
+    # Linux distributable carries licences, next to the .so files they cover
+    # (see ${FFMPEG_ARCHIVE_NAME}/LICENSE.txt for the build's own declared
+    # licence, and THIRD_PARTY_NOTICES at the repo root for the full pin).
+    add_custom_command(TARGET Infinite POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:Infinite>/licenses/ffmpeg"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:Infinite>/licenses/x264"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg/COPYING.GPLv3"
+                "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg/COPYING.GPLv2"
+                "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg/COPYING.LGPLv2.1"
+                "${ffmpeg_linux_SOURCE_DIR}/LICENSE.txt"
+                "$<TARGET_FILE_DIR:Infinite>/licenses/ffmpeg/"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/third_party/x264/COPYING"
+                "$<TARGET_FILE_DIR:Infinite>/licenses/x264/"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES"
+                "$<TARGET_FILE_DIR:Infinite>/licenses/"
+        COMMENT "Copying FFmpeg/x264 third-party licence texts next to Infinite")
 endif()
 
 # imgui-node-editor 0.9.1 ships its own GetKeyIndex() shim, which collides with

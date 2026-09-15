@@ -59235,6 +59235,92 @@ void ApplyModulationAndPalette(int frameId)
    }
 }
 
+// ===================================================== INFINITE_CAMERACONVTEST
+#if defined(__linux__)
+namespace Platform { namespace CameraLinuxTest {
+   // Declared in CameraLinux.cpp, exposed only for this test - see the file
+   // comment there ("Synthetic-buffer self-test").
+   void YuyvToRgbaForTest(const unsigned char* yuyv, int width, int height,
+                          std::vector<unsigned char>& outRgba);
+   bool MjpegToRgbaForTest(const unsigned char* data, size_t size, int expectedWidth, int expectedHeight,
+                           std::vector<unsigned char>& outRgba);
+} }
+
+// Exercises CameraLinux.cpp's YUYV->RGBA and MJPEG->RGBA converters on
+// hand-built buffers, since neither CI nor any container here has a real
+// V4L2 camera device to capture from.
+int RunCameraConvTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+   bool ok = true;
+
+   // --- YUYV -> RGBA -------------------------------------------------------
+   // A 2x2 frame (one packed row of two YUYV pixel pairs, Y0 U Y1 V) built
+   // from BT.601 values approximating a solid, saturated red.
+   {
+      const int w = 2, h = 2;
+      const unsigned char yuyv[] = {
+         76, 84, 76, 255,   // row 0: Y0 U Y1 V
+         76, 84, 76, 255    // row 1
+      };
+      std::vector<unsigned char> rgba;
+      Platform::CameraLinuxTest::YuyvToRgbaForTest(yuyv, w, h, rgba);
+      const bool sizeOk = rgba.size() == (size_t)w * h * 4;
+      bool colorOk = false;
+      if (sizeOk)
+      {
+         // Loose bounds - the point is that the converter ran and produced
+         // a strongly red, weakly green/blue opaque pixel, not an exact
+         // BT.601 rounding match.
+         const unsigned char r = rgba[0], g = rgba[1], b = rgba[2], a = rgba[3];
+         colorOk = r > 150 && g < 100 && b < 100 && a == 255;
+         printf("yuyv->rgba: r=%d g=%d b=%d a=%d\n", r, g, b, a);
+      }
+      printf("%s\n", (sizeOk && colorOk) ? "CAMERACONVTEST YUYV OK" : "CAMERACONVTEST YUYV FAIL - BUG");
+      ok = ok && sizeOk && colorOk;
+   }
+
+   // --- MJPEG -> RGBA -------------------------------------------------------
+   // Encodes a small synthetic solid-color image to a real in-memory JPEG
+   // with stb_image_write, then decodes it back through the exact converter
+   // CameraLinux.cpp's capture thread uses for MJPEG-format webcams.
+   {
+      const int w = 8, h = 8;
+      std::vector<unsigned char> rgb((size_t)w * h * 3);
+      for (size_t i = 0; i < rgb.size(); i += 3)
+      {
+         rgb[i + 0] = 32;
+         rgb[i + 1] = 200;
+         rgb[i + 2] = 32;
+      }
+      std::vector<unsigned char> jpeg;
+      auto writeFn = [](void* context, void* data, int size) {
+         auto* out = static_cast<std::vector<unsigned char>*>(context);
+         const unsigned char* bytes = static_cast<const unsigned char*>(data);
+         out->insert(out->end(), bytes, bytes + size);
+      };
+      stbi_write_jpg_to_func(writeFn, &jpeg, w, h, 3, rgb.data(), 90);
+
+      std::vector<unsigned char> rgba;
+      const bool decoded = !jpeg.empty() &&
+         Platform::CameraLinuxTest::MjpegToRgbaForTest(jpeg.data(), jpeg.size(), w, h, rgba);
+      bool colorOk = false;
+      if (decoded && rgba.size() == (size_t)w * h * 4)
+      {
+         const unsigned char r = rgba[0], g = rgba[1], b = rgba[2];
+         // JPEG is lossy - allow generous slack around the source color.
+         colorOk = std::abs((int)r - 32) < 40 && std::abs((int)g - 200) < 40 && std::abs((int)b - 32) < 40;
+         printf("mjpeg->rgba: r=%d g=%d b=%d\n", r, g, b);
+      }
+      printf("%s\n", (decoded && colorOk) ? "CAMERACONVTEST MJPEG OK" : "CAMERACONVTEST MJPEG FAIL - BUG");
+      ok = ok && decoded && colorOk;
+   }
+
+   printf("%s\n", ok ? "CAMERACONVTEST OK" : "CAMERACONVTEST FAIL - BUG");
+   return ok ? 0 : 1;
+}
+#endif // __linux__
+
 // ==================================================== INFINITE_SYPHONPATCHTEST
 int RunSyphonPatchTest()
 {
@@ -59462,6 +59548,11 @@ int main(int argc, char** argv)
 
    if (getenv("INFINITE_SYPHONPATCHTEST") != nullptr)
       return RunSyphonPatchTest();
+
+#if defined(__linux__)
+   if (getenv("INFINITE_CAMERACONVTEST") != nullptr)
+      return RunCameraConvTest();
+#endif
 
    // Out-of-process half of the plugin scan: describe ONE bundle and exit. The
    // parent (Platform::EnumerateVST3Plugins) re-execs us once per bundle so
@@ -75421,6 +75512,7 @@ int main(int argc, char** argv)
       if (getenv("INFINITE_VIDEOAUDIOTEST") != nullptr)
       {
          auto* out = static_cast<OutputNode*>(gNodes[1].node.get());
+         static int sVaRecordedFrames = 0;
          if (frameId == 2)
          {
             const bool started = out->StartRecording(TmpPath("infinite_videoaudiotest.mov"));
@@ -75429,6 +75521,7 @@ int main(int argc, char** argv)
          if (frameId == 62) // ~2 seconds at 30fps, comfortably past the 1.5s tone
          {
             const int frames = out->RecordedFrames();
+            sVaRecordedFrames = frames;
             out->StopRecording(); // blocks until AVAssetWriter finishes, so the file is complete by frame 64
             printf("recorded %d frames, status: %s\n", frames, out->RecordStatus().c_str());
          }
@@ -75481,7 +75574,15 @@ int main(int argc, char** argv)
             printf("tone check: 440Hz magnitude=%.1f vs 5000Hz control=%.1f  %s\n",
                    toneMag, noiseMag, toneOk ? "TONE PRESENT" : "TONE MISSING");
 
-            const double expectedDuration = 1.5;
+            // The recorded audio track's real length is the *video's* duration
+            // (60 frames / recordFps), not the 1.5s tone clip's own length:
+            // AudioFileNode::loop defaults to true, and all three platforms'
+            // recorders (Platform.mm's AppendAudioUpToLocked, MediaWin.cpp's
+            // and MediaLinux.cpp's WriteFileAudioTrack) deliberately loop a
+            // shorter file-audio source to fill the whole take rather than
+            // truncate it early - confirmed identical across all three while
+            // chasing a spurious Linux-only "1.5s" duration mismatch here.
+            const double expectedDuration = (double)sVaRecordedFrames / std::max(1, out->recordFps);
             const bool durationOk = decoded && std::fabs((double)buf.numFrames / std::max(1.0, buf.sampleRate) - expectedDuration) < 0.3;
 
             const bool ok = opened && video->HasAudio() && decoded && buf.channels >= 1 && durationOk && toneOk;
