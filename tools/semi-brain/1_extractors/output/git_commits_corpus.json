@@ -1,5 +1,21 @@
 [
   {
+    "hash": "63a08ceea57e2218a4620c96fadcf7565418e9d9",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 00:40:26 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "arrange",
+      "title": "fix(arrange): advance sourceOffsetSeconds on start-trim and fix Render3D cache-hit upload counter",
+      "description": "advance sourceOffsetSeconds on start-trim and fix Render3D cache-hit upload counter",
+      "bullets": [],
+      "body": "",
+      "raw": "fix(arrange): advance sourceOffsetSeconds on start-trim and fix Render3D cache-hit upload counter"
+    },
+    "stat": "src/arrange/ArrangeModel.cpp                       |   7 +\n src/main.cpp                                       |  12 +-\n src/nodes/Geometry3DNodes.cpp                      |   3 +\n .../1_extractors/output/git_commits_corpus.json    | 439 +++++++++++++++++++\n .../1_extractors/output/recovered_docs_corpus.json | 476 ++++++++++-----------\n .../3_datasets/train_dpo_preference.jsonl          |   4 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 174 ++++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 174 ++++----\n 8 files changed, 901 insertions(+), 388 deletions(-)"
+  },
+  {
     "hash": "9874b80451aa6573f53932850a27e19227a01d9a",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
