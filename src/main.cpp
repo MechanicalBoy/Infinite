@@ -108,6 +108,7 @@ namespace
 #include "core/field/BackendRegister.h"
 #include "core/field/PinTable.h"
 #include "core/ExprGlobals.h"
+#include "core/AISkillContent.h"
 #include "core/Palette.h"
 #include "core/Patch.h"
 #include "arrange/ArrangeModel.h"
@@ -39695,6 +39696,21 @@ namespace
       }
    }
 
+   // Writes `content` to `folder/filename`, for the "Install AI Skill"
+   // buttons in Settings > Field Language and Settings > Expression Globals.
+   // Returns a short status line for inline feedback next to the button -
+   // there's no app-wide toast system to hook into, so the button's own row
+   // is where success/failure has to show up.
+   std::string SaveAISkillFile(const std::string& folder, const char* filename, const char* content)
+   {
+      const std::string path = folder + "/" + filename;
+      std::ofstream file(path);
+      if (!file.is_open())
+         return "Couldn't write " + path;
+      file << content;
+      return "Saved " + path;
+   }
+
    void DrawSettingsWindow(bool* open)
    {
       // No SetNextWindowPos meant this took ImGui's default cascade position
@@ -40264,6 +40280,21 @@ namespace
                Tabler::DrawX(dl, center, iconSize, col);
             }
 
+            static std::string sFieldSkillStatus;
+            if (ImGui::Button("Install AI Skill##fieldLanguage"))
+            {
+               const std::string folder = Platform::OpenFolderDialog("Choose folder for the Field Language AI skill file");
+               if (!folder.empty())
+                  sFieldSkillStatus = SaveAISkillFile(folder, "infinite-field-language.md", AISkillContent::kFieldLanguageMarkdown);
+            }
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip("Save a Field-language reference file you can hand to any AI assistant\n(or drop into ~/.claude/skills/) so it can write Field kernels for you.");
+            if (!sFieldSkillStatus.empty())
+            {
+               ImGui::SameLine();
+               ImGui::TextDisabled("%s", sFieldSkillStatus.c_str());
+            }
+
             ImGui::Spacing();
             // See DrawModMatrixDocked's inner-content child for why
             // AlwaysUseWindowPadding is needed alongside Border now.
@@ -40555,6 +40586,21 @@ namespace
                ImGui::TextDisabled("bound       t = transport seconds, pi");
                ImGui::TextDisabled("in a param  lo / hi = that param's own range, plus its siblings");
                ImGui::TextDisabled("            a sibling of the same name shadows a global");
+            }
+
+            static std::string sExprSkillStatus;
+            if (ImGui::Button("Install AI Skill##exprGlobals"))
+            {
+               const std::string folder = Platform::OpenFolderDialog("Choose folder for the Expression Globals AI skill file");
+               if (!folder.empty())
+                  sExprSkillStatus = SaveAISkillFile(folder, "infinite-expression-globals.md", AISkillContent::kExpressionGlobalsMarkdown);
+            }
+            if (ImGui::IsItemHovered())
+               ImGui::SetTooltip("Save a reference file you can hand to any AI assistant\n(or drop into ~/.claude/skills/) so it can write '=' expressions and Globals for you.");
+            if (!sExprSkillStatus.empty())
+            {
+               ImGui::SameLine();
+               ImGui::TextDisabled("%s", sExprSkillStatus.c_str());
             }
             ImGui::Separator();
 
