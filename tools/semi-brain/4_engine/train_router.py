@@ -32,13 +32,15 @@ def train():
         "--train",
         "--data", str(DATA_DIR),
         "--adapter-path", str(ADAPTER_DIR),
-        "--iters", "200",
-        "--batch-size", "4",
+        "--iters", "300",
+        "--batch-size", "1",
         "--num-layers", "8",
         "--learning-rate", "1e-4",
         "--steps-per-report", "20",
+        "--steps-per-eval", "50",
         "--save-every", "50",
-        "--max-seq-length", "512"
+        "--max-seq-length", "512",
+        "--grad-checkpoint"
     ]
     
     subprocess.run(cmd, check=True)

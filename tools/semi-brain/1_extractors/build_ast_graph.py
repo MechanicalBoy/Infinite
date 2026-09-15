@@ -96,6 +96,33 @@ def extract_symbols_and_calls(file_path: Path):
                 current_class_stack.pop()
                 return
 
+        # 2b. Namespace definitions (same scope-stack pattern as class/struct)
+        elif node.type == "namespace_definition":
+            name_node = node.child_by_field_name("name")
+            body_node = node.child_by_field_name("body")
+            if name_node:
+                ns_name = get_node_text(name_node, source_bytes)
+                current_class_stack.append(ns_name)
+                prefix = "::".join(current_class_stack)
+                symbols[prefix] = {
+                    "kind": "namespace",
+                    "name": ns_name,
+                    "full_name": prefix,
+                    "file": rel_path,
+                    "line": node.start_point[0] + 1,
+                    "subsystem": subsystem
+                }
+                if body_node:
+                    for child in body_node.children:
+                        walk(child, current_func)
+                current_class_stack.pop()
+                return
+            # Anonymous namespace: recurse without pushing a scope name
+            if body_node:
+                for child in body_node.children:
+                    walk(child, current_func)
+                return
+
         # 3. Function / Method definitions
         elif node.type == "function_definition":
             decl = node.child_by_field_name("declarator")

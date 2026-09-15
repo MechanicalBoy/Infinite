@@ -18,6 +18,24 @@ SEMI_BRAIN_DIR = Path(__file__).resolve().parents[1]
 DISTILLED_DIR = SEMI_BRAIN_DIR / "2_distilled_brain"
 AST_GRAPH_FILE = SEMI_BRAIN_DIR / "1_extractors" / "output" / "ast_symbol_graph.json"
 
+# Architecturally load-bearing symbols per subsystem that a bug report rarely
+# names literally (e.g. "audio pop on retrigger" never says "ParamMailbox"),
+# but that own the invariant almost every bug in that subsystem routes through.
+# Only injected when they actually resolve to a real AST symbol -- see
+# _resolve_anchor_symbols -- so a stale/renamed entry here is a silent no-op,
+# never a hallucinated citation.
+SUBSYSTEM_ANCHOR_SYMBOLS = {
+    "audio_dsp": ["ParamMailbox", "AudioEngine", "INode", "IAudioSource"],
+    "render_3d": ["IGeometrySource", "INode"],
+    "field_compiler": ["FieldVM", "ElementVM", "Modulation"],
+    "arrange_timeline": ["Clip", "Patch"],
+    "nodes": ["INode", "Modulation"],
+    "core_system": ["Patch", "INode"],
+    "compositing_2d": ["FilterDef", "INode", "GLUtil"],
+    "ui_shell": ["INode"],
+    "platform": ["Platform"],
+}
+
 from retriever import HybridRetriever
 
 @dataclass
@@ -79,6 +97,22 @@ class SemiBrainCognitiveEngine:
                 self.ast_graph = json.load(f)
         else:
             self.ast_graph = {"symbols": {}, "forward_call_graph": {}, "reverse_call_graph": {}, "subsystems": {}}
+
+    def _resolve_anchor_symbols(self, subsystem: str) -> List[str]:
+        """Ground SUBSYSTEM_ANCHOR_SYMBOLS entries against the real AST graph.
+        An anchor name that no longer matches any symbol (renamed/removed) is
+        dropped silently rather than injected as a fabricated citation."""
+        resolved = []
+        symbol_names = self.ast_graph.get("symbols", {}).keys()
+        for anchor in SUBSYSTEM_ANCHOR_SYMBOLS.get(subsystem, []):
+            anchor_lower = anchor.lower()
+            match = next(
+                (s for s in symbol_names if s.lower() == anchor_lower or s.lower().endswith("::" + anchor_lower)),
+                None,
+            )
+            if match:
+                resolved.append(match)
+        return resolved
 
     def get_callers_for_symbols(self, symbols: List[str]) -> List[str]:
         callers = set()
@@ -173,7 +207,15 @@ class SemiBrainCognitiveEngine:
         for _, sym_name in scored_candidates[:12]:
             if sym_name not in matched_symbols:
                 matched_symbols.append(sym_name)
-                    
+
+        # Subsystem-anchor injection: architecturally load-bearing symbols
+        # (ParamMailbox, INode, ...) that own the invariant behind most bugs
+        # in this subsystem but are rarely named in the bug report's own
+        # words, so pure lexical scoring above never surfaces them.
+        for anchor_sym in self._resolve_anchor_symbols(subsystem):
+            if anchor_sym not in matched_symbols:
+                matched_symbols.append(anchor_sym)
+
         callers = self.get_callers_for_symbols(matched_symbols)
         
         # 2. System 1 Priors

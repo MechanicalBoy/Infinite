@@ -142,7 +142,7 @@ def build_hybrid_index():
     # 2. Compute Dense Embeddings using FastEmbed
     print("Computing FastEmbed dense embeddings (CPU ONNX)...")
     embed_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
-    
+
     # Batch embedding for speed
     batch_size = 256
     all_texts = [d[2] + " " + d[4] for d in documents] # Embed title + snippet
