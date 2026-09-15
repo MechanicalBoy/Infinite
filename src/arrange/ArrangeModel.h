@@ -114,21 +114,26 @@ namespace Arrange
       bool     mute      = false; // audio only
       bool     solo      = false; // audio only; any soloed audio lane silences the unsoloed ones
       std::string name;           // empty = auto ("V1", "A2", ...)
+      float    colorR = 0.0f, colorG = 0.0f, colorB = 0.0f; // 0,0,0 = default type accent
       std::vector<Clip> clips;    // always sorted by start, never overlapping
    };
 
-   // A track group: a named, colored, collapsible container for lanes. Unlike
-   // a clip group (Clip::groupId), a track group does NOT dissolve at 1 or 0
-   // members - Normalize prunes only fully-empty ones, never a singleton. A
-   // group with one track left in it is still a meaningful, user-named
-   // container the user may be about to add more tracks to.
+   // A track group: a named, colored container for lanes AND other track
+   // groups (unlimited nesting, Bitwig/Ableton/Logic folder-track style).
+   // Unlike a clip group (Clip::groupId), a track group does NOT dissolve at
+   // 1 or 0 members - Normalize prunes only fully-empty ones (no lanes and no
+   // child groups left anywhere in its subtree), never a singleton. A group
+   // with one track left in it is still a meaningful, user-named container
+   // the user may be about to add more tracks to. There is no collapsed
+   // state: every group's full subtree always renders.
    struct TrackGroup
    {
-      uint64_t    id        = 0;
+      uint64_t    id            = 0;
       std::string name;           // empty = auto ("Group 1", ...)
-      uint32_t    color     = 0xFF808080u; // RGBA8
-      bool        enabled   = true;
-      bool        collapsed = false;
+      uint32_t    color         = 0xFF808080u; // RGBA8
+      bool        enabled       = true;
+      bool        collapsed     = false;
+      uint64_t    parentGroupId = 0; // 0 = top-level, sits directly under the root
    };
 
    struct Marker
@@ -152,7 +157,7 @@ namespace Arrange
    struct Settings
    {
       int   timeDisplay  = 0;     // 0 = Bars, 1 = Time
-      int   snapDivision = 4;     // grid denominator: 0 = off, 1 = bar, 4 = 1/4, ... (WP6)
+      int   snapDivision = 16;    // grid denominator: 0 = off, 1 = bar, 4 = 1/4, 16 = 1/16, ... (WP6)
       bool  snapTriplet  = false; // x2/3 on divisions >= 2; ignored for bar/off
       float zoom         = 1.0f;  // pixels per beat multiplier
       float scroll       = 0.0f;  // leftmost visible beat
@@ -262,34 +267,87 @@ namespace Arrange
    uint64_t AddLane(Model& m, int type, int atIndex = -1);
    bool RemoveLane(Model& m, uint64_t laneId);
    bool ReorderLane(Model& m, uint64_t laneId, int newIndex);
+   // Repositions every lane in `laneIds` (their current relative order
+   // preserved) to sit contiguously in m.lanes, immediately before
+   // `beforeLaneIndex` (an index into m.lanes as it stood before this call).
+   // Row display order for both lanes and group headers is entirely derived
+   // from each lane's position in m.lanes (see TrackGroupChildren) - this is
+   // the primitive that actually moves a row (or a whole group's lanes)
+   // within that order. SetLaneTrackGroup/SetTrackGroupParent only change
+   // which group a row belongs to, not where it sits, so the Arrange
+   // panel's drag-and-drop calls both: reparent first, then this.
+   void MoveLanesBefore(Model& m, const std::vector<uint64_t>& laneIds, size_t beforeLaneIndex);
+   // Copies a lane (settings + every clip, all fresh ids; a clip group on the
+   // source gets a fresh clip-group id too, same convention as DuplicateBlock
+   // and DuplicateTrackGroup) and inserts it immediately after the source,
+   // in the same track group. New lane's id is returned through outLaneId.
+   bool DuplicateLane(Model& m, uint64_t laneId, uint64_t* outLaneId = nullptr);
    bool SetLaneEnabled(Model& m, uint64_t laneId, int mode); // EnableMode
    // Clears srcUid on every clip pointing at `uid` instead of deleting the
    // clip: deleting a node leaves its clips offline, not gone (WP5).
    bool ClearSource(Model& m, uint64_t uid);
 
    // --- track groups -----------------------------------------------------
-   // A container for lanes, distinct from a clip Group above: it does not
-   // auto-dissolve at 1 or 0 members (Normalize prunes only 0-member groups).
-   uint64_t AddTrackGroup(Model& m, const std::vector<uint64_t>& laneIds, const std::string& name = std::string());
+   // A container for lanes AND other track groups, distinct from a clip Group
+   // above: it does not auto-dissolve at 1 or 0 members (Normalize prunes
+   // only groups with nothing left anywhere in their subtree).
+   //
+   // `parentGroupId` nests a new group under an existing one (0 = top level).
+   uint64_t AddTrackGroup(Model& m, const std::vector<uint64_t>& laneIds, const std::string& name = std::string(), uint64_t parentGroupId = 0);
    // Removes the group record. `deleteLanes` also deletes every member lane
-   // (and their clips); otherwise members are simply ungrouped, kept in place.
+   // (and their clips), including nested child groups' lanes; otherwise
+   // members (lanes and child groups alike) are promoted to the dissolved
+   // group's own parent, kept in place - "Ungroup" one level, not to root.
    bool RemoveTrackGroup(Model& m, uint64_t groupId, bool deleteLanes);
    bool SetLaneTrackGroup(Model& m, uint64_t laneId, uint64_t groupId); // 0 = ungroup
+   // Reparents a group under another group (0 = top level). Rejects making a
+   // group its own ancestor or descendant (would create a cycle) and a
+   // dangling target group id.
+   bool SetTrackGroupParent(Model& m, uint64_t groupId, uint64_t newParentGroupId);
+   // Creates one new group containing exactly the given lanes, nested under
+   // `parentGroupId` (0 = top level). Used by "Group Selected".
+   uint64_t GroupSelectedLanes(Model& m, const std::vector<uint64_t>& laneIds, uint64_t parentGroupId = 0);
    bool RenameTrackGroup(Model& m, uint64_t groupId, const std::string& name);
    bool RecolorTrackGroup(Model& m, uint64_t groupId, uint32_t color);
    bool SetTrackGroupEnabled(Model& m, uint64_t groupId, int mode); // EnableMode
    bool SetTrackGroupCollapsed(Model& m, uint64_t groupId, bool collapsed);
+   std::string UniqueLaneName(const Model& m, const std::string& baseName, int type);
+   std::string UniqueTrackGroupName(const Model& m, const std::string& baseName);
    const TrackGroup* FindTrackGroup(const Model& m, uint64_t groupId);
+   // Direct member lanes only (does not recurse into nested child groups).
    std::vector<uint64_t> LanesInTrackGroup(const Model& m, uint64_t groupId);
-   // Duplicates a track group: every member lane (with its clips, fresh ids),
-   // and a fresh group record. Clip-level groupIds inside duplicated clips are
-   // remapped to fresh ids too, so the duplicate never shares a clip group
-   // with its source. New group's id is returned through outGroupId.
+   // Every lane in the group's subtree, including lanes nested inside child
+   // groups at any depth. Used by "Render Group" and subtree drag/duplicate.
+   std::vector<uint64_t> LanesInTrackGroupRecursive(const Model& m, uint64_t groupId);
+   // groupId's parent, its parent's parent, ... up to (not including) the
+   // root. Empty if groupId is already top-level or unknown.
+   std::vector<uint64_t> GroupAncestors(const Model& m, uint64_t groupId);
+   // Nesting depth: 0 for a top-level group, 1 for a group directly under a
+   // top-level group, etc.
+   int GroupDepth(const Model& m, uint64_t groupId);
+   // Duplicates a track group and its entire subtree: every member lane (with
+   // its clips, fresh ids) at every depth, every nested child group (fresh
+   // ids, parent links remapped to point at the new duplicates), and a fresh
+   // record for the group itself. Clip-level groupIds inside duplicated clips
+   // are remapped to fresh ids too, so the duplicate never shares a clip
+   // group with its source. New group's id is returned through outGroupId.
    bool DuplicateTrackGroup(Model& m, uint64_t groupId, uint64_t* outGroupId = nullptr);
-   // True if the lane should actually run: lane.enabled and (ungrouped, or its
-   // group is enabled). The one place both flags are read together - do not
-   // hand-check `lane.enabled && group->enabled` anywhere else.
+   // True if the lane should actually run: lane.enabled and every ancestor
+   // group (its own group, that group's parent, ... up to the root) is
+   // enabled. The one place the whole ancestor chain is read together - do
+   // not hand-check `lane.enabled` or `group->enabled` directly anywhere
+   // else; a lane or group disabled by an ancestor must read as disabled.
    bool LaneEffectivelyEnabled(const Model& m, const Lane& lane);
+   // Row slot at one level of the tree: either a lane or a child group,
+   // interleaved in the order they should draw. Used by row layout, the
+   // flattened selection order, and "Group With" menus.
+   struct RowSlot { bool isGroup = false; uint64_t id = 0; };
+   // Direct children of `parentGroupId` (0 = root), in draw order: lanes and
+   // child groups interleaved by where their earliest member lane sits in
+   // `m.lanes`, with wholly-empty child groups appended last in
+   // `m.trackGroups` order. Does not recurse - callers walk depth-first by
+   // calling this again with each returned group's id.
+   std::vector<RowSlot> TrackGroupChildren(const Model& m, uint64_t parentGroupId);
 
    // --- markers --------------------------------------------------------
    uint64_t AddMarker(Model& m, Tick pos, const std::string& name = std::string(), uint32_t color = 0xFFFFFFFFu);
