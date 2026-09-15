@@ -1188,6 +1188,13 @@ namespace
    // Field/stateful node's history for the whole drag.
    bool  gArrangeScrubbing = false;
    int64_t gArrangeScrubTick = 0;
+   // Which mouse button is driving the current scrub (step 2: a Sample's
+   // body scrubs on middle-click-drag, deliberately not left-click, so it
+   // can never collide with the left-click select/drag/trim/blade hit-
+   // testing every clip already has - see the per-clip loop in
+   // DrawArrangePanelContent). The ruler's own release-check below reads
+   // this instead of a hardcoded left button so either source ends cleanly.
+   ImGuiMouseButton gArrangeScrubButton = ImGuiMouseButton_Left;
    // Marker flag being dragged on the ruler (0 = none), and the inline rename.
    uint64_t gArrangeMarkerDragId = 0;
    int64_t gArrangeMarkerDragGrabTick = 0;
@@ -6047,9 +6054,10 @@ namespace
 
    // Ruler scrub (WP6). Begin/Update only move the ghost; End seeks exactly
    // once. Cancel drops the ghost without seeking.
-   void ArrangeScrubBegin(Arrange::Tick t)
+   void ArrangeScrubBegin(Arrange::Tick t, ImGuiMouseButton button = ImGuiMouseButton_Left)
    {
       gArrangeScrubbing = true;
+      gArrangeScrubButton = button;
       gArrangeScrubTick = std::clamp<Arrange::Tick>(t, 0, Arrange::kMaxTick);
    }
    void ArrangeScrubUpdate(Arrange::Tick t)
@@ -6206,6 +6214,8 @@ namespace
             r.colorSaturation = c.colorSaturation;
             r.retrigger = c.retrigger;
             r.sampleDropped = c.sampleDropped;
+            r.sampleBpm = c.sampleBpm;
+            r.sourceDurationSeconds = c.sourceDurationSeconds;
             s.clips.push_back(std::move(r));
          }
          data.streams.push_back(std::move(s));
@@ -6320,6 +6330,8 @@ namespace
             clip.colorSaturation = c.colorSaturation;
             clip.retrigger = c.retrigger;
             clip.sampleDropped = c.sampleDropped;
+            clip.sampleBpm = c.sampleBpm;
+            clip.sourceDurationSeconds = c.sourceDurationSeconds;
             lane.clips.push_back(std::move(clip));
          }
          m.lanes.push_back(std::move(lane));
@@ -27020,6 +27032,16 @@ namespace
       std::vector<uint8_t> filled;
    };
    std::unordered_map<uint64_t, ArrangeClipWave> gArrangeClipWaves;
+   // Audio Sample static waveforms (step 2): computed once, from the fully-
+   // decoded source buffer, in ArrangePollMediaImports right after
+   // OpenFromDecoded/the bounce adopt path - never touched by playback.
+   // Keyed by clip id like gArrangeClipWaves, but a wholly separate map: a
+   // clip can only ever be in one of the two (sampleDropped picks which),
+   // and mixing the two caches would let a stale live-fill bucket outlive a
+   // clip that has since become (or stopped being) a Sample. Only cleared
+   // when the clip is deleted or gets a new source (see the sweep at the
+   // bottom of this pass, mirroring gArrangeClipWaves' own prune below).
+   std::unordered_map<uint64_t, ArrangeClipWave> gArrangeSampleStaticWaves;
    // Ticks per bucket, the main-thread spelling of kClipPeakBucketsPerBeat.
    constexpr Arrange::Tick kArrangeWaveBucketTicks = Arrange::kPPQ / 16;
    // A clip longer than this many buckets (~1 hour at 120 bpm) stops being
@@ -27050,6 +27072,64 @@ namespace
       const long long n = ((long long)std::max<Arrange::Tick>(0, length) + kArrangeWaveBucketTicks - 1) /
                           kArrangeWaveBucketTicks;
       return (int)std::clamp<long long>(n, 0, kArrangeWaveMaxBuckets);
+   }
+
+   // Step 2: the Audio Sample static waveform. Computed exactly once, from
+   // the fully-decoded source buffer, at import/bounce-adopt time (see
+   // ArrangePollMediaImports) - never touched again by playback, unlike
+   // gArrangeClipWaves' live per-block fill. The bucket count is the clip's
+   // length *at the moment of import* (its ticks-per-bucket resolution
+   // matches the live cache via kArrangeWaveBucketTicks), and the buckets
+   // are stretched linearly across the whole decoded buffer regardless of
+   // any later BPM warp - a later Sample BPM edit changes clip.length (and
+   // therefore how the draw loop maps ticks -> these same buckets) but does
+   // NOT recompute the buckets themselves, matching the spec's "stretched
+   // linearly ... regardless of BPM warp" requirement.
+   void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
+                                        Arrange::Tick start, Arrange::Tick length,
+                                        const Platform::SampleBuffer* buf)
+   {
+      const int buckets = ArrangeWaveBucketCount(length);
+      if (buckets <= 0 || buf == nullptr || buf->numFrames <= 0 || buf->channels <= 0)
+      {
+         gArrangeSampleStaticWaves.erase(clipId);
+         return;
+      }
+
+      ArrangeClipWave w;
+      w.srcUid = srcUid;
+      w.srcOutput = srcOutput;
+      w.start = start;
+      w.length = length;
+      w.shape = ArrangeClipShape(srcUid, srcOutput, start, length);
+      w.minv.assign((size_t)buckets, 0.0f);
+      w.maxv.assign((size_t)buckets, 0.0f);
+      w.filled.assign((size_t)buckets, 1); // static: filled up-front, all at once
+
+      const int frames = buf->numFrames;
+      const int channels = buf->channels;
+      for (int b = 0; b < buckets; ++b)
+      {
+         // Linear stretch: bucket b covers [b, b+1)/buckets of the whole
+         // decoded file, independent of tempo/BPM - the file's own duration
+         // is the only axis here.
+         const long long f0 = ((long long)b * frames) / buckets;
+         const long long f1 = std::max<long long>(f0 + 1, ((long long)(b + 1) * frames) / buckets);
+         float mn = 0.0f, mx = 0.0f;
+         for (long long f = f0; f < f1 && f < frames; ++f)
+         {
+            for (int ch = 0; ch < channels; ++ch)
+            {
+               const float s = buf->channelData[(size_t)ch * frames + f];
+               mn = std::min(mn, s);
+               mx = std::max(mx, s);
+            }
+         }
+         w.minv[(size_t)b] = mn;
+         w.maxv[(size_t)b] = mx;
+      }
+
+      gArrangeSampleStaticWaves[clipId] = std::move(w);
    }
 
    // ---- Clip thumbnails (WP8) ------------------------------------------
@@ -27194,6 +27274,16 @@ namespace
                continue;
             for (const Arrange::Clip& c : lane.clips)
             {
+               // Audio Sample: no live-fill entry at all - its waveform is
+               // the static peak array computed once at import/bounce
+               // (gArrangeSampleStaticWaves, see ArrangePollMediaImports),
+               // never rebuilt here on a start/length change (a BPM edit
+               // must not blow away the one-time measurement).
+               if (c.sampleDropped)
+               {
+                  live.insert(c.id);
+                  continue;
+               }
                const int buckets = ArrangeWaveBucketCount(c.length);
                if (buckets <= 0)
                   continue;
@@ -27217,6 +27307,12 @@ namespace
          // id is gone from the model, so nothing will ever fill it again.
          for (auto it = gArrangeClipWaves.begin(); it != gArrangeClipWaves.end();)
             it = live.count(it->first) == 0 ? gArrangeClipWaves.erase(it) : std::next(it);
+         // Same prune for the Sample static-wave cache - a clip only ever
+         // has an entry in one of the two maps (sampleDropped picks which),
+         // but both are pruned off the same `live` set of ids still in the
+         // model.
+         for (auto it = gArrangeSampleStaticWaves.begin(); it != gArrangeSampleStaticWaves.end();)
+            it = live.count(it->first) == 0 ? gArrangeSampleStaticWaves.erase(it) : std::next(it);
          // Same for a deleted video clip, plus its FBO. Safe to free here:
          // the thumbnail is only ever sampled by ImGui's draw list for the
          // frame that queued it, and a clip that is gone from the model
@@ -29125,6 +29221,11 @@ namespace
          c.importPending = true;
          c.sampleDropped = true;
          c.syncToTempo = gArrange.settings.importSyncToTempo;
+         // Default to the project tempo at drop time - reproduces the old
+         // silent "file's BPM == project's BPM" assumption exactly (step 3),
+         // corrected below in ArrangePollMediaImports once the real
+         // duration is known, and freely editable afterward.
+         c.sampleBpm = (float)bpm;
          Arrange::PlaceOverwrite(gArrange, laneId, c, &clipId);
       });
       if (clipId == 0)
@@ -29200,8 +29301,12 @@ namespace
             continue;
          }
 
+         AudioFileNode* audioFileNode = nullptr;
          if (pending.kind == Arrange::ImportMediaKind::Audio)
-            static_cast<AudioFileNode*>(gn->node.get())->OpenFromDecoded(r.path, r.audioBuffer);
+         {
+            audioFileNode = static_cast<AudioFileNode*>(gn->node.get());
+            audioFileNode->OpenFromDecoded(r.path, r.audioBuffer);
+         }
          else if (pending.kind == Arrange::ImportMediaKind::Video)
             static_cast<VideoSourceNode*>(gn->node.get())->OpenFromHandle(r.path, r.videoHandle, r.audioBuffer);
          else
@@ -29216,6 +29321,20 @@ namespace
             // one-time calculation, never revisited on a later tempo change.
             if (pending.kind != Arrange::ImportMediaKind::Image && r.durationSeconds > 0.0)
                c->length = std::max<Arrange::Tick>(1, Arrange::SecondsToTicks(r.durationSeconds, bpm));
+            // Step 3: the persisted natural duration a later Sample BPM edit
+            // recomputes length from (length_ticks = sourceDurationSeconds *
+            // (sampleBpm/60) * kPPQ) - captured once here, never touched by
+            // a later tempo or BPM change.
+            if (pending.kind == Arrange::ImportMediaKind::Audio && r.durationSeconds > 0.0)
+               c->sourceDurationSeconds = r.durationSeconds;
+            // Step 2: the Sample's static waveform, computed once from the
+            // fully-decoded source right here (before any BPM warp is ever
+            // applied to c->length) - see ArrangeComputeSampleStaticWave's
+            // own comment. Only meaningful for a Sample; a manually-patched
+            // Audio Clip keeps using the live-fill gArrangeClipWaves cache.
+            if (pending.kind == Arrange::ImportMediaKind::Audio && c->sampleDropped && audioFileNode != nullptr)
+               ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
+                                               audioFileNode->Buffer());
             gArrange.revision++;
          }
          AudioTopologyRequest::Request();
@@ -29455,6 +29574,10 @@ namespace
          c->sampleDropped = true;
          c->importPending = true;
          c->syncToTempo = gArrange.settings.importSyncToTempo;
+         // Same default-to-current-tempo rule as a drag-dropped import (step
+         // 3) - corrected in ArrangePollMediaImports once the bounced file's
+         // real duration is known, same adopt path a drag-drop import uses.
+         c->sampleBpm = std::max(1.0f, Transport::Instance().Tempo());
          clipId = job.bounceClipId;
          gArrange.revision++;
       });
@@ -30872,9 +30995,22 @@ namespace
       {
          ArrangeScrubUpdate(gridSnap(xToTick(ImGui::GetIO().MousePos.x)));
       }
-      // Released anywhere (or the button lost its active state): the one seek.
-      if (gArrangeScrubbing && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+      // Released anywhere (or the button lost its active state): the one
+      // seek. Reads gArrangeScrubButton rather than a hardcoded left button
+      // so a Sample-body scrub (started on middle-click, see the per-clip
+      // loop below) ends on ITS button releasing, not on left-mouse state
+      // that was never down for it.
+      if (gArrangeScrubbing && !ImGui::IsMouseDown(gArrangeScrubButton))
          ArrangeScrubEnd();
+      // Sample-body scrub continuation: started from within the per-clip
+      // loop below (middle-click on a Sample), so - unlike the ruler's own
+      // drag above - it has no ImGui item to stay "active" against. Driven
+      // here, once per frame, purely off the button state.
+      if (gArrangeScrubbing && gArrangeScrubButton == ImGuiMouseButton_Middle &&
+          ImGui::IsMouseDown(ImGuiMouseButton_Middle))
+      {
+         ArrangeScrubUpdate(gridSnap(xToTick(ImGui::GetIO().MousePos.x)));
+      }
       if (gArrangeShiftDraggingLoop && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
       {
          gArrangeShiftDraggingLoop = false;
@@ -31928,6 +32064,22 @@ namespace
                openClipCtx = true;
             }
 
+            // Click-to-scrub on a Sample's body (step 2): deliberately
+            // middle-click, not left-click - every left-click combination
+            // above (plain/Alt/Cmd/Ctrl/Shift, on the body or an edge) is
+            // already claimed by select/drag/trim/group-scale/blade, and
+            // reusing any of them for scrub would silently steal one of
+            // those. Middle-click has no existing meaning here, so this is
+            // purely additive. Reuses the ruler's own ArrangeScrubBegin and
+            // xToTick/gridSnap conversion (see the update/end continuation
+            // next to the ruler's own scrub block above) so a Sample scrubs
+            // to exactly the tick the ruler itself would for that pixel.
+            if (clip.sampleDropped && clipHovered && !gArrangeBladeOn &&
+                ImGui::IsMouseClicked(ImGuiMouseButton_Middle) && !gArrangeScrubbing)
+            {
+               ArrangeScrubBegin(gridSnap(xToTick(mPos.x)), ImGuiMouseButton_Middle);
+            }
+
             // Styling. A Color Tint overrides the type palette; a disabled or
             // offline clip is drawn desaturated under a diagonal hatch - the
             // "this will not play" mark.
@@ -31976,10 +32128,26 @@ namespace
                dl->PushClipRect(ImVec2(cLeft + 1.0f, cTop + 1.0f), ImVec2(cRight - 1.0f, cBottom - 1.0f), true);
                dl->AddLine(ImVec2(cLeft + 1.0f, midY), ImVec2(cRight - 1.0f, midY),
                            IM_COL32(255, 255, 255, 45), 1.0f);
-               auto waveIt = gArrangeClipWaves.find(clip.id);
-               if (waveIt != gArrangeClipWaves.end() && !waveIt->second.minv.empty() && clip.length > 0)
+               // Audio Sample: a static peak array computed once at import
+               // (or Bounce to Sample) from the fully-decoded source file -
+               // see ArrangePollMediaImports. Audio Clip: unchanged, the
+               // live-fill cache the audio thread writes as it plays.
+               const ArrangeClipWave* waveSrc = nullptr;
+               if (clip.sampleDropped)
                {
-                  const ArrangeClipWave& wv = waveIt->second;
+                  auto it = gArrangeSampleStaticWaves.find(clip.id);
+                  if (it != gArrangeSampleStaticWaves.end())
+                     waveSrc = &it->second;
+               }
+               else
+               {
+                  auto it = gArrangeClipWaves.find(clip.id);
+                  if (it != gArrangeClipWaves.end())
+                     waveSrc = &it->second;
+               }
+               if (waveSrc != nullptr && !waveSrc->minv.empty() && clip.length > 0)
+               {
+                  const ArrangeClipWave& wv = *waveSrc;
                   const int nb = (int)wv.minv.size();
                   // x -> tick -> bucket, inverting the same tickToX the clip
                   // rect came from, so the waveform cannot drift from it at
@@ -32496,15 +32664,42 @@ namespace
                }
                fieldGestureEnd();
 
+               // Sync to Tempo / Sample BPM: an Audio Sample-only concept
+               // (see Clip::sampleBpm's comment) - this menu used to show
+               // the checkbox for any single-lane-type audio selection,
+               // which meant it silently applied to a manually-patched
+               // Audio Clip too (step 5's consistency-sweep gap). Gated on
+               // sampleDropped here to match the docked Clip Settings panel.
                cp = Arrange::FindClip(gArrange, cid);
-               bool syncToTempo = cp->syncToTempo;
-               if (ImGui::Checkbox("Sync to Tempo", &syncToTempo))
+               if (cp->sampleDropped)
                {
-                  ArrangeEdit([&]()
+                  bool syncToTempo = cp->syncToTempo;
+                  if (ImGui::Checkbox("Sync to Tempo", &syncToTempo))
                   {
-                     if (Arrange::Clip* c = Arrange::FindClip(gArrange, cid))
-                        c->syncToTempo = syncToTempo;
-                  });
+                     ArrangeEdit([&]()
+                     {
+                        if (Arrange::Clip* c = Arrange::FindClip(gArrange, cid))
+                           c->syncToTempo = syncToTempo;
+                     });
+                  }
+
+                  cp = Arrange::FindClip(gArrange, cid);
+                  float sampleBpm = cp->sampleBpm;
+                  ImGui::SetNextItemWidth(160.0f);
+                  if (ImGui::DragFloat("Sample BPM", &sampleBpm, 0.1f, 1.0f, 999.0f, "%.2f"))
+                  {
+                     fieldGesture(true);
+                     cp = Arrange::FindClip(gArrange, cid);
+                     cp->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
+                     if (cp->sourceDurationSeconds > 0.0f)
+                     {
+                        const double newLen = (double)cp->sourceDurationSeconds *
+                           ((double)cp->sampleBpm / 60.0) * (double)Arrange::kPPQ;
+                        cp->length = std::max<Arrange::Tick>(1, (Arrange::Tick)llround(newLen));
+                     }
+                     gArrange.revision++;
+                  }
+                  fieldGestureEnd();
                }
 
                ImGui::Separator();
@@ -36694,7 +36889,12 @@ namespace
       if (timelineRouting)
       {
          // Straight off the model (WP5b): ticks convert to beats with no
-         // tempo, so a tempo change does not touch the schedule at all.
+         // tempo, so a tempo change does not touch the schedule at all. BPM
+         // sync (step 3, ClipWindow::sampleBpm) keeps that property: only
+         // the clip's OWN sampleBpm is copied here, never combined with the
+         // current project tempo - RunTopology divides by the live tempo
+         // itself every block, so this schedule never goes stale on a tempo
+         // edit alone.
          std::unordered_map<std::string, size_t> indexOfKey;
          bool anySolo = false;
          for (const Arrange::Lane& lane : gArrange.lanes)
@@ -36752,6 +36952,12 @@ namespace
                // gate on it without reaching into gArrange from the audio
                // thread - see ClipWindow::sampleDropped's own comment.
                w.sampleDropped = c.sampleDropped;
+               // BPM sync (step 3) is Audio-Sample-only, same gate as
+               // retrigger just below - an Audio Clip has no sampleBpm of its
+               // own and always plays at native rate. 0 means "don't scale"
+               // (see ClipWindow::sampleBpm's own comment for why the ratio
+               // itself is computed live in RunTopology, not here).
+               w.sampleBpm = (c.sampleDropped && c.syncToTempo) ? c.sampleBpm : 0.0f;
                // Retrigger is an Audio Sample-only feature (Clip Settings
                // hides the control for every other category) - a stray
                // `retrigger=true` left over from a patch saved before this
@@ -38063,6 +38269,54 @@ namespace
                      gArrange.revision++;
                   }
                });
+            }
+
+            // Step 3: real, always-on BPM sync - Audio Sample only. An
+            // Audio Clip (manually-patched node) has no "sample bpm"
+            // concept at all, so this whole block is gated on isSample and
+            // never appears for a Clip.
+            if (isSample)
+            {
+               ImGui::Spacing();
+               ImGui::TextDisabled("Tempo Sync");
+               bool syncToTempo = clip->syncToTempo;
+               if (ImGui::Checkbox("Sync to Tempo##clipsync", &syncToTempo))
+               {
+                  ArrangeEdit([&]() {
+                     if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+                     {
+                        c->syncToTempo = syncToTempo;
+                        gArrange.revision++;
+                     }
+                  });
+               }
+               // Always visible/editable even with sync off (spec: "When
+               // sync is off, BPM field stays visible/editable but no rate
+               // override applies") - only SetClipRateOverride's live ratio
+               // (gated on syncToTempo in RebuildAudioTopology) is skipped.
+               float sampleBpm = clip->sampleBpm;
+               ImGui::SetNextItemWidth(fieldW);
+               if (ImGui::DragFloat("Sample BPM##clipbpm", &sampleBpm, 0.1f, 1.0f, 999.0f, "%.2f"))
+               {
+                  ArrangeEdit([&]() {
+                     if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
+                     {
+                        c->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
+                        // Length only follows a direct BPM edit here - never
+                        // a project tempo change (see ClipWindow::sampleBpm
+                        // and Clip::sampleBpm's own comments). sourceDuration
+                        // is the fixed, persisted "how long is the actual
+                        // decoded file" measurement from import/bounce time.
+                        if (c->sourceDurationSeconds > 0.0f)
+                        {
+                           const double newLen = (double)c->sourceDurationSeconds *
+                              ((double)c->sampleBpm / 60.0) * (double)Arrange::kPPQ;
+                           c->length = std::max<Arrange::Tick>(1, (Arrange::Tick)llround(newLen));
+                        }
+                        gArrange.revision++;
+                     }
+                  });
+               }
             }
          }
 
