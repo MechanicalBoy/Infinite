@@ -33112,6 +33112,48 @@ namespace
 
       const float fullTimelineBottom = std::max(lanesContentBottom, pinnedTopY + avail.y);
 
+      // Below the last track, keep the canvas reading as a continuous grid
+      // instead of trailing off into dead blank space (WP: decently-sized
+      // fixed canvas, independent of how few tracks exist) - faint row
+      // guides at the same kLaneHeight spacing, all the way to the bottom
+      // of the visible scroll area. Drawn before the loop band and playhead
+      // so their highlights overlay this area continuously.
+      {
+         const float emptyGridBottom = fullTimelineBottom;
+         if (emptyGridBottom > lanesContentBottom)
+         {
+            dl->PushClipRect(ImVec2(headerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
+            // Continue the same alternating row-background stripes the real
+            // lanes use (main.cpp laneBg above) so this region reads as more
+            // of the same timeline instead of a visually distinct flat-black
+            // void - it's still empty, but no longer looks "cut off".
+            {
+               size_t rowIdx = gArrange.lanes.size();
+               for (float gy = lanesContentBottom; gy < emptyGridBottom; gy += kLaneHeight, rowIdx++)
+               {
+                  const ImU32 stripeBg = (rowIdx % 2 == 0)
+                     ? (isLight ? IM_COL32(245, 245, 248, 255) : IM_COL32(24, 24, 28, 255))
+                     : (isLight ? IM_COL32(250, 250, 252, 255) : IM_COL32(28, 28, 32, 255));
+                  dl->AddRectFilled(ImVec2(headerStartX, gy), ImVec2(rulerStartX + rulerWidth, std::min(gy + kLaneHeight, emptyGridBottom)), stripeBg);
+               }
+            }
+            // Vertical beat/bar lines: the same ones drawn through every track
+            // row above, continued down so the timeline still reads as a grid
+            // instead of stopping dead at the last track.
+            for (const ArrangeGridLine& gl : arrangeGridLines)
+            {
+               const ImU32 gridCol = isLight
+                  ? IM_COL32(0, 0, 0, gl.isMajor ? 60 : 22)
+                  : IM_COL32(255, 255, 255, gl.isMajor ? 55 : 18);
+               dl->AddLine(ImVec2(gl.x, lanesContentBottom), ImVec2(gl.x, emptyGridBottom), gridCol, 1.0f);
+            }
+            const ImU32 emptyGridLine = isLight ? IM_COL32(0, 0, 0, 22) : IM_COL32(255, 255, 255, 18);
+            for (float gy = lanesContentBottom + kLaneHeight; gy < emptyGridBottom; gy += kLaneHeight)
+               dl->AddLine(ImVec2(rulerStartX, gy), ImVec2(rulerStartX + rulerWidth, gy), emptyGridLine, 1.0f);
+            dl->PopClipRect();
+         }
+      }
+
       // Draw loop region band (armed or mid-Shift+drag) behind everything
       // else. gArrange.settings.loop already holds the live preview range
       // while gArrangeShiftDraggingLoop is true (set above, in the ruler-drag
@@ -33167,47 +33209,6 @@ namespace
             dl->AddRectFilled(l0, ImVec2(l0.x + ts.x + 6.0f, l0.y + ts.y + 2.0f),
                               isLight ? IM_COL32(255, 255, 255, 230) : IM_COL32(20, 20, 24, 230), 3.0f);
             dl->AddText(ImVec2(lx, l0.y + 1.0f), ImGui::GetColorU32(ImGuiCol_Text), ghostLabel.c_str());
-         }
-      }
-
-      // Below the last track, keep the canvas reading as a continuous grid
-      // instead of trailing off into dead blank space (WP: decently-sized
-      // fixed canvas, independent of how few tracks exist) - faint row
-      // guides at the same kLaneHeight spacing, all the way to the bottom
-      // of the visible scroll area.
-      {
-         const float emptyGridBottom = fullTimelineBottom;
-         if (emptyGridBottom > lanesContentBottom)
-         {
-            dl->PushClipRect(ImVec2(headerStartX, lanesContentBottom), ImVec2(rulerStartX + rulerWidth, emptyGridBottom), true);
-            // Continue the same alternating row-background stripes the real
-            // lanes use (main.cpp laneBg above) so this region reads as more
-            // of the same timeline instead of a visually distinct flat-black
-            // void - it's still empty, but no longer looks "cut off".
-            {
-               size_t rowIdx = gArrange.lanes.size();
-               for (float gy = lanesContentBottom; gy < emptyGridBottom; gy += kLaneHeight, rowIdx++)
-               {
-                  const ImU32 stripeBg = (rowIdx % 2 == 0)
-                     ? (isLight ? IM_COL32(245, 245, 248, 255) : IM_COL32(24, 24, 28, 255))
-                     : (isLight ? IM_COL32(250, 250, 252, 255) : IM_COL32(28, 28, 32, 255));
-                  dl->AddRectFilled(ImVec2(headerStartX, gy), ImVec2(rulerStartX + rulerWidth, std::min(gy + kLaneHeight, emptyGridBottom)), stripeBg);
-               }
-            }
-            // Vertical beat/bar lines: the same ones drawn through every track
-            // row above, continued down so the timeline still reads as a grid
-            // instead of stopping dead at the last track.
-            for (const ArrangeGridLine& gl : arrangeGridLines)
-            {
-               const ImU32 gridCol = isLight
-                  ? IM_COL32(0, 0, 0, gl.isMajor ? 60 : 22)
-                  : IM_COL32(255, 255, 255, gl.isMajor ? 55 : 18);
-               dl->AddLine(ImVec2(gl.x, lanesContentBottom), ImVec2(gl.x, emptyGridBottom), gridCol, 1.0f);
-            }
-            const ImU32 emptyGridLine = isLight ? IM_COL32(0, 0, 0, 22) : IM_COL32(255, 255, 255, 18);
-            for (float gy = lanesContentBottom + kLaneHeight; gy < emptyGridBottom; gy += kLaneHeight)
-               dl->AddLine(ImVec2(rulerStartX, gy), ImVec2(rulerStartX + rulerWidth, gy), emptyGridLine, 1.0f);
-            dl->PopClipRect();
          }
       }
 
