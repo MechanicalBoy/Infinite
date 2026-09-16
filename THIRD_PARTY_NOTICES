@@ -45,25 +45,30 @@ for the binaries above is:
   (equivalently `https://github.com/FFmpeg/FFmpeg/archive/1005b294ff.tar.gz`).
   This is NOT the `ffmpeg-8.1.tar.xz` release tarball; a snapshot 53 commits
   later is a different work and only the actual commit satisfies section 6.
-- x264 at the commit BtbN's GPL build for this autobuild embedded. BtbN pulls
-  x264's `stable` branch at build time and does not publish that commit in
-  the release metadata; the shipped `libavcodec.so` reports it in its build
-  configuration string, readable with
-  `strings libavcodec.so | grep -o 'x264 [0-9]*'` and
-  `ffmpeg -version` against the bundled libraries.
+- x264 at git commit `0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee`. Not published
+  in the release metadata or embedded as a readable string in the shipped
+  `libavcodec.so` (x264's git-describe string is only baked in when built
+  from a live git checkout with a `.git` dir present, which BtbN's Docker
+  build does not preserve). Resolved instead from BtbN's own build recipe:
+  `scripts.d/50-x264.sh` in `BtbN/FFmpeg-Builds` pins `SCRIPT_COMMIT` to this
+  hash, cloned from `https://code.videolan.org/videolan/x264.git`, and that
+  pin was last changed 2025-10-24 - before this autobuild (2026-09-15), so it
+  was still in effect. Source:
+  `https://code.videolan.org/videolan/x264/-/archive/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz`
 
 Anyone who receives the Linux binary of Infinite may request this exact
 corresponding source under GPLv2-or-later/GPLv3 section 6. The written offer
 is: open an issue at the project's repository.
 
-**Release blocker, not yet done.** Section 6 is satisfied by an offer that is
-good for three years and actually fulfillable. Before the Linux binary is
-distributed, the release process must (a) download the FFmpeg snapshot above
-and the matching x264 source, (b) record their SHA256 sums here so a recipient
-can verify what they got, and (c) archive both tarballs as release assets
-alongside the AppImage so fulfilment does not depend on upstream URLs staying
-up. Until (a)-(c) are done, this file names a commit but does not yet pin a
-verified source archive.
+**Verified source archives (release assets).** Both tarballs above have been
+downloaded and hashed, and ship as GitHub release assets on this release
+(`ffmpeg-1005b294ff-src.tar.gz`, `x264-0480cb05-src.tar.gz`), so fulfilment
+does not depend on upstream URLs staying up:
+
+| Archive | SHA256 |
+|---|---|
+| `ffmpeg-1005b294ff-src.tar.gz` (FFmpeg source, commit `1005b294ff`) | `acd4385e9084beff6497030fc832a920e1699b87a79c80a30e787c2d3469ecfa` |
+| `x264-0480cb05-src.tar.gz` (x264 source, commit `0480cb05fa18`) | `d0967a1348c85dfde363bb52610403be898171493100561efa0dd05d5fd1ae50` |
 
 **Licence texts shipped with the Linux build.** `LICENSE.txt` inside each
 BtbN FFmpeg release tarball is the GPLv3 text (the FFmpeg build's own
