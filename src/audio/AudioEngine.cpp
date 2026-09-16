@@ -265,12 +265,23 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          if (blockStartBeat >= windows[pitchCursor].startBeat && blockStartBeat < windows[pitchCursor].endBeat)
          {
             terminal.sourceNode->SetClipPitchOverride(windows[pitchCursor].pitch);
-            // BPM sync (step 3): ratio computed fresh every block from the
-            // CURRENT project tempo (this same `bpm` local, not a value
+            // BPM sync (step 3): synced ratio computed fresh every block from
+            // the CURRENT project tempo (this same `bpm` local, not a value
             // cached at topology-build time) so a live tempo edit takes
             // effect immediately - see ClipWindow::sampleBpm's own comment.
-            const float tempoRatioLive = windows[pitchCursor].sampleBpm > 0.0f
-               ? (float)(bpm / (double)windows[pitchCursor].sampleBpm) : 1.0f;
+            // Unsynced ("Free") uses sampleBpm/origBpm instead - a ratio that
+            // is deliberately tempo-INDEPENDENT (a live project-tempo change
+            // must not move it, see ClipWindow::origBpm's own comment) but
+            // still reacts to the user editing the Sample BPM field itself,
+            // which previously did nothing at all once sync was off.
+            const ClipWindow& cw = windows[pitchCursor];
+            float tempoRatioLive = 1.0f;
+            if (cw.sampleBpm > 0.0f)
+            {
+               tempoRatioLive = cw.syncToTempo
+                  ? (float)(bpm / (double)cw.sampleBpm)
+                  : cw.sampleBpm / std::max(1.0f, cw.origBpm);
+            }
             terminal.sourceNode->SetClipRateOverride(tempoRatioLive);
 
             // Exact seek: only for a Sample (see ClipWindow::sampleDropped's
