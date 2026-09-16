@@ -317,6 +317,10 @@ namespace Patch
       // comments). sourceDurationSeconds is what makes a later sampleBpm
       // edit able to recompute `length` losslessly without re-decoding.
       float  sampleBpm             = 120.0f;
+      // The BPM detected at import, display only (see Arrange::Clip::origBpm).
+      // Written only when > 0; -1 is the load-time sentinel for "no line",
+      // which ApplyPatchData maps to 0 = none detected.
+      float  origBpm               = -1.0f;
       float  sourceDurationSeconds = 0.0f;
       // Audio-Sample-only (see Arrange::Clip::sourceOffsetSeconds's own
       // comment). 0 default so a patch saved before this field existed

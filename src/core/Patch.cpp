@@ -372,6 +372,14 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
          if (c.sampleDropped && (c.sampleBpm != 120.0f || c.sourceDurationSeconds != 0.0f))
             file << "clipbpm " << i << " " << c.id << " " << FloatToString(c.sampleBpm) << " "
                  << FloatToString(c.sourceDurationSeconds) << "\n";
+      // Frozen native-tempo reference (see Clip::origBpm's own comment) -
+      // own tag, same append-only convention, written whenever it's a real
+      // captured value (not the -1 load-time sentinel) so an unsynced clip's
+      // playback ratio round-trips instead of resetting to "native speed"
+      // on every reload.
+      for (const ClipRecord& c : s.clips)
+         if (c.sampleDropped && c.origBpm > 0.0f)
+            file << "cliporigbpm " << i << " " << c.id << " " << FloatToString(c.origBpm) << "\n";
       // Split-derived source offset: own tag, same append-only convention -
       // only written when non-zero (i.e. the clip is a split-off right
       // half) so an unsplit Sample's patch line stays exactly as it was.
@@ -925,6 +933,20 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
                   c.sampleBpm = sampleBpm;
                   c.sourceDurationSeconds = sourceDurationSeconds;
                }
+         }
+      }
+      else if (tag == "cliporigbpm")
+      {
+         int streamIdx = -1;
+         uint64_t clipId = 0;
+         float origBpm = -1.0f;
+         if (in >> streamIdx >> clipId >> origBpm &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() && clipId != 0)
+         {
+            if (!std::isfinite(origBpm) || origBpm <= 0.0f) origBpm = -1.0f;
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+                  c.origBpm = origBpm;
          }
       }
       else if (tag == "clipsrcoffset")

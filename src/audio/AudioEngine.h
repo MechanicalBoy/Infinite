@@ -65,7 +65,7 @@ static_assert(AudioNode::kMaxInputPins == kAudioMaxNodeInputs,
 // agree on (see Transport's tempo-staging comment). Allocated on the main
 // thread into AudioTopology::clipWindows and published with the topology, so
 // the audio thread never allocates and never frees - the array dies with the
-// ProcessList through the existing mRetiring path.
+// ProcessList through the mRetiring/DrainRetired path.
 struct ClipWindow
 {
    // Which clip this window belongs to, so the audio thread can label the
@@ -109,26 +109,19 @@ struct ClipWindow
    // up like a real instrument the way the user expects "only clips are
    // supposed to be live" to mean.
    bool   sampleDropped = false;
-   // Audio-Sample-only BPM sync (step 3): the clip's own Arrange::Clip::
-   // sampleBpm when syncToTempo is on, 0 for every other window (Audio Clip,
-   // video, or a Sample with sync off - "Free" plays at the file's native
-   // rate). Deliberately NOT baked into a ready-made ratio at topology-build
-   // time: tempo changes do not bump gArrange.revision or trigger a topology
-   // rebuild (see ArrangeAudioRebuildIfStale's "Tempo is deliberately
-   // absent" comment - ticks are tempo-invariant everywhere else in this
-   // model), so a ratio computed here would go stale on a live tempo edit.
-   // RunTopology instead divides the CURRENT project tempo (read fresh every
-   // block, same as its existing `bpm` local) by this field every block, so
-   // a tempo change takes effect on the very next block like a real "sync"
-   // feature must, without needing a topology rebuild.
+   // Audio-Sample-only (0 / false for every other window). The source is a
+   // pure function of the timeline, recomputed every block from the CURRENT
+   // project tempo (tempo edits do not rebuild the topology):
+   //   source seconds at beat b = sourceOffsetSeconds + (b - startBeat) * 60 / effBpm
+   //   effBpm = syncToTempo ? sampleBpm : projectTempo
+   // i.e. a synced Sample time-stretches by projectTempo / sampleBpm, an
+   // unsynced one plays at native speed. See RunTopology and
+   // AudioNode::SetClipSamplePosition. The arrange panel's static waveform
+   // uses the same formula (ArrangeSampleSourceBpm in main.cpp).
    float  sampleBpm    = 0.0f;
-   // Audio-Sample-only (Arrange::Clip::sourceOffsetSeconds, straight copy at
-   // topology-build time): how far into the decoded source buffer this
-   // window's clip starts, in seconds. 0 for every non-Sample window and for
-   // a Sample that has never been split. RunTopology's exact-seek lookahead
-   // adds this to the elapsed-seconds-since-onset figure before applying the
-   // pitch/tempo-ratio scaling, so a Sample created by splitting another one
-   // seeks into the middle of the file instead of always restarting at 0.
+   float  origBpm      = 0.0f;  // detected tempo, display only - never read by the audio thread
+   bool   syncToTempo  = false;
+   // Where in the source this window's box begins (a split/trimmed Sample).
    float  sourceOffsetSeconds = 0.0f;
 };
 
@@ -367,7 +360,11 @@ private:
       uint64_t generation = 0;
    };
    std::atomic<ProcessList*> mCurrent { nullptr };
-   ProcessList* mRetiring = nullptr; // freed on the NEXT SetTopology call
+   // Superseded lists awaiting the audio thread's confirmation - see
+   // DrainRetired(). Main thread only.
+   std::vector<ProcessList*> mRetiring;
+   std::atomic<bool> mDeviceOpen { false };
+   void DrainRetired();
 
    // Bumped once per SetTopology() call (main thread only) - see
    // CurrentGeneration(). Started at 0 so the first published topology is

@@ -16,40 +16,54 @@ encoding, and video-container audio-track decode
 (`libavformat`, `libavcodec`, `libavutil`, `libswscale`, `libswresample`).
 
 Prebuilt binaries (what actually links into the shipped binary), from the
-BtbN/FFmpeg-Builds project's `n8.1` release:
+BtbN/FFmpeg-Builds autobuild tag `autobuild-2026-09-15-13-18`, whose asset
+filenames embed the version string `n8.1.2-53-g1005b294ff` (a git snapshot 53
+commits past the `n8.1.2` release, not the `8.1` release tarball):
 
-| Variant | Arch | SHA256 |
+| Variant | Arch | Archive - SHA256 |
 |---|---|---|
-| `INFINITE_ENABLE_GPL_CODECS=ON` (default) | x86_64 | `ffmpeg-n8.1-latest-linux64-gpl-shared-8.1.tar.xz` - `9c3319a2d5cafb0bc51c532dec0b35ff0c7c4c28fea0afb90c40a79832501647` |
-| `INFINITE_ENABLE_GPL_CODECS=ON` (default) | aarch64 | `ffmpeg-n8.1-latest-linuxarm64-gpl-shared-8.1.tar.xz` - `14c2caa732cf53ee1bc6d71e8991db54dcb9535f3bca636b40096aed3bd9fdc8` |
-| `INFINITE_ENABLE_GPL_CODECS=OFF` | x86_64 | `ffmpeg-n8.1-latest-linux64-lgpl-shared-8.1.tar.xz` - `4fe9bc3b32bcb5bd0ce16f0035c16608baad018bacd8f0abc0942157dbdf52c2` |
-| `INFINITE_ENABLE_GPL_CODECS=OFF` | aarch64 | `ffmpeg-n8.1-latest-linuxarm64-lgpl-shared-8.1.tar.xz` - `082bd6b73e54506fd6edaf5f1098a8f004c03b8d354deeb83e80e5ff8c6b7044` |
+| `INFINITE_ENABLE_GPL_CODECS=ON` (default) | x86_64 | `ffmpeg-n8.1.2-53-g1005b294ff-linux64-gpl-shared-8.1.tar.xz` - `cdd23dda4552a11babd04b1e352736339d50cb2bca29f9fd2014e246a3924062` |
+| `INFINITE_ENABLE_GPL_CODECS=ON` (default) | aarch64 | `ffmpeg-n8.1.2-53-g1005b294ff-linuxarm64-gpl-shared-8.1.tar.xz` - `9b1d14ac6ce89d35ae2511f150477680931a482ea53fd033850f3d5d27af0141` |
+| `INFINITE_ENABLE_GPL_CODECS=OFF` | x86_64 | `ffmpeg-n8.1.2-53-g1005b294ff-linux64-lgpl-shared-8.1.tar.xz` - `c8fb071899337b16680ea1848c87fac27c3f31ff2c88e3c3b6c813f2625e9af1` |
+| `INFINITE_ENABLE_GPL_CODECS=OFF` | aarch64 | `ffmpeg-n8.1.2-53-g1005b294ff-linuxarm64-lgpl-shared-8.1.tar.xz` - `aac9ed865431ce338688d657ece3345712107a891dee77d6cad5f6d2fcf58ec5` |
 
 Downloaded from
-`https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/<name>`.
-See `CMakeLists.txt` (search `INFINITE_ENABLE_GPL_CODECS`) for the
-`FetchContent_Declare` that pins these.
+`https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-15-13-18/<name>`.
+See `CMakeLists.txt` (search `FFMPEG_RELEASE_TAG`) for the
+`FetchContent_Declare` that pins these, and the comment above it for why the
+pin is an immutable `autobuild-*` tag rather than the rolling `latest` tag
+(whose assets are replaced in place, so a hash pinned against it goes stale).
 
 **Source offer (GPL section 6).** BtbN distributes prebuilt binaries only;
 the obligation to make corresponding source available falls on this project
-as the distributor of the built binary, not on BtbN. The exact upstream
-FFmpeg source this build corresponds to is pinned here, independent of
-BtbN's build pipeline:
+as the distributor of the built binary, not on BtbN. The corresponding source
+for the binaries above is:
 
-- FFmpeg `8.1` source: `https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz`
-  SHA256 `b072aed6871998cce9b36e7774033105ca29e33632be5b6347f3206898e0756a`
-- x264 source (stable branch, commit `b35605ace3ddf7c1a5d67a2eb553f034aef41d55`,
-  the commit BtbN's `n8.1` GPL build was built against):
-  `https://code.videolan.org/videolan/x264/-/archive/b35605ace3ddf7c1a5d67a2eb553f034aef41d55/x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz`
-  SHA256 `cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9`
+- FFmpeg at git commit `1005b294ff` on the `release/8.1` branch - the commit
+  the `n8.1.2-53-g1005b294ff` version string names. Snapshot:
+  `https://git.ffmpeg.org/gitweb/ffmpeg.git/snapshot/1005b294ff.tar.gz`
+  (equivalently `https://github.com/FFmpeg/FFmpeg/archive/1005b294ff.tar.gz`).
+  This is NOT the `ffmpeg-8.1.tar.xz` release tarball; a snapshot 53 commits
+  later is a different work and only the actual commit satisfies section 6.
+- x264 at the commit BtbN's GPL build for this autobuild embedded. BtbN pulls
+  x264's `stable` branch at build time and does not publish that commit in
+  the release metadata; the shipped `libavcodec.so` reports it in its build
+  configuration string, readable with
+  `strings libavcodec.so | grep -o 'x264 [0-9]*'` and
+  `ffmpeg -version` against the bundled libraries.
 
-Anyone who receives the Linux binary of Infinite may request these exact
-source tarballs (or build them from the pinned commit/version above) under
-GPLv2-or-later/GPLv3 section 6. Until a release process archives these
-tarballs as GitHub release assets alongside the AppImage, the written offer
-is: open an issue at the project's repository, or use the URLs and SHA256
-sums above directly - both resolve to the exact source these binaries were
-built from as of this writing (2026-09-15).
+Anyone who receives the Linux binary of Infinite may request this exact
+corresponding source under GPLv2-or-later/GPLv3 section 6. The written offer
+is: open an issue at the project's repository.
+
+**Release blocker, not yet done.** Section 6 is satisfied by an offer that is
+good for three years and actually fulfillable. Before the Linux binary is
+distributed, the release process must (a) download the FFmpeg snapshot above
+and the matching x264 source, (b) record their SHA256 sums here so a recipient
+can verify what they got, and (c) archive both tarballs as release assets
+alongside the AppImage so fulfilment does not depend on upstream URLs staying
+up. Until (a)-(c) are done, this file names a commit but does not yet pin a
+verified source archive.
 
 **Licence texts shipped with the Linux build.** `LICENSE.txt` inside each
 BtbN FFmpeg release tarball is the GPLv3 text (the FFmpeg build's own
@@ -92,3 +106,30 @@ Media Foundation hardware paths) but explicitly scoped out of Phase 3 - it
 cannot be verified under the llvmpipe container or in CI, and is deferred to
 a phase with real hardware. libx264 software encode is the only Linux H.264
 path today.
+
+Signalsmith Stretch (all platforms)
+-----------------------------------
+
+Time-stretch / pitch-shift for Arrangement Timeline audio Samples
+(`src/audio/dsp/ClipTimeStretch.h`). Header-only, vendored in
+`external/signalsmith-stretch/`.
+
+| Component | Version | Commit |
+|---|---|---|
+| signalsmith-stretch | 1.3.2 | `57b93f4e9206a089a45387eaa39bdc9f310d3308` |
+| signalsmith-linear | 0.3.1 | `5668673560146a9cfe38c25315071e3fd68c8317` |
+
+Local modifications (marked `INFINITE PATCH`):
+- `signalsmith-stretch.h`: the silent-input bypass also waits until the
+  output latency's worth of silence has been produced, so synthesis tails are
+  not cut off at stretch rates above about 2x.
+- `signalsmith-linear/fft.h`: adds the missing `#include <cstring>`
+  (`std::memcpy`); it built only through libc++'s transitive includes and
+  fails on libstdc++ (Linux) and MSVC.
+
+FFT backend: Apple's Accelerate on macOS; the library's built-in portable
+C++ FFT on Windows and Linux (no intrinsics, so x64 and ARM64 alike).
+Measured at the same cost and bit-identical output to the Accelerate path.
+
+Licence: MIT. Licence texts: `external/signalsmith-stretch/LICENSE.txt` and
+`external/signalsmith-stretch/signalsmith-linear/LICENSE.txt`.

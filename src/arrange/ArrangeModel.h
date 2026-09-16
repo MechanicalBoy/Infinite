@@ -49,6 +49,39 @@ namespace Arrange
       return BeatsToTicks(sec * bpm / 60.0);
    }
 
+   // Audio Sample timing, one rule for audio, waveform and every edit:
+   //
+   //   source seconds covered by N ticks = TicksToSeconds(N, effBpm)
+   //   effBpm = syncToTempo ? sampleBpm : live project tempo
+   //
+   // Synced: the box is in beats of the SAMPLE's tempo, and playback
+   // time-stretches by projectTempo / sampleBpm, so a tempo change keeps the
+   // same audio in the same box. Unsynced: audio plays at native speed, so
+   // the box covers (lengthBeats * 60 / projectTempo) seconds of the file and
+   // a tempo change alone reveals or hides audio at the box's end - the box
+   // itself never moves. Sample BPM only matters while synced.
+   //
+   // The live tempo is not part of the model, so edits that convert ticks to
+   // source seconds (Split, TrimEdge, PlaceOverwrite) read it from here.
+   // main.cpp sets it every frame from Transport::Tempo(); tests set it
+   // directly.
+   inline double gSampleLiveTempoBpm = 120.0;
+
+   inline double SampleSourceBpm(bool syncToTempo, float sampleBpm, double liveBpm)
+   {
+      if (syncToTempo && sampleBpm > 0.0f)
+         return (double)sampleBpm;
+      return liveBpm > 0.0 ? liveBpm : 120.0;
+   }
+
+   // Ticks that `seconds` of source audio occupy at effBpm.
+   inline Tick SampleClipLengthTicks(double seconds, double effBpm)
+   {
+      if (!(seconds > 0.0)) return 1;
+      if (!(effBpm > 0.0)) effBpm = 120.0;
+      return std::max<Tick>(1, (Tick)llround(seconds * (effBpm / 60.0) * (double)kPPQ));
+   }
+
    enum LaneType { kLaneVideo = 0, kLaneAudio = 1 };
    enum Edge { kEdgeStart = 0, kEdgeEnd = 1 };
    // SetEnabled's third argument.
@@ -73,31 +106,16 @@ namespace Arrange
       // --- sample-dropped media clips (audio drop / video-image drop) ----
       float    pan     = 0.0f;  // audio only, -1..1, independent of the lane's own pan
       float    pitch   = 0.0f;  // audio only, semitones, +/-24 - mirrors SamplerNode::pitch
-      // Audio only. true (default): the clip's timeline length is the file's
-      // natural duration converted to ticks at the tempo in effect when it
-      // was dropped, so it lands on the beat grid; the source itself is not
-      // time-stretched, just cut off/looped to fit. false: length is still
-      // computed once at drop time the same way, but the clip is understood
-      // to represent the file's own untouched duration rather than something
-      // that should read as "on tempo" - a UI/authoring distinction only,
-      // there is no different playback behavior to it beyond that one-time
-      // length calculation. Never revisited on a later tempo change: ticks
-      // are already tempo-invariant everywhere else in this model.
+      // Audio-Sample-only - see SampleSourceBpm above for what these mean.
       bool     syncToTempo = true;
-      // Audio-Sample-only (0/unused for an Audio Clip and for video). The
-      // file's own/assumed BPM: defaults to the project tempo at drop time,
-      // which exactly reproduces the old silent "file's BPM == project's
-      // BPM at drop time" assumption syncToTempo used to bake into `length`
-      // once and never revisit. Freely editable afterward in Clip Settings;
-      // editing it recomputes `length` inline (see the BPM field's edit
-      // handler in main.cpp) rather than only mattering at import time, so
-      // a wrong initial guess can be corrected losslessly.
+      // The sample's own tempo: estimated at import, user-editable. Drives
+      // playback only while syncToTempo is on.
       float    sampleBpm = 120.0f;
-      // Audio-Sample-only. The decoded file's own natural duration in
-      // seconds, captured once at import (or at Bounce to Sample) and never
-      // touched afterward - persisted so a later sampleBpm edit can
-      // recompute `length` losslessly without re-decoding the file:
-      // length_ticks = sourceDurationSeconds * (sampleBpm / 60) * kPPQ.
+      // The tempo the import-time analysis detected (0 or negative = nothing
+      // detected). Display only - shown next to Sample BPM so a user edit can
+      // always be compared against, or reset to, the analysis.
+      float    origBpm = 120.0f;
+      // The decoded file's natural duration in seconds, captured at import.
       float    sourceDurationSeconds = 0.0f;
       // Audio-Sample-only. How far into the decoded source buffer this
       // clip's audio starts, in seconds. 0 for a freshly imported/bounced
