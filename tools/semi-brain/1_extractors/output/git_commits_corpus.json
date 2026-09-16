@@ -1,5 +1,37 @@
 [
   {
+    "hash": "77926fce8042e0066bb9d49653b1513c5d53bf80",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 07:41:45 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "build",
+      "title": "fix(build): pin Linux FFmpeg FetchContent to immutable BtbN release tag",
+      "description": "pin Linux FFmpeg FetchContent to immutable BtbN release tag",
+      "bullets": [],
+      "body": "BtbN/FFmpeg-Builds' \"latest\" tag is a rolling pointer whose assets get\nreplaced in place, so the pinned SHA256 hashes go stale over time and\nbreak fresh CMake configures with a hash-mismatch FetchContent\nfailure (hit on arm64 during Linux Phase 5 AppImage work). Repin all\nfour linux64/linuxarm64 gpl/lgpl shared archives to the immutable\nautobuild-2026-09-15-13-18 tag with hashes verified by downloading and\nsha256sum'ing the tarballs directly, and document the re-pin process\nfor next time.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "fix(build): pin Linux FFmpeg FetchContent to immutable BtbN release tag\n\nBtbN/FFmpeg-Builds' \"latest\" tag is a rolling pointer whose assets get\nreplaced in place, so the pinned SHA256 hashes go stale over time and\nbreak fresh CMake configures with a hash-mismatch FetchContent\nfailure (hit on arm64 during Linux Phase 5 AppImage work). Repin all\nfour linux64/linuxarm64 gpl/lgpl shared archives to the immutable\nautobuild-2026-09-15-13-18 tag with hashes verified by downloading and\nsha256sum'ing the tarballs directly, and document the re-pin process\nfor next time.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "CMakeLists.txt | 44 +++++++++++++++++++++++++++++++++++++-------\n 1 file changed, 37 insertions(+), 7 deletions(-)"
+  },
+  {
+    "hash": "629fa5b962b58286f792cab9f8b8f95be163097e",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Wed Sep 16 01:02:41 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "arrange",
+      "title": "fix(arrange): unify toolbar button hover, active highlights, and tooltips",
+      "description": "unify toolbar button hover, active highlights, and tooltips",
+      "bullets": [],
+      "body": "",
+      "raw": "fix(arrange): unify toolbar button hover, active highlights, and tooltips"
+    },
+    "stat": "src/main.cpp                                       | 129 ++++--\n .../1_extractors/output/git_commits_corpus.json    |  16 +\n .../1_extractors/output/recovered_docs_corpus.json | 468 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 147 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 147 +++----\n 5 files changed, 484 insertions(+), 423 deletions(-)"
+  },
+  {
     "hash": "1d29323aff8a2495250a01f24c5d1f6c30633115",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
