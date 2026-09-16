@@ -20,6 +20,7 @@ A unified node-based audiovisual modular workstation for **macOS**, **Windows**,
 
 ## Highlights
 
+- **Arrangement Timeline**: A full clip-based arrangement editor alongside the node canvas — tick-accurate scheduling off the same BPM transport, blade tool, track groups, marquee multi-select, drag-and-drop media import, live waveform/video-thumbnail rendering, and a render/export queue.
 - **Dual Synchronized DAG Engine**: High-throughput GPU texture pipeline (GLSL / OpenGL 3.2 Core) running in lockstep with a sample-accurate, pull-based audio graph tied to a global BPM transport.
 - **Universal Cross-Domain Modulation**: Modulate any shader parameter, 3D transform, audio synth control, or hosted plugin slider via LFOs, CV sequencers, live audio FFT spectrum analysis, or video analysis.
 - **Audio Synthesis & Physical Modeling**: Wavetable oscillator, modal metallic physical resonator, real-time granular engine, PaulStretch spectral stretcher, multi-sample player, and 8-track drum machine.
