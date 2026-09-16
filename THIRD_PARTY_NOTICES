@@ -92,3 +92,23 @@ Media Foundation hardware paths) but explicitly scoped out of Phase 3 - it
 cannot be verified under the llvmpipe container or in CI, and is deferred to
 a phase with real hardware. libx264 software encode is the only Linux H.264
 path today.
+
+Signalsmith Stretch (all platforms)
+-----------------------------------
+
+Time-stretch / pitch-shift for Arrangement Timeline audio Samples
+(`src/audio/dsp/ClipTimeStretch.h`). Header-only, vendored in
+`external/signalsmith-stretch/`.
+
+| Component | Version | Commit |
+|---|---|---|
+| signalsmith-stretch | 1.3.2 | `57b93f4e9206a089a45387eaa39bdc9f310d3308` |
+| signalsmith-linear | 0.3.1 | `5668673560146a9cfe38c25315071e3fd68c8317` |
+
+Local modification (marked `INFINITE PATCH` in `signalsmith-stretch.h`): the
+silent-input bypass also waits until the output latency's worth of silence
+has been produced, so synthesis tails are not cut off at stretch rates above
+about 2x.
+
+Licence: MIT. Licence texts: `external/signalsmith-stretch/LICENSE.txt` and
+`external/signalsmith-stretch/signalsmith-linear/LICENSE.txt`.
