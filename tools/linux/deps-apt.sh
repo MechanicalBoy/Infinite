@@ -13,6 +13,8 @@ apt-get install -y --no-install-recommends \
   pkg-config \
   git \
   ccache \
+  curl \
+  patchelf \
   libx11-dev \
   libxrandr-dev \
   libxinerama-dev \

@@ -524,6 +524,14 @@ namespace Platform
 
    bool PollPendingOpenFile(std::string& /*outPath*/)
    {
+      // Same story as PlatformWin.cpp's stub: launch-time opening is already
+      // covered generically in main.cpp (argv[1], checked once at startup
+      // for a .inf/.infinite extension - see the "Exec=Infinite %f" AppImage
+      // desktop entry in tools/linux/package-appimage.sh, which relies on
+      // exactly that path). What's missing here is only the Finder-style
+      // "app already running, OS asks it to open another file" event, which
+      // has no portable equivalent on X11/Wayland without a full
+      // single-instance/D-Bus-activation mechanism - not implemented (P5).
       return false;
    }
 

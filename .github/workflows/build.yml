@@ -325,3 +325,96 @@ jobs:
           path: build-linux/Infinite
           if-no-files-found: error
 
+  # Phase 5 task 5.1/5.2: the real release artifact. Runs on ubuntu-22.04
+  # directly (equivalent to building inside tools/linux/Dockerfile.release -
+  # same glibc-2.35 floor, same deps-apt.sh) rather than in a nested
+  # container, since GitHub's own ubuntu-22.04 runner already IS that floor.
+  # Clang only, Release, x86_64 - per phase-05-release.md 5.1. Independent of
+  # the `linux` job above (own build, own toolchain floor) so a change to the
+  # dev/test image never silently regresses the release build's glibc floor.
+  linux-appimage:
+    name: Linux AppImage (x86_64)
+    needs: detect
+    if: needs.detect.outputs.has_linux == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: sudo tools/linux/deps-apt.sh
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-appimage-${{ github.ref }}
+          restore-keys: |
+            linux-appimage-
+
+      - name: Build (Release, Clang)
+        run: |
+          export CC_FAMILY=clang
+          tools/linux/build.sh
+
+      - name: Assert no direct OpenGL library linkage
+        run: |
+          if ldd build-linux/Infinite | grep -E "libOpenGL|libGL\.so|libGLX|libEGL"; then
+            echo "ERROR: Infinite must NOT link libOpenGL/libGL/libGLX/libEGL directly (see audacity#12093)" >&2
+            exit 1
+          fi
+          echo "OK: no disallowed GL libraries linked directly."
+
+      - name: Package AppImage
+        run: tools/linux/package-appimage.sh build-linux artifacts-linux
+
+      - name: Verify AppImage runtime has no libfuse dependency
+        run: |
+          head -c 4194304 artifacts-linux/Infinite-x86_64.AppImage > /tmp/runtime-head
+          if command -v ldd >/dev/null 2>&1 && file /tmp/runtime-head | grep -qi ELF; then
+            if ldd /tmp/runtime-head 2>/dev/null | grep -qi libfuse; then
+              echo "ERROR: embedded AppImage runtime links libfuse.so.2 - not the static type2-runtime" >&2
+              exit 1
+            fi
+          fi
+          echo "OK: no libfuse.so.2 dependency in the embedded runtime."
+
+      - name: Upload Infinite-x86_64.AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: Infinite-x86_64.AppImage
+          path: artifacts-linux/Infinite-x86_64.AppImage
+          if-no-files-found: error
+
+  # Phase 5 task 5.3 (L3 smoke, validation.md's "L3" section): runs the
+  # x86_64 AppImage built above inside real distro base images it was never
+  # compiled on, to catch what an Ubuntu-22.04-only build can never prove -
+  # a distro missing a library Infinite assumes is present. Containers have
+  # no FUSE, so distro-smoke.sh always uses --appimage-extract-and-run.
+  linux-distro-smoke:
+    name: Linux distro smoke
+    needs: linux-appimage
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download AppImage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Infinite-x86_64.AppImage
+          path: .
+
+      - name: chmod +x
+        run: chmod +x Infinite-x86_64.AppImage
+
+      - name: Run distro smoke (Ubuntu 22.04/24.04, Debian 12, Fedora, Arch + minimal-install trap + Wayland best-effort)
+        run: tools/linux/distro-smoke.sh Infinite-x86_64.AppImage artifacts-linux
+
+      - name: Upload distro smoke artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Infinite-linux-distro-smoke
+          path: artifacts-linux
+          if-no-files-found: ignore
+

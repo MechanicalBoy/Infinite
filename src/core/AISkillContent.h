@@ -13,7 +13,8 @@
 // them together yet.
 namespace AISkillContent
 {
-   inline const char* kFieldLanguageMarkdown = R"AISKILL(---
+   inline const char* kFieldLanguageMarkdown =
+R"AISKILL(---
 name: infinite-field-language
 description: Write and debug Field kernel code for Infinite's Field nodes (Field Synth, Field Effect, Field Modifier, Field Pixel). Use whenever the user asks for a Field expression, a kernel for one of these nodes, or help fixing one that won't compile.
 ---
@@ -372,8 +373,8 @@ as separate flat circles instead of blending:
 ```
 param float speed = 1.2 [0.1, 5.0]
 param float size = 0.16 [0.05, 0.3]
-p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5)
-b1 = vec2(0.28 * cos(t * speed), 0.28 * sin(t * speed * 0.8))
+p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5))AISKILL"
+R"AISKILL(b1 = vec2(0.28 * cos(t * speed), 0.28 * sin(t * speed * 0.8))
 b2 = vec2(0.24 * cos(t * speed * 1.3 + 2.0), 0.24 * sin(t * speed * 1.1 + 1.0))
 r2 = size * size
 d1 = dot(p - b1, p - b1) + 0.0008

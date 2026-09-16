@@ -127,6 +127,7 @@ step_release() {
     echo "    uploaded website/assets/Infinite.dmg onto release $tag"
 
     step_release_windows "$tag"
+    step_release_linux "$tag"
 }
 
 # -------------------------------------------------------------- whatsnew ---
@@ -230,6 +231,43 @@ step_release_windows() {
     fi
 }
 
+# --------------------------------------------------------- release-linux ---
+# Mirrors step_release_windows: the AppImage is built by CI's
+# `linux-appimage` job (see .github/workflows/build.yml), not on this
+# (macOS) machine, so this pulls the artifact for the release commit's CI
+# run and uploads it onto the same GitHub Release the DMG/Windows zips just
+# went to. Best-effort, same reasoning as release-windows: a missing `gh`,
+# a still-running/failed CI run, or a run with no AppImage artifact all
+# just print a warning and return - they never fail the release step.
+step_release_linux() {
+    local tag="${1:?tag required}"
+    echo "==> release: syncing Infinite-x86_64.AppImage onto release $tag from CI"
+
+    local sha
+    sha=$(git rev-parse HEAD)
+    local run_id
+    run_id=$(gh run list --workflow=build.yml --branch main --status success \
+        --json databaseId,headSha --limit 20 \
+        --jq "[.[] | select(.headSha == \"$sha\")][0].databaseId" 2>/dev/null)
+    if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+        echo "    no successful CI run found yet for $sha - skipping Linux asset sync"
+        echo "    (CI may still be running; re-run 'release' once it's green, or upload manually)"
+        return 0
+    fi
+
+    local work
+    work=$(mktemp -d)
+    if ! gh run download "$run_id" -n "Infinite-x86_64.AppImage" -D "$work" >/dev/null 2>&1; then
+        echo "    Infinite-x86_64.AppImage artifact not found on run $run_id - skipping"
+        echo "    (linux-appimage job may have failed/continue-on-error)"
+        rm -rf "$work"
+        return 0
+    fi
+    gh release upload "$tag" "$work/Infinite-x86_64.AppImage" --clobber
+    echo "    uploaded Infinite-x86_64.AppImage onto release $tag"
+    rm -rf "$work"
+}
+
 # ----------------------------------------------------------------- cleanup ---
 # Auto-deletes ONLY files matching unambiguous junk patterns — editor swap
 # files, OS cruft, compiled artifacts. That's it.
@@ -293,6 +331,7 @@ case "$STEP" in
     nodediff) shift; step_nodediff "$@" ;;
     release) step_release ;;
     release-windows) shift; step_release_windows "$@" ;;
+    release-linux) shift; step_release_linux "$@" ;;
     whatsnew) shift; step_whatsnew "$@" ;;
     cleanup) step_cleanup ;;
     all)
