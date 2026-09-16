@@ -27976,6 +27976,12 @@ namespace
       });
       if (!changed)
          return false;
+      // A pasted clip is a fresh id (c.id = 0 above, reassigned by
+      // PlaceOverwrite) - the static-waveform cache is keyed by clip id, so
+      // without this a pasted Sample clip shows no waveform at all until
+      // some other edit happens to touch it.
+      for (uint64_t id : made)
+         ArrangeRefreshSampleStaticWave(id);
       gArrangeSel.clear();
       for (uint64_t id : made)
          if (Arrange::Find(gArrange, id).Valid())
@@ -27990,6 +27996,9 @@ namespace
       std::vector<uint64_t> made;
       if (!ArrangeEdit([&]() { Arrange::DuplicateBlock(gArrange, ids, &made); }))
          return false;
+      // Same fresh-id/stale-cache gap as ArrangePasteAt above.
+      for (uint64_t id : made)
+         ArrangeRefreshSampleStaticWave(id);
       gArrangeSel.clear();
       gArrangeSel.insert(made.begin(), made.end());
       gArrangeSelAnchor = made.empty() ? 0 : made.front();
@@ -29546,53 +29555,6 @@ namespace
       }
    }
 
-   // An unsynced Sample's `length` is derived from the CURRENT project tempo
-   // (see SampleClipLengthTicks's own comment) - unlike a synced Sample's,
-   // which is purely a function of its own sampleBpm and therefore already
-   // tempo-invariant. That makes an unsynced Sample the one clip type in the
-   // whole model whose `length` needs revisiting on a plain project-tempo
-   // change, even when nothing about the clip itself was touched: without
-   // this, changing the transport BPM while a clip's sync is off leaves its
-   // placed length pinned to whatever tempo was in effect the last time it
-   // was recomputed (drop, sync toggle, or a Sample BPM edit), while the
-   // audio itself keeps playing back at its own untouched native duration -
-   // exactly the "cuts off/pads the end" symptom the Sample BPM field's own
-   // edit handler was fixed for, just triggered by the transport's tempo
-   // control instead. Polled once a frame from DrawArrangePanelContent,
-   // same cadence as ArrangePollMediaImports, gated on the tempo actually
-   // having changed since the last call so an unchanged tempo costs nothing
-   // beyond the one comparison.
-   void ArrangeResyncUnsyncedSampleLengths()
-   {
-      static float sLastBpm = -1.0f;
-      const float bpm = Transport::Instance().Tempo();
-      if (bpm == sLastBpm)
-         return;
-      sLastBpm = bpm;
-
-      bool any = false;
-      for (Arrange::Lane& lane : gArrange.lanes)
-      {
-         if (lane.type != Arrange::kLaneAudio)
-            continue;
-         for (Arrange::Clip& c : lane.clips)
-         {
-            if (!c.sampleDropped || c.syncToTempo || !(c.sourceDurationSeconds > 0.0f))
-               continue;
-            const Arrange::Tick newLength = Arrange::SampleClipLengthTicks(
-               c.sourceDurationSeconds, c.sampleBpm, c.syncToTempo, (double)bpm);
-            if (newLength != c.length)
-            {
-               c.length = newLength;
-               ArrangeRefreshSampleStaticWave(c.id);
-               any = true;
-            }
-         }
-      }
-      if (any)
-         gArrange.revision++;
-   }
-
    std::string ArrangeRenderUniquePath(const std::string& path)
    {
       const size_t dot = path.rfind('.');
@@ -29682,11 +29644,6 @@ namespace
       // see ArrangePollMediaImports's own comment for why this is only
       // polled from here.
       ArrangePollMediaImports();
-
-      // Keep every unsynced Sample's placed length matching its own
-      // untouched real duration whenever the project tempo itself changes -
-      // see ArrangeResyncUnsyncedSampleLengths's own comment.
-      ArrangeResyncUnsyncedSampleLengths();
 
       // Clip labels, the offline test and the render popup's resolution probe
       // all look nodes up by uid - through the global per-frame map (WP5b),
