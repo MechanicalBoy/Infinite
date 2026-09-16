@@ -49,6 +49,29 @@ namespace Arrange
       return BeatsToTicks(sec * bpm / 60.0);
    }
 
+   // Audio-Sample-only: the tick length a Sample clip's fixed-duration audio
+   // should occupy on the grid right now - see Clip::sampleBpm's own comment.
+   // Synced: the file is time-stretched to follow the project, so its
+   // footprint is purely a function of its own (corrected) native tempo,
+   // independent of the live project tempo - exactly why ticks don't need
+   // revisiting on every tempo change (TicksToSeconds converts them at
+   // playback time). Unsynced: the file plays back untouched, at its own
+   // fixed real duration, so the footprint has to come from the CURRENT
+   // project tempo instead - sampleBpm plays no part in it there (it's just a
+   // stashed reference for if sync gets turned back on). Using the synced
+   // formula in the unsynced case used to make the clip's placed length drift
+   // out of step with the audio's actual (untouched) duration every time this
+   // field was edited, cutting the tail off or leaving a silent gap.
+   inline Tick SampleClipLengthTicks(double sourceDurationSeconds, float sampleBpm,
+                                      bool syncToTempo, double currentProjectBpm)
+   {
+      if (!(sourceDurationSeconds > 0.0)) return 1;
+      const double lenTicks = syncToTempo
+         ? sourceDurationSeconds * ((double)sampleBpm / 60.0) * (double)kPPQ
+         : (double)SecondsToTicks(sourceDurationSeconds, currentProjectBpm);
+      return std::max<Tick>(1, (Tick)llround(lenTicks));
+   }
+
    enum LaneType { kLaneVideo = 0, kLaneAudio = 1 };
    enum Edge { kEdgeStart = 0, kEdgeEnd = 1 };
    // SetEnabled's third argument.

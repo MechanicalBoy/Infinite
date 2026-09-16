@@ -280,16 +280,14 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             // position and must not be reset every block. The offset is
             // elapsed timeline seconds since this window's own onset: beats
             // are converted with the CURRENT tempo, so a tempo change is
-            // already folded in, and no separate BPM-mapping is needed since
-            // Sync to Tempo only ever affects a clip's placed length, never
-            // an actual playback-rate warp (see ArrangePollMediaImports).
-            // Pitch is a different story: AudioFilePlayerAudioNode implements
-            // it as varispeed (same "shift the read rate" model as
-            // SamplerNode's NoteToRate - see its ProcessBlock), so a pitched
-            // Sample consumes source-seconds faster or slower than real time.
-            // The elapsed-seconds-since-onset figure has to be scaled by that
-            // same ratio or the seek lands on the wrong source frame for any
-            // Sample whose clip pitch isn't 0.
+            // already folded in. Both Pitch (varispeed) and BPM sync (WSOLA
+            // time-stretch, see AudioFilePlayerAudioNode::ProcessBlock's own
+            // comment) warp how many source-seconds-per-real-second get
+            // consumed, but by two different mechanisms now - rather than
+            // duplicate that ratio math here, the node itself re-derives both
+            // seek positions from its own current pitch/tempo mailbox values
+            // (see SeekToClipOffset's own comment), so this just hands over
+            // the plain elapsed real time.
             if (discontinuity && windows[pitchCursor].sampleDropped)
             {
                // sourceOffsetSeconds folds in how far into the source file
@@ -300,14 +298,7 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
                // always relative to the file's own beginning.
                const double elapsedSeconds = windows[pitchCursor].sourceOffsetSeconds +
                   std::max(0.0, (blockStartBeat - windows[pitchCursor].startBeat) * 60.0 / bpm);
-               const double pitchRatio = std::pow(2.0, (double)windows[pitchCursor].pitch / 12.0);
-               // BPM sync (step 3) also warps the source-seconds-per-real-
-               // second rate, exactly like pitch does - a synced Sample must
-               // seek to the same scaled offset pitch already required, or a
-               // scrub/retrigger lands on the wrong source-file position.
-               // Same live (not baked) ratio as the SetClipRateOverride push
-               // just above.
-               terminal.sourceNode->SeekToClipOffset(elapsedSeconds * pitchRatio * (double)tempoRatioLive);
+               terminal.sourceNode->SeekToClipOffset(elapsedSeconds);
             }
          }
       }

@@ -32645,7 +32645,17 @@ namespace
                      ArrangeEdit([&]()
                      {
                         if (Arrange::Clip* c = Arrange::FindClip(gArrange, cid))
+                        {
                            c->syncToTempo = syncToTempo;
+                           // The mode switch itself changes what "correct
+                           // length" means (see SampleClipLengthTicks) - has
+                           // to be recomputed here too, not just on a BPM
+                           // field edit, or flipping sync leaves the clip's
+                           // footprint stuck at whatever the OTHER mode's
+                           // formula last produced.
+                           c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
+                              c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
+                        }
                      });
                   }
 
@@ -32663,12 +32673,14 @@ namespace
                         fieldGesture(true);
                         cp = Arrange::FindClip(gArrange, cid);
                         cp->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
-                        if (cp->sourceDurationSeconds > 0.0f)
-                        {
-                           const double newLen = (double)cp->sourceDurationSeconds *
-                              ((double)cp->sampleBpm / 60.0) * (double)Arrange::kPPQ;
-                           cp->length = std::max<Arrange::Tick>(1, (Arrange::Tick)llround(newLen));
-                        }
+                        // Unsynced playback never warps (see
+                        // SampleClipLengthTicks), so this edit is only ever a
+                        // correction to the stashed reference value for a
+                        // later Sync to Tempo - it must NOT move `length`,
+                        // which stays pinned to the clip's actual (untouched)
+                        // real duration at the current project tempo.
+                        cp->length = Arrange::SampleClipLengthTicks(cp->sourceDurationSeconds,
+                           cp->sampleBpm, cp->syncToTempo, (double)Transport::Instance().Tempo());
                         gArrange.revision++;
                      }
                      fieldGestureEnd();
@@ -38256,6 +38268,14 @@ namespace
                      if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                      {
                         c->syncToTempo = syncToTempo;
+                        // The mode switch itself changes what "correct
+                        // length" means (see SampleClipLengthTicks) - has to
+                        // be recomputed here too, not just on a BPM field
+                        // edit, or flipping sync leaves the clip's footprint
+                        // stuck at whatever the OTHER mode's formula last
+                        // produced.
+                        c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
+                           c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
                         gArrange.revision++;
                      }
                   });
@@ -38274,7 +38294,11 @@ namespace
                {
                   // Sync is off: no rate override applies (RebuildAudioTopology
                   // gates SetClipRateOverride's ratio on syncToTempo), so this
-                  // field only ever affects the clip's placed length below.
+                  // field is only ever a stashed reference for a later Sync to
+                  // Tempo - it must NOT move the clip's placed length, which
+                  // stays pinned to the clip's actual (untouched) real
+                  // duration at the current project tempo (see
+                  // SampleClipLengthTicks's own comment).
                   float sampleBpm = clip->sampleBpm;
                   ImGui::SetNextItemWidth(fieldW);
                   if (ImGui::DragFloat("Sample BPM##clipbpm", &sampleBpm, 0.1f, 1.0f, 999.0f, "%.2f"))
@@ -38283,15 +38307,8 @@ namespace
                         if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                         {
                            c->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
-                           // sourceDuration is the fixed, persisted "how long
-                           // is the actual decoded file" measurement from
-                           // import/bounce time.
-                           if (c->sourceDurationSeconds > 0.0f)
-                           {
-                              const double newLen = (double)c->sourceDurationSeconds *
-                                 ((double)c->sampleBpm / 60.0) * (double)Arrange::kPPQ;
-                              c->length = std::max<Arrange::Tick>(1, (Arrange::Tick)llround(newLen));
-                           }
+                           c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
+                              c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
                            gArrange.revision++;
                         }
                      });
