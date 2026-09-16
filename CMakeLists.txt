@@ -24,7 +24,7 @@ set(INFINITE_VERSION "0.4.0")
 # numeric components but INFINITE_VERSION is three; kept as an explicit
 # second value rather than derived, so bump both together when cutting a
 # release.
-set(INFINITE_VERSION_RC "0,3,5,0")
+set(INFINITE_VERSION_RC "0,4,0,0")
 string(REPLACE "," "." INFINITE_VERSION_RC_STR "${INFINITE_VERSION_RC}")
 
 if(APPLE)
