@@ -1097,10 +1097,9 @@ body {
 }
 
 .specs-grid {
-  display: flex;
-  justify-content: center;
-  gap: 26px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 20px 16px;
   margin-bottom: 20px;
 }
 
@@ -1109,6 +1108,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  text-align: center;
 }
 
 .spec-label {
@@ -1298,6 +1298,11 @@ body {
   .hero-section { padding: 30px 0 18px; }
   .nature-canvas-wrapper { height: 340px; }
 
+  .specs-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px 12px;
+  }
+
   /* Creative streams: 4 slidable square cards on mobile */
   .capabilities-grid {
     display: flex;
@@ -1390,13 +1395,6 @@ body {
   .download-card { padding: 24px 14px; }
   .footer-links { gap: 20px; }
 
-  .specs-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px 8px;
-    text-align: center;
-    margin-bottom: 16px;
-  }
   .spec-label { font-size: 0.64rem; }
   .spec-val { font-size: 0.72rem; }
 
@@ -1434,4 +1432,19 @@ body {
   .nav-container {
     padding: 0 14px;
   }
+
+  .specs-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .spec-col {
+    flex-direction: row;
+    justify-content: space-between;
+    text-align: left;
+    border-bottom: 1px dashed var(--border-subtle);
+    padding-bottom: 8px;
+  }
+  .spec-col:last-child { border-bottom: none; padding-bottom: 0; }
+  .spec-val { text-align: right; max-width: 60%; }
 }
