@@ -110,18 +110,32 @@ struct ClipWindow
    // supposed to be live" to mean.
    bool   sampleDropped = false;
    // Audio-Sample-only BPM sync (step 3): the clip's own Arrange::Clip::
-   // sampleBpm when syncToTempo is on, 0 for every other window (Audio Clip,
-   // video, or a Sample with sync off - "Free" plays at the file's native
-   // rate). Deliberately NOT baked into a ready-made ratio at topology-build
-   // time: tempo changes do not bump gArrange.revision or trigger a topology
-   // rebuild (see ArrangeAudioRebuildIfStale's "Tempo is deliberately
-   // absent" comment - ticks are tempo-invariant everywhere else in this
-   // model), so a ratio computed here would go stale on a live tempo edit.
-   // RunTopology instead divides the CURRENT project tempo (read fresh every
-   // block, same as its existing `bpm` local) by this field every block, so
-   // a tempo change takes effect on the very next block like a real "sync"
-   // feature must, without needing a topology rebuild.
+   // sampleBpm whenever the window is a dropped Sample (synced or not), 0
+   // for every other window (Audio Clip or video). Deliberately NOT baked
+   // into a ready-made ratio at topology-build time: tempo changes do not
+   // bump gArrange.revision or trigger a topology rebuild (see
+   // ArrangeAudioRebuildIfStale's "Tempo is deliberately absent" comment -
+   // ticks are tempo-invariant everywhere else in this model), so a ratio
+   // computed here would go stale on a live tempo edit. RunTopology instead
+   // recomputes the ratio fresh every block from this field plus `bpm`/
+   // `origBpm` below (see their own comments), so both a tempo change
+   // (synced) and a Sample BPM field edit (unsynced) take effect on the very
+   // next block, without needing a topology rebuild.
    float  sampleBpm    = 0.0f;
+   // Audio-Sample-only: the clip's Arrange::Clip::origBpm, the believed
+   // native tempo frozen once at import/decode and never touched again - see
+   // Clip::origBpm's own comment. 0 for every non-Sample window. This is the
+   // fixed reference point RunTopology divides the CURRENT sampleBpm by when
+   // `syncToTempo` below is false, so an unsynced clip's playback rate
+   // actually reacts to Sample BPM edits (sampleBpm/origBpm) instead of
+   // being permanently locked to native speed.
+   float  origBpm      = 0.0f;
+   // Audio-Sample-only, mirrors Arrange::Clip::syncToTempo. Picks which of
+   // the two ratios above RunTopology uses: bpm/sampleBpm when true (tracks
+   // live project tempo), sampleBpm/origBpm when false (tempo-independent,
+   // reacts only to the Sample BPM field itself). False for every non-Sample
+   // window, which combined with sampleBpm==0 there already forces ratio 1.0.
+   bool   syncToTempo  = false;
    // Audio-Sample-only (Arrange::Clip::sourceOffsetSeconds, straight copy at
    // topology-build time): how far into the decoded source buffer this
    // window's clip starts, in seconds. 0 for every non-Sample window and for

@@ -124,6 +124,21 @@ namespace Arrange
       // handler in main.cpp) rather than only mattering at import time, so
       // a wrong initial guess can be corrected losslessly.
       float    sampleBpm = 120.0f;
+      // Audio-Sample-only. The believed native tempo captured ONCE at import
+      // (or at Bounce to Sample) and never touched afterward, unlike
+      // sampleBpm above which is freely user-editable. This is the fixed
+      // reference point an unsynced clip's playback-rate ratio
+      // (sampleBpm / origBpm) is measured against, so correcting sampleBpm
+      // later changes both the grid length AND the actual playback speed
+      // (time-stretched via WSOLA, pitch preserved) relative to this frozen
+      // value - "this loop is actually N bpm, not what I estimated" - while
+      // a live project-tempo change alone never touches this ratio (see
+      // AudioSampleVoice's own comment on why that has to stay tempo-
+      // independent). Defaults to sampleBpm's own default so a clip that
+      // predates this field (loaded from an old patch) reproduces the old
+      // "always native speed until synced" behavior until sampleBpm is
+      // first edited.
+      float    origBpm = 120.0f;
       // Audio-Sample-only. The decoded file's own natural duration in
       // seconds, captured once at import (or at Bounce to Sample) and never
       // touched afterward - persisted so a later sampleBpm edit can

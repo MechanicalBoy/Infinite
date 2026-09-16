@@ -1409,6 +1409,13 @@ namespace
       uint64_t clipId = 0;
       uint64_t nodeUid = 0;
       Arrange::ImportMediaKind kind = Arrange::ImportMediaKind::Audio;
+      // True for a re-decode kicked by ArrangeRespawnCloneNode (paste/
+      // duplicate/split of an existing Sample clip) rather than a fresh
+      // drop from ArrangeImportMediaFile - the clip already has correct
+      // sampleBpm/origBpm/length/sourceDurationSeconds from the original,
+      // so ArrangePollMediaImports must not re-estimate/overwrite them,
+      // just attach the newly decoded buffer to the clone's own node.
+      bool isClone = false;
    };
    std::vector<ArrangePendingImport> gArrangePendingImports;
 
@@ -5885,7 +5892,16 @@ namespace
                 ca.blendMode != cb.blendMode || ca.pan != cb.pan || ca.pitch != cb.pitch ||
                 ca.opacity != cb.opacity || ca.colorBrightness != cb.colorBrightness ||
                 ca.colorContrast != cb.colorContrast || ca.colorSaturation != cb.colorSaturation ||
-                ca.retrigger != cb.retrigger)
+                ca.retrigger != cb.retrigger ||
+                // Sample-dropped/BPM-sync fields (step 3) - previously
+                // missing here entirely, which meant a gesture-based Sample
+                // BPM/sync-toggle edit could be silently dropped as "no
+                // change" by ArrangeGestureEnd instead of pushing an undo
+                // step.
+                ca.sampleDropped != cb.sampleDropped || ca.syncToTempo != cb.syncToTempo ||
+                ca.sampleBpm != cb.sampleBpm || ca.origBpm != cb.origBpm ||
+                ca.sourceDurationSeconds != cb.sourceDurationSeconds ||
+                ca.sourceOffsetSeconds != cb.sourceOffsetSeconds)
                return false;
          }
       }
@@ -6215,6 +6231,7 @@ namespace
             r.retrigger = c.retrigger;
             r.sampleDropped = c.sampleDropped;
             r.sampleBpm = c.sampleBpm;
+            r.origBpm = c.origBpm;
             r.sourceDurationSeconds = c.sourceDurationSeconds;
             r.sourceOffsetSeconds = c.sourceOffsetSeconds;
             s.clips.push_back(std::move(r));
@@ -6333,6 +6350,12 @@ namespace
             clip.retrigger = c.retrigger;
             clip.sampleDropped = c.sampleDropped;
             clip.sampleBpm = c.sampleBpm;
+            // -1 is Patch::ClipRecord::origBpm's load-time sentinel for "this
+            // patch predates the field" - default to sampleBpm so an
+            // unsynced clip reproduces the old always-native-speed behavior
+            // (ratio 1.0) until the user edits Sample BPM again, rather than
+            // an arbitrary/uninitialized reference tempo.
+            clip.origBpm = (c.origBpm > 0.0f) ? c.origBpm : c.sampleBpm;
             clip.sourceDurationSeconds = c.sourceDurationSeconds;
             clip.sourceOffsetSeconds = c.sourceOffsetSeconds;
             lane.clips.push_back(std::move(clip));
@@ -6671,6 +6694,11 @@ namespace
    // import, earlier in the file) needs to clean up a just-spawned node when
    // the clip placement it was for fails.
    void RemoveNodeByIndex(int index);
+
+   // Defined near ArrangePollMediaImports, below; forward-declared here since
+   // ArrangePasteAt/ArrangeDuplicateSelection (earlier in the file) need to
+   // call it for every newly-made Sample clip.
+   void ArrangeRespawnCloneNode(uint64_t clipId);
 
    // Which geometry-ish pin a node exposes at a given slot, and how to set it.
    // Geometry, camera, light and modulator connections are raw pointers rather
@@ -27979,6 +28007,14 @@ namespace
       });
       if (!changed)
          return false;
+      // A pasted Sample clip still points at the ORIGINAL clip's srcUid at
+      // this point (PlaceOverwrite copies the Clip struct verbatim aside
+      // from id/groupId/start) - give it its own private hidden node and a
+      // fresh decode before anything else touches it, so it never contends
+      // with the original (or any other paste of the same clip) over one
+      // node's single playback cursor/stretcher.
+      for (uint64_t id : made)
+         ArrangeRespawnCloneNode(id);
       // A pasted clip is a fresh id (c.id = 0 above, reassigned by
       // PlaceOverwrite) - the static-waveform cache is keyed by clip id, so
       // without this a pasted Sample clip shows no waveform at all until
@@ -27999,6 +28035,9 @@ namespace
       std::vector<uint64_t> made;
       if (!ArrangeEdit([&]() { Arrange::DuplicateBlock(gArrange, ids, &made); }))
          return false;
+      // Same node-sharing hazard as ArrangePasteAt above.
+      for (uint64_t id : made)
+         ArrangeRespawnCloneNode(id);
       // Same fresh-id/stale-cache gap as ArrangePasteAt above.
       for (uint64_t id : made)
          ArrangeRefreshSampleStaticWave(id);
@@ -29413,6 +29452,19 @@ namespace
       if (spawned == nullptr)
          return;
 
+      // A dropped Audio/Video/Image Sample owns this node privately - it is
+      // not a modular-canvas object the user patches into other things, just
+      // where the decoded buffer and WSOLA/playback state actually live (see
+      // AudioFilePlayerAudioNode). hiddenFromCanvas (the same flag Mount/
+      // Field encapsulation already uses) keeps it out of the node editor
+      // entirely - not drawn, not pickable, not wireable - so "drop a
+      // sample" no longer clutters the canvas the way spawning a visible
+      // node used to. ArrangePasteAt/ArrangeDuplicateSelection/Split give
+      // every clone its own freshly spawned hidden node rather than sharing
+      // this one, so no two clips ever contend over one node's single
+      // playback cursor/stretcher (see those functions' own comments).
+      spawned->hiddenFromCanvas = true;
+
       // Placeholder length until the real duration is known: one bar for
       // audio/video, corrected in ArrangePollMediaImports once decode
       // finishes; an image's fixed 5-second length is already final, since
@@ -29456,6 +29508,70 @@ namespace
       gArrangeFlashClipId = clipId;
       gArrangeFlashStart = ImGui::GetTime();
       gPatchDirty = true;
+   }
+
+   // Gives a pasted/duplicated/split Sample clip its own private hidden node
+   // and kicks a fresh async decode of the same source file, instead of
+   // leaving it pointing at the original clip's node - see
+   // ArrangeImportMediaFile's own comment on hiddenFromCanvas for why two
+   // clips must never share one node's single playback cursor/stretcher.
+   // No-op for anything that isn't a dropped Sample (e.g. an ordinary
+   // patched Audio Clip, which is fine to keep sharing srcUid the way
+   // paste/duplicate always have).
+   void ArrangeRespawnCloneNode(uint64_t clipId)
+   {
+      Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+      if (c == nullptr || !c->sampleDropped)
+         return;
+
+      GraphNode* srcNode = FindNodeByUid(c->srcUid);
+      if (srcNode == nullptr)
+         return;
+
+      std::string path;
+      Arrange::ImportMediaKind kind;
+      if (auto* audioNode = dynamic_cast<AudioFileNode*>(srcNode->node.get()))
+      {
+         path = audioNode->FilePath();
+         kind = Arrange::ImportMediaKind::Audio;
+      }
+      else if (auto* videoNode = dynamic_cast<VideoSourceNode*>(srcNode->node.get()))
+      {
+         path = videoNode->LoadedPath();
+         kind = Arrange::ImportMediaKind::Video;
+      }
+      else if (auto* imageNode = dynamic_cast<ImageSourceNode*>(srcNode->node.get()))
+      {
+         path = imageNode->LoadedPath();
+         kind = Arrange::ImportMediaKind::Image;
+      }
+      else
+         return;
+      if (path.empty())
+         return;
+
+      const ImVec2 spawnPos = FindFreeSpawnPosition(gViewCenterCanvas);
+      const std::string typeName = srcNode->typeName;
+      const char* category = (kind == Arrange::ImportMediaKind::Audio) ? "Modulators" : "Source";
+      GraphNode* spawned = SpawnNode(typeName.c_str(), category, spawnPos.x, spawnPos.y);
+      if (spawned == nullptr)
+         return;
+      spawned->hiddenFromCanvas = true;
+
+      // Same "loading" placeholder gap ArrangeImportMediaFile leaves a fresh
+      // drop in until ArrangePollMediaImports adopts the decode - the clone
+      // is silent/blank for a frame or two rather than briefly still
+      // pointing at (and contending with) the original's node.
+      c->srcUid = spawned->uid;
+      c->importPending = true;
+
+      ArrangePendingImport pending;
+      pending.jobId = Arrange::GetMediaImportManager().StartImport(path, kind);
+      pending.clipId = clipId;
+      pending.nodeUid = spawned->uid;
+      pending.kind = kind;
+      pending.isClone = true;
+      gArrangePendingImports.push_back(pending);
    }
 
    // Main thread, once per frame (called from DrawArrangePanelContent - the
@@ -29525,6 +29641,16 @@ namespace
          if (Arrange::Clip* c = Arrange::FindClip(gArrange, pending.clipId))
          {
             c->importPending = false;
+            // A clone (paste/duplicate/split) already has a correct
+            // sampleBpm/origBpm/length/sourceDurationSeconds copied from the
+            // clip it was cloned from - re-estimating here from the fresh
+            // decode would just be a second, possibly-different guess at the
+            // same file's native tempo, silently changing the clone's length
+            // and playback ratio out from under the user right after the
+            // paste/duplicate/split that made it. Only a genuinely new drop
+            // (ArrangeImportMediaFile) needs the first-time estimate below.
+            if (!pending.isClone)
+            {
             // Step 3: the persisted natural duration and estimated native
             // tempo a later Sample BPM edit recomputes length from
             // (SampleClipLengthTicks) - captured once here, never touched by
@@ -29536,12 +29662,19 @@ namespace
                // Estimate sample's original BPM via multi-strategy analysis
                const float estimatedBpm = ArrangeEstimateSampleBpm(audioFileNode ? audioFileNode->Buffer() : nullptr, r.path, (float)bpm);
                c->sampleBpm = estimatedBpm;
+               // Frozen once here, never touched again - see Clip::origBpm's
+               // own comment. A later Sample BPM edit changes c->sampleBpm
+               // (and thus the sampleBpm/origBpm playback ratio) but leaves
+               // this alone, which is what lets the ratio actually mean
+               // something instead of always reading 1.0.
+               c->origBpm = estimatedBpm;
                c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds, c->sampleBpm);
             }
             // Video/Image have no Sample BPM concept - their length is just
             // the file's natural duration at the current project tempo.
             else if (pending.kind != Arrange::ImportMediaKind::Image && r.durationSeconds > 0.0)
                c->length = std::max<Arrange::Tick>(1, Arrange::SecondsToTicks(r.durationSeconds, bpm));
+            }
             // Step 2: the Sample's static waveform, computed once from the
             // fully-decoded source right here (before any BPM warp is ever
             // applied to c->length) - see ArrangeComputeSampleStaticWave's
@@ -37240,10 +37373,15 @@ namespace
                w.sampleDropped = c.sampleDropped;
                // BPM sync (step 3) is Audio-Sample-only, same gate as
                // retrigger just below - an Audio Clip has no sampleBpm of its
-               // own and always plays at native rate. 0 means "don't scale"
-               // (see ClipWindow::sampleBpm's own comment for why the ratio
-               // itself is computed live in RunTopology, not here).
-               w.sampleBpm = (c.sampleDropped && c.syncToTempo) ? c.sampleBpm : 0.0f;
+               // own. 0 means "don't scale" (see ClipWindow::sampleBpm's own
+               // comment for why the ratio itself is computed live in
+               // RunTopology, not here). Set for BOTH sync states now - an
+               // unsynced clip still needs its current sampleBpm (against
+               // origBpm below) to compute a tempo-independent ratio, rather
+               // than always playing at native speed regardless of the field.
+               w.sampleBpm = c.sampleDropped ? c.sampleBpm : 0.0f;
+               w.origBpm = c.sampleDropped ? c.origBpm : 0.0f;
+               w.syncToTempo = c.sampleDropped && c.syncToTempo;
                // Straight copy - see ClipWindow::sourceOffsetSeconds's own
                // comment. Meaningless (and left at 0) for anything that
                // isn't a Sample, same gate as sampleDropped/sampleBpm above.
