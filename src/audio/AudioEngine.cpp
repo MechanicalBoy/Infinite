@@ -51,9 +51,16 @@ AudioEngine& AudioEngine::Instance()
 bool AudioEngine::Start(std::string& outError)
 {
    double sampleRate = 0.0;
+   // Raised BEFORE the device opens: the first callback can fire before
+   // AudioDeviceOpen returns, and SetTopology's retire drain must never treat
+   // that window as "no audio thread exists".
+   mDeviceOpen.store(true, std::memory_order_release);
    if (!Platform::AudioDeviceOpen(&AudioEngine::RenderThunk, this, sampleRate, outError,
                                   mRequestedDeviceId, mRequestedSampleRate, mRequestedBufferFrames))
+   {
+      mDeviceOpen.store(false, std::memory_order_release);
       return false;
+   }
    mSampleRate.store(sampleRate, std::memory_order_relaxed);
    mStartedAtMs.store(NowMs(), std::memory_order_relaxed);
    mPreviewPlayer.PrepareToPlay(sampleRate);
@@ -65,6 +72,9 @@ void AudioEngine::Stop()
 {
    Platform::AudioDeviceClose();
    mSampleRate.store(0.0, std::memory_order_relaxed);
+   // AudioDeviceClose has returned, so no callback can still hold a list.
+   mDeviceOpen.store(false, std::memory_order_release);
+   DrainRetired();
 
    // Reset xrun-detection state here, on Stop(), not on the next Start():
    // Platform::AudioDeviceClose() has already returned, so Process() cannot
@@ -97,9 +107,34 @@ void AudioEngine::SetTopology(AudioTopology topology)
    fresh->generation = mPublishedGeneration.fetch_add(1, std::memory_order_relaxed) + 1;
 
    ProcessList* old = mCurrent.exchange(fresh, std::memory_order_acq_rel);
+   if (old != nullptr)
+      mRetiring.push_back(old);
+   DrainRetired();
+}
 
-   delete mRetiring; // safe: the audio thread finished with this one a full generation ago
-   mRetiring = old;
+// A superseded ProcessList is only freed once the audio thread has COMPLETED a
+// RunTopology pass over a strictly newer generation (callbacks are serial, so
+// that pass started after every pass that could still hold `list`), or when no
+// device is open at all (offline renders run on this thread). The old rule -
+// "delete the list retired one SetTopology ago" - assumed at least one audio
+// callback between two publishes; two rebuilds inside one block period (paste
+// followed by the clone's decode finishing, or per-frame rebuilds during a
+// drag with a large buffer size) freed the list mid-ProcessBlock and crashed
+// writing into a nulled channel pointer.
+void AudioEngine::DrainRetired()
+{
+   const bool deviceOpen = mDeviceOpen.load(std::memory_order_acquire);
+   const uint64_t completed = mCompletedGeneration.load(std::memory_order_acquire);
+   size_t keep = 0;
+   for (size_t i = 0; i < mRetiring.size(); i++)
+   {
+      ProcessList* list = mRetiring[i];
+      if (!deviceOpen || completed > list->generation)
+         delete list;
+      else
+         mRetiring[keep++] = list;
+   }
+   mRetiring.resize(keep);
 }
 
 double AudioEngine::SampleRate() const
@@ -159,6 +194,7 @@ void AudioEngine::PumpMainThread()
    // retired (superseded by a newer Play(), or Stop()'s buffer once a new
    // one lands) rather than leaving it to leak.
    mPreviewPlayer.DrainRetired();
+   DrainRetired();
 }
 
 void AudioEngine::ProcessOffline(AudioBuffer& buffer)
@@ -235,7 +271,8 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             cursor--;
          while (cursor < terminal.numWindows && windows[cursor].startBeat < blockEndBeat)
          {
-            if (windows[cursor].retrigger && windows[cursor].startBeat >= blockStartBeat)
+            if (windows[cursor].retrigger && !windows[cursor].sampleDropped &&
+                windows[cursor].startBeat >= blockStartBeat)
                terminal.sourceNode->RequestRetrigger();
             cursor++;
          }
@@ -264,53 +301,30 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             pitchCursor++;
          if (blockStartBeat >= windows[pitchCursor].startBeat && blockStartBeat < windows[pitchCursor].endBeat)
          {
-            terminal.sourceNode->SetClipPitchOverride(windows[pitchCursor].pitch);
-            // BPM sync (step 3): synced ratio computed fresh every block from
-            // the CURRENT project tempo (this same `bpm` local, not a value
-            // cached at topology-build time) so a live tempo edit takes
-            // effect immediately - see ClipWindow::sampleBpm's own comment.
-            // Unsynced ("Free") uses sampleBpm/origBpm instead - a ratio that
-            // is deliberately tempo-INDEPENDENT (a live project-tempo change
-            // must not move it, see ClipWindow::origBpm's own comment) but
-            // still reacts to the user editing the Sample BPM field itself,
-            // which previously did nothing at all once sync was off.
-            const ClipWindow& cw = windows[pitchCursor];
-            float tempoRatioLive = 1.0f;
-            if (cw.sampleBpm > 0.0f)
-            {
-               tempoRatioLive = cw.syncToTempo
-                  ? (float)(bpm / (double)cw.sampleBpm)
-                  : cw.sampleBpm / std::max(1.0f, cw.origBpm);
-            }
-            terminal.sourceNode->SetClipRateOverride(tempoRatioLive);
+            if (!windows[pitchCursor].sampleDropped)
+               terminal.sourceNode->SetClipPitchOverride(windows[pitchCursor].pitch);
+         }
 
-            // Exact seek: only for a Sample (see ClipWindow::sampleDropped's
-            // comment - a live Audio Clip stays on the onset-only retrigger
-            // above, ramping up like a real instrument), and only on a
-            // discontinuity - continuous playback already has the right
-            // position and must not be reset every block. The offset is
-            // elapsed timeline seconds since this window's own onset: beats
-            // are converted with the CURRENT tempo, so a tempo change is
-            // already folded in. Both Pitch (varispeed) and BPM sync (WSOLA
-            // time-stretch, see AudioFilePlayerAudioNode::ProcessBlock's own
-            // comment) warp how many source-seconds-per-real-second get
-            // consumed, but by two different mechanisms now - rather than
-            // duplicate that ratio math here, the node itself re-derives both
-            // seek positions from its own current pitch/tempo mailbox values
-            // (see SeekToClipOffset's own comment), so this just hands over
-            // the plain elapsed real time.
-            if (discontinuity && windows[pitchCursor].sampleDropped)
-            {
-               // sourceOffsetSeconds folds in how far into the source file
-               // this window's clip itself starts (non-zero only for a
-               // Sample created by splitting another one - see
-               // ClipWindow::sourceOffsetSeconds's own comment), so the
-               // seek lands at the right point in the file rather than
-               // always relative to the file's own beginning.
-               const double elapsedSeconds = windows[pitchCursor].sourceOffsetSeconds +
-                  std::max(0.0, (blockStartBeat - windows[pitchCursor].startBeat) * 60.0 / bpm);
-               terminal.sourceNode->SeekToClipOffset(elapsedSeconds);
-            }
+         // Audio Sample position lock. Every block a Sample window overlaps
+         // (not just blocks that start inside it - a clip starting mid-block
+         // gets a negative source position and so lands sample-accurately),
+         // the node is told exactly which source second belongs at this
+         // block's first frame. Nothing is inferred from the node's own
+         // free-running position, so the audio cannot drift from the box,
+         // the waveform, or the transport.
+         int sampleCursor = std::clamp(terminal.windowCursor, 0, terminal.numWindows - 1);
+         while (sampleCursor > 0 && blockStartBeat < windows[sampleCursor].startBeat)
+            sampleCursor--;
+         while (sampleCursor + 1 < terminal.numWindows && blockStartBeat >= windows[sampleCursor].endBeat)
+            sampleCursor++;
+         const ClipWindow& sw = windows[sampleCursor];
+         if (sw.sampleDropped && sw.startBeat < blockEndBeat && sw.endBeat > blockStartBeat)
+         {
+            const double effBpm = (sw.syncToTempo && sw.sampleBpm > 0.0f) ? (double)sw.sampleBpm : bpm;
+            const double sourceSeconds = (double)sw.sourceOffsetSeconds +
+               (blockStartBeat - sw.startBeat) * 60.0 / std::max(1.0, effBpm);
+            const double sourcePerSecond = bpm / std::max(1.0, effBpm);
+            terminal.sourceNode->SetClipSamplePosition(sourceSeconds, sourcePerSecond, sw.pitch, discontinuity);
          }
       }
    }

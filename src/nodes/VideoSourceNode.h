@@ -67,7 +67,7 @@ public:
    // the caller) computes a near-zero delta and doesn't immediately nudge
    // the position away from what was just set. Main thread only, called
    // once per frame from the same loop that drives CookIfNeeded - never
-   // from the audio thread (unlike AudioNode::SeekToClipOffset, which is).
+   // from the audio thread (unlike AudioNode::SetClipSamplePosition, which is).
    void SeekTo(double seconds)
    {
       mPosition = seconds;

@@ -23,9 +23,17 @@ still describe the *post*-change state as current fact rather than calling out t
 - The per-clip "Trigger mode (Timeline / Retrigger)" UI row is **removed** from the inspector.
   `Clip::retrigger` (`ArrangeModel.h:119`) still exists and still defaults `true`, but nothing
   in the UI writes `false` to it anymore — every clip retriggers.
-- Sync-to-Tempo's BPM field is now **read-only while synced** (shows the live project tempo
-  number, no editable box) and only becomes an editable "Sample BPM" drag field when sync is
-  off — see §7.
+- Audio Sample tempo (redesigned 2026-09-16, `bugfix/arrange-sample-bpm-redesign`): one rule
+  everywhere (RunTopology, static waveform, split/trim offsets) - `effBpm = syncToTempo ?
+  sampleBpm : liveTempo`, source second at beat b = `sourceOffsetSeconds + (b - start) * 60 /
+  effBpm`. Synced = WSOLA-stretched by tempo/sampleBpm and follows tempo changes live; unsynced
+  = native speed, box fixed in ticks (tempo change reveals/hides the tail). Sample BPM is always
+  editable but only audible while synced; toggling sync or editing it while synced rescales the
+  box (`ArrangeRescaleSampleBox` via `TrimEdge`). `origBpm` = detected BPM, display only (<= 0 =
+  none); drop turns sync on only when a BPM was detected. Audio thread: `SetClipSamplePosition`
+  per block, position-locked in `AudioFilePlayerAudioNode::ProcessClipBlock`
+  (`gClipSampleDriftReseeks` must stay 0). Measured by `INFINITE_ARRANGESAMPLETEST=<dir>` and
+  `INFINITE_ARRANGESAMPLEEXPORTTEST=<dir>` (WAV + MP4 through the real render queue).
 - The track header row's inline Opacity/Solo/Mute/Gain/Pan mix strip was briefly moved to the
   docked inspector only, then **restored** to the header row on user request — it lives in both
   places now (the header strip for quick access, §3's "Track (lane)" inspector row for the full
@@ -156,7 +164,7 @@ All defined in one function, branching on selection kind:
 |---|---|---|
 | Single clip (both) | Name, Active/Bypassed, Start, Length, Fade In/Out, Color Tint, Source Node assign/clear. **No Trigger mode row** — retrigger is implicit and always on, not user-facing. | `~37556-37840` |
 | + video only | Blend mode, Opacity, Bright, Contrast, Sat | `~37669-37746` |
-| + audio only | Gain (dB), Pan, Pitch (semitones, live into node), Tempo Sync (Sample only — live BPM readout while synced, editable "Sample BPM" only while sync is off) | `~37747-37795` |
+| + audio only | Gain (dB), Pan, Pitch (semitones, live into node), Tempo Sync (Sample only — Sync checkbox, always-editable "Sample BPM", detected-BPM/stretch readout, Reset to Detected) | `~37747-37795` |
 | Multi-clip | Bulk rename, bulk Active/Bypassed, bulk tint, conditional Ungroup, Delete Selected | `~37841-37935` |
 | Track (lane) | Name, Active/Bypassed, audio: Solo/Mute/Gain/Pan, video: Opacity, Track Tint, Duplicate/Delete. Duplicated by the header row's own mix strip (same fields, quick-access) — see §1's changelog note. | `~37936-38065` |
 | Track Group | Name, Active/Bypassed, Group Color, Add Video/Audio Track, Ungroup (Keep Tracks), Delete Group+Tracks | `~38066-38131` |
@@ -240,7 +248,7 @@ useful when the source node can be seeked (`AudioFileNode`/`SamplerNode` respond
 | Question | Answer |
 |---|---|
 | Can a video be time-stretched? | Only a flat-rate speed multiplier, `VideoSourceNode::speed` (`VideoSourceNode.h:68`, default 1.0, serialized via `VisitParams`). **Per-node only** — the Arrange clip inspector doesn't expose it; must select the node on the canvas. No pitch-preserving/optical-flow stretch exists. |
-| Can an audio sample sync its internal BPM to project tempo? | **No.** `Clip::syncToTempo` (`ArrangeModel.h:74-86`) is a one-time length calculation at drop time only — never revisited on a later tempo change, never resamples/stretches. No `sourceBpm`/`fileBpm`/`detectBpm`/time-stretch field exists anywhere in `src/`. When sync is on, the inspector shows the live current project tempo (a read-only mirror of `Transport::Instance().Tempo()`, not the frozen `sampleBpm`) since that's what `SetClipRateOverride`'s ratio actually warps toward; the editable "Sample BPM" field only appears when sync is off. |
+| Can an audio sample sync its internal BPM to project tempo? | **Yes** (2026-09-16 redesign, see the top-of-file note): synced Samples WSOLA-stretch by `tempo / sampleBpm` every block and follow live tempo changes; BPM is estimated at drop (`ArrangeEstimateSampleBpm`). |
 | What audio pitch control *does* exist? | `Clip::pitch` (±24 semitones) pushed live into `AudioFileNode::pitch`/`SamplerNode::pitch`. This is **varispeed** (rate changes with pitch, turntable-style), not independent pitch-shift — applied in `AudioFilePlayerAudioNode`'s per-sample read: `pitchRatio = 2^(pitch/12); mPos += mPlaybackRate * pitchRatio` (`src/nodes/AnalyzeNodes.cpp:944-956`). |
 
 ## 8. Settings application order
@@ -306,8 +314,8 @@ that live-fills only fall back to when no cache exists.
    `RebuildAudioTopology`, `AudioEngine::RunTopology`) found it is already fully general via
    `IAudioSource` and C++ virtual dispatch, with no hardcoded restriction to any concrete node
    type anywhere in that path. The only place behavior legitimately varies by node type is the
-   optional `RequestRetrigger()`/`SetClipPitchOverride()`/`SetClipRateOverride()`/
-   `SeekToClipOffset()` hooks on `AudioNode` (`src/audio/AudioNode.h:83-136`) — no-op by default,
+   optional `RequestRetrigger()`/`SetClipPitchOverride()`/`SetClipSamplePosition()`
+   hooks on `AudioNode` (`src/audio/AudioNode.h:83-136`) — no-op by default,
    overridden only by `AudioFileNode`, `SamplerNode` (pitch only), and `WavetableSynthCore`
    (pitch only) — because a node with no internal playback position has nothing to retrigger or
    pitch-shift. That's deliberate, documented, opt-in architecture, not a routing bug. Don't
@@ -339,5 +347,5 @@ that live-fills only fall back to when no cache exists.
 | Change video compositing/blend | `ArrangeComposeShader`, `main.cpp:27292-27350` |
 | Change audio clip envelope/pan/gain | `AudioEngine::RunTopology` terminal pass, `AudioEngine.cpp:325-558` |
 | Add per-clip video speed control to the UI | expose `VideoSourceNode::speed` in `DrawArrangeClipSettingsChild`'s video branch, `main.cpp:37669-37746` |
-| Add real BPM-sync/time-stretch | new territory — no existing hook to extend; decide resample-on-tempo-change vs. one-shot like `syncToTempo` |
+| Change BPM-sync/time-stretch | keep the single effBpm rule in RunTopology, `ArrangeComputeSampleStaticWave` and `SampleSourceBpm` in ArrangeModel.cpp in lock-step; rerun `INFINITE_ARRANGESAMPLETEST` |
 | Add static/cached waveform peaks | `ArrangeClipWave`/`gArrangeClipWaves` fill path, `main.cpp:26951-27222` |

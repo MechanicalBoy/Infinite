@@ -4,6 +4,16 @@
 #include "CompensationDelay.h"
 #include "NoteEventQueue.h"
 
+#include <atomic>
+#include <cstdint>
+
+// Count of Arrangement Timeline Sample re-seeks caused by drift (the node's
+// own cursor disagreeing with the timeline by more than its tolerance) rather
+// than by a transport jump or a fresh window. Continuous playback must leave
+// it at zero; a non-zero delta means a rate mismatch the re-seek is papering
+// over. Read by the INFINITE_ARRANGESAMPLETEST fixture.
+inline std::atomic<uint64_t> gClipSampleDriftReseeks { 0 };
+
 // Audio-thread interface. ProcessBlock runs on the real-time render thread
 // and must obey the standard real-time-safety constraints (Bencina,
 // "Real-time audio programming 101" -
@@ -106,40 +116,22 @@ public:
    // pitch/varispeed control (a sample player) needs to override it.
    virtual void SetClipPitchOverride(float semitones) { (void)semitones; }
 
-   // Arrangement Timeline per-clip BPM-sync rate (main.cpp's RunTopology
-   // lookahead pass, same call site and same audio-thread-safety contract as
-   // SetClipPitchOverride): scales this node's *next* cook's time-stretch
-   // ratio by `ratio`, so an Audio Sample with Sync to Tempo on plays at
-   // currentProjectTempo / sampleBpm regardless of the file's own native rate
-   // - without changing its pitch (AudioFilePlayerAudioNode implements this
-   // via WsolaStretcher, deliberately NOT the varispeed model
-   // SetClipPitchOverride uses - see its ProcessBlock's own comment on why
-   // those two stay different algorithms). 1.0 (a no-op) for every window
-   // that isn't a tempo-synced Sample - Audio Clip windows, video, and a
-   // Sample with sync off all push 1.0 every block, same as they already push
-   // pitch 0. No-op by default; only a node with its own time-stretched read
-   // position (a sample player) needs to override it.
-   virtual void SetClipRateOverride(float ratio) { (void)ratio; }
-
-   // Arrangement Timeline exact seek (main.cpp's RunTopology lookahead pass,
-   // same call site as RequestRetrigger/SetClipPitchOverride): tells this
-   // node to jump its own playback position to `seconds` of PLAIN ELAPSED
-   // TIMELINE TIME (not file-native seconds, and not pre-scaled by pitch or
-   // tempo ratio - a node with both a pitch and a tempo control generally
-   // needs to seed two different internal cursors from this one number using
-   // its own current ratios, which only it knows) the next time it cooks.
-   // Fired only for an Audio Sample window (see ClipWindow::sampleDropped)
-   // and only on a genuine discontinuity - a scrub, a seek, a loop wrap, or
-   // Play landing mid-clip - never on ordinary continuous playback, where the
-   // node's own free-running position is already correct. This is what makes
-   // a Sample give the user's requested "already processed, so give me the
-   // exact moment" behaviour, as opposed to a live Audio Clip, which stays on
-   // RequestRetrigger's onset-only reset-to-start. Same audio-thread-safety
-   // contract as RequestRetrigger() - a same-thread request consumed at the
-   // top of the node's own cook, never blocking or allocating. No-op by
-   // default; only a node with its own playback position (a sample player)
-   // needs to override it.
-   virtual void SeekToClipOffset(double seconds) { (void)seconds; }
+   // Arrangement Timeline Audio Sample position lock (RunTopology, called
+   // every block a Sample window overlaps, immediately before this node's own
+   // ProcessBlockMulti on the audio thread). `sourceSeconds` is the position
+   // in the source file that belongs at this block's FIRST frame - negative
+   // when the clip starts later inside the block, beyond the file's end when
+   // the box outlasts the audio - and `sourcePerSecond` is how many source
+   // seconds elapse per real second (1 unsynced, projectTempo / sampleBpm
+   // synced). `force` marks a transport discontinuity (seek, scrub, loop
+   // wrap, Play). Pitch is passed alongside rather than through
+   // SetClipPitchOverride so a time-preserving implementation can fold it
+   // into its stretch ratio. A block with no call runs the node's normal
+   // (canvas) playback. No-op by default; only a sample player overrides it.
+   virtual void SetClipSamplePosition(double sourceSeconds, double sourcePerSecond, float pitchSemitones, bool force)
+   {
+      (void)sourceSeconds; (void)sourcePerSecond; (void)pitchSemitones; (void)force;
+   }
 
    // Samples of latency this node's own processing adds (lookahead,
    // oversampling, a hosted plugin's reported latency, ...) at whatever rate

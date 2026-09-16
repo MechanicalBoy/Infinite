@@ -7,228 +7,194 @@
 
 #include "platform/Platform.h"
 
-// The file's decoded sample rate can differ from the engine's running rate
-// (e.g. a 44.1kHz file with a 48kHz engine), so pos is generally non-integral
-// - linearly interpolate between the two nearest frames. Channel 0 only, same
-// simplification SamplerNode's ReadSample makes for a multi-channel file.
-// Free function (not a member) so WsolaStretcher below can share it with
-// every caller (AudioFilePlayerAudioNode, Arrangement Timeline Audio Sample
-// voices).
-inline float ReadBufferInterp(const Platform::SampleBuffer& buf, double pos)
+// One channel of a planar Platform::SampleBuffer at a fractional frame
+// position, linearly interpolated (the file's rate can differ from the
+// engine's, so read positions are generally non-integral). A channel the file
+// does not have reads as its last real channel, so a mono file feeds both
+// sides of a stereo output. Out-of-range positions read as silence.
+inline float ReadBufferInterp(const Platform::SampleBuffer& buf, int channel, double pos)
 {
    const int64_t i0 = (int64_t)std::floor(pos);
-   if (i0 < 0 || i0 >= buf.numFrames)
+   if (i0 < 0 || i0 >= buf.numFrames || buf.channels <= 0)
       return 0.0f;
+   const int ch = std::min(channel, buf.channels - 1);
+   const float* data = buf.channelData.data() + (size_t)ch * (size_t)buf.numFrames;
    const int64_t i1 = i0 + 1;
-   const float s0 = buf.channelData[i0];
-   const float s1 = (i1 < buf.numFrames) ? buf.channelData[i1] : s0;
+   const float s0 = data[i0];
+   const float s1 = (i1 < buf.numFrames) ? data[i1] : s0;
    const float frac = (float)(pos - (double)i0);
    return s0 + (s1 - s0) * frac;
 }
 
-// Real-time-safe WSOLA (Waveform-Similarity Overlap-Add) time-stretcher.
-// Reads channel 0 of a fully-decoded Platform::SampleBuffer and produces a
-// stretched signal at a caller-chosen ratio - ratio > 1 consumes the source
-// faster than real time (shorter/compressed), ratio < 1 slower
-// (longer/expanded) - WITHOUT changing pitch. Originally lived only inside
-// AudioFilePlayerAudioNode (Arrangement Timeline BPM-sync via
-// SetClipRateOverride); extracted here so the Arrangement Timeline's
-// self-contained Audio Sample voices can share the exact same algorithm
-// without either duplicating it or routing Sample playback through a canvas
-// node.
+// Channel 0 only - kept for callers that analyse rather than play.
+inline float ReadBufferInterp(const Platform::SampleBuffer& buf, double pos)
+{
+   return ReadBufferInterp(buf, 0, pos);
+}
+
+// Real-time-safe, allocation-free WSOLA time-stretcher over a fully decoded,
+// randomly addressable buffer (stereo). `ratio` is SOURCE frames consumed per
+// OUTPUT (ring) frame: > 1 plays the source faster, < 1 slower, pitch
+// unchanged.
 //
-// Because the source is a fully in-memory, randomly-addressable buffer (not
-// a stream), the whole thing can stay allocation-free: every buffer here is a
-// fixed-size member, and "seeking" is just repointing the analysis cursor -
-// no lookahead ring or background decode thread needed.
+// Position contract - the property the Arrangement Timeline depends on:
+// after Reset(sourceFrame, writeFrame, ratio), ring frame x holds source
+// content centred on sourceFrame + (x - writeFrame) * ratio, to within the
+// alignment search radius, for as long as the stretcher runs. The nominal
+// source position advances by exactly kHop * ratio per hop and is NEVER fed
+// back from the similarity search's chosen window start, so the per-hop
+// alignment nudges cannot accumulate into drift (the previous version set
+// next = nudgedStart + hop*ratio, a random walk away from the timeline).
 //
-// Algorithm: fixed-size synthesis windows (kWindow, 75% overlap at kHop) are
-// pulled from the source, Hann-windowed, and overlap-added into a small ring
-// buffer that the caller drains at its own pace (Read()). The analysis
-// position advances by kHop*ratio source-frames per hop - the actual time
-// warp - while a short cross-correlation search (kSearch) nudges each new
-// window's source offset to whatever position best continues the waveform
-// already sitting in the not-yet-finalized overlap region, which is what
-// keeps the seam between windows from phasing/combing. At ratio == 1.0 this
-// degenerates to plain, unshifted overlap-add reconstruction (the search is
-// skipped entirely - center of a silent reference on the very first hop, and
-// a needless-but-harmless perfect-alignment search after that would just
-// keep finding offset 0 anyway), so audio thread cost when nothing is
-// actually being stretched stays a Hann-window multiply-accumulate, not a
-// full correlation search.
+// Reset pre-rolls three hops before writeFrame, so the ring is already at
+// full overlap by the first frame the caller reads - a seek does not fade in.
 class WsolaStretcher
 {
 public:
-   static constexpr int kWindow = 1024;                    // ~23ms @44.1kHz
-   static constexpr int kHop = kWindow / 4;                 // 75% overlap - COLA-exact for Hann
+   static constexpr int kWindow = 1024;
+   static constexpr int kHalfWindow = kWindow / 2;
+   static constexpr int kHop = kWindow / 4;         // 75% overlap, COLA for Hann
    static constexpr int kOverlap = kWindow - kHop;
-   static constexpr int kSearch = 128;                      // +/- alignment search radius, frames
-   static constexpr int kRingSize = 8192;                   // power of two, generous vs. one hop of lookahead
+   static constexpr int kSearch = 128;              // +/- alignment radius, frames
+   static constexpr int kCorrLength = 512;          // frames compared per candidate
+   static constexpr int kPreRollHops = 3;
+   static constexpr int kChannels = 2;
+   static constexpr int kRingSize = 8192;
    static constexpr int kRingMask = kRingSize - 1;
 
    WsolaStretcher()
    {
-      // M_PI isn't standard C++ (absent on MSVC without _USE_MATH_DEFINES) -
-      // a local constant matches the convention the rest of the audio DSP
-      // code already uses (see MolderDsp.cpp's kTwoPi/kPi).
       constexpr double kTwoPi = 6.283185307179586476925286766559;
+      // Periodic Hann (divide by N, not N-1): exactly constant-overlap-add
+      // at a hop of N/4, so an unstretched signal reconstructs flat.
       for (int i = 0; i < kWindow; i++)
-         mHann[i] = 0.5f - 0.5f * (float)std::cos(kTwoPi * (double)i / (double)(kWindow - 1));
-
-      // Hann at 75% overlap is COLA (constant overlap-add) but not
-      // COLA-unity - measure the actual constant here instead of hardcoding
-      // a textbook value, so a later change to kWindow/kHop can't silently
-      // start pumping the output level.
+         mHann[i] = 0.5f - 0.5f * (float)std::cos(kTwoPi * (double)i / (double)kWindow);
       double total = 0.0;
-      for (int k = -8; k <= 8; k++)
-      {
-         const int idx = 0 - k * kHop;
-         if (idx >= 0 && idx < kWindow)
-            total += mHann[idx];
-      }
+      for (int k = 0; k < kWindow / kHop; k++)
+         total += mHann[k * kHop];
       mGainComp = (total > 1e-6) ? (float)(1.0 / total) : 1.0f;
-
-      Reset(0.0, 0);
+      Reset(0.0, 0, 1.0);
    }
 
-   // Drops all generated content and starts fresh - `analysisFrame` is where
-   // in the SOURCE to resume reading (native file-frame units), `writeFrame`
-   // is the ring/write-domain position this resumption corresponds to for the
-   // caller (normally the caller's own read cursor at the moment of reset, so
-   // Read() right after Reset()+one GenerateUpTo() picks up with no gap).
-   // Called on seek, restart, and a fresh buffer swap-in.
-   void Reset(double analysisFrame, int64_t writeFrame)
+   void Reset(double sourceFrame, int64_t writeFrame, double ratio)
    {
-      mAnalysisPos = analysisFrame;
-      mStretchWritten = writeFrame;
-      mSourceExhausted = false;
-      mRingEndPos = -1.0;
-      std::fill(std::begin(mOlaAccum), std::end(mOlaAccum), 0.0f);
-      mHavePrevWindow = false;
+      const int64_t firstWindow = writeFrame - (int64_t)kPreRollHops * kHop;
+      mWritten = firstWindow;
+      mCenterSource = sourceFrame + (double)(firstWindow + kHalfWindow - writeFrame) * ratio;
+      mHavePrev = false;
+      for (int ch = 0; ch < kChannels; ch++)
+         std::fill(std::begin(mOla[ch]), std::end(mOla[ch]), 0.0f);
    }
 
-   // Generates hops until the ring holds valid content through `throughFrame`
-   // (ring/write-domain units) or the source has run out (loop == false).
-   void GenerateUpTo(double throughFrame, float ratio, bool loop, const Platform::SampleBuffer& buf)
+   // Generates hops until the ring holds finished output through
+   // `throughFrame` (ring/write-domain units).
+   void GenerateUpTo(double throughFrame, double ratio, const Platform::SampleBuffer& buf)
    {
-      while (!mSourceExhausted && (double)mStretchWritten < throughFrame)
-         GenerateOneHop(ratio, loop, buf);
+      while ((double)mWritten < throughFrame)
+         GenerateOneHop(ratio, buf);
    }
 
-   // Ring/write-domain read, linear-interpolated. Caller must already have
-   // called GenerateUpTo(pos + 1 or more, ...). Returns 0 past Exhausted()'s
-   // end position.
-   float Read(double pos) const
+   float Read(int channel, double pos) const
    {
-      if (mRingEndPos >= 0.0 && pos >= mRingEndPos)
-         return 0.0f;
+      const int ch = std::clamp(channel, 0, kChannels - 1);
       const int64_t i0 = (int64_t)std::floor(pos);
       const float frac = (float)(pos - (double)i0);
-      const float s0 = mRing[i0 & kRingMask];
-      const float s1 = mRing[(i0 + 1) & kRingMask];
+      const float s0 = mRing[ch][i0 & kRingMask];
+      const float s1 = mRing[ch][(i0 + 1) & kRingMask];
       return s0 + (s1 - s0) * frac;
    }
 
-   // True once the source has run out with loop off. `endPos` (ring/write-
-   // domain units, comparable to Read()'s argument) is where playback should
-   // stop - the WSOLA equivalent of the old "mPos >= numFrames" check, which
-   // can no longer be done by comparing directly against the source's own
-   // frame count once ring-domain and source-domain length can differ.
-   bool Exhausted(double* endPos) const
-   {
-      if (mRingEndPos < 0.0)
-         return false;
-      if (endPos) *endPos = mRingEndPos;
-      return true;
-   }
-
-   // Main thread (via an atomic snapshot) - how far into the actual source
-   // file playback has reached, for AudioFileNode::Position()'s waveform
-   // playhead. Audio-thread-only to call directly.
-   double AnalysisFrame() const { return mAnalysisPos; }
+   int64_t Written() const { return mWritten; }
 
 private:
-   void GenerateOneHop(float ratio, bool loop, const Platform::SampleBuffer& buf)
+   static float Frame(const Platform::SampleBuffer& buf, int ch, int64_t i)
    {
-      const bool stretching = std::fabs(ratio - 1.0f) > 0.002f;
-
-      // mOlaAccum[0..kOverlap) already holds every contribution placed by
-      // earlier windows for this position (nothing has added THIS window's
-      // contribution yet) - exactly the "what's already committed to the
-      // output here" reference WSOLA's alignment search wants. Skipped on
-      // the very first hop (that reference would be silence) and whenever
-      // nothing is actually being stretched (see this function's own
-      // no-search fast path in the class comment).
-      const double start = (mHavePrevWindow && stretching)
-         ? FindBestOffset(buf)
-         : mAnalysisPos;
-
-      float windowed[kWindow];
-      for (int j = 0; j < kWindow; j++)
-         windowed[j] = ReadBufferInterp(buf, start + (double)j) * mHann[j];
-      for (int j = 0; j < kWindow; j++)
-         mOlaAccum[j] += windowed[j];
-
-      // The front kHop samples can never receive another contribution (the
-      // next window starts at least kHop frames later) - they're final.
-      for (int j = 0; j < kHop; j++)
-      {
-         mRing[mStretchWritten & kRingMask] = mOlaAccum[j] * mGainComp;
-         mStretchWritten++;
-      }
-      std::memmove(mOlaAccum, mOlaAccum + kHop, kOverlap * sizeof(float));
-      std::fill(mOlaAccum + kOverlap, mOlaAccum + kWindow, 0.0f);
-      mHavePrevWindow = true;
-
-      mAnalysisPos = start + (double)kHop * (double)ratio;
-      if (mAnalysisPos >= (double)buf.numFrames)
-      {
-         if (loop && buf.numFrames > 0)
-            mAnalysisPos = std::fmod(mAnalysisPos, (double)buf.numFrames);
-         else
-         {
-            mSourceExhausted = true;
-            mRingEndPos = (double)mStretchWritten;
-         }
-      }
+      if (i < 0 || i >= buf.numFrames || buf.channels <= 0)
+         return 0.0f;
+      const int c = std::min(ch, buf.channels - 1);
+      return buf.channelData[(size_t)c * (size_t)buf.numFrames + (size_t)i];
    }
 
-   // Normalized cross-correlation search over +/-kSearch frames around
-   // mAnalysisPos, against the not-yet-finalized overlap already sitting in
-   // mOlaAccum - the standard WSOLA "waveform similarity" step that keeps
-   // consecutive windows in phase so the overlap-add doesn't comb-filter.
-   double FindBestOffset(const Platform::SampleBuffer& buf) const
+   static float Mid(const Platform::SampleBuffer& buf, int64_t i)
    {
-      double bestOffset = 0.0;
-      float bestScore = -1.0f;
-      for (int s = -kSearch; s <= kSearch; s++)
+      if (buf.channels < 2)
+         return Frame(buf, 0, i);
+      return 0.5f * (Frame(buf, 0, i) + Frame(buf, 1, i));
+   }
+
+   // Normalised cross-correlation of the candidate window start against the
+   // natural continuation of the previous window, on the mid signal.
+   static double Score(const Platform::SampleBuffer& buf, int64_t cand, int64_t ref, int stride, bool* silent)
+   {
+      double num = 0.0, candEnergy = 0.0, refEnergy = 0.0;
+      for (int j = 0; j < kCorrLength; j += stride)
       {
-         double num = 0.0, denom = 0.0;
-         for (int j = 0; j < kOverlap; j++)
-         {
-            const float cand = ReadBufferInterp(buf, mAnalysisPos + (double)s + (double)j);
-            num += (double)cand * (double)mOlaAccum[j];
-            denom += (double)cand * (double)cand;
-         }
-         const float score = (denom > 1e-9) ? (float)(num / std::sqrt(denom)) : 0.0f;
-         if (score > bestScore)
-         {
-            bestScore = score;
-            bestOffset = (double)s;
-         }
+         const double c = Mid(buf, cand + j);
+         const double r = Mid(buf, ref + j);
+         num += c * r;
+         candEnergy += c * c;
+         refEnergy += r * r;
       }
-      return mAnalysisPos + bestOffset;
+      if (silent) *silent = refEnergy < 1e-10;
+      return candEnergy > 1e-12 ? num / std::sqrt(candEnergy) : -1e30;
+   }
+
+   int64_t FindBestStart(const Platform::SampleBuffer& buf, int64_t nominal) const
+   {
+      const int64_t ref = mPrevStart + kHop;
+      bool silent = false;
+      Score(buf, ref, ref, 4, &silent);
+      if (silent)
+         return nominal;
+      // Coarse pass every 2 frames with a 2-frame stride, then refine +/-2.
+      int64_t best = nominal;
+      double bestScore = -1e30;
+      for (int64_t off = -kSearch; off <= kSearch; off += 2)
+      {
+         const double s = Score(buf, nominal + off, ref, 2, nullptr);
+         if (s > bestScore) { bestScore = s; best = nominal + off; }
+      }
+      const int64_t coarse = best;
+      bestScore = -1e30;
+      for (int64_t off = -2; off <= 2; off++)
+      {
+         const int64_t cand = coarse + off;
+         if (cand < nominal - kSearch || cand > nominal + kSearch)
+            continue;
+         const double s = Score(buf, cand, ref, 1, nullptr);
+         if (s > bestScore) { bestScore = s; best = cand; }
+      }
+      return best;
+   }
+
+   void GenerateOneHop(double ratio, const Platform::SampleBuffer& buf)
+   {
+      const int64_t nominal = (int64_t)std::llround(mCenterSource - (double)kHalfWindow);
+      const int64_t start = mHavePrev ? FindBestStart(buf, nominal) : nominal;
+
+      for (int ch = 0; ch < kChannels; ch++)
+      {
+         float* ola = mOla[ch];
+         for (int j = 0; j < kWindow; j++)
+            ola[j] += Frame(buf, ch, start + j) * mHann[j];
+         for (int j = 0; j < kHop; j++)
+            mRing[ch][(mWritten + j) & kRingMask] = ola[j] * mGainComp;
+         std::memmove(ola, ola + kHop, kOverlap * sizeof(float));
+         std::fill(ola + kOverlap, ola + kWindow, 0.0f);
+      }
+      mWritten += kHop;
+      mPrevStart = start;
+      mHavePrev = true;
+      mCenterSource += (double)kHop * ratio;
    }
 
    float mHann[kWindow] = {};
    float mGainComp = 1.0f;
-   float mOlaAccum[kWindow] = {};
-   bool mHavePrevWindow = false;
+   float mOla[kChannels][kWindow] = {};
+   float mRing[kChannels][kRingSize] = {};
 
-   double mAnalysisPos = 0.0;      // next analysis window start, native source frames
-   int64_t mStretchWritten = 0;    // ring/write-domain frames generated so far
-   bool mSourceExhausted = false;
-   double mRingEndPos = -1.0;      // valid once mSourceExhausted, see Exhausted()
-
-   float mRing[kRingSize] = {};
+   double mCenterSource = 0.0; // nominal source frame at the centre of the next window
+   int64_t mPrevStart = 0;
+   int64_t mWritten = 0;       // ring frames finalised so far
+   bool mHavePrev = false;
 };
