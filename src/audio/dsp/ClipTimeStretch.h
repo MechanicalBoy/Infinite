@@ -7,7 +7,9 @@
 
 #include "platform/Platform.h"
 
-#if defined(__APPLE__) && !defined(SIGNALSMITH_USE_ACCELERATE)
+// Accelerate FFT on macOS; Windows/Linux use Signalsmith's portable C++ FFT.
+// INFINITE_TEST_PORTABLE_FFT forces the portable path on macOS for testing.
+#if defined(__APPLE__) && !defined(SIGNALSMITH_USE_ACCELERATE) && !defined(INFINITE_TEST_PORTABLE_FFT)
 #define SIGNALSMITH_USE_ACCELERATE
 #endif
 #include "signalsmith-stretch/signalsmith-stretch.h"
