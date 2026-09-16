@@ -51,42 +51,33 @@ namespace Arrange
 
    // Audio-Sample-only: the tick length a Sample clip's fixed-duration audio
    // should occupy on the grid right now - see Clip::sampleBpm's own comment.
-   // Synced: the file is time-stretched to follow the project, so its
-   // footprint is purely a function of its own (corrected) native tempo,
-   // independent of the live project tempo - exactly why ticks don't need
-   // revisiting on every tempo change (TicksToSeconds converts them at
-   // playback time). Unsynced: the file plays back untouched, at its own
-   // fixed real duration, so the footprint has to come from the CURRENT
-   // project tempo instead - sampleBpm plays no part in it there (it's just a
-   // stashed reference for if sync gets turned back on). Using the synced
-   // formula in the unsynced case used to make the clip's placed length drift
-   // out of step with the audio's actual (untouched) duration every time this
-   // field was edited, cutting the tail off or leaving a silent gap.
-   inline Tick SampleClipLengthTicks(double sourceDurationSeconds, float sampleBpm,
-                                      bool syncToTempo, double currentProjectBpm)
+   // Purely a function of the file's own (believed) native tempo and its
+   // real duration - deliberately independent of the live project tempo, for
+   // BOTH synced and unsynced clips, so ticks never need revisiting on a
+   // plain tempo change (TicksToSeconds converts them at playback time):
+   // synced additionally time-stretches (WSOLA) to keep pace with the live
+   // project tempo without moving this footprint; unsynced plays back
+   // untouched, so a tempo change alone leaves it exactly where it was, and
+   // the only thing that ever moves it is the user correcting sampleBpm
+   // itself (that's how you tell an unsynced clip "this loop is actually
+   // this many bars long" without warping the audio to fit).
+   inline Tick SampleClipLengthTicks(double sourceDurationSeconds, float sampleBpm)
    {
       if (!(sourceDurationSeconds > 0.0)) return 1;
-      const double lenTicks = syncToTempo
-         ? sourceDurationSeconds * ((double)sampleBpm / 60.0) * (double)kPPQ
-         : (double)SecondsToTicks(sourceDurationSeconds, currentProjectBpm);
+      const double lenTicks = sourceDurationSeconds * ((double)sampleBpm / 60.0) * (double)kPPQ;
       return std::max<Tick>(1, (Tick)llround(lenTicks));
    }
 
    // The exact inverse of SampleClipLengthTicks: how many seconds of the
    // SOURCE file a Sample clip's current `length` (ticks) represents right
-   // now. Has to branch on syncToTempo the same way the forward formula
-   // does, or the two stop being inverses of each other and whatever reads
-   // this (the static waveform cache, ArrangeComputeSampleStaticWave in
-   // main.cpp) slices the wrong sub-range of the decoded file - looking
-   // "cut off" or padded relative to what's actually heard - the moment a
-   // clip is unsynced and its Sample BPM or the live project tempo no
-   // longer matches whatever tempo was in effect when the cache was last
-   // computed.
-   inline double SampleClipWindowSeconds(Tick length, float sampleBpm, bool syncToTempo,
-                                          double currentProjectBpm)
+   // now - purely a function of sampleBpm, same as the forward formula, so
+   // the two stay inverses of each other regardless of sync state or the
+   // live project tempo. Used by the static waveform cache
+   // (ArrangeComputeSampleStaticWave in main.cpp) to slice the right
+   // sub-range of the decoded file.
+   inline double SampleClipWindowSeconds(Tick length, float sampleBpm)
    {
-      return syncToTempo ? TicksToSeconds(length, (double)sampleBpm)
-                          : TicksToSeconds(length, currentProjectBpm);
+      return TicksToSeconds(length, (double)sampleBpm);
    }
 
    enum LaneType { kLaneVideo = 0, kLaneAudio = 1 };

@@ -1390,6 +1390,14 @@ namespace
    uint64_t gArrangeMixGestureLaneId = 0;   // lane whose header S/M/pan/gain/opacity control is mid-gesture
    uint64_t gArrangeCtxClipId = 0;
    uint64_t gArrangeAssigningClipId = 0;
+   // When a Rename or Assign Node... is started from a multi-selection, the
+   // single gArrangeRenamingClipId/gArrangeAssigningClipId above still names
+   // just the anchor clip the inline field/picker is shown against - these
+   // hold every other selected id (same lane type only) that should receive
+   // the same new name/source on commit. Empty for an ordinary single-clip
+   // rename/assign.
+   std::vector<uint64_t> gArrangeRenameTargetIds;
+   std::vector<uint64_t> gArrangeAssignTargetIds;
 
    // One dropped-media-file decode in flight (or about to be), tracking the
    // clip/node already placed in a "loading" state so ArrangePollMediaImports
@@ -27037,18 +27045,15 @@ namespace
    // the decoded file - [sourceOffsetSeconds, sourceOffsetSeconds +
    // windowSeconds), where windowSeconds is this clip's own duration
    // converted back to source-file seconds via Arrange::SampleClipWindowSeconds
-   // (the exact inverse of whichever formula produced `length` - synced uses
-   // sampleBpm, unsynced uses the current project tempo, same branch
-   // SampleClipLengthTicks uses; see its own comment for why using the wrong
-   // one of the two silently slices the wrong part of the file). A clip that
-   // has never been split has sourceOffsetSeconds == 0 and windowSeconds
+   // (the exact inverse of SampleClipLengthTicks - see its own comment). A
+   // clip that has never been split has sourceOffsetSeconds == 0 and windowSeconds
    // spanning the whole file, so this reproduces the old whole-file behavior
    // exactly for that case; a clip born from a Split instead shows only its
    // own slice, so the right half continues the left half's waveform shape
    // instead of restarting at the file's beginning.
    void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
                                         Arrange::Tick start, Arrange::Tick length,
-                                        float sampleBpm, bool syncToTempo, double currentProjectBpm,
+                                        float sampleBpm,
                                         float sourceOffsetSeconds,
                                         const Platform::SampleBuffer* buf)
    {
@@ -27062,8 +27067,7 @@ namespace
 
       const int frames = buf->numFrames;
       const int channels = buf->channels;
-      const double windowSeconds = Arrange::SampleClipWindowSeconds(length, sampleBpm, syncToTempo,
-                                                                      currentProjectBpm);
+      const double windowSeconds = Arrange::SampleClipWindowSeconds(length, sampleBpm);
       const long long subF0 = std::clamp<long long>(
          (long long)std::llround((double)sourceOffsetSeconds * buf->sampleRate), 0, frames);
       const long long subF1 = std::clamp<long long>(
@@ -27143,8 +27147,7 @@ namespace
          return;
       }
       ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                      c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo(),
-                                      c->sourceOffsetSeconds, buf);
+                                      c->sampleBpm, c->sourceOffsetSeconds, buf);
    }
 
    // ---- Clip thumbnails (WP8) ------------------------------------------
@@ -29522,23 +29525,23 @@ namespace
          if (Arrange::Clip* c = Arrange::FindClip(gArrange, pending.clipId))
          {
             c->importPending = false;
-            // "Length only" syncToTempo (see Clip::syncToTempo's comment):
-            // the clip's timeline length is the file's natural duration
-            // converted to ticks at the current tempo - on or off, the same
-            // one-time calculation, never revisited on a later tempo change.
-            if (pending.kind != Arrange::ImportMediaKind::Image && r.durationSeconds > 0.0)
-               c->length = std::max<Arrange::Tick>(1, Arrange::SecondsToTicks(r.durationSeconds, bpm));
-            // Step 3: the persisted natural duration a later Sample BPM edit
-            // recomputes length from (length_ticks = sourceDurationSeconds *
-            // (sampleBpm/60) * kPPQ) - captured once here, never touched by
-            // a later tempo or BPM change.
+            // Step 3: the persisted natural duration and estimated native
+            // tempo a later Sample BPM edit recomputes length from
+            // (SampleClipLengthTicks) - captured once here, never touched by
+            // a later project-tempo change (see SampleClipLengthTicks's own
+            // comment for why that has to be true for both sync states).
             if (pending.kind == Arrange::ImportMediaKind::Audio && r.durationSeconds > 0.0)
             {
                c->sourceDurationSeconds = r.durationSeconds;
                // Estimate sample's original BPM via multi-strategy analysis
                const float estimatedBpm = ArrangeEstimateSampleBpm(audioFileNode ? audioFileNode->Buffer() : nullptr, r.path, (float)bpm);
                c->sampleBpm = estimatedBpm;
+               c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds, c->sampleBpm);
             }
+            // Video/Image have no Sample BPM concept - their length is just
+            // the file's natural duration at the current project tempo.
+            else if (pending.kind != Arrange::ImportMediaKind::Image && r.durationSeconds > 0.0)
+               c->length = std::max<Arrange::Tick>(1, Arrange::SecondsToTicks(r.durationSeconds, bpm));
             // Step 2: the Sample's static waveform, computed once from the
             // fully-decoded source right here (before any BPM warp is ever
             // applied to c->length) - see ArrangeComputeSampleStaticWave's
@@ -29546,7 +29549,7 @@ namespace
             // Audio Clip keeps using the live-fill gArrangeClipWaves cache.
             if (pending.kind == Arrange::ImportMediaKind::Audio && c->sampleDropped && audioFileNode != nullptr)
                ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                               c->sampleBpm, c->syncToTempo, (double)bpm,
+                                               c->sampleBpm,
                                                c->sourceOffsetSeconds,
                                                audioFileNode->Buffer());
             gArrange.revision++;
@@ -30968,7 +30971,7 @@ namespace
                if (labelled)
                {
                   const Arrange::Tick t = (Arrange::Tick)bar * barTicks;
-                  drawLabelPair(x, x + (float)(barPx * (double)labelEvery), std::to_string(bar + 1),
+                  drawLabelPair(x, x + (float)(barPx * (double)labelEvery), std::to_string(bar),
                                 ArrangeFormatTickSeconds(t));
                }
             }
@@ -32443,19 +32446,26 @@ namespace
                if (commit || ImGui::IsItemDeactivated())
                {
                   const std::string newName = gArrangeRenameClipBuffer;
-                  const uint64_t renameId = clip.id;
-                  if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false) && newName != clip.name)
+                  std::vector<uint64_t> renameIds = gArrangeRenameTargetIds;
+                  renameIds.push_back(clip.id);
+                  if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false))
                   {
                      ArrangeEdit([&]()
                      {
-                        if (Arrange::Clip* c = Arrange::FindClip(gArrange, renameId))
+                        for (uint64_t renameId : renameIds)
                         {
-                           c->name = newName;
-                           gArrange.revision++;
+                           if (Arrange::Clip* c = Arrange::FindClip(gArrange, renameId))
+                           {
+                              if (c->name == newName)
+                                 continue;
+                              c->name = newName;
+                              gArrange.revision++;
+                           }
                         }
                      });
                   }
                   gArrangeRenamingClipId = 0;
+                  gArrangeRenameTargetIds.clear();
                   sArrangeRenameFocusedId = 0;
                }
             }
@@ -32721,6 +32731,75 @@ namespace
                }
             }
 
+            const std::vector<uint64_t> ctxSelIds = ArrangeSelectionIds();
+            if (ctxSelIds.size() > 1)
+            {
+               // Multi-clip selection: an intentionally minimal menu. Every
+               // other item below (Fade, Sync/Sample BPM, Compositing, Color
+               // Grade, Output, Group/Ungroup...) is single-clip-scoped and
+               // would either apply nonsensically or silently do nothing to
+               // the rest of the batch - only offer what unambiguously means
+               // the same thing across every selected clip.
+               if (ImGui::MenuItem("Rename"))
+               {
+                  const std::string label = !cp->name.empty() ? cp->name
+                     : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
+                  gArrangeRenamingClipId = cid;
+                  gArrangeRenameTargetIds.clear();
+                  for (uint64_t id : ctxSelIds)
+                     if (id != cid)
+                        gArrangeRenameTargetIds.push_back(id);
+                  snprintf(gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer), "%s", label.c_str());
+               }
+               if (ImGui::BeginMenu("Color Tint"))
+               {
+                  const auto& kPaletteColors = kArrangePalette;
+                  for (int ci2 = 0; ci2 < 10; ci2++)
+                  {
+                     if (ci2 % 5 != 0) ImGui::SameLine();
+                     ImGui::PushID(ci2 + 700);
+                     const ImVec4 cVec = ImGui::ColorConvertU32ToFloat4(kPaletteColors[ci2].col);
+                     if (ImGui::ColorButton(kPaletteColors[ci2].name, cVec, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24)))
+                     {
+                        const float r = ci2 == 0 ? 0.0f : cVec.x;
+                        const float g = ci2 == 0 ? 0.0f : cVec.y;
+                        const float b = ci2 == 0 ? 0.0f : cVec.z;
+                        ArrangeEdit([&]()
+                        {
+                           for (uint64_t id : ctxSelIds)
+                           {
+                              Arrange::Clip* c = Arrange::FindClip(gArrange, id);
+                              if (c == nullptr || (c->colorR == r && c->colorG == g && c->colorB == b))
+                                 continue;
+                              c->colorR = r;
+                              c->colorG = g;
+                              c->colorB = b;
+                              gArrange.revision++;
+                           }
+                        });
+                     }
+                     ImGui::PopID();
+                  }
+                  ImGui::EndMenu();
+               }
+               // Assign Node...: only when every selected clip shares one
+               // lane type - a mixed audio+video batch has no single node
+               // type that fits both. ArrangeAssignClipSource itself still
+               // rejects any Sample clip in the batch (see its own comment),
+               // so a mixed Sample/Clip selection just leaves the Samples
+               // untouched rather than needing a separate check here.
+               if (ctxSelectionSingleType && ImGui::MenuItem("Assign Node..."))
+               {
+                  gArrangeAssigningClipId = cid;
+                  gArrangeAssignTargetIds.clear();
+                  for (uint64_t id : ctxSelIds)
+                     if (id != cid)
+                        gArrangeAssignTargetIds.push_back(id);
+                  ImGui::CloseCurrentPopup();
+               }
+            }
+            else
+            {
             // Rename and Active/Bypass: apply to every clip type, mirroring
             // the double-click-to-rename and '0'-key shortcuts this menu
             // just gives an explicit, discoverable entry point for.
@@ -32729,6 +32808,7 @@ namespace
                const std::string label = !cp->name.empty() ? cp->name
                   : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
                gArrangeRenamingClipId = cid;
+               gArrangeRenameTargetIds.clear();
                snprintf(gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer), "%s", label.c_str());
             }
             if (ImGui::MenuItem("Active", nullptr, cp->enabled))
@@ -32855,21 +32935,12 @@ namespace
                      {
                         if (Arrange::Clip* c = Arrange::FindClip(gArrange, cid))
                         {
+                           // Toggling sync alone never moves `length`
+                           // (SampleClipLengthTicks is purely a function of
+                           // sampleBpm/sourceDurationSeconds, same for both
+                           // states) - only whether WSOLA now follows the
+                           // live project tempo to fill that same footprint.
                            c->syncToTempo = syncToTempo;
-                           // The mode switch itself changes what "correct
-                           // length" means (see SampleClipLengthTicks) - has
-                           // to be recomputed here too, not just on a BPM
-                           // field edit, or flipping sync leaves the clip's
-                           // footprint stuck at whatever the OTHER mode's
-                           // formula last produced.
-                           c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
-                              c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
-                           // The visible waveform slices the decoded file by
-                           // the same synced-vs-unsynced formula (see
-                           // ArrangeComputeSampleStaticWave's comment) - stale
-                           // otherwise, showing whatever slice the OTHER mode
-                           // last computed.
-                           ArrangeRefreshSampleStaticWave(c->id);
                         }
                      });
                   }
@@ -32888,14 +32959,13 @@ namespace
                         fieldGesture(true);
                         cp = Arrange::FindClip(gArrange, cid);
                         cp->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
-                        // Unsynced playback never warps (see
-                        // SampleClipLengthTicks), so this edit is only ever a
-                        // correction to the stashed reference value for a
-                        // later Sync to Tempo - it must NOT move `length`,
-                        // which stays pinned to the clip's actual (untouched)
-                        // real duration at the current project tempo.
-                        cp->length = Arrange::SampleClipLengthTicks(cp->sourceDurationSeconds,
-                           cp->sampleBpm, cp->syncToTempo, (double)Transport::Instance().Tempo());
+                        // Correcting the believed native tempo directly
+                        // changes how many bars this loop actually spans
+                        // (SampleClipLengthTicks) - the visible way to tell
+                        // an unsynced clip "this is actually N bars long"
+                        // without warping the (untouched, native-rate) audio
+                        // to fit.
+                        cp->length = Arrange::SampleClipLengthTicks(cp->sourceDurationSeconds, cp->sampleBpm);
                         ArrangeRefreshSampleStaticWave(cp->id);
                         gArrange.revision++;
                      }
@@ -33057,6 +33127,7 @@ namespace
             if (cp != nullptr && !cp->sampleDropped && ImGui::MenuItem("Assign Node..."))
             {
                gArrangeAssigningClipId = cid;
+               gArrangeAssignTargetIds.clear();
                ImGui::CloseCurrentPopup();
             }
 
@@ -33095,6 +33166,7 @@ namespace
                ArrangeGroupSelection();
             if (ImGui::MenuItem("Ungroup", MODKEY "+Shift+G", false, ArrangeCanUngroupSelection()))
                ArrangeUngroupSelection();
+            }
          }
          ImGui::EndPopup();
       }
@@ -38483,16 +38555,12 @@ namespace
                   ArrangeEdit([&]() {
                      if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                      {
+                        // Toggling sync alone never moves `length`
+                        // (SampleClipLengthTicks is purely a function of
+                        // sampleBpm/sourceDurationSeconds, same for both
+                        // states) - only whether WSOLA now follows the live
+                        // project tempo to fill that same footprint.
                         c->syncToTempo = syncToTempo;
-                        // The mode switch itself changes what "correct
-                        // length" means (see SampleClipLengthTicks) - has to
-                        // be recomputed here too, not just on a BPM field
-                        // edit, or flipping sync leaves the clip's footprint
-                        // stuck at whatever the OTHER mode's formula last
-                        // produced.
-                        c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
-                           c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
-                        ArrangeRefreshSampleStaticWave(c->id);
                         gArrange.revision++;
                      }
                   });
@@ -38511,11 +38579,10 @@ namespace
                {
                   // Sync is off: no rate override applies (RebuildAudioTopology
                   // gates SetClipRateOverride's ratio on syncToTempo), so this
-                  // field is only ever a stashed reference for a later Sync to
-                  // Tempo - it must NOT move the clip's placed length, which
-                  // stays pinned to the clip's actual (untouched) real
-                  // duration at the current project tempo (see
-                  // SampleClipLengthTicks's own comment).
+                  // field is the visible way to tell an unsynced clip "this
+                  // loop is actually N bars long" - it recomputes `length`
+                  // (SampleClipLengthTicks) without touching the untouched,
+                  // native-rate audio itself.
                   float sampleBpm = clip->sampleBpm;
                   ImGui::SetNextItemWidth(fieldW);
                   if (ImGui::DragFloat("Sample BPM##clipbpm", &sampleBpm, 0.1f, 1.0f, 999.0f, "%.2f"))
@@ -38524,8 +38591,7 @@ namespace
                         if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
                         {
                            c->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
-                           c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
-                              c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
+                           c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds, c->sampleBpm);
                            ArrangeRefreshSampleStaticWave(c->id);
                            gArrange.revision++;
                         }
@@ -83082,14 +83148,22 @@ int main(int argc, char** argv)
 
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             {
-               // By uid, through the model: one timeline undo entry.
+               // By uid, through the model - one call (one undo entry) per
+               // target clip, so a multi-select Assign Node... points every
+               // selected clip of this lane type at the same node.
                ArrangeAssignClipSource(gArrangeAssigningClipId, hoveredCompatible->uid);
+               for (uint64_t targetId : gArrangeAssignTargetIds)
+                  ArrangeAssignClipSource(targetId, hoveredCompatible->uid);
                gArrangeAssigningClipId = 0;
+               gArrangeAssignTargetIds.clear();
             }
          }
 
          if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+         {
             gArrangeAssigningClipId = 0;
+            gArrangeAssignTargetIds.clear();
+         }
       }
 
       // [edperf] BuildControl's per-frame hit-test walk is the one part of the
