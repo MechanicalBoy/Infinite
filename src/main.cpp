@@ -27071,17 +27071,30 @@ namespace
    //
    // Buckets are stretched linearly across only the clip's OWN sub-range of
    // the decoded file - [sourceOffsetSeconds, sourceOffsetSeconds +
-   // windowSeconds), where windowSeconds is this clip's own duration
-   // converted back to source-file seconds via Arrange::SampleClipWindowSeconds
-   // (the exact inverse of SampleClipLengthTicks - see its own comment). A
-   // clip that has never been split has sourceOffsetSeconds == 0 and windowSeconds
+   // windowSeconds). For a SYNCED clip, windowSeconds is this clip's own
+   // duration converted back to source-file seconds via
+   // Arrange::SampleClipWindowSeconds (the exact inverse of
+   // SampleClipLengthTicks - see its own comment) - live-tempo-invariant by
+   // construction, same as the audio-thread ratio it mirrors. A clip that
+   // has never been split has sourceOffsetSeconds == 0 and windowSeconds
    // spanning the whole file, so this reproduces the old whole-file behavior
    // exactly for that case; a clip born from a Split instead shows only its
    // own slice, so the right half continues the left half's waveform shape
    // instead of restarting at the file's beginning.
+   //
+   // An UNSYNCED clip's box has a FIXED tick length (does not react to a
+   // live tempo change - see Clip::origBpm's own comment) but its
+   // sampleBpm/origBpm playback ratio is also fixed independent of tempo -
+   // together that means how much of the box's real duration (at whatever
+   // the CURRENT live tempo is) the audio thread actually consumes DOES
+   // still depend on live tempo, so windowSeconds must be recomputed from it
+   // fresh here too, exactly mirroring RunTopology's own ratio math (see
+   // AudioEngine.cpp's tempoRatioLive), rather than reusing the synced
+   // formula - using the wrong one here is what made the static waveform
+   // show a different slice of the file than what actually plays.
    void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
                                         Arrange::Tick start, Arrange::Tick length,
-                                        float sampleBpm,
+                                        bool syncToTempo, float sampleBpm, float origBpm,
                                         float sourceOffsetSeconds,
                                         const Platform::SampleBuffer* buf)
    {
@@ -27095,7 +27108,10 @@ namespace
 
       const int frames = buf->numFrames;
       const int channels = buf->channels;
-      const double windowSeconds = Arrange::SampleClipWindowSeconds(length, sampleBpm);
+      const double windowSeconds = syncToTempo
+         ? Arrange::SampleClipWindowSeconds(length, sampleBpm)
+         : Arrange::TicksToSeconds(length, std::max(1.0, (double)Transport::Instance().Tempo())) *
+              ((double)sampleBpm / (double)std::max(1.0f, origBpm));
       const long long subF0 = std::clamp<long long>(
          (long long)std::llround((double)sourceOffsetSeconds * buf->sampleRate), 0, frames);
       const long long subF1 = std::clamp<long long>(
@@ -27175,7 +27191,8 @@ namespace
          return;
       }
       ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                      c->sampleBpm, c->sourceOffsetSeconds, buf);
+                                      c->syncToTempo, c->sampleBpm, c->origBpm,
+                                      c->sourceOffsetSeconds, buf);
    }
 
    // ---- Clip thumbnails (WP8) ------------------------------------------
@@ -29682,7 +29699,7 @@ namespace
             // Audio Clip keeps using the live-fill gArrangeClipWaves cache.
             if (pending.kind == Arrange::ImportMediaKind::Audio && c->sampleDropped && audioFileNode != nullptr)
                ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                               c->sampleBpm,
+                                               c->syncToTempo, c->sampleBpm, c->origBpm,
                                                c->sourceOffsetSeconds,
                                                audioFileNode->Buffer());
             gArrange.revision++;
@@ -33094,10 +33111,10 @@ namespace
                         cp->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
                         // Correcting the believed native tempo directly
                         // changes how many bars this loop actually spans
-                        // (SampleClipLengthTicks) - the visible way to tell
-                        // an unsynced clip "this is actually N bars long"
-                        // without warping the (untouched, native-rate) audio
-                        // to fit.
+                        // (SampleClipLengthTicks) AND, since origBpm stays
+                        // frozen at the estimate captured on import, changes
+                        // the sampleBpm/origBpm playback ratio RunTopology
+                        // applies via WSOLA - see that ratio's own comment.
                         cp->length = Arrange::SampleClipLengthTicks(cp->sourceDurationSeconds, cp->sampleBpm);
                         ArrangeRefreshSampleStaticWave(cp->id);
                         gArrange.revision++;
@@ -38715,12 +38732,15 @@ namespace
                }
                else
                {
-                  // Sync is off: no rate override applies (RebuildAudioTopology
-                  // gates SetClipRateOverride's ratio on syncToTempo), so this
-                  // field is the visible way to tell an unsynced clip "this
-                  // loop is actually N bars long" - it recomputes `length`
-                  // (SampleClipLengthTicks) without touching the untouched,
-                  // native-rate audio itself.
+                  // Sync is off: the rate override is still live (see
+                  // AudioEngine::RunTopology's unsynced branch -
+                  // sampleBpm/origBpm - and ArrangeComputeSampleStaticWave's
+                  // matching windowSeconds branch), it's just tempo-
+                  // independent instead of tracking the transport. This field
+                  // is "what tempo is this loop actually at" - editing it
+                  // both resizes the box (SampleClipLengthTicks) AND changes
+                  // the sampleBpm/origBpm playback ratio, since origBpm stays
+                  // frozen at the estimate captured on import.
                   float sampleBpm = clip->sampleBpm;
                   ImGui::SetNextItemWidth(fieldW);
                   if (ImGui::DragFloat("Sample BPM##clipbpm", &sampleBpm, 0.1f, 1.0f, 999.0f, "%.2f"))
