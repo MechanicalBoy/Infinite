@@ -836,6 +836,230 @@ private:
    mutable std::atomic<bool> mOnsetPending { false };
 };
 
+// The file's decoded sample rate can differ from the engine's running rate
+// (e.g. a 44.1kHz file with a 48kHz engine), so pos is generally non-integral
+// - linearly interpolate between the two nearest frames. Channel 0 only, same
+// simplification SamplerNode's ReadSample makes for a multi-channel file.
+// Free function (not a member) so WsolaStretcher below can share it with
+// AudioFilePlayerAudioNode.
+static float ReadBufferInterp(const Platform::SampleBuffer& buf, double pos)
+{
+   const int64_t i0 = (int64_t)std::floor(pos);
+   if (i0 < 0 || i0 >= buf.numFrames)
+      return 0.0f;
+   const int64_t i1 = i0 + 1;
+   const float s0 = buf.channelData[i0];
+   const float s1 = (i1 < buf.numFrames) ? buf.channelData[i1] : s0;
+   const float frac = (float)(pos - (double)i0);
+   return s0 + (s1 - s0) * frac;
+}
+
+// Real-time-safe WSOLA (Waveform-Similarity Overlap-Add) time-stretcher.
+// Reads channel 0 of a fully-decoded Platform::SampleBuffer and produces a
+// stretched signal at a caller-chosen ratio - ratio > 1 consumes the source
+// faster than real time (shorter/compressed), ratio < 1 slower
+// (longer/expanded) - WITHOUT changing pitch. This is what
+// AudioFilePlayerAudioNode's Arrangement Timeline BPM-sync (SetClipRateOverride)
+// now runs through instead of the varispeed resampling still used for the
+// node's own explicit Pitch control (see ProcessBlock's own comment on why
+// those two stay different algorithms).
+//
+// Because the source is a fully in-memory, randomly-addressable buffer (not
+// a stream), the whole thing can stay allocation-free: every buffer here is a
+// fixed-size member, and "seeking" is just repointing the analysis cursor -
+// no lookahead ring or background decode thread needed.
+//
+// Algorithm: fixed-size synthesis windows (kWindow, 75% overlap at kHop) are
+// pulled from the source, Hann-windowed, and overlap-added into a small ring
+// buffer that the caller drains at its own pace (Read()). The analysis
+// position advances by kHop*ratio source-frames per hop - the actual time
+// warp - while a short cross-correlation search (kSearch) nudges each new
+// window's source offset to whatever position best continues the waveform
+// already sitting in the not-yet-finalized overlap region, which is what
+// keeps the seam between windows from phasing/combing. At ratio == 1.0 this
+// degenerates to plain, unshifted overlap-add reconstruction (the search is
+// skipped entirely - center of a silent reference on the very first hop, and
+// a needless-but-harmless perfect-alignment search after that would just
+// keep finding offset 0 anyway), so audio thread cost when nothing is
+// actually being stretched stays a Hann-window multiply-accumulate, not a
+// full correlation search.
+class WsolaStretcher
+{
+public:
+   static constexpr int kWindow = 1024;                    // ~23ms @44.1kHz
+   static constexpr int kHop = kWindow / 4;                 // 75% overlap - COLA-exact for Hann
+   static constexpr int kOverlap = kWindow - kHop;
+   static constexpr int kSearch = 128;                      // +/- alignment search radius, frames
+   static constexpr int kRingSize = 8192;                   // power of two, generous vs. one hop of lookahead
+   static constexpr int kRingMask = kRingSize - 1;
+
+   WsolaStretcher()
+   {
+      // M_PI isn't standard C++ (absent on MSVC without _USE_MATH_DEFINES) -
+      // a local constant matches the convention the rest of the audio DSP
+      // code already uses (see MolderDsp.cpp's kTwoPi/kPi).
+      constexpr double kTwoPi = 6.283185307179586476925286766559;
+      for (int i = 0; i < kWindow; i++)
+         mHann[i] = 0.5f - 0.5f * (float)std::cos(kTwoPi * (double)i / (double)(kWindow - 1));
+
+      // Hann at 75% overlap is COLA (constant overlap-add) but not
+      // COLA-unity - measure the actual constant here instead of hardcoding
+      // a textbook value, so a later change to kWindow/kHop can't silently
+      // start pumping the output level.
+      double total = 0.0;
+      for (int k = -8; k <= 8; k++)
+      {
+         const int idx = 0 - k * kHop;
+         if (idx >= 0 && idx < kWindow)
+            total += mHann[idx];
+      }
+      mGainComp = (total > 1e-6) ? (float)(1.0 / total) : 1.0f;
+
+      Reset(0.0, 0);
+   }
+
+   // Drops all generated content and starts fresh - `analysisFrame` is where
+   // in the SOURCE to resume reading (native file-frame units), `writeFrame`
+   // is the ring/write-domain position this resumption corresponds to for the
+   // caller (normally the caller's own read cursor at the moment of reset, so
+   // Read() right after Reset()+one GenerateUpTo() picks up with no gap).
+   // Called on seek, restart, and a fresh buffer swap-in.
+   void Reset(double analysisFrame, int64_t writeFrame)
+   {
+      mAnalysisPos = analysisFrame;
+      mStretchWritten = writeFrame;
+      mSourceExhausted = false;
+      mRingEndPos = -1.0;
+      std::fill(std::begin(mOlaAccum), std::end(mOlaAccum), 0.0f);
+      mHavePrevWindow = false;
+   }
+
+   // Generates hops until the ring holds valid content through `throughFrame`
+   // (ring/write-domain units) or the source has run out (loop == false).
+   void GenerateUpTo(double throughFrame, float ratio, bool loop, const Platform::SampleBuffer& buf)
+   {
+      while (!mSourceExhausted && (double)mStretchWritten < throughFrame)
+         GenerateOneHop(ratio, loop, buf);
+   }
+
+   // Ring/write-domain read, linear-interpolated. Caller must already have
+   // called GenerateUpTo(pos + 1 or more, ...). Returns 0 past Exhausted()'s
+   // end position.
+   float Read(double pos) const
+   {
+      if (mRingEndPos >= 0.0 && pos >= mRingEndPos)
+         return 0.0f;
+      const int64_t i0 = (int64_t)std::floor(pos);
+      const float frac = (float)(pos - (double)i0);
+      const float s0 = mRing[i0 & kRingMask];
+      const float s1 = mRing[(i0 + 1) & kRingMask];
+      return s0 + (s1 - s0) * frac;
+   }
+
+   // True once the source has run out with loop off. `endPos` (ring/write-
+   // domain units, comparable to Read()'s argument) is where playback should
+   // stop - the WSOLA equivalent of the old "mPos >= numFrames" check, which
+   // can no longer be done by comparing directly against the source's own
+   // frame count once ring-domain and source-domain length can differ.
+   bool Exhausted(double* endPos) const
+   {
+      if (mRingEndPos < 0.0)
+         return false;
+      if (endPos) *endPos = mRingEndPos;
+      return true;
+   }
+
+   // Main thread (via an atomic snapshot) - how far into the actual source
+   // file playback has reached, for AudioFileNode::Position()'s waveform
+   // playhead. Audio-thread-only to call directly.
+   double AnalysisFrame() const { return mAnalysisPos; }
+
+private:
+   void GenerateOneHop(float ratio, bool loop, const Platform::SampleBuffer& buf)
+   {
+      const bool stretching = std::fabs(ratio - 1.0f) > 0.002f;
+
+      // mOlaAccum[0..kOverlap) already holds every contribution placed by
+      // earlier windows for this position (nothing has added THIS window's
+      // contribution yet) - exactly the "what's already committed to the
+      // output here" reference WSOLA's alignment search wants. Skipped on
+      // the very first hop (that reference would be silence) and whenever
+      // nothing is actually being stretched (see this function's own
+      // no-search fast path in the class comment).
+      const double start = (mHavePrevWindow && stretching)
+         ? FindBestOffset(buf)
+         : mAnalysisPos;
+
+      float windowed[kWindow];
+      for (int j = 0; j < kWindow; j++)
+         windowed[j] = ReadBufferInterp(buf, start + (double)j) * mHann[j];
+      for (int j = 0; j < kWindow; j++)
+         mOlaAccum[j] += windowed[j];
+
+      // The front kHop samples can never receive another contribution (the
+      // next window starts at least kHop frames later) - they're final.
+      for (int j = 0; j < kHop; j++)
+      {
+         mRing[mStretchWritten & kRingMask] = mOlaAccum[j] * mGainComp;
+         mStretchWritten++;
+      }
+      std::memmove(mOlaAccum, mOlaAccum + kHop, kOverlap * sizeof(float));
+      std::fill(mOlaAccum + kOverlap, mOlaAccum + kWindow, 0.0f);
+      mHavePrevWindow = true;
+
+      mAnalysisPos = start + (double)kHop * (double)ratio;
+      if (mAnalysisPos >= (double)buf.numFrames)
+      {
+         if (loop && buf.numFrames > 0)
+            mAnalysisPos = std::fmod(mAnalysisPos, (double)buf.numFrames);
+         else
+         {
+            mSourceExhausted = true;
+            mRingEndPos = (double)mStretchWritten;
+         }
+      }
+   }
+
+   // Normalized cross-correlation search over +/-kSearch frames around
+   // mAnalysisPos, against the not-yet-finalized overlap already sitting in
+   // mOlaAccum - the standard WSOLA "waveform similarity" step that keeps
+   // consecutive windows in phase so the overlap-add doesn't comb-filter.
+   double FindBestOffset(const Platform::SampleBuffer& buf) const
+   {
+      double bestOffset = 0.0;
+      float bestScore = -1.0f;
+      for (int s = -kSearch; s <= kSearch; s++)
+      {
+         double num = 0.0, denom = 0.0;
+         for (int j = 0; j < kOverlap; j++)
+         {
+            const float cand = ReadBufferInterp(buf, mAnalysisPos + (double)s + (double)j);
+            num += (double)cand * (double)mOlaAccum[j];
+            denom += (double)cand * (double)cand;
+         }
+         const float score = (denom > 1e-9) ? (float)(num / std::sqrt(denom)) : 0.0f;
+         if (score > bestScore)
+         {
+            bestScore = score;
+            bestOffset = (double)s;
+         }
+      }
+      return mAnalysisPos + bestOffset;
+   }
+
+   float mHann[kWindow] = {};
+   float mGainComp = 1.0f;
+   float mOlaAccum[kWindow] = {};
+   bool mHavePrevWindow = false;
+
+   double mAnalysisPos = 0.0;      // next analysis window start, native source frames
+   int64_t mStretchWritten = 0;    // ring/write-domain frames generated so far
+   bool mSourceExhausted = false;
+   double mRingEndPos = -1.0;      // valid once mSourceExhausted, see Exhausted()
+
+   float mRing[kRingSize] = {};
+};
+
 class AudioFilePlayerAudioNode : public AudioNode
 {
 public:
@@ -951,15 +1175,18 @@ public:
       {
          mActiveBuffer = mSampleSlot.Active();
          mPos = 0.0;
+         mStretcher.Reset(0.0, 0);
          mFramePos.store(0, std::memory_order_relaxed);
          mAnalyser.Reset();
          const double fileRate = (mActiveBuffer != nullptr && mActiveBuffer->sampleRate > 0.0)
             ? mActiveBuffer->sampleRate : mSampleRate;
          mPlaybackRate = (fileRate > 0.0 && mSampleRate > 0.0) ? fileRate / mSampleRate : 1.0;
          mActiveFileSampleRate.store(fileRate, std::memory_order_relaxed);
-         // PositionSeconds() divides mFramePos by mActiveFileSampleRate, so
-         // deliberately excludes the pitch ratio below - a pitched-up clip's
-         // reported position still reads in the file's own real time.
+         // PositionSeconds() reads mFramePos, published from the stretcher's
+         // own source-domain analysis cursor (see the bottom of this
+         // function) - deliberately excludes the pitch ratio below, so a
+         // pitched-up clip's reported position still reads in the file's own
+         // real time.
       }
 
       for (int ch = 0; ch < buffer.numChannels; ch++)
@@ -968,6 +1195,7 @@ public:
       if (mRestartRequested.exchange(false, std::memory_order_acq_rel))
       {
          mPos = 0.0;
+         mStretcher.Reset(0.0, 0);
          mFramePos.store(0, std::memory_order_relaxed);
       }
 
@@ -975,8 +1203,21 @@ public:
       if (seekSeconds >= 0.0 && mActiveBuffer != nullptr)
       {
          const double fileRate = mActiveBuffer->sampleRate > 0.0 ? mActiveBuffer->sampleRate : mSampleRate;
-         mPos = std::clamp(seekSeconds * fileRate, 0.0, (double)mActiveBuffer->numFrames);
-         mFramePos.store((int64_t)mPos, std::memory_order_relaxed);
+         // Two separate warps now apply to a Sample window (see
+         // ProcessBlock's own comment below): the explicit Pitch control
+         // still varispeeds the STRETCHED signal (mPos, ring/write-domain),
+         // while BPM sync warps how fast the WSOLA stretcher itself consumes
+         // the SOURCE (mAnalysisPos) - AudioEngine's caller no longer needs
+         // to know that split exists, it just hands over plain elapsed
+         // timeline seconds and this seeds both cursors from it using
+         // whatever pitch/tempo ratio is in effect right now.
+         const float pitchRatio = powf(2.0f, mMailbox.SmoothedValue(kFilePitchParam) / 12.0f);
+         const float tempoRatio = mMailbox.SmoothedValue(kFileTempoRatioParam);
+         mPos = std::max(0.0, seekSeconds * (double)pitchRatio * fileRate);
+         const double analysisSeek = std::clamp(seekSeconds * (double)tempoRatio * fileRate,
+            0.0, (double)mActiveBuffer->numFrames);
+         mStretcher.Reset(analysisSeek, (int64_t)mPos);
+         mFramePos.store((int64_t)analysisSeek, std::memory_order_relaxed);
       }
 
       const bool loop = mLoop.load(std::memory_order_relaxed);
@@ -994,27 +1235,29 @@ public:
          // at. Smoothed like volume/gain so a live pitch edit from the
          // Arrange clip settings panel doesn't zipper.
          const float pitchRatio = powf(2.0f, mMailbox.SmoothedValue(kFilePitchParam) / 12.0f);
-         // BPM sync (step 3): a tempo-synced Audio Sample's read rate is
-         // additionally scaled by currentProjectTempo/sampleBpm, smoothed
-         // the same as pitch so a live tempo/BPM-field edit doesn't zipper.
-         // 1.0 (no-op) for every non-Sample/non-synced window - see
-         // SetClipRateOverride's own comment.
+         // BPM sync (step 3): a tempo-synced Audio Sample's rate is warped by
+         // currentProjectTempo/sampleBpm, smoothed the same as pitch so a
+         // live tempo/BPM-field edit doesn't zipper. Unlike Pitch above, this
+         // goes through WsolaStretcher rather than the raw read-rate - a
+         // tempo-sync warp is meant to change how long the clip takes to
+         // play, not what it sounds like, whereas Pitch is deliberately
+         // varispeed (turntable-style: speed and pitch move together). 1.0
+         // (no-op, and WsolaStretcher's own no-search fast path) for every
+         // non-Sample/non-synced window - see SetClipRateOverride's own
+         // comment.
          const float tempoRatio = mMailbox.SmoothedValue(kFileTempoRatioParam);
 
          float raw = 0.0f;
          if (hasBuffer && mPlaying.load(std::memory_order_relaxed))
          {
-            raw = ReadSample(*mActiveBuffer, mPos);
-            mPos += mPlaybackRate * pitchRatio * tempoRatio;
-            if (mPos >= mActiveBuffer->numFrames)
+            mStretcher.GenerateUpTo(mPos + 2.0, tempoRatio, loop, *mActiveBuffer);
+            raw = mStretcher.Read(mPos);
+            mPos += mPlaybackRate * pitchRatio;
+            double stretchEnd;
+            if (!loop && mStretcher.Exhausted(&stretchEnd) && mPos >= stretchEnd)
             {
-               if (loop)
-                  mPos -= mActiveBuffer->numFrames;
-               else
-               {
-                  mPos = (double)mActiveBuffer->numFrames;
-                  mPlaying.store(false, std::memory_order_relaxed);
-               }
+               mPos = stretchEnd;
+               mPlaying.store(false, std::memory_order_relaxed);
             }
          }
 
@@ -1027,29 +1270,13 @@ public:
             buffer.channels[ch][i] = monitor ? outSample : 0.0f;
       }
 
-      mFramePos.store((int64_t)mPos, std::memory_order_relaxed);
+      // Published in SOURCE frames (the stretcher's own analysis cursor), not
+      // mPos's ring/write-domain frames - see PositionSeconds()'s comment.
+      mFramePos.store((int64_t)mStretcher.AnalysisFrame(), std::memory_order_relaxed);
       mAnalyser.RunIfWindowFull();
    }
 
 private:
-   static float ReadSample(const Platform::SampleBuffer& buf, double pos)
-   {
-      // The file's decoded sample rate can differ from the engine's running
-      // rate (e.g. a 44.1kHz file with a 48kHz engine), so pos is generally
-      // non-integral - linearly interpolate between the two nearest frames.
-      // Channel 0 only, same simplification SamplerNode's ReadSample makes
-      // for a multi-channel file.
-      const int i0 = (int)std::floor(pos);
-      if (i0 < 0 || i0 >= buf.numFrames)
-         return 0.0f;
-      const int i1 = i0 + 1;
-      const float s0 = buf.channelData[i0];
-      const float s1 = (i1 < buf.numFrames) ? buf.channelData[i1] : s0;
-      const float frac = (float)(pos - i0);
-      return s0 + (s1 - s0) * frac;
-   }
-
-
    double mSampleRate = 44100.0;
    double mPlaybackRate = 1.0; // decoded file's sampleRate / engine's mSampleRate
    std::atomic<double> mActiveFileSampleRate { 44100.0 }; // for PositionSeconds() - see its comment
@@ -1065,7 +1292,8 @@ private:
    std::atomic<bool> mRestartRequested { false };
    std::atomic<double> mSeekRequestSeconds { -1.0 }; // see SeekToClipOffset
    std::atomic<int64_t> mFramePos { 0 };
-   double mPos = 0.0; // audio-thread-only playback cursor, in frames
+   double mPos = 0.0; // audio-thread-only playback cursor, in ring/write-domain frames (see WsolaStretcher)
+   WsolaStretcher mStretcher; // BPM-sync time-stretch; see ProcessBlock's own comment
 
    Platform::SampleBuffer* mActiveBuffer = nullptr;
    SampleSlot mSampleSlot;

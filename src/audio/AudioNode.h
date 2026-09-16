@@ -108,26 +108,32 @@ public:
 
    // Arrangement Timeline per-clip BPM-sync rate (main.cpp's RunTopology
    // lookahead pass, same call site and same audio-thread-safety contract as
-   // SetClipPitchOverride): scales this node's *next* cook's varispeed read
-   // rate by `ratio` on top of pitch, so an Audio Sample with Sync to Tempo
-   // on plays at currentProjectTempo / sampleBpm regardless of the file's own
-   // native rate. 1.0 (a no-op multiplier) for every window that isn't a
-   // tempo-synced Sample - Audio Clip windows, video, and a Sample with sync
-   // off all push 1.0 every block, same as they already push pitch 0. No-op
-   // by default; only a node with its own varispeed read position (a sample
-   // player) needs to override it.
+   // SetClipPitchOverride): scales this node's *next* cook's time-stretch
+   // ratio by `ratio`, so an Audio Sample with Sync to Tempo on plays at
+   // currentProjectTempo / sampleBpm regardless of the file's own native rate
+   // - without changing its pitch (AudioFilePlayerAudioNode implements this
+   // via WsolaStretcher, deliberately NOT the varispeed model
+   // SetClipPitchOverride uses - see its ProcessBlock's own comment on why
+   // those two stay different algorithms). 1.0 (a no-op) for every window
+   // that isn't a tempo-synced Sample - Audio Clip windows, video, and a
+   // Sample with sync off all push 1.0 every block, same as they already push
+   // pitch 0. No-op by default; only a node with its own time-stretched read
+   // position (a sample player) needs to override it.
    virtual void SetClipRateOverride(float ratio) { (void)ratio; }
 
    // Arrangement Timeline exact seek (main.cpp's RunTopology lookahead pass,
    // same call site as RequestRetrigger/SetClipPitchOverride): tells this
-   // node to jump its own playback position to `seconds` into its source the
-   // next time it cooks. Fired only for an Audio Sample window (see
-   // ClipWindow::sampleDropped) and only on a genuine discontinuity - a
-   // scrub, a seek, a loop wrap, or Play landing mid-clip - never on
-   // ordinary continuous playback, where the node's own free-running
-   // position is already correct. This is what makes a Sample give the
-   // user's requested "already processed, so give me the exact moment"
-   // behaviour, as opposed to a live Audio Clip, which stays on
+   // node to jump its own playback position to `seconds` of PLAIN ELAPSED
+   // TIMELINE TIME (not file-native seconds, and not pre-scaled by pitch or
+   // tempo ratio - a node with both a pitch and a tempo control generally
+   // needs to seed two different internal cursors from this one number using
+   // its own current ratios, which only it knows) the next time it cooks.
+   // Fired only for an Audio Sample window (see ClipWindow::sampleDropped)
+   // and only on a genuine discontinuity - a scrub, a seek, a loop wrap, or
+   // Play landing mid-clip - never on ordinary continuous playback, where the
+   // node's own free-running position is already correct. This is what makes
+   // a Sample give the user's requested "already processed, so give me the
+   // exact moment" behaviour, as opposed to a live Audio Clip, which stays on
    // RequestRetrigger's onset-only reset-to-start. Same audio-thread-safety
    // contract as RequestRetrigger() - a same-thread request consumed at the
    // top of the node's own cook, never blocking or allocating. No-op by
