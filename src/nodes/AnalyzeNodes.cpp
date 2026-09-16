@@ -633,11 +633,6 @@ namespace
    constexpr int kFileVolumeParam = 0;
    constexpr int kFileGainParam = 1;
    constexpr int kFilePitchParam = 2; // semitones - see AudioFileNode::pitch
-   // BPM-sync rate ratio (Arrangement Timeline step 3), 1.0 = native rate.
-   // Only ever pushed by SetClipRateOverride (Audio Sample windows); the
-   // node's own canvas UI has no control for this, so PrepareToPlay seeds it
-   // straight to 1.0 rather than from a member atomic like volume/gain/pitch.
-   constexpr int kFileTempoRatioParam = 3;
 
    constexpr int kAnalysisFftLog2 = 10; // 1024-point FFT, same size Platform.mm's live analyser used
    constexpr int kAnalysisFftSize = 1 << kAnalysisFftLog2;
@@ -857,7 +852,6 @@ public:
       mMailbox.SetImmediate(kFileVolumeParam, mVolume.load(std::memory_order_relaxed));
       mMailbox.SetImmediate(kFileGainParam, mGain.load(std::memory_order_relaxed));
       mMailbox.SetImmediate(kFilePitchParam, mPitchSemitones.load(std::memory_order_relaxed));
-      mMailbox.SetImmediate(kFileTempoRatioParam, 1.0f);
    }
 
    // Main thread only. Hands over ownership of a freshly decoded buffer.
@@ -908,23 +902,17 @@ public:
    // under the mailbox's per-block smoothing.
    void SetClipPitchOverride(float semitones) override { mMailbox.Push(kFilePitchParam, semitones); }
 
-   // Arrangement Timeline per-clip BPM sync (step 3): same push-only,
-   // never-touches-the-node's-own-member pattern as SetClipPitchOverride
-   // just above - a node can be shared by several clips, only one of which
-   // may be tempo-synced.
-   void SetClipRateOverride(float ratio) override { mMailbox.Push(kFileTempoRatioParam, ratio); }
-
-   // Arrangement Timeline exact seek (Audio Sample only - see
-   // AudioNode::SeekToClipOffset's own comment): stashes the requested
-   // offset in file seconds for ProcessBlock to consume at the top of its
-   // next block, converting to frames there (once the active buffer's own
-   // rate is known) rather than here, since this can be called from the
-   // audio thread with no safe access to mActiveBuffer's rate at this point.
-   // -1.0 is the sentinel for "no pending seek" - a real offset is always
-   // >= 0, so this can never collide with a genuine request.
-   void SeekToClipOffset(double seconds) override
+   // Arrangement Timeline Audio Sample position lock - see
+   // AudioNode::SetClipSamplePosition. Audio thread only (RunTopology calls it
+   // immediately before this node's own ProcessBlock in the same callback), so
+   // plain members, consumed and cleared at the top of ProcessBlock.
+   void SetClipSamplePosition(double sourceSeconds, double sourcePerSecond, float pitchSemitones, bool force) override
    {
-      mSeekRequestSeconds.store(seconds, std::memory_order_release);
+      mClipPending = true;
+      mClipSourceSeconds = sourceSeconds;
+      mClipSourcePerSecond = sourcePerSecond;
+      mClipPitch = pitchSemitones;
+      mClipForce = mClipForce || force;
    }
 
    // Main thread. mFramePos and mActiveFileSampleRate are only ever written
@@ -956,19 +944,18 @@ public:
       {
          mActiveBuffer = mSampleSlot.Active();
          mPos = 0.0;
-         mStretcher.Reset(0.0, 0);
+         mClipActive = false;
          mFramePos.store(0, std::memory_order_relaxed);
          mAnalyser.Reset();
          const double fileRate = (mActiveBuffer != nullptr && mActiveBuffer->sampleRate > 0.0)
             ? mActiveBuffer->sampleRate : mSampleRate;
          mPlaybackRate = (fileRate > 0.0 && mSampleRate > 0.0) ? fileRate / mSampleRate : 1.0;
          mActiveFileSampleRate.store(fileRate, std::memory_order_relaxed);
-         // PositionSeconds() reads mFramePos, published from the stretcher's
-         // own source-domain analysis cursor (see the bottom of this
-         // function) - deliberately excludes the pitch ratio below, so a
-         // pitched-up clip's reported position still reads in the file's own
-         // real time.
       }
+      // Recomputed every block, not only on swap-in: a PrepareToPlay at a new
+      // device rate after the buffer landed would otherwise leave it stale.
+      if (mActiveBuffer != nullptr && mActiveBuffer->sampleRate > 0.0 && mSampleRate > 0.0)
+         mPlaybackRate = mActiveBuffer->sampleRate / mSampleRate;
 
       for (int ch = 0; ch < buffer.numChannels; ch++)
          std::fill(buffer.channels[ch], buffer.channels[ch] + buffer.numFrames, 0.0f);
@@ -976,88 +963,146 @@ public:
       if (mRestartRequested.exchange(false, std::memory_order_acq_rel))
       {
          mPos = 0.0;
-         mStretcher.Reset(0.0, 0);
          mFramePos.store(0, std::memory_order_relaxed);
       }
 
-      const double seekSeconds = mSeekRequestSeconds.exchange(-1.0, std::memory_order_acq_rel);
-      if (seekSeconds >= 0.0 && mActiveBuffer != nullptr)
-      {
-         const double fileRate = mActiveBuffer->sampleRate > 0.0 ? mActiveBuffer->sampleRate : mSampleRate;
-         // Two separate warps now apply to a Sample window (see
-         // ProcessBlock's own comment below): the explicit Pitch control
-         // still varispeeds the STRETCHED signal (mPos, ring/write-domain),
-         // while BPM sync warps how fast the WSOLA stretcher itself consumes
-         // the SOURCE (mAnalysisPos) - AudioEngine's caller no longer needs
-         // to know that split exists, it just hands over plain elapsed
-         // timeline seconds and this seeds both cursors from it using
-         // whatever pitch/tempo ratio is in effect right now.
-         const float pitchRatio = powf(2.0f, mMailbox.SmoothedValue(kFilePitchParam) / 12.0f);
-         const float tempoRatio = mMailbox.SmoothedValue(kFileTempoRatioParam);
-         mPos = std::max(0.0, seekSeconds * (double)pitchRatio * fileRate);
-         const double analysisSeek = std::clamp(seekSeconds * (double)tempoRatio * fileRate,
-            0.0, (double)mActiveBuffer->numFrames);
-         mStretcher.Reset(analysisSeek, (int64_t)mPos);
-         mFramePos.store((int64_t)analysisSeek, std::memory_order_relaxed);
-      }
-
-      const bool loop = mLoop.load(std::memory_order_relaxed);
       const bool monitor = mMonitor.load(std::memory_order_relaxed);
       const bool hasBuffer = mActiveBuffer != nullptr && mActiveBuffer->numFrames > 0;
+      const bool clipBlock = mClipPending;
+      mClipPending = false;
+
+      if (clipBlock)
+      {
+         ProcessClipBlock(buffer, hasBuffer, monitor);
+      }
+      else
+      {
+         mClipActive = false;
+         const bool loop = mLoop.load(std::memory_order_relaxed);
+         for (int i = 0; i < buffer.numFrames; i++)
+         {
+            const float volume = mMailbox.SmoothedValue(kFileVolumeParam);
+            const float gain = mMailbox.SmoothedValue(kFileGainParam);
+            // Canvas playback: varispeed, same "shift the read rate" pitch
+            // model SamplerNode's NoteToRate uses, layered on the
+            // file/engine sample-rate ratio.
+            const float pitchRatio = powf(2.0f, mMailbox.SmoothedValue(kFilePitchParam) / 12.0f);
+
+            float left = 0.0f, right = 0.0f;
+            if (hasBuffer && mPlaying.load(std::memory_order_relaxed))
+            {
+               left = ReadBufferInterp(*mActiveBuffer, 0, mPos);
+               right = ReadBufferInterp(*mActiveBuffer, 1, mPos);
+               mPos += mPlaybackRate * pitchRatio;
+               if (mPos >= (double)mActiveBuffer->numFrames)
+               {
+                  if (loop)
+                     mPos = std::fmod(mPos, (double)mActiveBuffer->numFrames);
+                  else
+                  {
+                     mPos = (double)mActiveBuffer->numFrames;
+                     mPlaying.store(false, std::memory_order_relaxed);
+                  }
+               }
+            }
+            WriteFrame(buffer, i, left * volume, right * volume, gain, monitor);
+         }
+         mFramePos.store((int64_t)mPos, std::memory_order_relaxed);
+      }
+
+      mAnalyser.RunIfWindowFull();
+   }
+
+private:
+   void WriteFrame(AudioBuffer& buffer, int i, float left, float right, float gain, bool monitor)
+   {
+      // Still analysed while `monitor` is off - "silent but still analysed"
+      // always meant this node's own output, scoped to the graph.
+      mAnalyser.Push(0.5f * (left + right) * gain);
+      if (!monitor)
+         return;
+      for (int ch = 0; ch < buffer.numChannels; ch++)
+         buffer.channels[ch][i] = (ch % 2 == 0) ? left : right;
+   }
+
+   // Arrangement Timeline Audio Sample block. The audio is a pure function of
+   // the timeline: RunTopology hands over which source second belongs at this
+   // block's first frame and how many source seconds pass per real second
+   // (1 unsynced, projectTempo/sampleBpm synced). The node follows that with
+   // its own nominal cursor and only re-seeks when told to (a transport
+   // discontinuity) or when the requested position has moved more than a few
+   // milliseconds from where continuous playback would be (a window change, a
+   // tempo change on an unsynced clip, a topology swap onto a fresh node).
+   // Continuous playback never re-seeks, so a split clip's two halves and an
+   // uninterrupted play stay seamless. Pitch is time-preserving here: the
+   // stretcher runs at sourcePerSecond / pitchRatio and the ring is read
+   // pitchRatio times faster, so pitch never moves the audio off its box.
+   void ProcessClipBlock(AudioBuffer& buffer, bool hasBuffer, bool monitor)
+   {
+      if (!hasBuffer)
+      {
+         mClipActive = false;
+         for (int i = 0; i < buffer.numFrames; i++)
+            WriteFrame(buffer, i, 0.0f, 0.0f, 1.0f, false);
+         return;
+      }
+
+      const double fileRate = mActiveBuffer->sampleRate > 0.0 ? mActiveBuffer->sampleRate : mSampleRate;
+      const double sourcePerOutput = mPlaybackRate * std::max(0.0, mClipSourcePerSecond);
+      const double pitchRatio = std::pow(2.0, (double)mClipPitch / 12.0);
+      const double target = mClipSourceSeconds * fileRate;
+      const double driftLimit = 0.005 * fileRate;
+
+      bool reseek = !mClipActive || mClipForce;
+      mClipForce = false;
+      if (!reseek && std::fabs(target - mClipSource) > driftLimit)
+      {
+         reseek = true;
+         gClipSampleDriftReseeks.fetch_add(1, std::memory_order_relaxed);
+      }
+      if (reseek)
+         mClipSource = target;
+
+      // stretch = source frames per ring frame. Exactly 1 means the ring
+      // would be a copy of the source, so read the source directly: this is
+      // the unsynced, unpitched case and stays bit-exact interpolation.
+      const double ringPerOutput = mPlaybackRate * pitchRatio;
+      const double stretch = ringPerOutput > 0.0 ? std::clamp(sourcePerOutput / ringPerOutput, 0.1, 10.0) : 1.0;
+      const bool direct = std::fabs(stretch - 1.0) < 1e-4;
+      if (!direct && (reseek || mClipDirect || std::fabs(stretch - mClipStretch) > 0.02))
+      {
+         // A ratio change bigger than the stretcher tracks smoothly (a
+         // pitch or BPM edit) re-anchors it where playback is right now.
+         mRingPos = 0.0;
+         mStretcher.Reset(mClipSource, 0, stretch);
+      }
+      mClipDirect = direct;
+      mClipStretch = stretch;
+      mClipActive = true;
 
       for (int i = 0; i < buffer.numFrames; i++)
       {
          const float volume = mMailbox.SmoothedValue(kFileVolumeParam);
          const float gain = mMailbox.SmoothedValue(kFileGainParam);
-         // Varispeed: same "shift the read rate" pitch model SamplerNode's
-         // NoteToRate uses, layered on top of the file/engine sample-rate
-         // ratio above rather than replacing it - a pitched-up file still
-         // reads faster relative to its OWN rate, whatever the engine runs
-         // at. Smoothed like volume/gain so a live pitch edit from the
-         // Arrange clip settings panel doesn't zipper.
-         const float pitchRatio = powf(2.0f, mMailbox.SmoothedValue(kFilePitchParam) / 12.0f);
-         // BPM sync (step 3): a tempo-synced Audio Sample's rate is warped by
-         // currentProjectTempo/sampleBpm, smoothed the same as pitch so a
-         // live tempo/BPM-field edit doesn't zipper. Unlike Pitch above, this
-         // goes through WsolaStretcher rather than the raw read-rate - a
-         // tempo-sync warp is meant to change how long the clip takes to
-         // play, not what it sounds like, whereas Pitch is deliberately
-         // varispeed (turntable-style: speed and pitch move together). 1.0
-         // (no-op, and WsolaStretcher's own no-search fast path) for every
-         // non-Sample/non-synced window - see SetClipRateOverride's own
-         // comment.
-         const float tempoRatio = mMailbox.SmoothedValue(kFileTempoRatioParam);
-
-         float raw = 0.0f;
-         if (hasBuffer && mPlaying.load(std::memory_order_relaxed))
+         float left = 0.0f, right = 0.0f;
+         if (direct)
          {
-            mStretcher.GenerateUpTo(mPos + 2.0, tempoRatio, loop, *mActiveBuffer);
-            raw = mStretcher.Read(mPos);
-            mPos += mPlaybackRate * pitchRatio;
-            double stretchEnd;
-            if (!loop && mStretcher.Exhausted(&stretchEnd) && mPos >= stretchEnd)
-            {
-               mPos = stretchEnd;
-               mPlaying.store(false, std::memory_order_relaxed);
-            }
+            left = ReadBufferInterp(*mActiveBuffer, 0, mClipSource);
+            right = ReadBufferInterp(*mActiveBuffer, 1, mClipSource);
          }
-
-         const float outSample = raw * volume;
-         // Still analysed while `monitor` is off - "silent but still
-         // analysed" always meant this node's own output, just scoped to
-         // the graph now instead of to the hardware mixer.
-         mAnalyser.Push(outSample * gain);
-         for (int ch = 0; ch < buffer.numChannels; ch++)
-            buffer.channels[ch][i] = monitor ? outSample : 0.0f;
+         else
+         {
+            mStretcher.GenerateUpTo(mRingPos + 2.0, stretch, *mActiveBuffer);
+            left = mStretcher.Read(0, mRingPos);
+            right = mStretcher.Read(1, mRingPos);
+            mRingPos += ringPerOutput;
+         }
+         mClipSource += sourcePerOutput;
+         WriteFrame(buffer, i, left * volume, right * volume, gain, monitor);
       }
-
-      // Published in SOURCE frames (the stretcher's own analysis cursor), not
-      // mPos's ring/write-domain frames - see PositionSeconds()'s comment.
-      mFramePos.store((int64_t)mStretcher.AnalysisFrame(), std::memory_order_relaxed);
-      mAnalyser.RunIfWindowFull();
+      mFramePos.store((int64_t)std::max(0.0, mClipSource), std::memory_order_relaxed);
    }
 
-private:
    double mSampleRate = 44100.0;
    double mPlaybackRate = 1.0; // decoded file's sampleRate / engine's mSampleRate
    std::atomic<double> mActiveFileSampleRate { 44100.0 }; // for PositionSeconds() - see its comment
@@ -1071,10 +1116,22 @@ private:
 
    std::atomic<bool> mPlaying { false };
    std::atomic<bool> mRestartRequested { false };
-   std::atomic<double> mSeekRequestSeconds { -1.0 }; // see SeekToClipOffset
    std::atomic<int64_t> mFramePos { 0 };
-   double mPos = 0.0; // audio-thread-only playback cursor, in ring/write-domain frames (see WsolaStretcher)
-   WsolaStretcher mStretcher; // BPM-sync time-stretch; see ProcessBlock's own comment
+   double mPos = 0.0; // audio-thread-only canvas playback cursor, source frames
+
+   // Arrangement Timeline Sample state, audio thread only - see
+   // SetClipSamplePosition/ProcessClipBlock.
+   bool mClipPending = false;
+   bool mClipForce = false;
+   bool mClipActive = false;
+   bool mClipDirect = true;
+   double mClipSourceSeconds = 0.0;
+   double mClipSourcePerSecond = 1.0;
+   float mClipPitch = 0.0f;
+   double mClipSource = 0.0;   // nominal source frame of the next output frame
+   double mClipStretch = 1.0;
+   double mRingPos = 0.0;      // stretcher ring read cursor
+   WsolaStretcher mStretcher;
 
    Platform::SampleBuffer* mActiveBuffer = nullptr;
    SampleSlot mSampleSlot;

@@ -58,7 +58,7 @@ namespace
             right.id = m.NewId();
             right.start = b;
             right.length = e - b;
-            right.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(b - s, c.sampleBpm);
+            right.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(b - s, SampleSourceBpm(c.syncToTempo, c.sampleBpm, gSampleLiveTempoBpm));
             ClampFades(right);
             out.push_back(right);
             continue;
@@ -73,7 +73,7 @@ namespace
          // Overlaps our right edge: the surviving piece's own start moves
          // forward to `b`, so (like TrimEdge's start-edge case) it now
          // starts further into the source file too.
-         c.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(b - s, c.sampleBpm);
+         c.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(b - s, SampleSourceBpm(c.syncToTempo, c.sampleBpm, gSampleLiveTempoBpm));
          c.start = b;
          c.length = e - b;
          ClampFades(c);
@@ -532,9 +532,8 @@ bool TrimEdge(Model& m, uint64_t id, int edge, Tick tick)
       const Tick end = c.End();
       // Audio-Sample-only: the trimmed-off portion is no longer played, so
       // the source read-point must skip forward by the same amount, in
-      // seconds at the file's own assumed tempo (sampleBpm) - same formula
-      // Split uses for its right half (see Clip::sourceOffsetSeconds).
-      c.sourceOffsetSeconds += (float)TicksToSeconds(tick - c.start, c.sampleBpm);
+      // source seconds (see SampleSourceBpm) - same formula Split uses.
+      c.sourceOffsetSeconds += (float)TicksToSeconds(tick - c.start, SampleSourceBpm(c.syncToTempo, c.sampleBpm, gSampleLiveTempoBpm));
       c.start = tick;
       c.length = end - tick;
    }
@@ -572,13 +571,9 @@ bool Split(Model& m, uint64_t id, Tick tick, uint64_t* outRightId)
    right.fadeIn = 0;                    // the cut is not a fade
    ClampFades(right);
    // Audio-Sample-only: the right half continues reading the source file
-   // where the left half's own offset left off, plus however far past the
-   // original clip's start the cut point sits, converted from ticks to
-   // seconds at the file's own assumed tempo (sampleBpm) - NOT the project's
-   // current tempo, and independent of whether syncToTempo is on for this
-   // clip, since ticks are already tempo-invariant everywhere else in this
-   // model (see Clip::sourceOffsetSeconds's own comment).
-   right.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(tick - c.start, c.sampleBpm);
+   // exactly where the cut sits, in source seconds (see SampleSourceBpm), so
+   // the two halves play back as one uninterrupted take.
+   right.sourceOffsetSeconds = c.sourceOffsetSeconds + (float)TicksToSeconds(tick - c.start, SampleSourceBpm(c.syncToTempo, c.sampleBpm, gSampleLiveTempoBpm));
 
    c.length = tick - c.start;
    c.fadeOut = 0;
@@ -797,7 +792,7 @@ bool TrimGroupEdge(Model& m, uint64_t groupId, int edge, Tick tick)
             if (t == c.start) continue;
             const Tick end = c.End();
             // Same source-offset adjustment as TrimEdge's kEdgeStart branch.
-            c.sourceOffsetSeconds += (float)TicksToSeconds(t - c.start, c.sampleBpm);
+            c.sourceOffsetSeconds += (float)TicksToSeconds(t - c.start, SampleSourceBpm(c.syncToTempo, c.sampleBpm, gSampleLiveTempoBpm));
             c.start = t;
             c.length = end - t;
          }

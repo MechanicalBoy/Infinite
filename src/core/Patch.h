@@ -317,12 +317,9 @@ namespace Patch
       // comments). sourceDurationSeconds is what makes a later sampleBpm
       // edit able to recompute `length` losslessly without re-decoding.
       float  sampleBpm             = 120.0f;
-      // The believed native tempo frozen once at import, never touched by a
-      // later sampleBpm edit - see Arrange::Clip::origBpm's own comment.
-      // -1 is a load-time sentinel, not a real value: it means "this patch
-      // predates the field" so ApplyPatchData can default it to sampleBpm
-      // (reproducing the old always-native-speed-until-synced behavior for
-      // an unsynced clip) rather than to some arbitrary in-range number.
+      // The BPM detected at import, display only (see Arrange::Clip::origBpm).
+      // Written only when > 0; -1 is the load-time sentinel for "no line",
+      // which ApplyPatchData maps to 0 = none detected.
       float  origBpm               = -1.0f;
       float  sourceDurationSeconds = 0.0f;
       // Audio-Sample-only (see Arrange::Clip::sourceOffsetSeconds's own

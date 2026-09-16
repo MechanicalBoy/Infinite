@@ -6350,12 +6350,10 @@ namespace
             clip.retrigger = c.retrigger;
             clip.sampleDropped = c.sampleDropped;
             clip.sampleBpm = c.sampleBpm;
-            // -1 is Patch::ClipRecord::origBpm's load-time sentinel for "this
-            // patch predates the field" - default to sampleBpm so an
-            // unsynced clip reproduces the old always-native-speed behavior
-            // (ratio 1.0) until the user edits Sample BPM again, rather than
-            // an arbitrary/uninitialized reference tempo.
-            clip.origBpm = (c.origBpm > 0.0f) ? c.origBpm : c.sampleBpm;
+            // origBpm is the detected tempo, display only. It is written only
+            // when > 0, so a missing line (-1, the load sentinel) means "none
+            // detected" or a patch that predates detection - never a tempo.
+            clip.origBpm = (c.origBpm > 0.0f) ? c.origBpm : 0.0f;
             clip.sourceDurationSeconds = c.sourceDurationSeconds;
             clip.sourceOffsetSeconds = c.sourceOffsetSeconds;
             lane.clips.push_back(std::move(clip));
@@ -27013,6 +27011,13 @@ namespace
       // and still in flight when an edit lands is dropped on arrival rather
       // than written into the reshaped array at a coincidentally valid index.
       uint64_t shape = 0;
+      // Audio Sample static waves only: the remaining inputs the slice
+      // depends on, so ArrangeSyncClipVisuals can tell a stale entry from a
+      // current one after ANY edit (trim, split, paste, undo, BPM or sync
+      // change, a project-tempo change on an unsynced clip).
+      double   sampleEffBpm = 0.0;
+      float    sampleOffset = 0.0f;
+      const Platform::SampleBuffer* sampleBuf = nullptr;
       std::vector<float>   minv;
       std::vector<float>   maxv;
       std::vector<uint8_t> filled;
@@ -27060,42 +27065,16 @@ namespace
       return (int)std::clamp<long long>(n, 0, kArrangeWaveMaxBuckets);
    }
 
-   // Step 2: the Audio Sample static waveform. Computed from the fully-
-   // decoded source buffer - at import/bounce-adopt time for a freshly
-   // dropped Sample (see ArrangePollMediaImports), and again for both halves
-   // of a Split (see ArrangeSplitSelectionAt/ArrangeBladeSplitAt) since a
-   // split changes what sub-range of the file each half should show - never
-   // touched by playback itself, unlike gArrangeClipWaves' live per-block
-   // fill. The bucket count is the clip's own `length` (its ticks-per-bucket
-   // resolution matches the live cache via kArrangeWaveBucketTicks).
-   //
-   // Buckets are stretched linearly across only the clip's OWN sub-range of
-   // the decoded file - [sourceOffsetSeconds, sourceOffsetSeconds +
-   // windowSeconds). For a SYNCED clip, windowSeconds is this clip's own
-   // duration converted back to source-file seconds via
-   // Arrange::SampleClipWindowSeconds (the exact inverse of
-   // SampleClipLengthTicks - see its own comment) - live-tempo-invariant by
-   // construction, same as the audio-thread ratio it mirrors. A clip that
-   // has never been split has sourceOffsetSeconds == 0 and windowSeconds
-   // spanning the whole file, so this reproduces the old whole-file behavior
-   // exactly for that case; a clip born from a Split instead shows only its
-   // own slice, so the right half continues the left half's waveform shape
-   // instead of restarting at the file's beginning.
-   //
-   // An UNSYNCED clip's box has a FIXED tick length (does not react to a
-   // live tempo change - see Clip::origBpm's own comment) but its
-   // sampleBpm/origBpm playback ratio is also fixed independent of tempo -
-   // together that means how much of the box's real duration (at whatever
-   // the CURRENT live tempo is) the audio thread actually consumes DOES
-   // still depend on live tempo, so windowSeconds must be recomputed from it
-   // fresh here too, exactly mirroring RunTopology's own ratio math (see
-   // AudioEngine.cpp's tempoRatioLive), rather than reusing the synced
-   // formula - using the wrong one here is what made the static waveform
-   // show a different slice of the file than what actually plays.
+   // The Audio Sample static waveform, computed from the fully decoded
+   // source. Bucket b covers ticks [b, b+1) * kArrangeWaveBucketTicks of the
+   // box (the draw code's own mapping), and those ticks are converted to
+   // source seconds with exactly the rule the audio thread plays by
+   // (Arrange::SampleSourceBpm / ClipWindow): offset + TicksToSeconds(t,
+   // effBpm). Buckets past the end of the file stay empty rather than the
+   // file being stretched to fill the box, so what is drawn is what plays.
    void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
                                         Arrange::Tick start, Arrange::Tick length,
-                                        bool syncToTempo, float sampleBpm, float origBpm,
-                                        float sourceOffsetSeconds,
+                                        double effBpm, float sourceOffsetSeconds,
                                         const Platform::SampleBuffer* buf)
    {
       const int buckets = ArrangeWaveBucketCount(length);
@@ -27106,23 +27085,10 @@ namespace
          return;
       }
 
-      const int frames = buf->numFrames;
+      const long long frames = buf->numFrames;
       const int channels = buf->channels;
-      const double windowSeconds = syncToTempo
-         ? Arrange::SampleClipWindowSeconds(length, sampleBpm)
-         : Arrange::TicksToSeconds(length, std::max(1.0, (double)Transport::Instance().Tempo())) *
-              ((double)sampleBpm / (double)std::max(1.0f, origBpm));
-      const long long subF0 = std::clamp<long long>(
-         (long long)std::llround((double)sourceOffsetSeconds * buf->sampleRate), 0, frames);
-      const long long subF1 = std::clamp<long long>(
-         (long long)std::llround(((double)sourceOffsetSeconds + windowSeconds) * buf->sampleRate),
-         subF0, frames);
-      const long long subFrames = subF1 - subF0;
-      if (subFrames <= 0)
-      {
-         gArrangeSampleStaticWaves.erase(clipId);
-         return;
-      }
+      const double framesPerTick = Arrange::TicksToSeconds(1, effBpm) * buf->sampleRate;
+      const double frame0 = (double)sourceOffsetSeconds * buf->sampleRate;
 
       ArrangeClipWave w;
       w.srcUid = srcUid;
@@ -27130,25 +27096,28 @@ namespace
       w.start = start;
       w.length = length;
       w.shape = ArrangeClipShape(srcUid, srcOutput, start, length);
+      w.sampleEffBpm = effBpm;
+      w.sampleOffset = sourceOffsetSeconds;
+      w.sampleBuf = buf;
       w.minv.assign((size_t)buckets, 0.0f);
       w.maxv.assign((size_t)buckets, 0.0f);
       w.filled.assign((size_t)buckets, 1); // static: filled up-front, all at once
 
       for (int b = 0; b < buckets; ++b)
       {
-         // Linear stretch: bucket b covers [b, b+1)/buckets of this clip's
-         // OWN sub-range [subF0, subF1) of the decoded file - not the whole
-         // file - so a split-off clip's buckets read the right slice.
-         const long long f0 = subF0 + ((long long)b * subFrames) / buckets;
-         const long long f1 = std::max<long long>(f0 + 1, subF0 + ((long long)(b + 1) * subFrames) / buckets);
+         const double t0 = (double)b * (double)kArrangeWaveBucketTicks;
+         const double t1 = t0 + (double)kArrangeWaveBucketTicks;
+         const long long f0 = std::clamp<long long>((long long)std::floor(frame0 + t0 * framesPerTick), 0, frames);
+         const long long f1 = std::clamp<long long>(
+            std::max<long long>((long long)std::floor(frame0 + t1 * framesPerTick), f0 + 1), 0, frames);
          float mn = 0.0f, mx = 0.0f;
-         for (long long f = f0; f < f1 && f < frames; ++f)
+         for (long long f = f0; f < f1; ++f)
          {
             for (int ch = 0; ch < channels; ++ch)
             {
-               const float s = buf->channelData[(size_t)ch * frames + f];
-               mn = std::min(mn, s);
-               mx = std::max(mx, s);
+               const float v = buf->channelData[(size_t)ch * (size_t)frames + (size_t)f];
+               mn = std::min(mn, v);
+               mx = std::max(mx, v);
             }
          }
          w.minv[(size_t)b] = mn;
@@ -27156,6 +27125,68 @@ namespace
       }
 
       gArrangeSampleStaticWaves[clipId] = std::move(w);
+   }
+
+   double ArrangeSampleEffBpm(const Arrange::Clip& c)
+   {
+      return Arrange::SampleSourceBpm(c.syncToTempo, c.sampleBpm, (double)Transport::Instance().Tempo());
+   }
+
+   // Resizes a Sample's box so it keeps covering the same source audio when
+   // its effective BPM changes (sync toggle, or a Sample BPM edit while
+   // synced): a trim point the user set survives, and only the playback
+   // speed changes. Goes through TrimEdge so growing into a neighbour clamps
+   // at it instead of breaking the lane's no-overlap invariant.
+   void ArrangeRescaleSampleBox(uint64_t clipId, double oldEffBpm, double newEffBpm)
+   {
+      const Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+      if (c == nullptr || !(oldEffBpm > 0.0) || !(newEffBpm > 0.0) || oldEffBpm == newEffBpm)
+         return;
+      const Arrange::Tick newLength =
+         std::max<Arrange::Tick>(1, (Arrange::Tick)std::llround((double)c->length * newEffBpm / oldEffBpm));
+      Arrange::TrimEdge(gArrange, clipId, Arrange::kEdgeEnd, c->start + newLength);
+   }
+
+   void ArrangeSetSampleSync(uint64_t clipId, bool sync)
+   {
+      Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+      if (c == nullptr || c->syncToTempo == sync)
+         return;
+      const double oldEff = ArrangeSampleEffBpm(*c);
+      c->syncToTempo = sync;
+      const double newEff = ArrangeSampleEffBpm(*c);
+      gArrange.revision++;
+      ArrangeRescaleSampleBox(clipId, oldEff, newEff);
+   }
+
+   void ArrangeSetSampleBpm(uint64_t clipId, float bpm)
+   {
+      Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+      if (c == nullptr)
+         return;
+      bpm = std::clamp(bpm, 20.0f, 999.0f);
+      if (bpm == c->sampleBpm)
+         return;
+      const double oldEff = ArrangeSampleEffBpm(*c);
+      c->sampleBpm = bpm;
+      const double newEff = ArrangeSampleEffBpm(*c);
+      gArrange.revision++;
+      ArrangeRescaleSampleBox(clipId, oldEff, newEff);
+   }
+
+   // Status line under the Sample BPM field, shared by the context menu and
+   // the docked Clip Settings panel.
+   void ArrangeDrawSampleTempoInfo(const Arrange::Clip& c)
+   {
+      const double tempo = std::max(1.0, (double)Transport::Instance().Tempo());
+      if (c.origBpm > 0.0f)
+         ImGui::TextDisabled("Detected: %.1f BPM", (double)c.origBpm);
+      else
+         ImGui::TextDisabled("Detected: none (no clear beat)");
+      if (c.syncToTempo)
+         ImGui::TextDisabled("Stretched x%.3f to %.1f BPM", tempo / std::max(1.0, (double)c.sampleBpm), tempo);
+      else
+         ImGui::TextDisabled("Native speed (Sample BPM applies when synced)");
    }
 
    // Resolves the decoded source buffer behind an Arrange::Clip's srcUid, for
@@ -27191,8 +27222,7 @@ namespace
          return;
       }
       ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                      c->syncToTempo, c->sampleBpm, c->origBpm,
-                                      c->sourceOffsetSeconds, buf);
+                                      ArrangeSampleEffBpm(*c), c->sourceOffsetSeconds, buf);
    }
 
    // ---- Clip thumbnails (WP8) ------------------------------------------
@@ -27307,9 +27337,13 @@ namespace
    void ArrangeSyncClipVisuals()
    {
       static uint64_t sShapedRevision = ~0ull;
-      if (sShapedRevision != gArrange.revision)
+      static float sShapedTempo = -1.0f;
+      const float liveTempo = Transport::Instance().Tempo();
+      Arrange::gSampleLiveTempoBpm = std::max(1.0, (double)liveTempo);
+      if (sShapedRevision != gArrange.revision || sShapedTempo != liveTempo)
       {
          sShapedRevision = gArrange.revision;
+         sShapedTempo = liveTempo;
          std::unordered_set<uint64_t> live;
          std::unordered_set<uint64_t> liveVideo;
          for (const Arrange::Lane& lane : gArrange.lanes)
@@ -27345,6 +27379,17 @@ namespace
                if (c.sampleDropped)
                {
                   live.insert(c.id);
+                  if (c.importPending)
+                     continue;
+                  const Platform::SampleBuffer* buf = ArrangeSampleBufferForSrcUid(c.srcUid);
+                  const double effBpm = ArrangeSampleEffBpm(c);
+                  auto sw = gArrangeSampleStaticWaves.find(c.id);
+                  if (sw == gArrangeSampleStaticWaves.end() || sw->second.sampleBuf != buf ||
+                      sw->second.srcUid != c.srcUid || sw->second.length != c.length ||
+                      sw->second.start != c.start || sw->second.sampleEffBpm != effBpm ||
+                      sw->second.sampleOffset != c.sourceOffsetSeconds)
+                     ArrangeComputeSampleStaticWave(c.id, c.srcUid, c.srcOutput, c.start, c.length,
+                                                    effBpm, c.sourceOffsetSeconds, buf);
                   continue;
                }
                const int buckets = ArrangeWaveBucketCount(c.length);
@@ -29273,8 +29318,10 @@ namespace
    // 1. Filename/path metadata (e.g. "_128bpm", "140BPM", "bpm124")
    // 2. Exact loop duration matching (1, 2, 4, 8, 16, 32 bars)
    // 3. Spectral flux transient onset detection & IOI autocorrelation histogram
-   float ArrangeEstimateSampleBpm(const Platform::SampleBuffer* buf, const std::string& path, float fallbackBpm)
+   float ArrangeEstimateSampleBpm(const Platform::SampleBuffer* buf, const std::string& path, float fallbackBpm,
+                                  bool* detected = nullptr)
    {
+      if (detected) *detected = true;
       // Strategy 1: Explicit BPM tags in filename or path
       if (!path.empty())
       {
@@ -29323,7 +29370,7 @@ namespace
       }
 
       if (buf == nullptr || buf->numFrames <= 0 || buf->channels <= 0 || buf->channelData.empty())
-         return fallbackBpm > 0.0f ? fallbackBpm : 120.0f;
+         { if (detected) *detected = false; return fallbackBpm > 0.0f ? fallbackBpm : 120.0f; }
 
       const double sr = buf->sampleRate > 0.0 ? buf->sampleRate : 44100.0;
       const int numFrames = buf->numFrames;
@@ -29437,7 +29484,7 @@ namespace
       if (bestLoopBpm > 0.0f && bestLoopDiff < 0.1f)
          return bestLoopBpm;
 
-      return fallbackBpm > 0.0f ? fallbackBpm : 120.0f;
+      { if (detected) *detected = false; return fallbackBpm > 0.0f ? fallbackBpm : 120.0f; }
    }
 
    // Spawn the right node type for dropped media, place a clip in the lane,
@@ -29481,6 +29528,8 @@ namespace
       // this one, so no two clips ever contend over one node's single
       // playback cursor/stretcher (see those functions' own comments).
       spawned->hiddenFromCanvas = true;
+      if (auto* afn = dynamic_cast<AudioFileNode*>(spawned->node.get()))
+         afn->loop = false; // a Sample's box, not the node, decides what plays
 
       // Placeholder length until the real duration is known: one bar for
       // audio/video, corrected in ArrangePollMediaImports once decode
@@ -29676,16 +29725,25 @@ namespace
             if (pending.kind == Arrange::ImportMediaKind::Audio && r.durationSeconds > 0.0)
             {
                c->sourceDurationSeconds = r.durationSeconds;
-               // Estimate sample's original BPM via multi-strategy analysis
-               const float estimatedBpm = ArrangeEstimateSampleBpm(audioFileNode ? audioFileNode->Buffer() : nullptr, r.path, (float)bpm);
+               bool detected = false;
+               const float estimatedBpm = ArrangeEstimateSampleBpm(audioFileNode ? audioFileNode->Buffer() : nullptr,
+                                                                   r.path, (float)bpm, &detected);
                c->sampleBpm = estimatedBpm;
-               // Frozen once here, never touched again - see Clip::origBpm's
-               // own comment. A later Sample BPM edit changes c->sampleBpm
-               // (and thus the sampleBpm/origBpm playback ratio) but leaves
-               // this alone, which is what lets the ratio actually mean
-               // something instead of always reading 1.0.
-               c->origBpm = estimatedBpm;
-               c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds, c->sampleBpm);
+               // origBpm is the analysis result shown in Clip Settings; <= 0
+               // means nothing was detected (the Sample BPM field then holds
+               // the project tempo as a neutral starting point).
+               c->origBpm = detected ? estimatedBpm : 0.0f;
+               // A clear beat means a loop the user almost certainly wants on
+               // the grid, so it arrives synced (DAW auto-warp); no beat means
+               // a one-shot or free-time recording, which arrives at native
+               // speed. Either way the box holds the whole file.
+               c->syncToTempo = detected;
+               c->length = Arrange::SampleClipLengthTicks(
+                  c->sourceDurationSeconds,
+                  Arrange::SampleSourceBpm(c->syncToTempo, c->sampleBpm, bpm));
+               printf("Arrange sample import: %s duration %.3fs, BPM %s %.2f, sync %s\n", r.path.c_str(),
+                      (double)r.durationSeconds, detected ? "detected" : "not detected (using project tempo)",
+                      (double)estimatedBpm, c->syncToTempo ? "on" : "off");
             }
             // Video/Image have no Sample BPM concept - their length is just
             // the file's natural duration at the current project tempo.
@@ -29699,8 +29757,7 @@ namespace
             // Audio Clip keeps using the live-fill gArrangeClipWaves cache.
             if (pending.kind == Arrange::ImportMediaKind::Audio && c->sampleDropped && audioFileNode != nullptr)
                ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                               c->syncToTempo, c->sampleBpm, c->origBpm,
-                                               c->sourceOffsetSeconds,
+                                               ArrangeSampleEffBpm(*c), c->sourceOffsetSeconds,
                                                audioFileNode->Buffer());
             gArrange.revision++;
          }
@@ -33080,46 +33137,26 @@ namespace
                {
                   bool syncToTempo = cp->syncToTempo;
                   if (ImGui::Checkbox("Sync to Tempo", &syncToTempo))
-                  {
-                     ArrangeEdit([&]()
-                     {
-                        if (Arrange::Clip* c = Arrange::FindClip(gArrange, cid))
-                        {
-                           // Toggling sync alone never moves `length`
-                           // (SampleClipLengthTicks is purely a function of
-                           // sampleBpm/sourceDurationSeconds, same for both
-                           // states) - only whether WSOLA now follows the
-                           // live project tempo to fill that same footprint.
-                           c->syncToTempo = syncToTempo;
-                        }
-                     });
-                  }
+                     ArrangeEdit([&]() { ArrangeSetSampleSync(cid, syncToTempo); });
 
-                  if (syncToTempo)
+                  cp = Arrange::FindClip(gArrange, cid);
+                  float sampleBpm = cp->sampleBpm;
+                  ImGui::SetNextItemWidth(160.0f);
+                  if (ImGui::DragFloat("Sample BPM", &sampleBpm, 0.1f, 20.0f, 999.0f, "%.2f"))
                   {
-                     ImGui::TextDisabled("Following project tempo: %.2f BPM", (double)Transport::Instance().Tempo());
+                     fieldGesture(true);
+                     ArrangeSetSampleBpm(cid, sampleBpm);
                   }
-                  else
+                  fieldGestureEnd();
+                  if (const Arrange::Clip* ci = Arrange::FindClip(gArrange, cid))
                   {
-                     cp = Arrange::FindClip(gArrange, cid);
-                     float sampleBpm = cp->sampleBpm;
-                     ImGui::SetNextItemWidth(160.0f);
-                     if (ImGui::DragFloat("Sample BPM", &sampleBpm, 0.1f, 1.0f, 999.0f, "%.2f"))
+                     ArrangeDrawSampleTempoInfo(*ci);
+                     if (ci->origBpm > 0.0f && ci->origBpm != ci->sampleBpm &&
+                         ImGui::Selectable("Reset Sample BPM to Detected"))
                      {
-                        fieldGesture(true);
-                        cp = Arrange::FindClip(gArrange, cid);
-                        cp->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
-                        // Correcting the believed native tempo directly
-                        // changes how many bars this loop actually spans
-                        // (SampleClipLengthTicks) AND, since origBpm stays
-                        // frozen at the estimate captured on import, changes
-                        // the sampleBpm/origBpm playback ratio RunTopology
-                        // applies via WSOLA - see that ratio's own comment.
-                        cp->length = Arrange::SampleClipLengthTicks(cp->sourceDurationSeconds, cp->sampleBpm);
-                        ArrangeRefreshSampleStaticWave(cp->id);
-                        gArrange.revision++;
+                        const float detected = ci->origBpm;
+                        ArrangeEdit([&]() { ArrangeSetSampleBpm(cid, detected); });
                      }
-                     fieldGestureEnd();
                   }
                }
 
@@ -37388,14 +37425,7 @@ namespace
                // gate on it without reaching into gArrange from the audio
                // thread - see ClipWindow::sampleDropped's own comment.
                w.sampleDropped = c.sampleDropped;
-               // BPM sync (step 3) is Audio-Sample-only, same gate as
-               // retrigger just below - an Audio Clip has no sampleBpm of its
-               // own. 0 means "don't scale" (see ClipWindow::sampleBpm's own
-               // comment for why the ratio itself is computed live in
-               // RunTopology, not here). Set for BOTH sync states now - an
-               // unsynced clip still needs its current sampleBpm (against
-               // origBpm below) to compute a tempo-independent ratio, rather
-               // than always playing at native speed regardless of the field.
+               // Audio Sample timing inputs - see ClipWindow::sampleBpm.
                w.sampleBpm = c.sampleDropped ? c.sampleBpm : 0.0f;
                w.origBpm = c.sampleDropped ? c.origBpm : 0.0f;
                w.syncToTempo = c.sampleDropped && c.syncToTempo;
@@ -38706,54 +38736,22 @@ namespace
                ImGui::TextDisabled("Tempo Sync");
                bool syncToTempo = clip->syncToTempo;
                if (ImGui::Checkbox("Sync to Tempo##clipsync", &syncToTempo))
+                  ArrangeEdit([&]() { ArrangeSetSampleSync(clipId, syncToTempo); });
+               if (const Arrange::Clip* ci = Arrange::FindClip(gArrange, clipId))
                {
-                  ArrangeEdit([&]() {
-                     if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
-                     {
-                        // Toggling sync alone never moves `length`
-                        // (SampleClipLengthTicks is purely a function of
-                        // sampleBpm/sourceDurationSeconds, same for both
-                        // states) - only whether WSOLA now follows the live
-                        // project tempo to fill that same footprint.
-                        c->syncToTempo = syncToTempo;
-                        gArrange.revision++;
-                     }
-                  });
-               }
-               if (syncToTempo)
-               {
-                  // Synced: there is no number to type - the clip's native
-                  // BPM (fixed at whatever the project tempo was when it was
-                  // dropped) is what SetClipRateOverride's live ratio warps
-                  // FROM, and the project's CURRENT tempo is what it warps
-                  // TO, so this just mirrors the transport live rather than
-                  // showing the frozen reference value.
-                  ImGui::TextDisabled("Following project tempo: %.2f BPM", (double)Transport::Instance().Tempo());
-               }
-               else
-               {
-                  // Sync is off: the rate override is still live (see
-                  // AudioEngine::RunTopology's unsynced branch -
-                  // sampleBpm/origBpm - and ArrangeComputeSampleStaticWave's
-                  // matching windowSeconds branch), it's just tempo-
-                  // independent instead of tracking the transport. This field
-                  // is "what tempo is this loop actually at" - editing it
-                  // both resizes the box (SampleClipLengthTicks) AND changes
-                  // the sampleBpm/origBpm playback ratio, since origBpm stays
-                  // frozen at the estimate captured on import.
-                  float sampleBpm = clip->sampleBpm;
+                  float sampleBpm = ci->sampleBpm;
                   ImGui::SetNextItemWidth(fieldW);
-                  if (ImGui::DragFloat("Sample BPM##clipbpm", &sampleBpm, 0.1f, 1.0f, 999.0f, "%.2f"))
+                  if (ImGui::DragFloat("Sample BPM##clipbpm", &sampleBpm, 0.1f, 20.0f, 999.0f, "%.2f"))
+                     ArrangeEdit([&]() { ArrangeSetSampleBpm(clipId, sampleBpm); });
+               }
+               if (const Arrange::Clip* ci = Arrange::FindClip(gArrange, clipId))
+               {
+                  ArrangeDrawSampleTempoInfo(*ci);
+                  if (ci->origBpm > 0.0f && ci->origBpm != ci->sampleBpm &&
+                      ImGui::SmallButton("Reset to Detected##clipbpmreset"))
                   {
-                     ArrangeEdit([&]() {
-                        if (Arrange::Clip* c = Arrange::FindClip(gArrange, clipId))
-                        {
-                           c->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
-                           c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds, c->sampleBpm);
-                           ArrangeRefreshSampleStaticWave(c->id);
-                           gArrange.revision++;
-                        }
-                     });
+                     const float detected = ci->origBpm;
+                     ArrangeEdit([&]() { ArrangeSetSampleBpm(clipId, detected); });
                   }
                }
             }
@@ -67976,6 +67974,524 @@ int main(int argc, char** argv)
          RebuildAudioTopology();
 
          printf("arrange audio test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Arrangement Timeline Audio Sample timing, measured on real rendered
+      // audio. A synthetic 100 BPM click track (44.1 kHz stereo, so the
+      // file/engine rate conversion is exercised too, and 10 s long so it is
+      // not an exact loop length) goes through the real drop path
+      // (ArrangeImportMediaFile + ArrangePollMediaImports), then every case
+      // renders through RebuildAudioTopology + ProcessOffline and compares
+      // each click's onset in the output against where the box says it
+      // belongs. INFINITE_ARRANGESAMPLETEST=<dir> also writes the renders
+      // there as WAVs for inspection.
+      if (getenv("INFINITE_ARRANGESAMPLETEST") != nullptr && frameId == 4)
+      {
+         NewPatch();
+         bool allOk = true;
+         const std::string outDir = getenv("INFINITE_ARRANGESAMPLETEST");
+
+         Transport& tr = Transport::Instance();
+         const double kSr = 48000.0;
+         const int kBlock = 256;
+         const double kFileSr = 44100.0;
+         const double kFileBpm = 100.0;
+         const double kFileSeconds = 10.0;
+
+         const bool hadEngine = AudioEngine::Instance().SampleRate() > 0.0;
+         AudioEngine::Instance().Stop();
+         tr.NotifyAudioEngineStopped();
+         const AudioMode savedMode = gAudioMode;
+
+         // Click track: a 6 ms 2 kHz burst on every beat, left and right
+         // slightly different so a channel swap would show.
+         const std::string wavPath = TmpPath("infinite_arrangesample_click.wav");
+         {
+            const int frames = (int)(kFileSeconds * kFileSr);
+            std::vector<float> inter((size_t)frames * 2, 0.0f);
+            const double beatSec = 60.0 / kFileBpm;
+            for (int k = 0; k * beatSec < kFileSeconds; k++)
+            {
+               const int f0 = (int)std::llround(k * beatSec * kFileSr);
+               for (int j = 0; j < (int)(0.006 * kFileSr) && f0 + j < frames; j++)
+               {
+                  const double env = std::exp(-(double)j / (0.0015 * kFileSr));
+                  const float v = (float)(0.8 * env * std::sin(2.0 * 3.14159265358979 * 2000.0 * j / kFileSr));
+                  inter[(size_t)(f0 + j) * 2] = v;
+                  inter[(size_t)(f0 + j) * 2 + 1] = 0.9f * v;
+               }
+            }
+            AudioRecordings::WriteWav(wavPath, inter.data(), frames, kFileSr, 2);
+         }
+
+         const uint64_t revBefore = gArrange.revision;
+         gArrange = Arrange::Model();
+         gArrange.revision = revBefore + 1;
+         const uint64_t laneId = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+
+         gAudioMode = AudioMode::Timeline;
+         tr.SetTempo(120.0f);
+         Arrange::gSampleLiveTempoBpm = 120.0;
+         tr.SetLoop(false, 0.0, 0.0);
+
+         auto waitImports = [&]()
+         {
+            for (int i = 0; i < 500 && !gArrangePendingImports.empty(); i++)
+            {
+               ArrangePollMediaImports();
+               std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            return gArrangePendingImports.empty();
+         };
+
+         ArrangeImportMediaFile(wavPath, laneId, 0, Arrange::ImportMediaKind::Audio);
+         const bool imported = waitImports();
+         uint64_t clipId = 0;
+         if (const Arrange::Lane* ln = Arrange::FindLane(gArrange, laneId))
+            if (!ln->clips.empty())
+               clipId = ln->clips.front().id;
+         Arrange::Clip* c0 = Arrange::FindClip(gArrange, clipId);
+         const bool importOk = imported && c0 != nullptr && !c0->importPending;
+         printf("arrange sample import: %s\n", importOk ? "OK" : "FAIL");
+         allOk = allOk && importOk;
+
+         if (importOk)
+         {
+            // --- Estimate + drop defaults ------------------------------------
+            {
+               const double beats = Arrange::TicksToBeats(c0->length);
+               const double expectBeats = kFileSeconds * kFileBpm / 60.0;
+               const bool ok = std::fabs(c0->sampleBpm - kFileBpm) < 0.6 && c0->origBpm > 0.0f && c0->syncToTempo &&
+                               std::fabs(beats - expectBeats) < 0.01;
+               printf("arrange sample estimate: %s (sampleBpm %.2f, detected %.2f, sync %d, box %.3f beats, expected %.3f)\n",
+                      ok ? "OK" : "FAIL", (double)c0->sampleBpm, (double)c0->origBpm, (int)c0->syncToTempo, beats, expectBeats);
+               allOk = allOk && ok;
+            }
+
+            tr.SetPlaying(true);
+            tr.SetOfflineMode(true, kSr);
+            int cookFrame = 2000000;
+            uint64_t lastDriftReseeks = 0;
+            auto render = [&](double startBeat, double seconds, const char* name)
+            {
+               Arrange::gSampleLiveTempoBpm = (double)tr.Tempo();
+               RebuildAudioTopology();
+               cookFrame++;
+               for (GraphNode& gn : gNodes)
+                  gn.node->CookIfNeeded(cookFrame);
+               // AudioNodeOfAny, not dynamic_cast: the sample player's
+               // AudioNode lives inside its AudioFileNode, and a render that
+               // skips preparing it runs at the wrong file/engine rate.
+               for (GraphNode& gn : gNodes)
+                  if (AudioNode* an = AudioNodeOfAny(gn.node.get()))
+                     if (an->preparedForSampleRate != kSr)
+                     {
+                        an->PrepareToPlay(kSr, kAudioMaxBlockFrames);
+                        an->preparedForSampleRate = kSr;
+                     }
+               tr.SeekBeats(startBeat);
+               std::vector<float> ch0((size_t)kBlock), ch1((size_t)kBlock);
+               float* chans[2] = { ch0.data(), ch1.data() };
+               AudioBuffer buffer;
+               buffer.channels = chans;
+               buffer.numChannels = 2;
+               buffer.numFrames = kBlock;
+               std::vector<float> inter;
+               const uint64_t reseeksBefore = gClipSampleDriftReseeks.load();
+               const int blocks = (int)std::ceil(seconds * kSr / kBlock);
+               for (int b = 0; b < blocks; b++)
+               {
+                  ArrangeAudioRebuildIfStale();
+                  AudioEngine::Instance().ProcessOffline(buffer);
+                  for (int i = 0; i < kBlock; i++)
+                  {
+                     inter.push_back(ch0[(size_t)i]);
+                     inter.push_back(ch1[(size_t)i]);
+                  }
+               }
+               lastDriftReseeks = gClipSampleDriftReseeks.load() - reseeksBefore;
+               if (!outDir.empty())
+                  AudioRecordings::WriteWav(outDir + "/" + name + ".wav", inter.data(),
+                                            (int)(inter.size() / 2), kSr, 2);
+               return inter;
+            };
+
+            // Click times (seconds from render start), left channel: each
+            // click is a group of samples over 0.03 separated by >= 150 ms
+            // under 0.01, timed at its loudest sample. The peak, not the
+            // first sample over a threshold, so a stretcher's windowed
+            // pre-echo or the 2 ms clip-edge declick ramp can't bias it.
+            auto onsets = [&](const std::vector<float>& inter)
+            {
+               std::vector<double> out;
+               const long long frames = (long long)(inter.size() / 2);
+               long long i = 0;
+               while (i < frames)
+               {
+                  if (std::fabs(inter[(size_t)i * 2]) < 0.03f) { i++; continue; }
+                  long long peakAt = i, lastLoud = i;
+                  float peak = 0.0f;
+                  for (long long j = i; j < frames && j - lastLoud < (long long)(0.15 * kSr); j++)
+                  {
+                     const float v = std::fabs(inter[(size_t)j * 2]);
+                     if (v >= 0.01f) lastLoud = j;
+                     if (v > peak) { peak = v; peakAt = j; }
+                  }
+                  out.push_back((double)peakAt / kSr);
+                  i = lastLoud + (long long)(0.15 * kSr);
+               }
+               return out;
+            };
+
+            // Compares measured onsets against the expected times inside
+            // [0, until) seconds; reports count and worst error.
+            auto check = [&](const char* label, const std::vector<float>& inter,
+                             const std::vector<double>& expected, double tolMs)
+            {
+               // Same end cut-off expectedClicks applies.
+               const double renderSeconds = (double)(inter.size() / 2) / kSr;
+               std::vector<double> got;
+               for (double g : onsets(inter))
+                  if (g < renderSeconds - 0.02)
+                     got.push_back(g);
+               double worst = 0.0;
+               int matched = 0;
+               for (double e : expected)
+               {
+                  double best = 1e9;
+                  for (double g : got)
+                     best = std::min(best, std::fabs(g - e));
+                  if (best < 0.05)
+                     matched++;
+                  // A click right on a clip's start edge goes through the
+                  // engine's 2 ms declick ramp, which moves its peak later.
+                  const bool onEdge = e < 0.003;
+                  worst = std::max(worst, onEdge ? std::max(0.0, best - 0.002) : best);
+               }
+               const bool countOk = got.size() == expected.size();
+               const bool ok = countOk && matched == (int)expected.size() && worst * 1000.0 <= tolMs &&
+                               lastDriftReseeks == 0;
+               printf("arrange sample %s: %s (expected %d clicks, got %d, worst error %.2f ms, tol %.1f, drift reseeks %llu)\n",
+                      label, ok ? "OK" : "FAIL", (int)expected.size(), (int)got.size(), worst * 1000.0, tolMs,
+                      (unsigned long long)lastDriftReseeks);
+               if (!ok)
+               {
+                  printf("  [diag] got:");
+                  for (size_t i = 0; i < got.size() && i < 40; i++) printf(" %.4f", got[i]);
+                  printf("\n  [diag] expected:");
+                  for (size_t i = 0; i < expected.size() && i < 40; i++) printf(" %.4f", expected[i]);
+                  printf("\n");
+               }
+               allOk = allOk && ok;
+            };
+
+            // Expected click times for a render starting at `startBeat` of
+            // `seconds`: clicks sit at source beats k (source second k*0.6),
+            // placed on the timeline at clipStart + (srcSec - offset) *
+            // effBpm / 60 beats, inside the box only.
+            auto expectedClicks = [&](uint64_t id, double startBeat, double seconds)
+            {
+               std::vector<double> out;
+               const Arrange::Clip* c = Arrange::FindClip(gArrange, id);
+               const double tempo = (double)tr.Tempo();
+               const double eff = Arrange::SampleSourceBpm(c->syncToTempo, c->sampleBpm, tempo);
+               for (int k = 0; k * 60.0 / kFileBpm < kFileSeconds; k++)
+               {
+                  const double srcSec = k * 60.0 / kFileBpm - c->sourceOffsetSeconds;
+                  if (srcSec < -1e-9) continue;
+                  const double beat = Arrange::TicksToBeats(c->start) + srcSec * eff / 60.0;
+                  if (beat < Arrange::TicksToBeats(c->start) - 1e-9 || beat >= Arrange::TicksToBeats(c->End()) - 1e-6)
+                     continue;
+                  const double t = (beat - startBeat) * 60.0 / tempo;
+                  if (t >= -1e-9 && t < seconds - 0.02)
+                     out.push_back(std::max(0.0, t));
+               }
+               return out;
+            };
+
+            // Click peak sits ~0.125 ms into the synthetic click. Direct
+            // (unstretched) reads are interpolation-exact; WSOLA may move a
+            // transient by up to its +/-128-frame alignment search.
+            const double tolDirect = 0.5;
+            const double tol = 6.0;
+
+            // Synced at 120 (sample is 100): stretched to 1.2x, beat k at k*0.5 s.
+            tr.SetTempo(120.0f);
+            {
+               auto x = render(0.0, 8.0, "synced_120");
+               check("synced @120", x, expectedClicks(clipId, 0.0, 8.0), tol);
+            }
+            // Synced at 140: tempo change alone moves every click.
+            tr.SetTempo(140.0f);
+            {
+               auto x = render(0.0, 7.0, "synced_140");
+               check("synced @140", x, expectedClicks(clipId, 0.0, 7.0), tol);
+            }
+            // Play from mid-clip.
+            {
+               auto x = render(5.3, 4.0, "synced_140_from_5.3");
+               check("synced @140 from beat 5.3", x, expectedClicks(clipId, 5.3, 4.0), tol);
+            }
+            // Sync off at 120: box rescales to keep the same audio, and the
+            // audio plays at native speed (one click per 0.6 s).
+            tr.SetTempo(120.0f);
+            Arrange::gSampleLiveTempoBpm = 120.0;
+            {
+               const Arrange::Tick before = Arrange::FindClip(gArrange, clipId)->length;
+               ArrangeSetSampleSync(clipId, false);
+               const Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+               const bool ok = !c->syncToTempo && std::llabs(c->length - (Arrange::Tick)std::llround(before * 120.0 / 100.0)) <= 1;
+               printf("arrange sample sync off keeps audio in box: %s (%.3f -> %.3f beats)\n", ok ? "OK" : "FAIL",
+                      Arrange::TicksToBeats(before), Arrange::TicksToBeats(c->length));
+               allOk = allOk && ok;
+               auto x = render(0.0, 11.0, "unsynced_120");
+               check("unsynced @120 (native speed, whole file)", x, expectedClicks(clipId, 0.0, 11.0), tolDirect);
+            }
+            // Unsynced, Sample BPM typed: must change nothing audible.
+            {
+               const Arrange::Tick before = Arrange::FindClip(gArrange, clipId)->length;
+               ArrangeSetSampleBpm(clipId, 50.0f);
+               const bool ok = Arrange::FindClip(gArrange, clipId)->length == before;
+               printf("arrange sample unsynced BPM edit leaves box: %s\n", ok ? "OK" : "FAIL");
+               allOk = allOk && ok;
+               auto x = render(0.0, 11.0, "unsynced_120_bpm50");
+               check("unsynced @120 after Sample BPM edit", x, expectedClicks(clipId, 0.0, 11.0), tolDirect);
+            }
+            // Unsynced at 150: native speed still, box fixed at 20 beats =
+            // 8 s, so the file's last 2 s are cut at the box end.
+            tr.SetTempo(150.0f);
+            {
+               auto x = render(0.0, 11.0, "unsynced_150");
+               check("unsynced @150 (tail cut at box end)", x, expectedClicks(clipId, 0.0, 11.0), tolDirect);
+            }
+            // Back to synced, then Sample BPM 50: the clip now claims to be
+            // 50 BPM, so at 120 it plays 2.4x and the box halves to 8.33 beats.
+            tr.SetTempo(120.0f);
+            Arrange::gSampleLiveTempoBpm = 120.0;
+            {
+               ArrangeSetSampleSync(clipId, true);   // eff 120 -> 50
+               ArrangeSetSampleBpm(clipId, 100.0f); // back to the real tempo
+               const Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+               const double beats = Arrange::TicksToBeats(c->length);
+               const bool ok = std::fabs(beats - 16.6667) < 0.02;
+               printf("arrange sample sync round trip restores box: %s (%.3f beats)\n", ok ? "OK" : "FAIL", beats);
+               allOk = allOk && ok;
+               ArrangeSetSampleBpm(clipId, 50.0f);
+               auto x = render(0.0, 8.0, "synced_120_bpm50");
+               check("synced @120, Sample BPM 50 (2.4x, click per half beat)", x, expectedClicks(clipId, 0.0, 8.0), tol);
+               ArrangeSetSampleBpm(clipId, 100.0f);
+            }
+            // Pitch +7 st while synced: time-preserving, clicks stay put.
+            {
+               Arrange::FindClip(gArrange, clipId)->pitch = 7.0f;
+               gArrange.revision++;
+               auto x = render(0.0, 8.0, "synced_120_pitch7");
+               check("synced @120, pitch +7 (timing unchanged)", x, expectedClicks(clipId, 0.0, 8.0), tol);
+               Arrange::FindClip(gArrange, clipId)->pitch = 0.0f;
+               gArrange.revision++;
+            }
+            // Split at beat 6.5 (clone node for the right half, like the
+            // blade tool), then a paste of the whole original at beat 20.
+            {
+               uint64_t rightId = 0;
+               Arrange::Split(gArrange, clipId, Arrange::BeatsToTicks(6.5), &rightId);
+               ArrangeRespawnCloneNode(rightId);
+               Arrange::Clip pasted = *Arrange::FindClip(gArrange, clipId);
+               pasted.id = 0;
+               pasted.start = Arrange::BeatsToTicks(20.0);
+               pasted.length = Arrange::BeatsToTicks(10.0);
+               pasted.sourceOffsetSeconds = 0.0f;
+               uint64_t pasteId = 0;
+               Arrange::PlaceOverwrite(gArrange, laneId, pasted, &pasteId);
+               ArrangeRespawnCloneNode(pasteId);
+               // The crash path: rebuild repeatedly while the clones decode.
+               for (int i = 0; i < 20; i++)
+               {
+                  gArrange.revision++;
+                  ArrangeAudioRebuildIfStale();
+               }
+               const bool clonesOk = waitImports() && Arrange::FindClip(gArrange, rightId) != nullptr &&
+                                     Arrange::FindClip(gArrange, pasteId) != nullptr;
+               printf("arrange sample split + paste clones decoded: %s\n", clonesOk ? "OK" : "FAIL");
+               allOk = allOk && clonesOk;
+               if (clonesOk)
+               {
+                  auto x = render(0.0, 15.5, "split_and_paste");
+                  std::vector<double> e = expectedClicks(clipId, 0.0, 15.5);
+                  for (double t : expectedClicks(rightId, 0.0, 15.5)) e.push_back(t);
+                  for (double t : expectedClicks(pasteId, 0.0, 15.5)) e.push_back(t);
+                  std::sort(e.begin(), e.end());
+                  check("split + paste @120", x, e, tol);
+               }
+            }
+
+            // Static waveform lines up with the audio: the bucket holding
+            // each click's box position has a peak, the buckets between do not.
+            {
+               ArrangeSyncClipVisuals();
+               const auto it = gArrangeSampleStaticWaves.find(clipId);
+               bool ok = it != gArrangeSampleStaticWaves.end();
+               int hits = 0, clicks = 0;
+               if (ok)
+               {
+                  const ArrangeClipWave& w = it->second;
+                  for (double t : expectedClicks(clipId, 0.0, 1000.0))
+                  {
+                     const double beat = t * 120.0 / 60.0;
+                     const int b = (int)(Arrange::BeatsToTicks(beat) / kArrangeWaveBucketTicks);
+                     clicks++;
+                     if (b >= 0 && b < (int)w.maxv.size() && w.maxv[(size_t)b] > 0.3f)
+                        hits++;
+                  }
+                  ok = clicks > 0 && hits == clicks;
+               }
+               printf("arrange sample static waveform aligned: %s (%d/%d clicks in their bucket)\n", ok ? "OK" : "FAIL",
+                      hits, clicks);
+               allOk = allOk && ok;
+            }
+         }
+
+         tr.SetOfflineMode(false);
+         tr.SetPlaying(true);
+         if (hadEngine)
+         {
+            std::string startErr;
+            if (AudioEngine::Instance().Start(startErr))
+               tr.NotifyAudioEngineStarted(AudioEngine::Instance().SampleRate());
+         }
+         // The paste crash: several topology publishes landing inside one
+         // real audio callback used to free a ProcessList the callback was
+         // still walking. Hammer SetTopology with the device running and the
+         // Sample clips playing; a regression shows up as a crash (or an ASan
+         // report), not as a FAIL line.
+         if (AudioEngine::Instance().SampleRate() > 0.0 || StartAudioEngine(gAudioStartError))
+         {
+            gAudioMode = AudioMode::Timeline;
+            RebuildAudioTopology();
+            tr.SeekBeats(0.0);
+            for (int i = 0; i < 400; i++)
+            {
+               RebuildAudioTopology();
+               if (i % 8 == 0)
+                  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            AudioEngine::Instance().PumpMainThread();
+            printf("arrange sample live rebuild stress: OK (400 publishes under a running device at %.0f Hz)\n",
+                   AudioEngine::Instance().SampleRate());
+            if (!hadEngine)
+            {
+               AudioEngine::Instance().Stop();
+               tr.NotifyAudioEngineStopped();
+            }
+         }
+         else
+            printf("arrange sample live rebuild stress: SKIP (no audio device)\n");
+         gAudioMode = savedMode;
+         RebuildAudioTopology();
+         printf("arrange sample test: all  %s\n", allOk ? "OK" : "FAIL");
+      }
+
+      // Arrangement Timeline Sample through the REAL export path (symptom
+      // "offline render/export is untested"): the render queue, the WAV
+      // writer, the MP4 take through gArrangeTimelineExportNode and
+      // CompositeArrangeTimelineVideo, with audio gated by
+      // ArrangeTimelineRoutingActive. A 100 BPM click track synced at 120
+      // starts at beat 2 (1.0 s) on an audio lane and a Ramp clip starts at
+      // the same beat on a video lane, so in both files the first click and
+      // the first non-black frame belong at exactly 1.0 s and every click
+      // after it on a 0.5 s grid. The fixture only produces the files
+      // (INFINITE_ARRANGESAMPLEEXPORTTEST=<dir>); measuring them is ffmpeg's
+      // job, outside the app, so the check can't share the app's arithmetic.
+      if (const char* exportDir = getenv("INFINITE_ARRANGESAMPLEEXPORTTEST"))
+      {
+         static bool sExportQueued = false;
+         static bool sExportReported = false;
+         if (frameId == 4)
+         {
+            NewPatch();
+            Transport::Instance().SetTempo(120.0f);
+            Transport::Instance().SetLoop(false, 0.0, 0.0);
+            Arrange::gSampleLiveTempoBpm = 120.0;
+            const uint64_t revBefore = gArrange.revision;
+            gArrange = Arrange::Model();
+            gArrange.revision = revBefore + 1;
+            const uint64_t vLane = Arrange::AddLane(gArrange, Arrange::kLaneVideo);
+            const uint64_t aLane = Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+
+            const std::string wavPath = TmpPath("infinite_arrangeexport_click.wav");
+            {
+               const double fileSr = 44100.0;
+               const int frames = (int)(10.0 * fileSr);
+               std::vector<float> inter((size_t)frames * 2, 0.0f);
+               for (int k = 0; k * 0.6 < 10.0; k++)
+               {
+                  const int f0 = (int)std::llround(k * 0.6 * fileSr);
+                  for (int j = 0; j < (int)(0.006 * fileSr) && f0 + j < frames; j++)
+                  {
+                     const float v = (float)(0.8 * std::exp(-(double)j / (0.0015 * fileSr)) *
+                                             std::sin(2.0 * 3.14159265358979 * 2000.0 * j / fileSr));
+                     inter[(size_t)(f0 + j) * 2] = v;
+                     inter[(size_t)(f0 + j) * 2 + 1] = v;
+                  }
+               }
+               AudioRecordings::WriteWav(wavPath, inter.data(), frames, fileSr, 2);
+            }
+            ArrangeImportMediaFile(wavPath, aLane, Arrange::BeatsToTicks(2.0), Arrange::ImportMediaKind::Audio);
+            for (int i = 0; i < 500 && !gArrangePendingImports.empty(); i++)
+            {
+               ArrangePollMediaImports();
+               std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            const Arrange::Lane* al = Arrange::FindLane(gArrange, aLane);
+            const bool imported = gArrangePendingImports.empty() && al != nullptr && !al->clips.empty() &&
+                                  al->clips.front().syncToTempo;
+
+            GraphNode* rampGn = SpawnNode("Ramp", "Source", 0.0f, 0.0f);
+            if (rampGn != nullptr)
+            {
+               Arrange::Clip v;
+               v.start = Arrange::BeatsToTicks(2.0);
+               v.length = Arrange::BeatsToTicks(8.0);
+               v.srcUid = rampGn->uid;
+               Arrange::PlaceOverwrite(gArrange, vLane, v);
+            }
+            const bool haveDevice = AudioEngine::Instance().SampleRate() > 0.0 || StartAudioEngine(gAudioStartError);
+            printf("arrange sample export setup: %s (imported %d, ramp %d, device %d)\n",
+                   imported && rampGn != nullptr && haveDevice ? "OK" : "FAIL", (int)imported,
+                   (int)(rampGn != nullptr), (int)haveDevice);
+
+            gArrangeRenderQueue.clear();
+            gArrangeRenderActiveJobId = 0;
+            auto job = [&](int video, int format, const std::string& path)
+            {
+               ArrangeRenderJob j;
+               j.id = gArrangeRenderNextJobId++;
+               j.startTick = 0;
+               j.endTick = Arrange::BeatsToTicks(12.0); // 6 s
+               j.audioSource = kArrangeAudioTimeline;
+               j.videoSource = video;
+               j.width = 320;
+               j.height = 180;
+               j.fps = 30;
+               j.format = format;
+               j.path = path;
+               std::error_code ec;
+               std::filesystem::remove(path, ec);
+               gArrangeRenderQueue.push_back(j);
+            };
+            job(kArrangeVideoNone, 2, std::string(exportDir) + "/export_audio.wav");
+            job(kArrangeVideoTimeline, 0, std::string(exportDir) + "/export_av.mp4");
+            gArrangeRenderQueueRunning = true;
+            sExportQueued = true;
+         }
+         else if (sExportQueued && !sExportReported && !gArrangeRenderQueueRunning && !ArrangeRenderBusy())
+         {
+            sExportReported = true;
+            for (const ArrangeRenderJob& j : gArrangeRenderQueue)
+               printf("arrange sample export job %s: status %d (%s) %s\n", j.path.c_str(), j.status,
+                      j.status == kArrangeJobDone ? "done" : "NOT DONE", j.message.c_str());
+            printf("arrange sample export finished at frame %d\n", frameId);
+         }
       }
 
       // Overhaul WP4: the arrangement video compositor. Lane order (top lane
