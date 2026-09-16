@@ -251,6 +251,7 @@ namespace
 #include "audio/dsp/ResonatorBankKernel.h"
 #include "audio/dsp/CycleShaperKernel.h"
 #include "audio/dsp/SpecBlurKernel.h"
+#include "audio/dsp/SlicerDsp.h"
 
 namespace ed = ax::NodeEditor;
 
@@ -29195,18 +29196,182 @@ namespace
    // and kicks off the file's real decode on a worker thread via
    // Arrange::GetMediaImportManager() (ArrangeMediaImport.h). The clip/node
    // pair is tracked in gArrangePendingImports until ArrangePollMediaImports
-   // (below) adopts the finished decode.
-   //
-   // Silently does nothing if `path` isn't a media file this feature
-   // understands, or if it doesn't match the dropped-on lane's type (audio
-   // file onto a video lane or vice versa) - same silent-no-op convention
-   // every other unmatched-drop branch in this file already follows.
-   void ArrangeImportMediaFile(const std::string& path, uint64_t laneId, Arrange::Tick atTick)
+   // Multi-strategy sample BPM estimation combining:
+   // 1. Filename/path metadata (e.g. "_128bpm", "140BPM", "bpm124")
+   // 2. Exact loop duration matching (1, 2, 4, 8, 16, 32 bars)
+   // 3. Spectral flux transient onset detection & IOI autocorrelation histogram
+   float ArrangeEstimateSampleBpm(const Platform::SampleBuffer* buf, const std::string& path, float fallbackBpm)
    {
-      Arrange::ImportMediaKind kind;
-      if (!ArrangeMediaKindForPath(path, kind))
-         return;
+      // Strategy 1: Explicit BPM tags in filename or path
+      if (!path.empty())
+      {
+         std::string lowerPath = path;
+         for (char& ch : lowerPath)
+            ch = (char)std::tolower((unsigned char)ch);
 
+         size_t pos = 0;
+         while ((pos = lowerPath.find("bpm", pos)) != std::string::npos)
+         {
+            // Backward search for number before "bpm"
+            int endDigit = (int)pos - 1;
+            while (endDigit >= 0 && (lowerPath[endDigit] == ' ' || lowerPath[endDigit] == '_' || lowerPath[endDigit] == '-'))
+               endDigit--;
+            if (endDigit >= 0 && std::isdigit((unsigned char)lowerPath[endDigit]))
+            {
+               int startDigit = endDigit;
+               while (startDigit > 0 && (std::isdigit((unsigned char)lowerPath[startDigit - 1]) || lowerPath[startDigit - 1] == '.'))
+                  startDigit--;
+               std::string numStr = lowerPath.substr(startDigit, endDigit - startDigit + 1);
+               try {
+                  float val = std::stof(numStr);
+                  if (val >= 40.0f && val <= 300.0f)
+                     return val;
+               } catch (...) {}
+            }
+
+            // Forward search for number after "bpm"
+            size_t startAfter = pos + 3;
+            while (startAfter < lowerPath.size() && (lowerPath[startAfter] == ' ' || lowerPath[startAfter] == '_' || lowerPath[startAfter] == '-'))
+               startAfter++;
+            if (startAfter < lowerPath.size() && std::isdigit((unsigned char)lowerPath[startAfter]))
+            {
+               size_t endAfter = startAfter;
+               while (endAfter < lowerPath.size() && (std::isdigit((unsigned char)lowerPath[endAfter]) || lowerPath[endAfter] == '.'))
+                  endAfter++;
+               std::string numStr = lowerPath.substr(startAfter, endAfter - startAfter);
+               try {
+                  float val = std::stof(numStr);
+                  if (val >= 40.0f && val <= 300.0f)
+                     return val;
+               } catch (...) {}
+            }
+            pos += 3;
+         }
+      }
+
+      if (buf == nullptr || buf->numFrames <= 0 || buf->channels <= 0 || buf->channelData.empty())
+         return fallbackBpm > 0.0f ? fallbackBpm : 120.0f;
+
+      const double sr = buf->sampleRate > 0.0 ? buf->sampleRate : 44100.0;
+      const int numFrames = buf->numFrames;
+      const double durationSec = (double)numFrames / sr;
+
+      // Strategy 2: Exact musical loop duration matching (1, 2, 4, 8, 16 bars)
+      float bestLoopBpm = 0.0f;
+      float bestLoopDiff = 999.0f;
+      for (int bars : { 1, 2, 4, 8, 16, 32 })
+      {
+         const double candidateBpm = (double)(bars * 240) / durationSec;
+         if (candidateBpm >= 60.0 && candidateBpm <= 200.0)
+         {
+            const float rounded = std::roundf((float)candidateBpm);
+            const float diff = std::abs((float)candidateBpm - rounded);
+            if (diff < 0.15f && diff < bestLoopDiff)
+            {
+               bestLoopDiff = diff;
+               bestLoopBpm = rounded;
+            }
+         }
+      }
+
+      // Strategy 3: Transient Onset Detection & IOI clustering via SlicerDsp
+      const int maxAnalyzeFrames = std::min(numFrames, (int)(sr * 30.0));
+      std::vector<float> mono(maxAnalyzeFrames);
+      const float* ch0 = buf->channelData.data();
+      if (buf->channels == 1)
+      {
+         std::copy(ch0, ch0 + maxAnalyzeFrames, mono.begin());
+      }
+      else
+      {
+         const float* ch1 = ch0 + numFrames;
+         for (int i = 0; i < maxAnalyzeFrames; i++)
+            mono[i] = 0.5f * (ch0[i] + ch1[i]);
+      }
+
+      SlicerDsp::Params params;
+      params.sensitivity = 70.0f;
+      params.maxSlices = 128;
+      std::vector<int> onsets;
+      std::vector<float> strengths;
+      std::atomic<bool> abortFlag{false};
+      SlicerDsp::Detect(mono.data(), maxAnalyzeFrames, sr, params, onsets, strengths, &abortFlag);
+
+      if (onsets.size() >= 4)
+      {
+         std::vector<double> onsetTimes(onsets.size());
+         for (size_t i = 0; i < onsets.size(); i++)
+            onsetTimes[i] = (double)onsets[i] / sr;
+
+         float bestScore = -1.0f;
+         float bestBpm = 0.0f;
+         const double minIoiSec = 0.15; // 400 BPM
+         const double maxIoiSec = 2.0;  // 30 BPM
+
+         for (float candidateBpm = 60.0f; candidateBpm <= 200.0f; candidateBpm += 0.5f)
+         {
+            const double beatPeriod = 60.0 / (double)candidateBpm;
+            float score = 0.0f;
+
+            for (size_t i = 0; i < onsets.size(); i++)
+            {
+               for (size_t j = i + 1; j < onsets.size() && j < i + 16; j++)
+               {
+                  const double delta = onsetTimes[j] - onsetTimes[i];
+                  if (delta < minIoiSec) continue;
+                  if (delta > maxIoiSec) break;
+
+                  for (double mult : { 0.25, 0.333333, 0.5, 0.666667, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0 })
+                  {
+                     const double targetDelta = beatPeriod * mult;
+                     const double err = std::abs(delta - targetDelta);
+                     if (err < 0.025 * mult)
+                     {
+                        const float weight = (mult == 1.0 || mult == 0.5 || mult == 2.0) ? 2.0f : 1.0f;
+                        score += weight * (1.0f - (float)(err / (0.025 * mult)));
+                     }
+                  }
+               }
+            }
+
+            if (candidateBpm >= 85.0f && candidateBpm <= 145.0f)
+               score *= 1.15f;
+
+            if (score > bestScore)
+            {
+               bestScore = score;
+               bestBpm = candidateBpm;
+            }
+         }
+
+         if (bestScore > 5.0f && bestBpm > 0.0f)
+         {
+            if (bestLoopBpm > 0.0f)
+            {
+               if (std::abs(bestLoopBpm - bestBpm) < 2.0f ||
+                   std::abs(bestLoopBpm * 2.0f - bestBpm) < 2.0f ||
+                   std::abs(bestLoopBpm * 0.5f - bestBpm) < 2.0f)
+               {
+                  return bestLoopBpm;
+               }
+            }
+            if (std::abs(bestBpm - std::roundf(bestBpm)) < 0.12f)
+               return std::roundf(bestBpm);
+            return bestBpm;
+         }
+      }
+
+      if (bestLoopBpm > 0.0f && bestLoopDiff < 0.1f)
+         return bestLoopBpm;
+
+      return fallbackBpm > 0.0f ? fallbackBpm : 120.0f;
+   }
+
+   // Spawn the right node type for dropped media, place a clip in the lane,
+   // and dispatch the decode job to the background import thread.
+   void ArrangeImportMediaFile(const std::string& path, uint64_t laneId, Arrange::Tick atTick,
+                               Arrange::ImportMediaKind kind)
+   {
       int laneIdx = -1;
       for (size_t i = 0; i < gArrange.lanes.size(); i++)
       {
@@ -29250,11 +29415,9 @@ namespace
          c.name = spawned->typeName;
          c.importPending = true;
          c.sampleDropped = true;
-         c.syncToTempo = gArrange.settings.importSyncToTempo;
-         // Default to the project tempo at drop time - reproduces the old
-         // silent "file's BPM == project's BPM" assumption exactly (step 3),
-         // corrected below in ArrangePollMediaImports once the real
-         // duration is known, and freely editable afterward.
+         // Default syncToTempo to false so the dropped sample's original native state
+         // is preserved untouched until the user explicitly requests tempo sync.
+         c.syncToTempo = false;
          c.sampleBpm = (float)bpm;
          Arrange::PlaceOverwrite(gArrange, laneId, c, &clipId);
       });
@@ -29356,7 +29519,12 @@ namespace
             // (sampleBpm/60) * kPPQ) - captured once here, never touched by
             // a later tempo or BPM change.
             if (pending.kind == Arrange::ImportMediaKind::Audio && r.durationSeconds > 0.0)
+            {
                c->sourceDurationSeconds = r.durationSeconds;
+               // Estimate sample's original BPM via multi-strategy analysis
+               const float estimatedBpm = ArrangeEstimateSampleBpm(audioFileNode ? audioFileNode->Buffer() : nullptr, r.path, (float)bpm);
+               c->sampleBpm = estimatedBpm;
+            }
             // Step 2: the Sample's static waveform, computed once from the
             // fully-decoded source right here (before any BPM warp is ever
             // applied to c->length) - see ArrangeComputeSampleStaticWave's
@@ -30132,10 +30300,12 @@ namespace
             }
             if (ImGui::Button("##arrangeshowviewport", ImVec2(30, 0)))
                gArrangeShowViewport = !gArrangeShowViewport;
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !ImGui::IsPopupOpen("##arrangeviewportctx"))
+               ImGui::OpenPopup("##arrangeviewportctx");
             if (viewportWasOn)
                ImGui::PopStyleColor(2);
             if (ImGui::IsItemHovered())
-               ImGui::SetTooltip(viewportWasOn ? "Viewport Monitor: Visible" : "Toggle Viewport Monitor");
+               ImGui::SetTooltip(viewportWasOn ? "Viewport Monitor: Visible (Right-click for Dock Position)" : "Toggle Viewport Monitor (Right-click for Dock Position)");
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
@@ -30430,9 +30600,8 @@ namespace
          arrangeToolbarBottom = ImGui::GetCursorScreenPos().y;
       }
 
-      // Right-click anywhere on the toolbar row (not just the viewport
-      // monitor, which is off by default and rarely visible) to reach the
-      // panel's own dock menu - viewport left/right, timeline top/bottom.
+      // Right-click anywhere on the toolbar row to reach the
+      // panel's Dock Position menu (Timeline at Bottom / Timeline at Top).
       {
          const ImVec2 mouse = ImGui::GetIO().MousePos;
          const bool overToolbar = mouse.x >= panelOrigin.x && mouse.x < panelOrigin.x + panelSize.x &&
@@ -30443,26 +30612,34 @@ namespace
       }
       if (ImGui::BeginPopup("##arrangedockctx"))
       {
-         if (ImGui::MenuItem("Dock Left", nullptr, !gArrangeViewportOnRight))
-            gArrangeViewportOnRight = false;
-         if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
-            gArrangeViewportOnRight = true;
-         // The whole timeline panel: bottom or top of the window (saved
-         // with the document, not undoable - same as View > Arrangement
-         // Timeline > Dock).
-         ImGui::Separator();
-         const bool panelTop = gArrange.settings.dockSide == 1;
-         if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
+         if (ImGui::BeginMenu("Dock Position"))
          {
-            gArrange.settings.dockSide = 0;
-            gArrange.revision++; // a model field like any other (WP5b)
-            gPatchDirty = true;
+            const bool panelTop = gArrange.settings.dockSide == 1;
+            if (ImGui::MenuItem("Timeline at Bottom", nullptr, !panelTop) && panelTop)
+            {
+               gArrange.settings.dockSide = 0;
+               gArrange.revision++; // a model field like any other (WP5b)
+               gPatchDirty = true;
+            }
+            if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
+            {
+               gArrange.settings.dockSide = 1;
+               gArrange.revision++;
+               gPatchDirty = true;
+            }
+            ImGui::EndMenu();
          }
-         if (ImGui::MenuItem("Timeline at Top", nullptr, panelTop) && !panelTop)
+         ImGui::EndPopup();
+      }
+      if (ImGui::BeginPopup("##arrangeviewportctx"))
+      {
+         if (ImGui::BeginMenu("Viewport Position"))
          {
-            gArrange.settings.dockSide = 1;
-            gArrange.revision++;
-            gPatchDirty = true;
+            if (ImGui::MenuItem("Dock Left", nullptr, !gArrangeViewportOnRight))
+               gArrangeViewportOnRight = false;
+            if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
+               gArrangeViewportOnRight = true;
+            ImGui::EndMenu();
          }
          ImGui::EndPopup();
       }
@@ -30575,12 +30752,24 @@ namespace
 
          ImGui::Dummy(monAvail);
 
-         // Right-click anywhere on the monitor to reach the same dock menu
-         // the toolbar's right-click also opens (see "##arrangedockctx"
-         // above, drawn once, unconditionally, right after the toolbar).
+         // Right-click anywhere on the monitor to reach the Viewport Position menu
+         // (Dock Left / Dock Right).
          if (ImGui::IsWindowHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
-             !ImGui::IsPopupOpen("##arrangedockctx"))
-            ImGui::OpenPopup("##arrangedockctx");
+             !ImGui::IsPopupOpen("##arrangeviewportctx"))
+            ImGui::OpenPopup("##arrangeviewportctx");
+
+         if (ImGui::BeginPopup("##arrangeviewportctx"))
+         {
+            if (ImGui::BeginMenu("Viewport Position"))
+            {
+               if (ImGui::MenuItem("Dock Left", nullptr, !gArrangeViewportOnRight))
+                  gArrangeViewportOnRight = false;
+               if (ImGui::MenuItem("Dock Right", nullptr, gArrangeViewportOnRight))
+                  gArrangeViewportOnRight = true;
+               ImGui::EndMenu();
+            }
+            ImGui::EndPopup();
+         }
 
          ImGui::EndChild();
       };
@@ -32330,7 +32519,7 @@ namespace
                Arrange::ImportMediaKind kindProbe;
                if (ArrangeMediaKindForPath(p, kindProbe))
                {
-                  ArrangeImportMediaFile(p, laneId, cursorTick);
+                  ArrangeImportMediaFile(p, laneId, cursorTick, kindProbe);
                   cursorTick += Arrange::kTicksPerBar;
                }
                else
@@ -32349,8 +32538,13 @@ namespace
              gArrangePendingBrowserDrop.screenPos.x < rulerStartX + rulerWidth &&
              gArrangePendingBrowserDrop.screenPos.y >= curY && gArrangePendingBrowserDrop.screenPos.y < curY + rowH)
          {
-            ArrangeImportMediaFile(gArrangePendingBrowserDrop.path, laneId,
-                                   gridSnap(xToTick(gArrangePendingBrowserDrop.screenPos.x)));
+            Arrange::ImportMediaKind kindProbe;
+            if (ArrangeMediaKindForPath(gArrangePendingBrowserDrop.path, kindProbe))
+            {
+               ArrangeImportMediaFile(gArrangePendingBrowserDrop.path, laneId,
+                                      gridSnap(xToTick(gArrangePendingBrowserDrop.screenPos.x)),
+                                      kindProbe);
+            }
             gArrangePendingBrowserDrop.pending = false;
          }
 
