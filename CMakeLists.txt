@@ -224,17 +224,47 @@ endif()
 #     SHA256 cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9
 # These are documentation pins, not build inputs - this CMakeLists links the
 # prebuilt BtbN binaries above, it does not build FFmpeg/x264 from source.
+#
+# ---- Why FFMPEG_RELEASE_TAG is not "latest" --------------------------------
+# BtbN/FFmpeg-Builds' "latest" GitHub release tag is a rolling pointer: its
+# assets get replaced in place every time BtbN cuts a new autobuild, so a
+# SHA256 pinned against "latest" today silently goes stale and turns into a
+# hash-mismatch FetchContent failure on the next fresh configure (hit during
+# Linux Phase 5 AppImage work, 2026-09-16, on an arm64 dev container). BtbN
+# also publishes each autobuild under its own immutable tag
+# (autobuild-YYYY-MM-DD-HH-MM), whose assets never change - pin to one of
+# those instead, and the pinned SHA256 stays valid forever.
+#
+# ---- How to re-pin when a newer FFmpeg build is wanted ---------------------
+#   1. Find the desired autobuild tag and the exact version string embedded
+#      in its asset filenames:
+#        curl -s https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest \
+#          | grep -o '"tag_name": *"[^"]*"'   # confirms what "latest" points at today
+#        curl -s https://api.github.com/repos/BtbN/FFmpeg-Builds/releases \
+#          | grep -o '"tag_name": *"autobuild-[^"]*"' | head -1
+#      then list that release's assets to read the version string (the
+#      "n8.1.2-53-g1005b294ff" part) out of an asset name like
+#      ffmpeg-n8.1.2-53-g1005b294ff-linux64-gpl-shared-8.1.tar.xz.
+#   2. Download the four *-shared-8.1.tar.xz archives this file actually
+#      links (linux64-gpl, linux64-lgpl, linuxarm64-gpl, linuxarm64-lgpl) from
+#      that tag and `sha256sum` them directly - never copy a hash off a
+#      webpage, GitHub does not publish per-asset checksums anywhere trusted.
+#   3. Update FFMPEG_RELEASE_TAG, FFMPEG_ARCHIVE_VERSION, and all four
+#      SHA256 pins below together, so they describe one consistent release.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     option(INFINITE_ENABLE_GPL_CODECS "Link GPL FFmpeg + libx264 for H.264 recording on Linux (OFF = LGPL FFmpeg, no H.264 encode)" ON)
 
-    set(FFMPEG_VERSION "n8.1")
+    # Immutable BtbN/FFmpeg-Builds release tag and the version string its
+    # asset filenames embed - see "How to re-pin" above. Verified 2026-09-16.
+    set(FFMPEG_RELEASE_TAG "autobuild-2026-09-15-13-18")
+    set(FFMPEG_ARCHIVE_VERSION "n8.1.2-53-g1005b294ff")
     set(FFMPEG_LINUX_ARCH "linux64")
-    set(FFMPEG_GPL_SHA256 "9c3319a2d5cafb0bc51c532dec0b35ff0c7c4c28fea0afb90c40a79832501647")
-    set(FFMPEG_LGPL_SHA256 "4fe9bc3b32bcb5bd0ce16f0035c16608baad018bacd8f0abc0942157dbdf52c2")
+    set(FFMPEG_GPL_SHA256 "cdd23dda4552a11babd04b1e352736339d50cb2bca29f9fd2014e246a3924062")
+    set(FFMPEG_LGPL_SHA256 "c8fb071899337b16680ea1848c87fac27c3f31ff2c88e3c3b6c813f2625e9af1")
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
         set(FFMPEG_LINUX_ARCH "linuxarm64")
-        set(FFMPEG_GPL_SHA256 "14c2caa732cf53ee1bc6d71e8991db54dcb9535f3bca636b40096aed3bd9fdc8")
-        set(FFMPEG_LGPL_SHA256 "082bd6b73e54506fd6edaf5f1098a8f004c03b8d354deeb83e80e5ff8c6b7044")
+        set(FFMPEG_GPL_SHA256 "9b1d14ac6ce89d35ae2511f150477680931a482ea53fd033850f3d5d27af0141")
+        set(FFMPEG_LGPL_SHA256 "aac9ed865431ce338688d657ece3345712107a891dee77d6cad5f6d2fcf58ec5")
     endif()
 
     if(INFINITE_ENABLE_GPL_CODECS)
@@ -244,11 +274,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         set(FFMPEG_LICENCE_TAG "lgpl")
         set(FFMPEG_SHA256 "${FFMPEG_LGPL_SHA256}")
     endif()
-    set(FFMPEG_ARCHIVE_NAME "ffmpeg-${FFMPEG_VERSION}-latest-${FFMPEG_LINUX_ARCH}-${FFMPEG_LICENCE_TAG}-shared-8.1")
+    set(FFMPEG_ARCHIVE_NAME "ffmpeg-${FFMPEG_ARCHIVE_VERSION}-${FFMPEG_LINUX_ARCH}-${FFMPEG_LICENCE_TAG}-shared-8.1")
 
     FetchContent_Declare(
         ffmpeg_linux
-        URL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${FFMPEG_ARCHIVE_NAME}.tar.xz"
+        URL "https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_RELEASE_TAG}/${FFMPEG_ARCHIVE_NAME}.tar.xz"
         URL_HASH SHA256=${FFMPEG_SHA256}
     )
     FetchContent_MakeAvailable(ffmpeg_linux)
