@@ -149,6 +149,13 @@ namespace
 #else
       return "Infinite-windows-x64.zip";
 #endif
+#elif defined(__linux__)
+      // Phase 5 (AppImage). x86_64 only - see tools/linux/Dockerfile.release's
+      // glibc-2.35 floor and package-appimage.sh. Like the other platforms,
+      // this only resolves a download URL for the "Download" button in the
+      // update-available modal (main.cpp calls Platform::OpenExternalUrl on
+      // it) - there is no self-replace on any platform.
+      return "Infinite-x86_64.AppImage";
 #else
       return {};
 #endif

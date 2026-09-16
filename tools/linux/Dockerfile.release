@@ -1,0 +1,23 @@
+# P5 release-build base: the AppImage must not require a newer glibc than
+# the oldest distro we claim to support (validation.md's "L3" and
+# phase-05-release.md 5.1's glibc-2.35 floor). An AppImage bundles its own
+# libraries but never glibc - the build host's glibc becomes the minimum
+# version every user needs (see linux-parity skill §3.10) - so this image is
+# pinned to Ubuntu 22.04 (glibc 2.35) rather than 24.04 (glibc 2.39), which
+# tools/linux/Dockerfile (the dev/test image) intentionally uses instead.
+#
+# CMake check: this project's CMakeLists.txt says
+# `cmake_minimum_required(VERSION 3.16)`. Ubuntu 22.04's packaged cmake is
+# 3.22.1-1ubuntu1.22.04.2 (verified in this session via
+# `apt-cache policy cmake` inside an ubuntu:22.04 container) - well above
+# 3.16, so no Kitware-tarball CMake pin is needed here. If CMakeLists.txt's
+# minimum version is ever raised past what 22.04 ships, this comment is the
+# tripwire to add one (see Kitware's apt repo or the GitHub releases tarball
+# at https://github.com/Kitware/CMake/releases).
+FROM ubuntu:22.04
+
+COPY tools/linux/deps-apt.sh /tmp/deps-apt.sh
+RUN bash /tmp/deps-apt.sh && rm /tmp/deps-apt.sh
+
+WORKDIR /src
+ENV CCACHE_DIR=/root/.ccache
