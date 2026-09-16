@@ -72,6 +72,23 @@ namespace Arrange
       return std::max<Tick>(1, (Tick)llround(lenTicks));
    }
 
+   // The exact inverse of SampleClipLengthTicks: how many seconds of the
+   // SOURCE file a Sample clip's current `length` (ticks) represents right
+   // now. Has to branch on syncToTempo the same way the forward formula
+   // does, or the two stop being inverses of each other and whatever reads
+   // this (the static waveform cache, ArrangeComputeSampleStaticWave in
+   // main.cpp) slices the wrong sub-range of the decoded file - looking
+   // "cut off" or padded relative to what's actually heard - the moment a
+   // clip is unsynced and its Sample BPM or the live project tempo no
+   // longer matches whatever tempo was in effect when the cache was last
+   // computed.
+   inline double SampleClipWindowSeconds(Tick length, float sampleBpm, bool syncToTempo,
+                                          double currentProjectBpm)
+   {
+      return syncToTempo ? TicksToSeconds(length, (double)sampleBpm)
+                          : TicksToSeconds(length, currentProjectBpm);
+   }
+
    enum LaneType { kLaneVideo = 0, kLaneAudio = 1 };
    enum Edge { kEdgeStart = 0, kEdgeEnd = 1 };
    // SetEnabled's third argument.

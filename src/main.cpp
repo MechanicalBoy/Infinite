@@ -27036,17 +27036,20 @@ namespace
    // Buckets are stretched linearly across only the clip's OWN sub-range of
    // the decoded file - [sourceOffsetSeconds, sourceOffsetSeconds +
    // windowSeconds), where windowSeconds is this clip's own duration
-   // converted back to source-file seconds via its sampleBpm (the same
-   // conversion Split uses to derive a split-off clip's sourceOffsetSeconds -
-   // see Arrange::Split's own comment). A clip that has never been split has
-   // sourceOffsetSeconds == 0 and windowSeconds spanning the whole file, so
-   // this reproduces the old whole-file behavior exactly for that case; a
-   // clip born from a Split instead shows only its own slice, so the right
-   // half continues the left half's waveform shape instead of restarting at
-   // the file's beginning.
+   // converted back to source-file seconds via Arrange::SampleClipWindowSeconds
+   // (the exact inverse of whichever formula produced `length` - synced uses
+   // sampleBpm, unsynced uses the current project tempo, same branch
+   // SampleClipLengthTicks uses; see its own comment for why using the wrong
+   // one of the two silently slices the wrong part of the file). A clip that
+   // has never been split has sourceOffsetSeconds == 0 and windowSeconds
+   // spanning the whole file, so this reproduces the old whole-file behavior
+   // exactly for that case; a clip born from a Split instead shows only its
+   // own slice, so the right half continues the left half's waveform shape
+   // instead of restarting at the file's beginning.
    void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
                                         Arrange::Tick start, Arrange::Tick length,
-                                        float sampleBpm, float sourceOffsetSeconds,
+                                        float sampleBpm, bool syncToTempo, double currentProjectBpm,
+                                        float sourceOffsetSeconds,
                                         const Platform::SampleBuffer* buf)
    {
       const int buckets = ArrangeWaveBucketCount(length);
@@ -27059,7 +27062,8 @@ namespace
 
       const int frames = buf->numFrames;
       const int channels = buf->channels;
-      const double windowSeconds = Arrange::TicksToSeconds(length, sampleBpm);
+      const double windowSeconds = Arrange::SampleClipWindowSeconds(length, sampleBpm, syncToTempo,
+                                                                      currentProjectBpm);
       const long long subF0 = std::clamp<long long>(
          (long long)std::llround((double)sourceOffsetSeconds * buf->sampleRate), 0, frames);
       const long long subF1 = std::clamp<long long>(
@@ -27139,7 +27143,8 @@ namespace
          return;
       }
       ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                      c->sampleBpm, c->sourceOffsetSeconds, buf);
+                                      c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo(),
+                                      c->sourceOffsetSeconds, buf);
    }
 
    // ---- Clip thumbnails (WP8) ------------------------------------------
@@ -29532,12 +29537,60 @@ namespace
             // Audio Clip keeps using the live-fill gArrangeClipWaves cache.
             if (pending.kind == Arrange::ImportMediaKind::Audio && c->sampleDropped && audioFileNode != nullptr)
                ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                               c->sampleBpm, c->sourceOffsetSeconds,
+                                               c->sampleBpm, c->syncToTempo, (double)bpm,
+                                               c->sourceOffsetSeconds,
                                                audioFileNode->Buffer());
             gArrange.revision++;
          }
          AudioTopologyRequest::Request();
       }
+   }
+
+   // An unsynced Sample's `length` is derived from the CURRENT project tempo
+   // (see SampleClipLengthTicks's own comment) - unlike a synced Sample's,
+   // which is purely a function of its own sampleBpm and therefore already
+   // tempo-invariant. That makes an unsynced Sample the one clip type in the
+   // whole model whose `length` needs revisiting on a plain project-tempo
+   // change, even when nothing about the clip itself was touched: without
+   // this, changing the transport BPM while a clip's sync is off leaves its
+   // placed length pinned to whatever tempo was in effect the last time it
+   // was recomputed (drop, sync toggle, or a Sample BPM edit), while the
+   // audio itself keeps playing back at its own untouched native duration -
+   // exactly the "cuts off/pads the end" symptom the Sample BPM field's own
+   // edit handler was fixed for, just triggered by the transport's tempo
+   // control instead. Polled once a frame from DrawArrangePanelContent,
+   // same cadence as ArrangePollMediaImports, gated on the tempo actually
+   // having changed since the last call so an unchanged tempo costs nothing
+   // beyond the one comparison.
+   void ArrangeResyncUnsyncedSampleLengths()
+   {
+      static float sLastBpm = -1.0f;
+      const float bpm = Transport::Instance().Tempo();
+      if (bpm == sLastBpm)
+         return;
+      sLastBpm = bpm;
+
+      bool any = false;
+      for (Arrange::Lane& lane : gArrange.lanes)
+      {
+         if (lane.type != Arrange::kLaneAudio)
+            continue;
+         for (Arrange::Clip& c : lane.clips)
+         {
+            if (!c.sampleDropped || c.syncToTempo || !(c.sourceDurationSeconds > 0.0f))
+               continue;
+            const Arrange::Tick newLength = Arrange::SampleClipLengthTicks(
+               c.sourceDurationSeconds, c.sampleBpm, c.syncToTempo, (double)bpm);
+            if (newLength != c.length)
+            {
+               c.length = newLength;
+               ArrangeRefreshSampleStaticWave(c.id);
+               any = true;
+            }
+         }
+      }
+      if (any)
+         gArrange.revision++;
    }
 
    std::string ArrangeRenderUniquePath(const std::string& path)
@@ -29629,6 +29682,11 @@ namespace
       // see ArrangePollMediaImports's own comment for why this is only
       // polled from here.
       ArrangePollMediaImports();
+
+      // Keep every unsynced Sample's placed length matching its own
+      // untouched real duration whenever the project tempo itself changes -
+      // see ArrangeResyncUnsyncedSampleLengths's own comment.
+      ArrangeResyncUnsyncedSampleLengths();
 
       // Clip labels, the offline test and the render popup's resolution probe
       // all look nodes up by uid - through the global per-frame map (WP5b),
@@ -32849,6 +32907,12 @@ namespace
                            // formula last produced.
                            c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
                               c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
+                           // The visible waveform slices the decoded file by
+                           // the same synced-vs-unsynced formula (see
+                           // ArrangeComputeSampleStaticWave's comment) - stale
+                           // otherwise, showing whatever slice the OTHER mode
+                           // last computed.
+                           ArrangeRefreshSampleStaticWave(c->id);
                         }
                      });
                   }
@@ -32875,6 +32939,7 @@ namespace
                         // real duration at the current project tempo.
                         cp->length = Arrange::SampleClipLengthTicks(cp->sourceDurationSeconds,
                            cp->sampleBpm, cp->syncToTempo, (double)Transport::Instance().Tempo());
+                        ArrangeRefreshSampleStaticWave(cp->id);
                         gArrange.revision++;
                      }
                      fieldGestureEnd();
@@ -38470,6 +38535,7 @@ namespace
                         // produced.
                         c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
                            c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
+                        ArrangeRefreshSampleStaticWave(c->id);
                         gArrange.revision++;
                      }
                   });
@@ -38503,6 +38569,7 @@ namespace
                            c->sampleBpm = std::clamp(sampleBpm, 1.0f, 999.0f);
                            c->length = Arrange::SampleClipLengthTicks(c->sourceDurationSeconds,
                               c->sampleBpm, c->syncToTempo, (double)Transport::Instance().Tempo());
+                           ArrangeRefreshSampleStaticWave(c->id);
                            gArrange.revision++;
                         }
                      });
