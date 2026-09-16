@@ -20,7 +20,7 @@
 #include "audio/AudioNode.h"
 #include "audio/ParamMailbox.h"
 #include "audio/SampleSlot.h"
-#include "audio/dsp/WsolaStretcher.h"
+#include "audio/dsp/ClipTimeStretch.h"
 
 // =========================================================== Image Analyze
 
@@ -832,7 +832,7 @@ private:
    mutable std::atomic<bool> mOnsetPending { false };
 };
 
-// ReadBufferInterp and WsolaStretcher now live in audio/dsp/WsolaStretcher.h
+// ReadBufferInterp and ClipTimeStretch live in audio/dsp/ClipTimeStretch.h
 // (shared with the Arrangement Timeline's self-contained Audio Sample
 // voices, see AudioSampleVoice) - included above.
 
@@ -844,9 +844,11 @@ public:
    // lifetime).
    AudioFilePlayerAudioNode() = default;
 
-   void PrepareToPlay(double sampleRate, int /*maxBlockSize*/) override
+   void PrepareToPlay(double sampleRate, int maxBlockSize) override
    {
       mSampleRate = sampleRate;
+      mStretcher.Prepare(sampleRate, std::max(maxBlockSize, 1));
+      mClipActive = false;
       mAnalyser.SetSampleRate(sampleRate);
       mMailbox.PrepareToPlay(sampleRate);
       mMailbox.SetImmediate(kFileVolumeParam, mVolume.load(std::memory_order_relaxed));
@@ -1049,7 +1051,6 @@ private:
 
       const double fileRate = mActiveBuffer->sampleRate > 0.0 ? mActiveBuffer->sampleRate : mSampleRate;
       const double sourcePerOutput = mPlaybackRate * std::max(0.0, mClipSourcePerSecond);
-      const double pitchRatio = std::pow(2.0, (double)mClipPitch / 12.0);
       const double target = mClipSourceSeconds * fileRate;
       const double driftLimit = 0.005 * fileRate;
 
@@ -1063,21 +1064,31 @@ private:
       if (reseek)
          mClipSource = target;
 
-      // stretch = source frames per ring frame. Exactly 1 means the ring
-      // would be a copy of the source, so read the source directly: this is
-      // the unsynced, unpitched case and stays bit-exact interpolation.
-      const double ringPerOutput = mPlaybackRate * pitchRatio;
-      const double stretch = ringPerOutput > 0.0 ? std::clamp(sourcePerOutput / ringPerOutput, 0.1, 10.0) : 1.0;
-      const bool direct = std::fabs(stretch - 1.0) < 1e-4;
-      if (!direct && (reseek || mClipDirect || std::fabs(stretch - mClipStretch) > 0.02))
+      // rate = source seconds per output second. 1 with no pitch shift is a
+      // plain resampled read (bit-exact interpolation, zero latency); anything
+      // else goes through the spectral stretcher. The mode is only chosen on
+      // a re-anchor or when the parameters leave "plain", so tempo automation
+      // grazing exactly 1.0 doesn't flip modes mid-note.
+      const double rate = std::clamp(mClipSourcePerSecond, 0.05, 20.0);
+      const bool plain = std::fabs(rate - 1.0) < 1e-4 && mClipPitch == 0.0f;
+      const bool canStretch = mStretcher.Prepared();
+      bool direct = mClipDirect;
+      if (reseek || !mClipActive)
+         direct = plain || !canStretch;
+      else if (!plain && canStretch)
+         direct = false;
+
+      // Input frames are the source at engine-rate spacing.
+      const double fileFramesPerInput = mPlaybackRate;
+      const double inputFrame = mClipSource / std::max(1e-9, fileFramesPerInput);
+      if (!direct)
       {
-         // A ratio change bigger than the stretcher tracks smoothly (a
-         // pitch or BPM edit) re-anchors it where playback is right now.
-         mRingPos = 0.0;
-         mStretcher.Reset(mClipSource, 0, stretch);
+         mStretcher.SetPitch(mClipPitch);
+         if (reseek || mClipDirect)
+            mStretcher.Start(*mActiveBuffer, fileFramesPerInput, inputFrame, rate);
+         mStretcher.Render(*mActiveBuffer, fileFramesPerInput, inputFrame, rate, buffer.numFrames);
       }
       mClipDirect = direct;
-      mClipStretch = stretch;
       mClipActive = true;
 
       for (int i = 0; i < buffer.numFrames; i++)
@@ -1092,10 +1103,8 @@ private:
          }
          else
          {
-            mStretcher.GenerateUpTo(mRingPos + 2.0, stretch, *mActiveBuffer);
-            left = mStretcher.Read(0, mRingPos);
-            right = mStretcher.Read(1, mRingPos);
-            mRingPos += ringPerOutput;
+            left = mStretcher.Out(0, i);
+            right = mStretcher.Out(1, i);
          }
          mClipSource += sourcePerOutput;
          WriteFrame(buffer, i, left * volume, right * volume, gain, monitor);
@@ -1129,9 +1138,7 @@ private:
    double mClipSourcePerSecond = 1.0;
    float mClipPitch = 0.0f;
    double mClipSource = 0.0;   // nominal source frame of the next output frame
-   double mClipStretch = 1.0;
-   double mRingPos = 0.0;      // stretcher ring read cursor
-   WsolaStretcher mStretcher;
+   ClipTimeStretch mStretcher;
 
    Platform::SampleBuffer* mActiveBuffer = nullptr;
    SampleSlot mSampleSlot;

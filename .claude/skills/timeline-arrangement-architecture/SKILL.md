@@ -26,7 +26,7 @@ still describe the *post*-change state as current fact rather than calling out t
 - Audio Sample tempo (redesigned 2026-09-16, `bugfix/arrange-sample-bpm-redesign`): one rule
   everywhere (RunTopology, static waveform, split/trim offsets) - `effBpm = syncToTempo ?
   sampleBpm : liveTempo`, source second at beat b = `sourceOffsetSeconds + (b - start) * 60 /
-  effBpm`. Synced = WSOLA-stretched by tempo/sampleBpm and follows tempo changes live; unsynced
+  effBpm`. Synced = time-stretched (Signalsmith Stretch via `ClipTimeStretch`) by tempo/sampleBpm and follows tempo changes live; unsynced
   = native speed, box fixed in ticks (tempo change reveals/hides the tail). Sample BPM is always
   editable but only audible while synced; toggling sync or editing it while synced rescales the
   box (`ArrangeRescaleSampleBox` via `TrimEdge`). `origBpm` = detected BPM, display only (<= 0 =
@@ -248,7 +248,7 @@ useful when the source node can be seeked (`AudioFileNode`/`SamplerNode` respond
 | Question | Answer |
 |---|---|
 | Can a video be time-stretched? | Only a flat-rate speed multiplier, `VideoSourceNode::speed` (`VideoSourceNode.h:68`, default 1.0, serialized via `VisitParams`). **Per-node only** — the Arrange clip inspector doesn't expose it; must select the node on the canvas. No pitch-preserving/optical-flow stretch exists. |
-| Can an audio sample sync its internal BPM to project tempo? | **Yes** (2026-09-16 redesign, see the top-of-file note): synced Samples WSOLA-stretch by `tempo / sampleBpm` every block and follow live tempo changes; BPM is estimated at drop (`ArrangeEstimateSampleBpm`). |
+| Can an audio sample sync its internal BPM to project tempo? | **Yes** (2026-09-16 redesign, see the top-of-file note): synced Samples time-stretch (Signalsmith Stretch, `src/audio/dsp/ClipTimeStretch.h`) by `tempo / sampleBpm` every block and follow live tempo changes; BPM is estimated at drop (`ArrangeEstimateSampleBpm`). |
 | What audio pitch control *does* exist? | `Clip::pitch` (±24 semitones) pushed live into `AudioFileNode::pitch`/`SamplerNode::pitch`. This is **varispeed** (rate changes with pitch, turntable-style), not independent pitch-shift — applied in `AudioFilePlayerAudioNode`'s per-sample read: `pitchRatio = 2^(pitch/12); mPos += mPlaybackRate * pitchRatio` (`src/nodes/AnalyzeNodes.cpp:944-956`). |
 
 ## 8. Settings application order
