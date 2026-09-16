@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Infinite — A Visual Notebook Where Sound, Art and Geometry Connect</title>
-  <meta name="description" content="Infinite is an all-in-one creative space for macOS and Windows. Wire real-time video shaders, 3D geometry, and modular music on an infinite canvas. Free and open source — join the community on Discord.">
+  <meta name="description" content="Infinite is an all-in-one creative space for macOS, Windows, and Linux. Wire real-time video shaders, 3D geometry, and modular music on an infinite canvas. Free and open source — join the community on Discord.">
   <link rel="canonical" href="https://n1m21n.github.io/Infinite/">
 
   <!-- Open Graph -->
   <meta property="og:title" content="Infinite — A Visual Notebook Where Sound, Art and Geometry Connect">
-  <meta property="og:description" content="Real-time video shaders, 3D geometry, and modular synthesizers connected on an infinite canvas. Free and open source for macOS and Windows.">
+  <meta property="og:description" content="Real-time video shaders, 3D geometry, and modular synthesizers connected on an infinite canvas. Free and open source for macOS, Windows, and Linux.">
   <meta property="og:image" content="https://n1m21n.github.io/Infinite/assets/screenshot.png">
   <meta property="og:url" content="https://n1m21n.github.io/Infinite/">
   <meta property="og:type" content="website">
@@ -75,7 +75,7 @@
 
         <!-- Concise consumer summary -->
         <p class="hero-subtitle">
-          Infinite is an all-in-one creative playground for Mac and Windows. You wire ideas together on a single boundless page where every element reacts in real time.
+          Infinite is an all-in-one creative playground for Mac, Windows, and Linux. You wire ideas together on a single boundless page where every element reacts in real time.
         </p>
 
         <div class="hero-cta-group">
@@ -95,6 +95,10 @@
 
           <a href="#download" class="btn btn-secondary btn-lg">
             <span>Download for Windows</span>
+          </a>
+
+          <a href="#download" class="btn btn-secondary btn-lg">
+            <span>Download for Linux</span>
           </a>
 
           <a href="https://github.com/n1m21n/Infinite" target="_blank" rel="noopener" class="btn btn-secondary btn-lg">
@@ -503,6 +507,45 @@
       </div>
     </section>
 
+    <!-- First Time Setup on Linux (AppImage + FUSE) -->
+    <section id="setup-linux" class="section">
+      <div class="container">
+        <div class="setup-box">
+          <div class="section-label">First-Time Setup</div>
+          <h2 class="section-heading">Opening Infinite on Linux in 2 Steps</h2>
+          <p class="setup-intro">
+            Infinite ships as a single portable <code>AppImage</code> &mdash; no installer, nothing
+            written outside the file itself. It bundles the newer static AppImage runtime, so you
+            do <strong>not</strong> need <code>libfuse2</code> installed. Requires x86_64,
+            glibc &ge; 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 38+, or similar), and OpenGL 3.2
+            via X11 or XWayland.
+          </p>
+
+          <div class="steps-grid">
+            <div class="step-card">
+              <div class="step-num">1</div>
+              <h4 class="step-title">Make It Executable</h4>
+              <p class="step-desc">Download <code>Infinite-x86_64.AppImage</code>, then mark it executable:</p>
+              <div class="code-pill">
+                <code>chmod +x Infinite-x86_64.AppImage</code>
+                <button class="copy-inline-btn" data-code="chmod +x Infinite-x86_64.AppImage">Copy</button>
+              </div>
+            </div>
+
+            <div class="step-card">
+              <div class="step-num">2</div>
+              <h4 class="step-title">Run It</h4>
+              <p class="step-desc">Double-click it, or run <code>./Infinite-x86_64.AppImage</code> from a terminal. If it's running inside a container or a system with no <code>/dev/fuse</code> and mounting fails, extract-and-run instead:</p>
+              <div class="code-pill">
+                <code>./Infinite-x86_64.AppImage --appimage-extract-and-run</code>
+                <button class="copy-inline-btn" data-code="./Infinite-x86_64.AppImage --appimage-extract-and-run">Copy</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Download Section -->
     <section id="download" class="section">
       <div class="container">
@@ -524,6 +567,10 @@
               <span class="spec-val">10 or later, x64 &amp; ARM64</span>
             </div>
             <div class="spec-col">
+              <span class="spec-label">Linux</span>
+              <span class="spec-val">x86_64, glibc &ge; 2.35, AppImage &mdash; no libfuse2 needed</span>
+            </div>
+            <div class="spec-col">
               <span class="spec-label">License</span>
               <span class="spec-val">GPLv3 (default build, via bundled VST3) &mdash; MIT if built without VST3</span>
             </div>
@@ -535,6 +582,9 @@
             </a>
             <a href="https://github.com/n1m21n/Infinite/releases/latest/download/Infinite-windows-x64.zip" class="btn btn-primary btn-lg">
               <span>Download for Windows</span>
+            </a>
+            <a href="https://github.com/n1m21n/Infinite/releases/latest/download/Infinite-x86_64.AppImage" class="btn btn-primary btn-lg">
+              <span>Download for Linux</span>
             </a>
             <a href="https://github.com/n1m21n/Infinite" target="_blank" rel="noopener" class="btn btn-secondary btn-lg">
               <span>View Repository on GitHub</span>

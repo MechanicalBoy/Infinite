@@ -1,6 +1,6 @@
 ---
 name: ship-infinite
-description: Verify, review, commit, and push uncommitted Infinite changes, cut a versioned GitHub Release tag with curated "What's new" notes, build the distributable macOS DMG, pull the CI-built Windows x64/ARM64 zips, and publish all of it via the GitHub Pages website (n1m21n.github.io/Infinite) and that Release — plus flag node-catalog changes that need the Node Reference Manual updated, and clean up junk/duplicate tracked files. Use when asked to "ship this", "release Infinite", "cut a release", "build and publish the DMG", "push and deploy", or "clean up the repo before release".
+description: Verify, review, commit, and push uncommitted Infinite changes, cut a versioned GitHub Release tag with curated "What's new" notes, build the distributable macOS DMG, pull the CI-built Windows x64/ARM64 zips and the CI-built Linux AppImage, and publish all of it via the GitHub Pages website (n1m21n.github.io/Infinite) and that Release — plus flag node-catalog changes that need the Node Reference Manual updated, and clean up junk/duplicate tracked files. Use when asked to "ship this", "release Infinite", "cut a release", "build and publish the DMG", "push and deploy", or "clean up the repo before release".
 ---
 
 Paths below are relative to the repo root (`/Users/namansoni/infinte`), not
@@ -22,15 +22,16 @@ in order:
 # bump INFINITE_VERSION/INFINITE_VERSION_RC in CMakeLists.txt, commit, push (see gotchas)
 .claude/skills/ship-infinite/driver.sh whatsnew v0.2.7      # candidate release-notes bullets — curate by hand
 gh release create v0.2.7 --title v0.2.7 --notes-file notes.md --target main
-.claude/skills/ship-infinite/driver.sh release               # DMG (package.sh) + Windows zips (from CI) + Release upload
+.claude/skills/ship-infinite/driver.sh release               # DMG (package.sh) + Windows zips + Linux AppImage (from CI) + Release upload
 # then commit + push again so the new DMG (and any doc/cleanup changes) deploy:
 .claude/skills/ship-infinite/driver.sh commit "Release: rebuild DMG"
 .claude/skills/ship-infinite/driver.sh push
 ```
 
 `release` needs the `push` above to have already landed on `main`, since
-the Windows half pulls binaries CI built for that exact commit — see
-[Release (Windows)](#release-windows) below.
+the Windows and Linux halves both pull binaries CI built for that exact
+commit — see [Release (Windows)](#release-windows) and
+[Release (Linux)](#release-linux) below.
 
 Pushing to `main` is what deploys the site — `.github/workflows/deploy-pages.yml`
 already runs on every push to `main` and republishes the whole `website/`
@@ -87,7 +88,7 @@ Every shipped version gets its own GitHub Release tag (`v0.2.6`, `v0.2.7`,
 .claude/skills/ship-infinite/driver.sh whatsnew v0.2.7   # prints candidate bullets, see below
 # curate the bullets, then:
 gh release create v0.2.7 --title v0.2.7 --notes-file notes.md --target main
-.claude/skills/ship-infinite/driver.sh release             # DMG + Windows zips upload onto that tag
+.claude/skills/ship-infinite/driver.sh release             # DMG + Windows zips + Linux AppImage upload onto that tag
 ```
 
 Bump `INFINITE_VERSION`/`INFINITE_VERSION_RC` in `CMakeLists.txt` and
@@ -144,6 +145,23 @@ ARM64 job is `continue-on-error`, so the workflow can be green with only
 the x64 artifact present) all just print a warning and return — they never
 fail the overall `release` step, since the DMG and website deploy already
 went through by the time this runs.
+
+## Release (Linux)
+
+Same shape as Windows: no Linux machine here to build on, so this fetches
+the `Infinite-x86_64.AppImage` artifact that `.github/workflows/build.yml`'s
+`linux-appimage` job already built for the exact commit at `HEAD`, and
+uploads it onto the release with `gh release upload --clobber`. Runs
+automatically as part of `release`, right after the Windows upload; can
+also be run standalone once CI has finished for a commit already on `main`:
+
+```bash
+.claude/skills/ship-infinite/driver.sh release-linux <tag>   # e.g. v0.2-preview
+```
+
+Best-effort, same reasoning as Windows: no `gh`, no successful CI run yet
+for `HEAD`, or a run where `linux-appimage` failed all just print a warning
+and return — they never fail the overall `release` step.
 
 ## What's new
 
