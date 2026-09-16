@@ -139,6 +139,7 @@ namespace PatchJson
                {"retrigger", c.retrigger},
                {"sampleDropped", c.sampleDropped},
                {"sampleBpm", c.sampleBpm},
+               {"origBpm", c.origBpm},
                {"sourceDurationSeconds", c.sourceDurationSeconds},
                {"sourceOffsetSeconds", c.sourceOffsetSeconds}
             });
@@ -152,8 +153,30 @@ namespace PatchJson
             {"pan", s.pan},
             {"mute", s.mute},
             {"solo", s.solo},
+            {"enabled", s.enabled},
+            {"groupId", s.groupId},
+            {"colorR", s.colorR},
+            {"colorG", s.colorG},
+            {"colorB", s.colorB},
+            {"rowHeight", s.rowHeight},
             {"name", s.name},
             {"clips", clips}
+         });
+      }
+
+      // Track groups. Flat, like the model's own storage - nesting is carried
+      // by parentGroupId (0 = top level), not by nesting the JSON, so a reader
+      // sees exactly the shape Patch::Data holds.
+      out["trackGroups"] = json::array();
+      for (const Patch::TrackGroupRecord& g : data.trackGroups)
+      {
+         out["trackGroups"].push_back({
+            {"id", g.id},
+            {"color", g.color},
+            {"enabled", g.enabled},
+            {"collapsed", g.collapsed},
+            {"parentGroupId", g.parentGroupId},
+            {"name", g.name}
          });
       }
 

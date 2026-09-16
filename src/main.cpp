@@ -36409,6 +36409,73 @@ namespace
          { "Delete Selected", "Deletes the faces marked by an upstream Select op - or, with 'keep selected instead', deletes everything else and keeps only the selection." },
          { "Transform Selected", "Moves, rotates and scales only the faces marked by an upstream Select op, optionally sliding them along their own normals instead of a fixed direction." },
          { "Extrude Selected", "Extrudes only the faces marked by an upstream Select op along their own normals, by Distance, with Inset." },
+
+         // ---------------- Point distribution / vertex (3D) ----------------
+         { "Distribute Points on Faces", "Scatters points across the input mesh's surface, area-weighted so large faces get proportionally more - even coverage, unlike Mesh to Points, which walks the vertex list and therefore clumps wherever the topology does (a UV Sphere's poles). Density sets how many; 'method' chooses plain Random or Poisson (blue-noise, honouring Min Distance so no two points crowd together)." },
+         { "Distribute Points in Grid", "Generates a flat rectangular lattice of points from nothing - no geometry input. Count X/Y and Spacing X/Y set the grid, Jitter randomises each point off its cell centre. Ordering matches Image to Points exactly (row-major, cell-centre UV), so a grid and an Image to Points at the same counts line up point-for-point." },
+         { "Points to Vertices", "Point cloud in, mesh out: one vertex per point, with no edges or faces. This is the bridge that lets a cloud (Particle System, a Distribute node, Image to Points) re-enter the mesh operators that only know how to walk a Mesh. 'alive only' skips dead particles." },
+         { "Merge by Distance", "Welds vertices closer together than Threshold into one - the cleanup pass that makes a scatter or conversion result usable, closing seams a conversion left behind. Pushed to a large radius it collapses the geometry outright, which is sometimes the point." },
+         { "Set Vertex Color", "Writes per-element colour - vertex colours on a mesh, per-particle colour on a point cloud, whichever the input actually carries. 'source' picks where the colour comes from: a Flat colour, a two-colour Ramp, Random per element, a patched texture sampled at each element's UV, or a patched Palette node's swatches (offset steps which swatch starts the run). Nothing downstream has to know which - Render 3D reads whatever ended up there." },
+
+         // ---------------- Audio-reactive geometry / texture ----------------
+         { "Audio Displacement", "Deforms a geometry input using live audio patched into its second pin - five modes, each a different physical reading of the same signal: Normal Waveform pushes each vertex along its own normal by the oscilloscope trace, Spectral Bands maps the FFT across the X/U axis, Acoustic Ripples sends concentric waves out from the centre, Cymatics (Chladni) solves the standing-wave modal pattern for mode numbers m/n (the classic salt-on-a-plate figures), and Directional Axis pushes along a fixed local X/Y/Z. Attack/decay shape how fast the surface answers; Subdivide adds the resolution a displacement needs to be visible at all." },
+         { "Audio Ribbon", "Turns audio into a 3D mesh in the most literal way available: the waveform extruded as a flat ribbon through space, Segments points wide, with width/height scale and its own transform. Smoothing damps the trace between frames so it reads as a surface rather than a flicker. Takes audio on its own pin - it is a geometry source, so it goes into Render 3D, not into Audio Out." },
+         { "Audio Texture", "Renders incoming audio as an image, so every image node in the app becomes an audio visualiser: Waveform draws the oscilloscope trace, Spectrum the FFT magnitude across a chosen window size. gain scales the drawn amplitude, smoothing damps it between frames. Distinct from Audio Analyze, which produces numbers for modulation - this produces pixels." },
+
+         // ---------------- Audio routing (Utility) ----------------
+         { "Audio Out", "The terminal node for audio, the counterpart of Output for images: whatever is patched in is summed into the selected output device. It has no processing of its own and no output pin. Two cables into one Audio Out is refused on purpose - route them through a Mixer instead, which is the only node in the app that sums audio." },
+         { "Mixer", "The only node that sums audio - every other audio input pin takes exactly one cable, so any time two signals have to meet, they meet here. Four to eight slots, each with its own gain, pan, mute and solo, summed to one output." },
+         { "Splitter", "The explicit fan-out point for audio: an ordinary audio output feeds exactly one destination, so sending one signal to several places needs this node. Its own output is the one exempt from that rule. On the audio thread it is a plain copy - it exists for the graph-level visibility and the fan-out cap, not because copying is otherwise needed." },
+         { "Gain", "A single gain stage in dB, with a level meter - the simplest audio utility there is. Reach for it to trim a source before a Mixer, or to set up a clean level for something that has no output volume of its own." },
+         { "Blend Audio", "A two-input crossfader: blend 0 is A only, 1 is B only, 0.5 an equal-power centre. Not a second place to sum two signals (that's Mixer) - it picks a point between them, and its blend knob has a modulation pin, so an LFO or Macro can sweep the crossfade." },
+
+         // ---------------- Synths ----------------
+         { "Granular", "A granular synthesizer: it dissects a loaded sample (or audio recorded through its own 'record in' pin) into micro-grains and re-emits them - grain length and density set the texture, position/scan set where in the sample the grain cloud reads from, and freeze pins it there. The four random controls (position spray, length, pitch, pan) plus reverse probability are what turn a sample into a cloud rather than a stutter. Drag the waveform's edge handles to trim start/end; the grain dots on the display are the live emission." },
+         { "PaulStretch", "Extreme time-stretching - the PaulStretch algorithm, built for stretch factors where a few seconds becomes minutes of evolving ambient texture rather than a recognisable sample. Large-window FFT with phase randomisation is what keeps it smooth instead of stuttery: at phase randomisation 1 the result is pure texture, lower values keep more of the original's transient character. Also offers spectral pitch shift, frequency shift and unison detune. Load a file or record into its 'record in' pin." },
+         { "Spectral Synth", "Image-to-sound additive resynthesis, in the MetaSynth tradition: any image, glyph, drawing or live video patched in is read as a spectrogram and rebuilt out of 64-256 sine partials. X is time (the scan axis), Y is frequency (linear or logarithmic, between min/max Hz), brightness is amplitude, and in Hue-Pan colour mode the hue becomes stereo position. The scan can sync to the transport at a note division, free-run at its own speed, or be scrubbed by hand with position - and with a note cable connected it transposes polyphonically." },
+         { "Wave Terrain", "Wave terrain synthesis: an image patched in is read as a height field z = T(u,v), and the oscillator's waveform is whatever a closed orbit traced across that terrain reads back. Orbit type/centre/radius/ratio decide the path, so moving the orbit is a timbre control rather than a pitch one - and because the terrain is an ordinary image input, a Noise, Draw, Video or Reaction Diffusion node upstream reshapes the sound live. Each cycle is band-limited through a 10-level mip pyramid, so it stays alias-free however sharp the source image is." },
+         { "Metallic", "A physical-modelling synth for struck and plucked metal - bells, gongs, bars, plates, chimes, tines and strings - via extended Karplus-Strong waveguides and inharmonic modal resonator banks. 'material' picks the model, transient how hard it is struck, decay how long it rings, stiffness how inharmonic the partials are (which is what separates a bell from a string). Polyphonic with a note cable connected, free-running at 'frequency' when unpatched." },
+         { "Field Synth", "A polyphonic synthesizer whose voice is a Field kernel you write yourself, compiled to a sample-domain register machine - the note-driven counterpart of Field Effect. `state` declares per-voice memory, `param` exposes a modulatable knob, and the kernel runs once per sample per voice, on the audio thread. maxVoices caps the polyphony; presets are complete starting kernels." },
+
+         // ---------------- Macros ----------------
+         // One family, one shape: a hand control whose only output is a
+         // modulator, meant to be dragged onto other nodes' modulation pins.
+         { "Macro Slider", "A named fader exposed as a modulator - drag its output onto any slider's modulation pin to drive that parameter by hand. The plain 0..1 member of the Macro family; use Macro Knob when you want a response curve and invert as well." },
+         { "Macro Bipolar Knob", "A centre-detent knob running -1 to +1, exposed as a modulator - the right control for anything that has a natural middle (pan, detune, tilt). Its 0..1 output puts the detent at exactly 0.5, which is also where a bipolar modulation binding reads as 'no modulation'." },
+         { "Macro Toggle", "A latching on/off switch exposed as a modulator: output is exactly 0.0 or 1.0, nothing in between. Useful for driving a mode/enable parameter, or for gating another modulator through a Math node's multiply." },
+         { "Macro Trigger", "A momentary pad: output is 1.0 while pressed and 0.0 the moment it is released, with a visible flash on the press. Reach for it to fire something that responds to an edge - a Feedback burst, an envelope, a Resynthesize step - rather than to hold a value." },
+         { "Macro NumBox", "A number box with drag-to-scrub and direct typing, over a range and step you set yourself - for when the value matters as a number (a count, a Hz figure, a bar length) and a 0..1 slider would be the wrong instrument." },
+         { "Macro Radio Selector", "A multiple-choice selector emitting one discrete step per option - the control to use for a dropdown-shaped parameter (a mode, a waveform, a preset index), where a continuous slider would land between valid values. 'count' sets how many options." },
+         { "Macro Step Gate", "An 8-step gate that advances on the transport at rateBeats - a rhythm you draw rather than a curve. The output is the current step's on/off state, so it is the Macro family's answer to 'make this parameter pulse in time' without wiring an LFO and a Compare." },
+
+         // ---------------- MIDI / conversion modulators ----------------
+         { "MIDI CC", "Binds one physical control on a MIDI controller - a knob, fader or pad - and reports its position as a modulator. Press Learn and move the control; the node remembers that channel + controller number and polls only that binding. low/high remap the output range and invert flips it. Works with any class-compliant USB MIDI controller, since it only ever reads generic Control Change / Note On messages." },
+         { "MIDI Trigger", "The pad counterpart of MIDI CC: it fires a decaying 0..1 pulse whenever one specific MIDI note is hit, then sits at 0. A pad hit is an event rather than a position, so this spikes and decays over 'hold' seconds the way Audio Analyze's onset output does, instead of holding a live value. Velocity sensitivity scales the spike by how hard the pad was struck." },
+         { "Note to CV", "Converts a note stream's pitch into a modulator, so which note is playing can drive any parameter - a filter cutoff, a warp amount, pan. It is a pitch tracker, not an envelope: it holds the last note's pitch on release rather than falling back toward 0 (that's Envelope's job). rangeLow/High set which note range maps onto the full 0..1 span, glide smooths the jump between notes." },
+         { "Audio to CV", "Converts audio into a modulator through an amplitude follower - Peak or RMS detection with its own attack and release. The lightweight, single-output counterpart of Audio Analyze: reach for this when all you want is 'this parameter follows how loud that is', and for Audio Analyze when you want bands, onsets and a passthrough." },
+         { "Invert", "Mirrors a modulator around the midpoint of a low/high window, so what was at the top of the range lands at the bottom. Deliberately not a flat 1-v, which is why it still does the right thing when fed something already outside 0..1 - an unclamped Math output, for instance." },
+         { "Mod Depth", "Scales how much of a modulator's swing reaches its destination, without having to know anything about the destination. Because a modulation binding overrides the knob outright, 'depth' collapses the signal toward 0.5 rather than adding a fraction on top: at 0 the destination sits at its own mid-range and the modulator has no say, at 1 the source passes through unchanged. Negative depth inverts, so one knob covers how much and which direction." },
+
+         // ---------------- Notes ----------------
+         { "Note Switcher", "Cycles between up to four connected note inputs every N beats or seconds, or pins to one slot with 'manual' - the note-cable counterpart of Switcher (2D) and Switcher 3D. When the active slot changes, new note-ons come only from the new slot, while notes already held on the old one still get their note-offs passed through, so nothing hangs." },
+         { "Note Strum", "Spreads the notes of a chord across time instead of firing them together - strumMs per voice, in ascending pitch order, with each note's original gate length preserved. One knob: at 0 it is a passthrough, and the further up it goes the more the chord reads as strummed rather than struck." },
+
+         // ---------------- Source / capture ----------------
+#if defined(_WIN32)
+         { "Video In", "Captures a live camera as an image source - built-in, USB webcams and capture devices, through Media Foundation. 'mirror' flips it horizontally, which is usually what you want for a front-facing camera; 'resolution' picks the capture format. Windows will ask for camera permission the first time this node cooks, so it stays idle until it is actually in a patch." },
+#elif defined(__linux__)
+         { "Video In", "Captures a live camera as an image source via V4L2 - built-in, USB webcams and capture devices. 'mirror' flips it horizontally, which is usually what you want for a front-facing camera; 'resolution' picks the capture format. The device is opened the first time this node cooks, so it stays idle until it is actually in a patch." },
+#else
+         { "Video In", "Captures a live camera as an image source - the built-in camera, external USB webcams, and Continuity Camera (an iPhone used as a webcam). 'mirror' flips it horizontally, which is usually what you want for a front-facing camera; 'resolution' picks the capture format. macOS will prompt for camera permission the first time this node cooks, so it stays idle until it is actually in a patch." },
+#endif
+#if defined(_WIN32)
+         { "Syphon In", "Receives real-time video from another Windows application over Spout2 - Resolume, OBS, TouchDesigner, MadMapper, Unreal, Unity - as a zero-copy shared GPU texture. Pick a sender from the list; it rescans periodically, so a sender that starts after this node does will appear." },
+#elif !defined(__APPLE__)
+         { "Syphon In", "Syphon/Spout texture sharing is not available on Linux, so this node has no sender to receive from and outputs a placeholder. Use Video In (V4L2) or a file source instead." },
+#else
+         { "Syphon In", "Receives real-time video from another macOS application over Syphon - Resolume, OBS, TouchDesigner, MadMapper, Unreal, Unity - as a zero-copy shared GPU texture (IOSurface). Pick a server from the list; it rescans periodically, so a server that starts after this node does will appear." },
+#endif
+         { "FieldPixel", "Runs a Field kernel once per output pixel, on the GPU - write your own image generator or effect in Field instead of GLSL. `state` declares persistent per-pixel memory that survives to the next frame (which is what makes reaction-diffusion and trail effects expressible here), `param` exposes a modulatable knob, and extra input/output image pins can be declared by the kernel. width/height set the output resolution; presets are complete starting kernels." },
       };
       auto it = kText.find(typeName);
       return it != kText.end() ? it->second : nullptr;
@@ -36432,13 +36499,9 @@ namespace
          { "addnoise", "Adds random per-pixel grain, re-randomised every frame. Amount sets how strong it is." },
          { "vignette", "Darkens the image toward the edges, framing the centre. Radius and Softness shape the falloff, Center X/Y offsets it." },
          { "transform", "Translates, scales, rotates, and flips (horizontal/vertical) the whole image. Scale X/Y let you stretch non-uniformly on top of the overall Scale. Crop X/Y symmetrically crop the source in from each axis before the rest of the transform is applied." },
-         { "brightnesscontrast", "Basic exposure control: Brightness adds or subtracts a flat amount, Contrast steepens or flattens the curve around mid-grey." },
-         { "levels", "Remaps the input range: Black Point and White Point set what maps to pure black/white, Gamma curves the midtones." },
-         { "hsl", "Shifts Hue, scales Saturation and adds Lightness, independent of the underlying colour." },
          { "invert", "Inverts every colour channel (alpha untouched) - a photographic negative. No parameters." },
          { "posterize", "Reduces the image to a fixed number of tonal Levels per channel, producing flat colour bands." },
          { "threshold", "Converts to pure black or white based on luminance, split at Threshold." },
-         { "colorbalance", "Shifts colour along three axes - Cyan-Red, Magenta-Green, Yellow-Blue - without touching overall brightness." },
          { "exposure", "Multiplies brightness by powers of two, like a camera's exposure stop (compare Levels' linear/gamma remap)." },
          { "bloom", "Isolates pixels above a brightness Threshold, blurs them outward by Radius, and adds the glow back at Intensity - classic HDR-style bloom." },
          { "diffuseglow", "Screens a blurred copy of the whole image back over itself, glowing everything rather than just bright spots (compare Bloom, which is threshold-based)." },
@@ -36461,11 +36524,21 @@ namespace
          { "edge outline", "Detects edges via a luminance gradient and draws them as flat-Colour outlines at a chosen Thickness and Threshold, over the original image." },
          { "lut", "Grades the image through a second patched-in HALD/strip LUT image - an N x N-sliced colour cube encoded as a flat strip. LUT Size must match the LUT image's slice count, Mix blends with the original." },
          { "gradientmap", "Remaps luminance onto a two-colour gradient (Shadow to Highlight), Photoshop Gradient Map-style. Mix blends with the original colour." },
-         { "channelmixer", "Rebuilds each output channel as a weighted mix of the input's Red/Green/Blue - e.g. set 'Red from RGB' to swap or blend channels, or set all three rows equal for a weighted greyscale." },
          { "color adjustments", "All-in-one grading chain: Brightness/Contrast, Levels, Colour Balance, HSL, Vibrance, Tone Shaper (lift/gamma/gain-style S-curve), Channel Mixer, then an optional Black & White stage - so a common grade doesn't need eight separate nodes wired in series." },
          { "outerglow", "Adds a soft glow of a chosen Colour around the image's alpha edge, blurred outward. Amount controls strength." },
          { "coloroverlay", "Flat-tints the image toward a chosen Colour at a given Opacity." },
          { "dropshadow", "Offsets a blurred copy of the image's alpha behind it as a shadow, in a chosen Colour, Offset X/Y and Opacity." },
+
+         // ---------------- Alpha / opacity operators ----------------
+         // The one filter family that edits an existing alpha channel rather
+         // than producing a new one (that's Chroma Key / Luma Key's job).
+         { "show alpha", "Shows the alpha channel as a greyscale image, fully opaque - white is solid, black is transparent. A viewer, not an edit: it replaces the colour so you can see the matte a key produced, and is usually the first thing to reach for when a composite is going wrong." },
+         { "opacity", "Scales the whole image's existing alpha by Opacity - a uniform fade that keeps the colour untouched. Unlike Color Overlay, nothing is tinted; unlike a Blend's opacity, the transparency is baked into the image and travels with it down the chain." },
+         { "set alpha", "Replaces the alpha channel outright with the luminance of a second patched-in image - hand-drawn mattes, a Shape, a Ramp, or another branch's 'show alpha' output. With nothing patched into the second input the image is forced fully opaque instead." },
+         { "alpha invert", "Swaps transparent for solid and back (alpha = 1 - alpha), leaving the colour alone - the 'invert matte' switch a key would otherwise need a second node to get." },
+         { "alpha from luma", "Derives a new alpha channel from the image's own brightness, so a black background becomes transparent with nothing to key against. 'invert' flips which end is solid, for a white-on-black source." },
+         { "alpha levels", "The Levels remap applied to the alpha channel only: Low/High clamp and normalise the matte's range (choking a soft edge tighter or spreading it wider) and Gamma bends the falloff between them. The go-to cleanup pass after Chroma Key or Alpha from Luma." },
+         { "premultiply", "Converts between premultiplied alpha (colour already scaled by its own alpha) and straight alpha. Only reach for this when something looks wrong at the edges: dark fringing on a composite usually means straight alpha needs premultiplying, bright halos the reverse." },
       };
       auto it = kText.find(typeName);
       return it != kText.end() ? it->second : nullptr;
@@ -36545,6 +36618,9 @@ namespace
       if (category == "Modulators") return "Produces a changing number over time, not an image. Patch its output onto the small dot beside any slider to drive that parameter.";
       if (category == "3D") return "Part of the 3D geometry/render pipeline - geometry and point-cloud nodes feed into Render 3D via a Camera and Lights.";
       if (category == "Notes") return "Part of the note chain - takes note events in on its 'notes' pin and passes them out, changed. Feed a synth (Wavetable, Sampler) from the end of the chain.";
+      if (category == "Synths") return "A sound source - it produces audio rather than an image. With a note cable connected it plays polyphonically; with nothing patched into its note pin it free-runs at its own frequency. Route its output into an audio effect chain and on to Audio Out.";
+      if (category == "AudioEffects") return "Processes audio: one cable in, one cable out. Audio input pins take exactly one cable each - use a Mixer to sum signals and a Splitter to fan one out. See Menu > Help > Module reference for the effect families.";
+      if (category == "Macros") return "A hand control whose only output is a modulator. Drag its output onto the small dot beside any slider to drive that parameter by hand, or onto several at once to make this one control the whole gesture.";
       if (category == "Utility") return "Utility node: audio routing, terminal/output nodes (shows, exports or records the final result), Syphon and OSC I/O.";
       return "No additional notes for this node.";
    }
@@ -36613,11 +36689,11 @@ namespace
          { "Edit & Canvas", "Redo", MODKEY "+Shift+Z / Ctrl+Y", "Redo last undone action" },
          { "Edit & Canvas", "Cut / Copy", MODKEY "+C", "Copy selected nodes and internal connections" },
          { "Edit & Canvas", "Paste", MODKEY "+V", "Paste copied nodes with automatic offset" },
-         { "Edit & Canvas", "Duplicate", MODKEY "+D / Shift+D", "Duplicate selected nodes in-place" },
+         { "Edit & Canvas", "Duplicate", MODKEY "+D / Shift+D", "Duplicate selected nodes in-place. Canvas only - with the timeline focused, this duplicates clips instead" },
          { "Edit & Canvas", "Delete", "Delete / Backspace / Shift+X", "Delete selected nodes, groups, or links" },
          { "Edit & Canvas", "Delete Cable", "X", "Delete selected cable/link only" },
          { "Edit & Canvas", "Select All", "Shift+A", "Select all nodes on the canvas" },
-         { "Edit & Canvas", "Bypass Selection", "B", "Toggle bypass (power off) on the selected nodes" },
+         { "Edit & Canvas", "Bypass Selection", "B", "Toggle bypass (power off) on the selected nodes. Canvas only - with the timeline focused, B is the blade tool instead" },
          { "Edit & Canvas", "Group Selection", MODKEY "+G", "Wrap selected nodes in a group box" },
          { "Edit & Canvas", "Ungroup", MODKEY "+Shift+G", "Dissolve group without deleting nodes" },
          { "Edit & Canvas", "Add Node", "Shift+N", "Open quick type-to-filter node picker" },
@@ -36636,18 +36712,18 @@ namespace
 
          // Transport & Audio
          { "Transport & Audio", "Play / Pause", "Space", "Start / pause timeline and animations" },
-         { "Transport & Audio", "Toggle Audio Engine", "Shift+K", "Start / stop audio device" },
+         { "Transport & Audio", "Toggle Audio Engine", "Shift+K", "Start / stop audio device. Canvas only - with the timeline focused, Shift+K adds an audio track instead" },
 
          // Arrangement Timeline - these fire only while the timeline panel
          // owns the keyboard (click inside it) and no text field is active;
          // the canvas's own Cmd+C/V/D/G and Delete stand down meanwhile.
-         { "Arrangement Timeline", "Add Video Track", "Shift+J", "Add a new video track below the selected track" },
-         { "Arrangement Timeline", "Add Audio Track", "Shift+K", "Add a new audio track below the selected track" },
+         { "Arrangement Timeline", "Add Video Track", "Shift+J", "Add a new video track below the selected track. Every key in this section needs the timeline panel focused - click inside it first" },
+         { "Arrangement Timeline", "Add Audio Track", "Shift+K", "Add a new audio track below the selected track (Shift+K toggles the audio engine when the canvas has focus)" },
          { "Arrangement Timeline", "Copy / Paste Clips", MODKEY "+C / V", "Copy the selected clips; paste at the playhead on the last-clicked clip's lane" },
-         { "Arrangement Timeline", "Duplicate Clips", MODKEY "+D / Shift+D", "Copy the selected block right after itself" },
+         { "Arrangement Timeline", "Duplicate Clips", MODKEY "+D / Shift+D", "Copy the selected block right after itself (the same keys duplicate nodes when the canvas has focus)" },
          { "Arrangement Timeline", "Split at Playhead", MODKEY "+E", "Cut every selected clip the playhead passes through" },
          { "Arrangement Timeline", "Enable / Disable Clips", "0 / Keypad 0", "Mute the selected clips (they draw hatched) or bring them back" },
-         { "Arrangement Timeline", "Blade Tool", "B", "Toggle the blade: click a clip to cut it (and its group) at the mouse; Esc turns it off" },
+         { "Arrangement Timeline", "Blade Tool", "B", "Toggle the blade: click a clip to cut it (and its group) at the mouse; Esc turns it off (B bypasses nodes when the canvas has focus)" },
          { "Arrangement Timeline", "Group / Ungroup Clips", MODKEY "+G / " MODKEY "+Shift+G", "Group merges whole groups and loose clips into one; Ungroup dissolves every group touched" },
          { "Arrangement Timeline", "Delete Clips", "Delete / Backspace", "Delete the selected clips" },
          { "Arrangement Timeline", "Add Marker", "M", "Drop a marker at the playhead, on the snap grid" },
@@ -36783,6 +36859,7 @@ namespace
                { "Hide / show params", "Shift+H - the selected nodes, or every node when nothing is selected" },
                { "Modulation matrix", "Shift+M toggles the docked matrix of every active binding" },
                { "Audio engine on / off", "Shift+K, same as the top bar's Start/Stop Audio" },
+               { "Arrangement timeline", "Shift+T toggles the docked timeline. Once it has focus its own keys take over - see 'Arrangement timeline' below, or Menu > Help > Shortcuts for the full list." },
                { "Zoom", "Scroll (speed is adjustable in the Menu)" },
                { "Play / pause everything", "Play button in the top bar" },
             };
@@ -36814,6 +36891,46 @@ namespace
             "driven. Delete the cable to take manual control back.");
       }
 
+      if (ImGui::CollapsingHeader("Arrangement timeline", ImGuiTreeNodeFlags_DefaultOpen))
+      {
+         ImGui::TextWrapped(
+            "Shift+T opens a timeline docked beside the canvas. It does not replace the "
+            "patch - it schedules it. A track ('lane') is video or audio, and every clip "
+            "on it points at a node that already exists in your graph; the clip decides "
+            "WHEN that node is heard or seen, not what it does.");
+         ImGui::Spacing();
+         ImGui::TextWrapped("To build an arrangement:");
+         ImGui::Indent();
+         ImGui::Bullet(); ImGui::TextWrapped("Shift+J adds a video track, Shift+K an audio track (with the timeline focused).");
+         ImGui::Bullet(); ImGui::TextWrapped("Drag an audio, video or image file straight onto a track - it spawns the right source node on the canvas and makes a clip for it in one step.");
+         ImGui::Bullet(); ImGui::TextWrapped("Or drag empty track space to draw a clip, then assign a source node to it from the inspector.");
+         ImGui::Bullet(); ImGui::TextWrapped("Double-click a clip, track or group header to open its inspector (double-click again to close it).");
+         ImGui::Unindent();
+         ImGui::Spacing();
+         ImGui::TextWrapped(
+            "Positions are in bars and beats, never seconds, so the whole arrangement "
+            "retimes with the top bar's BPM. Audio clips from a file can follow project "
+            "tempo: switch Sync on in the inspector and the clip is time-stretched by "
+            "tempo / sample BPM, live, as you change the tempo. Switch it off and the clip "
+            "plays at its native speed instead.");
+         ImGui::Spacing();
+         ImGui::TextWrapped(
+            "Video tracks composite back to front, each clip with its own blend mode, "
+            "opacity and brightness/contrast/saturation grade. Audio clips carry gain, "
+            "pan, pitch and fades, summed per track. A clip's waveform is drawn from what "
+            "was actually played, so a clip you have not played yet shows a flat line "
+            "until the playhead has crossed it once.");
+         ImGui::Spacing();
+         ImGui::TextWrapped(
+            "Two clips on different tracks should not share one source node: there is one "
+            "playback position per node, so they cannot be retriggered independently. The "
+            "inspector warns you when that happens - duplicate the source node instead.");
+         ImGui::Spacing();
+         ImGui::TextWrapped(
+            "Right-click a track or group header to render or export just that track or "
+            "group; the full patch export is still in the top bar.");
+      }
+
       if (ImGui::CollapsingHeader("Using Feedback", ImGuiTreeNodeFlags_DefaultOpen))
       {
          ImGui::TextWrapped(
@@ -36839,7 +36956,7 @@ namespace
          ImGui::TextWrapped(
             "If you just want trails, use the Trails node instead - it is that same "
             "loop wrapped into one node, with decay, drift, zoom and rotation built "
-            "in. Reaction-Diffusion is the other pre-wired feedback node: it needs "
+            "in. Reaction Diffusion is the other pre-wired feedback node: it needs "
             "no input at all and simulates a chemical system frame over frame.");
       }
 
@@ -36849,23 +36966,42 @@ namespace
          struct Group { const char* category; std::vector<Entry> entries; };
          static const std::vector<Group> groups = {
             { "Source", {
+#if defined(_WIN32)
+               { "Image Source", "Loads a still image. Opens the native file picker and decodes anything Windows Imaging Component can read - PNG, JPEG, TIFF, BMP, GIF, HEIF and the camera RAW formats WIC has a codec for." },
+#elif defined(__linux__)
+               { "Image Source", "Loads a still image. Opens the native file picker and decodes PNG, JPEG, BMP, GIF, TGA and HDR. Platform image codecs vary on Linux, so HEIC and camera RAW are not decoded here - convert them first." },
+#else
                { "Image Source", "Loads a still image. Opens the native file picker and decodes anything macOS can read - PNG, JPEG, TIFF, HEIC, RAW and more." },
+#endif
                { "Video", "Plays a video file. Position follows the transport, so it pauses with everything else. Loop and speed (including reverse) are available. Also outputs the clip's own audio track, if it has one, on the same transport-driven clock as the picture (audioEnabled/volume)." },
-               { "Shape", "Ten vector primitives - circle, ellipse, rectangle, rounded rect, triangle, polygon, star, ring, cross, line - with fill, stroke, feather and background." },
+               { "Shape", "Twenty vector primitives - circle, ellipse, rectangle, rounded rect, triangle, polygon, star, ring, cross, line, hexagon, heart, arrow, crescent, gear, superellipse, pie, teardrop, chevron and blob - with fill, stroke, feather and background. Each one is also directly spawnable as its own named node." },
                { "Noise", "Procedural noise: value, fBm, ridged, Voronoi, Worley edges and white. Domain warping, octaves and colour mapping included." },
                { "Draw", "Paint straight onto the node preview. Six procedural brushes, eraser, spacing and jitter. Patch an image in to paint over it. Strokes can be recorded and replayed as an animation." },
                { "Formula", "A live GLSL shader. Pick a preset or press 'Edit GLSL...' to write your own; four knobs (uA-uD) are exposed for modulation." },
                { "Texture", "Blender-standard procedural textures: Voronoi, Brick, Magic, Wave and Musgrave, each with its own parameter block." },
                { "Text", "Renders text using any font installed on the system, with size, colour, tracking, alignment and position." },
+               { "Ramp", "A linear, radial, angular or diamond gradient with its own stops - the usual starting point for a mask or a Gradient Map source." },
+               { "Slideshow", "Steps through a folder of images on a beat interval, with an optional crossfade." },
+#if defined(_WIN32)
+               { "Video In", "Live camera or capture input through Media Foundation - pick a device and a resolution from the node. Frames arrive on the device's own clock, so this one source does not pause with the transport." },
+#elif defined(__linux__)
+               { "Video In", "Live camera or capture input through V4L2 (/dev/video*) - pick a device and a resolution from the node. Frames arrive on the device's own clock, so this one source does not pause with the transport." },
+#else
+               { "Video In", "Live camera or capture input through AVFoundation - pick a device and a resolution from the node. macOS asks for camera permission the first time. Frames arrive on the device's own clock, so this one source does not pause with the transport." },
+#endif
+               { "Audio Texture", "Turns live audio into an image - scrolling spectrogram, waveform or level field - so any image effect downstream becomes an audio visualiser." },
+               { "FieldPixel", "An image generated by a Field kernel you write yourself: the per-pixel counterpart of Field Effect, compiled rather than interpreted." },
             } },
             { "3D", {
-               { "Render 3D", "Full rasterizer & raytracer pipeline with ambient occlusion, shadow mapping, HDR environment reflections, and depth-buffer compositing." },
-               { "Camera 3D & Light 3D", "Perspective and orthographic cameras with orbit and target controls; Directional, Point, and Spot lights with shadow casting." },
-               { "Primitives & Mesh", "Box, Sphere, Cylinder, Torus, Plane, Grid, Teapot, 3D Mesh loader (OBJ, PLY, STL), and Path/Curve generator." },
-               { "Procedural Operations", "Extrude, Lathe / Revolve, Loft, Sweep along path, Boolean 3D (Union, Difference, Intersect), Subdivide, Bevel, Displace 3D (Noise & Texture displacement), and Bend / Twist / Taper deformers." },
-               { "Point Distribution & Instancing", "Surface and volume point scatter, Grid distribution, and Instance on Points with scale and rotation noise variations." },
+               { "Render 3D", "Rasterizes the geometry / camera / light / material graph into an image, with shadow mapping, ambient occlusion and HDR environment reflections (patch an HDRI node into its env input to replace the procedural sky). Antialiasing steps down automatically at large output sizes to stay inside GPU limits." },
+               { "Camera & Light", "Camera is a 3D viewpoint patched into Render 3D's camera input. Light is a scene light - Render 3D reads up to three, and ignores any beyond that." },
+               { "Primitives & Mesh", "Geometry covers 24 primitives (plane, cube, sphere, icosphere, torus, cylinder, cone, torus knot, capsule, tube, pyramid, prism, helix, supershape, the platonic solids, rounded cube, Mobius strip, Klein bottle, gear, star, disc, arrow), each also spawnable by name. Plus Model 3D (obj, ply, stl, usd, usdz), Text 3D, Curve, Ocean and Metaballs." },
+               { "Procedural Operations", "Transform, Array, Subdivide, Solidify, Extrude, Wireframe, Triangulate, Normals, Explode, Twist, Smooth, Mirror and Screw - plus Select and the ops that act only on its marked faces (Delete / Transform / Extrude Selected), Join Geometry's booleans (Union, Intersect, Difference), Displacement, Wrap and Merge by Distance." },
+               { "Point Distribution & Instancing", "Mesh to Points / Edges / Faces, Distribute Points on Faces (area-weighted, random or Poisson), Distribute Points in Grid, Image to Points, Points to Vertices, Set Vertex Color, and Instance on Points to stamp a shape at every point in one instanced call." },
                { "Audio Displacement", "Deforms 3D vertex geometries in real-time driven by live audio frequencies or RMS waveforms." },
-               { "Particle & Simulation", "3D particle emitter with gravity, turbulence vector fields, collision planes, and spring-mass dynamics." },
+               { "Particle System & Cloth", "Particle System is a 3D emitter with gravity, turbulence, collision planes and spring-mass dynamics. Cloth is a pinned mass-spring sheet with wind and collision." },
+               { "Material, Mapping & HDRI", "Material is the shading block Render 3D reads per slot (base colour, metal/rough, emission, texture inputs). Mapping controls how a texture is projected onto the geometry. HDRI supplies the environment map for reflections and the background." },
+               { "Field Primitive & Field Modifier", "Signed-distance geometry written as Field kernels and combined/warped by modifiers, then meshed - the procedural counterpart to the fixed primitives." },
             } },
             { "Compositing", {
                { "Transform", "Translate, scale, rotate, flip horizontal and flip vertical." },
@@ -36874,18 +37010,23 @@ namespace
                { "Switcher", "Cycles between its connected inputs every N beats or seconds, with an optional crossfade. Can be pinned to one input with 'manual'." },
                { "Fit", "Resamples an input to a chosen resolution. Fit letterboxes, Fill crops, Stretch ignores aspect, Native passes through. Use it to make differently-sized sources composite predictably." },
                { "Drop Shadow / Outer Glow / Colour Overlay", "Layer-effect style filters." },
-               { "Basic", "Brightness/contrast, exposure, levels (black/white point + gamma), invert, posterize, threshold." },
+               { "Alpha operators", "The one family that edits an existing alpha channel rather than making a new one: Show Alpha (view the matte), Opacity, Set Alpha (take alpha from a second image's luminance), Alpha Invert, Alpha from Luma, Alpha Levels (choke or spread a soft edge) and Premultiply / Unpremultiply." },
+               { "Basic", "Exposure, invert, posterize and threshold. Brightness/contrast, levels, HSL, colour balance and channel mixer no longer exist as standalone nodes - they are all sections of Color Adjustments now." },
                { "Curves", "Per-channel spline curve editor - drag control points on Red/Green/Blue/Luminance, Photoshop Curves-style." },
                { "LUT", "Applies a lookup-table image patched into the second input." },
                { "Gradient Map", "Remaps luminance onto a two-colour gradient." },
-               { "Channel Mixer", "Rebuilds each output channel from a weighted mix of the input channels - set all three rows equal for a weighted greyscale." },
-               { "HSL / Colour Balance", "Hue, saturation and lightness; per-axis colour shifts." },
                { "Color Adjustments", "All-in-one grading chain - brightness/contrast, levels, colour balance, HSL, vibrance, tone shaper, channel mixer and an optional black & white stage - so a common grade doesn't need eight nodes wired in series." },
                { "Color Ramp", "Recolors any 0-1 grayscale input through user-authored stops, up to 32 of them, with linear or constant interpolation. Unlike Gradient Map, it has no shape of its own - the shape comes from upstream." },
-               { "Remove Background", "On-device segmentation via the OS - no model download, no network, no key. Subject mode needs macOS 14, Person mode macOS 12. Segmentation is slow, so the mask is computed on demand and cached; for video use auto-refresh, which runs on a beat interval rather than every frame." },
+#if defined(_WIN32)
+               { "Remove Background", "On-device segmentation with no network access and no API key: Windows has no Vision equivalent, so a small model (u2netp) ships with the build and runs through ONNX Runtime on the DirectML GPU provider, falling back to CPU when DirectML does not register - the node's header line says which. Both Subject and Person modes use the same model. Segmentation is expensive, so the mask is computed on this interval rather than every frame." },
+#elif defined(__linux__)
+               { "Remove Background", "On-device segmentation with no network access and no API key: a small model (u2netp) ships with the build and runs through ONNX Runtime on the CPU provider. Both Subject and Person modes use the same model. Segmentation is expensive, and CPU inference more so, so raise the interval for video rather than computing a mask every frame." },
+#else
+               { "Remove Background", "On-device segmentation via Apple Vision - no model download, no network, no key. Subject mode (any salient foreground) needs macOS 14, Person mode macOS 12; the node says so when the OS is too old. Segmentation is expensive, so the mask is computed on this interval rather than every frame." },
+#endif
                { "Feedback", "Outputs the previous frame. Nothing visible on its own - it is the delay that makes a loop legal. See 'Using Feedback' above." },
                { "Trails", "A pre-wired feedback loop: decaying accumulation with drift, zoom, rotation and hue rotation. Reach for this before wiring a loop by hand." },
-               { "Reaction-Diffusion", "Gray-Scott chemical simulation, six presets. Needs no input; patch one in and its luminance varies the feed rate so the pattern grows differently through light and dark." },
+               { "Reaction Diffusion", "Gray-Scott chemical simulation, six presets. Needs no input; patch one in and its luminance varies the feed rate so the pattern grows differently through light and dark." },
             } },
             { "Effects", {
                { "Blur family", "Gaussian, box, motion (angle + distance) and radial (with a centre point)." },
@@ -36922,41 +37063,63 @@ namespace
 #else
                { "Syphon Out", "Broadcasts video, 3D renders, or visual shaders to other macOS applications in real-time via zero-copy GPU texture sharing." },
 #endif
+#if defined(_WIN32)
+               { "Syphon In", "Receives a video texture published by another Windows application over Spout, zero-copy on the GPU. Pick a publisher from the node's list." },
+#elif !defined(__APPLE__)
+               { "Syphon In", "Syphon/Spout texture sharing is not available on Linux, so this node has no sources to receive from." },
+#else
+               { "Syphon In", "Receives a video texture published by another macOS application over Syphon, zero-copy on the GPU. Pick a publisher from the node's list." },
+#endif
+               { "Audio In", "Live input from an audio device - the input side of the same engine Audio Out feeds. Choose the device in Settings > Audio." },
+               { "Field Graph", "Plots any Field kernel's output as a curve or surface, so you can see what a kernel does before patching it into Field Effect, Field Synth or FieldPixel." },
                { "Projection", "Warp, corner-pin and perspective-correct an image for projectors, flat walls, or curved screens, with built-in alignment test patterns and custom resolution target." },
                { "OSC Receive", "Listens on a UDP port for Open Sound Control messages matching an address pattern, and reports the last received value as a modulator (remapped through low/high). Behaves like LFO/Random - patch its output onto any slider's modulation pin." },
                { "OSC Send", "Sends its patched modulator input as an Open Sound Control message (address + float) to a host:port over UDP, on change (past an epsilon) or at least every interval - the one node in the patch with no output of its own." },
-               { "Gain, Mixer & Splitter", "Audio signal level adjustment with dB scaling, multi-channel audio mixer, and multi-channel signal splitter/router." },
+               { "Audio Out, Gain, Mixer, Splitter, Blend Audio", "The audio routing family. Audio Out is the terminal node. Every audio input pin takes exactly one cable, so Mixer is the only node that sums (4-8 slots, each with gain/pan/mute/solo) and Splitter is the only fan-out point. Gain is a single dB stage with a meter; Blend Audio is an equal-power crossfade between two inputs." },
             } },
             { "Notes", {
-               { "MIDI Notes", "External hardware MIDI controller input, note record, and polyphonic voice dispatch." },
+               { "MIDI Notes", "External hardware MIDI controller input, note record, and polyphonic voice dispatch. Note cables carry pitch/velocity/gate, not audio - they end at a synth." },
                { "Keyboard", "An interactive on-screen piano plus laptop-keyboard typing (Musical Typing layout) - the hardware-free way to play or test a patch." },
                { "Arpeggiator", "Tempo-synced arpeggiation patterns (Up, Down, Up/Down, Random, Chord, As-Played), octave span, and gate length." },
-               { "Scale Notes & Quantizer", "Musical scale and mode snapping across the standard modes through Chromatic, with pitch quantizing." },
+               { "Quantizer & Chorder", "Quantizer snaps incoming notes to a scale and mode (the standard modes through Chromatic). Chorder builds a chord from each single note it is given." },
                { "Bouncing Balls", "Physics-based gravity bounce note generator (up to 12 balls, with speed, size, and range controls) creating organic rhythmic polyrhythms as balls hit walls." },
                { "Note Transpose, Pitch Bend, Velocity Curve", "Pitch shifting, interval offset, pitch wheel modulation, and non-linear velocity mapping curves." },
                { "Gate, Humanizer, Glide", "Note gate length shaping, timing/velocity jitter humanization, and portamento glide." },
                { "Note Stack", "Polyphonic chord generator, harmony generator, and interval stacking." },
             } },
             { "Synths", {
-               { "Wavetable Synth", "Multi-voice polyphonic wavetable oscillator (up to 8 voices) with two independent A/B wavetable engines crossfaded against each other, wavetable position morphing, detuned unison, and integrated stereo spread." },
+               { "Wavetable", "Multi-voice polyphonic wavetable oscillator (up to 8 voices) with two independent A/B wavetable engines crossfaded against each other, wavetable position morphing, detuned unison, and integrated stereo spread." },
                { "Sampler", "High-resolution multi-sample player with pitch tracking, root note detection, start/end trimming, loop crossfades, and one-shot playback." },
                { "Drum Sequencer", "8-lane pattern drum sequencer with individual sample slots, per-step velocity, swing, choke groups, per-lane mute/solo, and decay envelopes." },
                { "Slicer", "Transient- or grid-sliced sample playback: chops a loaded sample into up to 64 slices and maps them chromatically from MIDI note 36, with draggable slice markers, a per-slice attack/decay pair, and a crossthrough toggle that lets a slice run past its own boundary." },
                { "Equation Synth", "Real-time bytebeat and mathematical expression synthesis evaluating user formulas with dynamic variables (t, x, y, inputs)." },
-               { "Wave Terrain Synth", "2D terrain trajectory orbital synthesis - a moving point traces a path across a height-mapped surface to generate a waveform." },
-               { "Spectral Synth", "Additive harmonic-bank synthesis with overtone-series sculpting." },
+               { "Wave Terrain", "2D terrain trajectory orbital synthesis - a moving point traces a path across a height-mapped surface to generate a waveform." },
+               { "Spectral Synth", "Image-to-spectral additive resynthesis, MetaSynth-style: any image, drawing or live video patched in is read as a spectrogram and rebuilt from 64-256 sine partials - X is time, Y is frequency, brightness is amplitude, and hue can become stereo position." },
+               { "Granular", "Granular synthesis over a loaded or recorded sample: grain length and density set the texture, position/scan and freeze set where the cloud reads from, and the random position/length/pitch/pan controls plus reverse probability are what make it a cloud rather than a stutter." },
+               { "PaulStretch", "Extreme time-stretching built for factors where seconds become minutes of evolving ambient texture, via large-window FFT with phase randomisation, plus spectral pitch shift, frequency shift and unison detune." },
+               { "Metallic", "Physical modelling for struck and plucked metal - bells, gongs, bars, plates, chimes, tines, strings - via extended Karplus-Strong waveguides and inharmonic modal resonator banks." },
+               { "Oscillator", "Four classic waveforms (sine, triangle, saw, square) with an interactive amp envelope, unison, filter, hard sync and fine/coarse tuning." },
+               { "Molder & Grain Molder", "Molder decomposes a sample into tracked harmonic partials plus a real residual, then mutates a parameter genome and re-renders from it, each roll walking further from the last. Grain Molder rearranges grains along a blend between original position and a per-grain metric (level, brightness, random)." },
+               { "Field Synth", "A polyphonic synth whose voice is a Field kernel you write yourself, compiled to a sample-domain register machine - the note-driven counterpart of Field Effect." },
             } },
             { "AudioEffects", {
                { "Audio Filter", "Multi-mode state-variable & ladder filter (LP12/24/36, HP, BP, Notch, Peak) with drive and resonance control." },
-               { "Dynamics", "Peak and RMS compressor, limiter, and expander with adjustable attack, release, knee, ratio, and gain reduction metering." },
+               { "Dynamics", "A compressor with peak or RMS detection, threshold, ratio, attack, release, makeup and an external sidechain input, over a live static transfer curve. Limiter is its own separate node." },
                { "Delay & Reverb", "Tempo-synced ping-pong / stereo bounce delay, feedback filters, high-density Feedback Delay Network (FDN) reverberator with predelay and damping." },
                { "Stutter & Glitch", "Beat-synced buffer repeater, freeze, reverse playback, and granular slice retriggering." },
                { "Wavetable Shaper", "Non-linear transfer curve distortion, saturation drive, bias, and anti-aliased oversampled waveshaping." },
-               { "EQ", "4-band parametric equalizer with high/low shelving, peak filters, and interactive frequency response display." },
+               { "EQ", "Five-band parametric equalizer - low shelf, three peaks and a high shelf by default, each switchable to shelf / peak / HP12 / LP12 and independently on or off - over an interactive frequency response display. Drag a band's dot for frequency and gain, Shift-drag for Q." },
                { "Resonator Bank", "Up to 16 parallel bandpass resonators forming a tuned modal filter bank, including a 'Metallic' tuning mode." },
                { "Cycle Shaper", "Single-cycle waveform distortion and crossfade shaper." },
                { "Spectral Blur & Frequency Shifter", "FFT spectral domain phase smearing, freeze, and frequency SSB modulation." },
-               { "Plugin", "Third-party AU (macOS) / VST3 (Windows) audio plugin hosting with full state save/restore and parameter automation via mapped modulation pins. The plugin editor opens in its own native window." },
+               { "Field Effect", "An audio effect whose DSP is a Field kernel you write in the node, compiled to a sample-domain register machine rather than interpreted. Field Synth is its note-driven sibling and Field Graph plots what a kernel does." },
+#if defined(_WIN32)
+               { "Plugin", "Hosts third-party VST3 effects, with full state save/restore and parameter automation through mapped modulation pins. The plugin's own editor opens in its own native window. Audio Units are a macOS-only format and are not available here." },
+#elif defined(__linux__)
+               { "Plugin", "Hosts third-party VST3 effects, with full state save/restore and parameter automation through mapped modulation pins. The plugin's own editor opens in its own X11 window. Audio Units are a macOS-only format and are not available here." },
+#else
+               { "Plugin", "Hosts third-party Audio Unit and VST3 effects, with full state save/restore and parameter automation through mapped modulation pins. The plugin's own editor opens in its own native window." },
+#endif
             } },
          };
 
@@ -36982,7 +37145,13 @@ namespace
          ImGui::Bullet(); ImGui::TextWrapped("Modulate a Switcher's 'every' with an LFO for irregular cutting.");
          ImGui::Bullet(); ImGui::TextWrapped("Chain a Math node off two LFOs at different rates to get slow drifting motion.");
          ImGui::Bullet(); ImGui::TextWrapped("A node's output can feed several inputs at once - it only renders once per frame.");
+#if defined(_WIN32)
+         ImGui::Bullet(); ImGui::TextWrapped("Settings and the last graph layout are stored in %%APPDATA%%\\Infinite.");
+#elif defined(__linux__)
+         ImGui::Bullet(); ImGui::TextWrapped("Settings and the last graph layout are stored in $XDG_CONFIG_HOME/Infinite (~/.config/Infinite by default).");
+#else
          ImGui::Bullet(); ImGui::TextWrapped("Settings and the last graph layout are stored in ~/Library/Application Support/Infinite.");
+#endif
       }
 
       ImGui::End();
@@ -37288,6 +37457,62 @@ namespace
    // read it to prove an edit costs exactly one rebuild and an idle frame none.
    unsigned long long gAudioTopologyRebuildCount = 0;
 
+   // The video counterpart of gArrangeRetriggerConflictClipIds, and the reason
+   // it needs one of its own: a video clip does not drive its source node's
+   // position at all - VideoSourceNode decodes from the global Transport time
+   // and the clip only decides WHETHER that node's current frame is shown (see
+   // CollectArrangeVideoLayers). So one node fed to clips on two video lanes
+   // does not fight over a playback position the way the audio path does; it
+   // does something quieter and more confusing, which is show the same frame
+   // twice. Wherever the two clips overlap in time, the upper lane's copy
+   // composites over the lower one's identical picture, so the lower clip's own
+   // blend mode, opacity and grade appear to do nothing - the classic "I graded
+   // the clip and nothing happened" report. Nothing is suppressed here (there
+   // is no behavior to suppress, and a deliberate double-composite with
+   // different blend modes is a legitimate effect); the clips are recorded so
+   // the inspector can say why, exactly like the audio warning.
+   //
+   // Cached on gArrange.revision rather than recomputed per frame: unlike the
+   // audio side there is no rebuild step to hang it off, and the inspector is
+   // its only reader.
+   std::set<uint64_t> gArrangeVideoSourceConflictClipIds;
+   uint64_t gArrangeVideoConflictBuiltRevision = UINT64_MAX;
+
+   const std::set<uint64_t>& ArrangeVideoSourceConflictClips()
+   {
+      if (gArrangeVideoConflictBuiltRevision == gArrange.revision)
+         return gArrangeVideoSourceConflictClipIds;
+      gArrangeVideoConflictBuiltRevision = gArrange.revision;
+      gArrangeVideoSourceConflictClipIds.clear();
+
+      // Which video lanes each source node appears on, and which clips put it
+      // there. Disabled and unassigned clips are skipped for the same reason
+      // CollectArrangeVideoLayers skips them: they never composite, so they
+      // cannot collide with anything.
+      std::unordered_map<uint64_t, std::set<uint64_t>> lanesPerSrc;
+      std::unordered_map<uint64_t, std::vector<uint64_t>> clipsPerSrc;
+      for (const Arrange::Lane& lane : gArrange.lanes)
+      {
+         if (lane.type != Arrange::kLaneVideo)
+            continue;
+         for (const Arrange::Clip& c : lane.clips)
+         {
+            if (!c.enabled || c.srcUid == 0)
+               continue;
+            lanesPerSrc[c.srcUid].insert(lane.id);
+            clipsPerSrc[c.srcUid].push_back(c.id);
+         }
+      }
+      for (const auto& kv : lanesPerSrc)
+      {
+         if (kv.second.size() <= 1)
+            continue; // several clips on ONE lane are fine - a lane never overlaps itself
+         for (uint64_t clipId : clipsPerSrc[kv.first])
+            gArrangeVideoSourceConflictClipIds.insert(clipId);
+      }
+      return gArrangeVideoSourceConflictClipIds;
+   }
+
    CompensationDelay& ArrangeTerminalCompensation(uint64_t laneId, uint64_t srcUid, int srcOutput)
    {
       uint64_t key = laneId * 0x9E3779B97F4A7C15ull;
@@ -37435,9 +37660,16 @@ namespace
                w.origBpm = c.sampleDropped ? c.origBpm : 0.0f;
                w.syncToTempo = c.sampleDropped && c.syncToTempo;
                // Straight copy - see ClipWindow::sourceOffsetSeconds's own
-               // comment. Meaningless (and left at 0) for anything that
-               // isn't a Sample, same gate as sampleDropped/sampleBpm above.
-               w.sourceOffsetSeconds = c.sampleDropped ? c.sourceOffsetSeconds : 0.0f;
+               // comment. Passed through for EVERY audio clip, not just a
+               // Sample: the model already moves this field on any clip's trim
+               // or split (ArrangeModel.cpp's TrimEdge/Split call
+               // SampleSourceBpm with the clip's own sync state, Sample or
+               // not), and RunTopology's position lock now applies to every
+               // clip, so zeroing it here would have made a trimmed non-Sample
+               // clip replay from the file's start instead of from its trim
+               // point. sampleBpm/syncToTempo above stay Sample-only, which is
+               // what makes the mapping fall back to native speed.
+               w.sourceOffsetSeconds = c.sourceOffsetSeconds;
                // Retrigger is an Audio Sample-only feature (Clip Settings
                // hides the control for every other category) - a stray
                // `retrigger=true` left over from a patch saved before this
@@ -37452,14 +37684,19 @@ namespace
                scheduled[it->second].windows.push_back(w);
             }
          }
-         // A retrigger clip needs its node to itself: RunTopology's retrigger
-         // lookahead seeks the node's own playback position, and a node fed
-         // to more than one lane has only one such position for both to
-         // fight over. Rather than let two lanes silently stomp each other's
-         // onset, suppress the retrigger (fall back to timeline-continuous
-         // for that window) whenever its srcUid turns out to be scheduled on
-         // more than one lane, and record the affected clips so the UI can
-         // say why.
+         // A clip needs its node to itself. The node has ONE playback
+         // position and RunTopology's position lock states, per block, which
+         // source second belongs at this instant - so a node scheduled on two
+         // lanes gets two such statements in the same block and the last
+         // terminal to run wins, leaving the other lane's clip audibly playing
+         // its neighbour's position. Retrigger has the same single-position
+         // problem and is additionally suppressed here (falling back to
+         // timeline-continuous for that window) since it is a flag we own;
+         // the position lock is not suppressible - there is no correct
+         // position to state for two clips at once - so the set below records
+         // EVERY clip on a multi-lane source, not just the retriggering ones,
+         // and the inspector explains it. Duplicating the source node is the
+         // only real fix, which is what the warning says.
          gArrangeRetriggerConflictClipIds.clear();
          std::unordered_map<uint64_t, std::set<uint64_t>> lanesPerSrc;
          for (const ScheduledTerminal& st : scheduled)
@@ -37470,11 +37707,8 @@ namespace
                continue;
             for (ClipWindow& w : st.windows)
             {
-               if (w.retrigger)
-               {
-                  w.retrigger = false;
-                  gArrangeRetriggerConflictClipIds.insert(w.clipId);
-               }
+               w.retrigger = false;
+               gArrangeRetriggerConflictClipIds.insert(w.clipId);
             }
          }
 
@@ -38586,19 +38820,34 @@ namespace
             });
          }
 
-         // Retrigger is always on for an Audio Sample (no Continuous mode
-         // to pick anymore - see Clip::retrigger's default). The only time
-         // it doesn't actually retrigger is the conflict case below, which
-         // is a fact about the patch, not a setting, so it stays informational.
-         if (isSample && !isVideo && gArrangeRetriggerConflictClipIds.count(clipId))
+         if (isVideo && ArrangeVideoSourceConflictClips().count(clipId))
+         {
+            ImGui::Spacing();
+            ImGui::TextDisabled("Source");
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + fieldW);
+            ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f),
+               "This clip's source is also used on another video track. A video clip does not "
+               "hold its own playback position - the source reads the global transport - so both "
+               "clips show the same frame, and wherever they overlap the upper track hides this "
+               "one's blend mode, opacity and grade. Give it its own node (Duplicate) unless the "
+               "double composite is deliberate.");
+            ImGui::PopTextWrapPos();
+         }
+
+         // Every audio clip position-locks its source now (see RunTopology's
+         // position lock), so a source shared across lanes is a conflict for
+         // any audio clip, not only a dropped Sample. It is a fact about the
+         // patch rather than a setting, so it stays informational.
+         if (!isVideo && gArrangeRetriggerConflictClipIds.count(clipId))
          {
             ImGui::Spacing();
             ImGui::TextDisabled("Playback & Trigger");
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + fieldW);
             ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f),
-               "This clip's source is also used on another lane, so it can't be retriggered "
-               "independently - playing as Timeline (Continuous) instead. Give it its own node "
-               "(Duplicate) to retrigger it.");
+               "This clip's source is also used on another track. The node holds one playback "
+               "position and both tracks set it every block, so whichever is summed last wins and "
+               "this clip can end up playing the other one's position. Give it its own node "
+               "(Duplicate).");
             ImGui::PopTextWrapPos();
          }
 
@@ -59137,6 +59386,18 @@ int RunVST3ScanTest()
    Platform::PluginLoadState state = Platform::PluginLoadState::Pending;
    for (int i = 0; i < 600 && state == Platform::PluginLoadState::Pending; i++)
    {
+      // Pump the main run loop, don't just sleep. PluginVST3Create defers the
+      // module load onto the MAIN dispatch queue on purpose (see the long
+      // comment there: the VST3 factory is only main-thread-safe, and several
+      // real plugins build AppKit objects inside createInstance), and on macOS
+      // that queue is drained only by the main run loop. The shipping app gets
+      // that for free from glfwPollEvents every frame; a headless fixture that
+      // only sleeps never runs the block at all, so the handle stayed Pending
+      // until this loop timed out and the verdict read FAIL with an *empty*
+      // error string - a fixture bug that masqueraded as a host bug on macOS
+      // while the same host code passed on Linux, which doesn't defer through
+      // a dispatch queue here. No-op on the platforms that don't need it.
+      Platform::PumpPluginEditorEvents();
       state = Platform::PluginPoll(handle, error);
       if (state == Platform::PluginLoadState::Pending)
          std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -59161,18 +59422,31 @@ int RunVST3ScanTest()
       }
       const float* inPtrs[2] = { inL.data(), inR.data() };
       float* outPtrs[2] = { outL.data(), outR.data() };
-      Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames);
 
+      // Render half a second, not one block, and peak across all of it. A
+      // single 512-frame block is 10.7 ms at 48 kHz, and "which plugin am I
+      // testing" is whatever the machine happens to have installed first -
+      // so the one-block version failed on a perfectly healthy host as soon
+      // as that plugin was a 100%-wet reverb with a pre-delay longer than
+      // 10.7 ms (measured: ValhallaPlate returns exactly 0.0 for block 1).
+      // That is the plugin doing its job, not the host failing to render.
+      // 48 blocks outlasts any plausible pre-delay or reported latency while
+      // still costing milliseconds.
+      const int kRenderBlocks = 48;
       float peak = 0.0f;
-      for (int i = 0; i < kFrames; i++)
-         peak = std::max(peak, std::fabs(outL[i]));
+      for (int b = 0; b < kRenderBlocks; b++)
+      {
+         Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames);
+         for (int i = 0; i < kFrames; i++)
+            peak = std::max(peak, std::fabs(outL[i]));
+      }
       // Only "not silent" is asserted here (not "differs from input" as
       // PLUGINSCANTEST does) - an instrument-only plugin fallback has no
       // input bus at all and would legitimately echo silence back for a
-      // dry passthrough default, whereas total silence with a driven 440Hz
-      // tone means render never ran.
+      // dry passthrough default, whereas total silence across half a second
+      // of driven 440Hz tone means render never ran.
       const bool notSilent = peak > 1.0e-4f;
-      printf("VST3SCAN render: peak=%.5f  %s\n", peak, notSilent ? "OK" : "FAIL");
+      printf("VST3SCAN render: peak=%.5f over %d blocks  %s\n", peak, kRenderBlocks, notSilent ? "OK" : "FAIL");
       ok = ok && notSilent;
 
       const int paramCount = Platform::PluginParameterCount(handle);
@@ -59657,7 +59931,7 @@ int RunNetworkTest()
    std::string body;
    std::string error;
    const std::string url = "https://api.github.com/repos/n1m21n/Infinite/releases/latest";
-   const std::string ua = "Infinite-CI-SelfTest/0.3.5";
+   const std::string ua = "Infinite-CI-SelfTest/0.4.0";
    printf("Testing HttpGet against %s...\n", url.c_str());
    bool ok = Platform::HttpGet(url, ua, body, error, /*timeoutSeconds=*/15);
    if (!ok)
@@ -62441,7 +62715,12 @@ int main(int argc, char** argv)
          // A demo patch: a source cube continuously reshaped by Resynthesize
          // 3D, instanced onto a slow-drifting particle field so many
          // independent "floating cubes" share one animated source shape, then
-         // graded through a five-stage 2D chain before Output.
+         // graded through a three-stage 2D chain before Output. The grade used
+         // to be five nodes: hsl, colorbalance and brightnesscontrast were
+         // folded into the single "color adjustments" filter and no longer
+         // exist as spawnable types, so spawning them by name silently added
+         // nothing and every gNodes[] index from there on read past the end of
+         // the vector. One graded node now does all three stages.
          SpawnNode("Cube", "3D", 40.0f, 40.0f);                    // 0 source shape
          SpawnNode("Resynthesize 3D", "3D", 320.0f, 40.0f);        // 1 continuous morph
          SpawnNode("Particle System", "3D", 40.0f, 420.0f);        // 2 drift field
@@ -62450,12 +62729,10 @@ int main(int argc, char** argv)
          SpawnNode("Light", "3D", 40.0f, 920.0f);                  // 5 key
          SpawnNode("Light", "3D", 40.0f, 1080.0f);                 // 6 fill/rim
          SpawnNode("Render 3D", "3D", 620.0f, 420.0f);             // 7
-         SpawnNode("hsl", "Compositing", 900.0f, 420.0f);                // 8
-         SpawnNode("colorbalance", "Compositing", 900.0f, 560.0f);       // 9
-         SpawnNode("bloom", "Effects", 900.0f, 700.0f);            // 10
-         SpawnNode("vignette", "Effects", 900.0f, 840.0f);         // 11
-         SpawnNode("brightnesscontrast", "Compositing", 900.0f, 980.0f); // 12
-         SpawnNode("Output", "Utility", 1180.0f, 420.0f);           // 13
+         SpawnNode("color adjustments", "Compositing", 900.0f, 420.0f); // 8 the whole primaries grade
+         SpawnNode("bloom", "Effects", 900.0f, 700.0f);            // 9
+         SpawnNode("vignette", "Effects", 900.0f, 840.0f);         // 10
+         SpawnNode("Output", "Utility", 1180.0f, 420.0f);          // 11
 
          auto* cube = static_cast<GeometryNode*>(gNodes[0].node.get());
          cube->detail = 32;
@@ -62544,32 +62821,30 @@ int main(int argc, char** argv)
          render->shadowQuality = 1;
          render->shadowStrength = 0.5f;
 
-         auto* hsl = static_cast<FilterNode*>(gNodes[8].node.get());
-         hsl->Input().Connect(render);
-         hsl->SetParamValue(1, 0, 1.5f); // Saturation - stands in for the old standalone vibrance step
+         // Param indices follow the "color adjustments" def's flat order in
+         // src/core/FilterDefs.cpp: 0 Brightness, 1 Contrast, 2 Black Point,
+         // 3 White Point, 4 Gamma, 5 Cyan-Red, 6 Magenta-Green, 7 Yellow-Blue,
+         // 8 Hue Shift, 9 Saturation, 10 Lightness - the section headers are
+         // labels on the first param of each section, not params of their own.
+         auto* grade = static_cast<FilterNode*>(gNodes[8].node.get());
+         grade->Input().Connect(render);
+         grade->SetParamValue(0, 0, 0.02f);  // Brightness
+         grade->SetParamValue(1, 0, 0.15f);  // Contrast
+         grade->SetParamValue(5, 0, 0.05f);  // Cyan-Red: push warm
+         grade->SetParamValue(7, 0, -0.05f); // Yellow-Blue: push toward yellow
+         grade->SetParamValue(9, 0, 1.5f);   // Saturation
 
-         auto* colorbalance = static_cast<FilterNode*>(gNodes[9].node.get());
-         colorbalance->Input().Connect(hsl);
-         colorbalance->SetParamValue(0, 0, 0.05f);  // Cyan-Red: push warm
-         colorbalance->SetParamValue(1, 0, 0.0f);   // Magenta-Green
-         colorbalance->SetParamValue(2, 0, -0.05f); // Yellow-Blue: push toward yellow
-
-         auto* bloom = static_cast<FilterNode*>(gNodes[10].node.get());
-         bloom->Input().Connect(colorbalance);
+         auto* bloom = static_cast<FilterNode*>(gNodes[9].node.get());
+         bloom->Input().Connect(grade);
          bloom->SetParamValue(0, 0, 0.72f); // Threshold - only genuine highlights bloom
          bloom->SetParamValue(1, 0, 0.9f);  // Intensity
          bloom->SetParamValue(2, 0, 4.0f);  // Radius
 
-         auto* vignette = static_cast<FilterNode*>(gNodes[11].node.get());
+         auto* vignette = static_cast<FilterNode*>(gNodes[10].node.get());
          vignette->Input().Connect(bloom);
 
-         auto* bc = static_cast<FilterNode*>(gNodes[12].node.get());
-         bc->Input().Connect(vignette);
-         bc->SetParamValue(0, 0, 0.02f); // Brightness
-         bc->SetParamValue(1, 0, 0.15f); // Contrast
-
-         auto* out = static_cast<OutputNode*>(gNodes[13].node.get());
-         out->Input().Connect(bc);
+         auto* out = static_cast<OutputNode*>(gNodes[11].node.get());
+         out->Input().Connect(vignette);
 
          for (GraphNode& gn : gNodes)
             gn.showParams = false;

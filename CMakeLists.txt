@@ -19,7 +19,7 @@ project(Infinite LANGUAGES C CXX)
 # "am I current" comparison. Bump this (and INFINITE_VERSION_RC below it,
 # kept in sync by hand) when cutting a release; nothing else should hardcode
 # a version string.
-set(INFINITE_VERSION "0.3.5")
+set(INFINITE_VERSION "0.4.0")
 # VERSIONINFO (src/platform/win/Infinite.rc.in) wants four dot/comma-separated
 # numeric components but INFINITE_VERSION is three; kept as an explicit
 # second value rather than derived, so bump both together when cutting a
@@ -216,14 +216,23 @@ endif()
 # THAT BINARY - this project, not BtbN. So the exact upstream FFmpeg and
 # x264 SOURCE this build corresponds to is pinned here too, independent of
 # BtbN's own build pipeline, and documented in THIRD_PARTY_NOTICES:
-#   FFmpeg 8.1 source:  https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz
-#     SHA256 b072aed6871998cce9b36e7774033105ca29e33632be5b6347f3206898e0756a
-#   x264 source (stable branch, commit b35605ace3ddf7c1a5d67a2eb553f034aef41d55,
-#   the commit BtbN's n8.1 GPL build was built against):
-#     https://code.videolan.org/videolan/x264/-/archive/b35605ace3ddf7c1a5d67a2eb553f034aef41d55/x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz
-#     SHA256 cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9
+#   FFmpeg, git commit 1005b294ff on release/8.1 - the commit the pinned
+#   archives' own version string (n8.1.2-53-g1005b294ff) names, 53 commits
+#   past the n8.1.2 release:
+#     https://git.ffmpeg.org/gitweb/ffmpeg.git/snapshot/1005b294ff.tar.gz
+#   NOT ffmpeg-8.1.tar.xz - the release tarball is a different work from a
+#   snapshot 53 commits later, and only the actual commit satisfies section 6.
+#   x264: BtbN pulls x264's stable branch at build time and publishes no
+#   commit id in the release metadata, so the commit has to be read back out
+#   of the shipped libavcodec.so's build-configuration string. See
+#   THIRD_PARTY_NOTICES, which also carries the outstanding release blocker:
+#   the snapshot and the x264 source must be downloaded, their SHA256 sums
+#   recorded, and both archived as release assets before the Linux binary is
+#   distributed - a section 6 offer has to be fulfillable, not just written.
 # These are documentation pins, not build inputs - this CMakeLists links the
 # prebuilt BtbN binaries above, it does not build FFmpeg/x264 from source.
+# Keep them in step with FFMPEG_ARCHIVE_VERSION below and with
+# THIRD_PARTY_NOTICES: all three describe one release or none of them do.
 #
 # ---- Why FFMPEG_RELEASE_TAG is not "latest" --------------------------------
 # BtbN/FFmpeg-Builds' "latest" GitHub release tag is a rolling pointer: its

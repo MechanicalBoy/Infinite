@@ -26,7 +26,8 @@ set -uo pipefail
 # network call from here.
 export INFINITE_NO_UPDATE_CHECK=1
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"
 cd "$ROOT"
 
 OS="$(uname -s 2>/dev/null || echo unknown)"
@@ -97,6 +98,9 @@ known_failure_reason() {
 # Tier definitions per docs/plans/test-tiering.md
 # ---------------------------------------------------------------------------
 
+# Fixtures whose env var is a directory to write media into, not a "1" flag.
+DIR_VALUED_TESTS="ARRANGESAMPLETEST ARRANGESAMPLEEXPORTTEST"
+
 TIER1_CHECKS=(
   "UNDOTEST:10"
   "ARRANGETEST:10"
@@ -107,6 +111,7 @@ TIER1_CHECKS=(
   "ARRANGEMARKERTEST:10"
   "ARRANGERENDERTEST:10"
   "ARRANGEWAVETEST:10"
+  "ARRANGESAMPLETEST:400"
   "PATCHTEST:30"
   "ROUNDTRIPTEST:35"
   "SYPHONPATCHTEST:1"
@@ -254,6 +259,8 @@ FULL_TESTS=(
   "ARRANGEMARKERTEST:10"
   "ARRANGERENDERTEST:10"
   "ARRANGEWAVETEST:10"
+  "ARRANGESAMPLETEST:400"
+  "ARRANGESAMPLEEXPORTTEST:900"
   "UNDOPERFTEST:10"
   "PATCHTEST:30"
   "ROUNDTRIPTEST:35"
@@ -481,7 +488,15 @@ for spec in "${SELECTED_TESTS[@]}"; do
   name="${spec%%:*}"
   frames="${spec##*:}"
   out="/tmp/infinite_test_${name}.log"
-  env "INFINITE_${name}=1" INFINITE_EXITAFTER="$frames" "$BIN" >"$out" 2>&1
+  # Most fixtures are switched on with a plain "=1". A few take a WRITABLE
+  # DIRECTORY instead, because they render real media (WAV/MP4) and then
+  # re-read it to measure the result; give each one a fresh temp dir per run
+  # so a stale file from the last run can never be what gets measured.
+  case " $DIR_VALUED_TESTS " in
+    *" $name "*) test_value="$(mktemp -d "/tmp/infinite_${name}.XXXXXX")" ;;
+    *)           test_value=1 ;;
+  esac
+  env "INFINITE_${name}=$test_value" INFINITE_EXITAFTER="$frames" "$BIN" >"$out" 2>&1
   rc=$?
   if [ $rc -ne 0 ]; then
     if is_known_failure "$name"; then
@@ -535,6 +550,39 @@ for spec in "${SELECTED_TESTS[@]}"; do
       FAIL=$((FAIL+1)); FAILED_NAMES+=("$name")
     else
       echo "  [pass]  $name  — $xfail xfail (baselined blind spots, see $xfail_out), 0 new"
+      PASS=$((PASS+1))
+    fi
+    continue
+  fi
+
+  if [ "$name" = "ARRANGESAMPLEEXPORTTEST" ]; then
+    # This fixture deliberately prints no verdict: it only renders
+    # export_audio.wav and export_av.mp4 through the real render queue, and
+    # measuring them is an out-of-app job so the check cannot accidentally
+    # share the app's own arithmetic (see the comment at its frameId == 4
+    # branch in src/main.cpp). Both files are a 6 s window in which a 100 BPM
+    # click synced at 120 starts at beat 2, so the first click and the first
+    # non-black frame both belong at exactly 1.0 s, with clicks on a 0.5 s
+    # grid after it.
+    if ! grep -q "arrange sample export finished" "$out"; then
+      echo "  [FAIL]  $name — render queue never drained, see $out"
+      FAIL=$((FAIL+1)); FAILED_NAMES+=("$name (queue never drained)")
+      continue
+    fi
+    if grep -q "NOT DONE" "$out"; then
+      echo "  [FAIL]  $name — a render job did not reach Done, see $out"
+      grep "export job" "$out" | sed 's/^/          /'
+      FAIL=$((FAIL+1)); FAILED_NAMES+=("$name (job not done)")
+      continue
+    fi
+    export_verdict=$(python3 "$SKILL_DIR/check-arrange-export.py" "$test_value" 2>&1)
+    export_rc=$?
+    if [ $export_rc -ne 0 ]; then
+      echo "  [FAIL]  $name — exported files do not measure up, see $out"
+      echo "$export_verdict" | sed 's/^/          /'
+      FAIL=$((FAIL+1)); FAILED_NAMES+=("$name")
+    else
+      echo "  [pass]  $name  — $export_verdict"
       PASS=$((PASS+1))
     fi
     continue

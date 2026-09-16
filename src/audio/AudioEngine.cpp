@@ -271,9 +271,20 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
             cursor--;
          while (cursor < terminal.numWindows && windows[cursor].startBeat < blockEndBeat)
          {
-            if (windows[cursor].retrigger && !windows[cursor].sampleDropped &&
-                windows[cursor].startBeat >= blockStartBeat)
-               terminal.sourceNode->RequestRetrigger();
+            // No RequestRetrigger() here any more, and deliberately so. This
+            // used to fire for a window with retrigger set that was NOT a
+            // dropped Sample - a condition that became unsatisfiable once
+            // RebuildAudioTopology started gating `w.retrigger` on
+            // `c.sampleDropped` (the two conditions are each other's
+            // negation), so it had been dead for every clip in every patch.
+            // The position lock below now covers both cases with one rule, and
+            // covers them better: an onset-only seek can only land a clip on a
+            // block boundary, while the lock states the exact source second
+            // that belongs at this block's first frame, every block. The one
+            // node type that implements RequestRetrigger
+            // (AudioFilePlayerAudioNode, behind both Audio File and Sampler)
+            // implements SetClipSamplePosition too, so nothing lost a trigger
+            // it was actually receiving.
             cursor++;
          }
          // Clamped, not stored raw: the walk above exits at `numWindows` once
@@ -287,38 +298,63 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer)
          // terminal's own sourceNode every block the playhead is inside a
          // window, so a node shared by several clips plays each one at its
          // own pitch instead of one clip's edit bleeding into every other
-         // clip that happens to share its source. Block-granular like the
-         // retrigger onset above - if this block spans a window boundary the
-         // whole block still renders at the window active at its start, one
-         // block's worth of a stale pitch at worst. A block with no window
-         // covering its start (a gap, or the playhead outside every clip)
-         // pushes nothing, leaving whatever the node's own canvas pitch cook
-         // last set - inaudible either way since nothing plays there.
+         // clip that happens to share its source. Block-granular - if this
+         // block spans a window boundary the whole block still renders at the
+         // window active at its start, one block's worth of a stale pitch at
+         // worst. A block with no window covering its start (a gap, or the
+         // playhead outside every clip) pushes nothing, leaving whatever the
+         // node's own canvas pitch cook last set - inaudible either way since
+         // nothing plays there.
+         //
+         // Pushed for every window, Sample or not. It used to skip a dropped
+         // Sample on the grounds that the position lock below carries pitch
+         // itself - true for the file player, but Sampler and the wavetable
+         // synth override SetClipPitchOverride and do NOT implement
+         // SetClipSamplePosition, so a Sample clip whose source was a Sampler
+         // got its pitch from neither path and the control did nothing at all.
+         // The engine cannot tell which of the two a given node consumes, so it
+         // offers both; the file player's clip path reads the lock's pitch and
+         // ignores this mailbox push for those blocks, which is harmless.
          int pitchCursor = std::clamp(terminal.windowCursor, 0, terminal.numWindows - 1);
          while (pitchCursor > 0 && blockStartBeat < windows[pitchCursor].startBeat)
             pitchCursor--;
          while (pitchCursor + 1 < terminal.numWindows && blockStartBeat >= windows[pitchCursor].endBeat)
             pitchCursor++;
          if (blockStartBeat >= windows[pitchCursor].startBeat && blockStartBeat < windows[pitchCursor].endBeat)
-         {
-            if (!windows[pitchCursor].sampleDropped)
-               terminal.sourceNode->SetClipPitchOverride(windows[pitchCursor].pitch);
-         }
+            terminal.sourceNode->SetClipPitchOverride(windows[pitchCursor].pitch);
 
-         // Audio Sample position lock. Every block a Sample window overlaps
-         // (not just blocks that start inside it - a clip starting mid-block
-         // gets a negative source position and so lands sample-accurately),
-         // the node is told exactly which source second belongs at this
-         // block's first frame. Nothing is inferred from the node's own
-         // free-running position, so the audio cannot drift from the box,
-         // the waveform, or the transport.
+         // Clip position lock, for EVERY audio clip - not just a dropped
+         // Sample. Every block a window overlaps (not just blocks that start
+         // inside it - a clip starting mid-block gets a negative source
+         // position and so lands sample-accurately), the node is told exactly
+         // which source second belongs at this block's first frame. Nothing is
+         // inferred from the node's own free-running position, so the audio
+         // cannot drift from the box, the waveform, or the transport.
+         //
+         // This used to be gated on sampleDropped, which left a real hole: a
+         // clip whose source node was assigned by hand in the inspector rather
+         // than created by dropping a file is not "dropped", so it got neither
+         // the retrigger above (gated on sampleDropped from the other side) nor
+         // this lock. Its node just free-ran from wherever its own canvas cook
+         // had left it, which meant a hard seek into such a clip played the
+         // wrong part of the file, and playing the same clip twice gave two
+         // different results. One rule for every clip closes that.
+         //
+         // What stays Sample-only is the source-time MAPPING, not the lock:
+         // sourceOffsetSeconds (a trim or split moves it, for any clip) is
+         // passed through for all of them, while sampleBpm/syncToTempo are
+         // zero for a non-Sample, so effBpm falls back to the live tempo and
+         // sourcePerSecond to 1.0 - native speed, clip-relative. A source that
+         // cannot be positioned (any synth, Audio In) ignores the call: the
+         // base SetClipSamplePosition is a no-op and only the file player
+         // overrides it.
          int sampleCursor = std::clamp(terminal.windowCursor, 0, terminal.numWindows - 1);
          while (sampleCursor > 0 && blockStartBeat < windows[sampleCursor].startBeat)
             sampleCursor--;
          while (sampleCursor + 1 < terminal.numWindows && blockStartBeat >= windows[sampleCursor].endBeat)
             sampleCursor++;
          const ClipWindow& sw = windows[sampleCursor];
-         if (sw.sampleDropped && sw.startBeat < blockEndBeat && sw.endBeat > blockStartBeat)
+         if (sw.startBeat < blockEndBeat && sw.endBeat > blockStartBeat)
          {
             const double effBpm = (sw.syncToTempo && sw.sampleBpm > 0.0f) ? (double)sw.sampleBpm : bpm;
             const double sourceSeconds = (double)sw.sourceOffsetSeconds +
