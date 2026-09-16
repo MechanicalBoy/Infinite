@@ -1294,7 +1294,6 @@ body {
   }
 
   .nav-links { display: none; }
-  .nav-btn-discord { display: none; }
   .hero-section { padding: 30px 0 18px; }
   .nature-canvas-wrapper { height: 340px; }
 
@@ -1426,11 +1425,11 @@ body {
 }
 
 @media (max-width: 480px) {
-  .nav-btn-github {
-    display: none;
-  }
   .nav-container {
     padding: 0 14px;
+  }
+  .nav-actions {
+    gap: 6px;
   }
 
   .specs-grid {
