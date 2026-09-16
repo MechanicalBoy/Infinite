@@ -27186,7 +27186,7 @@ namespace
       if (c.syncToTempo)
          ImGui::TextDisabled("Stretched x%.3f to %.1f BPM", tempo / std::max(1.0, (double)c.sampleBpm), tempo);
       else
-         ImGui::TextDisabled("Native speed (Sample BPM applies when synced)");
+         ImGui::TextDisabled("Native speed - turn on Sync to Tempo to set Sample BPM");
    }
 
    // Resolves the decoded source buffer behind an Arrange::Clip's srcUid, for
@@ -33139,8 +33139,11 @@ namespace
                   if (ImGui::Checkbox("Sync to Tempo", &syncToTempo))
                      ArrangeEdit([&]() { ArrangeSetSampleSync(cid, syncToTempo); });
 
+                  // Sample BPM only means something while synced (unsynced
+                  // plays at native speed), so it is locked while sync is off.
                   cp = Arrange::FindClip(gArrange, cid);
                   float sampleBpm = cp->sampleBpm;
+                  ImGui::BeginDisabled(!cp->syncToTempo);
                   ImGui::SetNextItemWidth(160.0f);
                   if (ImGui::DragFloat("Sample BPM", &sampleBpm, 0.1f, 20.0f, 999.0f, "%.2f"))
                   {
@@ -33150,7 +33153,6 @@ namespace
                   fieldGestureEnd();
                   if (const Arrange::Clip* ci = Arrange::FindClip(gArrange, cid))
                   {
-                     ArrangeDrawSampleTempoInfo(*ci);
                      if (ci->origBpm > 0.0f && ci->origBpm != ci->sampleBpm &&
                          ImGui::Selectable("Reset Sample BPM to Detected"))
                      {
@@ -33158,6 +33160,9 @@ namespace
                         ArrangeEdit([&]() { ArrangeSetSampleBpm(cid, detected); });
                      }
                   }
+                  ImGui::EndDisabled();
+                  if (const Arrange::Clip* ci = Arrange::FindClip(gArrange, cid))
+                     ArrangeDrawSampleTempoInfo(*ci);
                }
 
                ImGui::Separator();
@@ -38737,23 +38742,27 @@ namespace
                bool syncToTempo = clip->syncToTempo;
                if (ImGui::Checkbox("Sync to Tempo##clipsync", &syncToTempo))
                   ArrangeEdit([&]() { ArrangeSetSampleSync(clipId, syncToTempo); });
+               // Locked while sync is off: unsynced plays at native speed,
+               // so Sample BPM would be a control that does nothing.
                if (const Arrange::Clip* ci = Arrange::FindClip(gArrange, clipId))
                {
+                  const bool locked = !ci->syncToTempo;
+                  ImGui::BeginDisabled(locked);
                   float sampleBpm = ci->sampleBpm;
                   ImGui::SetNextItemWidth(fieldW);
                   if (ImGui::DragFloat("Sample BPM##clipbpm", &sampleBpm, 0.1f, 20.0f, 999.0f, "%.2f"))
                      ArrangeEdit([&]() { ArrangeSetSampleBpm(clipId, sampleBpm); });
+                  if (const Arrange::Clip* cr = Arrange::FindClip(gArrange, clipId))
+                     if (cr->origBpm > 0.0f && cr->origBpm != cr->sampleBpm &&
+                         ImGui::SmallButton("Reset to Detected##clipbpmreset"))
+                     {
+                        const float detected = cr->origBpm;
+                        ArrangeEdit([&]() { ArrangeSetSampleBpm(clipId, detected); });
+                     }
+                  ImGui::EndDisabled();
                }
                if (const Arrange::Clip* ci = Arrange::FindClip(gArrange, clipId))
-               {
                   ArrangeDrawSampleTempoInfo(*ci);
-                  if (ci->origBpm > 0.0f && ci->origBpm != ci->sampleBpm &&
-                      ImGui::SmallButton("Reset to Detected##clipbpmreset"))
-                  {
-                     const float detected = ci->origBpm;
-                     ArrangeEdit([&]() { ArrangeSetSampleBpm(clipId, detected); });
-                  }
-               }
             }
          }
 
