@@ -38,6 +38,19 @@ Anything else you write (`p`, `d`, `fld`, `b1`...) is just a local - no
 presets in this codebase end statements with `;` (house style; the grammar
 also accepts a bare newline, but match the existing presets).
 
+Two easy syntax slips that produce a compile error rather than a warning:
+
+- **Comments are `#`, never `//`.** Field's only comment token is `#` to end
+  of line (`field-language` §10). A `//` in preset text is not "C-style
+  comment support that also works" - it errors as an unexpected character at
+  the `/` (seen in practice: `line 1, col 42: unexpected character`).
+- **Two-argument arctangent is `atan2(y, x)`, not `atan(y, x)`.** GLSL 150's
+  two-arg `atan` exists, but Field's surface syntax reserves the name
+  `atan2` for it (`GlslBackend.cpp:368-371`, which lowers `atan2(y,x)` to
+  GLSL's `atan(y,x)`). A single-arg `atan(x)` passes straight through as a
+  normal builtin per §1's table; `atan(y, x)` with two arguments is an
+  "unknown function" compile error.
+
 ## 2. Aspect correction is not optional - do it on every preset with a spatial pattern
 
 `uv` is `[0,1]×[0,1]` regardless of the node's width/height sliders. Any
@@ -125,7 +138,86 @@ to a modulator). Poor fits: anything needing per-pixel history from a
 that needs many taps - possible but costs a real ping-pong texture and
 should be scoped deliberately, not bolted onto an otherwise-simple preset).
 
-## 6. Before shipping a new preset
+## 6. `state` in this build: hard cap of 4 declarations, ~4 floats total - no multi-bank yet
+
+`field-state/SKILL.md` describes the *design*: pixel state packs "up to four
+cells per bank," phrased as if more cells just means more banks. **The
+implementation does not have multi-bank support today.** `FieldIR.cpp:3330`
+rejects a 5th `state` declaration outright:
+
+```
+pixel state: 4 cells max in this build (one RGBA16F ping-pong pair);
+GLUtil::RunShaderPass binds a single color attachment
+```
+
+Two things this error message doesn't fully spell out, confirmed by reading
+the check itself (`FieldIR.cpp:3330`, `outProgram.declaredStates.size() >= 4`)
+and the codegen that consumes it (`GlslBackend.cpp:694-707, 721-734`):
+
+- **`state` in the pixel domain only actually works for scalar `float` in
+  this build - `vec2`/`vec3`/`vec4` state is accepted by the type checker
+  but is broken in codegen.** Each declared cell is assigned straight from
+  one texture channel with no lane-splitting: `GlslBackend.cpp:704` emits
+  `<typeStr> fld_v_<name> = fld_st0.<r|g|b|a>;` - a single float component.
+  If `typeStr` is `vec2`/`vec3`/`vec4` (because you wrote `state vec2 foo`),
+  that line is `vec2 fld_v_foo = fld_st0.r;`, a scalar-into-vector
+  initializer, which GLSL rejects as **"Incompatible types in
+  initialization"** - and because that declaration never lands, *every*
+  later reference to `fld_v_foo` then errors as "undeclared identifier",
+  burying the real cause under a wall of cascaded errors. **Only declare
+  `state float`** in a pixel kernel; if you need a 2D quantity (a position,
+  a velocity), split it into two `state float` cells (`posX`/`posY`) and
+  recombine into a `vec2` local inside the body.
+- **The cap is 4 declarations, and since every declaration must be a
+  scalar float, it is also a hard 4-`float`-total budget** - there is no
+  daylight between "4 cells" and "4 floats" in this build the way there is
+  for element/sample state. A "boxes bouncing and colliding" preset wanting
+  `pos`+`vel` for one box needs exactly `posX, posY, velX, velY` - 4
+  `state float` cells, the entire budget, for **one** fully-stateful
+  object.
+
+**Workaround that still looks like "objects colliding":** give at most one
+object genuine physics (4 `state float` cells recombined into `vec2 pos`/
+`vec2 vel` locals - the full budget), and make the others purely
+**analytic** - a closed-form function of `t` (Lissajous curve,
+`abs(fract(...))` triangle-wave bounce, a rotating orbit) that needs no
+`state` at all. The stateful object can still test for overlap against the
+analytic ones' positions and react (reflect its velocity) since their
+position is just math, not a stored cell - it reads as mutual collision even
+though only one side is "real" simulation. This is a capability limit of the
+current build, not a design ceiling - say so explicitly when a request
+implies more independent moving+colliding bodies, or richer per-object state,
+than 4 scalar floats can hold.
+
+## 7. Image input can only be read at the current pixel - no offset sampling
+
+Field Pixel does have an image input: an `image` pin (parsed in `FieldParse.cpp`
+alongside `geometry`/`audio`; type-checked in `FieldIR.cpp:1679-1694`) aliases
+straight to the same texture `col` already reads (`GlslBackend.cpp:208-214`,
+`"src"`). So a preset can genuinely take a user-supplied image as input.
+
+**What it cannot do: read that image at any coordinate other than the current
+pixel's own `uv`.** `col`/`src` are computed once, up front, as
+`texture(fld_srcTex, vUv)` (`GlslBackend.cpp:683`) - a fixed sample, not a
+function. There is no `Call`-kind handling anywhere in `GlslBackend.cpp` for
+an image name (only `state` names get that, via the `A(coord)` offset-read
+added in build step 22 - see `field-language`'s offset-reads section). So a
+kernel cannot say "sample the input image shifted by `(dx, dy)`" to translate,
+warp, or reposition it.
+
+**Practical consequence:** anything that needs to pick an input image up and
+move it - a floating sprite, a shape that bounces and collides using its own
+pixel content, image-based advection/warping - is **not buildable as a preset
+in this build**. It requires a real compiler feature (an image-domain
+offset-read, mirroring `state`'s), not clever kernel text. What *is*
+buildable today with an image input: reading it once per pixel and
+compositing/thresholding/color-mapping it in place (it can react to `t`,
+`param`s, or a moving procedural pattern layered on top via `mix`/parity
+blend) - just not repositioning the image itself. Say this limitation
+explicitly rather than attempting an offset read that will silently resolve
+to the same fixed-`uv` sample and produce a static, non-moving result.
+
+## 8. Before shipping a new preset
 
 1. Does every spatial-distance/angle computation use an aspect-corrected `p`
    (§2), not raw `uv`?
