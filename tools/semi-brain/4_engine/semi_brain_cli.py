@@ -77,7 +77,30 @@ def run_cognitive_analysis(query: str):
     console.print(s2_table)
     console.print()
     
-    # 4. Choice Tree MCTS Evaluation
+    # 4. AST Impact Tree & Caller Fan-Out Graph
+    impact_tree = engine.build_impact_tree(frame)
+    rich_impact = Tree("[bold cyan]🌳 AST Impact & Caller Fan-Out Tree[/bold cyan]")
+    
+    def add_impact_node(node, parent_tree, is_root=False):
+        tags = []
+        if node.crosses_subsystem and not is_root:
+            tags.append(f"[bold yellow]crosses->{node.subsystem}[/bold yellow]")
+        if node.is_hub:
+            tags.append("[bold magenta]hub (fanout>=2)[/bold magenta]")
+        tag_str = f" [dim][[/dim]{', '.join(tags)}[dim]][/dim]" if tags else ""
+        loc_str = f" [dim]{node.file}:{node.line}[/dim]" if node.file else ""
+        
+        sym_style = "[bold green]" if is_root else "[bold white]"
+        node_branch = parent_tree.add(f"{sym_style}{node.symbol}[/{sym_style.strip('[]')}] [cyan]({node.subsystem})[/cyan]{loc_str}{tag_str}")
+        for child in node.children:
+            add_impact_node(child, node_branch, is_root=False)
+            
+    add_impact_node(impact_tree, rich_impact, is_root=True)
+
+    console.print(Panel(rich_impact, title="[bold cyan]AST Blast-Radius Impact Graph[/bold cyan]", border_style="cyan"))
+    console.print()
+
+    # 5. Choice Tree MCTS Evaluation
     branches = engine.evaluate_choice_tree(frame)
     
     tree = Tree("[bold green]🌲 Choice Tree Exploration & Forward Rollouts (MCTS)[/bold green]")
@@ -92,7 +115,7 @@ def run_cognitive_analysis(query: str):
     console.print(Panel(tree, border_style="green"))
     console.print()
     
-    # 5. Final Solution Synthesis
+    # 6. Final Solution Synthesis
     best_branch = branches[0]
     brief = f"""### 🎯 Semi-Brain Implementation Brief
 

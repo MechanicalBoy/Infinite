@@ -394,6 +394,16 @@ namespace Patch
       bool  importSyncToTempo = true; // see Arrange::Settings::importSyncToTempo
    };
 
+   // Dockable viewport panel (see gViewportPanelNodes in main.cpp)
+   struct ViewportRecord
+   {
+      bool  open = false;
+      int   dock = 1; // 0 = bottom, 1 = right, 2 = left, 3 = top
+      float width = 320.0f;
+      float height = 260.0f;
+      std::vector<int> nodes; // node indices displayed as viewport cards
+   };
+
    struct Data
    {
       std::vector<NodeRecord> nodes;
@@ -413,6 +423,7 @@ namespace Patch
       std::vector<MarkerRecord> markers; // arrangement markers, sorted by pos
       std::vector<TrackGroupRecord> trackGroups;
       ArrangeSettingsRecord arrangeSettings;
+      ViewportRecord viewport;
    };
 
    bool Write(const std::string& path, const Data& data, std::string& outError);

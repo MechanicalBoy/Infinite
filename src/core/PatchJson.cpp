@@ -218,6 +218,14 @@ namespace PatchJson
          };
       }
 
+      out["viewport"] = {
+         {"open", data.viewport.open},
+         {"dock", data.viewport.dock},
+         {"width", data.viewport.width},
+         {"height", data.viewport.height},
+         {"nodes", data.viewport.nodes}
+      };
+
       return out;
    }
 }

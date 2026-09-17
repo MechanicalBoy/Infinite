@@ -70,10 +70,10 @@ transform change - but the panel that stacks cards left-to-right when
 bottom-docked and top-to-bottom when side-docked is unasserted.
 
 The specific untested risks there are card lifetime (a card whose node is
-deleted - `gViewportPanelNodes` is scrubbed at `src/main.cpp:19863` and
-`:19918`, and it is not serialized or tracked by undo) and the stacking
-direction flipping with the dock. If you touch `DrawViewportPanelContainer`,
-that is unguarded code.
+deleted - `gViewportPanelNodes` is scrubbed when a node is deleted, and
+is serialized to patch data and restored/remapped across undo/redo) and the
+stacking direction flipping with the dock. If you touch
+`DrawViewportPanelContainer`, that is unguarded code.
 
 ## Windows parity
 

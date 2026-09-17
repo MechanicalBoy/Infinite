@@ -416,6 +416,15 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
       if (!a.importSyncToTempo)
          file << "arrangeimportsync 0\n";
    }
+   if (data.viewport.open || !data.viewport.nodes.empty() || data.viewport.dock != 1 ||
+       data.viewport.width != 320.0f || data.viewport.height != 260.0f)
+   {
+      file << "viewport " << (data.viewport.open ? 1 : 0) << " " << data.viewport.dock << " "
+           << FloatToString(data.viewport.width) << " " << FloatToString(data.viewport.height);
+      for (int nodeIdx : data.viewport.nodes)
+         file << " " << nodeIdx;
+      file << "\n";
+   }
 
    if (!file.good())
    {
@@ -1090,6 +1099,25 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
          int v = 1;
          in >> v;
          outData.arrangeSettings.importSyncToTempo = v != 0;
+      }
+      else if (tag == "viewport")
+      {
+         int open = 0, dock = 1;
+         float width = 320.0f, height = 260.0f;
+         if (in >> open >> dock >> width >> height)
+         {
+            outData.viewport.open = (open != 0);
+            outData.viewport.dock = std::clamp(dock, 0, 3);
+            if (std::isfinite(width) && width > 0.0f)
+               outData.viewport.width = width;
+            if (std::isfinite(height) && height > 0.0f)
+               outData.viewport.height = height;
+            int nodeIdx = -1;
+            while (in >> nodeIdx)
+            {
+               outData.viewport.nodes.push_back(nodeIdx);
+            }
+         }
       }
       // Anything else is from a newer version and is deliberately ignored.
    }
