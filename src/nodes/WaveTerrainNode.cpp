@@ -720,8 +720,8 @@ void WaveTerrainNode::RenderPreview(int /*frameId*/)
    else if (mPixels.size() != (size_t)size * size * 4)
       FillProceduralDefault(mPixels, size); // see comment on FillProceduralDefault: a flat placeholder would make every orbit param sample the same silence
 
-   const unsigned int srcTex = (hasGL && mTextureInput.GetSource()) ? mTextureInput.GetSource()->GetOutputTexture() : 0;
-   const unsigned long long currentTexRev = mTextureInput.GetSource() ? mTextureInput.GetSource()->TextureRevision() : 0;
+   const unsigned int srcTex = hasGL ? mTextureInput.Texture() : 0;
+   const unsigned long long currentTexRev = mTextureInput.Revision();
    const float totalRot = rotation + mCurrentRotation;
 
    const bool texChanged = hasGL && ((currentTexRev != mLastTexRev) || (mPixels.empty()));

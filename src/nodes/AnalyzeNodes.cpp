@@ -262,7 +262,7 @@ void ImageAnalyzeNode::Analyze()
    wrapper.w = size;
    wrapper.h = size;
 
-   const unsigned int srcTex = mInput.GetSource() ? mInput.GetSource()->GetOutputTexture() : 0;
+   const unsigned int srcTex = mInput.Texture();
    if (srcTex == 0)
       return;
 

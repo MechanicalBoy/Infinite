@@ -6562,6 +6562,18 @@ namespace
       return 0; // sources and modulators have no image inputs
    }
 
+   // Bypass means "this node is not in the chain", which only has one honest
+   // answer when there is exactly one thing to fall back to. A node with two
+   // or more input pins of any kind (Blend, Mixer, Switcher, Join, Material,
+   // a sidechained Dynamics, Math...) has no input that is obviously "the"
+   // pass-through, so it cannot be bypassed at all: no power button, B skips
+   // it, and EnforceBypassRule clears a bypass flag a load or a pin-count
+   // change left behind. Nodes with zero or one input keep bypass.
+   bool CanBypass(const GraphNode& gn)
+   {
+      return gn.node != nullptr && dynamic_cast<CommentNode*>(gn.node.get()) == nullptr && InputCountFor(gn) <= 1;
+   }
+
    ImageCable* CableFor(GraphNode& gn, int slot)
    {
       // Every other Render3D input (geometry/camera/light) is a raw pointer
@@ -27506,8 +27518,27 @@ namespace
             if (c.enabled && c.srcUid != 0 && Arrange::LaneEffectivelyEnabled(gArrange, lane))
             {
                GraphNode* gn = FindNodeByUid(c.srcUid);
+               int srcOutput = c.srcOutput;
+               // A clip plays what its node gives the canvas: bypassed
+               // effect -> the picture feeding it, bypassed source -> nothing.
+               // Same rule the audio terminals follow via ResolvedAudioSource.
+               // Geometry nodes forward their own bypass, so they are drawn as is.
+               if (gn != nullptr && gn->node != nullptr && gn->node->bypassed &&
+                   dynamic_cast<IGeometrySource*>(gn->node.get()) == nullptr)
+               {
+                  INode* resolved = gn->node.get();
+                  for (int hops = 0; resolved != nullptr && resolved->bypassed && hops < 64; hops++)
+                     resolved = resolved->BypassSource();
+                  if (resolved != nullptr && resolved->bypassed)
+                     resolved = nullptr;
+                  gn = nullptr;
+                  srcOutput = 0;
+                  for (GraphNode& cand : gNodes)
+                     if (resolved != nullptr && cand.node.get() == resolved)
+                        gn = &cand;
+               }
                if (gn != nullptr && gn->node != nullptr)
-                  out.push_back({ gn, c.srcOutput, c.blendMode, std::clamp(lane.opacity * c.opacity, 0.0f, 1.0f),
+                  out.push_back({ gn, srcOutput, c.blendMode, std::clamp(lane.opacity * c.opacity, 0.0f, 1.0f),
                                   c.id, c.colorBrightness, c.colorContrast, c.colorSaturation });
             }
             break;
@@ -33960,6 +33991,8 @@ namespace
    void WriteNodeBool(GraphNode* gn, const std::string& boolName, bool newVal, int channelIdx = 0)
    {
       if (gn == nullptr || gn->node == nullptr) return;
+      if (boolName == "bypassed" && !CanBypass(*gn))
+         return;
       PushUndoCheckpoint();
       if (boolName == "bypassed")
       {
@@ -60530,7 +60563,7 @@ void ApplyModulationAndPalette(int frameId)
    // controls and have it land the same frame.
    for (GraphNode& gn : gNodes)
    {
-      if (dynamic_cast<IPaletteSource*>(gn.node.get()) != nullptr)
+      if (dynamic_cast<IPaletteSource*>(gn.node.get()) != nullptr && !gn.node->bypassed)
          gn.node->CookIfNeeded(frameId);
    }
 
@@ -60541,9 +60574,10 @@ void ApplyModulationAndPalette(int frameId)
    // never being called on them.
    for (GraphNode& gn : gNodes)
    {
-      if (dynamic_cast<FieldPixelNode*>(gn.node.get()) != nullptr ||
-          dynamic_cast<FieldPrimitiveNode*>(gn.node.get()) != nullptr ||
-          dynamic_cast<FieldElementNode*>(gn.node.get()) != nullptr)
+      if (!gn.node->bypassed &&
+          (dynamic_cast<FieldPixelNode*>(gn.node.get()) != nullptr ||
+           dynamic_cast<FieldPrimitiveNode*>(gn.node.get()) != nullptr ||
+           dynamic_cast<FieldElementNode*>(gn.node.get()) != nullptr))
       {
          gn.node->CookIfNeeded(frameId);
       }
@@ -63566,7 +63600,8 @@ int main(int argc, char** argv)
                ArrangeSeekVideoSampleSources(Transport::Instance().Beats());
 
                for (GraphNode& gn : gNodes)
-                  gn.node->CookIfNeeded(frameId);
+                  if (!gn.node->bypassed)
+                     gn.node->CookIfNeeded(frameId);
 
                // Arrangement render: composite every active video lane, bottom
                // lane first so the top lane is frontmost, directly onto
@@ -74062,6 +74097,71 @@ int main(int argc, char** argv)
          printf("%s\n", allOk ? "FIELDPINNODE OK" : "SUSPECT");
       }
 
+      if (getenv("INFINITE_BYPASSRULETEST") != nullptr && frameId == 4)
+      {
+         // 1) Which node types keep the power button. Printed in full so a
+         //    new multi-input node losing bypass is visible in the log.
+         int allowed = 0, blocked = 0;
+         for (const std::string& category : NodeFactory::Instance().GetCategories())
+            for (const std::string& name : NodeFactory::Instance().GetNodesInCategory(category))
+            {
+               GraphNode probe;
+               probe.node.reset(NodeFactory::Instance().MakeNode(name));
+               if (probe.node == nullptr)
+                  continue;
+               if (CanBypass(probe))
+                  allowed++;
+               else
+               {
+                  blocked++;
+                  printf("BYPASSRULE no bypass: %s / %s (%d inputs)\n", category.c_str(), name.c_str(), InputCountFor(probe));
+               }
+            }
+         printf("BYPASSRULE %d types bypassable, %d not\n", allowed, blocked);
+
+         // 2) Texture -> Cube with the texture bypassed: the cube must stop
+         //    seeing that texture, not keep its last frame.
+         bool ok = true;
+         {
+            GraphNode shape;
+            shape.node.reset(NodeFactory::Instance().MakeNode("Shape"));
+            GraphNode cube;
+            cube.node.reset(NodeFactory::Instance().MakeNode("Cube"));
+            auto* geo = dynamic_cast<GeometryNode*>(cube.node.get());
+            if (shape.node == nullptr || geo == nullptr)
+            {
+               printf("BYPASSRULE texture: could not spawn Shape/Cube  FAIL\n");
+               ok = false;
+            }
+            else
+            {
+               geo->TextureInput().Connect(shape.node.get());
+               geo->CookIfNeeded(frameId);
+               const bool liveHasTex = geo->GetSurfaceTexture() != 0;
+               shape.node->bypassed = true;
+               geo->CookIfNeeded(frameId + 1);
+               const bool bypassedClear = geo->GetSurfaceTexture() == 0 && geo->SurfaceTextureRevision() == 0;
+               printf("BYPASSRULE texture live=%s bypassed-cleared=%s  %s\n", liveHasTex ? "yes" : "no",
+                      bypassedClear ? "yes" : "no", (liveHasTex && bypassedClear) ? "OK" : "FAIL");
+               ok = ok && liveHasTex && bypassedClear;
+               geo->TextureInput().Disconnect();
+            }
+         }
+         // 3) The rule on the real classes the user named.
+         for (const char* name : { "Blend", "Mixer", "Switcher", "Join Geometry" })
+         {
+            GraphNode probe;
+            probe.node.reset(NodeFactory::Instance().MakeNode(name));
+            if (probe.node == nullptr)
+               continue;
+            const bool pass = !CanBypass(probe);
+            printf("BYPASSRULE %s blocked: %s\n", name, pass ? "OK" : "FAIL");
+            ok = ok && pass;
+         }
+         printf("BYPASSRULE %s\n", ok ? "PASS" : "FAIL");
+         glfwSetWindowShouldClose(window, GLFW_TRUE);
+      }
+
       if (getenv("INFINITE_ROUNDTRIPTEST") != nullptr && frameId == 4)
       {
          // Every node type that declares params must survive both paths that
@@ -80115,7 +80215,7 @@ int main(int argc, char** argv)
             }
 
             ImGui::SetCursorPos(ImVec2(topRowPos.x + expectedW - 22.0f, topRowPos.y));
-            if (BypassToggle(gn.node->bypassed))
+            if (CanBypass(gn) && BypassToggle(gn.node->bypassed))
             {
                PushUndoCheckpoint();
                gn.node->bypassed = !gn.node->bypassed;
@@ -80411,7 +80511,13 @@ int main(int argc, char** argv)
             if (EyeToggle(gn.showParams))
                gn.showParams = !gn.showParams;
             ImGui::SameLine();
-            if (BypassToggle(gn.node->bypassed))
+            if (!CanBypass(gn))
+            {
+               // Same footprint as BypassToggle, so the toggles to its right
+               // sit where they do on every other node.
+               ImGui::Dummy(ImVec2(22.0f, 18.0f));
+            }
+            else if (BypassToggle(gn.node->bypassed))
             {
                PushUndoCheckpoint();
                gn.node->bypassed = !gn.node->bypassed;
@@ -82270,7 +82376,7 @@ int main(int argc, char** argv)
                for (int i = 0; i < nodeCount; i++)
                {
                   GraphNode* sel = FindNodeByIndex((int)selNodes[i].Get() / GraphNode::kStride);
-                  if (sel == nullptr || sel->node == nullptr || dynamic_cast<CommentNode*>(sel->node.get()) != nullptr)
+                  if (sel == nullptr || !CanBypass(*sel))
                      continue;
                   sel->node->bypassed = !sel->node->bypassed;
                   if (dynamic_cast<IAudioSource*>(sel->node.get()) != nullptr ||
@@ -85397,10 +85503,35 @@ int main(int argc, char** argv)
       // while nodes draw, so every pointer here belongs to a node that still
       // exists. Cooking before the UI would mean writing through last frame's
       // pointers, which dangle the moment a node is deleted.
+      // A node that cannot be bypassed never stays bypassed: covers a patch,
+      // paste or undo snapshot saved before the rule existed, and a node
+      // whose pin count grew past one (Mixer channels, Field pixel inputs).
+      // Only nodes already flagged pay for the pin count.
+      {
+         bool clearedAudio = false;
+         for (GraphNode& gn : gNodes)
+         {
+            if (!gn.node->bypassed || CanBypass(gn))
+               continue;
+            gn.node->bypassed = false;
+            if (dynamic_cast<IAudioSource*>(gn.node.get()) != nullptr ||
+                dynamic_cast<INoteSource*>(gn.node.get()) != nullptr)
+               clearedAudio = true;
+         }
+         if (clearedAudio)
+            RebuildAudioTopology();
+      }
+
       ApplyModulationAndPalette(frameId);
 
       for (GraphNode& gn : gNodes)
       {
+         if (gn.node->bypassed)
+         {
+            if (auto* syphonOut = dynamic_cast<SyphonOutNode*>(gn.node.get()))
+               syphonOut->Withdraw();
+            continue;
+         }
          if (dynamic_cast<OutputNode*>(gn.node.get()) != nullptr ||
              dynamic_cast<SyphonOutNode*>(gn.node.get()) != nullptr ||
              dynamic_cast<OscSendNode*>(gn.node.get()) != nullptr)
@@ -86018,8 +86149,14 @@ int main(int argc, char** argv)
       // ArrangeSeekVideoSampleSources's own comment for why.
       ArrangeSeekVideoSampleSources(Transport::Instance().Beats());
 
+      // A bypassed node is out of the chain, so it does no work at all: a
+      // sender (Syphon/Spout Out, OSC Send) stops sending, a receiver
+      // (camera, Syphon In, video) stops pulling frames into the graph, and
+      // a GPU effect stops rendering. Nothing reads its texture - every
+      // image read resolves past it (ImageCable::Resolved).
       for (GraphNode& gn : gNodes)
-         gn.node->CookIfNeeded(frameId);
+         if (!gn.node->bypassed)
+            gn.node->CookIfNeeded(frameId);
 
       // Arrangement monitor (overhaul WP4): after the cook, so the clips it
       // selects and the textures it reads belong to the same frame.

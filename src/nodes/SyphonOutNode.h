@@ -33,6 +33,10 @@ public:
    void SetServerName(const std::string& name);
 
    bool HasClients() const;
+   // Takes the server off the network. Called while the node is bypassed,
+   // so a receiver sees the source go away rather than a frozen last frame;
+   // the next cook after un-bypassing publishes it again.
+   void Withdraw();
    int PublishedWidth() const { return mOut.w; }
    int PublishedHeight() const { return mOut.h; }
 

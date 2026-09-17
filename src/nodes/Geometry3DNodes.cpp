@@ -889,9 +889,7 @@ unsigned long long GeometryNode::MaterialRevision() const
 
 unsigned int GeometryNode::GetSurfaceTexture()
 {
-   return mTextureInput.IsConnected() && mTextureInput.GetSource()
-             ? mTextureInput.GetSource()->GetOutputTexture()
-             : 0;
+   return mTextureInput.Texture();
 }
 
 unsigned int GeometryNode::GetOutputTexture()

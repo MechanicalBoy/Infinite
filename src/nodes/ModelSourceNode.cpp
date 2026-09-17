@@ -213,9 +213,7 @@ unsigned long long ModelSourceNode::MaterialRevision() const
 
 unsigned int ModelSourceNode::GetSurfaceTexture()
 {
-   return mTextureInput.IsConnected() && mTextureInput.GetSource()
-             ? mTextureInput.GetSource()->GetOutputTexture()
-             : 0;
+   return mTextureInput.Texture();
 }
 
 unsigned int ModelSourceNode::GetOutputTexture()

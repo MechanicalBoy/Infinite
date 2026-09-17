@@ -112,9 +112,7 @@ unsigned long long Text3DNode::MaterialRevision() const
 
 unsigned int Text3DNode::GetSurfaceTexture()
 {
-   return mTextureInput.IsConnected() && mTextureInput.GetSource()
-             ? mTextureInput.GetSource()->GetOutputTexture()
-             : 0;
+   return mTextureInput.Texture();
 }
 
 unsigned int Text3DNode::GetOutputTexture()

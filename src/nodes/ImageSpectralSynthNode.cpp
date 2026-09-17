@@ -952,8 +952,8 @@ void ImageSpectralSynthNode::RenderPreview(int /*frameId*/)
    const int size = 256;
    EnsurePreviewResources(size);
 
-   const unsigned int srcTex = mTextureInput.GetSource() ? mTextureInput.GetSource()->GetOutputTexture() : 0;
-   const unsigned long long currentTexRev = mTextureInput.GetSource() ? mTextureInput.GetSource()->TextureRevision() : 0;
+   const unsigned int srcTex = mTextureInput.Texture();
+   const unsigned long long currentTexRev = mTextureInput.Revision();
 
    const bool texChanged = (currentTexRev != mLastTexRev) || (mPixels.empty());
 

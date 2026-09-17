@@ -106,14 +106,15 @@ unsigned int MaterialNode::GetMaterialTexture(int map)
       return 0;
    // Its own map wins when one is patched in; otherwise whatever the upstream
    // shape already carried passes through untouched.
-   if (mMaps[map].IsConnected() && mMaps[map].GetSource())
-      return mMaps[map].GetSource()->GetOutputTexture();
+   // A map pin whose source is bypassed counts as unpatched.
+   if (mMaps[map].Resolved() != nullptr)
+      return mMaps[map].Texture();
    return input ? input->GetMaterialTexture(map) : 0;
 }
 
 unsigned long long MaterialNode::SurfaceTextureRevision() const
 {
-   if (mMaps[kMapAlbedo].IsConnected() && mMaps[kMapAlbedo].GetSource())
+   if (mMaps[kMapAlbedo].Resolved() != nullptr)
       return mMaps[kMapAlbedo].Revision();
    return input ? input->SurfaceTextureRevision() : 0;
 }
