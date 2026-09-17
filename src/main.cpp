@@ -29863,10 +29863,6 @@ namespace
       const ImVec2 panelOrigin = ImGui::GetCursorScreenPos();
       const ImVec2 panelSize = ImGui::GetContentRegionAvail();
 
-      // Track panel rect for keyboard shortcut focus routing
-      gArrangePanelRectMin = panelOrigin;
-      gArrangePanelRectMax = ImVec2(panelOrigin.x + panelSize.x, panelOrigin.y + panelSize.y);
-
       // The timeline is read-only for the duration of a take (WP7): the
       // compositor and the audio scheduler both read gArrange frame by frame
       // while a job runs, and an edit landing mid-render would change the
@@ -29940,11 +29936,8 @@ namespace
       }
 
       // Keyboard focus claim
-      if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
-          (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)))
-      {
+      if (overPanel && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)))
          gArrangeClaimedKeys = true;
-      }
       gArrangeFocused = gArrangeClaimedKeys;
 
       Transport& tr = Transport::Instance();
@@ -30853,6 +30846,11 @@ namespace
                gPatchDirty = true;
             }
             ImGui::EndMenu();
+         }
+         ImGui::Separator();
+         if (ImGui::MenuItem("Close Arrangement Timeline"))
+         {
+            gArrangePanelOpen = false;
          }
          ImGui::EndPopup();
       }
@@ -33352,13 +33350,16 @@ namespace
                }
             }
 
-            // Group and Ungroup act on whole groups only.
+            } // end else (single-clip specific properties)
+
+            // Group, Ungroup, and Delete: available for both multi-selection and single-clip / group-selection
             ImGui::Separator();
             if (ImGui::MenuItem("Group", MODKEY "+G", false, ArrangeCanGroupSelection()))
                ArrangeGroupSelection();
             if (ImGui::MenuItem("Ungroup", MODKEY "+Shift+G", false, ArrangeCanUngroupSelection()))
                ArrangeUngroupSelection();
-            }
+            if (ImGui::MenuItem("Delete", "Backspace", false, !ctxSelIds.empty()))
+               ArrangeDeleteSelection();
          }
          ImGui::EndPopup();
       }
@@ -35899,7 +35900,7 @@ namespace
                                  ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
           (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)))
          gPerfMatrixClaimedKeys = true;
-      gPerfMatrixFocused = gPerfEditMode && gPerfMatrixClaimedKeys;
+      gPerfMatrixFocused = gPerfMatrixClaimedKeys && gPerfEditMode;
       if (gPerfEditMode)
       {
          if (!mouseOverAnyElement && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
@@ -65306,6 +65307,47 @@ int main(int argc, char** argv)
       const bool arrangeLeft = gArrangePanelOpen && ArrangePanelDock() == 2;
       const bool arrangeTop = gArrangePanelOpen && ArrangePanelDock() == 3;
 
+      // Maintain keyboard focus states across docked panels and canvas regardless of dock order
+      if ((ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) &&
+          !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+      {
+         const ImVec2 m = ImGui::GetIO().MousePos;
+         const bool inArrange = gArrangePanelOpen &&
+            (m.x >= gArrangePanelRectMin.x && m.x <= gArrangePanelRectMax.x &&
+             m.y >= gArrangePanelRectMin.y && m.y <= gArrangePanelRectMax.y);
+         const bool inPerf = gPerfPanelOpen &&
+            (m.x >= gPerfPanelRectMin.x && m.x <= gPerfPanelRectMax.x &&
+             m.y >= gPerfPanelRectMin.y && m.y <= gPerfPanelRectMax.y);
+
+         gArrangeClaimedKeys = inArrange;
+         gArrangeFocused = inArrange;
+
+         gPerfMatrixClaimedKeys = inPerf;
+         gPerfMatrixFocused = inPerf && gPerfEditMode;
+      }
+      else
+      {
+         if (!gArrangePanelOpen)
+         {
+            gArrangeClaimedKeys = false;
+            gArrangeFocused = false;
+         }
+         else
+         {
+            gArrangeFocused = gArrangeClaimedKeys;
+         }
+
+         if (!gPerfPanelOpen)
+         {
+            gPerfMatrixClaimedKeys = false;
+            gPerfMatrixFocused = false;
+         }
+         else
+         {
+            gPerfMatrixFocused = gPerfMatrixClaimedKeys && gPerfEditMode;
+         }
+      }
+
       // Drop the 3D render state of any node no longer in the panel. Done
       // here, at the top of the next frame, rather than at the moment its
       // card was closed: that card had already submitted its texture to that
@@ -81712,7 +81754,7 @@ int main(int argc, char** argv)
       // that must not also pop the canvas node picker open underneath it.
       const bool doAddNode = gRequestAddNode ||
          (!cmdOrCtrl && io.KeyShift && (!typing || searchPopupOpen) && gCommentEdit.target == nullptr &&
-          !gArrangeFocused && ImGui::IsKeyPressed(ImGuiKey_N, false));
+          ImGui::IsKeyPressed(ImGuiKey_N, false));
       gRequestAddNode = false;
       if (doAddNode)
       {
@@ -81836,21 +81878,9 @@ int main(int argc, char** argv)
          gPerfMatrixClaimedKeys = false;
          gPerfMatrixFocused = false;
       }
-      else if (gPerfMatrixClaimedKeys &&
-               (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) &&
-               !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+      else
       {
-         // A click anywhere outside the matrix - the canvas, a node, the
-         // toolbar - moves the user's attention there, so the shortcuts go
-         // with it. Popups are exempt: the matrix's own context menu draws
-         // outside the panel rect.
-         const ImVec2 m = ImGui::GetIO().MousePos;
-         if (m.x < gPerfPanelRectMin.x || m.x > gPerfPanelRectMax.x ||
-             m.y < gPerfPanelRectMin.y || m.y > gPerfPanelRectMax.y)
-         {
-            gPerfMatrixClaimedKeys = false;
-            gPerfMatrixFocused = false;
-         }
+         gPerfMatrixFocused = gPerfMatrixClaimedKeys && gPerfEditMode;
       }
 
       // Arrangement Timeline focus guard: when arrangement timeline owns the
@@ -81861,17 +81891,9 @@ int main(int argc, char** argv)
          gArrangeClaimedKeys = false;
          gArrangeFocused = false;
       }
-      else if (gArrangeClaimedKeys &&
-               (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) &&
-               !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+      else
       {
-         const ImVec2 m = ImGui::GetIO().MousePos;
-         if (m.x < gArrangePanelRectMin.x || m.x > gArrangePanelRectMax.x ||
-             m.y < gArrangePanelRectMin.y || m.y > gArrangePanelRectMax.y)
-         {
-            gArrangeClaimedKeys = false;
-            gArrangeFocused = false;
-         }
+         gArrangeFocused = gArrangeClaimedKeys;
       }
 
       const bool doDelete = gRequestDelete ||
