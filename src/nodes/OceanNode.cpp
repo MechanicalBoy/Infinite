@@ -90,9 +90,7 @@ unsigned long long OceanNode::MaterialRevision() const
 
 unsigned int OceanNode::GetSurfaceTexture()
 {
-   return mTextureInput.IsConnected() && mTextureInput.GetSource()
-             ? mTextureInput.GetSource()->GetOutputTexture()
-             : 0;
+   return mTextureInput.Texture();
 }
 
 void OceanNode::CookIfNeeded(int frameId)

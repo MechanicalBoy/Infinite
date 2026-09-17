@@ -38,7 +38,17 @@ public:
       if (node == nullptr)
          return 0;
       node->CookIfNeeded(frameId);
-      return node->GetOutputTexture(mSourceOutput);
+      return node->GetOutputTexture(ResolvedOutput(node));
+   }
+
+   // The texture this cable resolves to, without cooking. Every read of an
+   // input's pixels goes through here or Pull(), never GetSource(): the raw
+   // source may be bypassed, and a bypassed node no longer cooks, so its own
+   // texture is whatever it last rendered - a frozen frame.
+   unsigned int Texture() const
+   {
+      INode* node = Resolved();
+      return node ? node->GetOutputTexture(ResolvedOutput(node)) : 0;
    }
 
    int Width() const
@@ -62,6 +72,11 @@ public:
    }
 
 private:
+   // A hop past a bypassed node lands on a different node, whose output
+   // numbering has nothing to do with the one this cable chose - so it reads
+   // that node's main output, as the audio resolver already does.
+   int ResolvedOutput(INode* node) const { return node == mSource ? mSourceOutput : 0; }
+
    INode* mSource = nullptr;
    int mSourceOutput = 0;
 };

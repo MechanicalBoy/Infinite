@@ -211,6 +211,8 @@ float CompareNode::Value01()
 
 float RangeToRangeNode::Value01()
 {
+   if (bypassed)
+      return input ? input->Value01() : constantIn;
    const float v = input ? input->Value01() : constantIn;
    const float span = inHigh - inLow;
    const float t = std::fabs(span) > 1e-6f ? (v - inLow) / span : 0.0f;
@@ -223,6 +225,8 @@ float RangeToRangeNode::Value01()
 
 float SmoothNode::Value01()
 {
+   if (bypassed)
+      return input ? input->Value01() : constantIn;
    const float target = input ? input->Value01() : constantIn;
    const double beats = Transport::Instance().Beats();
    if (mLast >= 0.0f && beats == mLastBeats)
@@ -238,6 +242,8 @@ float SmoothNode::Value01()
 
 float ModDepthNode::Value01()
 {
+   if (bypassed)
+      return input ? input->Value01() : constantIn;
    const float v = input ? input->Value01() : constantIn;
    return std::clamp(0.5f + (v - 0.5f) * depth, 0.0f, 1.0f);
 }
@@ -246,6 +252,8 @@ float ModDepthNode::Value01()
 
 float EnvelopeNode::Value01()
 {
+   if (bypassed)
+      return input ? input->Value01() : constantIn;
    const float in01 = input ? input->Value01() : constantIn;
    const double seconds = Transport::Instance().Seconds();
 

@@ -264,8 +264,6 @@ const Mesh& AudioDisplacementNode::GetMesh()
       mCookWarning.clear();
       return kEmptyMesh;
    }
-   if (bypassed)
-      return input->GetMesh();
 
    mCookWarning = DescribeGeometryMismatch(input, GeometryRequirement::kMeshSurface);
 
@@ -481,8 +479,6 @@ unsigned long long AudioDisplacementNode::MeshRevision()
 {
    if (input == nullptr)
       return 0;
-   if (bypassed)
-      return input->MeshRevision();
    GetMesh();
    return mMeshRevision;
 }

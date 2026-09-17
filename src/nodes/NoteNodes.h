@@ -608,13 +608,6 @@ public:
    void CookIfNeeded(int frameId) override;
    void VisitParams(ParamVisitor& v) override;
 
-   INode* BypassSource() override
-   {
-      for (int i = 0; i < kSlots; i++)
-         if (noteInputs[i].IsConnected())
-            return noteInputs[i].GetSource();
-      return nullptr;
-   }
    NoteCable* NoteInputSlot(int slot) override
    {
       return (slot >= 0 && slot < kSlots) ? &noteInputs[slot] : nullptr;
@@ -649,16 +642,6 @@ public:
    void CookIfNeeded(int frameId) override;
    void VisitParams(ParamVisitor& v) override;
 
-   INode* BypassSource() override
-   {
-      const int active = ActiveSlot();
-      if (active >= 0 && active < kSlots && noteInputs[active].IsConnected())
-         return noteInputs[active].GetSource();
-      for (int i = 0; i < kSlots; i++)
-         if (noteInputs[i].IsConnected())
-            return noteInputs[i].GetSource();
-      return nullptr;
-   }
    NoteCable* NoteInputSlot(int slot) override
    {
       return (slot >= 0 && slot < kSlots) ? &noteInputs[slot] : nullptr;
@@ -709,6 +692,7 @@ public:
 
    NoteCable* NoteInputSlot(int slot) override { return slot == 0 ? &noteInput : nullptr; }
    const char* InputLabel(int slot) const override { return slot == 0 ? "notes" : nullptr; }
+   INode* BypassSource() override { return noteInput.GetSource(); }
    AudioNode* GetAudioNode() override;
 
    int mode = kUp;

@@ -51,9 +51,6 @@ size_t MaterialNode::TriangleCount() const
 
 Material MaterialNode::GetMaterial() const
 {
-   if (bypassed)
-      return input ? input->GetMaterial() : Material();
-
    Material m;
    m.color[0] = color[0]; m.color[1] = color[1]; m.color[2] = color[2];
    m.metallic = metallic;
@@ -106,14 +103,15 @@ unsigned int MaterialNode::GetMaterialTexture(int map)
       return 0;
    // Its own map wins when one is patched in; otherwise whatever the upstream
    // shape already carried passes through untouched.
-   if (mMaps[map].IsConnected() && mMaps[map].GetSource())
-      return mMaps[map].GetSource()->GetOutputTexture();
+   // A map pin whose source is bypassed counts as unpatched.
+   if (mMaps[map].Resolved() != nullptr)
+      return mMaps[map].Texture();
    return input ? input->GetMaterialTexture(map) : 0;
 }
 
 unsigned long long MaterialNode::SurfaceTextureRevision() const
 {
-   if (mMaps[kMapAlbedo].IsConnected() && mMaps[kMapAlbedo].GetSource())
+   if (mMaps[kMapAlbedo].Resolved() != nullptr)
       return mMaps[kMapAlbedo].Revision();
    return input ? input->SurfaceTextureRevision() : 0;
 }
@@ -388,50 +386,24 @@ void JoinGeometryNode::RebuildIfNeeded()
 
 const Mesh& JoinGeometryNode::GetMesh()
 {
-   if (bypassed)
-   {
-      for (int i = 0; i < kSlots; i++)
-         if (inputs[i] != nullptr)
-            return inputs[i]->GetMesh();
-      return mCache;
-   }
    RebuildIfNeeded();
    return mCache;
 }
 
 unsigned long long JoinGeometryNode::MeshRevision()
 {
-   if (bypassed)
-   {
-      for (int i = 0; i < kSlots; i++)
-         if (inputs[i] != nullptr)
-            return inputs[i]->MeshRevision();
-      return 0;
-   }
    RebuildIfNeeded();
    return mMeshRevision;
 }
 
 Mat4 JoinGeometryNode::GetModelMatrix() const
 {
-   if (bypassed)
-   {
-      for (int i = 0; i < kSlots; i++)
-         if (inputs[i] != nullptr)
-            return inputs[i]->GetModelMatrix();
-   }
    Mat4 m = Mat4::Scale(uniformScale, uniformScale, uniformScale);
    return Mat4::Multiply(Mat4::Translation(posX, posY, posZ), m);
 }
 
 Material JoinGeometryNode::GetMaterial() const
 {
-   if (bypassed)
-   {
-      for (int i = 0; i < kSlots; i++)
-         if (inputs[i] != nullptr)
-            return inputs[i]->GetMaterial();
-   }
    // The merged vertices may carry each input's absolute colour, and only
    // RebuildIfNeeded knows whether they do. Render3D reads GetMaterial() when
    // it builds its draw signature, which can happen before it ever asks for

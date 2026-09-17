@@ -143,8 +143,18 @@ public:
    }
 
    // IGeometrySource overrides & passthrough forwarding
-   const Mesh& GetMesh() override { return mOutMesh; }
-   unsigned long long MeshRevision() override { return mMeshRevision; }
+   const Mesh& GetMesh() override
+   {
+      if (bypassed)
+         return input ? input->GetMesh() : EmptyMesh();
+      return mOutMesh;
+   }
+   unsigned long long MeshRevision() override
+   {
+      if (bypassed)
+         return input ? input->MeshRevision() : 0;
+      return mMeshRevision;
+   }
    Mat4 GetModelMatrix() const override { return input ? input->GetModelMatrix() : Mat4::Identity(); }
    Material GetMaterial() const override { return input ? input->GetMaterial() : Material(); }
    unsigned long long MaterialRevision() const override { return ComputeContentRevision(GetMaterial(), mMaterialRevision, mLastMaterialHash); }

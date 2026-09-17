@@ -416,8 +416,8 @@ void ProjectionNode::CookIfNeeded(int frameId)
    int targetH = (int)std::max(16.0f, height);
    if (matchInput && hasInput)
    {
-      int inW = mInput.GetSource()->GetOutputWidth();
-      int inH = mInput.GetSource()->GetOutputHeight();
+      int inW = mInput.Width();
+      int inH = mInput.Height();
       if (inW > 0 && inH > 0)
       {
          targetW = inW;
@@ -430,7 +430,7 @@ void ProjectionNode::CookIfNeeded(int frameId)
 
    // Signature caching check
    Signature sig;
-   sig.upstreamRev = mInput.GetSource() ? mInput.GetSource()->TextureRevision() : 0;
+   sig.upstreamRev = mInput.Revision();
    sig.width = targetW;
    sig.height = targetH;
    sig.matchInput = matchInput;

@@ -60,6 +60,15 @@ void SyphonOutNode::SetServerName(const std::string& name)
    }
 }
 
+void SyphonOutNode::Withdraw()
+{
+   if (mServer != nullptr)
+   {
+      Platform::SyphonServerDestroy(mServer);
+      mServer = nullptr;
+   }
+}
+
 bool SyphonOutNode::HasClients() const
 {
    if (mServer == nullptr)

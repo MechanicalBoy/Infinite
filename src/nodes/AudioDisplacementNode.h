@@ -33,7 +33,6 @@ public:
    AudioDisplacementNode();
    ~AudioDisplacementNode() override;
 
-   INode* BypassSource() override { return dynamic_cast<INode*>(input); }
 
    unsigned int GetOutputTexture() override { return 0; }
    int GetOutputWidth() const override { return 0; }

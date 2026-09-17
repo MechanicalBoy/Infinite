@@ -70,7 +70,11 @@ bool OutputNode::StartRecording(const std::string& path)
 
    if (includeAudio && mAudioInput.IsConnected())
    {
-      if (auto* file = dynamic_cast<AudioFileNode*>(mAudioInput.GetSource()))
+      // A bypassed file is out of the graph, so it must not reach the take
+      // by muxing its file directly; the live path records what the graph
+      // actually plays instead.
+      auto* file = dynamic_cast<AudioFileNode*>(mAudioInput.GetSource());
+      if (file != nullptr && !file->bypassed)
       {
          if (file->IsLoaded())
          {
@@ -272,7 +276,7 @@ bool OutputNode::StartOfflineRender(const std::string& path, double audioSampleR
    if (mOfflineIncludeAudio)
    {
       AudioFileNode* file = !forceGraphAudio ? dynamic_cast<AudioFileNode*>(mAudioInput.GetSource()) : nullptr;
-      if (file != nullptr && file->IsLoaded())
+      if (file != nullptr && !file->bypassed && file->IsLoaded())
       {
          audioPath = file->FilePath();
          audioLoop = file->loop;

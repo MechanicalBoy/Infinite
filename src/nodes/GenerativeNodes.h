@@ -219,7 +219,9 @@ public:
    unsigned long long SurfaceTextureRevision() const override { return mRevision; }
 
    ImageCable& Input() { return mInput; }
-   INode* BypassSource() override { return mInput.GetSource(); }
+   // Image in, points out: there is nothing of the same kind to pass, so a
+   // bypassed Image to Points is removed (empty cloud), never its image.
+   INode* BypassSource() override { return nullptr; }
    size_t PointCount() const { return mPoints.size(); }
 
    // Sampling grid, not source resolution: a 4000px image at density 128 still

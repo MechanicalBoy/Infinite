@@ -47,6 +47,7 @@ public:
    // starting right after the native "in" pin - same layering scheme as
    // FieldPixelNode::DeclaredImageInput.
    int NativeInputCount() const { return 1; }
+   INode* BypassSource() override { return audioInput.GetSource(); }
    AudioCable* AudioInputSlot(int slot) override
    {
       if (slot == 0) return &audioInput;

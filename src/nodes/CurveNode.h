@@ -33,8 +33,8 @@ public:
 
    const Polyline& GetPolyline();
    unsigned long long CurveRevision();
-   const Polyline* GetCurve() override { return &GetPolyline(); }
-   unsigned long long CurveStamp() override { return CurveRevision(); }
+   const Polyline* GetCurve() override { return bypassed ? nullptr : &GetPolyline(); }
+   unsigned long long CurveStamp() override { return bypassed ? 0 : CurveRevision(); }
 
    size_t PointCount() const { return mLine.Count(); }
    size_t TriangleCount() const { return mMesh.indices.size() / 3; }
