@@ -525,43 +525,233 @@ namespace Tabler
       dl->AddLine(ImVec2(center.x - 4.5f * s, center.y + 7.0f * s), ImVec2(center.x + 4.5f * s, center.y + 7.0f * s), col, stroke);
    }
 
-   // Tabler: file-music / clip settings (file with folded top-right corner + audio waveform inside)
-   inline void DrawFileMusic(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   // Tabler: edit / clip settings (box with pencil)
+   inline void DrawEdit(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
    {
       if (!dl) return;
       const float s = size / 24.0f;
-      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.2f, 1.6f * s);
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.5f, 1.9f * s);
       auto P = [&](float x, float y) { return Point24(center, size, x, y); };
 
-      // Outer page outline with folded top-right corner
-      dl->PathClear();
-      dl->PathLineTo(P(14.0f, 3.0f));
-      dl->PathLineTo(P(5.0f, 3.0f));
-      dl->PathLineTo(P(5.0f, 21.0f));
-      dl->PathLineTo(P(19.0f, 21.0f));
-      dl->PathLineTo(P(19.0f, 8.0f));
-      dl->PathStroke(col, ImDrawFlags_None, stroke);
+      // Box contour: (7, 7) -> (4.5, 7) -> (4.5, 19.5) -> (17, 19.5) -> (17, 17)
+      const ImVec2 boxPts[] = {
+         P(7.0f, 7.0f), P(4.5f, 7.0f), P(4.5f, 19.5f), P(17.0f, 19.5f), P(17.0f, 17.0f)
+      };
+      dl->AddPolyline(boxPts, 5, col, ImDrawFlags_None, stroke);
 
-      // Folded corner lines: (14, 3) -> (14, 8) -> (19, 8)
-      dl->PathClear();
-      dl->PathLineTo(P(14.0f, 3.0f));
-      dl->PathLineTo(P(14.0f, 8.0f));
-      dl->PathLineTo(P(19.0f, 8.0f));
-      dl->PathStroke(col, ImDrawFlags_None, stroke);
+      // Pencil body & tip
+      const ImVec2 pencilPts[] = {
+         P(9.0f, 15.0f), P(12.0f, 15.0f), P(20.2f, 6.8f),
+         P(17.2f, 3.8f), P(9.0f, 12.0f), P(9.0f, 15.0f)
+      };
+      dl->AddPolyline(pencilPts, 6, col, ImDrawFlags_Closed, stroke);
+      dl->AddLine(P(15.8f, 5.2f), P(18.8f, 8.2f), col, stroke);
+   }
 
-      // Waveform bars inside the document (vertically centered, diamond envelope)
-      const float xs[5] = { 8.0f, 10.0f, 12.0f, 14.0f, 16.0f };
-      const float halfH[5] = { 1.5f, 3.5f, 5.5f, 3.5f, 1.5f };
-      const float cy = 13.5f;
-      for (int i = 0; i < 5; i++)
+   // Tabler: repeat / loop (dual loop arrows)
+   inline void DrawRepeat(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.6f, 2.0f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      // Top loop: (4.5, 12) -> (4.5, 7.5) -> (19.5, 7.5) with arrowhead
+      const ImVec2 topPts[] = { P(4.5f, 12.0f), P(4.5f, 7.5f), P(19.5f, 7.5f) };
+      dl->AddPolyline(topPts, 3, col, ImDrawFlags_None, stroke);
+      const ImVec2 topArrow[] = { P(16.5f, 4.5f), P(19.5f, 7.5f), P(16.5f, 10.5f) };
+      dl->AddPolyline(topArrow, 3, col, ImDrawFlags_None, stroke);
+
+      // Bottom loop: (19.5, 12) -> (19.5, 16.5) -> (4.5, 16.5) with arrowhead
+      const ImVec2 botPts[] = { P(19.5f, 12.0f), P(19.5f, 16.5f), P(4.5f, 16.5f) };
+      dl->AddPolyline(botPts, 3, col, ImDrawFlags_None, stroke);
+      const ImVec2 botArrow[] = { P(7.5f, 19.5f), P(4.5f, 16.5f), P(7.5f, 13.5f) };
+      dl->AddPolyline(botArrow, 3, col, ImDrawFlags_None, stroke);
+   }
+
+   // Tabler: zoom / search (magnifying glass)
+   inline void DrawZoom(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.5f, 2.0f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      const ImVec2 c = P(10.0f, 10.0f);
+      const float r = 6.8f * s;
+      dl->AddCircle(c, r, col, 24, stroke);
+      dl->AddLine(P(14.8f, 14.8f), P(20.5f, 20.5f), col, stroke);
+   }
+
+   // Tabler: hand-stop / grab (clean palm with 4 upright fingers and thumb)
+   inline void DrawHand(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.5f, 1.8f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      // Four fingers with rounded caps
+      // Index finger
+      const ImVec2 f1[] = { P(8.0f, 14.0f), P(8.0f, 6.5f), P(9.2f, 5.0f), P(10.5f, 5.0f), P(10.5f, 12.0f) };
+      dl->AddPolyline(f1, 5, col, ImDrawFlags_None, stroke);
+
+      // Middle finger
+      const ImVec2 f2[] = { P(10.5f, 12.0f), P(10.5f, 4.0f), P(11.8f, 2.8f), P(13.2f, 2.8f), P(13.5f, 4.0f), P(13.5f, 12.0f) };
+      dl->AddPolyline(f2, 6, col, ImDrawFlags_None, stroke);
+
+      // Ring finger
+      const ImVec2 f3[] = { P(13.5f, 12.0f), P(13.5f, 5.2f), P(14.8f, 4.2f), P(16.0f, 4.2f), P(16.2f, 5.2f), P(16.2f, 12.5f) };
+      dl->AddPolyline(f3, 6, col, ImDrawFlags_None, stroke);
+
+      // Pinky & Palm outer contour down to wrist and thumb
+      const ImVec2 palm[] = {
+         P(16.2f, 12.5f), P(16.2f, 7.8f), P(17.4f, 6.8f), P(18.6f, 6.8f), P(18.8f, 7.8f),
+         P(18.8f, 15.0f), P(18.2f, 18.5f), P(15.5f, 21.0f), P(11.5f, 21.0f),
+         P(8.5f, 19.5f), P(6.5f, 16.5f), P(4.2f, 14.2f), P(4.0f, 12.8f),
+         P(5.2f, 11.5f), P(6.8f, 12.5f), P(8.0f, 14.5f)
+      };
+      dl->AddPolyline(palm, 16, col, ImDrawFlags_None, stroke);
+   }
+
+   // Tabler: line-height / track height
+   inline void DrawLineHeight(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.5f, 1.9f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      // Top arrowhead & stem
+      const ImVec2 topArrow[] = { P(3.2f, 7.5f), P(6.0f, 4.5f), P(8.8f, 7.5f) };
+      dl->AddPolyline(topArrow, 3, col, ImDrawFlags_None, stroke);
+      dl->AddLine(P(6.0f, 4.5f), P(6.0f, 19.5f), col, stroke);
+      // Bottom arrowhead
+      const ImVec2 botArrow[] = { P(3.2f, 16.5f), P(6.0f, 19.5f), P(8.8f, 16.5f) };
+      dl->AddPolyline(botArrow, 3, col, ImDrawFlags_None, stroke);
+
+      // Right horizontal lines
+      dl->AddLine(P(12.0f, 6.0f), P(20.5f, 6.0f), col, stroke);
+      dl->AddLine(P(12.0f, 12.0f), P(20.5f, 12.0f), col, stroke);
+      dl->AddLine(P(12.0f, 18.0f), P(20.5f, 18.0f), col, stroke);
+   }
+
+   // Tabler: pointer (Select Tool)
+   // SVG: M7.904 17.563a1.2 1.2 0 0 0 2.228 .308l2.09 -3.093l4.907 4.907a1.067 1.067 0 0 0 1.509 0l1.047 -1.047a1.067 1.067 0 0 0 0 -1.509l-4.907 -4.907l3.113 -2.09a1.2 1.2 0 0 0 -.309 -2.228l-13.582 -3.904l3.904 13.563
+   inline void DrawPointer(ImDrawList* dl, ImVec2 center, float size, ImU32 col, bool filled = true, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.4f, 1.8f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      const ImVec2 pts[] = {
+         P(4.0f, 4.0f),
+         P(7.9f, 17.6f),
+         P(10.1f, 17.9f),
+         P(12.2f, 14.8f),
+         P(17.1f, 19.7f),
+         P(18.6f, 19.7f),
+         P(19.7f, 18.6f),
+         P(19.7f, 17.1f),
+         P(14.8f, 12.2f),
+         P(17.9f, 10.1f),
+         P(17.6f, 7.9f)
+      };
+      if (filled)
       {
-         dl->AddLine(P(xs[i], cy - halfH[i]), P(xs[i], cy + halfH[i]), col, stroke);
+         const ImVec2 head[] = { pts[0], pts[1], pts[3], pts[10] };
+         const ImVec2 tail[] = { pts[3], pts[4], pts[7], pts[8] };
+         dl->AddConvexPolyFilled(head, 4, col);
+         dl->AddConvexPolyFilled(tail, 4, col);
       }
+      dl->AddPolyline(pts, 11, col, ImDrawFlags_Closed, stroke);
+   }
+
+   // Tabler: trim tool (two opposing chevrons, no middle lines)
+   inline void DrawTrim(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.6f, 2.0f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      // Left chevron (<)
+      const ImVec2 leftArrow[] = { P(9.5f, 6.5f), P(4.5f, 12.0f), P(9.5f, 17.5f) };
+      dl->AddPolyline(leftArrow, 3, col, ImDrawFlags_None, stroke);
+
+      // Right chevron (>)
+      const ImVec2 rightArrow[] = { P(14.5f, 6.5f), P(19.5f, 12.0f), P(14.5f, 17.5f) };
+      dl->AddPolyline(rightArrow, 3, col, ImDrawFlags_None, stroke);
+   }
+
+   // Tabler: pencil (draw / spawn clip tool)
+   // SVG: M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4
+   //      M13.5 6.5l4 4
+   inline void DrawPencil(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.5f, 1.9f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      // Outer pencil contour (body + rounded eraser cap + tip)
+      const ImVec2 body[] = {
+         P(4.0f, 20.0f),
+         P(8.0f, 20.0f),
+         P(18.5f, 9.5f),
+         P(19.8f, 8.2f),
+         P(19.8f, 6.8f),
+         P(18.5f, 5.5f),
+         P(17.2f, 4.2f),
+         P(15.8f, 4.2f),
+         P(14.5f, 5.5f),
+         P(4.0f, 16.0f)
+      };
+      dl->AddPolyline(body, 10, col, ImDrawFlags_Closed, stroke);
+
+      // Collar line: M13.5 6.5l4 4
+      dl->AddLine(P(13.5f, 6.5f), P(17.5f, 10.5f), col, stroke);
+   }
+
+   // Tabler: cursor-text / range selection (I-beam text selection cursor)
+   // SVG: M10 12h4
+   //      M9 4a3 3 0 0 1 3 3v10a3 3 0 0 1 -3 3
+   //      M15 4a3 3 0 0 0 -3 3v10a3 3 0 0 0 3 3
+   inline void DrawCursorText(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      if (!dl) return;
+      const float s = size / 24.0f;
+      const float stroke = customStroke > 0.0f ? customStroke : ImMax(1.6f, 2.0f * s);
+      auto P = [&](float x, float y) { return Point24(center, size, x, y); };
+
+      // Center crossbar
+      dl->AddLine(P(9.5f, 12.0f), P(14.5f, 12.0f), col, stroke);
+
+      // Left bracket
+      const ImVec2 leftPts[] = {
+         P(9.0f, 4.0f), P(10.5f, 4.3f), P(11.7f, 5.5f), P(12.0f, 7.0f),
+         P(12.0f, 17.0f),
+         P(11.7f, 18.5f), P(10.5f, 19.7f), P(9.0f, 20.0f)
+      };
+      dl->AddPolyline(leftPts, 8, col, ImDrawFlags_None, stroke);
+
+      // Right bracket
+      const ImVec2 rightPts[] = {
+         P(15.0f, 4.0f), P(13.5f, 4.3f), P(12.3f, 5.5f), P(12.0f, 7.0f),
+         P(12.0f, 17.0f),
+         P(12.3f, 18.5f), P(13.5f, 19.7f), P(15.0f, 20.0f)
+      };
+      dl->AddPolyline(rightPts, 8, col, ImDrawFlags_None, stroke);
+   }
+
+   // Alias for Range Selection Tool
+   inline void DrawRange(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
+   {
+      DrawCursorText(dl, center, size, col, customStroke);
    }
 
    // Blank-icon-slot fallback: a crisp rounded rect with a subtle inner square
-   // (matching Apple SF Symbols missing asset convention) so that any unset or
-   // missing icon never silently leaves an empty rect.
    inline void DrawPlaceholder(ImDrawList* dl, ImVec2 center, float size, ImU32 col, float customStroke = 0.0f)
    {
       if (!dl) return;

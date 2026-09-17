@@ -626,8 +626,8 @@ namespace
    // Field 'graph' domain (build step 10): forward-declared for the same
    // reason as the two above - ApplyPatchData (far below) needs to remap
    // every FieldGraphNode's persisted key->index ownership map to the fresh
-   // indices it just assigned, and the definition lives next to
-   // RemapViewportPanelNodes, after ApplyPatchData in file order.
+   // indices it just assigned, and the definition lives after ApplyPatchData
+   // in file order.
    void RemapFieldGraphOwnership(const std::map<int, int>& remap);
 
    // Offline Render (non-realtime export) - defined near RebuildAudioTopology/
@@ -1121,16 +1121,14 @@ namespace
    bool gNodePanelOpen = false;
    // The dockable viewport panel: every node index in this list gets its own
    // card, stacked left-to-right when bottom-docked or top-to-bottom when
-   // right/left-docked (see DrawViewportPanelContainer). Session UI state
-   // only, like gNodePanelOpen above - not serialized to patch data, but
-   // carried across Undo/Redo via RemapViewportPanelNodes since those
-   // respawn every node with a new index.
+   // right/left-docked (see DrawViewportPanelContainer). Serialized to
+   // Patch::Data and restored with node index remapping in ApplyPatchData.
    bool gViewportPanelOpen = false;
    std::vector<int> gViewportPanelNodes;
    int gViewportPanelDock = 1;        // 0 = bottom, 1 = right, 2 = left
    // The dockable modulation matrix panel: a spreadsheet-style table of every
-   // active modulation binding. Session UI state only, like gNodePanelOpen and
-   // gViewportPanelNodes above - not serialized to patch data or tracked by undo.
+   // active modulation binding. Session UI state only, like gNodePanelOpen
+   // above - not serialized to patch data or tracked by undo.
    bool  gModMatrixOpen = false;
    int   gModMatrixDock = 0;              // 0 = bottom, 1 = right, 2 = left, 3 = top
    int   gModMatrixFillRows = -1;         // INFINITE_MODMATRIXGEOM probe only
@@ -1196,9 +1194,33 @@ namespace
    // the tempo changes mid-drag.
    bool   gArrangeShiftDraggingLoop = false;
    int64_t gArrangeLoopDragAnchorTick = 0;
-   // Blade tool (toolbar scissors / B): while on, a click on a clip splits
-   // it at the mouse (snapped when snap is on) instead of selecting it.
-   bool  gArrangeBladeOn = false;
+   enum ArrangeLoopDragMode {
+      kArrangeLoopDragNone = 0,
+      kArrangeLoopDragStart, // dragging left border
+      kArrangeLoopDragEnd,   // dragging right border
+      kArrangeLoopDragMove   // dragging header / entire loop
+   };
+   ArrangeLoopDragMode gArrangeLoopDragMode = kArrangeLoopDragNone;
+   Arrange::Tick gArrangeLoopDragOrigStart = 0;
+   Arrange::Tick gArrangeLoopDragOrigEnd = 0;
+   Arrange::Tick gArrangeLoopDragGrabTick = 0;
+   // Arrangement tools (Select A, Trim T, Range R, Blade B, Zoom Z, Hand H, Pencil P)
+   enum class ArrangeTool {
+      Select = 0, // A - Standard selection, move, and edge-trim
+      Trim,       // T - Focused trim / slip tool
+      Range,      // R - Range / marquee selection tool
+      Blade,      // B - Cut / split tool
+      Zoom,       // Z - Zoom tool (click in, Alt-click out, drag scrub)
+      Hand,       // H - Hand / pan tool (drag canvas to pan & scroll)
+      Pencil      // P - Pencil / draw tool (click or drag to spawn new unassigned clip)
+   };
+   ArrangeTool gArrangeTool = ArrangeTool::Select;
+   bool  gArrangeBladeOn = false; // Kept in sync with gArrangeTool == ArrangeTool::Blade
+   bool  gArrangeHandDragging = false;
+   bool  gArrangeZoomDragging = false;
+   ImVec2 gArrangeZoomDragStart(0.0f, 0.0f);
+   float  gArrangeZoomDragStartPpb = 40.0f;
+   double gArrangeZoomDragStartBeats = 0.0;
    // A clip Add to Timeline just made: the panel scrolls it into view once
    // (it can land past the right edge, or on a lane below the fold) and
    // pulses its outline so it is found at a glance.
@@ -1365,12 +1387,13 @@ namespace
       bool singleMember = false;  // Alt held at mouse-down
    } gArrangeDrag;
 
-   // Shift+drag rectangle-select. Screen-space corners (updated live as the
-   // mouse moves) plus the selection captured at mouse-down, so a plain
-   // Shift-drag adds to what was already selected rather than replacing it.
+   // Shift+drag rectangle-select / Range Tool (R). Screen-space corners (updated
+   // live as the mouse moves) plus the selection captured at mouse-down.
    struct ArrangeMarqueeState
    {
       bool active = false;
+      bool allTracks = false; // Started from ruler/header -> spans all tracks vertically
+      int  startLane = -1;    // -1 if all tracks or not track-bounded
       ImVec2 anchor{ 0, 0 };
       ImVec2 current{ 0, 0 };
       std::set<uint64_t> baseSel;
@@ -28531,6 +28554,56 @@ namespace
       return true;
    }
 
+   // Cmd+R / Ctrl+R: renames the active selection (track, group, clip, or
+   // multiple selected clips). If header rows are selected, acts on the anchor
+   // row; otherwise acts on the selected clip(s).
+   bool ArrangeRenameSelection()
+   {
+      // Track or group row selection takes precedence if active
+      if (!gArrangeRowSel.empty())
+      {
+         uint64_t targetId = 0;
+         if (gArrangeRowSelAnchor != 0 && gArrangeRowSel.count(gArrangeRowSelAnchor))
+            targetId = gArrangeRowSelAnchor;
+         else
+            targetId = *gArrangeRowSel.begin();
+
+         if (targetId != 0)
+         {
+            gArrangeRenamingLaneId = targetId;
+            gArrangeRenameJustStarted = true;
+            return true;
+         }
+      }
+
+      // Clip selection (single or multi)
+      const std::vector<uint64_t> selIds = ArrangeSelectionIds();
+      if (!selIds.empty())
+      {
+         uint64_t cid = 0;
+         if (gArrangeSelAnchor != 0 && std::find(selIds.begin(), selIds.end(), gArrangeSelAnchor) != selIds.end())
+            cid = gArrangeSelAnchor;
+         else
+            cid = selIds.front();
+
+         const Arrange::Clip* cp = Arrange::FindClip(gArrange, cid);
+         if (cp != nullptr)
+         {
+            const GraphNode* ctxNode = FindNodeByUid(cp->srcUid);
+            const std::string label = !cp->name.empty() ? cp->name
+               : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
+            gArrangeRenamingClipId = cid;
+            gArrangeRenameTargetIds.clear();
+            for (uint64_t id : selIds)
+               if (id != cid)
+                  gArrangeRenameTargetIds.push_back(id);
+            snprintf(gArrangeRenameClipBuffer, sizeof(gArrangeRenameClipBuffer), "%s", label.c_str());
+            return true;
+         }
+      }
+      return false;
+   }
+
    // ---- live clip drag ------------------------------------------------------
 
    // Starts a drag gesture on `clipId`. `mode` is an ArrangeDragMode; for a
@@ -29998,6 +30071,56 @@ namespace
          }
       }
 
+      // Hand Tool live dragging (pan timeline horizontally & scroll vertically)
+      if (gArrangeHandDragging)
+      {
+         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+         if (ImGui::GetIO().MouseDown[0])
+         {
+            const ImVec2 delta = ImGui::GetIO().MouseDelta;
+            if (std::abs(delta.x) > 0.001f && gArrangePixelsPerBeat > 0.0f)
+               gArrangeScrollBeats = std::max(0.0, gArrangeScrollBeats - (double)(delta.x / gArrangePixelsPerBeat));
+            if (std::abs(delta.y) > 0.001f)
+               ImGui::SetScrollY(ImGui::GetScrollY() - delta.y);
+         }
+         else
+         {
+            gArrangeHandDragging = false;
+         }
+      }
+
+      // Zoom Tool live dragging (smooth horizontal zoom scrubbing around drag start)
+      if (gArrangeZoomDragging)
+      {
+         if (ImGui::GetIO().MouseDown[0])
+         {
+            const float dx = ImGui::GetIO().MousePos.x - gArrangeZoomDragStart.x;
+            if (std::abs(dx) > 3.0f)
+            {
+               const float factor = std::clamp(expf(dx * 0.012f), 0.05f, 20.0f);
+               const float newPpb = std::clamp(gArrangeZoomDragStartPpb * factor, kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
+               const float mx = gArrangeZoomDragStart.x - sArrangeLastRulerStartX;
+               if (mx > 0.0f)
+               {
+                  const double mBeat = gArrangeZoomDragStartBeats + (double)mx / gArrangeZoomDragStartPpb;
+                  gArrangeScrollBeats = std::max(0.0, mBeat - (double)mx / newPpb);
+               }
+               gArrangePixelsPerBeat = newPpb;
+            }
+         }
+         else
+         {
+            const float dx = ImGui::GetIO().MousePos.x - gArrangeZoomDragStart.x;
+            const float dy = ImGui::GetIO().MousePos.y - gArrangeZoomDragStart.y;
+            if (std::sqrt(dx * dx + dy * dy) < 4.0f)
+            {
+               const float factor = ImGui::GetIO().KeyAlt ? 0.75f : 1.35f;
+               zoomAroundMouse(factor);
+            }
+            gArrangeZoomDragging = false;
+         }
+      }
+
       // Keyboard focus claim
       if (overPanel && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)))
          gArrangeClaimedKeys = true;
@@ -30082,6 +30205,8 @@ namespace
             if (gArrangeRowSel.empty() || !ArrangeGroupRowSelection())
                ArrangeGroupSelection();
          }
+         else if (cmd && !kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_R, false))
+            ArrangeRenameSelection();
          else if (!cmd && kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_J, false))
             ArrangeAddTrackShortcut(true);
          else if (!cmd && kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_K, false))
@@ -30098,9 +30223,42 @@ namespace
          // keys (Shift+M is the mod matrix, hence noMods on M).
          else if (noMods && ImGui::IsKeyPressed(ImGuiKey_M, false))
             ArrangeAddMarkerAtPlayhead();
-         // The canvas's B (bypass) is gated off while the timeline is focused.
+         // Tool selection hotkeys (A = Select, T = Trim, R = Range, B = Blade, Z = Zoom, H = Hand)
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_A, false))
+         {
+            gArrangeTool = ArrangeTool::Select;
+            gArrangeBladeOn = false;
+         }
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_T, false))
+         {
+            gArrangeTool = (gArrangeTool == ArrangeTool::Trim) ? ArrangeTool::Select : ArrangeTool::Trim;
+            gArrangeBladeOn = false;
+         }
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_R, false))
+         {
+            gArrangeTool = (gArrangeTool == ArrangeTool::Range) ? ArrangeTool::Select : ArrangeTool::Range;
+            gArrangeBladeOn = false;
+         }
          else if (noMods && ImGui::IsKeyPressed(ImGuiKey_B, false))
-            gArrangeBladeOn = !gArrangeBladeOn;
+         {
+            gArrangeTool = (gArrangeTool == ArrangeTool::Blade) ? ArrangeTool::Select : ArrangeTool::Blade;
+            gArrangeBladeOn = (gArrangeTool == ArrangeTool::Blade);
+         }
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+         {
+            gArrangeTool = (gArrangeTool == ArrangeTool::Zoom) ? ArrangeTool::Select : ArrangeTool::Zoom;
+            gArrangeBladeOn = false;
+         }
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_H, false))
+         {
+            gArrangeTool = (gArrangeTool == ArrangeTool::Hand) ? ArrangeTool::Select : ArrangeTool::Hand;
+            gArrangeBladeOn = false;
+         }
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_P, false))
+         {
+            gArrangeTool = (gArrangeTool == ArrangeTool::Pencil) ? ArrangeTool::Select : ArrangeTool::Pencil;
+            gArrangeBladeOn = false;
+         }
          else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
             ArrangeJumpToMarker(-1);
          else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
@@ -30115,10 +30273,18 @@ namespace
             ArrangeSeekTick(ArrangeEndKeyTargetTick());
          else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && gArrangeDrag.mode == kArrangeDragNone)
          {
-            gArrangeSel.clear();
-            gArrangeSelAnchor = 0;
-            gArrangeAssigningClipId = 0;
-            gArrangeBladeOn = false;
+            if (gArrangeTool != ArrangeTool::Select)
+            {
+               gArrangeTool = ArrangeTool::Select;
+               gArrangeBladeOn = false;
+            }
+            else
+            {
+               gArrangeSel.clear();
+               gArrangeSelAnchor = 0;
+               gArrangeAssigningClipId = 0;
+               gArrangeBladeOn = false;
+            }
          }
       }
 
@@ -30766,34 +30932,104 @@ namespace
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
-            const float iconSize = (bmax.y - bmin.y) * 0.55f;
+            const float iconSize = (bmax.y - bmin.y) * 0.65f;
             const bool hovered = ImGui::IsItemHovered();
             const ImU32 icol = loopWasOn ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
-            Tabler::DrawRefresh(ImGui::GetWindowDrawList(), center, iconSize, icol);
+            Tabler::DrawRepeat(ImGui::GetWindowDrawList(), center, iconSize, icol);
          }
 
-         // Blade (scissors, B): while on, clicking a clip cuts it at the
-         // mouse instead of selecting it; the cursor becomes the scissors.
-         ImGui::SameLine(0.0f, 14.0f);
-         const bool bladeWasOn = gArrangeBladeOn; // see snapWasOn above
-         if (bladeWasOn)
+         // Tool Selector (Select A, Trim T, Range R, Blade B, Zoom Z, Hand H)
+         ImGui::SameLine();
+         const bool toolNonDefault = (gArrangeTool != ArrangeTool::Select);
+         if (toolNonDefault)
          {
             ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(16, 185, 129, 255));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(5, 150, 105, 255));
          }
-         if (ImGui::Button("##arrangebladebtn", ImVec2(30, 0)))
-            gArrangeBladeOn = !gArrangeBladeOn;
-         if (bladeWasOn)
+         const float toolBtnW = 34.0f;
+         if (ImGui::Button("##arrangetoolmodepicker", ImVec2(toolBtnW, 0)))
+         {
+            ImGui::OpenPopup("##arrangetoolpopup");
+         }
+         if (toolNonDefault)
             ImGui::PopStyleColor(2);
+
+         const char* toolTooltip = "Tool: Select (A)";
+         switch (gArrangeTool)
+         {
+            case ArrangeTool::Select: toolTooltip = "Tool: Select (A) - Click to choose tool"; break;
+            case ArrangeTool::Trim:   toolTooltip = "Tool: Trim (T) - Click to choose tool"; break;
+            case ArrangeTool::Range:  toolTooltip = "Tool: Range Selection (R) - Click to choose tool"; break;
+            case ArrangeTool::Blade:  toolTooltip = "Tool: Blade / Cut (B) - Click to choose tool"; break;
+            case ArrangeTool::Zoom:   toolTooltip = "Tool: Zoom (Z) - Click to choose tool"; break;
+            case ArrangeTool::Hand:   toolTooltip = "Tool: Hand / Pan (H) - Click to choose tool"; break;
+            case ArrangeTool::Pencil: toolTooltip = "Tool: Pencil / Draw (P) - Click to choose tool"; break;
+         }
          if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(bladeWasOn ? "Blade Tool: Active (Click clip to cut)" : "Blade / Cut Tool (B)");
+            ImGui::SetTooltip("%s", toolTooltip);
+
+         // Draw current tool icon + chevron
          {
             const ImVec2 bmin = ImGui::GetItemRectMin();
             const ImVec2 bmax = ImGui::GetItemRectMax();
-            const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
+            const float iconSize = (bmax.y - bmin.y) * 0.65f;
+            const ImVec2 center(bmin.x + 12.5f, (bmin.y + bmax.y) * 0.5f);
             const bool hovered = ImGui::IsItemHovered();
-            const ImU32 icol = bladeWasOn ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
-            Tabler::DrawScissors(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, icol);
+            const ImU32 icol = toolNonDefault ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
+            ImDrawList* tdl = ImGui::GetWindowDrawList();
+            switch (gArrangeTool)
+            {
+               case ArrangeTool::Select: Tabler::DrawPointer(tdl, center, iconSize, icol, true); break;
+               case ArrangeTool::Trim:   Tabler::DrawTrim(tdl, center, iconSize, icol); break;
+               case ArrangeTool::Range:  Tabler::DrawRange(tdl, center, iconSize, icol); break;
+               case ArrangeTool::Blade:  Tabler::DrawScissors(tdl, center, iconSize, icol); break;
+               case ArrangeTool::Zoom:   Tabler::DrawZoom(tdl, center, iconSize, icol); break;
+               case ArrangeTool::Hand:   Tabler::DrawHand(tdl, center, iconSize, icol); break;
+               case ArrangeTool::Pencil: Tabler::DrawPencil(tdl, center, iconSize, icol); break;
+            }
+            // Small chevron down on the right edge
+            const ImVec2 chevCenter(bmax.x - 6.5f, (bmin.y + bmax.y) * 0.5f);
+            Tabler::DrawChevronDown(tdl, chevCenter, 8.0f, icol, 1.3f);
+         }
+
+         if (ImGui::BeginPopup("##arrangetoolpopup"))
+         {
+            if (ImGui::MenuItem("Select", "A", gArrangeTool == ArrangeTool::Select))
+            {
+               gArrangeTool = ArrangeTool::Select;
+               gArrangeBladeOn = false;
+            }
+            if (ImGui::MenuItem("Trim", "T", gArrangeTool == ArrangeTool::Trim))
+            {
+               gArrangeTool = ArrangeTool::Trim;
+               gArrangeBladeOn = false;
+            }
+            if (ImGui::MenuItem("Range Selection", "R", gArrangeTool == ArrangeTool::Range))
+            {
+               gArrangeTool = ArrangeTool::Range;
+               gArrangeBladeOn = false;
+            }
+            if (ImGui::MenuItem("Blade", "B", gArrangeTool == ArrangeTool::Blade))
+            {
+               gArrangeTool = ArrangeTool::Blade;
+               gArrangeBladeOn = true;
+            }
+            if (ImGui::MenuItem("Zoom", "Z", gArrangeTool == ArrangeTool::Zoom))
+            {
+               gArrangeTool = ArrangeTool::Zoom;
+               gArrangeBladeOn = false;
+            }
+            if (ImGui::MenuItem("Hand", "H", gArrangeTool == ArrangeTool::Hand))
+            {
+               gArrangeTool = ArrangeTool::Hand;
+               gArrangeBladeOn = false;
+            }
+            if (ImGui::MenuItem("Pencil (Draw Clip)", "P", gArrangeTool == ArrangeTool::Pencil))
+            {
+               gArrangeTool = ArrangeTool::Pencil;
+               gArrangeBladeOn = false;
+            }
+            ImGui::EndPopup();
          }
 
          // Add Marker (M): drops one at the playhead, on the snap grid.
@@ -30808,7 +31044,7 @@ namespace
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             const bool hovered = ImGui::IsItemHovered();
             const ImU32 icol = hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol;
-            Tabler::DrawFlag(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, icol);
+            Tabler::DrawFlag(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.65f, icol);
          }
 
          // Reset Row Heights: any track drag-resized off the default row
@@ -30834,24 +31070,17 @@ namespace
             const ImVec2 rbmin = ImGui::GetItemRectMin();
             const ImVec2 rbmax = ImGui::GetItemRectMax();
             const ImVec2 rcenter((rbmin.x + rbmax.x) * 0.5f, (rbmin.y + rbmax.y) * 0.5f);
-            ImDrawList* rdl = ImGui::GetWindowDrawList();
-            const float barW = 12.0f;
             const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
             const ImU32 barCol = anyResized
                ? (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol)
                : (arrangeIconCol & 0x60FFFFFFu);
-            for (int bi = 0; bi < 3; bi++)
-            {
-               const float by = rcenter.y - 5.0f + (float)bi * 5.0f;
-               rdl->AddLine(ImVec2(rcenter.x - barW * 0.5f, by), ImVec2(rcenter.x + barW * 0.5f, by), barCol, 1.4f);
-            }
+            Tabler::DrawLineHeight(ImGui::GetWindowDrawList(), rcenter, (rbmax.y - rbmin.y) * 0.65f, barCol);
             if (hovered)
                ImGui::SetTooltip(anyResized ? "Reset all track heights to default" : "All tracks already at default height");
          }
 
-         // Inspector / Clip Settings toggle. Icon is the sliders/adjustments
-         // glyph rather than a plain list, so it reads distinctly from the
-         // Reset Row Heights bars icon right beside it.
+         // Inspector / Clip Settings toggle. Icon is the edit/pencil
+         // glyph for clip/track settings.
          ImGui::SameLine();
          const bool inspectorWasOpen = gArrangeClipSettingsPanelOpen;
          if (inspectorWasOpen)
@@ -30871,7 +31100,7 @@ namespace
             const ImVec2 center((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f);
             const bool hovered = ImGui::IsItemHovered();
             const ImU32 icol = inspectorWasOpen ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(255, 255, 255, 255) : arrangeIconCol);
-            Tabler::DrawFileMusic(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.62f, icol);
+            Tabler::DrawEdit(ImGui::GetWindowDrawList(), center, (bmax.y - bmin.y) * 0.65f, icol);
          }
 
          // The routing mode (gAudioMode) is owned by the "Enable Timeline
@@ -31399,13 +31628,75 @@ namespace
 
       // The ruler's own button: click-drag scrubs a ghost playhead (the
       // transport seeks once, on release - WP6), Shift+drag carves the loop.
+      // In Range Selection mode (R), dragging on the ruler selects across ALL tracks.
+      // Dragging along the loop borders ([start, end]) or loop header adjusts the loop.
+      const float loopX0 = tickToX(gArrange.settings.loop.start);
+      const float loopX1 = tickToX(gArrange.settings.loop.end);
+      const float kBorderHitRadius = 7.0f;
+      const bool mouseInRuler = mouse.x >= rulerPos.x && mouse.x < rulerPos.x + rulerSize.x &&
+                                mouse.y >= rulerPos.y && mouse.y < rulerPos.y + rulerSize.y;
+      const bool loopLeftBorderHovered = gArrange.settings.loop.enabled && mouseInRuler && !markerHoveredAny &&
+                                         (std::abs(mouse.x - loopX0) <= kBorderHitRadius);
+      const bool loopRightBorderHovered = gArrange.settings.loop.enabled && mouseInRuler && !markerHoveredAny &&
+                                          (std::abs(mouse.x - loopX1) <= kBorderHitRadius);
+      const bool loopHeaderHovered = gArrange.settings.loop.enabled && mouseInRuler && !markerHoveredAny &&
+                                     !loopLeftBorderHovered && !loopRightBorderHovered &&
+                                     (mouse.x > loopX0 && mouse.x < loopX1) &&
+                                     (mouse.y >= kTickStripTop && mouse.y <= kTickStripTop + 8.0f);
+
+      if (gArrangeLoopDragMode != kArrangeLoopDragNone)
+      {
+         if (gArrangeLoopDragMode == kArrangeLoopDragStart || gArrangeLoopDragMode == kArrangeLoopDragEnd)
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+         else if (gArrangeLoopDragMode == kArrangeLoopDragMove)
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+      }
+      else if (loopLeftBorderHovered || loopRightBorderHovered)
+      {
+         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+      }
+      else if (loopHeaderHovered)
+      {
+         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+      }
+
       ImGui::SetCursorScreenPos(rulerPos);
       ImGui::InvisibleButton("##arrangerulerbtn", rulerSize);
       const bool rulerShiftHeld = ImGui::GetIO().KeyShift;
       if (ImGui::IsItemActivated())
       {
          const Arrange::Tick at = gridSnap(xToTick(ImGui::GetIO().MousePos.x));
-         if (rulerShiftHeld)
+         if (loopLeftBorderHovered)
+         {
+            gArrangeLoopDragMode = kArrangeLoopDragStart;
+            gArrangeLoopDragOrigStart = gArrange.settings.loop.start;
+            gArrangeLoopDragOrigEnd = gArrange.settings.loop.end;
+            gArrangeLoopDragGrabTick = xToTick(ImGui::GetIO().MousePos.x);
+         }
+         else if (loopRightBorderHovered)
+         {
+            gArrangeLoopDragMode = kArrangeLoopDragEnd;
+            gArrangeLoopDragOrigStart = gArrange.settings.loop.start;
+            gArrangeLoopDragOrigEnd = gArrange.settings.loop.end;
+            gArrangeLoopDragGrabTick = xToTick(ImGui::GetIO().MousePos.x);
+         }
+         else if (loopHeaderHovered)
+         {
+            gArrangeLoopDragMode = kArrangeLoopDragMove;
+            gArrangeLoopDragOrigStart = gArrange.settings.loop.start;
+            gArrangeLoopDragOrigEnd = gArrange.settings.loop.end;
+            gArrangeLoopDragGrabTick = xToTick(ImGui::GetIO().MousePos.x);
+         }
+         else if (gArrangeTool == ArrangeTool::Range)
+         {
+            gArrangeMarquee.active = true;
+            gArrangeMarquee.allTracks = true;
+            gArrangeMarquee.startLane = -1;
+            gArrangeMarquee.anchor = ImGui::GetIO().MousePos;
+            gArrangeMarquee.current = ImGui::GetIO().MousePos;
+            gArrangeMarquee.baseSel = rulerShiftHeld ? gArrangeSel : std::set<uint64_t>();
+         }
+         else if (rulerShiftHeld)
          {
             gArrangeShiftDraggingLoop = true;
             gArrangeLoopDragAnchorTick = at;
@@ -31415,7 +31706,47 @@ namespace
             ArrangeScrubBegin(at);
          }
       }
-      if (gArrangeShiftDraggingLoop && ImGui::IsItemActive())
+      if (gArrangeLoopDragMode != kArrangeLoopDragNone && ImGui::IsItemActive())
+      {
+         const Arrange::Tick curTick = xToTick(ImGui::GetIO().MousePos.x);
+         if (gArrangeLoopDragMode == kArrangeLoopDragStart)
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            Arrange::Tick newStart = gridSnap(curTick);
+            if (newStart < 0) newStart = 0;
+            if (newStart >= gArrange.settings.loop.end)
+               newStart = std::max<Arrange::Tick>(0, gArrange.settings.loop.end - Arrange::kPPQ / 16);
+            ArrangeSetLoop(true, newStart, gArrange.settings.loop.end);
+         }
+         else if (gArrangeLoopDragMode == kArrangeLoopDragEnd)
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            Arrange::Tick newEnd = gridSnap(curTick);
+            if (newEnd <= gArrange.settings.loop.start)
+               newEnd = gArrange.settings.loop.start + Arrange::kPPQ / 16;
+            ArrangeSetLoop(true, gArrange.settings.loop.start, newEnd);
+         }
+         else if (gArrangeLoopDragMode == kArrangeLoopDragMove)
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            const Arrange::Tick tickDelta = gridSnap(curTick) - gridSnap(gArrangeLoopDragGrabTick);
+            const Arrange::Tick loopLen = gArrangeLoopDragOrigEnd - gArrangeLoopDragOrigStart;
+            Arrange::Tick newStart = gArrangeLoopDragOrigStart + tickDelta;
+            if (newStart < 0) newStart = 0;
+            Arrange::Tick newEnd = newStart + loopLen;
+            ArrangeSetLoop(true, newStart, newEnd);
+         }
+      }
+      if (gArrangeLoopDragMode != kArrangeLoopDragNone && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+      {
+         gArrangeLoopDragMode = kArrangeLoopDragNone;
+      }
+      if (gArrangeTool == ArrangeTool::Range && gArrangeMarquee.active && gArrangeMarquee.allTracks)
+      {
+         if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            gArrangeMarquee.current = ImGui::GetIO().MousePos;
+      }
+      else if (gArrangeShiftDraggingLoop && ImGui::IsItemActive())
       {
          // Shift+drag on the ruler carves out [start,end) - dragging left of
          // the anchor extends the region backward instead of collapsing it.
@@ -31453,8 +31784,6 @@ namespace
       }
       // Right-click the ruler while a loop region is armed to drop it (a
       // marker flag's own right-click opens its menu instead).
-      const bool mouseInRuler = mouse.x >= rulerPos.x && mouse.x < rulerPos.x + rulerSize.x &&
-                                mouse.y >= rulerPos.y && mouse.y < rulerPos.y + rulerSize.y;
       if (mouseInRuler && !markerHoveredAny && gArrange.settings.loop.enabled && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
          ArrangeSetLoop(false, gArrange.settings.loop.start, gArrange.settings.loop.end);
 
@@ -31558,6 +31887,21 @@ namespace
          // Past the last row: fall back to the last lane so drag targeting
          // still clamps sanely.
          return laneRowTop.empty() ? -1 : (int)laneRowTop.size() - 1;
+      };
+
+      // Continuous monotonic lane index lookup for Range / Marquee selections (no gaps between lanes)
+      auto laneIndexForY = [&](float y) -> int
+      {
+         if (laneRowTop.empty()) return 0;
+         if (y <= laneRowTop.front()) return 0;
+         if (y >= laneRowTop.back()) return (int)laneRowTop.size() - 1;
+         for (size_t li = 0; li < laneRowTop.size(); ++li)
+         {
+            const float nextTop = (li + 1 < laneRowTop.size()) ? laneRowTop[li + 1] : (laneRowTop[li] + laneRowH[li]);
+            if (y >= laneRowTop[li] && y < nextTop)
+               return (int)li;
+         }
+         return std::clamp((int)laneRowTop.size() - 1, 0, (int)laneRowTop.size() - 1);
       };
 
       // Clip-edge snap. With snap on the grid point is always taken (a hard
@@ -32068,12 +32412,33 @@ namespace
       // mouse-down (baseSel) once the per-lane loop is done drawing.
       bool marqueeFinalizeNow = false;
       std::set<uint64_t> marqueeHits;
+      Arrange::Tick marqueeMinTick = 0;
+      Arrange::Tick marqueeMaxTick = 0;
+      float marqueeX0 = 0.0f;
+      float marqueeX1 = 0.0f;
+      int marqueeMinLane = 0;
+      int marqueeMaxLane = (int)laneRowTop.size() - 1;
       if (gArrangeMarquee.active)
       {
          if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
             gArrangeMarquee.current = mouse;
          else
             marqueeFinalizeNow = true;
+
+         const Arrange::Tick tAnchor = gridSnap(xToTick(gArrangeMarquee.anchor.x));
+         const Arrange::Tick tCurrent = gridSnap(xToTick(gArrangeMarquee.current.x));
+         marqueeMinTick = std::min(tAnchor, tCurrent);
+         marqueeMaxTick = std::max(tAnchor, tCurrent);
+         marqueeX0 = std::max(rulerStartX, tickToX(marqueeMinTick));
+         marqueeX1 = std::min(rulerStartX + rulerWidth, tickToX(marqueeMaxTick));
+
+         if (!gArrangeMarquee.allTracks && !laneRowTop.empty())
+         {
+            const int startL = (gArrangeMarquee.startLane >= 0) ? gArrangeMarquee.startLane : laneIndexForY(gArrangeMarquee.anchor.y);
+            const int curL = laneIndexForY(gArrangeMarquee.current.y);
+            marqueeMinLane = std::clamp(std::min(startL, curL), 0, (int)laneRowTop.size() - 1);
+            marqueeMaxLane = std::clamp(std::max(startL, curL), 0, (int)laneRowTop.size() - 1);
+         }
       }
 
       // Every group header draws once, up front - not lane-triggered. With
@@ -32361,12 +32726,19 @@ namespace
 
             if (gArrangeMarquee.active)
             {
-               const float rMinX = std::min(gArrangeMarquee.anchor.x, gArrangeMarquee.current.x);
-               const float rMaxX = std::max(gArrangeMarquee.anchor.x, gArrangeMarquee.current.x);
-               const float rMinY = std::min(gArrangeMarquee.anchor.y, gArrangeMarquee.current.y);
-               const float rMaxY = std::max(gArrangeMarquee.anchor.y, gArrangeMarquee.current.y);
-               if (rMaxX >= cLeft && rMinX <= cRight && rMaxY >= cTop && rMinY <= cBottom)
-                  marqueeHits.insert(clip.id);
+               if (gArrangeMarquee.allTracks)
+               {
+                  if (cRight >= marqueeX0 && cLeft <= marqueeX1)
+                     marqueeHits.insert(clip.id);
+               }
+               else
+               {
+                  if ((int)i >= marqueeMinLane && (int)i <= marqueeMaxLane)
+                  {
+                     if (cRight >= marqueeX0 && cLeft <= marqueeX1)
+                        marqueeHits.insert(clip.id);
+                  }
+               }
             }
 
             ImGui::PushID((int)(clip.id & 0x7fffffff));
@@ -32385,113 +32757,184 @@ namespace
 
             const bool isSelected = gArrangeSel.count(clip.id) != 0;
             const ImGuiIO& cio = ImGui::GetIO();
+            const ImVec2 mPos = cio.MousePos;
 
             // Hit zones: a trim handle is at most a quarter of the clip on
             // each side (2..6 px), so the middle half of any clip always moves.
-            const ImVec2 mPos = cio.MousePos;
             const float handleW = std::clamp((clipX1 - clipX0) * 0.25f, 2.0f, 6.0f);
-            // The blade has no trim zones: the whole clip is a cut target.
-            const bool onLeftEdge = clipHovered && !gArrangeBladeOn && clipX0 >= rulerStartX && (mPos.x - clipX0 <= handleW);
-            const bool onRightEdge = clipHovered && !gArrangeBladeOn && !onLeftEdge && clipX1 <= rulerStartX + rulerWidth &&
+            const bool onLeftEdge = clipHovered && clipX0 >= rulerStartX && (mPos.x - clipX0 <= handleW);
+            const bool onRightEdge = clipHovered && !onLeftEdge && clipX1 <= rulerStartX + rulerWidth &&
                                      (clipX1 - mPos.x <= handleW);
             const int edgeHit = onLeftEdge ? Arrange::kEdgeStart : (onRightEdge ? Arrange::kEdgeEnd : -1);
-            // A grouped clip's edge that is also the group's edge drives the
-            // group (trim the members on that edge; Shift scales). Alt works
-            // on the one clip.
-            bool groupEdge = false;
-            if (edgeHit >= 0 && clip.groupId != 0 && !cio.KeyAlt)
-            {
-               auto gs = arrangeGroupSpans.find(clip.groupId);
-               if (gs != arrangeGroupSpans.end())
-                  groupEdge = edgeHit == Arrange::kEdgeStart ? clip.start == gs->second.start : clip.End() == gs->second.end;
-            }
 
-            if (edgeHit >= 0)
-               ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-
-            // Click: Alt = this member only; Cmd/Ctrl or Shift = toggle into
-            // the selection (no drag) - except Shift on a group edge, which is
-            // the proportional scale. A plain click keeps an existing
-            // selection that contains the clip, so the drag moves all of it.
-            // Blade: the click cuts at the mouse (on the grid when snap is
-            // on) and neither selects nor drags.
             const Arrange::Tick bladeTick = gridSnap(xToTick(mPos.x));
-            const bool bladeCuts = gArrangeBladeOn && bladeTick > clip.start && bladeTick < clip.End();
-            if (clipActivated && gArrangeBladeOn)
-            {
-               if (bladeCuts)
-                  ArrangeBladeSplitAt(clip.id, bladeTick);
-            }
-            // Double-click opens the Clip Inspector (Docked Inspector panel)
-            else if (clipActivated && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
-                     gArrangeDrag.mode == kArrangeDragNone && !cio.KeyShift && !cio.KeySuper && !cio.KeyCtrl)
-            {
-               if (gArrangeClipSettingsPanelOpen && gArrangeSettingsPanelTarget == clip.id)
-               {
-                  gArrangeClipSettingsPanelOpen = false;
-               }
-               else
-               {
-                  gArrangeClipSettingsPanelOpen = true;
-                  gArrangeSettingsPanelTarget = clip.id;
-                  gArrangeRowSel.clear();
-                  gArrangeRowSelAnchor = 0;
-               }
-            }
-            else if (clipActivated && gArrangeDrag.mode == kArrangeDragNone)
-            {
-               const Arrange::Tick grabTick = xToTick(mPos.x);
-               const bool alt = cio.KeyAlt;
-               if (cio.KeyShift && groupEdge)
-               {
-                  ArrangeClickSelect(clip.id, false, false);
-                  ArrangeDragBegin(kArrangeDragGroupScale, clip.id, edgeHit, grabTick);
-               }
-               else if (cio.KeySuper || cio.KeyCtrl || cio.KeyShift)
-               {
-                  ArrangeClickSelect(clip.id, true, alt);
-               }
-               else
-               {
-                  const bool wasSelected = isSelected && !alt;
-                  ArrangeClickSelect(clip.id, false, alt);
-                  int mode = kArrangeDragMove;
-                  if (groupEdge)
-                     mode = kArrangeDragGroupEdge;
-                  else if (edgeHit == Arrange::kEdgeStart)
-                     mode = kArrangeDragTrimStart;
-                  else if (edgeHit == Arrange::kEdgeEnd)
-                     mode = kArrangeDragTrimEnd;
-                  ArrangeDragBegin(mode, clip.id, edgeHit >= 0 ? edgeHit : Arrange::kEdgeStart, grabTick);
-                  gArrangeDrag.collapseOnClick = wasSelected;
-                  gArrangeDrag.singleMember = alt;
-               }
-            }
+            const bool bladeCuts = (gArrangeTool == ArrangeTool::Blade || gArrangeBladeOn) &&
+                                   (bladeTick > clip.start && bladeTick < clip.End());
 
-            // Right-click: the menu acts on the selection, so a clip outside
-            // it becomes the selection first.
-            if (clipHovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+            // Hand Tool: drag canvas to pan & scroll
+            if (gArrangeTool == ArrangeTool::Hand)
             {
-               if (!isSelected)
+               if (clipHovered)
+                  ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+               if (clipActivated)
+                  gArrangeHandDragging = true;
+            }
+            // Zoom Tool: click in, Alt-click / right-click out, drag scrub
+            else if (gArrangeTool == ArrangeTool::Zoom)
+            {
+               if (clipActivated)
+               {
+                  gArrangeZoomDragging = true;
+                  gArrangeZoomDragStart = mPos;
+                  gArrangeZoomDragStartPpb = gArrangePixelsPerBeat;
+                  gArrangeZoomDragStartBeats = gArrangeScrollBeats;
+               }
+               else if (clipHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+               {
+                  zoomAroundMouse(0.75f);
+               }
+            }
+            // Range Selection Tool: marquee select bounded to track(s)
+            else if (gArrangeTool == ArrangeTool::Range)
+            {
+               if (clipActivated && !gArrangeMarquee.active)
+               {
+                  gArrangeMarquee.active = true;
+                  gArrangeMarquee.allTracks = false;
+                  gArrangeMarquee.startLane = (int)i;
+                  gArrangeMarquee.anchor = mPos;
+                  gArrangeMarquee.current = mPos;
+                  gArrangeMarquee.baseSel = cio.KeyShift ? gArrangeSel : std::set<uint64_t>();
+                  marqueeHits.insert(clip.id);
+               }
+            }
+            // Trim Tool: dedicated slip/trim on clip edges
+            else if (gArrangeTool == ArrangeTool::Trim)
+            {
+               if (clipHovered)
+                  ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+               if (clipActivated && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  const float midX = (clipX0 + clipX1) * 0.5f;
+                  const bool isLeft = (mPos.x < midX);
+                  const int edge = isLeft ? Arrange::kEdgeStart : Arrange::kEdgeEnd;
+                  const int mode = isLeft ? kArrangeDragTrimStart : kArrangeDragTrimEnd;
                   ArrangeClickSelect(clip.id, false, cio.KeyAlt);
-               gArrangeCtxClipId = clip.id;
-               openClipCtx = true;
+                  ArrangeDragBegin(mode, clip.id, edge, xToTick(mPos.x));
+               }
+               if (clipHovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+               {
+                  if (!isSelected)
+                     ArrangeClickSelect(clip.id, false, cio.KeyAlt);
+                  gArrangeCtxClipId = clip.id;
+                  openClipCtx = true;
+               }
             }
-
-            // Click-to-scrub on a Sample's body (step 2): deliberately
-            // middle-click, not left-click - every left-click combination
-            // above (plain/Alt/Cmd/Ctrl/Shift, on the body or an edge) is
-            // already claimed by select/drag/trim/group-scale/blade, and
-            // reusing any of them for scrub would silently steal one of
-            // those. Middle-click has no existing meaning here, so this is
-            // purely additive. Reuses the ruler's own ArrangeScrubBegin and
-            // xToTick/gridSnap conversion (see the update/end continuation
-            // next to the ruler's own scrub block above) so a Sample scrubs
-            // to exactly the tick the ruler itself would for that pixel.
-            if (clip.sampleDropped && clipHovered && !gArrangeBladeOn &&
-                ImGui::IsMouseClicked(ImGuiMouseButton_Middle) && !gArrangeScrubbing)
+            // Blade Tool (B): slice clip at mouse/grid
+            else if (gArrangeTool == ArrangeTool::Blade || gArrangeBladeOn)
             {
-               ArrangeScrubBegin(gridSnap(xToTick(mPos.x)), ImGuiMouseButton_Middle);
+               if (clipActivated && bladeCuts)
+               {
+                  ArrangeBladeSplitAt(clip.id, bladeTick);
+               }
+            }
+            // Pencil / Draw Tool (P): select/inspect existing clip or right click menu
+            else if (gArrangeTool == ArrangeTool::Pencil)
+            {
+               if (clipHovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+               {
+                  if (!isSelected)
+                     ArrangeClickSelect(clip.id, false, cio.KeyAlt);
+                  gArrangeCtxClipId = clip.id;
+                  openClipCtx = true;
+               }
+               else if (clipActivated && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  ArrangeClickSelect(clip.id, cio.KeyShift, cio.KeyAlt);
+               }
+            }
+            // Select Tool (A): Standard DAW clip interaction
+            else
+            {
+               // A grouped clip's edge that is also the group's edge drives the
+               // group (trim the members on that edge; Shift scales). Alt works
+               // on the one clip.
+               bool groupEdge = false;
+               if (edgeHit >= 0 && clip.groupId != 0 && !cio.KeyAlt)
+               {
+                  auto gs = arrangeGroupSpans.find(clip.groupId);
+                  if (gs != arrangeGroupSpans.end())
+                     groupEdge = edgeHit == Arrange::kEdgeStart ? clip.start == gs->second.start : clip.End() == gs->second.end;
+               }
+
+               if (edgeHit >= 0)
+                  ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+
+               // Click: Alt = this member only; Cmd/Ctrl or Shift = toggle into
+               // the selection (no drag) - except Shift on a group edge, which is
+               // the proportional scale. A plain click keeps an existing
+               // selection that contains the clip, so the drag moves all of it.
+               if (clipActivated && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
+                   gArrangeDrag.mode == kArrangeDragNone && !cio.KeyShift && !cio.KeySuper && !cio.KeyCtrl)
+               {
+                  if (gArrangeClipSettingsPanelOpen && gArrangeSettingsPanelTarget == clip.id)
+                  {
+                     gArrangeClipSettingsPanelOpen = false;
+                  }
+                  else
+                  {
+                     gArrangeClipSettingsPanelOpen = true;
+                     gArrangeSettingsPanelTarget = clip.id;
+                     gArrangeRowSel.clear();
+                     gArrangeRowSelAnchor = 0;
+                  }
+               }
+               else if (clipActivated && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  const Arrange::Tick grabTick = xToTick(mPos.x);
+                  const bool alt = cio.KeyAlt;
+                  if (cio.KeyShift && groupEdge)
+                  {
+                     ArrangeClickSelect(clip.id, false, false);
+                     ArrangeDragBegin(kArrangeDragGroupScale, clip.id, edgeHit, grabTick);
+                  }
+                  else if (cio.KeySuper || cio.KeyCtrl || cio.KeyShift)
+                  {
+                     ArrangeClickSelect(clip.id, true, alt);
+                  }
+                  else
+                  {
+                     const bool wasSelected = isSelected && !alt;
+                     ArrangeClickSelect(clip.id, false, alt);
+                     int mode = kArrangeDragMove;
+                     if (groupEdge)
+                        mode = kArrangeDragGroupEdge;
+                     else if (edgeHit == Arrange::kEdgeStart)
+                        mode = kArrangeDragTrimStart;
+                     else if (edgeHit == Arrange::kEdgeEnd)
+                        mode = kArrangeDragTrimEnd;
+                     ArrangeDragBegin(mode, clip.id, edgeHit >= 0 ? edgeHit : Arrange::kEdgeStart, grabTick);
+                     gArrangeDrag.collapseOnClick = wasSelected;
+                     gArrangeDrag.singleMember = alt;
+                  }
+               }
+
+               // Right-click: the menu acts on the selection, so a clip outside
+               // it becomes the selection first.
+               if (clipHovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+               {
+                  if (!isSelected)
+                     ArrangeClickSelect(clip.id, false, cio.KeyAlt);
+                  gArrangeCtxClipId = clip.id;
+                  openClipCtx = true;
+               }
+
+               // Middle-click scrub on a Sample
+               if (clip.sampleDropped && clipHovered &&
+                   ImGui::IsMouseClicked(ImGuiMouseButton_Middle) && !gArrangeScrubbing)
+               {
+                  ArrangeScrubBegin(gridSnap(xToTick(mPos.x)), ImGuiMouseButton_Middle);
+               }
             }
 
             // Styling. A Color Tint overrides the type palette; a disabled or
@@ -32753,39 +33196,97 @@ namespace
             ImGui::PopID();
          }
 
-         // Empty lane body: left-click clears the selection (not with the
-         // blade on - a missed cut keeps it), right-click offers "Add Clip"
-         // at that tick.
+         // Empty lane body: behavior depends on active tool
          const bool mouseInLane = mouse.x >= rulerStartX && mouse.x < rulerStartX + rulerWidth &&
                                   mouse.y >= curY && mouse.y < curY + rowH;
          if (mouseInLane && !clipHoveredAny && ImGui::IsWindowHovered())
          {
             const ImGuiIO& lio = ImGui::GetIO();
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+            if (gArrangeTool == ArrangeTool::Hand)
             {
-               AddUnassignedClipAt(laneId, gridSnap(xToTick(mouse.x)));
+               ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+               if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                  gArrangeHandDragging = true;
             }
-            else if (lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl && !gArrangeMarquee.active &&
-                     ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+            else if (gArrangeTool == ArrangeTool::Zoom)
             {
-               gArrangeMarquee.active = true;
-               gArrangeMarquee.anchor = mouse;
-               gArrangeMarquee.current = mouse;
-               gArrangeMarquee.baseSel = gArrangeSel;
+               if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+               {
+                  gArrangeZoomDragging = true;
+                  gArrangeZoomDragStart = mouse;
+                  gArrangeZoomDragStartPpb = gArrangePixelsPerBeat;
+                  gArrangeZoomDragStartBeats = gArrangeScrollBeats;
+               }
+               else if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+               {
+                  zoomAroundMouse(0.75f);
+               }
             }
-            else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
-                !gArrangeBladeOn && !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
+            else if (gArrangeTool == ArrangeTool::Pencil)
             {
-               gArrangeSel.clear();
-               gArrangeSelAnchor = 0;
-               gArrangeRowSel.clear();
-               gArrangeRowSelAnchor = 0;
+               const Arrange::Tick ghostTick = gridSnap(xToTick(mouse.x));
+               const float gx0 = std::max(rulerStartX, tickToX(ghostTick));
+               const float gx1 = std::min(rulerStartX + rulerWidth, tickToX(ghostTick + Arrange::kTicksPerBar));
+               if (gx1 > gx0)
+               {
+                  dl->AddRectFilled(ImVec2(gx0, curY + 2.0f), ImVec2(gx1, curY + rowH - 2.0f),
+                                    IM_COL32(16, 185, 129, 50), 3.0f);
+                  dl->AddRect(ImVec2(gx0, curY + 2.0f), ImVec2(gx1, curY + rowH - 2.0f),
+                              IM_COL32(16, 185, 129, 200), 3.0f, 0, 1.5f);
+               }
+               if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  AddUnassignedClipAt(laneId, ghostTick);
+               }
+               if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+               {
+                  addClipAtTick = ghostTick;
+                  addClipToLaneId = laneId;
+                  openAddClip = true;
+               }
             }
-            if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+            else if (gArrangeTool == ArrangeTool::Range)
             {
-               addClipAtTick = gridSnap(xToTick(mouse.x));
-               addClipToLaneId = laneId;
-               openAddClip = true;
+               if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !gArrangeMarquee.active && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  gArrangeMarquee.active = true;
+                  gArrangeMarquee.allTracks = false;
+                  gArrangeMarquee.startLane = (int)i;
+                  gArrangeMarquee.anchor = mouse;
+                  gArrangeMarquee.current = mouse;
+                  gArrangeMarquee.baseSel = lio.KeyShift ? gArrangeSel : std::set<uint64_t>();
+               }
+            }
+            else
+            {
+               if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  AddUnassignedClipAt(laneId, gridSnap(xToTick(mouse.x)));
+               }
+               else if (lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl && !gArrangeMarquee.active &&
+                        ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone)
+               {
+                  gArrangeMarquee.active = true;
+                  gArrangeMarquee.allTracks = false;
+                  gArrangeMarquee.startLane = (int)i;
+                  gArrangeMarquee.anchor = mouse;
+                  gArrangeMarquee.current = mouse;
+                  gArrangeMarquee.baseSel = gArrangeSel;
+               }
+               else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gArrangeDrag.mode == kArrangeDragNone &&
+                   !gArrangeBladeOn && !lio.KeyShift && !lio.KeySuper && !lio.KeyCtrl)
+               {
+                  gArrangeSel.clear();
+                  gArrangeSelAnchor = 0;
+                  gArrangeRowSel.clear();
+                  gArrangeRowSelAnchor = 0;
+               }
+               if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+               {
+                  addClipAtTick = gridSnap(xToTick(mouse.x));
+                  addClipToLaneId = laneId;
+                  openAddClip = true;
+               }
             }
          }
 
@@ -32886,12 +33387,31 @@ namespace
             gArrangeMarquee.active = false;
          else
          {
-            const ImVec2 r0(std::min(gArrangeMarquee.anchor.x, gArrangeMarquee.current.x),
-                             std::min(gArrangeMarquee.anchor.y, gArrangeMarquee.current.y));
-            const ImVec2 r1(std::max(gArrangeMarquee.anchor.x, gArrangeMarquee.current.x),
-                             std::max(gArrangeMarquee.anchor.y, gArrangeMarquee.current.y));
-            dl->AddRectFilled(r0, r1, IM_COL32(90, 160, 250, 45));
-            dl->AddRect(r0, r1, IM_COL32(120, 180, 255, 200), 0.0f, 0, 1.0f);
+            const float rMinX = marqueeX0;
+            const float rMaxX = marqueeX1;
+            float rMinY = 0.0f;
+            float rMaxY = 0.0f;
+            if (gArrangeMarquee.allTracks || laneRowTop.empty())
+            {
+               rMinY = lanesTopY;
+               rMaxY = lanesContentBottom;
+            }
+            else
+            {
+               rMinY = laneRowTop[marqueeMinLane];
+               rMaxY = laneRowTop[marqueeMaxLane] + laneRowH[marqueeMaxLane];
+            }
+
+            if (rMaxX > rMinX && rMaxY > rMinY)
+            {
+               const ImVec2 r0(rMinX, rMinY);
+               const ImVec2 r1(rMaxX, rMaxY);
+               dl->AddRectFilled(r0, r1, IM_COL32(59, 130, 246, 22));
+               dl->AddRect(r0, r1, IM_COL32(96, 165, 250, 110), 0.0f, 0, 1.0f);
+               // Subtle vertical boundary lines at x0 and x1
+               dl->AddLine(ImVec2(r0.x, r0.y), ImVec2(r0.x, r1.y), IM_COL32(255, 255, 255, 120), 1.0f);
+               dl->AddLine(ImVec2(r1.x, r0.y), ImVec2(r1.x, r1.y), IM_COL32(255, 255, 255, 120), 1.0f);
+            }
          }
       }
 
@@ -32954,16 +33474,50 @@ namespace
          }
       }
 
-      // Blade: the system cursor gives way to a scissor drawn at the mouse
-      // anywhere over the lanes.
-      if (gArrangeBladeOn && ImGui::IsWindowHovered() && mouse.x >= rulerStartX &&
+      // Tool cursors over the lanes
+      if (ImGui::IsWindowHovered() && mouse.x >= rulerStartX &&
           mouse.x < rulerStartX + rulerWidth && mouse.y >= lanesTopY &&
           mouse.y < lanesContentBottom)
       {
-         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
-         ImDrawList* fg = ImGui::GetForegroundDrawList();
-         Tabler::DrawScissors(fg, ImVec2(mouse.x + 1.0f, mouse.y + 1.0f), 20.0f, IM_COL32(0, 0, 0, 200), 3.2f);
-         Tabler::DrawScissors(fg, mouse, 20.0f, IM_COL32(255, 255, 255, 255), 1.8f);
+         if (gArrangeBladeOn || gArrangeTool == ArrangeTool::Blade)
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            Tabler::DrawScissors(fg, ImVec2(mouse.x + 1.0f, mouse.y + 1.0f), 20.0f, IM_COL32(0, 0, 0, 200), 3.2f);
+            Tabler::DrawScissors(fg, mouse, 20.0f, IM_COL32(255, 255, 255, 255), 1.8f);
+         }
+         else if (gArrangeTool == ArrangeTool::Pencil)
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            Tabler::DrawPencil(fg, ImVec2(mouse.x + 1.0f, mouse.y + 1.0f), 20.0f, IM_COL32(0, 0, 0, 200), 3.2f);
+            Tabler::DrawPencil(fg, mouse, 20.0f, IM_COL32(255, 255, 255, 255), 1.8f);
+         }
+         else if (gArrangeTool == ArrangeTool::Zoom)
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            const bool zoomOut = ImGui::GetIO().KeyAlt || ImGui::IsMouseDown(ImGuiMouseButton_Right);
+            Tabler::DrawZoom(fg, ImVec2(mouse.x + 1.0f, mouse.y + 1.0f), 20.0f, IM_COL32(0, 0, 0, 200), 3.2f);
+            Tabler::DrawZoom(fg, mouse, 20.0f, IM_COL32(255, 255, 255, 255), 1.8f);
+            // Draw + or - indicator inside the magnifying glass center
+            const ImVec2 zc(mouse.x - 2.0f, mouse.y - 2.0f);
+            fg->AddLine(ImVec2(zc.x - 2.5f, zc.y), ImVec2(zc.x + 2.5f, zc.y), IM_COL32(255, 255, 255, 255), 1.6f);
+            if (!zoomOut)
+               fg->AddLine(ImVec2(zc.x, zc.y - 2.5f), ImVec2(zc.x, zc.y + 2.5f), IM_COL32(255, 255, 255, 255), 1.6f);
+         }
+         else if (gArrangeTool == ArrangeTool::Hand)
+         {
+            ImGui::SetMouseCursor(gArrangeHandDragging ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);
+         }
+         else if (gArrangeTool == ArrangeTool::Range)
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+         }
+         else if (gArrangeTool == ArrangeTool::Trim)
+         {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+         }
       }
       dl->PopClipRect();
 
@@ -33008,7 +33562,7 @@ namespace
                // would either apply nonsensically or silently do nothing to
                // the rest of the batch - only offer what unambiguously means
                // the same thing across every selected clip.
-               if (ImGui::MenuItem("Rename"))
+               if (ImGui::MenuItem("Rename", MODKEY "+R"))
                {
                   const std::string label = !cp->name.empty() ? cp->name
                      : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
@@ -33071,7 +33625,7 @@ namespace
             // Rename and Active/Bypass: apply to every clip type, mirroring
             // the double-click-to-rename and '0'-key shortcuts this menu
             // just gives an explicit, discoverable entry point for.
-            if (ImGui::MenuItem("Rename"))
+            if (ImGui::MenuItem("Rename", MODKEY "+R"))
             {
                const std::string label = !cp->name.empty() ? cp->name
                   : (ctxNode != nullptr ? NodeTitle(*ctxNode) : std::string("Unassigned"));
@@ -33482,7 +34036,7 @@ namespace
                gArrangeAddTrackInsertAfter = laneIdx;
                InsertArrangeTrack(false);
             }
-            if (ImGui::MenuItem("Rename Track"))
+            if (ImGui::MenuItem("Rename Track", MODKEY "+R"))
             {
                gArrangeRenamingLaneId = ctxLaneId;
                gArrangeRenameJustStarted = true;
@@ -33589,7 +34143,7 @@ namespace
                gArrangeAddTrackInsertAfter = lastLaneIdx;
                InsertArrangeTrack(false, ctxGroupId);
             }
-            if (ImGui::MenuItem("Rename Group"))
+            if (ImGui::MenuItem("Rename Group", MODKEY "+R"))
             {
                gArrangeRenamingLaneId = ctxGroupId;
                gArrangeRenameJustStarted = true;
@@ -33766,12 +34320,32 @@ namespace
             const float bx0 = std::max(rulerStartX, tickToX(bl.start));
             const float bx1 = std::min(rulerStartX + rulerWidth, tickToX(bl.end));
             const float bandBottom = fullTimelineBottom;
-            const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 60) : IM_COL32(250, 204, 21, 40);
-            const ImU32 bandBorder = IM_COL32(250, 204, 21, 200);
+            const ImU32 bandCol = gArrangeShiftDraggingLoop ? IM_COL32(250, 204, 21, 45) : IM_COL32(250, 204, 21, 30);
+            const ImU32 bandBorder = IM_COL32(250, 204, 21, 180);
+            const bool isDraggingLeft = (gArrangeLoopDragMode == kArrangeLoopDragStart);
+            const bool isDraggingRight = (gArrangeLoopDragMode == kArrangeLoopDragEnd);
+            const bool isDraggingHeader = (gArrangeLoopDragMode == kArrangeLoopDragMove);
+
             // From the tick strip down: the marker strip above stays clear.
             dl->AddRectFilled(ImVec2(bx0, kTickStripTop), ImVec2(bx1, bandBottom), bandCol);
-            dl->AddLine(ImVec2(bx0, kTickStripTop), ImVec2(bx0, bandBottom), bandBorder, 1.5f);
-            dl->AddLine(ImVec2(bx1, kTickStripTop), ImVec2(bx1, bandBottom), bandBorder, 1.5f);
+
+            // Loop brace header bar in ruler
+            const ImU32 headerBarCol = isDraggingHeader ? IM_COL32(255, 235, 59, 255) : IM_COL32(250, 204, 21, 230);
+            dl->AddRectFilled(ImVec2(bx0, kTickStripTop), ImVec2(bx1, kTickStripTop + 4.0f), headerBarCol, 2.0f);
+
+            // Left boundary line & bracket handle [
+            const ImU32 leftCol = isDraggingLeft ? IM_COL32(255, 255, 255, 255) : bandBorder;
+            const float leftStroke = isDraggingLeft ? 2.5f : 1.5f;
+            dl->AddLine(ImVec2(bx0, kTickStripTop), ImVec2(bx0, bandBottom), leftCol, leftStroke);
+            dl->AddLine(ImVec2(bx0, kTickStripTop), ImVec2(bx0, kTickStripTop + 8.0f), leftCol, 3.0f);
+            dl->AddLine(ImVec2(bx0, kTickStripTop + 8.0f), ImVec2(bx0 + 5.0f, kTickStripTop + 8.0f), leftCol, 2.0f);
+
+            // Right boundary line & bracket handle ]
+            const ImU32 rightCol = isDraggingRight ? IM_COL32(255, 255, 255, 255) : bandBorder;
+            const float rightStroke = isDraggingRight ? 2.5f : 1.5f;
+            dl->AddLine(ImVec2(bx1, kTickStripTop), ImVec2(bx1, bandBottom), rightCol, rightStroke);
+            dl->AddLine(ImVec2(bx1, kTickStripTop), ImVec2(bx1, kTickStripTop + 8.0f), rightCol, 3.0f);
+            dl->AddLine(ImVec2(bx1 - 5.0f, kTickStripTop + 8.0f), ImVec2(bx1, kTickStripTop + 8.0f), rightCol, 2.0f);
          }
       }
 
@@ -36830,6 +37404,7 @@ namespace
          { "Arrangement Timeline", "Split at Playhead", MODKEY "+E", "Cut every selected clip the playhead passes through" },
          { "Arrangement Timeline", "Enable / Disable Clips", "0 / Keypad 0", "Mute the selected clips (they draw hatched) or bring them back" },
          { "Arrangement Timeline", "Blade Tool", "B", "Toggle the blade: click a clip to cut it (and its group) at the mouse; Esc turns it off (B bypasses nodes when the canvas has focus)" },
+         { "Arrangement Timeline", "Rename", MODKEY "+R", "Rename selected track, group, clip, or multiple selected clips" },
          { "Arrangement Timeline", "Group / Ungroup Clips", MODKEY "+G / " MODKEY "+Shift+G", "Group merges whole groups and loose clips into one; Ungroup dissolves every group touched" },
          { "Arrangement Timeline", "Delete Clips", "Delete / Backspace", "Delete the selected clips" },
          { "Arrangement Timeline", "Add Marker", "M", "Drop a marker at the playhead, on the snap grid" },
@@ -40590,6 +41165,11 @@ namespace
       data.transport.timeSigDen = Transport::Instance().TimeSigDenominator();
       data.transport.key = Transport::Instance().Key();
       data.transport.scale = Transport::Instance().Scale();
+      data.viewport.open = gViewportPanelOpen;
+      data.viewport.dock = gViewportPanelDock;
+      data.viewport.width = gViewportPanelWidth;
+      data.viewport.height = gViewportPanelHeight;
+      data.viewport.nodes = gViewportPanelNodes;
       return data;
    }
 
@@ -41027,8 +41607,7 @@ namespace
    // alongside the graph is what gives that: the checkpoint pushed when the
    // user grabbed the knob predates the recording, so undoing to it removes
    // the recording, and redo brings it back. Carried across ApplyPatchData's
-   // respawn through the same old-index -> new-index remap as
-   // RemapViewportPanelNodes.
+   // respawn through the same old-index -> new-index remap as RemapGestures.
    struct UndoEntry
    {
       Patch::Data patch;
@@ -41063,8 +41642,7 @@ namespace
    // Rewrites a snapshot's gesture keys from the indices that were live when
    // it was captured to the fresh indices ApplyPatchData just handed out.
    // A recording whose node has no remap entry belonged to a node that does
-   // not exist at this point in history and is dropped - same rule as
-   // RemapViewportPanelNodes.
+   // not exist at this point in history and is dropped.
    GestureRecorder::PlaybackMap RemapGestures(const GestureRecorder::PlaybackMap& gestures,
                                               const std::map<int, int>& remap)
    {
@@ -41153,6 +41731,11 @@ namespace
       ForgetAllDiscreteSlots();
       PaletteBinding::Instance().Clear();
       ExprGlobals::Clear();
+      gViewportPanelOpen = false;
+      gViewportPanelNodes.clear();
+      gViewportPanelDock = 1;
+      gViewportPanelWidth = 320.0f;
+      gViewportPanelHeight = 260.0f;
       gNextIndex = 1;
       // Unlike gNextIndex, this does NOT restart: uids are only useful because
       // they are never reused, and a fresh document that started minting 1, 2,
@@ -42529,6 +43112,19 @@ namespace
       // guaranteed.
       RebuildAudioTopology();
 
+      gViewportPanelOpen = data.viewport.open;
+      gViewportPanelDock = std::clamp(data.viewport.dock, 0, 3);
+      if (std::isfinite(data.viewport.width) && data.viewport.width >= kViewportPanelMinWidth)
+         gViewportPanelWidth = data.viewport.width;
+      if (std::isfinite(data.viewport.height) && data.viewport.height >= kViewportPanelMinHeight)
+         gViewportPanelHeight = data.viewport.height;
+      gViewportPanelNodes.clear();
+      for (int savedIdx : data.viewport.nodes)
+      {
+         if (GraphNode* node = resolve(savedIdx))
+            gViewportPanelNodes.push_back(node->index);
+      }
+
       if (outRemap != nullptr)
          *outRemap = remap;
 
@@ -42611,32 +43207,10 @@ namespace
    bool gDragSnapshotValid = false;
    bool gDragSnapshotPushed = false;
 
-   // Undo/Redo rebuild the graph via ApplyPatchData, which respawns every
-   // node with a fresh index (see NewPatch). gViewportPanelNodes is session
-   // UI state, not part of Patch::Data, so it has to be carried across that
-   // respawn by hand using the same old-index -> new-index remap
-   // ApplyPatchData already builds for cables/modulation/etc. Entries with
-   // no entry in remap belonged to a node that no longer exists at this
-   // point in history and are dropped.
-   void RemapViewportPanelNodes(const std::map<int, int>& remap)
-   {
-      std::vector<int> remapped;
-      remapped.reserve(gViewportPanelNodes.size());
-      for (int idx : gViewportPanelNodes)
-      {
-         auto it = remap.find(idx);
-         if (it != remap.end())
-            remapped.push_back(it->second);
-      }
-      gViewportPanelNodes = std::move(remapped);
-   }
-
-   // Field 'graph' domain (build step 10): mirrors RemapViewportPanelNodes
-   // immediately above, for the one other piece of per-node state that isn't
-   // part of Patch::Data proper but still keys off node index - a
+   // Field 'graph' domain (build step 10): for the one piece of per-node state
+   // that isn't part of Patch::Data proper but still keys off node index - a
    // FieldGraphNode's persisted key->index ownership map (doc §5.3.1,
-   // §5.6.3). Unlike gViewportPanelNodes this is per-node rather than one
-   // session-wide list, so it walks gNodes rather than a global. Called from
+   // §5.6.3). Walks gNodes rather than a global list. Called from
    // inside ApplyPatchData itself (shared by Undo, Redo and LoadPatchFrom)
    // right after `remap` is fully built, rather than separately from each
    // caller.
@@ -43250,7 +43824,6 @@ namespace
       gArrangeGestureOpen = false;
       gArrangeDrag = ArrangeDragState();
       gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
-      RemapViewportPanelNodes(remap);
       // After ApplyPatchData, never before: NewPatch (its first step) clears
       // the recorder, so restoring earlier would just be wiped.
       GestureRecorder::Instance().Restore(RemapGestures(prev.gestures, remap), GestureClockNow());
@@ -43282,7 +43855,6 @@ namespace
       gArrangeGestureOpen = false;
       gArrangeDrag = ArrangeDragState();
       gArrangeMarkerDragId = 0; // a flag drag's gesture just closed too
-      RemapViewportPanelNodes(remap);
       GestureRecorder::Instance().Restore(RemapGestures(next.gestures, remap), GestureClockNow());
       gPatchDirty = true;
       gPatchStatus = "Redo";

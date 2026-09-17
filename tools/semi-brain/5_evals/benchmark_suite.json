@@ -208,5 +208,12 @@
     "expected_subsystem": "field_compiler",
     "required_invariants": ["State cell reset on transport loop/seek", "Delay sugar semantics"],
     "target_symbols": ["FieldState", "Transport"]
+  },
+  {
+    "id": "CASE_31",
+    "query": "AudioEngine instance sample rate change mid-playback triggers audio effect cook fanout and image cable pull desync",
+    "expected_subsystem": "audio_dsp",
+    "required_invariants": ["Two-object rule DSP isolation", "ImageCable pull frame sync", "ParamMailbox delivery <= 1 block"],
+    "target_symbols": ["AudioEngine", "AudioEffectNode", "ImageCable"]
   }
 ]

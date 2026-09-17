@@ -29,6 +29,34 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 console = Console()
 BENCHMARK_FILE = EVALS_DIR / "benchmark_suite.json"
 
+def verify_graph_grounded_choice_tree(engine: SemiBrainCognitiveEngine):
+    """
+    Assert that the generated branch set for deep real fan-out differs from the flat/no-fanout case,
+    and that branches are named from real graph symbols rather than static template literals.
+    """
+    # 1. Flat / leaf case
+    frame_flat = engine.analyze_problem("ArrangeSliderFloat text-edit race where double clicking gets focus stolen")
+    tree_flat = engine.build_impact_tree(frame_flat)
+    branches_flat = engine.evaluate_choice_tree(frame_flat)
+    
+    # 2. Deep fanout case
+    frame_deep = engine.analyze_problem("AudioEngine instance sample rate change mid-playback triggers audio effect cook fanout and image cable pull desync")
+    tree_deep = engine.build_impact_tree(frame_deep)
+    branches_deep = engine.evaluate_choice_tree(frame_deep)
+    
+    # Assertions
+    assert tree_flat.count_nodes() < tree_deep.count_nodes(), f"Expected deep tree to have more nodes than flat tree ({tree_deep.count_nodes()} vs {tree_flat.count_nodes()})"
+    assert len(branches_flat) == 2, f"Expected 2 branches for flat leaf case, got {len(branches_flat)}"
+    assert len(branches_deep) > len(branches_flat), f"Expected deep fanout case to generate more branches ({len(branches_deep)} vs {len(branches_flat)})"
+    assert branches_deep[0].blast_penalty != branches_flat[0].blast_penalty, "Expected blast penalties to be derived from tree shape and differ"
+    
+    # Verify real symbol names in branches for deep case
+    deep_branch_names = " ".join([b.name for b in branches_deep])
+    assert "AudioEngine" in deep_branch_names, f"Expected 'AudioEngine' symbol in branch names: {deep_branch_names}"
+    
+    console.print("[bold green]✓ Verified recursive graph-grounded choice tree generation (deep fanout vs flat case)[/bold green]")
+    return True
+
 def run_evals():
     if not BENCHMARK_FILE.exists():
         console.print("[red]Error: benchmark_suite.json not found![/red]")
@@ -37,9 +65,13 @@ def run_evals():
     with open(BENCHMARK_FILE, "r", encoding="utf-8") as f:
         benchmarks = json.load(f)
         
-    console.print(Panel("[bold cyan]🚀 Starting Semi-Brain Benchmark Evaluation (30 Test Cases)[/bold cyan]", border_style="cyan"))
+    console.print(Panel(f"[bold cyan]🚀 Starting Semi-Brain Benchmark Evaluation ({len(benchmarks)} Test Cases)[/bold cyan]", border_style="cyan"))
     
     engine = SemiBrainCognitiveEngine()
+    
+    # Run graph-grounded dynamic tree verification
+    verify_graph_grounded_choice_tree(engine)
+    console.print()
     
     results = []
     subsystem_correct = 0
@@ -101,7 +133,7 @@ def run_evals():
     overall_fidelity = (0.25 * sub_acc + 0.25 * inv_acc + 0.25 * sym_acc + 0.25 * branch_acc)
     
     # Render Results Table
-    table = Table(title="[bold green]30-Case Benchmark Evaluation Results[/bold green]", border_style="green")
+    table = Table(title=f"[bold green]{total}-Case Benchmark Evaluation Results[/bold green]", border_style="green")
     table.add_column("Case ID", style="cyan", width=10)
     table.add_column("Query Summary", style="white", width=45)
     table.add_column("Expected", style="yellow")
@@ -128,7 +160,7 @@ def run_evals():
     # Render Scorecard Panel
     scorecard = f"""### 📊 Semi-Brain Cognitive Fidelity Scorecard
 
-* **Evaluated Test Cases**: 30 Historical Scenarios
+* **Evaluated Test Cases**: {total} Historical Scenarios
 * **Total Evaluation Time**: {elapsed:.2f}s ({elapsed/total*1000:.1f}ms / case)
 
 | Evaluation Metric | Score | Status |

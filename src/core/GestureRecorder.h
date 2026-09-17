@@ -168,8 +168,7 @@ public:
    // to make one appear and disappear at the right point in history - the
    // same way a typed expression does - so the undo stack snapshots this map
    // alongside the graph and hands it back through Restore(), keyed through
-   // ApplyPatchData's old-index -> new-index remap. This mirrors
-   // RemapViewportPanelNodes in main.cpp exactly.
+   // ApplyPatchData's old-index -> new-index remap.
    //
    // Any in-progress session (Shift still held, or a param still armed) is
    // deliberately NOT part of the snapshot: a half-drawn gesture is not a
