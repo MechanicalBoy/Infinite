@@ -32498,11 +32498,13 @@ namespace
             // offline clip is drawn desaturated under a diagonal hatch - the
             // "this will not play" mark.
             const bool hasTint = clip.colorR > 0.001f || clip.colorG > 0.001f || clip.colorB > 0.001f;
+            // A Color Tint is drawn at full opacity in both states so the clip always
+            // shows exactly the palette swatch the user picked, not a blended-down shade.
             ImU32 clipBaseCol = hasTint
-               ? IM_COL32((int)(clip.colorR * 255.0f), (int)(clip.colorG * 255.0f), (int)(clip.colorB * 255.0f), 210)
+               ? IM_COL32((int)std::lround(clip.colorR * 255.0f), (int)std::lround(clip.colorG * 255.0f), (int)std::lround(clip.colorB * 255.0f), 255)
                : (isVideo ? IM_COL32(109, 40, 217, 210) : IM_COL32(5, 150, 105, 210));
             ImU32 clipActiveCol = hasTint
-               ? IM_COL32((int)(clip.colorR * 255.0f), (int)(clip.colorG * 255.0f), (int)(clip.colorB * 255.0f), 255)
+               ? IM_COL32((int)std::lround(clip.colorR * 255.0f), (int)std::lround(clip.colorG * 255.0f), (int)std::lround(clip.colorB * 255.0f), 255)
                : (isVideo ? IM_COL32(139, 92, 246, 255) : IM_COL32(16, 185, 129, 255));
             const bool muted = !clip.enabled || offline || laneSilenced;
             if (muted)
