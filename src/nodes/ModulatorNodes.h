@@ -246,6 +246,7 @@ public:
 
    float Value01() override;
 
+   INode* BypassSource() override { return dynamic_cast<INode*>(input); }
    IModulator* input = nullptr;
    IModulator** ModulatorInputSlot(int slot) override { return slot == 0 ? &input : nullptr; }
    int ModulatorInputCount() const override { return 1; }
@@ -276,6 +277,7 @@ public:
 
    float Value01() override;
 
+   INode* BypassSource() override { return dynamic_cast<INode*>(input); }
    IModulator* input = nullptr;
    IModulator** ModulatorInputSlot(int slot) override { return slot == 0 ? &input : nullptr; }
    int ModulatorInputCount() const override { return 1; }
@@ -316,6 +318,7 @@ public:
 
    float Value01() override;
 
+   INode* BypassSource() override { return dynamic_cast<INode*>(input); }
    IModulator* input = nullptr;
    IModulator** ModulatorInputSlot(int slot) override { return slot == 0 ? &input : nullptr; }
    int ModulatorInputCount() const override { return 1; }
@@ -354,6 +357,7 @@ public:
 
    float Value01() override;
 
+   INode* BypassSource() override { return dynamic_cast<INode*>(input); }
    IModulator* input = nullptr;
    IModulator** ModulatorInputSlot(int slot) override { return slot == 0 ? &input : nullptr; }
    int ModulatorInputCount() const override { return 1; }

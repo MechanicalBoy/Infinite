@@ -89,12 +89,16 @@ void CurveNode::RebuildIfNeeded()
 
 const Mesh& CurveNode::GetMesh()
 {
+   if (bypassed)
+      return EmptyMesh();
    RebuildIfNeeded();
    return mMesh;
 }
 
 unsigned long long CurveNode::MeshRevision()
 {
+   if (bypassed)
+      return 0;
    RebuildIfNeeded();
    return mRevision;
 }

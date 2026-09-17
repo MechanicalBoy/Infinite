@@ -83,12 +83,12 @@ AudioNode* AudioRibbonNode::GetAudioNode()
 
 const Mesh& AudioRibbonNode::GetMesh()
 {
-   return mMesh;
+   return bypassed ? EmptyMesh() : mMesh;
 }
 
 unsigned long long AudioRibbonNode::MeshRevision()
 {
-   return mMeshRevision;
+   return bypassed ? 0 : mMeshRevision;
 }
 
 Mat4 AudioRibbonNode::GetModelMatrix() const

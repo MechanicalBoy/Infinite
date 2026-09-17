@@ -265,7 +265,6 @@ public:
       return ComputeContentRevision(GetMappingTransform(), mMappingRevision, mLastMappingHash);
    }
 
-   INode* BypassSource() override { return dynamic_cast<INode*>(input); }
    IGeometrySource* PassthroughSource() const override { return input; }
    // Forwarded alongside PassthroughSource: a node that claims to pass an
    // instancer through has to pass the wrapping Transform's group matrix
@@ -552,13 +551,6 @@ public:
    MappingTransform GetMappingTransform() const override;
    unsigned long long MappingRevision() const override;
 
-   INode* BypassSource() override
-   {
-      for (int i = 0; i < kSlots; i++)
-         if (inputs[i] != nullptr)
-            return dynamic_cast<INode*>(inputs[i]);
-      return nullptr;
-   }
 
    IGeometrySource* inputs[kSlots] = { nullptr, nullptr, nullptr, nullptr };
    IGeometrySource** GeometryInputSlot(int slot) override

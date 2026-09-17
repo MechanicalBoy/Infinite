@@ -161,6 +161,16 @@ inline unsigned long long ComputeContentRevision(const T& value, unsigned long l
    return revision;
 }
 
+// The one empty mesh a bypassed (or unconnected) geometry node hands out.
+// A bypassed node doesn't cook, so every getter on a geometry *source* must
+// answer empty while bypassed and every getter on a one-input *modifier* must
+// answer its input's value - INFINITE_BYPASSSWEEPTEST checks both per type.
+inline const Mesh& EmptyMesh()
+{
+   static const Mesh kEmpty;
+   return kEmpty;
+}
+
 class IGeometrySource : public ICookWarningSource
 {
 public:

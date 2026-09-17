@@ -26,13 +26,6 @@ public:
    void CookIfNeeded(int frameId) override;
 
    ImageCable& Input(int slot) { return mInputs[slot]; }
-   INode* BypassSource() override
-   {
-      for (int i = 0; i < kSlots; i++)
-         if (mInputs[i].IsConnected())
-            return mInputs[i].GetSource();
-      return nullptr;
-   }
 
    int ActiveSlot() const { return mActiveSlot; }
 

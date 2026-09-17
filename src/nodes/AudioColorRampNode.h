@@ -50,7 +50,6 @@ public:
    unsigned long long TextureRevision() const override { return mRevision; }
    void CookIfNeeded(int frameId) override;
 
-   INode* BypassSource() override { return mInput.GetSource(); }
 
    // Slots: 0 = optional upstream Image, 1 = Audio stream
    ImageCable& Input() { return mInput; }

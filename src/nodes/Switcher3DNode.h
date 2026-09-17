@@ -62,13 +62,6 @@ public:
    unsigned long long InstanceSelectionRevision() const override;
    const std::vector<Mat4>* InstanceTransformOverride() const override;
 
-   INode* BypassSource() override
-   {
-      for (int i = 0; i < kSlots; i++)
-         if (inputs[i] != nullptr)
-            return dynamic_cast<INode*>(inputs[i]);
-      return nullptr;
-   }
 
    IGeometrySource* inputs[kSlots] = { nullptr, nullptr, nullptr, nullptr };
    IGeometrySource** GeometryInputSlot(int slot) override

@@ -385,7 +385,6 @@ public:
    static INode* Create() { return new DisplacementNode(); }
    ~DisplacementNode() override;
 
-   INode* BypassSource() override { return dynamic_cast<INode*>(input); }
 
    unsigned int GetOutputTexture() override { return 0; }
    int GetOutputWidth() const override { return 0; }
@@ -732,7 +731,6 @@ public:
    ~SetColorNode() override;
    static const std::vector<std::string>& SourceNames();
 
-   INode* BypassSource() override { return dynamic_cast<INode*>(input); }
 
    unsigned int GetOutputTexture() override { return 0; }
    int GetOutputWidth() const override { return 0; }
@@ -879,7 +877,6 @@ class WrapNode : public INode, public IGeometrySource
 {
 public:
    static INode* Create() { return new WrapNode(); }
-   INode* BypassSource() override { return dynamic_cast<INode*>(sourceInput); }
    unsigned int GetOutputTexture() override { return 0; }
    int GetOutputWidth() const override { return 0; }
    int GetOutputHeight() const override { return 0; }

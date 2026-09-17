@@ -103,8 +103,8 @@ public:
    }
 
    // IGeometrySource overrides (pure generator - identity transforms, no passthrough)
-   const Mesh& GetMesh() override { return mOutMesh; }
-   unsigned long long MeshRevision() override { return mMeshRevision; }
+   const Mesh& GetMesh() override { return bypassed ? EmptyMesh() : mOutMesh; }
+   unsigned long long MeshRevision() override { return bypassed ? 0 : mMeshRevision; }
    Mat4 GetModelMatrix() const override { return Mat4::Identity(); }
    Material GetMaterial() const override { return Material(); }
    unsigned int GetSurfaceTexture() override { return 0; }

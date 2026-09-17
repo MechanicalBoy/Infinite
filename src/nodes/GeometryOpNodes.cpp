@@ -556,8 +556,6 @@ const Mesh& DisplacementNode::GetMesh()
 {
    if (input == nullptr)
       return kEmptyMesh;
-   if (bypassed)
-      return input->GetMesh();
 
    const Signature sig = CurrentSignature();
    if (mHasBuilt && sig == mBuilt)
@@ -579,8 +577,6 @@ unsigned long long DisplacementNode::MeshRevision()
 {
    if (input == nullptr)
       return 0;
-   if (bypassed)
-      return input->MeshRevision();
    GetMesh();
    return mMeshRevision;
 }
@@ -947,8 +943,6 @@ const Mesh& WrapNode::GetMesh()
       mCookWarning.clear();
       return kEmptyMesh;
    }
-   if (bypassed)
-      return sourceInput->GetMesh();
 
    mCookWarning = DescribeGeometryMismatch(targetInput, GeometryRequirement::kMeshSurface);
 
@@ -987,8 +981,6 @@ unsigned long long WrapNode::MeshRevision()
 {
    if (sourceInput == nullptr)
       return 0;
-   if (bypassed)
-      return sourceInput->MeshRevision();
    GetMesh();
    return mMeshRevision;
 }
@@ -1250,8 +1242,6 @@ const Mesh& SetColorNode::GetMesh()
    static const Mesh kEmptySetColorMesh;
    if (input == nullptr)
       return kEmptySetColorMesh;
-   if (bypassed)
-      return input->GetMesh();
 
    const Signature sig = CurrentSignature();
    if (mHasBuilt && sig == mBuilt)
@@ -1269,8 +1259,6 @@ unsigned long long SetColorNode::MeshRevision()
 {
    if (input == nullptr)
       return 0;
-   if (bypassed)
-      return input->MeshRevision();
    GetMesh();
    return mMeshRevision;
 }
@@ -1279,8 +1267,6 @@ const std::vector<Particle>* SetColorNode::GetPointCloud()
 {
    if (input == nullptr)
       return nullptr;
-   if (bypassed)
-      return input->GetPointCloud();
    GetMesh(); // shared rebuild path keeps mesh and point cache in sync
    return mHasPointCache ? &mPointCache : nullptr;
 }
@@ -1289,8 +1275,6 @@ unsigned long long SetColorNode::PointCloudRevision()
 {
    if (input == nullptr)
       return 0;
-   if (bypassed)
-      return input->PointCloudRevision();
    GetMesh();
    return mHasPointCache ? mCloudRevision : 0;
 }
