@@ -705,7 +705,111 @@ const std::vector<FieldPixelNode::Preset>& FieldPixelNode::Presets()
         "whiteFoam = vec3(0.95, 0.98, 1.0);\n"
         "waterCol = mix(deepIndigo, cerulean, clamp((p.y + 0.5) / 0.8, 0.0, 1.0));\n"
         "skyCream = vec3(0.92, 0.90, 0.82);\n"
-        "col = mix(skyCream, waterCol, isWater) + whiteFoam * isFoam;" }
+        "col = mix(skyCream, waterCol, isWater) + whiteFoam * isFoam;" },
+      { "Spiral Feedback Illusion",
+        "param float speed = 1.0 [0.0, 5.0];\n"
+        "param float freq = 10.0 [1.0, 30.0];\n"
+        "param float arms = 5.0 [1.0, 12.0];\n"
+        "param float warp = 1.0 [0.0, 3.0];\n"
+        "param float rate = 0.9 [0.5, 0.999];\n"
+        "state float A = 0 [wrap];\n"
+        "p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);\n"
+        "d = length(p);\n"
+        "ang = atan2(p.y, p.x);\n"
+        "spiral = sin(ang * arms + d * freq - t * speed);\n"
+        "fresh = step(0.0, spiral);\n"
+        // Reading the state cell offset along its own spiral arm (rather than
+        // straight back at itself) is what makes the pattern feed back into a
+        // rotating hypnotic spiral instead of a static black/white pinwheel.
+        "prev = A(uv + p * warp * 0.05);\n"
+        "A = clamp(fresh * 0.5 + prev * rate, 0.0, 1.0);\n"
+        "bw = step(0.5, A);\n"
+        "col = vec3(bw);" },
+      // 1 stateful box (real physics: wall bounce + collision against the
+      // other 8) plus 8 analytic Lissajous boxes. Pixel state tops out at 4
+      // scalar floats total in this build (posX/posY/velX/velY), so every
+      // additional "object" has to be a closed-form function of t instead of
+      // its own state cell - see field-pixel-presets SKILL.md S6.
+      { "Bouncing Boxes Collision",
+        "param float speed = 1.0 [0.1, 3.0];\n"
+        "param float boxSize = 0.05 [0.02, 0.1];\n"
+        "state float posX = 0.15;\n"
+        "state float posY = 0.1;\n"
+        "state float velX = 0.35;\n"
+        "state float velY = 0.28;\n"
+        "pos = vec2(posX, posY);\n"
+        "vel = vec2(velX, velY);\n"
+        "s = boxSize;\n"
+        "boundX = 0.5 * aspect - s;\n"
+        "boundY = 0.5 - s;\n"
+        "hitWallX = step(boundX, abs(pos.x + vel.x * dt * speed));\n"
+        "hitWallY = step(boundY, abs(pos.y + vel.y * dt * speed));\n"
+        "vel = vec2(vel.x * (1.0 - 2.0 * hitWallX), vel.y * (1.0 - 2.0 * hitWallY));\n"
+        "cA = vec2(0.3 * sin(t * 0.9), 0.22 * cos(t * 1.3));\n"
+        "cB = vec2(0.28 * cos(t * 0.7 + 1.0), 0.24 * sin(t * 1.1 + 2.0));\n"
+        "cC = vec2(0.25 * sin(t * 1.4 + 3.0), 0.3 * cos(t * 0.6 + 1.5));\n"
+        "cD = vec2(0.32 * cos(t * 0.5 + 2.5), 0.18 * sin(t * 1.6 + 0.5));\n"
+        "cE = vec2(0.2 * sin(t * 1.1 + 4.0), 0.28 * cos(t * 0.8 + 3.5));\n"
+        "cF = vec2(0.3 * cos(t * 1.3 + 1.7), 0.2 * sin(t * 0.9 + 2.9));\n"
+        "cG = vec2(0.22 * sin(t * 0.8 + 0.3), 0.26 * cos(t * 1.5 + 1.2));\n"
+        "cH = vec2(0.27 * cos(t * 1.0 + 3.3), 0.22 * sin(t * 1.2 + 0.8));\n"
+        "hitA = step(abs(pos.x - cA.x), 2.0 * s) * step(abs(pos.y - cA.y), 2.0 * s);\n"
+        "hitB = step(abs(pos.x - cB.x), 2.0 * s) * step(abs(pos.y - cB.y), 2.0 * s);\n"
+        "hitC = step(abs(pos.x - cC.x), 2.0 * s) * step(abs(pos.y - cC.y), 2.0 * s);\n"
+        "hitD = step(abs(pos.x - cD.x), 2.0 * s) * step(abs(pos.y - cD.y), 2.0 * s);\n"
+        "hitE = step(abs(pos.x - cE.x), 2.0 * s) * step(abs(pos.y - cE.y), 2.0 * s);\n"
+        "hitF = step(abs(pos.x - cF.x), 2.0 * s) * step(abs(pos.y - cF.y), 2.0 * s);\n"
+        "hitG = step(abs(pos.x - cG.x), 2.0 * s) * step(abs(pos.y - cG.y), 2.0 * s);\n"
+        "hitH = step(abs(pos.x - cH.x), 2.0 * s) * step(abs(pos.y - cH.y), 2.0 * s);\n"
+        "sumHit = hitA + hitB + hitC + hitD + hitE + hitF + hitG + hitH;\n"
+        "anyHit = step(0.5, sumHit);\n"
+        "vel = vel * (1.0 - 2.0 * anyHit);\n"
+        "pos = pos + vel * dt * speed;\n"
+        "posX = pos.x;\n"
+        "posY = pos.y;\n"
+        "velX = vel.x;\n"
+        "velY = vel.y;\n"
+        "p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);\n"
+        "box0 = step(max(abs(p.x - pos.x), abs(p.y - pos.y)), s);\n"
+        "boxA = step(max(abs(p.x - cA.x), abs(p.y - cA.y)), s);\n"
+        "boxB = step(max(abs(p.x - cB.x), abs(p.y - cB.y)), s);\n"
+        "boxC = step(max(abs(p.x - cC.x), abs(p.y - cC.y)), s);\n"
+        "boxD = step(max(abs(p.x - cD.x), abs(p.y - cD.y)), s);\n"
+        "boxE = step(max(abs(p.x - cE.x), abs(p.y - cE.y)), s);\n"
+        "boxF = step(max(abs(p.x - cF.x), abs(p.y - cF.y)), s);\n"
+        "boxG = step(max(abs(p.x - cG.x), abs(p.y - cG.y)), s);\n"
+        "boxH = step(max(abs(p.x - cH.x), abs(p.y - cH.y)), s);\n"
+        "mask = clamp(box0 + boxA + boxB + boxC + boxD + boxE + boxF + boxG + boxH, 0.0, 1.0);\n"
+        "bg = vec3(0.03, 0.03, 0.06);\n"
+        "fg = vec3(0.95 - 0.5 * anyHit, 0.55 + 0.4 * anyHit, 0.85);\n"
+        "col = mix(bg, fg, mask);" },
+      { "Organic Liquid Warp",
+        "param float scale = 3.0 [0.5, 8.0];\n"
+        "param float speed = 0.5 [0.05, 2.0];\n"
+        "param float warp = 1.5 [0.2, 4.0];\n"
+        "param float hue = 0.0 [0.0, 1.0];\n"
+        "p = vec2(uv.x * aspect, uv.y) * scale;\n"
+        // Three rounds of domain warping (each round feeds the previous
+        // round's warped coordinate back into the next) is what turns plain
+        // sine ripples into liquid-looking flow instead of a static grid.
+        "w1 = vec2(sin(p.y * 1.3 + t * speed), cos(p.x * 1.1 - t * speed * 0.8));\n"
+        "p1 = p + w1 * warp;\n"
+        "w2 = vec2(sin(p1.y * 1.7 - t * speed * 0.6), cos(p1.x * 1.5 + t * speed * 0.9));\n"
+        "p2 = p1 + w2 * warp * 0.6;\n"
+        "w3 = vec2(sin(p2.y * 2.1 + t * speed * 1.1), cos(p2.x * 1.9 - t * speed * 0.7));\n"
+        "p3 = p2 + w3 * warp * 0.35;\n"
+        "field1 = sin(p3.x * 1.3 + p3.y * 0.7);\n"
+        "field2 = cos(p3.x * 0.6 - p3.y * 1.4 + t * speed * 0.3);\n"
+        "liquid = field1 * 0.6 + field2 * 0.4;\n"
+        "pc = liquid * 0.5 + 0.5 + hue;\n"
+        // Inigo Quilez cosine palette: base + amp * cos(2pi * (freq * pc + phase)).
+        "colA = vec3(0.5, 0.45, 0.55);\n"
+        "colB = vec3(0.45, 0.4, 0.5);\n"
+        "colC = vec3(1.0, 0.9, 0.7);\n"
+        "colD = vec3(0.1, 0.35, 0.55);\n"
+        "base = colA + colB * cos(6.283185 * (colC * pc + colD));\n"
+        "highlight = pow(clamp(liquid - 0.6, 0.0, 1.0) * 2.5, 3.0);\n"
+        "col = base + vec3(highlight);" }
    };
    return kPresets;
 }
