@@ -203,6 +203,25 @@ const std::vector<Preset>& Presets()
         { 0.790f, 0.820f, 0.870f },  // border  #C9D1DE
         { 0.369f, 0.506f, 0.675f } } // accent  nord10  #5E81AC
       },
+      { "Forest Green", {
+         { "Source",       { 0.106f, 0.478f, 0.208f } }, // Leaf Green     #1B7A35
+         { "3D",           { 0.043f, 0.431f, 0.502f } }, // Spruce Teal    #0B6E80
+         { "Compositing",  { 0.196f, 0.322f, 0.482f } }, // Indigo Pine   #32527B
+         { "Effects",      { 0.690f, 0.396f, 0.000f } }, // Autumn Gold    #B06500
+         { "Modulators",   { 0.275f, 0.471f, 0.047f } }, // Olive Moss     #46780C
+         { "Macros",       { 0.729f, 0.235f, 0.024f } }, // Warm Cedar     #BA3C06
+         { "Utility",      { 0.251f, 0.345f, 0.298f } }, // Slate Lichen   #40584C
+         { "Notes",        { 0.071f, 0.478f, 0.204f } }, // Meadow Fern    #127A34
+         { "Synths",       { 0.047f, 0.431f, 0.408f } }, // Ocean Pine     #0C6E68
+         { "AudioEffects", { 0.012f, 0.447f, 0.318f } }, // Rainforest     #037251
+      },
+      { { 0.929f, 0.957f, 0.918f },  // window  Pale Sage Green #EDF4EA
+        { 0.878f, 0.918f, 0.851f },  // panel   Muted Sage Tea  #E0EAD9
+        { 0.071f, 0.141f, 0.086f },  // text    Deep Pine       #122416
+        { 0.239f, 0.353f, 0.259f },  // textDim Slate Moss      #3D5A42
+        { 0.706f, 0.773f, 0.682f },  // border  Sage Lichen     #B4C5AE
+        { 0.102f, 0.431f, 0.231f } } // accent  Forest Emerald  #1A6E3B
+      },
    };
    return presets;
 }

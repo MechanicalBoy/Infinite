@@ -59811,9 +59811,9 @@ static bool RunAppearanceSelfTest()
       }
    };
 
-   // 1. Coverage - for all 9 presets x all 10 categories, ColorFor() returns a non-fallback color
+   // 1. Coverage - for all 10 presets x all 10 categories, ColorFor() returns a non-fallback color
    const auto& presetNames = CategoryColors::PresetNames();
-   check(presetNames.size() == 9, "preset count is 9");
+   check(presetNames.size() == 10, "preset count is 10");
    const auto& catNames = CategoryColors::CategoryNames();
    check(catNames.size() == 10, "category count is 10");
 
@@ -59863,6 +59863,8 @@ static bool RunAppearanceSelfTest()
    // 4. Polarity isolation
    CategoryColors::SetPreset(6); // GitHub Light
    check(CategoryColors::IsThemeLight(), "GitHub Light is light theme");
+   CategoryColors::SetPreset(9); // Forest Green
+   check(CategoryColors::IsThemeLight(), "Forest Green is light theme");
    check(!CategoryColors::HasCategoryColorOverride("Source", true), "light Source has no override yet");
    check(!CategoryColors::HasCableColorOverride(CategoryColors::CableType::Modulation, true), "light cable has no override");
    check(!CategoryColors::HasNodeOpacityOverride(true), "light opacity has no override");

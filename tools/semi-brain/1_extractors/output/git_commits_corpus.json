@@ -1,5 +1,229 @@
 [
   {
+    "hash": "9a862d6038c50b3814efd4109fa3fb8657ffe524",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 17:36:37 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'feature/lush-fx-redesign': Phaser feedback + Flanger damping",
+      "description": "Merge branch 'feature/lush-fx-redesign': Phaser feedback + Flanger damping",
+      "bullets": [],
+      "body": "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Merge branch 'feature/lush-fx-redesign': Phaser feedback + Flanger damping\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "c92eaf85f9416f6502fc7b6ceda55b5b8ec9b097",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 17:36:20 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "fx",
+      "title": "feat(fx): add missing feedback/resonance to Phaser, feedback damping to Flanger",
+      "description": "add missing feedback/resonance to Phaser, feedback damping to Flanger",
+      "bullets": [],
+      "body": "Same idea as Reverb's FDN redesign - fix structural gaps that make these\nkernels sound thin, without touching their existing param surface.\nPhaser had no feedback path around the allpass cascade at all: signal ran\nstraight through N stages and out. Every real unit (Phase 90, Small Stone)\ngets its resonant swoosh by feeding the chain's own output back into its\ninput to sharpen the notches; without it this was closer to a mild EQ\nsweep. Added a fixed internal feedback loop (per-channel, so the existing\nL/R cutoff spread isn't collapsed) - stable by construction since an\nallpass cascade is unity-magnitude, so any |fb| < 1 can't blow up.\nFlanger's feedback tap was unfiltered in both modes, so repeats stayed\nfull-bandwidth - real BBD/tape flanger loops always lose some top end on\nevery pass (the bucket-brigade compander's own bandwidth limit). Added a\nfixed ~7kHz damping filter on the feedback tap only (not the dry wet-tap\noutput), so repeats darken without dulling the primary signal.\nChorus and Delay were left alone - both already have multi-voice/BBD\ncharacter or Hermite interpolation, ping-pong, tone tilt, and analog wow/\nflutter, so there was no equivalent structural gap to fix.\nVerified: AUDIOPARAMSWEEPTEST and AUDIOTEARDOWNSWEEPTEST pass for both\nnodes (the rateDiv FAIL is the pre-existing documented blind spot shared\nby Chorus/Flanger/Phaser/Tremolo, not a regression), DSPTEST passes.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(fx): add missing feedback/resonance to Phaser, feedback damping to Flanger\n\nSame idea as Reverb's FDN redesign - fix structural gaps that make these\nkernels sound thin, without touching their existing param surface.\n\nPhaser had no feedback path around the allpass cascade at all: signal ran\nstraight through N stages and out. Every real unit (Phase 90, Small Stone)\ngets its resonant swoosh by feeding the chain's own output back into its\ninput to sharpen the notches; without it this was closer to a mild EQ\nsweep. Added a fixed internal feedback loop (per-channel, so the existing\nL/R cutoff spread isn't collapsed) - stable by construction since an\nallpass cascade is unity-magnitude, so any |fb| < 1 can't blow up.\n\nFlanger's feedback tap was unfiltered in both modes, so repeats stayed\nfull-bandwidth - real BBD/tape flanger loops always lose some top end on\nevery pass (the bucket-brigade compander's own bandwidth limit). Added a\nfixed ~7kHz damping filter on the feedback tap only (not the dry wet-tap\noutput), so repeats darken without dulling the primary signal.\n\nChorus and Delay were left alone - both already have multi-voice/BBD\ncharacter or Hermite interpolation, ping-pong, tone tilt, and analog wow/\nflutter, so there was no equivalent structural gap to fix.\n\nVerified: AUDIOPARAMSWEEPTEST and AUDIOTEARDOWNSWEEPTEST pass for both\nnodes (the rateDiv FAIL is the pre-existing documented blind spot shared\nby Chorus/Flanger/Phaser/Tremolo, not a regression), DSPTEST passes.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/audio/EffectDefs.cpp        |  4 ++++\n src/audio/dsp/FlangerKernel.cpp | 12 ++++++++----\n src/audio/dsp/FlangerKernel.h   | 15 ++++++++++++++-\n src/audio/dsp/PhaserKernel.cpp  | 12 ++++++++----\n src/audio/dsp/PhaserKernel.h    | 24 +++++++++++++++++++++++-\n 5 files changed, 57 insertions(+), 10 deletions(-)"
+  },
+  {
+    "hash": "c59fe4ffe7878d7e3fbd0996ccaad5a663cfaf5c",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 17:29:12 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "tooling",
+      "title": "feat(tooling): expand param-truth-audit to AudioEffects kernels",
+      "description": "expand param-truth-audit to AudioEffects kernels",
+      "bullets": [],
+      "body": "Adds a second pass tracing UI-declared ranges in EffectDefs.cpp against\nthe std::clamp/transform math in each AudioEffects kernel's PushParams,\ncovering 18 kernel files (23 effects) that were previously invisible to\nthe audit since their DSP lives outside src/nodes/. Also generalizes\ndetection beyond std::clamp to any backend transform on a mailbox value\n(unit conversions, threshold reads), since a UI control can misrepresent\nwhat the DSP does with a value without a clamp being involved at all.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(tooling): expand param-truth-audit to AudioEffects kernels\n\nAdds a second pass tracing UI-declared ranges in EffectDefs.cpp against\nthe std::clamp/transform math in each AudioEffects kernel's PushParams,\ncovering 18 kernel files (23 effects) that were previously invisible to\nthe audit since their DSP lives outside src/nodes/. Also generalizes\ndetection beyond std::clamp to any backend transform on a mailbox value\n(unit conversions, threshold reads), since a UI control can misrepresent\nwhat the DSP does with a value without a clamp being involved at all.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".claude/skills/param-truth-audit/SKILL.md | 114 +++++----\n scripts/audit_param_truth.py              | 394 +++++++++++++++++++++++++++---\n 2 files changed, 425 insertions(+), 83 deletions(-)"
+  },
+  {
+    "hash": "5f863f76ef27fe1dcf3d35101b130bb0136f817e",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 17:04:24 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "tooling",
+      "title": "feat(tooling): add param-truth-audit skill and script",
+      "description": "add param-truth-audit skill and script",
+      "bullets": [],
+      "body": "Static-analysis check that a node's DSP clamp on a mailbox param agrees\nwith its own knob/slider's declared range in main.cpp, scoped per-node\nvia the same dynamic_cast dispatch mapping audit_node_params.py uses (so\nsame-named fields on unrelated nodes never cross-match). Written after\nfinding two real range/behavior mismatches in AnalogNode this session\n(pw silently not reaching osc2, fm's DSP clamp exceeding its documented\n0..1 knob range) that neither node-param-audit nor audio-node-sweep\nwould have caught, since both check modulatability and save/load - not\nnumeric agreement between a control and its own consumer.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(tooling): add param-truth-audit skill and script\n\nStatic-analysis check that a node's DSP clamp on a mailbox param agrees\nwith its own knob/slider's declared range in main.cpp, scoped per-node\nvia the same dynamic_cast dispatch mapping audit_node_params.py uses (so\nsame-named fields on unrelated nodes never cross-match). Written after\nfinding two real range/behavior mismatches in AnalogNode this session\n(pw silently not reaching osc2, fm's DSP clamp exceeding its documented\n0..1 knob range) that neither node-param-audit nor audio-node-sweep\nwould have caught, since both check modulatability and save/load - not\nnumeric agreement between a control and its own consumer.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ".claude/skills/param-truth-audit/SKILL.md | 118 +++++++++++++\n scripts/audit_param_truth.py              | 270 ++++++++++++++++++++++++++++++\n 2 files changed, 388 insertions(+)\n create mode 100644 .claude/skills/param-truth-audit/SKILL.md\n create mode 100755 scripts/audit_param_truth.py"
+  },
+  {
+    "hash": "e8d0e42571eb8d805ee2f1fe0867ff6ef4a4d02b",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 16:59:31 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "analog",
+      "title": "fix(analog): clamp fm depth to its actual 0..1 range",
+      "description": "clamp fm depth to its actual 0..1 range",
+      "bullets": [],
+      "body": "DSP clamped fm to 0..2 while the knob only ever reaches 1.0, so the\nupper half was dead/unreachable headroom left over from an earlier\nrange - clamp now matches the knob's documented 0..1 range.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "fix(analog): clamp fm depth to its actual 0..1 range\n\nDSP clamped fm to 0..2 while the knob only ever reaches 1.0, so the\nupper half was dead/unreachable headroom left over from an earlier\nrange - clamp now matches the knob's documented 0..1 range.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/nodes/AnalogSynthCore.h | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "hash": "3aa9e5c836c0388dcf911f9c004b714c8ecb8b06",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 16:51:32 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "analog",
+      "title": "feat(analog): make pulse width active on every oscillator waveform",
+      "description": "make pulse width active on every oscillator waveform",
+      "bullets": [],
+      "body": "PolyBlepOsc::Generate now warps sine/triangle/saw around pulseWidth\n(pulse-sine, vari-triangle skew, phase-distorted saw) instead of only\naffecting square/pulse, and stays identity at pw=0.5 so existing sounds\nare unchanged. Removes the BeginDisabled gate on the analog synth's pw\nknob so it's always live and modulatable, and fixes osc2 never\nreceiving pw1 at all (it silently used the 0.5 default even when wave2\nwas Square).\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(analog): make pulse width active on every oscillator waveform\n\nPolyBlepOsc::Generate now warps sine/triangle/saw around pulseWidth\n(pulse-sine, vari-triangle skew, phase-distorted saw) instead of only\naffecting square/pulse, and stays identity at pw=0.5 so existing sounds\nare unchanged. Removes the BeginDisabled gate on the analog synth's pw\nknob so it's always live and modulatable, and fixes osc2 never\nreceiving pw1 at all (it silently used the 0.5 default even when wave2\nwas Square).\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/audio/DspMath.h         | 35 ++++++++++++++++++++++++++++++-----\n src/main.cpp                |  5 -----\n src/nodes/AnalogSynthCore.h |  4 ++--\n 3 files changed, 32 insertions(+), 12 deletions(-)"
+  },
+  {
+    "hash": "3b386076d1e5dfc6e8da3ce801f7c178df763d86",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 16:41:38 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "render3d",
+      "title": "Merge branch 'feature/depth-mapping': depth projection node and Render3D multi-pass output Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "description": "Merge branch 'feature/depth-mapping': depth projection node and Render3D multi-pass output Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'feature/depth-mapping': depth projection node and Render3D multi-pass output Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "80e0eae4f5f04729a311e53f59d0262918a2d757",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 16:41:33 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "3d",
+      "title": "feat(3d): add DepthProjectionNode for depth-map unprojection and Render3D multi-pass output",
+      "description": "add DepthProjectionNode for depth-map unprojection and Render3D multi-pass output",
+      "bullets": [],
+      "body": "Adds a new node that unprojects a depth texture into a point cloud or mesh\nunder perspective/planar/radial/cylindrical models, with edge-tearing mesh\ngeneration, colormap/tint output, and PBR material fields. Render3DNode gains\na renderPass selector (color/linear depth/raw depth/normals/position) with\nmatching shader branches and clear-color handling.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(3d): add DepthProjectionNode for depth-map unprojection and Render3D multi-pass output\n\nAdds a new node that unprojects a depth texture into a point cloud or mesh\nunder perspective/planar/radial/cylindrical models, with edge-tearing mesh\ngeneration, colormap/tint output, and PBR material fields. Render3DNode gains\na renderPass selector (color/linear depth/raw depth/normals/position) with\nmatching shader branches and clear-color handling.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "CMakeLists.txt                    |   1 +\n src/nodes/DepthProjectionNode.cpp | 602 ++++++++++++++++++++++++++++++++++++++\n src/nodes/DepthProjectionNode.h   | 212 ++++++++++++++\n src/nodes/Geometry3DNodes.cpp     |  32 +-\n src/nodes/Geometry3DNodes.h       |   3 +\n 5 files changed, 849 insertions(+), 1 deletion(-)\n create mode 100644 src/nodes/DepthProjectionNode.cpp\n create mode 100644 src/nodes/DepthProjectionNode.h"
+  },
+  {
+    "hash": "30b90c825bd0814e0ae3de4be14d55d501d719d3",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 16:33:05 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "audio",
+      "title": "feat(audio): add vol 1 & vol 2 controls and update analog synth oscillator layout",
+      "description": "add vol 1 & vol 2 controls and update analog synth oscillator layout",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(audio): add vol 1 & vol 2 controls and update analog synth oscillator layout"
+    },
+    "stat": "src/main.cpp                |  6 ++++--\n src/nodes/AnalogNode.cpp    |  4 ++++\n src/nodes/AnalogNode.h      |  6 +++++-\n src/nodes/AnalogSynthCore.h | 10 ++++++++--\n 4 files changed, 21 insertions(+), 5 deletions(-)"
+  },
+  {
+    "hash": "cb23f918aa4253a49ccdbdbdc1634401b3b3b4c0",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 16:13:38 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "AnalogNode: update oscillator layout with per-osc tune (fine/semi/oct), FM depth, and mix default 50%",
+      "description": "AnalogNode: update oscillator layout with per-osc tune (fine/semi/oct), FM depth, and mix default 50%",
+      "bullets": [],
+      "body": "",
+      "raw": "AnalogNode: update oscillator layout with per-osc tune (fine/semi/oct), FM depth, and mix default 50%"
+    },
+    "stat": "src/main.cpp                | 165 ++++++++++++++++++++++++++++++++++++++++++--\n src/nodes/AnalogNode.cpp    |  20 ++++--\n src/nodes/AnalogNode.h      |  32 +++++++--\n src/nodes/AnalogSynthCore.h |  98 ++++++++++++++++++--------\n 4 files changed, 268 insertions(+), 47 deletions(-)"
+  },
+  {
+    "hash": "2c7ebf4de65d7554f9d9d557fcbad116e0e049c2",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 15:03:32 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'feature/mod-matrix-curve': interactive curve shaping for modulation matrix",
+      "description": "Merge branch 'feature/mod-matrix-curve': interactive curve shaping for modulation matrix",
+      "bullets": [],
+      "body": "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Merge branch 'feature/mod-matrix-curve': interactive curve shaping for modulation matrix\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "d0788c38eae11203075d35f10ac4c792dbfc7088",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 15:03:25 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "mod-matrix",
+      "title": "feat(mod-matrix): add interactive curve column for wired mods, expressions, and gesture playback",
+      "description": "add interactive curve column for wired mods, expressions, and gesture playback",
+      "bullets": [],
+      "body": "Adds a mini curve box (drag to shape, right-click presets, double-click\nreset) to the modulation matrix table, warping modulation values via\ny = x^2^(3*curve) before they reach the destination range. Applies to\nwired modulators, inline expressions, and gesture recordings, with\ncurve state carried through patch save/load (text + JSON) and undo.\nLive value is drawn tiny in the widget's corner instead of a tooltip.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(mod-matrix): add interactive curve column for wired mods, expressions, and gesture playback\n\nAdds a mini curve box (drag to shape, right-click presets, double-click\nreset) to the modulation matrix table, warping modulation values via\ny = x^2^(3*curve) before they reach the destination range. Applies to\nwired modulators, inline expressions, and gesture recordings, with\ncurve state carried through patch save/load (text + JSON) and undo.\nLive value is drawn tiny in the widget's corner instead of a tooltip.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/core/GestureRecorder.cpp |  36 +++-\n src/core/GestureRecorder.h   |   4 +\n src/core/Modulation.cpp      |  28 ++++\n src/core/Modulation.h        |  20 ++-\n src/core/Patch.cpp           |  51 +++++-\n src/core/Patch.h             |   3 +\n src/core/PatchJson.cpp       |   5 +-\n src/main.cpp                 | 388 ++++++++++++++++++++++++++++++++++++++++++-\n 8 files changed, 517 insertions(+), 18 deletions(-)"
+  },
+  {
+    "hash": "6e4fa0b6faf39975e9328f46c08e35022b37abe7",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 14:18:10 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "AnalogNode: align filter frequency taper and musical resonance curve with Wavetable and Oscillator",
+      "description": "AnalogNode: align filter frequency taper and musical resonance curve with Wavetable and Oscillator",
+      "bullets": [],
+      "body": "",
+      "raw": "AnalogNode: align filter frequency taper and musical resonance curve with Wavetable and Oscillator"
+    },
+    "stat": ".../2026-09-18-touchdesigner-depth-mapping.md      | 79 ++++++++++++++++++++++\n src/main.cpp                                       |  4 +-\n src/nodes/AnalogNode.h                             |  4 +-\n src/nodes/AnalogSynthCore.h                        |  8 ++-\n 4 files changed, 89 insertions(+), 6 deletions(-)\n create mode 100644 docs/prior-art/2026-09-18-touchdesigner-depth-mapping.md"
+  },
+  {
+    "hash": "d91001d8c13f53f16da137375e7c313b7222a57f",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 13:57:05 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "synth",
+      "title": "feat(synth): layout oscillator selectors and switches in top row, expand waveforms and SVF filter modes",
+      "description": "layout oscillator selectors and switches in top row, expand waveforms and SVF filter modes",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(synth): layout oscillator selectors and switches in top row, expand waveforms and SVF filter modes"
+    },
+    "stat": "src/main.cpp                                       |  27 +-\n src/nodes/AnalogNode.h                             |  25 +-\n src/nodes/AnalogSynthCore.h                        |  63 ++-\n .../1_extractors/output/git_commits_corpus.json    |  32 ++\n .../1_extractors/output/recovered_docs_corpus.json | 476 ++++++++++-----------\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 150 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 150 +++----\n 7 files changed, 496 insertions(+), 427 deletions(-)"
+  },
+  {
     "hash": "449873ce538acec3eabd496459cde75a33e29f51",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
