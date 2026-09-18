@@ -445,7 +445,7 @@ public:
                const float keyTrackOctaves = ((currentPitch - 60.0f) / 12.0f) * keyTrack;
                const float driftOctaves = analog ? v.driftCutoffOffset : 0.0f;
                const float effectiveCutoff = std::clamp(cutoff * powf(2.0f, keyTrackOctaves + driftOctaves),
-                                                        10.0f, (float)mSampleRate * 0.45f);
+                                                        20.0f, (float)mSampleRate * 0.45f);
                float filtered = driven;
 
                if (filterType == kAFilterLadder)
@@ -459,9 +459,13 @@ public:
                   const int svfType = filterType - 1;
                   const int stages = SynthModes::FilterStages(svfType);
                   const int shape = SynthModes::FilterShapeOf(svfType);
+                  const float q = 0.707f + resonance * resonance * 9.3f;
+                  const float g = tanf((float)M_PI * effectiveCutoff / (float)mSampleRate);
+                  const float k = 1.0f / (q < 0.01f ? 0.01f : q);
                   for (int s = 0; s < stages; ++s)
                   {
-                     v.svf[s].SetCutoff(effectiveCutoff, 0.5f + resonance * 9.5f);
+                     v.svf[s].g = g;
+                     v.svf[s].k = k;
                      const DspMath::TptSvf::Outputs o = v.svf[s].Process(filtered);
                      switch (shape)
                      {

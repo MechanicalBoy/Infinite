@@ -76,7 +76,7 @@ struct AnalogSynthParams
    float oscMix = 0.0f;
    float sub = 0.0f;
    float noise = 0.0f;
-   float cutoff = 8000.0f;
+   float cutoff = 12000.0f;
    float resonance = 0.0f;
    float drive = 0.0f;
    float keyTrack = 0.0f;
@@ -134,7 +134,7 @@ public:
    float oscMix = 0.0f;
    float sub = 0.0f;
    float noise = 0.0f;
-   float cutoff = 8000.0f;
+   float cutoff = 12000.0f;
    float resonance = 0.0f;
    float drive = 0.0f;
    float keyTrack = 0.0f;

@@ -22832,8 +22832,8 @@ namespace
          AudioKnobRow row(4, kKnobLarge, ImGui::GetFrameHeight() + 5.0f);
          row.DropdownKnob("analogFlt", filterNames, n->filterType,
                           [n](int i) { PushUndoCheckpoint(); n->filterType = i; },
-                          "cutoff", &n->cutoff, 20.0f, 20000.0f, "%.0f Hz", filterOff);
-         row.Knob("res", &n->resonance, 0.0f, 1.0f, "%.2f", kKnobLarge);
+                          "filter", &n->cutoff, 20.0f, 18000.0f, "%.0f Hz", filterOff, kKnobLarge, true);
+         row.Knob("reso", &n->resonance, 0.0f, 1.0f, "%.2f", kKnobLarge);
          row.Knob("drive", &n->drive, 0.0f, 1.0f, "%.2f");
          row.Knob("key track", &n->keyTrack, 0.0f, 1.0f, "%.2f");
          row.End();
