@@ -501,6 +501,8 @@ public:
 
    static INode* Create() { return new Render3DNode(); }
    static const std::vector<std::string>& ProjectionNames();
+   static const std::vector<std::string>& RenderPassNames();
+   int renderPass = 0; // 0 = color, 1 = linear depth, 2 = raw Z depth, 3 = normals, 4 = position
 
    ~Render3DNode() override;
 
@@ -616,6 +618,7 @@ public:
    void VisitParams(ParamVisitor& v) override
    {
       v.Float("width", width); v.Float("height", height);
+      v.Int("renderPass", renderPass);
       v.Int("projection", projection); v.Float("fov", fov);
       v.Float("orthoHeight", orthoHeight); v.Float("camDistance", camDistance);
       v.Float("camAzimuth", camAzimuth); v.Float("camElevation", camElevation);

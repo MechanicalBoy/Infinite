@@ -24,6 +24,7 @@ namespace
    };
    const std::vector<std::string> kShadingNames = { "Lit", "Normals", "UV", "Flat" };
    const std::vector<std::string> kProjectionNames = { "Perspective", "Orthographic" };
+   const std::vector<std::string> kRenderPassNames = { "Color", "Depth (Linear)", "Depth (Raw Z)", "Normals", "Position" };
    const std::vector<std::string> kSampleNames = { "Off", "2x", "4x", "8x" };
    const std::vector<std::string> kTonemapNames = { "None", "ACES", "Reinhard" };
    const std::vector<std::string> kShadowQualityNames = { "1024", "2048", "4096" };
@@ -342,6 +343,9 @@ namespace
       "uniform float uRoughness;\n"
       "uniform float uOpacity;\n"
       "uniform int uShading;\n"
+      "uniform int uRenderPass;\n"
+      "uniform float uNear;\n"
+      "uniform float uFar;\n"
       "uniform float uIor;\n"
       "uniform float uSpecular;\n"
       "uniform float uClearcoat;\n"
@@ -594,6 +598,23 @@ namespace
       "   }\n"
       "   if (uAlphaCutoff > 0.0 && uOpacity < uAlphaCutoff) discard;\n"
       "   vec3 n = normalize(vNormal);\n"
+      "   if (uRenderPass == 1) {\n"
+      "      float d = clamp((length(vWorldPos - uCamPos) - uNear) / max(0.001, uFar - uNear), 0.0, 1.0);\n"
+      "      fragColor = vec4(vec3(d), uOpacity);\n"
+      "      return;\n"
+      "   }\n"
+      "   if (uRenderPass == 2) {\n"
+      "      fragColor = vec4(vec3(gl_FragCoord.z), uOpacity);\n"
+      "      return;\n"
+      "   }\n"
+      "   if (uRenderPass == 3) {\n"
+      "      fragColor = vec4(n * 0.5 + 0.5, uOpacity);\n"
+      "      return;\n"
+      "   }\n"
+      "   if (uRenderPass == 4) {\n"
+      "      fragColor = vec4(vWorldPos, uOpacity);\n"
+      "      return;\n"
+      "   }\n"
       "   if (uShading == 1) { fragColor = vec4(n * 0.5 + 0.5, uOpacity); return; }\n"
       "   if (uShading == 2) { fragColor = vec4(vUv, 0.0, uOpacity); return; }\n"
       "\n"
@@ -913,6 +934,7 @@ void GeometryNode::CookIfNeeded(int frameId)
 // ================================================================= Render
 
 const std::vector<std::string>& Render3DNode::ProjectionNames() { return kProjectionNames; }
+const std::vector<std::string>& Render3DNode::RenderPassNames() { return kRenderPassNames; }
 const std::vector<std::string>& Render3DNode::SampleNames() { return kSampleNames; }
 const std::vector<std::string>& Render3DNode::TonemapNames() { return kTonemapNames; }
 const std::vector<std::string>& Render3DNode::ShadowQualityNames() { return kShadowQualityNames; }
@@ -1652,7 +1674,12 @@ void Render3DNode::CookIfNeeded(int frameId)
    const bool multisampling = mActiveSamples > 1 && mMsFbo != 0;
    glBindFramebuffer(GL_FRAMEBUFFER, multisampling ? mMsFbo : mFbo);
    glViewport(0, 0, w, h);
-   glClearColor(bgColor[0], bgColor[1], bgColor[2], bgOpacity);
+   if (renderPass == 1 || renderPass == 2)
+      glClearColor(1.0f, 1.0f, 1.0f, bgOpacity);
+   else if (renderPass == 3)
+      glClearColor(0.5f, 0.5f, 0.5f, bgOpacity);
+   else
+      glClearColor(bgColor[0], bgColor[1], bgColor[2], bgOpacity);
    glClearDepth(1.0);
    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -1740,6 +1767,9 @@ void Render3DNode::CookIfNeeded(int frameId)
    glUniform3fv(glGetUniformLocation(mProgram, "uCamPos"), 1, eye);
    glUniform1f(glGetUniformLocation(mProgram, "uExposure"), exposure);
    glUniform1i(glGetUniformLocation(mProgram, "uTonemap"), tonemap);
+   glUniform1i(glGetUniformLocation(mProgram, "uRenderPass"), renderPass);
+   glUniform1f(glGetUniformLocation(mProgram, "uNear"), nearPlane);
+   glUniform1f(glGetUniformLocation(mProgram, "uFar"), farPlane);
    glActiveTexture(GL_TEXTURE1);
    glBindTexture(GL_TEXTURE_2D, shadowsActive ? mShadowTex : DummyShadowTexture());
    glUniform1i(glGetUniformLocation(mProgram, "uShadowMap"), 1);
