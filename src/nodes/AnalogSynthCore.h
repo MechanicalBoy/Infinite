@@ -81,6 +81,7 @@ namespace AnalogSynthCore
          case kAWaveSaw: return DspMath::kWaveSaw;
          case kAWaveSquare: return DspMath::kWaveSquare;
          case kAWaveTriangle: return DspMath::kWaveTriangle;
+         case kAWaveSine: return DspMath::kWaveSine;
          default: return DspMath::kWaveSaw;
       }
    }
@@ -107,7 +108,7 @@ public:
       DspMath::OnePole glide;
 
       ZdfLadderFilter::State ladder;
-      DspMath::TptSvf svf;
+      DspMath::TptSvf svf[SynthModes::kMaxFilterStages];
 
       float driftPitchOffset = 0.0f;
       float driftCutoffOffset = 0.0f;
@@ -123,8 +124,11 @@ public:
          osc2.phase = 0.0;
          osc2.phaseInc = 0.0;
          ladder.Reset();
-         svf.Reset();
-         svf.SetSampleRate(sampleRate);
+         for (int s = 0; s < SynthModes::kMaxFilterStages; ++s)
+         {
+            svf[s].Reset();
+            svf[s].SetSampleRate(sampleRate);
+         }
          ampEnv.SetSampleRate(sampleRate);
          lastOut = 0.0f;
       }
@@ -150,8 +154,11 @@ public:
          v.Reset(mSampleRate);
 
       mFreeLadder.Reset();
-      mFreeSvf.Reset();
-      mFreeSvf.SetSampleRate(mSampleRate);
+      for (int s = 0; s < SynthModes::kMaxFilterStages; ++s)
+      {
+         mFreeSvf[s].Reset();
+         mFreeSvf[s].SetSampleRate(mSampleRate);
+      }
       for (int u = 0; u < AnalogSynthCore::kMaxUnison; ++u)
       {
          mFreeOsc1[u].phase = (double)AnalogSynthCore::kVoicePhaseSeed[u];
@@ -337,16 +344,22 @@ public:
                const float k = resonance * 3.98f;
                filtered = ZdfLadderFilter::Process(mFreeLadder, driven, g, k);
             }
-            else if (filterType >= kAFilterSvfLP && filterType <= kAFilterSvfNotch)
+            else if (filterType >= kAFilterSvfLP12 && filterType < kNumAFilterTypes)
             {
-               mFreeSvf.SetCutoff(effectiveCutoff, 0.5f + resonance * 9.5f);
-               const DspMath::TptSvf::Outputs o = mFreeSvf.Process(driven);
-               switch (filterType)
+               const int svfType = filterType - 1; // maps to SynthModes::kFilterLP12 ...
+               const int stages = SynthModes::FilterStages(svfType);
+               const int shape = SynthModes::FilterShapeOf(svfType);
+               for (int s = 0; s < stages; ++s)
                {
-                  case kAFilterSvfLP: filtered = o.low; break;
-                  case kAFilterSvfHP: filtered = o.high; break;
-                  case kAFilterSvfBP: filtered = o.band; break;
-                  case kAFilterSvfNotch: filtered = o.notch; break;
+                  mFreeSvf[s].SetCutoff(effectiveCutoff, 0.5f + resonance * 9.5f);
+                  const DspMath::TptSvf::Outputs o = mFreeSvf[s].Process(filtered);
+                  switch (shape)
+                  {
+                     case SynthModes::kShapeHigh:  filtered = o.high; break;
+                     case SynthModes::kShapeBand:  filtered = o.band; break;
+                     case SynthModes::kShapeNotch: filtered = o.notch; break;
+                     default:                      filtered = o.low; break;
+                  }
                }
             }
 
@@ -441,16 +454,22 @@ public:
                   const float k = resonance * 3.98f;
                   filtered = ZdfLadderFilter::Process(v.ladder, driven, g, k);
                }
-               else if (filterType >= kAFilterSvfLP && filterType <= kAFilterSvfNotch)
+               else if (filterType >= kAFilterSvfLP12 && filterType < kNumAFilterTypes)
                {
-                  v.svf.SetCutoff(effectiveCutoff, 0.5f + resonance * 9.5f);
-                  const DspMath::TptSvf::Outputs o = v.svf.Process(driven);
-                  switch (filterType)
+                  const int svfType = filterType - 1;
+                  const int stages = SynthModes::FilterStages(svfType);
+                  const int shape = SynthModes::FilterShapeOf(svfType);
+                  for (int s = 0; s < stages; ++s)
                   {
-                     case kAFilterSvfLP: filtered = o.low; break;
-                     case kAFilterSvfHP: filtered = o.high; break;
-                     case kAFilterSvfBP: filtered = o.band; break;
-                     case kAFilterSvfNotch: filtered = o.notch; break;
+                     v.svf[s].SetCutoff(effectiveCutoff, 0.5f + resonance * 9.5f);
+                     const DspMath::TptSvf::Outputs o = v.svf[s].Process(filtered);
+                     switch (shape)
+                     {
+                        case SynthModes::kShapeHigh:  filtered = o.high; break;
+                        case SynthModes::kShapeBand:  filtered = o.band; break;
+                        case SynthModes::kShapeNotch: filtered = o.notch; break;
+                        default:                      filtered = o.low; break;
+                     }
                   }
                }
 
@@ -621,7 +640,7 @@ private:
    DspMath::PolyBlepOsc mFreeOsc2;
    DspMath::WhiteNoise mFreeNoise;
    ZdfLadderFilter::State mFreeLadder;
-   DspMath::TptSvf mFreeSvf;
+   DspMath::TptSvf mFreeSvf[SynthModes::kMaxFilterStages];
 
    DspMath::OnePole mPolyNormSmooth;
    std::atomic<int> mActiveVoices { 0 };

@@ -15,10 +15,16 @@ enum AnalogFilterType
 {
    kAFilterOff = 0,
    kAFilterLadder,   // ZDF nonlinear Moog ladder
-   kAFilterSvfLP,    // 12 dB SVF Lowpass
-   kAFilterSvfHP,    // 12 dB SVF Highpass
-   kAFilterSvfBP,    // 12 dB SVF Bandpass
-   kAFilterSvfNotch, // 12 dB SVF Notch
+   kAFilterSvfLP12,  // 12 dB SVF Lowpass
+   kAFilterSvfLP24,  // 24 dB SVF Lowpass
+   kAFilterSvfLP36,  // 36 dB SVF Lowpass
+   kAFilterSvfHP12,  // 12 dB SVF Highpass
+   kAFilterSvfHP24,  // 24 dB SVF Highpass
+   kAFilterSvfHP36,  // 36 dB SVF Highpass
+   kAFilterSvfBP12,  // 12 dB SVF Bandpass
+   kAFilterSvfBP24,  // 24 dB SVF Bandpass
+   kAFilterSvfNotch12, // 12 dB SVF Notch
+   kAFilterSvfNotch24, // 24 dB SVF Notch
    kNumAFilterTypes
 };
 
@@ -27,12 +33,13 @@ enum AnalogWaveform
    kAWaveSaw = 0,
    kAWaveSquare,
    kAWaveTriangle,
+   kAWaveSine,
    kNumAWaveforms
 };
 
 inline const std::vector<std::string>& AnalogWaveformList()
 {
-   static const std::vector<std::string> kList = { "saw", "square", "triangle" };
+   static const std::vector<std::string> kList = { "saw", "square", "triangle", "sine" };
    return kList;
 }
 
@@ -42,9 +49,15 @@ inline const std::vector<std::string>& AnalogFilterTypeList()
       "off",
       "ladder lp",
       SynthModes::FilterName(SynthModes::kFilterLP12),
+      SynthModes::FilterName(SynthModes::kFilterLP24),
+      SynthModes::FilterName(SynthModes::kFilterLP36),
       SynthModes::FilterName(SynthModes::kFilterHP12),
+      SynthModes::FilterName(SynthModes::kFilterHP24),
+      SynthModes::FilterName(SynthModes::kFilterHP36),
       SynthModes::FilterName(SynthModes::kFilterBP12),
-      SynthModes::FilterName(SynthModes::kFilterNotch12)
+      SynthModes::FilterName(SynthModes::kFilterBP24),
+      SynthModes::FilterName(SynthModes::kFilterNotch12),
+      SynthModes::FilterName(SynthModes::kFilterNotch24)
    };
    return kList;
 }

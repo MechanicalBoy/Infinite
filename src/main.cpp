@@ -22790,34 +22790,35 @@ namespace
       // Oscillator section
       BeginAudioSection("oscillator");
       {
-         // Row 1: Osc 1
+         // Row 1: Selections and switches
          AudioKnobRow row(4);
          row.Dropdown("wave 1", waveList, n->wave1, [n](int i) { PushUndoCheckpoint(); n->wave1 = i; });
-         if (n->wave1 != kAWaveSquare)
+         row.Dropdown("wave 2", waveList, n->wave2, [n](int i) { PushUndoCheckpoint(); n->wave2 = i; });
+         row.Checkbox("sync", &n->sync);
+         row.Checkbox("analog", &n->analog);
+         row.End();
+      }
+      {
+         // Row 2: Oscillator knobs
+         AudioKnobRow row(4);
+         const bool pwDisabled = (n->wave1 != kAWaveSquare && n->wave2 != kAWaveSquare);
+         if (pwDisabled)
             ImGui::BeginDisabled();
          row.Knob("pw", &n->pw1, 0.01f, 0.99f, "%.2f");
-         if (n->wave1 != kAWaveSquare)
+         if (pwDisabled)
             ImGui::EndDisabled();
          row.Knob("voices", &n->voices, 1.0f, 7.0f, "%.0f");
          row.Knob("spread", &n->spread, 0.0f, 1.0f, "%.2f");
-         row.End();
-      }
-      {
-         // Row 2: Osc 2
-         AudioKnobRow row(4);
-         row.Dropdown("wave 2", waveList, n->wave2, [n](int i) { PushUndoCheckpoint(); n->wave2 = i; });
-         row.Checkbox("sync", &n->sync);
          row.Knob("tune", &n->osc2Tune, -24.0f, 24.0f, "%.0f st", kKnobLarge);
-         row.Knob("detune", &n->osc2Detune, -50.0f, 50.0f, "%.1f c");
          row.End();
       }
       {
-         // Row 3: Mix & Character
+         // Row 3: Mix, detune, sub & noise
          AudioKnobRow row(4);
+         row.Knob("detune", &n->osc2Detune, -50.0f, 50.0f, "%.1f c");
          row.Knob("mix", &n->oscMix, 0.0f, 1.0f, "%.2f", kKnobLarge);
          row.Knob("sub", &n->sub, 0.0f, 1.0f, "%.2f");
          row.Knob("noise", &n->noise, 0.0f, 1.0f, "%.2f");
-         row.Checkbox("analog", &n->analog);
          row.End();
       }
       EndAudioSection();

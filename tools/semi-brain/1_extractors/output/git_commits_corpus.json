@@ -1,5 +1,37 @@
 [
   {
+    "hash": "449873ce538acec3eabd496459cde75a33e29f51",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 13:53:10 2026 +0530",
+    "parsed_message": {
+      "type": "fix",
+      "scope": "gesture-recorder",
+      "title": "fix(gesture-recorder): capture shift-drag gestures while transport is paused",
+      "description": "capture shift-drag gestures while transport is paused",
+      "bullets": [],
+      "body": "GestureRecorder timestamped both recording and playback off the same\nclock, which the previous fix (0eb00b5) made freeze while the transport\nis paused so a looping recording would hold still on pause. Side effect:\nrecording a new gesture while paused stamped every sample with the same\nfrozen time, so the trace had no duration and played back as a static\nvalue instead of the drag that was just performed.\nSplit it into two clocks - the playback clock (unchanged, still freezes\non pause) and a new record clock that always advances regardless of\nplay state. NotifyMovement/MaybeFinishArmedRecording now timestamp\nagainst the record clock, so shift+drag captures real motion whether\nthe transport is playing or paused; BeginFrame/GetPlaybackValue still\nuse the playback clock so looping recordings still freeze on pause.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "fix(gesture-recorder): capture shift-drag gestures while transport is paused\n\nGestureRecorder timestamped both recording and playback off the same\nclock, which the previous fix (0eb00b5) made freeze while the transport\nis paused so a looping recording would hold still on pause. Side effect:\nrecording a new gesture while paused stamped every sample with the same\nfrozen time, so the trace had no duration and played back as a static\nvalue instead of the drag that was just performed.\n\nSplit it into two clocks - the playback clock (unchanged, still freezes\non pause) and a new record clock that always advances regardless of\nplay state. NotifyMovement/MaybeFinishArmedRecording now timestamp\nagainst the record clock, so shift+drag captures real motion whether\nthe transport is playing or paused; BeginFrame/GetPlaybackValue still\nuse the playback clock so looping recordings still freeze on pause.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/core/GestureRecorder.cpp |  1 +\n src/core/GestureRecorder.h   | 34 +++++++++++++++++++++++-----------\n src/main.cpp                 | 20 ++++++++++----------\n 3 files changed, 34 insertions(+), 21 deletions(-)"
+  },
+  {
+    "hash": "30ef06b9c61123bc6aaf21da44e12237734403bd",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 13:42:41 2026 +0530",
+    "parsed_message": {
+      "type": "style",
+      "scope": "synth",
+      "title": "style(synth): streamline Analog node layout, add ADSR callout panel, and clean knob labels",
+      "description": "streamline Analog node layout, add ADSR callout panel, and clean knob labels",
+      "bullets": [],
+      "body": "",
+      "raw": "style(synth): streamline Analog node layout, add ADSR callout panel, and clean knob labels"
+    },
+    "stat": "src/main.cpp                                       | 182 ++------\n src/nodes/AnalogNode.h                             |  16 +-\n src/nodes/AnalogSynthCore.h                        |  16 +-\n .../1_extractors/output/git_commits_corpus.json    |  87 ++++\n .../1_extractors/output/recovered_docs_corpus.json | 464 ++++++++++-----------\n .../3_datasets/train_dpo_preference.jsonl          |   1 +\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 153 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 153 +++----\n 8 files changed, 525 insertions(+), 547 deletions(-)"
+  },
+  {
     "hash": "238b3875187fac1a4d83ff6d045b0340eb6371c4",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
