@@ -154,6 +154,7 @@ namespace Patch
       // See Modulation::Source::enabled. Only meaningful (and only ever
       // written) alongside lo/hi - see the format comment above.
       bool enabled = true;
+      float curve = 0.0f; // in [-1.0, 1.0], 0 = linear
    };
 
    // A palette node driving one colour swatch on another node.
@@ -172,6 +173,7 @@ namespace Patch
       int dstIndex = 0;
       int dstParam = 0;
       std::string text;
+      float curve = 0.0f; // in [-1.0, 1.0], 0 = linear
    };
 
    // One patch-wide named value an expression can read - see
@@ -266,6 +268,7 @@ namespace Patch
       bool hasRangeOverride = false;
       float rangeLo = 0.0f, rangeHi = 0.0f;
       std::vector<GestureSample> samples; // >= 2 entries, timeSec strictly increasing
+      float curve = 0.0f; // in [-1.0, 1.0], 0 = linear
    };
 
    // Arrangement timeline (docs/plans/arrangement/README.md). A stream is one

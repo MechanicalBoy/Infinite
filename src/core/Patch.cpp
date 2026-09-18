@@ -251,12 +251,16 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
       // enabled is positional and trails lo/hi, so a disabled binding that
       // hasn't resolved a range yet still needs one written to carry
       // enabled at all - force hasRange so the tokens line up.
-      const bool hasRange = m.hasRange || !m.enabled;
+      const bool hasRange = m.hasRange || !m.enabled || std::abs(m.curve) > 0.0001f;
       if (hasRange)
       {
          file << " " << FloatToString(m.lo) << " " << FloatToString(m.hi);
-         if (!m.enabled)
-            file << " 0";
+         if (!m.enabled || std::abs(m.curve) > 0.0001f)
+         {
+            file << " " << (m.enabled ? "1" : "0");
+            if (std::abs(m.curve) > 0.0001f)
+               file << " " << FloatToString(m.curve);
+         }
       }
       file << "\n";
    }
@@ -264,7 +268,11 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
       file << "pal " << p.dstIndex << " " << p.dstColor << " "
            << p.srcIndex << " " << p.srcSwatch << "\n";
    for (const ExprRecord& e : data.expressions)
+   {
       file << "expr " << e.dstIndex << " " << e.dstParam << " " << EscapeLine(e.text) << "\n";
+      if (std::abs(e.curve) > 0.0001f)
+         file << "exprcurve " << e.dstIndex << " " << e.dstParam << " " << FloatToString(e.curve) << "\n";
+   }
    for (const GlobalRecord& g : data.globals)
       file << "glob " << g.name << " " << EscapeLine(g.expr) << "\n";
    if (data.perfLayout.cellSize != 76 || data.perfLayout.pageCount > 1 || !data.perfLayout.pageNames.empty())
@@ -316,6 +324,8 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
          file << " " << FloatToString(s.value) << " " << DoubleToString(s.timeSec) << " "
               << (s.startsNewGrab ? 1 : 0);
       file << "\n";
+      if (std::abs(g.curve) > 0.0001f)
+         file << "gesturecurve " << g.dstIndex << " " << g.dstParam << " " << FloatToString(g.curve) << "\n";
    }
    for (size_t i = 0; i < data.streams.size(); i++)
    {
@@ -601,6 +611,9 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
          // existed) leaves it at its default of true.
          int enabled = 1;
          m.enabled = !(in >> enabled) || enabled != 0;
+         float curve = 0.0f;
+         if (in >> curve)
+            m.curve = curve;
          outData.modulation.push_back(m);
       }
       else if (tag == "pal")
@@ -619,6 +632,22 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
             raw.erase(0, 1);
          e.text = UnescapeLine(raw);
          outData.expressions.push_back(e);
+      }
+      else if (tag == "exprcurve")
+      {
+         int dstIndex = 0, dstParam = 0;
+         float curve = 0.0f;
+         if (in >> dstIndex >> dstParam >> curve)
+         {
+            for (ExprRecord& e : outData.expressions)
+            {
+               if (e.dstIndex == dstIndex && e.dstParam == dstParam)
+               {
+                  e.curve = curve;
+                  break;
+               }
+            }
+         }
       }
       else if (tag == "glob")
       {
@@ -692,6 +721,22 @@ bool Read(const std::string& path, Data& outData, std::string& outError)
          // playback loop and is dropped rather than kept as a no-op record.
          if (g.samples.size() >= 2)
             outData.gestures.push_back(std::move(g));
+      }
+      else if (tag == "gesturecurve")
+      {
+         int dstIndex = 0, dstParam = 0;
+         float curve = 0.0f;
+         if (in >> dstIndex >> dstParam >> curve)
+         {
+            for (GestureRecord& g : outData.gestures)
+            {
+               if (g.dstIndex == dstIndex && g.dstParam == dstParam)
+               {
+                  g.curve = curve;
+                  break;
+               }
+            }
+         }
       }
       else if (tag == "perf")
       {

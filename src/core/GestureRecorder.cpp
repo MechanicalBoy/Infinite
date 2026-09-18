@@ -151,12 +151,20 @@ bool GestureRecorder::GetPlaybackValue(int nodeIndex, int paramIndex, double now
          }
       }
    }
+   auto applyCurve = [](float v, float curve) -> float {
+      v = std::clamp(v, 0.0f, 1.0f);
+      if (std::abs(curve) < 0.0001f)
+         return v;
+      return std::pow(v, std::exp2(curve * 3.0f));
+   };
+
    if (pb.hasRangeOverride)
    {
       if (pb.recordedMax > pb.recordedMin)
       {
-         const double norm = (raw - pb.recordedMin) / (pb.recordedMax - pb.recordedMin);
-         outValue = pb.rangeLo + (float)norm * (pb.rangeHi - pb.rangeLo);
+         const float norm = std::clamp((float)(raw - pb.recordedMin) / (pb.recordedMax - pb.recordedMin), 0.0f, 1.0f);
+         const float curved = applyCurve(norm, pb.curve);
+         outValue = pb.rangeLo + curved * (pb.rangeHi - pb.rangeLo);
       }
       else
       {
@@ -165,7 +173,16 @@ bool GestureRecorder::GetPlaybackValue(int nodeIndex, int paramIndex, double now
    }
    else
    {
-      outValue = (float)raw;
+      if (pb.recordedMax > pb.recordedMin && std::abs(pb.curve) > 0.0001f)
+      {
+         const float norm = std::clamp((float)(raw - pb.recordedMin) / (pb.recordedMax - pb.recordedMin), 0.0f, 1.0f);
+         const float curved = applyCurve(norm, pb.curve);
+         outValue = pb.recordedMin + curved * (pb.recordedMax - pb.recordedMin);
+      }
+      else
+      {
+         outValue = (float)raw;
+      }
    }
    return true;
 }
@@ -209,6 +226,19 @@ bool GestureRecorder::PlaybackRangeFor(int nodeIndex, int paramIndex, float& lo,
    lo = it->second.rangeLo;
    hi = it->second.rangeHi;
    return true;
+}
+
+void GestureRecorder::SetPlaybackCurve(int nodeIndex, int paramIndex, float curve)
+{
+   auto it = mPlayback.find(Key(nodeIndex, paramIndex));
+   if (it != mPlayback.end())
+      it->second.curve = std::clamp(curve, -1.0f, 1.0f);
+}
+
+float GestureRecorder::PlaybackCurveFor(int nodeIndex, int paramIndex) const
+{
+   auto it = mPlayback.find(Key(nodeIndex, paramIndex));
+   return it != mPlayback.end() ? it->second.curve : 0.0f;
 }
 
 void GestureRecorder::ClearForNode(int nodeIndex)
