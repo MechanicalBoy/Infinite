@@ -253,10 +253,10 @@ public:
          const float resonance = mMailbox.SmoothedValue(kResonance);
          const float drive = mMailbox.SmoothedValue(kDrive);
          const float keyTrack = mMailbox.SmoothedValue(kKeyTrack);
-         const float attackSec = mMailbox.SmoothedValue(kAttack);
-         const float decaySec = mMailbox.SmoothedValue(kDecay);
+         const float attackMs = mMailbox.SmoothedValue(kAttack);
+         const float decayMs = mMailbox.SmoothedValue(kDecay);
          const float sustainLevel = mMailbox.SmoothedValue(kSustain);
-         const float releaseSec = mMailbox.SmoothedValue(kRelease);
+         const float releaseMs = mMailbox.SmoothedValue(kRelease);
          const float clipPitch = mMailbox.SmoothedValue(kClipPitchParam);
 
          const int unisonCount = std::clamp((int)lroundf(voicesParam), 1, kMaxUnison);
@@ -364,7 +364,7 @@ public:
                if (!v.active)
                   continue;
 
-               v.ampEnv.SetADSR(attackSec * 1000.0f, decaySec * 1000.0f, sustainLevel, releaseSec * 1000.0f);
+               v.ampEnv.SetADSR(attackMs, decayMs, sustainLevel, releaseMs);
                const float ampEnvVal = v.ampEnv.Process();
                if (!v.ampEnv.IsActive())
                {
@@ -567,12 +567,12 @@ public:
       mLastNotePitch = (float)note;
       mHasLastNote = true;
 
-      const float attackSec = mMailbox.SmoothedValue(kAttack);
-      const float decaySec = mMailbox.SmoothedValue(kDecay);
+      const float attackMs = mMailbox.SmoothedValue(kAttack);
+      const float decayMs = mMailbox.SmoothedValue(kDecay);
       const float sustainLevel = mMailbox.SmoothedValue(kSustain);
-      const float releaseSec = mMailbox.SmoothedValue(kRelease);
+      const float releaseMs = mMailbox.SmoothedValue(kRelease);
 
-      v.ampEnv.SetADSR(attackSec * 1000.0f, decaySec * 1000.0f, sustainLevel, releaseSec * 1000.0f);
+      v.ampEnv.SetADSR(attackMs, decayMs, sustainLevel, releaseMs);
       if (stolen)
          v.ampEnv.ResetLevel();
       v.ampEnv.NoteOn();

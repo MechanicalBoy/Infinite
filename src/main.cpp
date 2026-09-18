@@ -22769,111 +22769,6 @@ namespace
       EndAudioBody();
    }
 
-   void DrawAnalogVisualizer(AnalogNode* n)
-   {
-      const float w = gAudioBodyW;
-      const float h = 100.0f;
-      const ImVec2 origin = ImGui::GetCursorScreenPos();
-      const ImVec2 br(origin.x + w, origin.y + h);
-      ImDrawList* dl = ImGui::GetWindowDrawList();
-
-      ImGui::InvisibleButton("##analogFilterCurve", ImVec2(w, h));
-      const bool isLight = IsThemeLight();
-      dl->AddRectFilled(origin, br, ScopeBgCol(), 4.0f);
-      dl->PushClipRect(origin, br, true);
-
-      // Graticule
-      DrawFilterGraticule(dl, origin, w, h);
-
-      const int type = n->filterType;
-      const float fc = std::max(20.0f, n->cutoff);
-      const float res = std::clamp(n->resonance, 0.0f, 1.0f);
-
-      constexpr int kNumPoints = 96;
-      float curveDb[kNumPoints];
-
-      for (int i = 0; i < kNumPoints; i++)
-      {
-         const float x = origin.x + (float)i * (w / (float)(kNumPoints - 1));
-         const float f = FilterVizXToFreq(x, origin.x, w);
-         const float r = f / fc;
-
-         float magSq = 1.0f;
-         if (type == kAFilterOff)
-         {
-            magSq = 1.0f;
-         }
-         else if (type == kAFilterLadder)
-         {
-            // 4-pole Moog ladder with feedback k = 3.98 * res
-            const float k = res * 3.98f;
-            const float h1Sq = 1.0f / (1.0f + r * r);
-            const float h1Mag4 = h1Sq * h1Sq;
-            const float theta1 = -atanf(r);
-            const float theta4 = 4.0f * theta1;
-            const float realPart = 1.0f + k * h1Mag4 * cosf(theta4);
-            const float imagPart = k * h1Mag4 * sinf(theta4);
-            const float denomSq = realPart * realPart + imagPart * imagPart;
-            magSq = (h1Mag4 * h1Mag4) / std::max(1e-9f, denomSq);
-         }
-         else if (type == kAFilterSvfLP)
-         {
-            const float q = 0.5f + res * 9.5f;
-            const float r2 = r * r;
-            const float denom = (1.0f - r2) * (1.0f - r2) + (r2 / (q * q));
-            magSq = 1.0f / std::max(1e-9f, denom);
-         }
-         else if (type == kAFilterSvfHP)
-         {
-            const float q = 0.5f + res * 9.5f;
-            const float r2 = r * r;
-            const float denom = (1.0f - r2) * (1.0f - r2) + (r2 / (q * q));
-            magSq = (r2 * r2) / std::max(1e-9f, denom);
-         }
-         else if (type == kAFilterSvfBP)
-         {
-            const float q = 0.5f + res * 9.5f;
-            const float r2 = r * r;
-            const float denom = (1.0f - r2) * (1.0f - r2) + (r2 / (q * q));
-            magSq = (r2 / (q * q)) / std::max(1e-9f, denom);
-         }
-         else if (type == kAFilterSvfNotch)
-         {
-            const float q = 0.5f + res * 9.5f;
-            const float r2 = r * r;
-            const float denom = (1.0f - r2) * (1.0f - r2) + (r2 / (q * q));
-            magSq = ((1.0f - r2) * (1.0f - r2)) / std::max(1e-9f, denom);
-         }
-
-         const float db = 10.0f * log10f(std::max(1e-6f, magSq));
-         curveDb[i] = std::clamp(db, -60.0f, 24.0f);
-      }
-
-      // Fill
-      const float yBottom = origin.y + h;
-      const ImU32 fillCol = isLight ? IM_COL32(230, 140, 30, 32) : IM_COL32(255, 170, 70, 36);
-      for (int i = 0; i < kNumPoints - 1; i++)
-      {
-         const float x0 = origin.x + (float)i * (w / (float)(kNumPoints - 1));
-         const float x1 = origin.x + (float)(i + 1) * (w / (float)(kNumPoints - 1));
-         const float y0 = FilterVizDbToY(curveDb[i], origin.y, h);
-         const float y1 = FilterVizDbToY(curveDb[i + 1], origin.y, h);
-         dl->AddQuadFilled(ImVec2(x0, y0), ImVec2(x1, y1), ImVec2(x1, yBottom), ImVec2(x0, yBottom), fillCol);
-      }
-
-      // Line
-      dl->PathClear();
-      for (int i = 0; i < kNumPoints; i++)
-      {
-         const float x = origin.x + (float)i * (w / (float)(kNumPoints - 1));
-         const float y = FilterVizDbToY(curveDb[i], origin.y, h);
-         dl->PathLineTo(ImVec2(x, y));
-      }
-      dl->PathStroke(isLight ? IM_COL32(230, 130, 20, 255) : IM_COL32(255, 180, 80, 245), 0, 1.8f);
-
-      dl->PopClipRect();
-   }
-
    void DrawAnalogBody(GraphNode& gn, AnalogNode* n)
    {
       const bool noteDriven = n->noteInput.GetSource() != nullptr;
@@ -22890,9 +22785,6 @@ namespace
 
       BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
 
-      DrawAnalogVisualizer(n);
-      ImGui::Dummy(ImVec2(0.0f, 4.0f));
-
       const auto& waveList = AnalogWaveformList();
 
       // Oscillator section
@@ -22900,32 +22792,32 @@ namespace
       {
          // Row 1: Osc 1
          AudioKnobRow row(4);
-         row.Dropdown("wave 1##analogWave1", waveList, n->wave1, [n](int i){ PushUndoCheckpoint(); n->wave1 = i; });
+         row.Dropdown("wave 1", waveList, n->wave1, [n](int i) { PushUndoCheckpoint(); n->wave1 = i; });
          if (n->wave1 != kAWaveSquare)
             ImGui::BeginDisabled();
-         row.Knob("pw 1##analogPw1", &n->pw1, 0.01f, 0.99f, "%.2f");
+         row.Knob("pw", &n->pw1, 0.01f, 0.99f, "%.2f");
          if (n->wave1 != kAWaveSquare)
             ImGui::EndDisabled();
-         row.Knob("voices##analogVoices", &n->voices, 1.0f, 7.0f, "%.0f");
-         row.Knob("spread##analogSpread", &n->spread, 0.0f, 1.0f, "%.2f");
+         row.Knob("voices", &n->voices, 1.0f, 7.0f, "%.0f");
+         row.Knob("spread", &n->spread, 0.0f, 1.0f, "%.2f");
          row.End();
       }
       {
          // Row 2: Osc 2
          AudioKnobRow row(4);
-         row.Dropdown("wave 2##analogWave2", waveList, n->wave2, [n](int i){ PushUndoCheckpoint(); n->wave2 = i; });
-         row.Checkbox("sync##analogSync", &n->sync);
-         row.Knob("tune 2##analogTune2", &n->osc2Tune, -24.0f, 24.0f, "%.0f st", kKnobLarge);
-         row.Knob("detune 2##analogDetune2", &n->osc2Detune, -50.0f, 50.0f, "%.1f c");
+         row.Dropdown("wave 2", waveList, n->wave2, [n](int i) { PushUndoCheckpoint(); n->wave2 = i; });
+         row.Checkbox("sync", &n->sync);
+         row.Knob("tune", &n->osc2Tune, -24.0f, 24.0f, "%.0f st", kKnobLarge);
+         row.Knob("detune", &n->osc2Detune, -50.0f, 50.0f, "%.1f c");
          row.End();
       }
       {
-         // Row 3: Blend
+         // Row 3: Mix & Character
          AudioKnobRow row(4);
-         row.Knob("mix##analogMix", &n->oscMix, 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("sub##analogSub", &n->sub, 0.0f, 1.0f, "%.2f");
-         row.Knob("noise##analogNoise", &n->noise, 0.0f, 1.0f, "%.2f");
-         row.Skip();
+         row.Knob("mix", &n->oscMix, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("sub", &n->sub, 0.0f, 1.0f, "%.2f");
+         row.Knob("noise", &n->noise, 0.0f, 1.0f, "%.2f");
+         row.Checkbox("analog", &n->analog);
          row.End();
       }
       EndAudioSection();
@@ -22935,38 +22827,26 @@ namespace
       // Filter section
       BeginAudioSection("filter");
       {
-         // Row 1: Filter 1
-         AudioKnobRow row(4);
-         row.Dropdown("filter##analogFltType", filterNames, n->filterType, [n](int i){ PushUndoCheckpoint(); n->filterType = i; });
-         row.Knob("cutoff##analogCutoff", &n->cutoff, 20.0f, 20000.0f, "%.0f Hz", kKnobLarge);
-         row.Knob("res##analogRes", &n->resonance, 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("drive##analogDrive", &n->drive, 0.0f, 1.0f, "%.2f");
-         row.End();
-      }
-      {
-         // Row 2: Filter 2
-         AudioKnobRow row(4);
-         row.Knob("key track##analogKeyTrack", &n->keyTrack, 0.0f, 1.0f, "%.2f");
-         row.Checkbox("analog##analogDrift", &n->analog);
-         row.Skip();
-         row.Skip();
+         const bool filterOff = (n->filterType == kAFilterOff);
+         AudioKnobRow row(4, kKnobLarge, ImGui::GetFrameHeight() + 5.0f);
+         row.DropdownKnob("analogFlt", filterNames, n->filterType,
+                          [n](int i) { PushUndoCheckpoint(); n->filterType = i; },
+                          "cutoff", &n->cutoff, 20.0f, 20000.0f, "%.0f Hz", filterOff);
+         row.Knob("res", &n->resonance, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("drive", &n->drive, 0.0f, 1.0f, "%.2f");
+         row.Knob("key track", &n->keyTrack, 0.0f, 1.0f, "%.2f");
          row.End();
       }
       EndAudioSection();
 
       ImGui::Dummy(ImVec2(0.0f, 2.0f));
 
-      // Envelope section
-      BeginAudioSection("envelope");
-      {
-         AudioKnobRow row(4);
-         row.Knob("attack##analogAtk", &n->attack, 0.001f, 10.0f, "%.3f s");
-         row.Knob("decay##analogDec", &n->decay, 0.001f, 10.0f, "%.3f s");
-         row.Knob("sustain##analogSus", &n->sustain, 0.0f, 1.0f, "%.2f");
-         row.Knob("release##analogRel", &n->release, 0.001f, 10.0f, "%.3f s");
-         row.End();
-      }
-      EndAudioSection();
+      // Envelope section (interactive ADSR curve panel with parameter sliders)
+      ImGui::PushID("amp");
+      DrawEnvelopePanel("amp envelope  -  drag the handles", "##analogAmpEnv", &n->attack,
+                        &n->decay, &n->sustain, &n->release, nullptr, 0.0f, 0.0f, nullptr,
+                        IM_COL32(150, 214, 255, 245));
+      ImGui::PopID();
 
       ImGui::Dummy(ImVec2(0.0f, 2.0f));
 
@@ -22976,12 +22856,12 @@ namespace
          AudioKnobRow row(4);
          if (noteDriven)
             ImGui::BeginDisabled();
-         row.Knob("freq##analogFreq", &n->freq, 20.0f, 8000.0f, "%.0f Hz", kKnobLarge);
+         row.Knob("freq", &n->freq, 20.0f, 8000.0f, "%.0f Hz", kKnobLarge);
          if (noteDriven)
             ImGui::EndDisabled();
-         row.Knob("volume##analogVol", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("glide##analogGlide", &n->glide, 0.0f, 2.0f, "%.2f s", kKnobSmall, false, false, AudioWidgetStyle::KnobSkewGlide150);
-         row.Knob("bend##analogBend", &n->pitchBend, -2.0f, 2.0f, "%+.2f st");
+         row.Knob("volume", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("glide", &n->glide, 0.0f, 2.0f, "%.2f s", kKnobSmall, false, false, AudioWidgetStyle::KnobSkewGlide150);
+         row.Knob("bend", &n->pitchBend, -2.0f, 2.0f, "%+.2f st");
          row.End();
       }
       EndAudioSection();

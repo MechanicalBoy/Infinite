@@ -67,10 +67,10 @@ struct AnalogSynthParams
    float resonance = 0.0f;
    float drive = 0.0f;
    float keyTrack = 0.0f;
-   float attack = 0.005f;
-   float decay = 0.3f;
-   float sustain = 0.75f;
-   float release = 0.25f;
+   float attack = 5.0f;     // ms
+   float decay = 300.0f;    // ms
+   float sustain = 0.75f;   // 0..1
+   float release = 250.0f;  // ms
 
    int wave1 = kAWaveSaw;
    int wave2 = kAWaveSaw;
@@ -125,10 +125,10 @@ public:
    float resonance = 0.0f;
    float drive = 0.0f;
    float keyTrack = 0.0f;
-   float attack = 0.005f;
-   float decay = 0.3f;
-   float sustain = 0.75f;
-   float release = 0.25f;
+   float attack = 5.0f;     // ms
+   float decay = 300.0f;    // ms
+   float sustain = 0.75f;   // 0..1
+   float release = 250.0f;  // ms
 
    // Discrete settings
    int wave1 = kAWaveSaw;

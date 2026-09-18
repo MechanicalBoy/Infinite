@@ -1,5 +1,92 @@
 [
   {
+    "hash": "238b3875187fac1a4d83ff6d045b0340eb6371c4",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 13:38:35 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Merge branch 'feature/lush-reverb-redesign': FDN redesign for Valhalla Vintage Verb-grade lushness",
+      "description": "Merge branch 'feature/lush-reverb-redesign': FDN redesign for Valhalla Vintage Verb-grade lushness",
+      "bullets": [],
+      "body": "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "Merge branch 'feature/lush-reverb-redesign': FDN redesign for Valhalla Vintage Verb-grade lushness\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "647eaa1bc3e465739a5cff00e6d1694490993242",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 13:30:19 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "reverb",
+      "title": "feat(reverb): redesign FDN for Valhalla Vintage Verb-grade lushness",
+      "description": "redesign FDN for Valhalla Vintage Verb-grade lushness",
+      "bullets": [
+        "8 -> 16 lines, Hadamard mix generalized to any power-of-two line count",
+        "Delay lengths widened to ~20-77ms (hall-scale)",
+        "2 -> 4-stage Schroeder diffusion, run as independent L/R chains instead",
+        "Delay-length modulation now always on, not gated behind \"analog\" -",
+        "Added a fixed ~13kHz pre-tank bandwidth filter to soften the injected",
+        "Per-channel predelay so stereo content survives into the diffusers"
+      ],
+      "body": "The old kernel sounded metallic and small/roomy: delay-length modulation\nonly ran in \"analog\" mode (a static FDN rings metallically), just 2\ndiffusion stages before an 8-line tank left the impulse response\nperiodic, delay lines topped out around 42ms (room-scale, not hall), and\nthe whole tank ran off one mono-summed input with a sign flip standing\nin for stereo width.\nof one mono chain, so stereo width comes from real decorrelation\nthis was the main source of the metallic ringing\ntransient\nNo param/UI surface change - all of this drives the existing 5 params +\nanalog + mix. Exempted from the KHS-simple control-count rule per user\nrequest (2026-09-18); see feedback_audio_node_minimalism memory.\nVerified: DSPTEST's RunReverbFixture (RT60 accuracy, predelay timing,\nmonotonic decay, damping effect, NaN/denormal tail) and the audio param/\nteardown sweeps all pass; the sweep's decay/damping/predelay FAILs are\nthe pre-existing documented blind spot (EffectDefs.cpp comment), not a\nregression.\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",
+      "raw": "feat(reverb): redesign FDN for Valhalla Vintage Verb-grade lushness\n\nThe old kernel sounded metallic and small/roomy: delay-length modulation\nonly ran in \"analog\" mode (a static FDN rings metallically), just 2\ndiffusion stages before an 8-line tank left the impulse response\nperiodic, delay lines topped out around 42ms (room-scale, not hall), and\nthe whole tank ran off one mono-summed input with a sign flip standing\nin for stereo width.\n\n- 8 -> 16 lines, Hadamard mix generalized to any power-of-two line count\n- Delay lengths widened to ~20-77ms (hall-scale)\n- 2 -> 4-stage Schroeder diffusion, run as independent L/R chains instead\n  of one mono chain, so stereo width comes from real decorrelation\n- Delay-length modulation now always on, not gated behind \"analog\" -\n  this was the main source of the metallic ringing\n- Added a fixed ~13kHz pre-tank bandwidth filter to soften the injected\n  transient\n- Per-channel predelay so stereo content survives into the diffusers\n\nNo param/UI surface change - all of this drives the existing 5 params +\nanalog + mix. Exempted from the KHS-simple control-count rule per user\nrequest (2026-09-18); see feedback_audio_node_minimalism memory.\n\nVerified: DSPTEST's RunReverbFixture (RT60 accuracy, predelay timing,\nmonotonic decay, damping effect, NaN/denormal tail) and the audio param/\nteardown sweeps all pass; the sweep's decay/damping/predelay FAILs are\nthe pre-existing documented blind spot (EffectDefs.cpp comment), not a\nregression.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+    },
+    "stat": "src/audio/EffectDefs.cpp       |  20 +++---\n src/audio/dsp/ReverbKernel.cpp | 136 ++++++++++++++++++++---------------------\n src/audio/dsp/ReverbKernel.h   | 129 +++++++++++++++++++++++++-------------\n 3 files changed, 166 insertions(+), 119 deletions(-)"
+  },
+  {
+    "hash": "f0f39e8b76ef2b1749abdfd80dd47deda8b5bfff",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 13:28:43 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "audio",
+      "title": "Merge branch 'feature/virtual-analog-synth-node' into main",
+      "description": "Merge branch 'feature/virtual-analog-synth-node' into main",
+      "bullets": [],
+      "body": "",
+      "raw": "Merge branch 'feature/virtual-analog-synth-node' into main"
+    },
+    "stat": ""
+  },
+  {
+    "hash": "57d01d0a5ff070f33311271724d4db21b6e8349e",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 13:28:36 2026 +0530",
+    "parsed_message": {
+      "type": "chore",
+      "scope": "semi-brain",
+      "title": "chore(semi-brain): update corpus and training datasets",
+      "description": "update corpus and training datasets",
+      "bullets": [],
+      "body": "",
+      "raw": "chore(semi-brain): update corpus and training datasets"
+    },
+    "stat": ".../1_extractors/output/git_commits_corpus.json    |  80 ++++\n .../1_extractors/output/recovered_docs_corpus.json | 468 ++++++++++-----------\n .../output/skills_and_invariants_corpus.json       |   4 +-\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 161 +++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 161 +++----\n 5 files changed, 482 insertions(+), 392 deletions(-)"
+  },
+  {
+    "hash": "96ae03981fe10769c4673a3ca5a2f73f28496d84",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 13:27:49 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "synth",
+      "title": "feat(synth): add Analog virtual-analog polyphonic synthesizer node",
+      "description": "add Analog virtual-analog polyphonic synthesizer node",
+      "bullets": [],
+      "body": "",
+      "raw": "feat(synth): add Analog virtual-analog polyphonic synthesizer node"
+    },
+    "stat": "ARCHITECTURE.md                 |   6 +\n CMakeLists.txt                  |   1 +\n src/audio/dsp/ZdfLadderFilter.h | 106 +++++++\n src/main.cpp                    | 227 +++++++++++++-\n src/nodes/AnalogNode.cpp        |  97 ++++++\n src/nodes/AnalogNode.h          | 145 +++++++++\n src/nodes/AnalogSynthCore.h     | 634 ++++++++++++++++++++++++++++++++++++++++\n 7 files changed, 1215 insertions(+), 1 deletion(-)\n create mode 100644 src/audio/dsp/ZdfLadderFilter.h\n create mode 100644 src/nodes/AnalogNode.cpp\n create mode 100644 src/nodes/AnalogNode.h\n create mode 100644 src/nodes/AnalogSynthCore.h"
+  },
+  {
     "hash": "9db3840e22457d93fad771561b04869c87f5a6b6",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",
