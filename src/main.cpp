@@ -77013,13 +77013,15 @@ int main(int argc, char** argv)
          Null3DNode nullNode; nullNode.input = &probe;
          checkForwarding("Null3DNode", &nullNode);
 
-         // MaterialNode is excluded from the default construction below and
-         // wired with bypassed=true instead: unbypassed, it originates A from
-         // its own params by design (same reason MappingNode is excluded from
-         // MAPPINGSWEEPTEST) - bypassed=true is what exercises its forwarding
-         // path (UtilityNodes.cpp:54, `if (bypassed) return input->GetMaterial()`).
-         MaterialNode matNode; matNode.input = &probe; matNode.bypassed = true;
-         checkForwarding("MaterialNode(bypassed)", &matNode);
+         // MaterialNode is excluded from this sweep entirely: unbypassed, it
+         // originates A from its own params by design (same reason MappingNode
+         // is excluded from MAPPINGSWEEPTEST); bypassed, it fails the one-input
+         // CanBypass() rule (it has a mesh input plus per-map texture pins), so
+         // it can never actually be bypassed in the live graph - any stale
+         // bypassed=true gets force-cleared on load - and MaterialNode::GetMaterial
+         // no longer has a forwarding branch to exercise (removed as unreachable
+         // dead code in 140221d). There is no reachable state left in which this
+         // node forwards its input's material, so there is nothing here to sweep.
 
          MappingNode mapNode; mapNode.input = &probe;
          checkForwarding("MappingNode", &mapNode);
