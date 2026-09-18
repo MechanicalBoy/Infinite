@@ -27,11 +27,17 @@ namespace AnalogSynthCore
       kFreq,
       kGlide,
       kPitchBend,
+      kFine1,
+      kSemi1,
+      kOct1,
+      kFine2,
+      kSemi2,
+      kOct2,
       kPw1,
       kVoices,
       kSpread,
-      kOsc2Tune,
-      kOsc2Detune,
+      kFm,
+      kDetune,
       kOscMix,
       kSub,
       kNoise,
@@ -186,11 +192,17 @@ public:
       mMailbox.Push(kFreq, p.freq);
       mMailbox.Push(kGlide, p.glide);
       mMailbox.Push(kPitchBend, p.pitchBend);
+      mMailbox.Push(kFine1, p.fine1);
+      mMailbox.Push(kSemi1, p.semi1);
+      mMailbox.Push(kOct1, p.oct1);
+      mMailbox.Push(kFine2, p.fine2);
+      mMailbox.Push(kSemi2, p.semi2);
+      mMailbox.Push(kOct2, p.oct2);
       mMailbox.Push(kPw1, p.pw1);
       mMailbox.Push(kVoices, p.voices);
       mMailbox.Push(kSpread, p.spread);
-      mMailbox.Push(kOsc2Tune, p.osc2Tune);
-      mMailbox.Push(kOsc2Detune, p.osc2Detune);
+      mMailbox.Push(kFm, p.fm);
+      mMailbox.Push(kDetune, p.detune);
       mMailbox.Push(kOscMix, p.oscMix);
       mMailbox.Push(kSub, p.sub);
       mMailbox.Push(kNoise, p.noise);
@@ -248,11 +260,17 @@ public:
          const float freeFreq = mMailbox.SmoothedValue(kFreq);
          const float glideTime = mMailbox.SmoothedValue(kGlide);
          const float pitchBend = mMailbox.SmoothedValue(kPitchBend);
+         const float fine1 = mMailbox.SmoothedValue(kFine1);
+         const float semi1 = mMailbox.SmoothedValue(kSemi1);
+         const float oct1 = mMailbox.SmoothedValue(kOct1);
+         const float fine2 = mMailbox.SmoothedValue(kFine2);
+         const float semi2 = mMailbox.SmoothedValue(kSemi2);
+         const float oct2 = mMailbox.SmoothedValue(kOct2);
          const float pw1 = mMailbox.SmoothedValue(kPw1);
          const float voicesParam = mMailbox.SmoothedValue(kVoices);
          const float spread = mMailbox.SmoothedValue(kSpread);
-         const float osc2Tune = mMailbox.SmoothedValue(kOsc2Tune);
-         const float osc2Detune = mMailbox.SmoothedValue(kOsc2Detune);
+         const float fm = std::clamp(mMailbox.SmoothedValue(kFm), 0.0f, 2.0f);
+         const float detune = std::clamp(mMailbox.SmoothedValue(kDetune), 0.0f, 100.0f);
          const float oscMix = std::clamp(mMailbox.SmoothedValue(kOscMix), 0.0f, 1.0f);
          const float subVol = mMailbox.SmoothedValue(kSub);
          const float noiseVol = mMailbox.SmoothedValue(kNoise);
@@ -288,18 +306,33 @@ public:
             const float baseHz = std::clamp(currentFreq * powf(2.0f, totalCents / 1200.0f),
                                             10.0f, (float)mSampleRate * 0.45f);
 
-            // Osc1 Unison
+            // Osc 2
+            const float osc2Cents = oct2 * 1200.0f + semi2 * 100.0f + fine2;
+            const float osc2Hz = std::clamp(baseHz * powf(2.0f, osc2Cents / 1200.0f),
+                                            10.0f, (float)mSampleRate * 0.45f);
+            mFreeOsc2.SetFrequency(osc2Hz, mSampleRate);
+            const float osc2Sample = mFreeOsc2.Generate(wave2Dsp);
+            mFreeOsc2.Advance();
+
+            // Osc 1 with FM from Osc 2
+            const float osc1Cents = oct1 * 1200.0f + semi1 * 100.0f + fine1;
+            const float osc1BaseHz = std::clamp(baseHz * powf(2.0f, osc1Cents / 1200.0f),
+                                                10.0f, (float)mSampleRate * 0.45f);
+            const float fmRatio = std::max(0.0f, 1.0f + osc2Sample * fm * 2.5f);
+            const float osc1ModHz = std::clamp(osc1BaseHz * fmRatio, 10.0f, (float)mSampleRate * 0.45f);
+
+            // Osc 1 Unison
             float osc1Sum = 0.0f;
             bool osc1Wrapped = false;
             for (int u = 0; u < unisonCount; ++u)
             {
-               float detuneCents = 0.0f;
+               float uDetuneCents = 0.0f;
                if (unisonCount > 1)
                {
                   const float uFrac = ((float)u / (float)(unisonCount - 1) - 0.5f) * 2.0f;
-                  detuneCents = uFrac * (spread * 50.0f);
+                  uDetuneCents = uFrac * (detune * spread);
                }
-               const float uHz = std::clamp(baseHz * powf(2.0f, detuneCents / 1200.0f),
+               const float uHz = std::clamp(osc1ModHz * powf(2.0f, uDetuneCents / 1200.0f),
                                             10.0f, (float)mSampleRate * 0.45f);
                mFreeOsc1[u].SetFrequency(uHz, mSampleRate);
                osc1Sum += mFreeOsc1[u].Generate(wave1Dsp, pw1);
@@ -309,15 +342,8 @@ public:
             }
             osc1Sum *= osc1Norm;
 
-            // Osc2
-            const float osc2Cents = osc2Tune * 100.0f + osc2Detune;
-            const float osc2Hz = std::clamp(baseHz * powf(2.0f, osc2Cents / 1200.0f),
-                                            10.0f, (float)mSampleRate * 0.45f);
-            mFreeOsc2.SetFrequency(osc2Hz, mSampleRate);
             if (sync && osc1Wrapped)
                mFreeOsc2.phase = 0.0;
-            const float osc2Sample = mFreeOsc2.Generate(wave2Dsp);
-            mFreeOsc2.Advance();
 
             // Sub osc (osc1[0] phase / 2)
             const float subPhase = (float)(mFreeOsc1[0].phase * 0.5);
@@ -335,7 +361,7 @@ public:
                driven += mFreeNoise.Next() * 0.001f;
 
             // Filter
-            const float effectiveCutoff = std::clamp(cutoff, 10.0f, (float)mSampleRate * 0.45f);
+            const float effectiveCutoff = std::clamp(cutoff, 20.0f, (float)mSampleRate * 0.45f);
             float filtered = driven;
 
             if (filterType == kAFilterLadder)
@@ -349,9 +375,13 @@ public:
                const int svfType = filterType - 1; // maps to SynthModes::kFilterLP12 ...
                const int stages = SynthModes::FilterStages(svfType);
                const int shape = SynthModes::FilterShapeOf(svfType);
+               const float q = 0.707f + resonance * resonance * 9.3f;
+               const float g = tanf((float)M_PI * effectiveCutoff / (float)mSampleRate);
+               const float k = 1.0f / (q < 0.01f ? 0.01f : q);
                for (int s = 0; s < stages; ++s)
                {
-                  mFreeSvf[s].SetCutoff(effectiveCutoff, 0.5f + resonance * 9.5f);
+                  mFreeSvf[s].g = g;
+                  mFreeSvf[s].k = k;
                   const DspMath::TptSvf::Outputs o = mFreeSvf[s].Process(filtered);
                   switch (shape)
                   {
@@ -395,18 +425,33 @@ public:
                const float voiceBaseHz = std::clamp(baseHz * powf(2.0f, totalCents / 1200.0f),
                                                     10.0f, (float)mSampleRate * 0.45f);
 
-               // Osc1 Unison
+               // Osc 2
+               const float osc2Cents = oct2 * 1200.0f + semi2 * 100.0f + fine2;
+               const float osc2Hz = std::clamp(voiceBaseHz * powf(2.0f, osc2Cents / 1200.0f),
+                                               10.0f, (float)mSampleRate * 0.45f);
+               v.osc2.SetFrequency(osc2Hz, mSampleRate);
+               const float osc2Sample = v.osc2.Generate(wave2Dsp);
+               v.osc2.Advance();
+
+               // Osc 1 with FM from Osc 2
+               const float osc1Cents = oct1 * 1200.0f + semi1 * 100.0f + fine1;
+               const float osc1BaseHz = std::clamp(voiceBaseHz * powf(2.0f, osc1Cents / 1200.0f),
+                                                   10.0f, (float)mSampleRate * 0.45f);
+               const float fmRatio = std::max(0.0f, 1.0f + osc2Sample * fm * 2.5f);
+               const float osc1ModHz = std::clamp(osc1BaseHz * fmRatio, 10.0f, (float)mSampleRate * 0.45f);
+
+               // Osc 1 Unison
                float osc1Sum = 0.0f;
                bool osc1Wrapped = false;
                for (int u = 0; u < unisonCount; ++u)
                {
-                  float detuneCents = 0.0f;
+                  float uDetuneCents = 0.0f;
                   if (unisonCount > 1)
                   {
                      const float uFrac = ((float)u / (float)(unisonCount - 1) - 0.5f) * 2.0f;
-                     detuneCents = uFrac * (spread * 50.0f);
+                     uDetuneCents = uFrac * (detune * spread);
                   }
-                  const float uHz = std::clamp(voiceBaseHz * powf(2.0f, detuneCents / 1200.0f),
+                  const float uHz = std::clamp(osc1ModHz * powf(2.0f, uDetuneCents / 1200.0f),
                                                10.0f, (float)mSampleRate * 0.45f);
                   v.osc1[u].SetFrequency(uHz, mSampleRate);
                   osc1Sum += v.osc1[u].Generate(wave1Dsp, pw1);
@@ -416,15 +461,8 @@ public:
                }
                osc1Sum *= osc1Norm;
 
-               // Osc2
-               const float osc2Cents = osc2Tune * 100.0f + osc2Detune;
-               const float osc2Hz = std::clamp(voiceBaseHz * powf(2.0f, osc2Cents / 1200.0f),
-                                               10.0f, (float)mSampleRate * 0.45f);
-               v.osc2.SetFrequency(osc2Hz, mSampleRate);
                if (sync && osc1Wrapped)
                   v.osc2.phase = 0.0;
-               const float osc2Sample = v.osc2.Generate(wave2Dsp);
-               v.osc2.Advance();
 
                // Sub osc (osc1[0] phase / 2)
                const float subPhase = (float)(v.osc1[0].phase * 0.5);
