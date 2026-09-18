@@ -68,18 +68,32 @@ struct AnalogSynthParams
    float freq = 220.0f;
    float glide = 0.0f;
    float pitchBend = 0.0f;
+
+   float fine1 = 0.0f;      // cents: -50..+50
+   float semi1 = 0.0f;      // semitones: -24..+24
+   float oct1 = 0.0f;       // octaves: -3..+3
+
+   float fine2 = 0.0f;      // cents: -50..+50
+   float semi2 = 0.0f;      // semitones: -24..+24
+   float oct2 = 0.0f;       // octaves: -3..+3
+
    float pw1 = 0.5f;
+   float osc1Vol = 1.0f;
+   float osc2Vol = 1.0f;
    float voices = 1.0f;
    float spread = 0.2f;
-   float osc2Tune = 0.0f;
-   float osc2Detune = 0.0f;
-   float oscMix = 0.0f;
+   float fm = 0.0f;         // 0..1 FM depth osc 2 -> osc 1
+
+   float detune = 10.0f;    // cents: 0..100 unison detune
+   float oscMix = 0.5f;     // 50% default
    float sub = 0.0f;
    float noise = 0.0f;
+
    float cutoff = 12000.0f;
    float resonance = 0.0f;
    float drive = 0.0f;
    float keyTrack = 0.0f;
+
    float attack = 5.0f;     // ms
    float decay = 300.0f;    // ms
    float sustain = 0.75f;   // 0..1
@@ -121,17 +135,25 @@ public:
    int ActiveVoices() const;
    double DebugMailboxSampleRate() const;
 
-   // 19 smoothed floats
+   // 26 smoothed floats
    float volume = 0.8f;
    float freq = 220.0f;
    float glide = 0.0f;
    float pitchBend = 0.0f;
+   float fine1 = 0.0f;
+   float semi1 = 0.0f;
+   float oct1 = 0.0f;
+   float fine2 = 0.0f;
+   float semi2 = 0.0f;
+   float oct2 = 0.0f;
    float pw1 = 0.5f;
+   float osc1Vol = 1.0f;
+   float osc2Vol = 1.0f;
    float voices = 1.0f;
    float spread = 0.2f;
-   float osc2Tune = 0.0f;
-   float osc2Detune = 0.0f;
-   float oscMix = 0.0f;
+   float fm = 0.0f;
+   float detune = 10.0f;
+   float oscMix = 0.5f;
    float sub = 0.0f;
    float noise = 0.0f;
    float cutoff = 12000.0f;

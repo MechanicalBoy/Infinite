@@ -174,6 +174,7 @@ namespace
 #include "nodes/Text3DNode.h"
 #include "nodes/UtilityNodes.h"
 #include "nodes/PointDistributionNodes.h"
+#include "nodes/DepthProjectionNode.h"
 #include "nodes/PathNode.h"
 #include "nodes/GeometryTableNode.h"
 #include "nodes/CurveNode.h"
@@ -5367,6 +5368,7 @@ namespace
       REGISTER_NODE(MetaBallNode, Metaballs, "3D");
       REGISTER_NODE(MeshResynthNode, Resynthesize 3D, "3D");
       REGISTER_NODE(ImageToPointsNode, Image to Points, "3D");
+      REGISTER_NODE(DepthProjectionNode, Depth Projection, "3D");
       REGISTER_NODE(CurveNode, Curve, "3D");
       // Three names, one class - Points/Edges/Faces are the same sampler.
       for (int i = 0; i < 3; i++)
@@ -6509,6 +6511,8 @@ namespace
          return 1;
       if (dynamic_cast<ImageToPointsNode*>(gn.node.get()) != nullptr)
          return 1;
+      if (dynamic_cast<DepthProjectionNode*>(gn.node.get()) != nullptr)
+         return 2; // depth and optional color
       if (dynamic_cast<ClothNode*>(gn.node.get()) != nullptr)
          return 1;
       if (dynamic_cast<JoinGeometryNode*>(gn.node.get()) != nullptr)
@@ -6632,6 +6636,8 @@ namespace
          return slot == 0 ? &resynth->Input() : nullptr;
       if (auto* i2p = dynamic_cast<ImageToPointsNode*>(gn.node.get()))
          return slot == 0 ? &i2p->Input() : nullptr;
+      if (auto* dp = dynamic_cast<DepthProjectionNode*>(gn.node.get()))
+         return (slot == 0) ? &dp->DepthInput() : ((slot == 1) ? &dp->ColorInput() : nullptr);
       if (auto* curves = dynamic_cast<CurvesNode*>(gn.node.get()))
          return slot == 0 ? &curves->Input() : nullptr;
       if (auto* cramp = dynamic_cast<ColorRampNode*>(gn.node.get()))
@@ -22790,16 +22796,34 @@ namespace
       // Oscillator section
       BeginAudioSection("oscillator");
       {
-         // Row 1: Selections and switches
+         // Row 1: Oscillator 1 (Selection, Fine Tune, Semitones, Octave)
          AudioKnobRow row(4);
          row.Dropdown("wave 1", waveList, n->wave1, [n](int i) { PushUndoCheckpoint(); n->wave1 = i; });
+         row.Knob("fine", &n->fine1, -50.0f, 50.0f, "%.1f c", kKnobSmall, false, false, AudioWidgetStyle::Knob, nullptr, nullptr, -1, "fine1");
+         row.Knob("semi", &n->semi1, -24.0f, 24.0f, "%.0f st", kKnobSmall, false, false, AudioWidgetStyle::Knob, nullptr, nullptr, -1, "semi1");
+         row.Knob("oct", &n->oct1, -3.0f, 3.0f, "%+.0f oct", kKnobSmall, false, false, AudioWidgetStyle::Knob, nullptr, nullptr, -1, "oct1");
+         row.End();
+      }
+      {
+         // Row 2: Oscillator 2 (Selection, Fine Tune, Semitones, Octave)
+         AudioKnobRow row(4);
          row.Dropdown("wave 2", waveList, n->wave2, [n](int i) { PushUndoCheckpoint(); n->wave2 = i; });
+         row.Knob("fine", &n->fine2, -50.0f, 50.0f, "%.1f c", kKnobSmall, false, false, AudioWidgetStyle::Knob, nullptr, nullptr, -1, "fine2");
+         row.Knob("semi", &n->semi2, -24.0f, 24.0f, "%.0f st", kKnobSmall, false, false, AudioWidgetStyle::Knob, nullptr, nullptr, -1, "semi2");
+         row.Knob("oct", &n->oct2, -3.0f, 3.0f, "%+.0f oct", kKnobSmall, false, false, AudioWidgetStyle::Knob, nullptr, nullptr, -1, "oct2");
+         row.End();
+      }
+      {
+         // Row 3: Osc 1 Vol, Osc 2 Vol, Sync & Analog switches
+         AudioKnobRow row(4);
+         row.Knob("vol 1", &n->osc1Vol, 0.0f, 1.0f, "%.2f");
+         row.Knob("vol 2", &n->osc2Vol, 0.0f, 1.0f, "%.2f");
          row.Checkbox("sync", &n->sync);
          row.Checkbox("analog", &n->analog);
          row.End();
       }
       {
-         // Row 2: Oscillator knobs
+         // Row 4: pw, voices, spread, fm
          AudioKnobRow row(4);
          const bool pwDisabled = (n->wave1 != kAWaveSquare && n->wave2 != kAWaveSquare);
          if (pwDisabled)
@@ -22809,13 +22833,13 @@ namespace
             ImGui::EndDisabled();
          row.Knob("voices", &n->voices, 1.0f, 7.0f, "%.0f");
          row.Knob("spread", &n->spread, 0.0f, 1.0f, "%.2f");
-         row.Knob("tune", &n->osc2Tune, -24.0f, 24.0f, "%.0f st", kKnobLarge);
+         row.Knob("fm", &n->fm, 0.0f, 1.0f, "%.2f", kKnobLarge);
          row.End();
       }
       {
-         // Row 3: Mix, detune, sub & noise
+         // Row 5: detune, mix (default 50%), sub, noise
          AudioKnobRow row(4);
-         row.Knob("detune", &n->osc2Detune, -50.0f, 50.0f, "%.1f c");
+         row.Knob("detune", &n->detune, 0.0f, 100.0f, "%.1f c");
          row.Knob("mix", &n->oscMix, 0.0f, 1.0f, "%.2f", kKnobLarge);
          row.Knob("sub", &n->sub, 0.0f, 1.0f, "%.2f");
          row.Knob("noise", &n->noise, 0.0f, 1.0f, "%.2f");
@@ -23678,6 +23702,60 @@ namespace
       ModSlider("size from luma", &n->sizeFromLuma, -1.0f, 1.0f);
       ModCheckbox("use image colour", &n->useImageColor);
       ColorSwatch("tint", n->tint, n);
+   }
+
+   void DrawDepthProjectionParams(DepthProjectionNode* n)
+   {
+      if (n->outputType == DepthProjectionNode::kPoints)
+         ImGui::TextDisabled("%zu points", n->PointCount());
+      else
+         ImGui::TextDisabled("%zu triangles (%zu vertices)", n->TriangleCount(), n->GetMesh().vertices.size());
+
+      DropdownButton("projection", DepthProjectionNode::ProjectionNames(), n->projection,
+                     [n](int i) { n->projection = i; });
+      DropdownButton("output", DepthProjectionNode::OutputTypeNames(), n->outputType,
+                     [n](int i) { n->outputType = i; });
+      ModSliderInt("density", &n->density, 8, 400);
+
+      NodeSeparator("depth");
+      DropdownButton("source", DepthProjectionNode::DepthSourceNames(), n->depthSource,
+                     [n](int i) { n->depthSource = i; });
+      ModSlider("near depth", &n->nearDepth, 0.01f, 20.0f);
+      ModSlider("far depth", &n->farDepth, 0.1f, 50.0f);
+      ModSlider("depth scale", &n->depthScale, -5.0f, 5.0f);
+      ModSlider("depth curve", &n->depthCurve, 0.1f, 4.0f);
+      ModSlider("clip near", &n->clipNear, 0.0f, 1.0f);
+      ModSlider("clip far", &n->clipFar, 0.0f, 1.0f);
+
+      if (n->projection == DepthProjectionNode::kPerspective || n->projection == DepthProjectionNode::kRadial)
+      {
+         NodeSeparator("camera");
+         ModSlider("fov", &n->fov, 10.0f, 130.0f);
+         ModCheckbox("auto aspect", &n->autoAspect);
+         if (!n->autoAspect)
+            ModSlider("aspect", &n->customAspect, 0.2f, 4.0f);
+         ModSlider("focal scale", &n->focalScale, 0.1f, 3.0f);
+         ModSlider("center x", &n->principalPointX, -1.0f, 1.0f);
+         ModSlider("center y", &n->principalPointY, -1.0f, 1.0f);
+      }
+      else
+      {
+         NodeSeparator("dimensions");
+         ModSlider("width", &n->planarWidth, 0.1f, 20.0f);
+         ModSlider("height", &n->planarHeight, 0.1f, 20.0f);
+      }
+
+      NodeSeparator("appearance");
+      if (n->outputType == DepthProjectionNode::kPoints)
+         ModSlider("point size", &n->pointSize, 0.01f, 4.0f);
+      else
+         ModSlider("edge tear", &n->edgeTearThreshold, 0.01f, 2.0f);
+
+      DropdownButton("color", DepthProjectionNode::ColorModeNames(), n->colorMode,
+                     [n](int i) { n->colorMode = i; });
+      ColorSwatch("tint", n->tint, n);
+      ModSlider("metallic", &n->metallic, 0.0f, 1.0f);
+      ModSlider("roughness", &n->roughness, 0.0f, 1.0f);
    }
 
    void DrawMeshToPointsParams(MeshToPointsNode* n)
@@ -24590,6 +24668,8 @@ namespace
       ImGui::BeginGroup();
 
       NodeSeparator("output", colW);
+      DropdownButton("pass", Render3DNode::RenderPassNames(), n->renderPass,
+                     [n](int i) { n->renderPass = i; }, colW);
       // This is the export resolution: Output sizes its own buffer from whatever
       // its input hands it, so a 4000px PNG needs 4000 set here or it is an
       // upscale of a smaller render.
@@ -37348,6 +37428,7 @@ namespace
          { "Join Geometry", "Combines two or more geometry inputs into one. The boolean modes (Union, Difference, Intersection, etc, each also spawnable as its own named node) need closed, manifold solids to produce a clean result - open surfaces can give garbage." },
          { "Metaballs", "Builds an isosurface (blobby, merging spheres) from a point cloud source, or from a manually-placed set of balls when no cloud is patched in." },
          { "Image to Points", "Converts an image into a 3D point cloud - brightness/depth-source drives per-point depth, with density, threshold, point size and optional colour-from-image." },
+         { "Depth Projection", "Unprojects a 2D depth map and optional color image into a 3D point cloud or triangulated surface mesh, supporting pinhole camera, planar, radial and cylindrical projections with depth curves and edge tearing." },
          { "Curve", "A generative parametric curve/tube (line, circle, spiral, helix and other presets) extruded into a mesh, with point count, smoothness, spread, height, twist and tube radius/taper controls." },
          { "Mesh to Points", "Samples the input mesh's vertices as a point cloud, for feeding Instance on Points or Metaballs." },
          { "Mesh to Edges", "Samples points along the input mesh's edges as a point cloud, for feeding Instance on Points or Metaballs." },
@@ -63989,6 +64070,31 @@ int main(int argc, char** argv)
          for (GraphNode& gn : gNodes)
             gn.showParams = true;
       }
+      else if (getenv("INFINITE_DEPTHTEST") != nullptr)
+      {
+         SpawnNode("Noise", "Source", 40.0f, 40.0f);                  // 0: depth image source
+         SpawnNode("Ramp", "Source", 40.0f, 300.0f);                  // 1: color image source
+         SpawnNode("Depth Projection", "3D", 300.0f, 40.0f);          // 2: depth projection
+         SpawnNode("Render 3D", "3D", 560.0f, 40.0f);                 // 3: render 3D
+
+         auto* depthMap = static_cast<NoiseNode*>(gNodes[0].node.get());
+         depthMap->octaves = 3;
+         auto* colorMap = static_cast<RampNode*>(gNodes[1].node.get());
+         (void)colorMap;
+
+         auto* dp = static_cast<DepthProjectionNode*>(gNodes[2].node.get());
+         dp->DepthInput().Connect(gNodes[0].node.get());
+         dp->ColorInput().Connect(gNodes[1].node.get());
+         dp->density = 64;
+         dp->projection = DepthProjectionNode::kPerspective;
+         dp->outputType = DepthProjectionNode::kPoints;
+
+         auto* r = static_cast<Render3DNode*>(gNodes[3].node.get());
+         r->geometry[0] = dp;
+         r->width = 400.0f;
+         r->height = 400.0f;
+         r->renderPass = 0; // beauty
+      }
       else if (getenv("INFINITE_TEXTFIT") != nullptr)
       {
          SpawnNode("Text", "Source", 40.0f, 40.0f);
@@ -80774,6 +80880,43 @@ int main(int argc, char** argv)
          glfwSetWindowShouldClose(window, GLFW_TRUE);
       }
 
+      if (getenv("INFINITE_DEPTHTEST") != nullptr)
+      {
+         if (frameId == 4)
+         {
+            auto* dp = static_cast<DepthProjectionNode*>(gNodes[2].node.get());
+            auto* r = static_cast<Render3DNode*>(gNodes[3].node.get());
+            const size_t pts = dp->PointCount();
+            const unsigned int tex = r->GetOutputTexture();
+            printf("depth projection points: %zu points, outputTex=%u  %s\n",
+                   pts, tex, (pts > 0 && tex != 0) ? "OK" : "FAIL");
+            dp->outputType = DepthProjectionNode::kMesh;
+            dp->projection = DepthProjectionNode::kPlanar;
+         }
+         else if (frameId == 8)
+         {
+            auto* dp = static_cast<DepthProjectionNode*>(gNodes[2].node.get());
+            auto* r = static_cast<Render3DNode*>(gNodes[3].node.get());
+            const size_t tris = dp->TriangleCount();
+            const size_t verts = dp->GetMesh().vertices.size();
+            const unsigned int tex = r->GetOutputTexture();
+            printf("depth projection mesh: %zu triangles, %zu vertices, outputTex=%u  %s\n",
+                   tris, verts, tex, (tris > 0 && verts > 0 && tex != 0) ? "OK" : "FAIL");
+            r->renderPass = 1; // Linear depth
+            dp->projection = DepthProjectionNode::kRadial;
+         }
+         else if (frameId == 12)
+         {
+            auto* dp = static_cast<DepthProjectionNode*>(gNodes[2].node.get());
+            auto* r = static_cast<Render3DNode*>(gNodes[3].node.get());
+            const bool ok = dp->TriangleCount() > 0 && r->GetOutputTexture() != 0;
+            printf("depth projection multi-pass passes: renderPass=%d  %s\n",
+                   r->renderPass, ok ? "OK" : "FAIL");
+            printf("DEPTH PROJECTION & MULTI-PASS RENDER 3D OK\n");
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+         }
+      }
+
       // Points-render-as-points, phase 1 - see the INFINITE_PHASE1TEST spawn
       // block above for the scene. Checked at two points in time so the
       // Particle System check can prove the render keeps advancing rather
@@ -81491,6 +81634,7 @@ int main(int argc, char** argv)
                   dynamic_cast<CurveNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<MeshResynthNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<ImageToPointsNode*>(gn.node.get()) != nullptr ||
+                  dynamic_cast<DepthProjectionNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<CameraNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<LightNode*>(gn.node.get()) != nullptr)
          {
@@ -81561,6 +81705,13 @@ int main(int argc, char** argv)
                snprintf(line, sizeof(line), "gen %d, %zu tris", mrs->Generation(), mrs->TriangleCount());
             else if (auto* i2p = dynamic_cast<ImageToPointsNode*>(gn.node.get()))
                snprintf(line, sizeof(line), "%zu points", i2p->PointCount());
+            else if (auto* dp = dynamic_cast<DepthProjectionNode*>(gn.node.get()))
+            {
+               if (dp->outputType == DepthProjectionNode::kPoints)
+                  snprintf(line, sizeof(line), "%zu points", dp->PointCount());
+               else
+                  snprintf(line, sizeof(line), "%zu triangles", dp->TriangleCount());
+            }
             else
                snprintf(line, sizeof(line), "scene node");
             dl->AddText(ImVec2(origin.x + 12, origin.y + 10),
@@ -81867,6 +82018,8 @@ int main(int argc, char** argv)
                DrawMeshResynthParams(n);
             else if (auto* n = dynamic_cast<ImageToPointsNode*>(gn.node.get()))
                DrawImageToPointsParams(n);
+            else if (auto* n = dynamic_cast<DepthProjectionNode*>(gn.node.get()))
+               DrawDepthProjectionParams(n);
             else if (auto* n = dynamic_cast<CommentNode*>(gn.node.get()))
                DrawCommentParams(n);
             else if (auto* n = dynamic_cast<PathNode*>(gn.node.get()))
@@ -87579,7 +87732,9 @@ int main(int argc, char** argv)
                 dynamic_cast<MetaBallNode*>(gn.node.get()) != nullptr ||
                 dynamic_cast<CurveNode*>(gn.node.get()) != nullptr ||
                 dynamic_cast<MeshToPointsNode*>(gn.node.get()) != nullptr ||
-                dynamic_cast<MeshResynthNode*>(gn.node.get()) != nullptr)
+                dynamic_cast<MeshResynthNode*>(gn.node.get()) != nullptr ||
+                dynamic_cast<ImageToPointsNode*>(gn.node.get()) != nullptr ||
+                dynamic_cast<DepthProjectionNode*>(gn.node.get()) != nullptr)
             {
                // Pass-throughs and samplers with nothing patched in are empty
                // by definition, so that is not a failure.
