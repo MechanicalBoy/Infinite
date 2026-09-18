@@ -194,6 +194,7 @@ namespace
 #include "nodes/AudioNodes.h"
 #include "nodes/AudioEffectNode.h"
 #include "nodes/WavetableNode.h"
+#include "nodes/AnalogNode.h"
 #include "nodes/WaveTerrainNode.h"
 #include "nodes/EquationNode.h"
 #include "nodes/ImageSpectralSynthNode.h"
@@ -5473,6 +5474,7 @@ namespace
       // the save format (confirmed: it silently ate the type name on load).
       REGISTER_NODE(OscillatorNode, Oscillator, "Synths");
       REGISTER_NODE(WavetableNode, Wavetable, "Synths");
+      REGISTER_NODE(AnalogNode, Analog, "Synths");
       REGISTER_NODE(WaveTerrainNode, Wave Terrain, "Synths");
       REGISTER_NODE(EquationNode, Equation Synth, "Synths");
       REGISTER_NODE(ImageSpectralSynthNode, Spectral Synth, "Synths");
@@ -13004,7 +13006,6 @@ namespace
 
       EndAudioBody();
    }
-
 
    void DrawOscillatorWaveform(int waveform, float phase, float h, float width)
    {
@@ -22768,6 +22769,226 @@ namespace
       EndAudioBody();
    }
 
+   void DrawAnalogVisualizer(AnalogNode* n)
+   {
+      const float w = gAudioBodyW;
+      const float h = 100.0f;
+      const ImVec2 origin = ImGui::GetCursorScreenPos();
+      const ImVec2 br(origin.x + w, origin.y + h);
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+
+      ImGui::InvisibleButton("##analogFilterCurve", ImVec2(w, h));
+      const bool isLight = IsThemeLight();
+      dl->AddRectFilled(origin, br, ScopeBgCol(), 4.0f);
+      dl->PushClipRect(origin, br, true);
+
+      // Graticule
+      DrawFilterGraticule(dl, origin, w, h);
+
+      const int type = n->filterType;
+      const float fc = std::max(20.0f, n->cutoff);
+      const float res = std::clamp(n->resonance, 0.0f, 1.0f);
+
+      constexpr int kNumPoints = 96;
+      float curveDb[kNumPoints];
+
+      for (int i = 0; i < kNumPoints; i++)
+      {
+         const float x = origin.x + (float)i * (w / (float)(kNumPoints - 1));
+         const float f = FilterVizXToFreq(x, origin.x, w);
+         const float r = f / fc;
+
+         float magSq = 1.0f;
+         if (type == kAFilterOff)
+         {
+            magSq = 1.0f;
+         }
+         else if (type == kAFilterLadder)
+         {
+            // 4-pole Moog ladder with feedback k = 3.98 * res
+            const float k = res * 3.98f;
+            const float h1Sq = 1.0f / (1.0f + r * r);
+            const float h1Mag4 = h1Sq * h1Sq;
+            const float theta1 = -atanf(r);
+            const float theta4 = 4.0f * theta1;
+            const float realPart = 1.0f + k * h1Mag4 * cosf(theta4);
+            const float imagPart = k * h1Mag4 * sinf(theta4);
+            const float denomSq = realPart * realPart + imagPart * imagPart;
+            magSq = (h1Mag4 * h1Mag4) / std::max(1e-9f, denomSq);
+         }
+         else if (type == kAFilterSvfLP)
+         {
+            const float q = 0.5f + res * 9.5f;
+            const float r2 = r * r;
+            const float denom = (1.0f - r2) * (1.0f - r2) + (r2 / (q * q));
+            magSq = 1.0f / std::max(1e-9f, denom);
+         }
+         else if (type == kAFilterSvfHP)
+         {
+            const float q = 0.5f + res * 9.5f;
+            const float r2 = r * r;
+            const float denom = (1.0f - r2) * (1.0f - r2) + (r2 / (q * q));
+            magSq = (r2 * r2) / std::max(1e-9f, denom);
+         }
+         else if (type == kAFilterSvfBP)
+         {
+            const float q = 0.5f + res * 9.5f;
+            const float r2 = r * r;
+            const float denom = (1.0f - r2) * (1.0f - r2) + (r2 / (q * q));
+            magSq = (r2 / (q * q)) / std::max(1e-9f, denom);
+         }
+         else if (type == kAFilterSvfNotch)
+         {
+            const float q = 0.5f + res * 9.5f;
+            const float r2 = r * r;
+            const float denom = (1.0f - r2) * (1.0f - r2) + (r2 / (q * q));
+            magSq = ((1.0f - r2) * (1.0f - r2)) / std::max(1e-9f, denom);
+         }
+
+         const float db = 10.0f * log10f(std::max(1e-6f, magSq));
+         curveDb[i] = std::clamp(db, -60.0f, 24.0f);
+      }
+
+      // Fill
+      const float yBottom = origin.y + h;
+      const ImU32 fillCol = isLight ? IM_COL32(230, 140, 30, 32) : IM_COL32(255, 170, 70, 36);
+      for (int i = 0; i < kNumPoints - 1; i++)
+      {
+         const float x0 = origin.x + (float)i * (w / (float)(kNumPoints - 1));
+         const float x1 = origin.x + (float)(i + 1) * (w / (float)(kNumPoints - 1));
+         const float y0 = FilterVizDbToY(curveDb[i], origin.y, h);
+         const float y1 = FilterVizDbToY(curveDb[i + 1], origin.y, h);
+         dl->AddQuadFilled(ImVec2(x0, y0), ImVec2(x1, y1), ImVec2(x1, yBottom), ImVec2(x0, yBottom), fillCol);
+      }
+
+      // Line
+      dl->PathClear();
+      for (int i = 0; i < kNumPoints; i++)
+      {
+         const float x = origin.x + (float)i * (w / (float)(kNumPoints - 1));
+         const float y = FilterVizDbToY(curveDb[i], origin.y, h);
+         dl->PathLineTo(ImVec2(x, y));
+      }
+      dl->PathStroke(isLight ? IM_COL32(230, 130, 20, 255) : IM_COL32(255, 180, 80, 245), 0, 1.8f);
+
+      dl->PopClipRect();
+   }
+
+   void DrawAnalogBody(GraphNode& gn, AnalogNode* n)
+   {
+      const bool noteDriven = n->noteInput.GetSource() != nullptr;
+      const int voices = n->ActiveVoices();
+      const auto& filterNames = AnalogFilterTypeList();
+      const char* filterName = (n->filterType >= 0 && n->filterType < (int)filterNames.size())
+                                  ? filterNames[n->filterType].c_str() : "off";
+
+      char stat[96];
+      if (noteDriven)
+         snprintf(stat, sizeof(stat), "%s  -  %d voice%s", filterName, voices, voices == 1 ? "" : "s");
+      else
+         snprintf(stat, sizeof(stat), "%s  -  free run %.0f Hz", filterName, n->freq);
+
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+
+      DrawAnalogVisualizer(n);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+      const auto& waveList = AnalogWaveformList();
+
+      // Oscillator section
+      BeginAudioSection("oscillator");
+      {
+         // Row 1: Osc 1
+         AudioKnobRow row(4);
+         row.Dropdown("wave 1##analogWave1", waveList, n->wave1, [n](int i){ PushUndoCheckpoint(); n->wave1 = i; });
+         if (n->wave1 != kAWaveSquare)
+            ImGui::BeginDisabled();
+         row.Knob("pw 1##analogPw1", &n->pw1, 0.01f, 0.99f, "%.2f");
+         if (n->wave1 != kAWaveSquare)
+            ImGui::EndDisabled();
+         row.Knob("voices##analogVoices", &n->voices, 1.0f, 7.0f, "%.0f");
+         row.Knob("spread##analogSpread", &n->spread, 0.0f, 1.0f, "%.2f");
+         row.End();
+      }
+      {
+         // Row 2: Osc 2
+         AudioKnobRow row(4);
+         row.Dropdown("wave 2##analogWave2", waveList, n->wave2, [n](int i){ PushUndoCheckpoint(); n->wave2 = i; });
+         row.Checkbox("sync##analogSync", &n->sync);
+         row.Knob("tune 2##analogTune2", &n->osc2Tune, -24.0f, 24.0f, "%.0f st", kKnobLarge);
+         row.Knob("detune 2##analogDetune2", &n->osc2Detune, -50.0f, 50.0f, "%.1f c");
+         row.End();
+      }
+      {
+         // Row 3: Blend
+         AudioKnobRow row(4);
+         row.Knob("mix##analogMix", &n->oscMix, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("sub##analogSub", &n->sub, 0.0f, 1.0f, "%.2f");
+         row.Knob("noise##analogNoise", &n->noise, 0.0f, 1.0f, "%.2f");
+         row.Skip();
+         row.End();
+      }
+      EndAudioSection();
+
+      ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
+      // Filter section
+      BeginAudioSection("filter");
+      {
+         // Row 1: Filter 1
+         AudioKnobRow row(4);
+         row.Dropdown("filter##analogFltType", filterNames, n->filterType, [n](int i){ PushUndoCheckpoint(); n->filterType = i; });
+         row.Knob("cutoff##analogCutoff", &n->cutoff, 20.0f, 20000.0f, "%.0f Hz", kKnobLarge);
+         row.Knob("res##analogRes", &n->resonance, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("drive##analogDrive", &n->drive, 0.0f, 1.0f, "%.2f");
+         row.End();
+      }
+      {
+         // Row 2: Filter 2
+         AudioKnobRow row(4);
+         row.Knob("key track##analogKeyTrack", &n->keyTrack, 0.0f, 1.0f, "%.2f");
+         row.Checkbox("analog##analogDrift", &n->analog);
+         row.Skip();
+         row.Skip();
+         row.End();
+      }
+      EndAudioSection();
+
+      ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
+      // Envelope section
+      BeginAudioSection("envelope");
+      {
+         AudioKnobRow row(4);
+         row.Knob("attack##analogAtk", &n->attack, 0.001f, 10.0f, "%.3f s");
+         row.Knob("decay##analogDec", &n->decay, 0.001f, 10.0f, "%.3f s");
+         row.Knob("sustain##analogSus", &n->sustain, 0.0f, 1.0f, "%.2f");
+         row.Knob("release##analogRel", &n->release, 0.001f, 10.0f, "%.3f s");
+         row.End();
+      }
+      EndAudioSection();
+
+      ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
+      // Output section
+      BeginAudioSection("output");
+      {
+         AudioKnobRow row(4);
+         if (noteDriven)
+            ImGui::BeginDisabled();
+         row.Knob("freq##analogFreq", &n->freq, 20.0f, 8000.0f, "%.0f Hz", kKnobLarge);
+         if (noteDriven)
+            ImGui::EndDisabled();
+         row.Knob("volume##analogVol", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("glide##analogGlide", &n->glide, 0.0f, 2.0f, "%.2f s", kKnobSmall, false, false, AudioWidgetStyle::KnobSkewGlide150);
+         row.Knob("bend##analogBend", &n->pitchBend, -2.0f, 2.0f, "%+.2f st");
+         row.End();
+      }
+      EndAudioSection();
+
+      EndAudioBody();
+   }
+
    // Dispatch for anything IsAudioBodyNode() accepts. Called from the
    // node-body loop's DrawPreview-replacement chain; audio nodes have no
    // image to preview, so this entirely replaces DrawPreview +
@@ -22778,6 +22999,8 @@ namespace
          DrawOscillatorBody(gn, n);
       else if (auto* n = dynamic_cast<WavetableNode*>(gn.node.get()))
          DrawWavetableBody(gn, n);
+      else if (auto* n = dynamic_cast<AnalogNode*>(gn.node.get()))
+         DrawAnalogBody(gn, n);
       else if (auto* n = dynamic_cast<WaveTerrainNode*>(gn.node.get()))
          DrawWaveTerrainBody(gn, n);
       else if (auto* n = dynamic_cast<EquationNode*>(gn.node.get()))
@@ -36962,6 +37185,7 @@ namespace
          { "Plugin", "Hosts a third-party Audio Unit effect. Drag one in from the Plugins panel (Rescan there indexes what is installed; the list is cached, so launching never rescans), or drop a .component bundle from Finder. \"open\" shows the plugin's own editor in a separate window. The sliders on the body are plugin parameters you chose to expose: turn \"configure\" on and touch a control in the plugin's own window and it appears here as a mapped row - or pick one from the dropdown, since not every plugin's editor tells the host what was touched. Each mapped row is a real param with its own modulation pin, so a Ramp or Envelope can drive it. Right-click a row to unmap it. With nothing loaded, or bypassed, audio passes through unchanged." },
          { "Oscillator", "A synth oscillator with four classic waveforms (sine, triangle, saw, square), interactive amp envelope, unison, filter, hard sync, and fine/coarse tuning. With no note cable connected, it free-runs at a set frequency; connect a note cable and it becomes polyphonic and envelope-gated." },
          { "Wavetable", "Two independent wavetable engines with unison, filter, and pitch/filter/amp envelopes, mixed by an A/B control. With no note cable connected, it free-runs at a set frequency; connect a note cable and it becomes polyphonic and envelope-gated." },
+         { "Analog", "A classic polyphonic virtual-analog synth voice with two analog-style oscillators (osc1 unison stack, osc2 tuning/detune/sync, sub osc, white noise, pre-filter drive stage, nonlinear ZDF Moog-ladder or SVF filter, and amplitude ADSR across up to 8 voices)." },
          { "Equation Synth", "A synth defined by a live formula (y = f(x, a, b, c, d, t)) instead of a fixed waveform - knobs a-d feed the equation directly, so turning them reshapes the waveform itself rather than modulating a preset one." },
          { "Sampler", "A sample player: load a file (or drag one in from the Samples search panel), or record from the audio input pin. Click the waveform to audition from that point, or use the audition button - both preview this node on its own dedicated voice, independent of the transport and any note cable, and never cut off or get cut off by an incoming note. Drag the waveform's two edge handles to set the loop range (start/end). pitch/finetune are coarse/fine tuning, speed is a -2..2 varispeed control (negative plays backward), volume is the output level. loop/rev/p-p control what happens at the range edges: loop wraps or bounces (ping-pong) instead of stopping, reverse flips the base direction. With no note cable connected, it free-runs on the transport - starts the moment you hit space, stops when you stop it; connect a note cable and it becomes polyphonic instead, each note played back at the pitch offset from middle C. Spacebar always silences every voice this node is making." },
          { "Slicer", "Chops a sample into slices and maps them chromatically to the keyboard from MIDI note 36 upward - note 36 plays slice 1, 37 plays slice 2, and so on. A note past the last slice is silent; it does not wrap round to slice 1. Load a file (or drag one in from the Samples panel), or record from the audio input pin. slice by picks where the boundaries come from: onsets runs transient detection over the sample on a background thread, grid divides it arithmetically at the *global transport tempo* (there is no per-node bpm - change the tempo and the grid follows). sensitivity is the detection threshold and is the only control that re-runs the analysis; onsets just caps the result to the strongest N, and division/slice by recompute boundaries instantly. Click a slice band in the waveform to audition it, and in onsets mode drag any marker to move a boundary by hand - hand-edited markers are saved with the patch. Two separate controls decide how long a slice lasts: crossthrough sets whether playback may run PAST the slice's own next onset (off by default - each slice stops where the next begins), while decay shapes only the amplitude envelope, reading 'hold' at the top of its throw where the slice stays at full level. So: crossthrough off + hold is the classic tight chop; crossthrough off + a decay ends at whichever comes first; crossthrough on + hold plays through the rest of the sample; crossthrough on + a decay is a one-shot with a tail over the rest of the break. attack extends each slice's own fade-in from instant up to half a second." },
@@ -37772,6 +37996,7 @@ namespace
             } },
             { "Synths", {
                { "Wavetable", "Multi-voice polyphonic wavetable oscillator (up to 8 voices) with two independent A/B wavetable engines crossfaded against each other, wavetable position morphing, detuned unison, and integrated stereo spread." },
+               { "Analog", "Virtual-analog polyphonic synth with dual oscillators, unison stacking, osc hard sync, sub-oscillator, noise, pre-filter drive, nonlinear ZDF Moog ladder and SVF filters, and amp ADSR." },
                { "Sampler", "High-resolution multi-sample player with pitch tracking, root note detection, start/end trimming, loop crossfades, and one-shot playback." },
                { "Drum Sequencer", "8-lane pattern drum sequencer with individual sample slots, per-step velocity, swing, choke groups, per-lane mute/solo, and decay envelopes." },
                { "Slicer", "Transient- or grid-sliced sample playback: chops a loaded sample into up to 64 slices and maps them chromatically from MIDI note 36, with draggable slice markers, a per-slice attack/decay pair, and a crossthrough toggle that lets a slice run past its own boundary." },

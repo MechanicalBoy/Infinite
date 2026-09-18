@@ -124,6 +124,12 @@ getting a file each:
   **Wave Terrain**, and **Equation Synth**. Lifted out of
   `SamplerNode.cpp` so a new sample-playing node never has to reimplement its
   own use-after-free trap.
+- **`src/nodes/AnalogNode.h`/`.cpp` & `src/nodes/AnalogSynthCore.h`** — virtual-analog
+  polyphonic synthesizer node. Features dual PolyBLEP anti-aliased oscillators
+  (osc 1 unison stack, osc 2 tune/detune/sync, sub-oscillator, noise generator,
+  pre-filter drive), non-linear Zero-Delay-Feedback (ZDF) 4-pole Moog ladder
+  and 2-pole SVF filters with keytracking, analog pitch/cutoff drift, and up to
+  8-voice polyphony with ADSR amplitude envelopes.
 - **`src/nodes/EquationNode.h`/`.cpp` & `src/audio/dsp/EquationDsp.h`** — Desmos-style
   mathematical equation oscillator synth node. Evaluates user math expressions
   \(y = f(x, a, b, c, d)\) or presets in real-time, generates an exact 10-level
