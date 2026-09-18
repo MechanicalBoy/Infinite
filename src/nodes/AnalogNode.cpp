@@ -1,0 +1,97 @@
+#include "AnalogNode.h"
+#include "AnalogSynthCore.h"
+
+AnalogNode::AnalogNode() = default;
+AnalogNode::~AnalogNode() = default;
+
+void AnalogNode::CookIfNeeded(int frameId)
+{
+   if (frameId == mLastCookFrame)
+      return;
+   mLastCookFrame = frameId;
+
+   if (!mAudioNode)
+      mAudioNode = std::make_unique<AudioAnalogNode>();
+
+   AnalogSynthParams params;
+   params.volume = volume;
+   params.freq = freq;
+   params.glide = glide;
+   params.pitchBend = pitchBend;
+   params.pw1 = pw1;
+   params.voices = voices;
+   params.spread = spread;
+   params.osc2Tune = osc2Tune;
+   params.osc2Detune = osc2Detune;
+   params.oscMix = oscMix;
+   params.sub = sub;
+   params.noise = noise;
+   params.cutoff = cutoff;
+   params.resonance = resonance;
+   params.drive = drive;
+   params.keyTrack = keyTrack;
+   params.attack = attack;
+   params.decay = decay;
+   params.sustain = sustain;
+   params.release = release;
+
+   params.wave1 = wave1;
+   params.wave2 = wave2;
+   params.filterType = filterType;
+   params.sync = sync;
+   params.analog = analog;
+
+   mAudioNode->PushParams(params);
+}
+
+AudioNode* AnalogNode::GetAudioNode()
+{
+   if (!mAudioNode)
+      mAudioNode = std::make_unique<AudioAnalogNode>();
+   return mAudioNode.get();
+}
+
+int AnalogNode::ReadScope(float* out, int capacity)
+{
+   return mAudioNode ? mAudioNode->ScopeRing().Read(out, capacity) : 0;
+}
+
+int AnalogNode::ActiveVoices() const
+{
+   return mAudioNode ? mAudioNode->ActiveVoices() : 0;
+}
+
+double AnalogNode::DebugMailboxSampleRate() const
+{
+   return mAudioNode ? mAudioNode->DebugMailboxSampleRate() : 0.0;
+}
+
+void AnalogNode::VisitParams(ParamVisitor& v)
+{
+   v.Float("volume", volume);
+   v.Float("freq", freq);
+   v.Float("glide", glide);
+   v.Float("pitchBend", pitchBend);
+   v.Float("pw1", pw1);
+   v.Float("voices", voices);
+   v.Float("spread", spread);
+   v.Float("osc2Tune", osc2Tune);
+   v.Float("osc2Detune", osc2Detune);
+   v.Float("oscMix", oscMix);
+   v.Float("sub", sub);
+   v.Float("noise", noise);
+   v.Float("cutoff", cutoff);
+   v.Float("resonance", resonance);
+   v.Float("drive", drive);
+   v.Float("keyTrack", keyTrack);
+   v.Float("attack", attack);
+   v.Float("decay", decay);
+   v.Float("sustain", sustain);
+   v.Float("release", release);
+
+   v.Int("wave1", wave1);
+   v.Int("wave2", wave2);
+   v.Int("filterType", filterType);
+   v.Bool("sync", sync);
+   v.Bool("analog", analog);
+}

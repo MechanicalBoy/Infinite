@@ -498,6 +498,7 @@ set(COMMON_SOURCES
     src/nodes/AudioNodes.cpp
     src/nodes/NoteNodes.cpp
     src/nodes/WavetableNode.cpp
+    src/nodes/AnalogNode.cpp
     src/nodes/WaveTerrainNode.cpp
     src/nodes/EquationNode.cpp
     src/nodes/ImageSpectralSynthNode.cpp
