@@ -524,6 +524,10 @@ namespace
       // Spread/Mix control set, plus the same sync-to-tempo rate mode
       // Chorus/Flanger/Delay/Stutter share. See PhaserKernel.h's class
       // comment.
+      // As of 2026-09-18 the kernel wraps its allpass cascade in a fixed
+      // internal feedback loop (see PhaserKernel.h's class comment) for a
+      // real resonant swoosh instead of a shallow EQ sweep - no new param,
+      // still driven entirely by the params below + analog + mix.
       {
          EffectDef def;
          def.name = "Phaser";

@@ -11,7 +11,13 @@
 #include "audio/MusicTime.h"
 #include "audio/ParamMailbox.h"
 
-// Flanger's kernel - modulated delay line per channel with digital and analog modes.
+// Flanger's kernel - modulated delay line per channel with digital and
+// analog modes. The feedback tap runs through a fixed ~7kHz damping filter
+// (mFbDampL/R) before being written back into the line, in both modes - a
+// real BBD/tape flanger loop always loses a little top end on every pass
+// (the bucket-brigade compander's own bandwidth limit), and a plain
+// unfiltered comb loop reads as harsher/more metallic than that. No new
+// param - still the same 5 knobs (delay, depth, rate, feedback, spread).
 class AudioEffectNode;
 
 class FlangerKernel : public IEffectKernel
@@ -43,6 +49,8 @@ public:
          mFilterR[i].SetSampleRate(sampleRate);
          mFilterR[i].SetCutoff(9000.0f, 0.707f);
       }
+      mFbDampL.SetCutoff(7000.0f, sampleRate);
+      mFbDampR.SetCutoff(7000.0f, sampleRate);
       Reset();
    }
 
@@ -57,6 +65,8 @@ public:
          mFilterL[i].Reset();
          mFilterR[i].Reset();
       }
+      mFbDampL.Reset();
+      mFbDampR.Reset();
    }
 
    void PushParams(const AudioEffectNode& node, double sampleRate) override;
@@ -80,4 +90,7 @@ private:
    AnalogDsp::DriftLfo mDriftLfo;
    DspMath::TptSvf mFilterL[2];
    DspMath::TptSvf mFilterR[2];
+
+   // Feedback-path damping - fixed cutoff, always on (both modes).
+   AnalogDsp::OnePoleLP mFbDampL, mFbDampR;
 };

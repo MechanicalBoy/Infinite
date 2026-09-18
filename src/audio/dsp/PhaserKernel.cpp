@@ -53,8 +53,8 @@ void PhaserKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*side
          const float aL = AllpassCoeff(fcL, (float)mSampleRate);
          const float aR = AllpassCoeff(fcR, (float)mSampleRate);
 
-         float xL = AnalogDsp::AsymTanh(in.channels[0][i], 0.06f);
-         float xR = numChannels >= 2 ? AnalogDsp::AsymTanh(in.channels[1][i], 0.06f) : xL;
+         float xL = AnalogDsp::AsymTanh(in.channels[0][i] + kFeedbackAnalog * mFbL, 0.06f);
+         float xR = numChannels >= 2 ? AnalogDsp::AsymTanh(in.channels[1][i] + kFeedbackAnalog * mFbR, 0.06f) : xL;
          for (int s = 0; s < stages; s++)
          {
             xL = mStagesL[s].Process(xL, aL);
@@ -62,6 +62,8 @@ void PhaserKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*side
             xR = mStagesR[s].Process(xR, aR);
             xR = AnalogDsp::AsymTanh(xR, 0.04f);
          }
+         mFbL = xL;
+         mFbR = xR;
 
          out.channels[0][i] = xL;
          if (numChannels >= 2)
@@ -74,13 +76,15 @@ void PhaserKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*side
          const float aL = AllpassCoeff(fcL, (float)mSampleRate);
          const float aR = AllpassCoeff(fcR, (float)mSampleRate);
 
-         float xL = in.channels[0][i];
-         float xR = numChannels >= 2 ? in.channels[1][i] : xL;
+         float xL = in.channels[0][i] + kFeedbackDigital * mFbL;
+         float xR = (numChannels >= 2 ? in.channels[1][i] : in.channels[0][i]) + kFeedbackDigital * mFbR;
          for (int s = 0; s < stages; s++)
          {
             xL = mStagesL[s].Process(xL, aL);
             xR = mStagesR[s].Process(xR, aR);
          }
+         mFbL = xL;
+         mFbR = xR;
 
          out.channels[0][i] = xL;
          if (numChannels >= 2)
