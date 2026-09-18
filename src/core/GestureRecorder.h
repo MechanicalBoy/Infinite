@@ -137,6 +137,9 @@ public:
    // Returns false (leaving lo/hi untouched) if no override is set.
    bool PlaybackRangeFor(int nodeIndex, int paramIndex, float& lo, float& hi) const;
 
+   void SetPlaybackCurve(int nodeIndex, int paramIndex, float curve);
+   float PlaybackCurveFor(int nodeIndex, int paramIndex) const;
+
    // Everything this node recorded (armed, mid-session, or looping) goes
    // away with it. Mirrors Modulation::UnbindAllFor / PaletteBinding::
    // UnbindAllFor at the node delete site - without it the (nodeIndex,
@@ -170,6 +173,7 @@ public:
       bool hasRangeOverride = false;
       float rangeLo = 0.0f, rangeHi = 0.0f;    // see SetPlaybackRange
       float recordedMin = 0.0f, recordedMax = 0.0f; // min/max across samples, computed once at finalize
+      float curve = 0.0f;          // in [-1.0, 1.0], 0 = linear
    };
 
    using PlaybackMap = std::map<Key, Playback>;

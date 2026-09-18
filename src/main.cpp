@@ -26406,6 +26406,163 @@ namespace
       return changed;
    }
 
+   inline float ApplyModulationCurve(float v, float curve)
+   {
+      v = std::clamp(v, 0.0f, 1.0f);
+      if (std::abs(curve) < 0.0001f)
+         return v;
+      return std::pow(v, std::exp2(curve * 3.0f));
+   }
+
+   bool DrawMiniCurveWidget(const char* strId, float* curve, float liveInput01 = -1.0f, float width = 50.0f)
+   {
+      bool changed = false;
+      if (curve == nullptr)
+         return false;
+
+      const float h = ImGui::GetFrameHeight();
+      const float w = width;
+      const ImVec2 pos = ImGui::GetCursorScreenPos();
+
+      ImGui::PushID(strId);
+      ImGui::InvisibleButton(strId, ImVec2(w, h));
+      const bool hovered = ImGui::IsItemHovered();
+      const bool active = ImGui::IsItemActive();
+      const bool doubleClicked = hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+
+      if (active && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f))
+      {
+         const float deltaY = ImGui::GetIO().MouseDelta.y;
+         if (deltaY != 0.0f)
+         {
+            *curve = std::clamp(*curve + deltaY * 0.015f, -1.0f, 1.0f);
+            if (std::abs(*curve) < 0.02f)
+               *curve = 0.0f;
+            changed = true;
+         }
+      }
+      if (ImGui::IsItemActivated())
+         PushUndoCheckpoint();
+
+      if (doubleClicked)
+      {
+         PushUndoCheckpoint();
+         *curve = 0.0f;
+         changed = true;
+      }
+
+      if (ImGui::BeginPopupContextItem("##curve_ctx"))
+      {
+         ImGui::TextDisabled("Modulation Curve");
+         ImGui::Separator();
+         if (ImGui::MenuItem("Linear (Reset)", nullptr, std::abs(*curve) < 0.001f))
+         {
+            PushUndoCheckpoint();
+            *curve = 0.0f;
+            changed = true;
+         }
+         if (ImGui::MenuItem("Ease In (+0.50)", nullptr, std::abs(*curve - 0.5f) < 0.05f))
+         {
+            PushUndoCheckpoint();
+            *curve = 0.5f;
+            changed = true;
+         }
+         if (ImGui::MenuItem("Ease Out (-0.50)", nullptr, std::abs(*curve - (-0.5f)) < 0.05f))
+         {
+            PushUndoCheckpoint();
+            *curve = -0.5f;
+            changed = true;
+         }
+         if (ImGui::MenuItem("Steep Exp (+0.85)", nullptr, std::abs(*curve - 0.85f) < 0.05f))
+         {
+            PushUndoCheckpoint();
+            *curve = 0.85f;
+            changed = true;
+         }
+         if (ImGui::MenuItem("Steep Log (-0.85)", nullptr, std::abs(*curve - (-0.85f)) < 0.05f))
+         {
+            PushUndoCheckpoint();
+            *curve = -0.85f;
+            changed = true;
+         }
+         if (ImGui::MenuItem("Invert Curve", nullptr, false, std::abs(*curve) > 0.001f))
+         {
+            PushUndoCheckpoint();
+            *curve = -*curve;
+            changed = true;
+         }
+         ImGui::EndPopup();
+      }
+
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const bool isLight = IsThemeLight();
+      const ImVec2 maxPos(pos.x + w, pos.y + h);
+
+      const ImU32 bgCol = isLight ? (hovered ? IM_COL32(225, 230, 240, 255) : IM_COL32(235, 238, 246, 255))
+                                  : (hovered ? IM_COL32(32, 35, 45, 255)   : IM_COL32(22, 24, 32, 255));
+      const ImU32 borderCol = active ? (isLight ? IM_COL32(60, 140, 240, 255) : IM_COL32(80, 160, 255, 255))
+                                     : (hovered ? (isLight ? IM_COL32(160, 175, 200, 255) : IM_COL32(70, 75, 95, 255))
+                                                : (isLight ? IM_COL32(195, 205, 220, 255) : IM_COL32(45, 48, 62, 255)));
+      dl->AddRectFilled(pos, maxPos, bgCol, 3.0f);
+      dl->AddRect(pos, maxPos, borderCol, 3.0f, 0, 1.0f);
+
+      const float padX = 4.0f;
+      const float padY = 3.0f;
+      const float plotW = w - padX * 2.0f;
+      const float plotH = h - padY * 2.0f;
+      const ImVec2 plotMin(pos.x + padX, pos.y + padY);
+
+      const ImU32 refCol = isLight ? IM_COL32(170, 180, 195, 120) : IM_COL32(70, 75, 95, 120);
+      dl->AddLine(ImVec2(plotMin.x, plotMin.y + plotH), ImVec2(plotMin.x + plotW, plotMin.y), refCol, 1.0f);
+
+      auto evalPt = [&](float xNorm) -> ImVec2 {
+         const float yNorm = ApplyModulationCurve(xNorm, *curve);
+         return ImVec2(plotMin.x + xNorm * plotW, plotMin.y + (1.0f - yNorm) * plotH);
+      };
+
+      const bool isCurved = std::abs(*curve) > 0.001f;
+      const ImU32 curveCol = active ? (isLight ? IM_COL32(20, 120, 240, 255) : IM_COL32(80, 180, 255, 255))
+                                    : (isCurved ? (isLight ? IM_COL32(30, 140, 210, 255) : IM_COL32(70, 200, 230, 255))
+                                                : (isLight ? IM_COL32(110, 120, 140, 200) : IM_COL32(150, 160, 180, 200)));
+      const float lineThickness = (active || hovered) ? 2.0f : 1.5f;
+
+      const int kSegments = 20;
+      ImVec2 prevPt = evalPt(0.0f);
+      for (int i = 1; i <= kSegments; i++)
+      {
+         const float xNorm = (float)i / (float)kSegments;
+         const ImVec2 nextPt = evalPt(xNorm);
+         dl->AddLine(prevPt, nextPt, curveCol, lineThickness);
+         prevPt = nextPt;
+      }
+
+      const ImVec2 midPt = evalPt(0.5f);
+      const ImU32 dotCol = isCurved ? (isLight ? IM_COL32(20, 120, 240, 255) : IM_COL32(80, 200, 255, 255))
+                                    : (isLight ? IM_COL32(120, 130, 150, 255) : IM_COL32(140, 150, 170, 255));
+      dl->AddCircleFilled(midPt, (hovered || active) ? 3.0f : 2.0f, dotCol);
+
+      if (liveInput01 >= 0.0f && liveInput01 <= 1.0f)
+      {
+         const ImVec2 livePt = evalPt(liveInput01);
+         const ImU32 liveCol = isLight ? IM_COL32(235, 100, 30, 255) : IM_COL32(255, 180, 50, 255);
+         dl->AddCircleFilled(livePt, 3.5f, liveCol);
+         dl->AddCircle(livePt, 3.5f, isLight ? IM_COL32(255, 255, 255, 255) : IM_COL32(20, 20, 26, 255), 0, 1.0f);
+      }
+
+      if (isCurved)
+      {
+         char valBuf[16];
+         snprintf(valBuf, sizeof(valBuf), "%+.2f", *curve);
+         ImFont* font = ImGui::GetFont();
+         const float tinySize = ImGui::GetFontSize() * 0.62f;
+         const ImU32 valCol = isLight ? IM_COL32(90, 98, 115, 220) : IM_COL32(160, 168, 185, 220);
+         dl->AddText(font, tinySize, ImVec2(pos.x + 2.0f, pos.y + 1.0f), valCol, valBuf);
+      }
+
+      ImGui::PopID();
+      return changed;
+   }
+
    void DrawModMatrixTable()
    {
       Modulation& mod = Modulation::Instance();
@@ -26446,7 +26603,7 @@ namespace
          // for it, so the loop's own target kept receding. Pinning the
          // height to this panel's available height (captured above, before
          // the table exists) gives the loop a stable target to fill to.
-         if (ImGui::BeginTable("##modmatrixtable", 9, flags, ImVec2(0.0f, panelSize.y)))
+         if (ImGui::BeginTable("##modmatrixtable", 10, flags, ImVec2(0.0f, panelSize.y)))
          {
             // Fixed, non-resizable widths rather than the stretch/drag
             // behaviour ImGui tables default to - dragging columns around
@@ -26462,6 +26619,7 @@ namespace
             // table reads as a symmetrical grid instead of a ragged one.
             const bool vertical = gModMatrixDock == 1 || gModMatrixDock == 2;
             const float wCol = vertical ? 57.0f : 130.0f; // vertical is 130 * 0.6 - 40% narrower
+            const float wCurve = vertical ? 42.0f : 50.0f;
 
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("##en", ImGuiTableColumnFlags_WidthFixed, 18.0f);
@@ -26472,6 +26630,7 @@ namespace
             ImGui::TableSetupColumn("Lo", ImGuiTableColumnFlags_WidthFixed, wCol);
             ImGui::TableSetupColumn("Hi", ImGuiTableColumnFlags_WidthFixed, wCol);
             ImGui::TableSetupColumn("##inv", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+            ImGui::TableSetupColumn("Curve", ImGuiTableColumnFlags_WidthFixed, wCurve);
             ImGui::TableSetupColumn("##unbind", ImGuiTableColumnFlags_WidthFixed, 20.0f);
             ImGui::TableHeadersRow();
 
@@ -26519,7 +26678,7 @@ namespace
                // Enable toggle
                ImGui::TableNextColumn();
                const ImU32 dotColour = src.enabled ? IM_COL32(120, 220, 140, 255)
-                                                    : IM_COL32(110, 110, 120, 255);
+                                                   : IM_COL32(110, 110, 120, 255);
                const ImVec2 dotCursor = ImGui::GetCursorScreenPos();
                const float dotH = ImGui::GetTextLineHeight();
                ImGui::Dummy(ImVec2(dotH, dotH));
@@ -26532,7 +26691,7 @@ namespace
                   ImVec2(dotCursor.x + dotH * 0.5f, dotCursor.y + dotH * 0.5f), dotH * 0.35f, dotColour);
 
                const ImVec4 textColour = src.enabled ? ImGui::GetStyle().Colors[ImGuiCol_Text]
-                                                      : ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
+                                                     : ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
                ImGui::PushStyleColor(ImGuiCol_Text, textColour);
 
                // Source
@@ -26600,6 +26759,18 @@ namespace
                ImGui::TableNextColumn();
                if (ImGui::SmallButton("Inv"))
                   mod.SetRange(dstIndex, dstParam, src.hi, src.lo);
+
+               // Curve
+               ImGui::TableNextColumn();
+               float curveVal = src.curve;
+               float liveIn01 = -1.0f;
+               if (src.nodeIndex >= 0 && srcNode != nullptr && srcNode->node != nullptr)
+               {
+                  if (IModulator* modulator = ModulatorForOutput(srcNode->node.get(), src.outputIndex))
+                     liveIn01 = std::clamp(modulator->Value01(), 0.0f, 1.0f);
+               }
+               if (DrawMiniCurveWidget("##modcurve", &curveVal, liveIn01, wCurve))
+                  mod.SetCurve(dstIndex, dstParam, curveVal);
 
                // Unbind
                ImGui::TableNextColumn();
@@ -26732,6 +26903,15 @@ namespace
 
                ImGui::TableNextColumn(); // invert - not meaningful for an expression's range
 
+               // Curve
+               ImGui::TableNextColumn();
+               float exprCurveVal = mod.ExpressionCurveFor(dstIndex, dstParam);
+               float liveExpr01 = -1.0f;
+               if (frameRef != nullptr && frameRef->value != nullptr && hiE != loE)
+                  liveExpr01 = std::clamp((*frameRef->value - loE) / (hiE - loE), 0.0f, 1.0f);
+               if (DrawMiniCurveWidget("##exprcurve", &exprCurveVal, liveExpr01, wCurve))
+                  mod.SetExpressionCurve(dstIndex, dstParam, exprCurveVal);
+
                bool unboundExpr = false;
                ImGui::TableNextColumn();
                {
@@ -26840,6 +27020,15 @@ namespace
                if (ImGui::SmallButton("Full"))
                   rec.ClearPlaybackRange(dstIndex, dstParam);
 
+               // Curve
+               ImGui::TableNextColumn();
+               float recCurveVal = rec.PlaybackCurveFor(dstIndex, dstParam);
+               float liveRec01 = -1.0f;
+               if (frameRef != nullptr && frameRef->value != nullptr && hiR != loR)
+                  liveRec01 = std::clamp((*frameRef->value - loR) / (hiR - loR), 0.0f, 1.0f);
+               if (DrawMiniCurveWidget("##reccurve", &recCurveVal, liveRec01, wCurve))
+                  rec.SetPlaybackCurve(dstIndex, dstParam, recCurveVal);
+
                bool unboundRec = false;
                ImGui::TableNextColumn();
                {
@@ -26897,7 +27086,7 @@ namespace
             {
                const float before = ImGui::GetCursorPosY();
                ImGui::TableNextRow();
-               for (int col = 0; col < 9; ++col)
+               for (int col = 0; col < 10; ++col)
                {
                   ImGui::TableNextColumn();
                   ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeight()));
@@ -41236,7 +41425,7 @@ namespace
                                      link.second.nodeIndex, link.second.outputIndex,
                                      link.second.polarity, link.second.depth, link.second.centre,
                                      link.second.lo, link.second.hi, link.second.hasRange,
-                                     link.second.enabled });
+                                     link.second.enabled, link.second.curve });
       // Shift-drag/armed recordings looping right now - previously session-
       // only (see GestureRecorder.h), now part of the saved patch itself,
       // same as modulation/palette bindings just above.
@@ -41249,6 +41438,7 @@ namespace
          g.hasRangeOverride = playback.hasRangeOverride;
          g.rangeLo = playback.rangeLo;
          g.rangeHi = playback.rangeHi;
+         g.curve = playback.curve;
          g.samples.reserve(playback.samples.size());
          for (const GestureRecorder::Sample& s : playback.samples)
             g.samples.push_back({ s.value, s.timeSec, s.startsNewGrab });
@@ -41258,7 +41448,14 @@ namespace
          data.palette.push_back({ link.first.first, link.first.second,
                                   link.second.nodeIndex, link.second.swatchIndex });
       for (const auto& expr : Modulation::Instance().Expressions())
-         data.expressions.push_back({ expr.first.first, expr.first.second, expr.second });
+      {
+         Patch::ExprRecord rec;
+         rec.dstIndex = expr.first.first;
+         rec.dstParam = expr.first.second;
+         rec.text = expr.second;
+         rec.curve = Modulation::Instance().ExpressionCurveFor(rec.dstIndex, rec.dstParam);
+         data.expressions.push_back(std::move(rec));
+      }
       // Written in list order: a global may reference the ones above it, so
       // the order is part of the meaning, not just presentation.
       for (const ExprGlobals::Global& g : ExprGlobals::All())
@@ -43088,6 +43285,7 @@ namespace
             source.hi = m.hi;
             source.hasRange = m.hasRange;
             source.enabled = m.enabled;
+            source.curve = m.curve;
             Modulation::Instance().RestoreLink(dst->index, m.dstParam, source);
          }
       }
@@ -43109,6 +43307,7 @@ namespace
             pb.hasRangeOverride = g.hasRangeOverride;
             pb.rangeLo = g.rangeLo;
             pb.rangeHi = g.rangeHi;
+            pb.curve = g.curve;
             pb.samples.reserve(g.samples.size());
             for (const Patch::GestureSample& s : g.samples)
                pb.samples.push_back({ s.value, s.timeSec, s.startsNewGrab });
@@ -43133,7 +43332,11 @@ namespace
       {
          GraphNode* dst = resolve(e.dstIndex);
          if (dst != nullptr)
+         {
             Modulation::Instance().SetExpression(dst->index, e.dstParam, e.text);
+            if (std::abs(e.curve) > 0.0001f)
+               Modulation::Instance().SetExpressionCurve(dst->index, e.dstParam, e.curve);
+         }
       }
       ExprGlobals::All().clear();
       for (const Patch::GlobalRecord& g : data.globals)
@@ -61202,7 +61405,8 @@ void ApplyModulationAndPalette(int frameId)
                continue;
             }
          }
-         const float v01 = std::clamp(modulator->Value01(), 0.0f, 1.0f);
+         const float rawV01 = std::clamp(modulator->Value01(), 0.0f, 1.0f);
+         const float v01 = ApplyModulationCurve(rawV01, src.curve);
          *ref.value = ShapeToParam(ref, src.lo + (src.hi - src.lo) * v01);
          continue;
       }
@@ -61265,9 +61469,17 @@ void ApplyModulationAndPalette(int frameId)
          // it's skipped entirely when the formula already used lo/hi itself
          // (see formulaOwnsRange above).
          float mapped = result;
+         const float exprCurve = modulation.ExpressionCurveFor(ref.nodeIndex, ref.paramIndex);
          if (!formulaOwnsRange && ref.maxValue > ref.minValue)
          {
-            const float norm = (result - ref.minValue) / (ref.maxValue - ref.minValue);
+            float norm = std::clamp((result - ref.minValue) / (ref.maxValue - ref.minValue), 0.0f, 1.0f);
+            norm = ApplyModulationCurve(norm, exprCurve);
+            mapped = boundLo + norm * (boundHi - boundLo);
+         }
+         else if (std::abs(exprCurve) > 0.0001f && boundHi != boundLo)
+         {
+            float norm = std::clamp((result - boundLo) / (boundHi - boundLo), 0.0f, 1.0f);
+            norm = ApplyModulationCurve(norm, exprCurve);
             mapped = boundLo + norm * (boundHi - boundLo);
          }
          *ref.value = ShapeToParam(ref, mapped);
@@ -62196,6 +62408,7 @@ int main(int argc, char** argv)
          getenv("INFINITE_DRAGTEST") != nullptr || getenv("INFINITE_COLORTEST") != nullptr ||
          getenv("INFINITE_PICKERTEST") != nullptr || getenv("INFINITE_OSCTEST") != nullptr ||
          getenv("INFINITE_MODBOUNDSTEST") != nullptr || getenv("INFINITE_MODMATRIXTEST") != nullptr ||
+         getenv("INFINITE_MODCURVETEST") != nullptr ||
          getenv("INFINITE_GESTUREUNDOTEST") != nullptr ||
          getenv("INFINITE_MODMATRIXGEOM") != nullptr;
 
@@ -64130,7 +64343,7 @@ int main(int argc, char** argv)
          }
          if (getenv("INFINITE_GESTUREUNDOTEST") != nullptr)
             gNodes[0].showParams = true; // params must be drawn for them to register
-         if (getenv("INFINITE_MODMATRIXTEST") != nullptr)
+         if (getenv("INFINITE_MODMATRIXTEST") != nullptr || getenv("INFINITE_MODCURVETEST") != nullptr)
          {
             // Range to Range, not LFO: a deterministic constantIn (like
             // INFINITE_MODBOUNDSTEST's fixture) so the enable/disable test
@@ -87064,6 +87277,163 @@ int main(int argc, char** argv)
             // and flushing stdout - see the identical comment on
             // INFINITE_MODBOUNDSTEST above.
             printf("%s\n", (test1Ok && test2Ok && test3Ok && test4Ok) ? "MOD MATRIX TEST OK" : "SUSPECT");
+         }
+      }
+
+      if (getenv("INFINITE_MODCURVETEST") != nullptr)
+      {
+         static int sidesParam = -1;
+         static int rotParam = -1;
+         static int radiusParam = -1;
+         static bool testMathOk = false;
+         static bool testModWarpOk = false;
+         static bool testExprOk = false;
+         static bool testGestureOk = false;
+         static bool testRoundTripOk = false;
+         static bool testJsonOk = false;
+
+         auto* shape = static_cast<ShapeNode*>(gNodes[0].node.get());
+         auto* r2r = static_cast<RangeToRangeNode*>(gNodes[2].node.get());
+         Modulation& mod = Modulation::Instance();
+         GestureRecorder& rec = GestureRecorder::Instance();
+
+         if (frameId == 1)
+         {
+            // Test 1: Math properties of ApplyModulationCurve
+            const float v0 = ApplyModulationCurve(0.0f, 0.5f);
+            const float v1 = ApplyModulationCurve(1.0f, -0.5f);
+            const float midLin = ApplyModulationCurve(0.5f, 0.0f);
+            const float midExp = ApplyModulationCurve(0.5f, 0.5f);
+            const float midLog = ApplyModulationCurve(0.5f, -0.5f);
+            testMathOk = (std::fabs(v0 - 0.0f) < 1e-5f) &&
+                         (std::fabs(v1 - 1.0f) < 1e-5f) &&
+                         (std::fabs(midLin - 0.5f) < 1e-5f) &&
+                         (midExp < 0.5f) && (midLog > 0.5f);
+            printf("testMath (ApplyModulationCurve unit check) %s (midLin=%.3f midExp=%.3f midLog=%.3f)\n",
+                   testMathOk ? "OK" : "- BUG", midLin, midExp, midLog);
+
+            for (const ParamRef& ref : mod.FrameParams())
+            {
+               if (ref.nodeIndex == gNodes[0].index)
+               {
+                  if (ref.name == "sides") sidesParam = ref.paramIndex;
+                  else if (ref.name == "rotation") rotParam = ref.paramIndex;
+                  else if (ref.name == "radius" || ref.name == "size x") radiusParam = ref.paramIndex;
+               }
+            }
+
+            r2r->outLow = 0.0f;
+            r2r->outHigh = 1.0f;
+            r2r->clampOutput = true;
+            r2r->constantIn = 0.5f; // input is 0.5
+            mod.Bind(gNodes[0].index, sidesParam, gNodes[2].index);
+            mod.SetRange(gNodes[0].index, sidesParam, 0.0f, 100.0f);
+            mod.SetCurve(gNodes[0].index, sidesParam, 0.5f);
+
+            if (rotParam >= 0)
+            {
+               mod.SetExpression(gNodes[0].index, rotParam, "0.5");
+               mod.SetExpressionCurve(gNodes[0].index, rotParam, -0.6f);
+            }
+         }
+         if (frameId == 3)
+         {
+            const float curve = mod.CurveFor(gNodes[0].index, sidesParam);
+            const bool curveStored = (std::fabs(curve - 0.5f) < 1e-4f);
+            const float expectedVal = ApplyModulationCurve(0.5f, 0.5f) * 100.0f;
+            const bool valueWarped = (shape->sides < 30 && shape->sides > 5);
+            testModWarpOk = curveStored && valueWarped;
+            printf("testModWarp (modulator curve applied) stored=%.2f sides=%d expected=%.1f %s\n",
+                   curve, shape->sides, expectedVal, testModWarpOk ? "OK" : "- BUG");
+
+            if (rotParam >= 0)
+            {
+               const float exprCurve = mod.ExpressionCurveFor(gNodes[0].index, rotParam);
+               testExprOk = (std::fabs(exprCurve - (-0.6f)) < 1e-4f);
+               printf("testExpr (expression curve stored) curve=%.2f %s\n",
+                      exprCurve, testExprOk ? "OK" : "- BUG");
+            }
+            else
+            {
+               testExprOk = true;
+            }
+
+            // Setup gesture recorder loop on radiusParam
+            if (radiusParam >= 0)
+            {
+               rec.BeginFrame(/*shiftHeld=*/true, ImGui::GetTime());
+               rec.NotifyMovement(gNodes[0].index, radiusParam, 0.1f, ImGui::GetTime(), true);
+               rec.NotifyMovement(gNodes[0].index, radiusParam, 0.9f, ImGui::GetTime() + 0.1, false);
+            }
+         }
+         if (frameId == 5)
+         {
+            if (radiusParam >= 0)
+            {
+               rec.SetPlaybackCurve(gNodes[0].index, radiusParam, 0.75f);
+               const float gestCurve = rec.PlaybackCurveFor(gNodes[0].index, radiusParam);
+               testGestureOk = (std::fabs(gestCurve - 0.75f) < 1e-4f);
+               printf("testGesture (gesture curve stored) curve=%.2f %s\n",
+                      gestCurve, testGestureOk ? "OK" : "- BUG");
+            }
+            else
+            {
+               testGestureOk = true;
+            }
+
+            // Check JSON serialization
+            nlohmann::json out = PatchJson::ToJson(BuildPatchData());
+            bool jsonModCurveOk = false;
+            for (const auto& m : out["modulation"])
+            {
+               if (m["dstIndex"] == gNodes[0].index && m["dstParam"] == sidesParam)
+                  jsonModCurveOk = (std::fabs(m["curve"].get<float>() - 0.5f) < 1e-4f);
+            }
+            testJsonOk = jsonModCurveOk;
+            printf("testJson (JSON export carries curve) %s\n", testJsonOk ? "OK" : "- BUG");
+
+            // Save patch
+            SavePatchTo(TmpPath("infinite_modcurvetest.infinite"));
+         }
+         if (frameId == 7)
+         {
+            NewPatch();
+            LoadPatchFrom(TmpPath("infinite_modcurvetest.infinite"));
+         }
+         if (frameId == 9)
+         {
+            int reloadedNodeIdx = -1;
+            int reloadedSidesParam = -1;
+            int reloadedRotParam = -1;
+            int reloadedRadiusParam = -1;
+            for (GraphNode& gn : gNodes)
+               if (dynamic_cast<ShapeNode*>(gn.node.get()) != nullptr)
+                  reloadedNodeIdx = gn.index;
+            for (const ParamRef& ref : mod.FrameParams())
+            {
+               if (ref.nodeIndex == reloadedNodeIdx)
+               {
+                  if (ref.name == "sides") reloadedSidesParam = ref.paramIndex;
+                  else if (ref.name == "rotation") reloadedRotParam = ref.paramIndex;
+                  else if (ref.name == "radius" || ref.name == "size x") reloadedRadiusParam = ref.paramIndex;
+               }
+            }
+
+            const float reloadedModCurve = mod.CurveFor(reloadedNodeIdx, reloadedSidesParam);
+            const float reloadedExprCurve = (reloadedRotParam >= 0) ? mod.ExpressionCurveFor(reloadedNodeIdx, reloadedRotParam) : -0.6f;
+            const float reloadedGestCurve = (reloadedRadiusParam >= 0) ? rec.PlaybackCurveFor(reloadedNodeIdx, reloadedRadiusParam) : 0.75f;
+
+            const bool modOk = (std::fabs(reloadedModCurve - 0.5f) < 1e-3f);
+            const bool exprOk = (std::fabs(reloadedExprCurve - (-0.6f)) < 1e-3f);
+            const bool gestOk = (std::fabs(reloadedGestCurve - 0.75f) < 1e-3f);
+            testRoundTripOk = modOk && exprOk && gestOk;
+
+            printf("testRoundTrip (patch reload) modCurve=%.2f exprCurve=%.2f gestCurve=%.2f %s\n",
+                   reloadedModCurve, reloadedExprCurve, reloadedGestCurve,
+                   testRoundTripOk ? "OK" : "- BUG");
+
+            const bool allOk = testMathOk && testModWarpOk && testExprOk && testGestureOk && testRoundTripOk && testJsonOk;
+            printf("%s\n", allOk ? "MOD CURVE TEST OK" : "MOD CURVE TEST FAIL");
          }
       }
 

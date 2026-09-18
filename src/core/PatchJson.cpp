@@ -47,7 +47,8 @@ namespace PatchJson
                                         {"srcIndex", m.srcIndex}, {"srcOutput", m.srcOutput},
                                         {"polarity", m.polarity}, {"depth", m.depth},
                                         {"centre", m.centre}, {"lo", m.lo}, {"hi", m.hi},
-                                        {"hasRange", m.hasRange}, {"enabled", m.enabled} });
+                                        {"hasRange", m.hasRange}, {"enabled", m.enabled},
+                                        {"curve", m.curve} });
 
       out["palette"] = json::array();
       for (const Patch::PaletteRecord& p : data.palette)
@@ -57,7 +58,7 @@ namespace PatchJson
       out["expressions"] = json::array();
       for (const Patch::ExprRecord& e : data.expressions)
          out["expressions"].push_back({ {"dstIndex", e.dstIndex}, {"dstParam", e.dstParam},
-                                         {"text", e.text} });
+                                         {"text", e.text}, {"curve", e.curve} });
 
       out["globals"] = json::array();
       for (const Patch::GlobalRecord& g : data.globals)

@@ -48,6 +48,20 @@ void Modulation::SetRange(int nodeIndex, int paramIndex, float lo, float hi)
    it->second.hasRange = true;
 }
 
+void Modulation::SetCurve(int nodeIndex, int paramIndex, float curve)
+{
+   auto it = mLinks.find(Key(nodeIndex, paramIndex));
+   if (it == mLinks.end())
+      return;
+   it->second.curve = std::clamp(curve, -1.0f, 1.0f);
+}
+
+float Modulation::CurveFor(int nodeIndex, int paramIndex) const
+{
+   auto it = mLinks.find(Key(nodeIndex, paramIndex));
+   return (it != mLinks.end()) ? it->second.curve : 0.0f;
+}
+
 Modulation::Source Modulation::ResolvedSourceFor(const ParamRef& ref)
 {
    auto it = mLinks.find(Key(ref.nodeIndex, ref.paramIndex));
@@ -132,6 +146,20 @@ void Modulation::UnbindAllFor(int nodeIndex)
    {
       if (it->first.first == nodeIndex)
          it = mExpressionErrors.erase(it);
+      else
+         ++it;
+   }
+   for (auto it = mExpressionRanges.begin(); it != mExpressionRanges.end();)
+   {
+      if (it->first.first == nodeIndex)
+         it = mExpressionRanges.erase(it);
+      else
+         ++it;
+   }
+   for (auto it = mExpressionCurves.begin(); it != mExpressionCurves.end();)
+   {
+      if (it->first.first == nodeIndex)
+         it = mExpressionCurves.erase(it);
       else
          ++it;
    }

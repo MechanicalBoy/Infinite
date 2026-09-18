@@ -99,6 +99,10 @@ public:
       // read-only-locked, because the cable is still patched - matching
       // how HasExpression behaves under a live cable.
       bool enabled = true;
+
+      // Curvature warping parameter for transfer shaping, in [-1.0, 1.0].
+      // 0.0 = linear identity (y = x). >0 = exponential/ease-in. <0 = logarithmic/ease-out.
+      float curve = 0.0f;
    };
 
    // Creates a fresh binding, defaulting the range to the destination's full
@@ -117,6 +121,9 @@ public:
    // leaves nodeIndex/outputIndex/centre/polarity/depth untouched. No-op if
    // nothing is bound there.
    void SetRange(int nodeIndex, int paramIndex, float lo, float hi);
+   // Sets the transfer curve parameter for an existing binding in place.
+   void SetCurve(int nodeIndex, int paramIndex, float curve);
+   float CurveFor(int nodeIndex, int paramIndex) const;
    // Enables or disables an existing binding in place, leaving everything
    // else about it untouched. No-op if nothing is bound there, mirroring
    // SetRange().
@@ -152,6 +159,7 @@ public:
       mExpressions.erase(Key(nodeIndex, paramIndex));
       mExpressionErrors.erase(Key(nodeIndex, paramIndex));
       mExpressionRanges.erase(Key(nodeIndex, paramIndex));
+      mExpressionCurves.erase(Key(nodeIndex, paramIndex));
    }
    const std::string* ExpressionFor(int nodeIndex, int paramIndex) const;
    bool HasExpression(int nodeIndex, int paramIndex) const { return ExpressionFor(nodeIndex, paramIndex) != nullptr; }
@@ -180,6 +188,15 @@ public:
       return true;
    }
 
+   void SetExpressionCurve(int nodeIndex, int paramIndex, float curve) { mExpressionCurves[Key(nodeIndex, paramIndex)] = std::clamp(curve, -1.0f, 1.0f); }
+   void ClearExpressionCurve(int nodeIndex, int paramIndex) { mExpressionCurves.erase(Key(nodeIndex, paramIndex)); }
+   float ExpressionCurveFor(int nodeIndex, int paramIndex) const
+   {
+      auto it = mExpressionCurves.find(Key(nodeIndex, paramIndex));
+      return it != mExpressionCurves.end() ? it->second : 0.0f;
+   }
+   const std::map<Key, float>& ExpressionCurves() const { return mExpressionCurves; }
+
    // Set by the per-frame evaluation pass when an expression fails to parse
    // or evaluate, so the UI can surface it instead of just freezing silently.
    void SetExpressionError(int nodeIndex, int paramIndex, const std::string& error);
@@ -189,7 +206,7 @@ public:
    // restart from 1 on a new patch, so a link left over from the previous one
    // does not go stale - it silently re-attaches to whichever node happens to
    // land on that index next.
-   void Clear() { mLinks.clear(); mExpressions.clear(); mExpressionErrors.clear(); mExpressionRanges.clear(); mKnownParams.clear(); }
+   void Clear() { mLinks.clear(); mExpressions.clear(); mExpressionErrors.clear(); mExpressionRanges.clear(); mExpressionCurves.clear(); mKnownParams.clear(); }
 
    // Parameters registered during the current frame's node drawing.
    void ClearFrameParams() { mFrameParams.clear(); }
@@ -215,6 +232,7 @@ private:
    std::map<Key, std::string> mExpressions;
    std::map<Key, std::string> mExpressionErrors;
    std::map<Key, std::pair<float, float>> mExpressionRanges;
+   std::map<Key, float> mExpressionCurves;
    std::vector<ParamRef> mFrameParams;
    std::map<Key, ParamRef> mKnownParams;
 };
