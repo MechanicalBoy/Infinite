@@ -118,27 +118,40 @@ namespace DspMath
 
       // Reads `atPhase` (normally `phase`, or `phase` plus a momentary
       // modulation offset) rather than the member directly - see the class
-      // comment. `pulseWidth` only matters for kWaveSquare/kWavePulse.
+      // comment. `pulseWidth` skews every waveform, not just
+      // kWaveSquare/kWavePulse: it moves where in the cycle the shape's
+      // "midpoint" falls (see WarpPhase), the same way it moves a square's
+      // duty cycle. At 0.5 every waveform is unchanged from its symmetric
+      // form.
       float Generate(int waveform, float pulseWidth, double atPhase) const
       {
          atPhase -= floor(atPhase); // wrap into [0, 1) - floor handles negative offsets too
          switch (waveform)
          {
             case kWaveSine:
-               return (float)sin(2.0 * M_PI * atPhase);
+               return (float)sin(2.0 * M_PI * WarpPhase(atPhase, pulseWidth));
 
             case kWaveTriangle:
+            {
                // Naive (non-BLEP) triangle: its harmonics already roll off
                // at -12 dB/octave, so residual aliasing is far less audible
                // than on saw/square - not worth a second integrator state
                // to correct, especially once phase can be offset per-sample
                // by FM (an integrator's running state can't be "read at an
-               // offset" the way this stateless formula can).
-               return 2.0f * (float)fabs(2.0 * (atPhase - floor(atPhase + 0.5))) - 1.0f;
+               // offset" the way this stateless formula can). Same naive
+               // treatment extends to the pulseWidth-skewed peak below.
+               const double w = WarpPhase(atPhase, pulseWidth);
+               return (float)(1.0 - 4.0 * fabs(w - 0.5));
+            }
 
             case kWaveSaw:
             {
-               float out = (float)(2.0 * atPhase - 1.0);
+               // Phase-warped ramp: pulseWidth bends how fast phase crosses
+               // the first vs. second half of the cycle (a Casio CZ-style
+               // phase-distortion "warm-up"), while the hard wrap edge stays
+               // exactly where the un-warped BLEP correction expects it.
+               const double w = WarpPhase(atPhase, pulseWidth);
+               float out = (float)(2.0 * w - 1.0);
                out -= BlepCorrection(atPhase, phaseInc);
                return out;
             }
@@ -174,6 +187,18 @@ namespace DspMath
       }
 
    private:
+      // Remaps atPhase so its "midpoint" - the point every non-square shape
+      // below treats as its symmetric centre - falls at pulseWidth instead
+      // of always at 0.5, stretching [0, pulseWidth) and [pulseWidth, 1)
+      // each into half the returned range. Continuous at 0/pulseWidth/1 (no
+      // new value discontinuity), so it's safe to feed into sin/saw/triangle
+      // without additional BLEP handling.
+      static double WarpPhase(double atPhase, float pulseWidth)
+      {
+         const double pw = pulseWidth < 0.01f ? 0.01 : (pulseWidth > 0.99f ? 0.99 : (double)pulseWidth);
+         return atPhase < pw ? (atPhase / pw) * 0.5 : 0.5 + (atPhase - pw) / (1.0 - pw) * 0.5;
+      }
+
       // PolyBLEP: 2nd-order polynomial approximation of the band-limited
       // step, applied within one sample (dt = phaseInc) of a discontinuity.
       static float BlepCorrection(double t, double dt)

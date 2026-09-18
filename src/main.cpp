@@ -22825,12 +22825,7 @@ namespace
       {
          // Row 4: pw, voices, spread, fm
          AudioKnobRow row(4);
-         const bool pwDisabled = (n->wave1 != kAWaveSquare && n->wave2 != kAWaveSquare);
-         if (pwDisabled)
-            ImGui::BeginDisabled();
          row.Knob("pw", &n->pw1, 0.01f, 0.99f, "%.2f");
-         if (pwDisabled)
-            ImGui::EndDisabled();
          row.Knob("voices", &n->voices, 1.0f, 7.0f, "%.0f");
          row.Knob("spread", &n->spread, 0.0f, 1.0f, "%.2f");
          row.Knob("fm", &n->fm, 0.0f, 1.0f, "%.2f", kKnobLarge);

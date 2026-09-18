@@ -317,7 +317,7 @@ public:
             const float osc2Hz = std::clamp(baseHz * powf(2.0f, osc2Cents / 1200.0f),
                                             10.0f, (float)mSampleRate * 0.45f);
             mFreeOsc2.SetFrequency(osc2Hz, mSampleRate);
-            const float osc2Sample = mFreeOsc2.Generate(wave2Dsp);
+            const float osc2Sample = mFreeOsc2.Generate(wave2Dsp, pw1);
             mFreeOsc2.Advance();
 
             // Osc 1 with FM from Osc 2
@@ -436,7 +436,7 @@ public:
                const float osc2Hz = std::clamp(voiceBaseHz * powf(2.0f, osc2Cents / 1200.0f),
                                                10.0f, (float)mSampleRate * 0.45f);
                v.osc2.SetFrequency(osc2Hz, mSampleRate);
-               const float osc2Sample = v.osc2.Generate(wave2Dsp);
+               const float osc2Sample = v.osc2.Generate(wave2Dsp, pw1);
                v.osc2.Advance();
 
                // Osc 1 with FM from Osc 2
