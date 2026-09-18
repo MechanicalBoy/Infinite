@@ -275,7 +275,7 @@ public:
          const float osc2Vol = mMailbox.SmoothedValue(kOsc2Vol);
          const float voicesParam = mMailbox.SmoothedValue(kVoices);
          const float spread = mMailbox.SmoothedValue(kSpread);
-         const float fm = std::clamp(mMailbox.SmoothedValue(kFm), 0.0f, 2.0f);
+         const float fm = std::clamp(mMailbox.SmoothedValue(kFm), 0.0f, 1.0f);
          const float detune = std::clamp(mMailbox.SmoothedValue(kDetune), 0.0f, 100.0f);
          const float oscMix = std::clamp(mMailbox.SmoothedValue(kOscMix), 0.0f, 1.0f);
          const float subVol = mMailbox.SmoothedValue(kSub);
