@@ -34,6 +34,8 @@ namespace AnalogSynthCore
       kSemi2,
       kOct2,
       kPw1,
+      kOsc1Vol,
+      kOsc2Vol,
       kVoices,
       kSpread,
       kFm,
@@ -199,6 +201,8 @@ public:
       mMailbox.Push(kSemi2, p.semi2);
       mMailbox.Push(kOct2, p.oct2);
       mMailbox.Push(kPw1, p.pw1);
+      mMailbox.Push(kOsc1Vol, p.osc1Vol);
+      mMailbox.Push(kOsc2Vol, p.osc2Vol);
       mMailbox.Push(kVoices, p.voices);
       mMailbox.Push(kSpread, p.spread);
       mMailbox.Push(kFm, p.fm);
@@ -267,6 +271,8 @@ public:
          const float semi2 = mMailbox.SmoothedValue(kSemi2);
          const float oct2 = mMailbox.SmoothedValue(kOct2);
          const float pw1 = mMailbox.SmoothedValue(kPw1);
+         const float osc1Vol = mMailbox.SmoothedValue(kOsc1Vol);
+         const float osc2Vol = mMailbox.SmoothedValue(kOsc2Vol);
          const float voicesParam = mMailbox.SmoothedValue(kVoices);
          const float spread = mMailbox.SmoothedValue(kSpread);
          const float fm = std::clamp(mMailbox.SmoothedValue(kFm), 0.0f, 2.0f);
@@ -353,7 +359,7 @@ public:
             const float noiseSample = mFreeNoise.Next();
 
             // Mixer
-            float mixed = osc1Sum * osc1Gain + osc2Sample * osc2Gain + subSample * subVol + noiseSample * noiseVol;
+            float mixed = osc1Sum * osc1Gain * osc1Vol + osc2Sample * osc2Gain * osc2Vol + subSample * subVol + noiseSample * noiseVol;
 
             // Pre-filter drive
             float driven = DspMath::FastTanh(mixed * driveGain);
@@ -472,7 +478,7 @@ public:
                const float noiseSample = v.noise.Next();
 
                // Mixer
-               float mixed = osc1Sum * osc1Gain + osc2Sample * osc2Gain + subSample * subVol + noiseSample * noiseVol;
+               float mixed = osc1Sum * osc1Gain * osc1Vol + osc2Sample * osc2Gain * osc2Vol + subSample * subVol + noiseSample * noiseVol;
 
                // Pre-filter drive
                float driven = DspMath::FastTanh(mixed * driveGain);

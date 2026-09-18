@@ -22814,8 +22814,10 @@ namespace
          row.End();
       }
       {
-         // Row 3: Sync & Analog switches
-         AudioKnobRow row(2);
+         // Row 3: Osc 1 Vol, Osc 2 Vol, Sync & Analog switches
+         AudioKnobRow row(4);
+         row.Knob("vol 1", &n->osc1Vol, 0.0f, 1.0f, "%.2f");
+         row.Knob("vol 2", &n->osc2Vol, 0.0f, 1.0f, "%.2f");
          row.Checkbox("sync", &n->sync);
          row.Checkbox("analog", &n->analog);
          row.End();

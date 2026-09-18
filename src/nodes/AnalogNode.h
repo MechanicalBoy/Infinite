@@ -78,6 +78,8 @@ struct AnalogSynthParams
    float oct2 = 0.0f;       // octaves: -3..+3
 
    float pw1 = 0.5f;
+   float osc1Vol = 1.0f;
+   float osc2Vol = 1.0f;
    float voices = 1.0f;
    float spread = 0.2f;
    float fm = 0.0f;         // 0..1 FM depth osc 2 -> osc 1
@@ -133,7 +135,7 @@ public:
    int ActiveVoices() const;
    double DebugMailboxSampleRate() const;
 
-   // 24 smoothed floats
+   // 26 smoothed floats
    float volume = 0.8f;
    float freq = 220.0f;
    float glide = 0.0f;
@@ -145,6 +147,8 @@ public:
    float semi2 = 0.0f;
    float oct2 = 0.0f;
    float pw1 = 0.5f;
+   float osc1Vol = 1.0f;
+   float osc2Vol = 1.0f;
    float voices = 1.0f;
    float spread = 0.2f;
    float fm = 0.0f;

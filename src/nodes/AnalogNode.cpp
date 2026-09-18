@@ -25,6 +25,8 @@ void AnalogNode::CookIfNeeded(int frameId)
    params.semi2 = semi2;
    params.oct2 = oct2;
    params.pw1 = pw1;
+   params.osc1Vol = osc1Vol;
+   params.osc2Vol = osc2Vol;
    params.voices = voices;
    params.spread = spread;
    params.fm = fm;
@@ -85,6 +87,8 @@ void AnalogNode::VisitParams(ParamVisitor& v)
    v.Float("semi2", semi2);
    v.Float("oct2", oct2);
    v.Float("pw1", pw1);
+   v.Float("osc1Vol", osc1Vol);
+   v.Float("osc2Vol", osc2Vol);
    v.Float("voices", voices);
    v.Float("spread", spread);
    v.Float("fm", fm);
