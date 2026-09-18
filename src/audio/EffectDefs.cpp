@@ -328,11 +328,17 @@ namespace
 
       // ---------------------------------------------------------------- Reverb
       // Algorithmic only - the design doc's `engine` dropdown (algorithmic /
-      // convolution) and its whole Tier 2 table (diffusion, mod, early/late
-      // balance, tone shaping, freeze, and convolution's own IR-file
-      // sub-panel) are cut per .claude/skills/new-audio-node/SKILL.md's
-      // minimalism rule - see ReverbKernel.h's class comment. Tier 1: size,
-      // decay, damping, predelay, width - 5 params + the universal mix.
+      // convolution) and convolution's own IR-file sub-panel are still cut.
+      // The rest of the old Tier 2 table (diffusion, mod, early/late
+      // balance, tone shaping, freeze) is no longer a UI cut so much as an
+      // internal-only upgrade: as of 2026-09-18 the kernel runs real 4-stage
+      // Schroeder diffusion and always-on delay-length modulation (see
+      // ReverbKernel.h's class comment) for Valhalla Vintage Verb-grade
+      // lushness, but none of that is exposed as its own knob - the 5 Tier 1
+      // params below (+ analog, + the universal mix) still drive it all.
+      // Reverb is explicitly exempted from the KHS-simple control-count rule
+      // (.claude/skills/new-audio-node/SKILL.md) while its sound quality is
+      // being actively improved; see the audio-node-minimalism feedback memory.
       {
          EffectDef def;
          def.name = "Reverb";
@@ -344,9 +350,9 @@ namespace
          def.params.push_back({ "size", 0.0f, 1.0f, 0.5f });
          // decay/damping/predelay are confirmed (by hand) AUDIOPARAMSWEEPTEST
          // blind spots, structurally, not from a missing prerequisite: all
-         // three only change what the FDN's 8 lines *write*, and a line's
+         // three only change what the FDN's 16 lines *write*, and a line's
          // own read is always its own activeLen samples behind its write
-         // (~600-1100 samples at this param's default `size`, see
+         // (~520-1960 samples at this param's default `size`, see
          // ReverbKernel.h's class comment) - `size` passes because it moves
          // the read position directly and so is audible on the very next
          // sample, but the sweep's post-alteration measurement window (one
