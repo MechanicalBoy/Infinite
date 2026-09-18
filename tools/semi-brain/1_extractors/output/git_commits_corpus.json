@@ -1,5 +1,21 @@
 [
   {
+    "hash": "54494fceb1199c1fd716a9d7fac6f61ca651de25",
+    "author_name": "n1m21n",
+    "author_email": "namansoniii21@gmail.com",
+    "author_date": "Fri Sep 18 18:14:38 2026 +0530",
+    "parsed_message": {
+      "type": "feat",
+      "scope": "core",
+      "title": "Bump version to 0.4.1 for release, refresh semi-brain corpus",
+      "description": "Bump version to 0.4.1 for release, refresh semi-brain corpus",
+      "bullets": [],
+      "body": "",
+      "raw": "Bump version to 0.4.1 for release, refresh semi-brain corpus"
+    },
+    "stat": "CMakeLists.txt                                     |   4 +-\n .../1_extractors/output/git_commits_corpus.json    |  32 ++\n .../1_extractors/output/recovered_docs_corpus.json | 432 ++++++++++-----------\n .../output/skills_and_invariants_corpus.json       |  11 +-\n tools/semi-brain/3_datasets/train_sft_alpaca.jsonl | 159 ++++----\n .../semi-brain/3_datasets/train_sft_sharegpt.jsonl | 159 ++++----\n website/index.html                                 |   2 +-\n 7 files changed, 422 insertions(+), 377 deletions(-)"
+  },
+  {
     "hash": "2592557268bca2198b540b92fe13d303590c73ae",
     "author_name": "n1m21n",
     "author_email": "namansoniii21@gmail.com",

@@ -75294,8 +75294,10 @@ int main(int argc, char** argv)
                if (IsUserSpawnable(name))
                   types.push_back({ category, name });
 
-         for (const auto& [category, name] : types)
+         for (const auto& typePair : types)
          {
+            const std::string& category = typePair.first;
+            const std::string& name = typePair.second;
             GraphNode* t = SpawnNode(name, category, -3000.0f, -3000.0f);
             if (t == nullptr || t->node == nullptr)
                continue;
