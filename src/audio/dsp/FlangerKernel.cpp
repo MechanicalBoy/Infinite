@@ -57,8 +57,10 @@ void FlangerKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
          float delayedL = mLineL.Read(lMs * 0.001f * (float)mSampleRate);
          float delayedR = mLineR.Read(rMs * 0.001f * (float)mSampleRate);
 
-         const float fbL = AnalogDsp::AsymTanh(delayedL * feedback, 0.15f);
-         const float fbR = AnalogDsp::AsymTanh(delayedR * feedback, 0.15f);
+         const float dampedL = mFbDampL.Process(delayedL);
+         const float dampedR = mFbDampR.Process(delayedR);
+         const float fbL = AnalogDsp::AsymTanh(dampedL * feedback, 0.15f);
+         const float fbR = AnalogDsp::AsymTanh(dampedR * feedback, 0.15f);
          mLineL.Write(inL + fbL);
          mLineR.Write(inR + fbR);
 
@@ -79,8 +81,10 @@ void FlangerKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
          const float delayedL = mLineL.Read(lMs * 0.001f * (float)mSampleRate);
          const float delayedR = mLineR.Read(rMs * 0.001f * (float)mSampleRate);
 
-         mLineL.Write(inL + delayedL * feedback);
-         mLineR.Write(inR + delayedR * feedback);
+         const float dampedL = mFbDampL.Process(delayedL);
+         const float dampedR = mFbDampR.Process(delayedR);
+         mLineL.Write(inL + dampedL * feedback);
+         mLineR.Write(inR + dampedR * feedback);
 
          out.channels[0][i] = delayedL;
          if (numChannels >= 2)
