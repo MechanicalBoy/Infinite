@@ -33,20 +33,31 @@ public:
    // by this - they end on their own via MaybeFinishArmedRecording.
    void BeginFrame(bool shiftHeld, double nowSec);
 
-   // Advances the clock samples are timestamped with and played back
-   // against (see ClockNow) - call once per frame, right alongside
-   // BeginFrame, with the real frame delta and the global transport's play
-   // state. Only accumulates while `playing` is true, so a recording made
-   // before a pause holds still through it instead of continuing to
-   // advance on wall-clock time - the same freeze every other time-based
-   // modulator gets for free by reading Transport's own clock instead of
-   // ImGui::GetTime().
+   // Advances two clocks - call once per frame, right alongside BeginFrame,
+   // with the real frame delta and the global transport's play state:
+   //
+   //  - the playback clock (see ClockNow), which a looping recording is
+   //    replayed against. Only accumulates while `playing` is true, so a
+   //    loop already playing back holds still through a pause instead of
+   //    continuing to advance on wall-clock time - the same freeze every
+   //    other time-based modulator gets for free by reading Transport's own
+   //    clock instead of ImGui::GetTime().
+   //  - the record clock (see RecordClockNow), which new samples are
+   //    timestamped with. Always accumulates, paused or not, so shift-
+   //    dragging a knob while the transport is paused still captures real
+   //    motion instead of a burst of identically-timestamped samples that
+   //    play back as a static value.
    void AdvanceClock(double deltaSeconds, bool playing);
 
-   // The clock gesture samples are timestamped and replayed against - see
-   // AdvanceClock. Starts at 0 and never moves on its own, so it's safe to
-   // read before a frame (or an ImGui context) exists.
+   // The clock a looping recording is replayed against - see AdvanceClock.
+   // Starts at 0 and never moves on its own, so it's safe to read before a
+   // frame (or an ImGui context) exists.
    double ClockNow() const { return mClockSeconds; }
+
+   // The clock new gesture samples are timestamped with - see AdvanceClock.
+   // Unlike ClockNow, this never freezes, so recording works the same
+   // whether the transport is playing or paused.
+   double RecordClockNow() const { return mRecordClockSeconds; }
 
    // Arms exactly this one param for recording, independent of Shift. The
    // very next drag on it joins the session; releasing that drag finishes it
@@ -196,6 +207,7 @@ private:
    void FinalizeSession(const Key& key, double nowSec);
 
    double mClockSeconds = 0.0;
+   double mRecordClockSeconds = 0.0;
    bool mShiftHeld = false;
    std::set<Key> mArmedParams;
    std::map<Key, std::vector<Sample>> mSession;

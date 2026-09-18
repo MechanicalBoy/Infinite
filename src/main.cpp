@@ -3749,9 +3749,9 @@ namespace
             GestureRecorder::Instance().StopPlayback(nodeIndex, paramIndex);
          }
          if (ImGui::IsItemActive() && (ImGui::GetIO().KeyShift || GestureRecorder::Instance().IsArmed(nodeIndex, paramIndex)))
-            GestureRecorder::Instance().NotifyMovement(nodeIndex, paramIndex, *value, GestureRecorder::Instance().ClockNow(), /*isNewGrab=*/justActivated);
+            GestureRecorder::Instance().NotifyMovement(nodeIndex, paramIndex, *value, GestureRecorder::Instance().RecordClockNow(), /*isNewGrab=*/justActivated);
          if (ImGui::IsItemDeactivated())
-            GestureRecorder::Instance().MaybeFinishArmedRecording(nodeIndex, paramIndex, GestureRecorder::Instance().ClockNow());
+            GestureRecorder::Instance().MaybeFinishArmedRecording(nodeIndex, paramIndex, GestureRecorder::Instance().RecordClockNow());
          const bool hovered = ImGui::IsItemHovered();
          if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             BeginTypedEditFromCurrent(editKey, nodeIndex, paramIndex, value, fmt, /*hasExpr=*/true);
@@ -3829,9 +3829,9 @@ namespace
             GestureRecorder::Instance().StopPlayback(nodeIndex, paramIndex);
          }
          if (ImGui::IsItemActive() && (ImGui::GetIO().KeyShift || GestureRecorder::Instance().IsArmed(nodeIndex, paramIndex)))
-            GestureRecorder::Instance().NotifyMovement(nodeIndex, paramIndex, *value, GestureRecorder::Instance().ClockNow(), /*isNewGrab=*/justActivated);
+            GestureRecorder::Instance().NotifyMovement(nodeIndex, paramIndex, *value, GestureRecorder::Instance().RecordClockNow(), /*isNewGrab=*/justActivated);
          if (ImGui::IsItemDeactivated())
-            GestureRecorder::Instance().MaybeFinishArmedRecording(nodeIndex, paramIndex, GestureRecorder::Instance().ClockNow());
+            GestureRecorder::Instance().MaybeFinishArmedRecording(nodeIndex, paramIndex, GestureRecorder::Instance().RecordClockNow());
          // Double-click (or hovering and typing a digit/'='/etc below) still
          // opens the typed-entry field even while locked - that's a deliberate
          // "replace this" action, not an accidental grab, and its own commit
@@ -3987,9 +3987,9 @@ namespace
          }
       }
       if (active && gestureNodeIndex >= 0 && (ImGui::GetIO().KeyShift || GestureRecorder::Instance().IsArmed(gestureNodeIndex, gestureParamIndex)))
-         GestureRecorder::Instance().NotifyMovement(gestureNodeIndex, gestureParamIndex, *value, GestureRecorder::Instance().ClockNow(), /*isNewGrab=*/gestureJustActivated);
+         GestureRecorder::Instance().NotifyMovement(gestureNodeIndex, gestureParamIndex, *value, GestureRecorder::Instance().RecordClockNow(), /*isNewGrab=*/gestureJustActivated);
       if (gestureNodeIndex >= 0 && ImGui::IsItemDeactivated())
-         GestureRecorder::Instance().MaybeFinishArmedRecording(gestureNodeIndex, gestureParamIndex, GestureRecorder::Instance().ClockNow());
+         GestureRecorder::Instance().MaybeFinishArmedRecording(gestureNodeIndex, gestureParamIndex, GestureRecorder::Instance().RecordClockNow());
       if (gestureNodeIndex >= 0 && GestureRecorder::Instance().IsRecording(gestureNodeIndex, gestureParamIndex))
          fillColor = IM_COL32(235, 70, 70, 255);
 
@@ -4376,9 +4376,9 @@ namespace
          }
       }
       if (active && gestureNodeIndex >= 0 && (ImGui::GetIO().KeyShift || GestureRecorder::Instance().IsArmed(gestureNodeIndex, gestureParamIndex)))
-         GestureRecorder::Instance().NotifyMovement(gestureNodeIndex, gestureParamIndex, *value, GestureRecorder::Instance().ClockNow(), /*isNewGrab=*/gestureJustActivated);
+         GestureRecorder::Instance().NotifyMovement(gestureNodeIndex, gestureParamIndex, *value, GestureRecorder::Instance().RecordClockNow(), /*isNewGrab=*/gestureJustActivated);
       if (gestureNodeIndex >= 0 && ImGui::IsItemDeactivated())
-         GestureRecorder::Instance().MaybeFinishArmedRecording(gestureNodeIndex, gestureParamIndex, GestureRecorder::Instance().ClockNow());
+         GestureRecorder::Instance().MaybeFinishArmedRecording(gestureNodeIndex, gestureParamIndex, GestureRecorder::Instance().RecordClockNow());
       if (gestureNodeIndex >= 0 && GestureRecorder::Instance().IsRecording(gestureNodeIndex, gestureParamIndex))
          fillColor = IM_COL32(235, 70, 70, 255);
 
@@ -4795,9 +4795,9 @@ namespace
             GestureRecorder::Instance().StopPlayback(nodeIndex, paramIndex);
          }
          if (ImGui::IsItemActive() && (ImGui::GetIO().KeyShift || GestureRecorder::Instance().IsArmed(nodeIndex, paramIndex)))
-            GestureRecorder::Instance().NotifyMovement(nodeIndex, paramIndex, *value, GestureRecorder::Instance().ClockNow(), /*isNewGrab=*/justActivated);
+            GestureRecorder::Instance().NotifyMovement(nodeIndex, paramIndex, *value, GestureRecorder::Instance().RecordClockNow(), /*isNewGrab=*/justActivated);
          if (ImGui::IsItemDeactivated())
-            GestureRecorder::Instance().MaybeFinishArmedRecording(nodeIndex, paramIndex, GestureRecorder::Instance().ClockNow());
+            GestureRecorder::Instance().MaybeFinishArmedRecording(nodeIndex, paramIndex, GestureRecorder::Instance().RecordClockNow());
          const bool hovered = ImGui::IsItemHovered();
          // Double-click / hover-and-type below still opens the typed-entry
          // field even while locked - a deliberate "replace this" action, not
