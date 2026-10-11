@@ -240,6 +240,44 @@ bool RunEffectMixAndLimiterFixture()
       all &= ok;
    }
 
+   // 6) Drive keeps the bass. Its always-on DC blocker was a fixed
+   //    R = 0.995 one-pole, a 35 Hz high-pass at 44.1 kHz (76 Hz at
+   //    96 kHz); it is now 8 Hz at every rate. At 0 dB drive and a small
+   //    level the curve is nearly linear, so a 40 Hz tone must come out
+   //    within 0.3 dB of a 1 kHz one - at 44.1 and 96 kHz.
+   {
+      const EffectDef* driveDef = FindEffectDef("Drive");
+      bool ok = driveDef != nullptr;
+      for (double rate : { 44100.0, 96000.0 })
+      {
+         if (!ok)
+            break;
+         auto levelAt = [&](double hz) {
+            auto node = std::make_unique<AudioEffectNode>(*driveDef);
+            node->mix = 1.0f;
+            *node->ParamPtr("drive") = 0.0f;
+            node->GetAudioNode()->PrepareToPlay(rate, 512);
+            node->CookIfNeeded(1);
+            const int n = (int)(1.5 * rate);
+            std::vector<std::vector<float>> out;
+            DelayTest::RunSamples(
+               *node, n, 1,
+               [hz, rate](int i, int) { return 0.05f * (float)std::sin(2.0 * M_PI * hz * (double)i / rate); }, &out);
+            double sum = 0.0;
+            const int from = n / 2;
+            for (int i = from; i < n; i++)
+               sum += (double)out[0][(size_t)i] * out[0][(size_t)i];
+            return 10.0 * std::log10(sum / (double)(n - from));
+         };
+         const double diff = levelAt(40.0) - levelAt(1000.0);
+         const bool thisOk = std::fabs(diff) < 0.3;
+         printf("DSPTEST drive bass response @ %.0f Hz: 40 Hz vs 1 kHz %+.2f dB (want ~0)  %s\n", rate, diff,
+                thisOk ? "OK" : "FAIL");
+         ok &= thisOk;
+      }
+      all &= ok;
+   }
+
    return all;
 }
 }

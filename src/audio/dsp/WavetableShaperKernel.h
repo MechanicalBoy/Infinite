@@ -119,6 +119,8 @@ public:
    {
       mSampleRate = sampleRate;
       mMailbox.PrepareToPlay(sampleRate);
+      for (int ch = 0; ch < kMaxChannels; ch++)
+         mDcBlockers[ch].SetSampleRate(sampleRate);
       Reset();
    }
 

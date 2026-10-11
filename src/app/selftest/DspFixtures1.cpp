@@ -2064,6 +2064,7 @@ bool RunWavetableShaperFixture()
          [sweepHz](int i, int) { return sinf(2.0f * (float)M_PI * sweepHz * (float)i / (float)44100.0); }, &out);
 
       DcBlocker refBlocker; // starts zeroed, matching the node's post-warmup state
+      refBlocker.SetSampleRate(sampleRate);
       float maxErr = 0.0f;
       for (int i = 0; i < testSamples; i++)
       {
