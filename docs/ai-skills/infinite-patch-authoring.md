@@ -248,14 +248,14 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Audio Color Ramp` | img:image, audio:audio | out:image | 28 |  |
-| `Blend` | input:image, input_2:image | out:image | 3 |  |
+| `Blend` | input:image, input_2:image | out:image | 4 |  |
 | `Color Ramp` | input:image | out:image | 67 | bypass |
 | `Comment` | none | out:image | 5 |  |
-| `Curves` | input:image | out:image | 6 | bypass |
+| `Curves` | input:image | out:image | 7 | bypass |
 | `Feedback` | input:image | out:image | 1 | bypass |
 | `Fit` | input:image | out:image | 8 | bypass |
 | `Group` | none | out:image | 4 | bypass |
-| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 9 |  |
+| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 10 |  |
 | `Null` | in:image | out:image | 0 | bypass |
 | `Reaction Diffusion` | input:image | out:image | 11 | bypass |
 | `Remove Background` | input:image | out:image | 9 | bypass |
@@ -266,15 +266,15 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `alpha invert` | input:image | out:image | 0 | bypass |
 | `alpha levels` | input:image | out:image | 3 | bypass |
 | `chroma key` | input:image | out:image | 5 | bypass |
-| `color adjustments` | input:image | out:image | 23 | bypass |
+| `color adjustments` | input:image | out:image | 34 | bypass |
 | `coloroverlay` | input:image | out:image | 2 | bypass |
 | `dropshadow` | input:image | out:image | 4 | bypass |
 | `exposure` | input:image | out:image | 2 | bypass |
 | `gradientmap` | input:image | out:image | 3 | bypass |
 | `invert` | input:image | out:image | 0 | bypass |
-| `lookup` | input:image, input_2:image | out:image | 3 |  |
+| `lookup` | input:image, input_2:image | out:image | 4 |  |
 | `luma key` | input:image | out:image | 5 | bypass |
-| `lut` | input:image, input_2:image | out:image | 2 |  |
+| `lut` | input:image, input_2:image | out:image | 3 |  |
 | `opacity` | input:image | out:image | 1 | bypass |
 | `outerglow` | input:image | out:image | 3 | bypass |
 | `posterize` | input:image | out:image | 1 | bypass |
@@ -291,7 +291,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Resynthesize` | input:image | out:image | 20 | bypass |
 | `addnoise` | input:image | out:image | 1 | bypass |
 | `bloom` | input:image | out:image | 4 | bypass |
-| `boxblur` | input:image | out:image | 2 | bypass |
+| `boxblur` | input:image | out:image | 3 | bypass |
 | `convolve` | input:image | out:image | 13 | bypass |
 | `crop` | input:image | out:image | 6 | bypass |
 | `diffuseglow` | input:image | out:image | 3 | bypass |
