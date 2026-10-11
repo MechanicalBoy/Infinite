@@ -7,6 +7,7 @@ namespace app
 {
 bool RunAliasTest(); // selftest/AliasTests.cpp
 bool RunPitchTest(); // selftest/PitchTests.cpp
+bool RunFxAudit(); // selftest/FxAudit.cpp
 // Resolves the main window's DPI + the manual slider into UiScale::Current(), hands the point
 // scale to the GLFW backend and (re)bakes the font atlas at the resulting physical size. Safe
 // to call again between frames: the atlas is rebuilt from scratch and, when the GL renderer
@@ -508,6 +509,11 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       RegisterNodes(); // its PDC check spawns real nodes; no GL involved
       return RunPitchTest() ? 0 : 1;
    }
+
+   // Measurement audit of every audio effect: gain, stereo, tail, stress,
+   // param clicks, sample-rate consistency (selftest/FxAudit.cpp).
+   if (getenv("INFINITE_FXAUDIT") != nullptr)
+      return RunFxAudit() ? 0 : 1;
 
    // The --audio-summary maths on synthesized signals with known answers
    // (docs/fix-briefs/headless-engine.md 2.1).
