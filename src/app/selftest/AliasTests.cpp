@@ -25,6 +25,7 @@
 // A linear effect runs as the rig's own control and must read clean.
 #include "app/AppShared.h"
 #include "audio/dsp/PortableFft.h"
+#include "nodes/AnalogNode.h"
 
 namespace app
 {
@@ -133,6 +134,49 @@ namespace
       out = Measure(tail, c.fundBin);
       return true;
    }
+
+   // A synth voice measured the same way: AnalogNode free-running (no note
+   // cable) at a frequency on an odd FFT bin, analog drift/hiss off so the
+   // noise floor is not read as aliasing, filter open unless the case says.
+   struct SynthCase
+   {
+      const char* label;
+      int fundBin;
+      std::function<void(AnalogNode&)> setup;
+      double gateDb = 0.0;
+   };
+
+   AliasMeasurement RunSynthCase(const SynthCase& c)
+   {
+      AnalogNode node;
+      node.freq = (float)((double)c.fundBin * kRate / (double)kN);
+      node.analog = false;
+      node.filterType = kAFilterOff;
+      node.oscMix = 0.0f; // osc1 only unless the case mixes osc2 in
+      node.sub = 0.0f;
+      node.noise = 0.0f;
+      node.voices = 1.0f;
+      node.volume = 0.5f;
+      c.setup(node);
+      node.GetAudioNode()->PrepareToPlay(kRate, 512);
+      node.CookIfNeeded(1);
+
+      constexpr int kBlock = 256;
+      std::vector<float> l(kBlock), r(kBlock), all;
+      float* chans[2] = { l.data(), r.data() };
+      AudioBuffer out;
+      out.channels = chans;
+      out.numChannels = 2;
+      out.numFrames = kBlock;
+      const int warm = (int)(0.3 * kRate);
+      while ((int)all.size() < warm + kN)
+      {
+         node.GetAudioNode()->ProcessBlock(nullptr, 0, out);
+         all.insert(all.end(), l.begin(), l.end());
+      }
+      std::vector<float> tail(all.begin() + warm, all.begin() + warm + kN);
+      return Measure(tail, c.fundBin);
+   }
 }
 
 bool RunAliasTest()
@@ -195,6 +239,61 @@ bool RunAliasTest()
       printf("ALIASTEST %-36s alias<20k %7.1f dB  harmonics %7.1f dB  (re fundamental, -6 dBFS, 48 kHz)  %s\n",
              c.label, m.aliasDb, m.harmonicDb, verdict);
    }
+   // Analog synth voice (AnalogSynthCore.h). Bin 597 = 1749 Hz (~A6), 75 = 220 Hz.
+   const std::vector<SynthCase> synthCases = {
+      // Before (same metric): saw -29 / -37 dB (1.75 kHz / 220 Hz), square -30,
+      // drive 100% -21, ladder 8 kHz res 0.5 +13.6 (a limit cycle, not aliasing).
+      // The 2-point PolyBLEP oscillators are now the floor (-34 / -42 dB alone).
+      { "Analog saw 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveSaw; }, -38.0 },
+      { "Analog square 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveSquare; }, -40.0 },
+      { "Analog triangle 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveTriangle; }, -48.0 },
+      { "Analog saw 220 Hz", 75, [](AnalogNode& n) { n.wave1 = kAWaveSaw; }, -47.0 },
+      { "Analog hard sync (osc2 +7 st) 1.75 kHz", 597,
+        [](AnalogNode& n) {
+           n.sync = true;
+           n.semi2 = 7.0f;
+           n.oscMix = 1.0f; // hear the synced slave
+        } },
+      { "Analog hard sync (osc2 +7 st) 220 Hz", 75,
+        [](AnalogNode& n) {
+           n.sync = true;
+           n.semi2 = 7.0f;
+           n.oscMix = 1.0f;
+        } },
+      // FM depth kept under the point where the frequency ratio clips at 0 Hz
+      // (1 + 2.5 fm > 0 throughout), so the output stays periodic at the note.
+      { "Analog FM 0.3 (sine osc2 -> saw) 1.75 kHz", 597,
+        [](AnalogNode& n) {
+           n.wave2 = kAWaveSine;
+           n.fm = 0.3f;
+        } },
+      { "Analog saw + drive 100% 1.75 kHz", 597, [](AnalogNode& n) { n.drive = 1.0f; }, -30.0 },
+      { "Analog saw -> ladder 8 kHz res 0.5 1.75 kHz", 597,
+        [](AnalogNode& n) {
+           n.filterType = kAFilterLadder;
+           n.cutoff = 8000.0f;
+           n.resonance = 0.5f;
+           n.drive = 0.5f;
+        },
+        -30.0 },
+   };
+   for (const SynthCase& c : synthCases)
+   {
+      const AliasMeasurement m = RunSynthCase(c);
+      const char* verdict = "info";
+      static char buf[48];
+      if (c.gateDb < 0.0)
+      {
+         const bool ok = m.aliasDb <= c.gateDb;
+         snprintf(buf, sizeof(buf), "gate %.0f dB %s", c.gateDb, ok ? "OK" : "FAIL");
+         verdict = buf;
+         all &= ok;
+         gated++;
+      }
+      printf("ALIASTEST %-36s alias<20k %7.1f dB  harmonics %7.1f dB  (re fundamental)  %s\n", c.label, m.aliasDb,
+             m.harmonicDb, verdict);
+   }
+
    printf("ALIASTEST %d gated case(s) at their limits  %s\n", gated, all ? "OK" : "FAIL");
    return all;
 }

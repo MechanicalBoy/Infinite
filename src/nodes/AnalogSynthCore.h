@@ -179,6 +179,8 @@ public:
       DspMath::PolyBlepOsc sub;
       DspMath::WhiteNoise noise;
       DspMath::OnePole glide;
+      // Anti-aliased pre-filter drive, one per signal path (see ProcessBlock).
+      DspMath::FastTanhAdaa driveL, driveR;
 
       // Two independent filter chains. The stack's unison voices are split
       // between them, so left and right carry different oscillators through
@@ -215,6 +217,8 @@ public:
             svfR[s].SetSampleRate(sampleRate);
          }
          stereoPath = false;
+         driveL.Reset();
+         driveR.Reset();
          ampEnv.SetSampleRate(sampleRate);
          lastOut = 0.0f;
       }
@@ -241,6 +245,8 @@ public:
 
       mFreeLadder.Reset();
       mFreeLadderR.Reset();
+      mFreeDriveL.Reset();
+      mFreeDriveR.Reset();
       mFreeStereoPath = false;
       for (int s = 0; s < SynthModes::kMaxFilterStages; ++s)
       {
@@ -283,7 +289,9 @@ public:
       if (filterType == kAFilterLadder)
       {
          const float g = ZdfLadderFilter::CutoffToG(effectiveCutoff, mSampleRate);
-         const float k = resonance * 3.98f;
+         // Full resonance sits just past the ladder's k = 4 self-oscillation
+         // threshold, so the top of the knob sings at the cutoff (ZdfLadderFilter.h).
+         const float k = resonance * 4.2f;
          return ZdfLadderFilter::Process(ladder, input, g, k);
       }
       if (filterType >= kAFilterSvfLP12 && filterType < kNumAFilterTypes)
@@ -521,8 +529,10 @@ public:
             // Pre-filter drive. The analog hiss is drawn separately per side
             // - two circuits, two noise floors - which decorrelates the pair
             // a little further at no extra cost.
-            float drivenL = DspMath::FastTanh(mixedL * driveGain);
-            float drivenR = DspMath::FastTanh(mixedR * driveGain);
+            // ADAA'd tanh: this stage runs on every patch (driveGain >= 1),
+            // and a plain tanh of a bright oscillator mix aliased at -30 dB.
+            float drivenL = mFreeDriveL.Process(mixedL * driveGain);
+            float drivenR = mFreeDriveR.Process(mixedR * driveGain);
             if (analog)
             {
                drivenL += mFreeNoise.Next() * 0.001f;
@@ -640,8 +650,8 @@ public:
                const float mixedR = osc1SumR * osc1Gain * osc1Vol + centreMix;
 
                // Pre-filter drive, one noise draw per side
-               float drivenL = DspMath::FastTanh(mixedL * driveGain);
-               float drivenR = DspMath::FastTanh(mixedR * driveGain);
+               float drivenL = v.driveL.Process(mixedL * driveGain);
+               float drivenR = v.driveR.Process(mixedR * driveGain);
                if (analog)
                {
                   drivenL += v.noise.Next() * 0.001f;
@@ -851,6 +861,7 @@ private:
    DspMath::WhiteNoise mFreeNoise;
    ZdfLadderFilter::State mFreeLadder;
    ZdfLadderFilter::State mFreeLadderR;
+   DspMath::FastTanhAdaa mFreeDriveL, mFreeDriveR;
    bool mFreeStereoPath = false;
    // Cached normalised detune multipliers, rebuilt only when the stack size
    // changes - NormalizeUnisonDetune is a per-stack constant, not per-sample

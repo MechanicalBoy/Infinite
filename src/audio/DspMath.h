@@ -84,6 +84,48 @@ namespace DspMath
       return x * (27.0f + x2) / (27.0f + 9.0f * x2);
    }
 
+   // Antiderivative of FastTanh: the rational part x(27+x^2)/(27+9x^2)
+   // divides to x/9 + 24x/(9x^2+27), and past |x| = 3 the curve is a flat
+   // +-1. Continuous at 3, and even.
+   inline double FastTanhAntiderivative(double u)
+   {
+      const double a = std::fabs(u);
+      const double atThree = 9.0 / 18.0 + (4.0 / 3.0) * std::log(9.0 * 9.0 + 27.0);
+      if (a > 3.0)
+         return atThree + (a - 3.0);
+      return a * a / 18.0 + (4.0 / 3.0) * std::log(9.0 * a * a + 27.0);
+   }
+
+   // First-order antiderivative anti-aliasing (ADAA) of FastTanh: the
+   // average of the curve over the straight line between the previous input
+   // and this one, (F(u) - F(u')) / (u - u'), instead of its value at one
+   // point (Parker, Zavalishin & Le Bivic, DAFx-16). Suppresses the aliasing
+   // a saturator generates by roughly an extra 6 dB/octave, at the cost of
+   // half a sample of delay. Double precision: the difference quotient of
+   // two antiderivative values is mostly rounding in float.
+   struct FastTanhAdaa
+   {
+      double prevU = 0.0;
+      double prevF = FastTanhAntiderivative(0.0);
+
+      void Reset()
+      {
+         prevU = 0.0;
+         prevF = FastTanhAntiderivative(0.0);
+      }
+
+      float Process(float u)
+      {
+         const double F = FastTanhAntiderivative(u);
+         const double du = (double)u - prevU;
+         const float y = (std::fabs(du) < 1.0e-5) ? FastTanh((float)(0.5 * ((double)u + prevU)))
+                                                   : (float)((F - prevF) / du);
+         prevU = u;
+         prevF = F;
+         return y;
+      }
+   };
+
    // --------------------------------------------------------------- PolyBLEP
    // Band-limited sawtooth/square/sine/triangle via a phase-accumulator
    // oscillator with polynomial band-limited step (PolyBLEP) correction

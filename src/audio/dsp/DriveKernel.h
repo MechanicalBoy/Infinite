@@ -66,17 +66,7 @@ namespace DriveDsp
       return RawShape(x, driveDb, bias, color) - zeroRef;
    }
 
-   // Antiderivative of FastTanh: the rational part x(27+x^2)/(27+9x^2)
-   // divides to x/9 + 24x/(9x^2+27), and past |x| = 3 the curve is a flat
-   // +-1. Continuous at 3, and even.
-   inline double FastTanhAntiderivative(double u)
-   {
-      const double a = std::fabs(u);
-      const double atThree = 9.0 / 18.0 + (4.0 / 3.0) * std::log(9.0 * 9.0 + 27.0);
-      if (a > 3.0)
-         return atThree + (a - 3.0);
-      return a * a / 18.0 + (4.0 / 3.0) * std::log(9.0 * a * a + 27.0);
-   }
+   using DspMath::FastTanhAntiderivative;
 
    // Antiderivative of atan(2u): u atan(2u) - ln(1 + 4u^2) / 4.
    inline double AtanAntiderivative(double u) { return u * std::atan(2.0 * u) - 0.25 * std::log1p(4.0 * u * u); }
