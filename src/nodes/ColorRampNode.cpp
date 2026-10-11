@@ -206,7 +206,7 @@ bool ColorRampNode::EnsureShader()
    if (mShaderTried)
       return mProgram != 0;
    mShaderTried = true;
-   mProgram = GLUtil::CompileProgram(kFragSrc);
+   mProgram = GLUtil::CompileProgram(GLUtil::WithClampedOutput(kFragSrc).c_str());
    return mProgram != 0;
 }
 
@@ -226,7 +226,7 @@ void ColorRampNode::CookIfNeeded(int frameId)
       return;
    if (mLutDirty || mLutTex == 0)
       RebuildLut();
-   if (!GLUtil::EnsureFbo(mOut, mInput.Width(), mInput.Height()))
+   if (!GLUtil::EnsureFbo(mOut, mInput.Width(), mInput.Height(), GLUtil::ImageWorkingFormat(), "ColorRamp"))
       return;
 
    GLUtil::RunShaderPass(mOut, mProgram, [this, srcTex]()

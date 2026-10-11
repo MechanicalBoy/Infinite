@@ -122,7 +122,7 @@ bool CurvesNode::EnsureShader()
    if (mShaderTried)
       return mProgram != 0;
    mShaderTried = true;
-   mProgram = GLUtil::CompileProgram(kFragSrc);
+   mProgram = GLUtil::CompileProgram(GLUtil::WithClampedOutput(kFragSrc).c_str());
    return mProgram != 0;
 }
 
@@ -145,7 +145,7 @@ void CurvesNode::CookIfNeeded(int frameId)
       lutStale = mLutVersion[c] != mShapes[c].version;
    if (lutStale)
       RebuildLut();
-   if (!GLUtil::EnsureFbo(mOut, mInput.Width(), mInput.Height()))
+   if (!GLUtil::EnsureFbo(mOut, mInput.Width(), mInput.Height(), GLUtil::ImageWorkingFormat(), "Curves"))
       return;
 
    GLUtil::RunShaderPass(mOut, mProgram, [this, srcTex]()

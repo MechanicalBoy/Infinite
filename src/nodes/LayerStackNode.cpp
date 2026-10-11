@@ -83,7 +83,7 @@ bool LayerStackNode::EnsureShader()
    if (mShaderTried)
       return mProgram != 0;
    mShaderTried = true;
-   mProgram = GLUtil::CompileProgram(FragSrc().c_str());
+   mProgram = GLUtil::CompileProgram(GLUtil::WithClampedOutput(FragSrc()).c_str());
    return mProgram != 0;
 }
 
@@ -113,7 +113,7 @@ void LayerStackNode::CookIfNeeded(int frameId)
 
    if (!EnsureShader())
       return;
-   if (!GLUtil::EnsureFbo(mOut, w, h))
+   if (!GLUtil::EnsureFbo(mOut, w, h, GLUtil::ImageWorkingFormat(), "LayerStack"))
       return;
 
    GLUtil::RunShaderPass(mOut, mProgram, [this, &tex, &active]()

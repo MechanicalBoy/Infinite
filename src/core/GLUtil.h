@@ -56,6 +56,24 @@ namespace GLUtil
 
    inline unsigned int FboTexture(const Fbo& fbo) { return fbo.tex; }
 
+   // Storage format of the 2D image chain (filters, Curves, Blend, Layer
+   // Stack, Color Ramp). Half float, so a chain of N nodes rounds once at
+   // the output instead of N times to 8 bits (docs/plans/image-fx).
+   // INFINITE_IMAGE_RGBA8=1 restores the old 8-bit chain for A/B benches.
+   unsigned int ImageWorkingFormat();
+
+   // Wraps a fragment shader so its write is clamped to 0..1, the range an
+   // RGBA8 target used to clamp to for free. Keeps the look of existing
+   // patches while the chain stores float; nodes that want headroom opt out
+   // by not using it. Renames the source's `void main()`.
+   std::string WithClampedOutput(const std::string& fragSrc);
+
+   // GLSL: `vec3 OutputDither(vec3 c)` adds a fixed per-pixel offset in
+   // +-0.5/255, so a value already on an 8-bit code rounds back to the same
+   // code (byte-identical exports for 8-bit content) and anything between
+   // codes dithers instead of banding. Paste after `out vec4 fragColor;`.
+   extern const char* const kOutputDitherGlsl;
+
    // Compiles fragSrc against a shared fullscreen-quad vertex shader (attributes
    // aPos/aUv at locations 0/1). Returns 0 on failure; if outError is non-null the
    // compile/link log is written there instead of stderr (used by FormulaNode to

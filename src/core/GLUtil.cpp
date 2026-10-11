@@ -257,6 +257,30 @@ namespace GLUtil
       return 0;
    }
 
+   unsigned int ImageWorkingFormat()
+   {
+      static const unsigned int sFormat = getenv("INFINITE_IMAGE_RGBA8") != nullptr ? GL_RGBA8 : GL_RGBA16F;
+      return sFormat;
+   }
+
+   std::string WithClampedOutput(const std::string& fragSrc)
+   {
+      std::string src = fragSrc;
+      const size_t at = src.find("void main()");
+      if (at == std::string::npos)
+         return src;
+      src.replace(at, 11, "void imageMain()");
+      src += "\nvoid main() { imageMain(); fragColor = clamp(fragColor, 0.0, 1.0); }\n";
+      return src;
+   }
+
+   const char* const kOutputDitherGlsl =
+      "vec3 OutputDither(vec3 c) {\n"
+      "   // interleaved gradient noise (Jimenez 2014): fixed, so renders stay deterministic\n"
+      "   float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n"
+      "   return c + (n - 0.5) * (0.999 / 255.0);\n"
+      "}\n";
+
    unsigned int CompileProgram(const char* fragSrc, std::string* outError)
    {
       auto fail = [outError](const char* stage, const std::string& log) -> unsigned int
@@ -335,41 +359,44 @@ namespace GLUtil
    void DrawTextureToScreen(unsigned int tex, int windowW, int windowH, int texW, int texH,
                              bool checkerBg, bool transparentWindow)
    {
-      static const char* kBlitFragSrc =
+      static const std::string kBlitFragSrc = std::string(
          "#version 150\n"
          "in vec2 vUv;\n"
          "out vec4 fragColor;\n"
-         "uniform sampler2D uTex;\n"
-         "void main() { fragColor = texture(uTex, vUv); }\n";
+         "uniform sampler2D uTex;\n") +
+         kOutputDitherGlsl +
+         "void main() { vec4 c = texture(uTex, vUv); fragColor = vec4(OutputDither(c.rgb), c.a); }\n";
 
       // Composites the texture's own alpha over the same dark checkerboard
       // pattern the node editor draws behind a transparent preview (see
       // DrawCheckerboardBackdrop in main.cpp), so a node with a transparent
       // background reads the same way here as it does inline/in the viewport
       // panel instead of just showing solid black where alpha is 0.
-      static const char* kBlitCheckerFragSrc =
+      static const std::string kBlitCheckerFragSrc = std::string(
          "#version 150\n"
          "in vec2 vUv;\n"
          "out vec4 fragColor;\n"
-         "uniform sampler2D uTex;\n"
+         "uniform sampler2D uTex;\n") +
+         kOutputDitherGlsl +
          "void main()\n"
          "{\n"
          "   vec4 c = texture(uTex, vUv);\n"
          "   vec2 cell = floor(gl_FragCoord.xy / 12.0);\n"
          "   float parity = mod(cell.x + cell.y, 2.0);\n"
          "   vec3 bg = mix(vec3(30.0, 30.0, 38.0) / 255.0, vec3(18.0, 18.0, 24.0) / 255.0, parity);\n"
-         "   fragColor = vec4(mix(bg, c.rgb, c.a), 1.0);\n"
+         "   fragColor = vec4(OutputDither(mix(bg, c.rgb, c.a)), 1.0);\n"
          "}\n";
 
       // For a window with a transparent framebuffer: the texture's own alpha
       // goes to the window (premultiplied, what every compositor expects) so
       // the desktop / OBS window capture sees through it, no backdrop.
-      static const char* kBlitPremulFragSrc =
+      static const std::string kBlitPremulFragSrc = std::string(
          "#version 150\n"
          "in vec2 vUv;\n"
          "out vec4 fragColor;\n"
-         "uniform sampler2D uTex;\n"
-         "void main() { vec4 c = texture(uTex, vUv); fragColor = vec4(c.rgb * c.a, c.a); }\n";
+         "uniform sampler2D uTex;\n") +
+         kOutputDitherGlsl +
+         "void main() { vec4 c = texture(uTex, vUv); fragColor = vec4(OutputDither(c.rgb * c.a), c.a); }\n";
 
       static unsigned int sPremulProgram = 0;
       static int sLocTexPremul = -1;
@@ -379,17 +406,17 @@ namespace GLUtil
       static int sLocTexChecker = -1;
       if (sBlitProgram == 0)
       {
-         sBlitProgram = CompileProgram(kBlitFragSrc);
+         sBlitProgram = CompileProgram(kBlitFragSrc.c_str());
          sLocTex = glGetUniformLocation(sBlitProgram, "uTex");
       }
       if (sCheckerProgram == 0)
       {
-         sCheckerProgram = CompileProgram(kBlitCheckerFragSrc);
+         sCheckerProgram = CompileProgram(kBlitCheckerFragSrc.c_str());
          sLocTexChecker = glGetUniformLocation(sCheckerProgram, "uTex");
       }
       if (transparentWindow && sPremulProgram == 0)
       {
-         sPremulProgram = CompileProgram(kBlitPremulFragSrc);
+         sPremulProgram = CompileProgram(kBlitPremulFragSrc.c_str());
          sLocTexPremul = glGetUniformLocation(sPremulProgram, "uTex");
       }
       const unsigned int program = transparentWindow ? sPremulProgram : (checkerBg ? sCheckerProgram : sBlitProgram);

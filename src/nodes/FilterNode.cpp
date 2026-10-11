@@ -63,7 +63,7 @@ bool FilterNode::EnsureShader()
       LookupLocs(mPreProgram, mPreLocs);
    }
 
-   std::string src = std::string(kPreamble) + mDef.fragmentBody;
+   std::string src = GLUtil::WithClampedOutput(std::string(kPreamble) + mDef.fragmentBody);
    mProgram = GLUtil::CompileProgram(src.c_str());
    if (mProgram == 0)
       return false;
@@ -153,7 +153,7 @@ void FilterNode::CookIfNeeded(int frameId)
 
    if (!EnsureShader())
       return;
-   if (!GLUtil::EnsureFbo(mOut, mInput.Width(), mInput.Height()))
+   if (!GLUtil::EnsureFbo(mOut, mInput.Width(), mInput.Height(), GLUtil::ImageWorkingFormat(), "Filter"))
       return;
 
    Signature sig;
