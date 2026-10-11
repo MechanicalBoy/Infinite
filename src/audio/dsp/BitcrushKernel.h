@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #include "IEffectKernel.h"
 #include "audio/DspMath.h"
@@ -63,6 +64,23 @@ private:
    ParamMailbox mMailbox;
    double mSampleRate = 44100.0;
    std::atomic<int> mAnalog { 0 };
+   std::atomic<int> mDither { 0 };
+
+   // TPDF dither source: the difference of two uniform draws is triangular
+   // on (-1, 1) LSB - the standard dither, which makes the quantisation error
+   // independent of the signal (no harmonic distortion on quiet material) at
+   // the cost of a flat noise floor. Seeded, so renders are deterministic.
+   uint32_t mRng = 0x9E3779B9u;
+   float Tpdf()
+   {
+      auto next = [this]() {
+         mRng ^= mRng << 13;
+         mRng ^= mRng >> 17;
+         mRng ^= mRng << 5;
+         return (float)(mRng >> 8) * (1.0f / 16777216.0f);
+      };
+      return next() - next();
+   }
 
    float mPhase = 0.0f;
    float mHoldL = 0.0f, mHoldR = 0.0f;

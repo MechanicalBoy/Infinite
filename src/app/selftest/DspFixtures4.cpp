@@ -3,6 +3,7 @@
 // AudioEffectNode -> AudioEffectRuntime -> kernel pipeline, one sample per
 // block, so what is measured is what a patch hears.
 #include "app/AppShared.h"
+#include <algorithm>
 
 namespace app
 {
@@ -274,6 +275,120 @@ bool RunEffectMixAndLimiterFixture()
          printf("DSPTEST drive bass response @ %.0f Hz: 40 Hz vs 1 kHz %+.2f dB (want ~0)  %s\n", rate, diff,
                 thisOk ? "OK" : "FAIL");
          ok &= thisOk;
+      }
+      all &= ok;
+   }
+
+   // 7) Bitcrush's `bits` is the bit depth it says: an N-bit converter has
+   //    2^N levels. (It used to deliver 2^(N+1) - 1 - a bit more than shown.)
+   //    And TPDF dither does what dither is for: a quiet tone through an
+   //    8-bit crush has its quantisation distortion (harmonics) replaced by
+   //    a noise floor.
+   {
+      const EffectDef* bcDef = FindEffectDef("Bitcrush");
+      bool ok = bcDef != nullptr;
+      auto makeCrush = [&](float bits, float dither) {
+         auto node = std::make_unique<AudioEffectNode>(*bcDef);
+         node->mix = 1.0f;
+         *node->ParamPtr("rate") = 44100.0f; // no hold at the fixture's rate: quantiser only
+         *node->ParamPtr("bits") = bits;
+         *node->ParamPtr("dither") = dither;
+         node->GetAudioNode()->PrepareToPlay(sampleRate, 512);
+         node->CookIfNeeded(1);
+         DelayTest::RunSamples(*node, 4410, 1, [](int, int) { return 0.0f; }, nullptr);
+         return node;
+      };
+      if (ok)
+      {
+         for (float bits : { 1.0f, 4.0f, 8.0f })
+         {
+            auto node = makeCrush(bits, 0.0f);
+            const int n = 1 << 16;
+            std::vector<std::vector<float>> out;
+            DelayTest::RunSamples(*node, n, 1, [n](int i, int) { return -1.0f + 2.0f * (float)i / (float)n; }, &out);
+            std::vector<float> v = out[0];
+            std::sort(v.begin(), v.end());
+            const int levels = (int)(std::unique(v.begin(), v.end()) - v.begin());
+            const int want = 1 << (int)bits;
+            const bool thisOk = levels == want;
+            printf("DSPTEST bitcrush %.0f bits: %d output levels on a full-scale ramp (want %d)  %s\n", bits, levels,
+                   want, thisOk ? "OK" : "FAIL");
+            ok &= thisOk;
+         }
+
+         // A 3-LSB, 1 kHz tone at 8 bits. Harmonics 2..10 re the fundamental,
+         // by quadrature correlation over a whole number of cycles.
+         auto harmonicsDb = [&](float dither) {
+            auto node = makeCrush(8.0f, dither);
+            const double f = 1000.0;
+            const int n = 44100; // 1000 whole cycles
+            const float amp = 3.0f * (2.0f / 256.0f);
+            std::vector<std::vector<float>> out;
+            DelayTest::RunSamples(
+               *node, n, 1, [&](int i, int) { return amp * (float)std::sin(2.0 * M_PI * f * i / sampleRate); }, &out);
+            auto power = [&](int h) {
+               double c = 0.0, s = 0.0;
+               for (int i = 0; i < n; i++)
+               {
+                  const double w = 2.0 * M_PI * f * h * i / sampleRate;
+                  c += out[0][(size_t)i] * std::cos(w);
+                  s += out[0][(size_t)i] * std::sin(w);
+               }
+               return c * c + s * s;
+            };
+            double harm = 0.0;
+            for (int h = 2; h <= 10; h++)
+               harm += power(h);
+            return 10.0 * std::log10(std::max(harm, 1e-30) / power(1));
+         };
+         // Dithered, what is left in the nine harmonic bins is the dither's
+         // own noise: TPDF + rounding is 0.25 LSB^2 against the tone's
+         // 4.5 LSB^2, spread over 22 kHz, i.e. about -46 dB in nine 1 Hz
+         // bins. So "at the noise floor" is the bar, not zero.
+         const double plain = harmonicsDb(0.0f), dithered = harmonicsDb(1.0f);
+         const bool ditherOk = plain > -30.0 && dithered < -40.0 && dithered < plain - 15.0;
+         printf("DSPTEST bitcrush dither: harmonics of a 3-LSB tone %.1f dB undithered, %.1f dB dithered  %s\n", plain,
+                dithered, ditherOk ? "OK" : "FAIL");
+         ok &= ditherOk;
+      }
+      all &= ok;
+   }
+
+   // 8) Dynamics' `scHpf` takes bass out of the detector only: with it on, a
+   //    loud 40 Hz tone barely moves the gain, while the audio path itself is
+   //    unchanged (same output for a tone well above the cutoff).
+   {
+      const EffectDef* dynDef = FindEffectDef("Dynamics");
+      bool ok = dynDef != nullptr;
+      auto grDb = [&](float scHpf, double hz) {
+         auto node = std::make_unique<AudioEffectNode>(*dynDef);
+         node->mix = 1.0f;
+         *node->ParamPtr("threshold") = -30.0f;
+         *node->ParamPtr("ratio") = 8.0f;
+         *node->ParamPtr("makeup") = 0.0f;
+         *node->ParamPtr("scHpf") = scHpf;
+         node->GetAudioNode()->PrepareToPlay(sampleRate, 512);
+         node->CookIfNeeded(1);
+         const int n = (int)(1.0 * sampleRate);
+         std::vector<std::vector<float>> out;
+         DelayTest::RunSamples(
+            *node, n, 1, [&](int i, int) { return 0.5f * (float)std::sin(2.0 * M_PI * hz * i / sampleRate); }, &out);
+         double in2 = 0.0, out2 = 0.0;
+         for (int i = n / 2; i < n; i++)
+         {
+            const double x = 0.5 * std::sin(2.0 * M_PI * hz * i / sampleRate);
+            in2 += x * x;
+            out2 += (double)out[0][(size_t)i] * out[0][(size_t)i];
+         }
+         return 10.0 * std::log10(in2 / std::max(out2, 1e-30)); // gain reduction, dB
+      };
+      if (ok)
+      {
+         const double bassOff = grDb(0.0f, 40.0), bassOn = grDb(1.0f, 40.0);
+         const double midOff = grDb(0.0f, 2000.0), midOn = grDb(1.0f, 2000.0);
+         ok = bassOff > 15.0 && bassOn < bassOff - 10.0 && std::fabs(midOn - midOff) < 0.5;
+         printf("DSPTEST dynamics sc hpf: 40 Hz reduction %.1f -> %.1f dB, 2 kHz %.1f -> %.1f dB  %s\n", bassOff,
+                bassOn, midOff, midOn, ok ? "OK" : "FAIL");
       }
       all &= ok;
    }

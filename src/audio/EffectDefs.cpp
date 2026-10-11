@@ -229,6 +229,9 @@ namespace
          // implementation; correct by inspection.
          def.params.push_back({ "sidechainExternal", 0.0f, 1.0f, 0.0f });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f });
+         // Appended (saved patches' param order). Detector-only 90 Hz high-pass,
+         // off by default so existing patches compress exactly as before.
+         def.params.push_back({ "scHpf", 0.0f, 1.0f, 0.0f });
          // mix is AudioEffectNode's universal field, not a second param here.
 
          def.makeKernel = []() { return std::make_unique<DynamicsKernel>(); };
@@ -579,6 +582,10 @@ namespace
          def.params.push_back({ "rate", 200.0f, 44100.0f, 6000.0f });
          def.params.push_back({ "bits", 1.0f, 16.0f, 8.0f });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f });
+         // Appended (saved patches' param order). TPDF dither, off by default:
+         // undithered crush is the classic character; dither trades its
+         // distortion for a clean noise floor (BitcrushKernel.h).
+         def.params.push_back({ "dither", 0.0f, 1.0f, 0.0f });
          def.makeKernel = []() { return std::make_unique<BitcrushKernel>(); };
          defs.push_back(std::move(def));
       }

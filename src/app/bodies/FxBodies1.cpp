@@ -1167,7 +1167,7 @@ namespace app
          row.End();
       }
       {
-         AudioKnobRow row(3, 20.0f, 0.0f, false);
+         AudioKnobRow row(4, 20.0f, 0.0f, false);
          bool rms = n->Param("detectorRms") != 0.0f;
          bool rmsUserChanged = false;
          if (row.Checkbox("RMS##dynRms", &rms, &rmsUserChanged))
@@ -1191,6 +1191,15 @@ namespace app
             if (analogBoolUserChanged) // a cable flip writes the value but never checkpoints
                PushUndoCheckpoint();
             *n->ParamPtr("analog") = analogBool ? 1.0f : 0.0f;
+         }
+         // Detector-only 90 Hz high-pass: bass stops pumping the gain.
+         bool scHpf = n->Param("scHpf") != 0.0f;
+         bool scHpfUserChanged = false;
+         if (row.Checkbox("sc hpf##dynScHpf", &scHpf, &scHpfUserChanged))
+         {
+            if (scHpfUserChanged)
+               PushUndoCheckpoint();
+            *n->ParamPtr("scHpf") = scHpf ? 1.0f : 0.0f;
          }
          row.End();
       }

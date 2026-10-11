@@ -3,20 +3,28 @@
 #include "AnalogPrimitives.h"
 #include "nodes/AudioEffectNode.h"
 
-void BitcrushKernel::PushParams(const AudioEffectNode& node, double sampleRate)
+// The sample rate comes from PrepareToPlay, never from here: writing it
+// from the main thread raced the audio thread's read.
+void BitcrushKernel::PushParams(const AudioEffectNode& node, double /*sampleRate*/)
 {
-   mSampleRate = sampleRate;
    mMailbox.Push(kRateHz, node.Param("rate"));
    mMailbox.Push(kBits, node.Param("bits"));
    mAnalog.store(node.Param("analog") != 0.0f ? 1 : 0, std::memory_order_relaxed);
+   mDither.store(node.Param("dither") != 0.0f ? 1 : 0, std::memory_order_relaxed);
 }
 
 namespace
 {
-   inline float QuantizeToBits(float x, float bits)
+   // An N-bit converter: 2^N levels, step 2 / 2^N across [-1, 1), mid-tread
+   // (zero is a level, so silence stays silence). `ditherLsb` is added in
+   // units of one step before rounding. (This used to round x * (2^N - 1)
+   // across [-1, 1] - 2^(N+1) - 1 levels, about one bit more than the knob
+   // said, and three levels at "1 bit".)
+   inline float QuantizeToBits(float x, float bits, float ditherLsb)
    {
-      const float levels = powf(2.0f, std::max(1.0f, bits)) - 1.0f;
-      return roundf(std::clamp(x, -1.0f, 1.0f) * levels) / levels;
+      const float step = 2.0f / powf(2.0f, std::clamp(bits, 1.0f, 16.0f));
+      const float q = roundf(std::clamp(x, -1.0f, 1.0f) / step + ditherLsb) * step;
+      return std::clamp(q, -1.0f, 1.0f - step);
    }
 }
 
@@ -24,6 +32,7 @@ void BitcrushKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*si
 {
    const int numChannels = std::min(in.numChannels, std::min(out.numChannels, 2));
    const bool analog = mAnalog.load(std::memory_order_relaxed) != 0;
+   const bool dither = mDither.load(std::memory_order_relaxed) != 0;
 
    for (int i = 0; i < out.numFrames; i++)
    {
@@ -53,8 +62,8 @@ void BitcrushKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*si
             mHoldR = inR;
          }
 
-         float outL = AnalogDsp::MuLawQuantize(mHoldL, bits);
-         float outR = AnalogDsp::MuLawQuantize(mHoldR, bits);
+         float outL = AnalogDsp::MuLawQuantize(mHoldL, bits, 255.0f, dither ? Tpdf() : 0.0f);
+         float outR = AnalogDsp::MuLawQuantize(mHoldR, bits, 255.0f, dither ? Tpdf() : 0.0f);
 
          // Output buffer warmth
          outL = AnalogDsp::AsymTanh(outL, 0.08f);
@@ -73,9 +82,9 @@ void BitcrushKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*si
             mHoldR = numChannels >= 2 ? in.channels[1][i] : mHoldL;
          }
 
-         out.channels[0][i] = QuantizeToBits(mHoldL, bits);
+         out.channels[0][i] = QuantizeToBits(mHoldL, bits, dither ? Tpdf() : 0.0f);
          if (numChannels >= 2)
-            out.channels[1][i] = QuantizeToBits(mHoldR, bits);
+            out.channels[1][i] = QuantizeToBits(mHoldR, bits, dither ? Tpdf() : 0.0f);
       }
 
       for (int ch = 2; ch < out.numChannels; ch++)
