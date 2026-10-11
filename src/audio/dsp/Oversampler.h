@@ -34,11 +34,15 @@ public:
    static constexpr int kMaxChannels = 8;
    static constexpr int kMaxFactor = 8;
 
-   void Prepare(int factor)
+   // `firstStageGroupDelay` trades the first stage's sharpness for cost and
+   // latency: 64 (the default) is flat to 20 kHz at 44.1 kHz with ~100 dB of
+   // stopband; a synth voice, where folding into 20-24 kHz is acceptable and
+   // up to 16 instances run at once, can use 32.
+   void Prepare(int factor, int firstStageGroupDelay = 64)
    {
       mFactor = (factor >= 8) ? 8 : (factor >= 4 ? 4 : 2);
       mStages = (mFactor == 8) ? 3 : (mFactor == 4 ? 2 : 1);
-      static constexpr int kGroupDelay[3] = { 64, 12, 12 };
+      const int kGroupDelay[3] = { std::max(8, firstStageGroupDelay), 12, 12 };
       static constexpr double kBeta[3] = { 10.0, 10.0, 10.0 };
       mLatency = 0;
       for (int s = 0; s < mStages; s++)
@@ -55,6 +59,14 @@ public:
       for (int s = 0; s < 3; s++)
          for (int ch = 0; ch < kMaxChannels; ch++)
             mStage[s][ch].Reset();
+   }
+
+   // One channel only - for a signal path that starts up mid-stream and
+   // must not resume from stale history.
+   void ResetChannel(int ch)
+   {
+      for (int s = 0; s < 3; s++)
+         mStage[s][ch].Reset();
    }
 
    int Factor() const { return mFactor; }
