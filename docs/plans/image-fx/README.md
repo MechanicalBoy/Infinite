@@ -43,20 +43,22 @@ different: the same maths running live, with every parameter modulatable.
 | # | Branch | Work | State |
 |---|---|---|---|
 | 1 | `feature/image-fx-audit` | IMGAUDIT and this baseline | done |
-| 2 | — | RGBA16F linear-light chain: decode at sources, encode and dither at outputs | next |
-| 3 | — | Node maths: grade, Curves, blurs, LUT, lookup, glows, blend modes | |
+| 2 | `feature/image-fx-float` | RGBA16F linear-light chain: decode at sources, encode and dither at outputs | done (GPU over budget, see below) |
+| 3 | — | Node maths: grade, Curves, blurs, LUT, lookup, glows, blend modes | next |
 
 ## 6. Success metrics
 
-| Metric | Target | Baseline |
-|---|---|---|
-| Identity settings change no pixel values | 0 codes | Curves 0.097; most filters 0.002 (8-bit) |
-| 10-node chain keeps dark levels | ≥ 100 of 103 | 26 |
-| Blur edge in linear light (red/green) | dip ≥ 0.98 | 0.69–0.70 |
-| Blur energy | 1.000 ± 0.02 | 0.988–1.004 (pass) |
-| Grade sat 0 = Rec.709 luminance | ≤ 1e-3 | 0.93 off (HSV gives white) |
-| LUT identity round trip | ≤ 0.5/255 | 0.50 (128 codes) |
-| GPU time | ≤ +10% | column below |
+| Metric | Target | Baseline | After Block 2 |
+|---|---|---|---|
+| Identity settings change no pixel values | 0 codes | Curves 0.097; most filters 0.002 (8-bit) | filters 0.0005; Curves Block 3 |
+| 10-node chain keeps dark levels | ≥ 100 of 103 | 26 | **102** (1024/1024 levels) |
+| Blur edge in linear light (red/green) | dip ≥ 0.98 | 0.69–0.70 | **0.999** |
+| Blur energy | 1.000 ± 0.02 | 0.988–1.004 (pass) | 0.999 |
+| Exposure +1 EV on 18% grey | 0.360 | 0.831 | **0.360** |
+| 50% white over black (linear) | half the light | n/a | err 0.0000 |
+| Grade sat 0 = Rec.709 luminance | ≤ 1e-3 | 0.93 off (HSV gives white) | Block 3 |
+| LUT identity round trip | ≤ 0.5/255 | 0.50 (128 codes) | Block 3 |
+| GPU time | ≤ +10% | column below | **+15% over the 8-bit chain (miss)** |
 
 ## 7. Findings from the baseline
 
@@ -94,6 +96,50 @@ different: the same maths running live, with every parameter modulatable.
     of premultiplied colour.
 11. **GPU** (1080p, M-series): Gaussian 2.1 ms, Bloom 1.7 ms and Diffuse Glow
     1.4 ms are the heavy ones. Everything else is ≤ 0.4 ms.
+
+## Block 2 results (branch `feature/image-fx-float`)
+
+| Step | Commit | What |
+|---|---|---|
+| 1 | b983f855 | RGBA16F storage, clamped writes, dithered 8-bit output |
+| 2 | f1a2e5ad | Linear light on blurs and exposure; old patches load with it off |
+| 3 | 093b9cb3 | Linear light on glows, Blend, Layer Stack; shared `GLUtil::kSrgbGlsl` |
+
+- **Migration.** `INode::BeforeLoadParams()` runs before params load. A missing
+  `linear` key means an old patch, so it keeps the gamma look. New nodes default on.
+- **Decode.** Degree-5 fit on [0.04045, 1], exact linear segment below, both
+  ends pinned. Max error 0.03 of an 8-bit code; every code round trips; white
+  stays 1.0 (the dividing blend modes need that). Encode is exact `pow`.
+- **Headroom.** Writes stay clamped to [0,1] (`hdr 1.00`), so +1 EV on 80%
+  still clips. Unclamping is a separate decision: it changes how every
+  downstream node sees > 1 values.
+
+### GPU, honestly
+
+Only interleaved same-binary A/B is trustworthy here; thermal drift moved the
+same box blur between 1.03 and 1.42 ms across runs.
+
+```bash
+# legacy look vs linear, same binary, alternate 5 times, wait for load < 6
+INFINITE_IMGAUDIT_LEGACY=1 INFINITE_IMGAUDIT=1 INFINITE_EXITAFTER=1 build/Infinite.app/Contents/MacOS/Infinite
+INFINITE_IMGAUDIT=1 INFINITE_EXITAFTER=1 build/Infinite.app/Contents/MacOS/Infinite
+# 8-bit storage: INFINITE_IMAGE_RGBA8=1
+```
+
+| Change | Suite GPU |
+|---|---|
+| RGBA8 → RGBA16F storage | +3.7% |
+| Gamma → linear light (per-tap decode) | +10.9% |
+| Gaussian / Box / Bloom / Diffuse Glow | +8% / +11% / +25% / +14% |
+
+- The cost sits in the two-pass filters, which decode every tap in the pre-pass.
+- Tried and reverted: decode once into a second scratch buffer. It cost more
+  than it saved (+1.2 ms on motion blur), and limited to two-pass filters it
+  was a wash (+9.9% vs +10.9%).
+- **Perf finding.** Two-pass filters are expensive even before this work: box
+  blur's 9 taps cost about 7× motion blur's 16. Fixing that structure (shared
+  scratch reuse, bandwidth of the pre-pass target) is where the budget comes
+  back. It is tracked for the perf initiative, not for Block 3.
 
 ## Baseline, per filter (2026-10-11, commit 35f2308e)
 
