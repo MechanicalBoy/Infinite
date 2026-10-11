@@ -1,0 +1,228 @@
+// INFINITE_PITCHTEST: how cleanly the Pitch Shifter shifts.
+//
+// Four measurements, through the real AudioEffectNode -> kernel chain at
+// 48 kHz, fully wet:
+//
+//   purity     a sine shifted by N semitones should come out as one sine at
+//              the target pitch. Everything else - the grain-rate amplitude
+//              modulation and comb sidebands a delay-line shifter makes,
+//              spectral smearing - is reported as energy outside the target's
+//              window lobe, relative to the target (dB, lower is better).
+//              The input is chosen so the *output* lands on an FFT bin.
+//   chord      three sines shifted together; energy outside the three target
+//              lobes, relative to their sum. Intermodulation and smearing
+//              between partials shows up here and not in `purity`.
+//   unity      at 0 semitones the effect should be transparent: the output
+//              should null against the input delayed by the reported
+//              latency (residual, dB re the input).
+//   transient  a click train shifted +7 st: the width (ms) of the window
+//              holding 90% of each click's output energy. A doubled or
+//              smeared click is wider.
+//
+// Cases with a gate fail the test past it; the rest are reported so the
+// numbers are visible before and after a change.
+#include "app/AppShared.h"
+#include "audio/dsp/PortableFft.h"
+
+namespace app
+{
+namespace
+{
+   constexpr double kRate = 48000.0;
+   constexpr int kLog2N = 14;
+   constexpr int kN = 1 << kLog2N;
+   constexpr int kLobe = 4;
+   constexpr double kBinHz = kRate / (double)kN;
+
+   const EffectDef* PitchDef()
+   {
+      for (const EffectDef& d : GetEffectDefs())
+         if (d.name == "Pitch Shifter")
+            return &d;
+      return nullptr;
+   }
+
+   std::unique_ptr<AudioEffectNode> MakeShifter(float semitones, float grainMs, float spectral)
+   {
+      auto node = std::make_unique<AudioEffectNode>(*PitchDef());
+      node->mix = 1.0f;
+      *node->ParamPtr("pitch") = semitones;
+      *node->ParamPtr("grain") = grainMs;
+      if (float* p = node->ParamPtr("spectral"))
+         *p = spectral;
+      node->GetAudioNode()->PrepareToPlay(kRate, 512);
+      node->CookIfNeeded(1);
+      return node;
+   }
+
+   std::vector<float> Render(AudioEffectNode& node, int n, const std::function<float(int)>& sig)
+   {
+      std::vector<std::vector<float>> out;
+      DelayTest::RunSamples(node, n, 1, [&](int i, int) { return sig(i); }, &out);
+      return out[0];
+   }
+
+   // Power spectrum of the last kN samples, Blackman-Harris windowed.
+   std::vector<double> Spectrum(const std::vector<float>& x)
+   {
+      std::vector<float> w((size_t)kN);
+      const size_t off = x.size() - (size_t)kN;
+      for (int i = 0; i < kN; i++)
+      {
+         const double t = 2.0 * M_PI * i / kN;
+         w[(size_t)i] = (float)(x[off + (size_t)i] *
+                                (0.35875 - 0.48829 * std::cos(t) + 0.14128 * std::cos(2 * t) - 0.01168 * std::cos(3 * t)));
+      }
+      PortableFft::RealFft fft;
+      fft.Prepare(kLog2N);
+      std::vector<float> re((size_t)kN / 2), im((size_t)kN / 2);
+      fft.Forward(w.data(), kLog2N, re.data(), im.data());
+      std::vector<double> p((size_t)kN / 2);
+      for (int k = 1; k < kN / 2; k++)
+         p[(size_t)k] = (double)re[(size_t)k] * re[(size_t)k] + (double)im[(size_t)k] * im[(size_t)k];
+      return p;
+   }
+
+   // Energy outside the target bins' lobes (20 Hz .. 20 kHz) re the energy inside them.
+   double Spurious(const std::vector<double>& p, const std::vector<int>& targets)
+   {
+      const int lo = (int)(20.0 / kBinHz), hi = (int)(20000.0 / kBinHz);
+      double in = 0.0, out = 0.0;
+      for (int k = lo; k <= hi; k++)
+      {
+         bool inside = false;
+         for (int t : targets)
+            inside |= std::abs(k - t) <= kLobe;
+         (inside ? in : out) += p[(size_t)k];
+      }
+      return 10.0 * std::log10(std::max(out, 1e-30) / std::max(in, 1e-30));
+   }
+
+   double Ratio(float semitones) { return std::pow(2.0, semitones / 12.0); }
+
+   double Purity(float semitones, float grainMs, float spectral, int targetBin)
+   {
+      auto node = MakeShifter(semitones, grainMs, spectral);
+      const double inHz = targetBin * kBinHz / Ratio(semitones);
+      const auto y = Render(*node, (int)(0.5 * kRate) + kN,
+                            [&](int i) { return 0.5f * (float)std::sin(2.0 * M_PI * inHz * i / kRate); });
+      return Spurious(Spectrum(y), { targetBin });
+   }
+
+   double Chord(float semitones, float grainMs, float spectral)
+   {
+      auto node = MakeShifter(semitones, grainMs, spectral);
+      const std::vector<int> targets = { 101, 127, 151 }; // ~296, 372, 442 Hz: a major-ish triad
+      const double r = Ratio(semitones);
+      const auto y = Render(*node, (int)(0.5 * kRate) + kN, [&](int i) {
+         double v = 0.0;
+         for (int t : targets)
+            v += std::sin(2.0 * M_PI * (t * kBinHz / r) * i / kRate);
+         return (float)(0.25 * v);
+      });
+      return Spurious(Spectrum(y), targets);
+   }
+
+   double Unity(float grainMs, float spectral)
+   {
+      auto node = MakeShifter(0.0f, grainMs, spectral);
+      const int latency = node->GetAudioNode()->LatencySamples();
+      uint32_t seed = 1;
+      std::vector<float> in((size_t)kRate);
+      for (float& v : in)
+      {
+         seed = seed * 1664525u + 1013904223u;
+         v = 0.3f * ((float)((seed >> 8) & 0xFFFF) / 32768.0f - 1.0f);
+      }
+      const auto y = Render(*node, (int)in.size(), [&](int i) { return in[(size_t)i]; });
+      double e = 0.0, s = 0.0;
+      for (size_t i = (size_t)(0.3 * kRate); i < in.size(); i++)
+      {
+         const double d = y[i] - in[i - (size_t)latency];
+         e += d * d;
+         s += (double)in[i] * in[i];
+      }
+      return 10.0 * std::log10(std::max(e, 1e-30) / s);
+   }
+
+   double TransientWidthMs(float grainMs, float spectral)
+   {
+      auto node = MakeShifter(7.0f, grainMs, spectral);
+      const int period = (int)(0.25 * kRate);
+      const auto y = Render(*node, period * 8, [&](int i) { return (i % period) == period / 2 ? 1.0f : 0.0f; });
+      // Average the 90%-energy width over clicks 3..7 (past start-up).
+      double total = 0.0;
+      int count = 0;
+      for (int c = 3; c < 8; c++)
+      {
+         const size_t a = (size_t)(c * period), b = a + (size_t)period;
+         double e = 0.0;
+         for (size_t i = a; i < b; i++)
+            e += (double)y[i] * y[i];
+         if (e <= 0.0)
+            continue;
+         // Smallest window around the energy centroid holding 90%.
+         std::vector<double> cum(b - a + 1, 0.0);
+         for (size_t i = a; i < b; i++)
+            cum[i - a + 1] = cum[i - a] + (double)y[i] * y[i];
+         size_t best = b - a;
+         size_t lo = 0;
+         for (size_t hi = 0; hi <= b - a; hi++)
+            while (lo < hi && cum[hi] - cum[lo] >= 0.9 * e)
+            {
+               best = std::min(best, hi - lo);
+               lo++;
+            }
+         total += 1000.0 * (double)best / kRate;
+         count++;
+      }
+      return count > 0 ? total / count : 0.0;
+   }
+
+   struct Line
+   {
+      const char* label;
+      double value;
+      double gate; // 0 = report only; purity/chord/unity gates are maxima, width gates maxima too
+      const char* unit;
+   };
+}
+
+bool RunPitchTest()
+{
+   if (PitchDef() == nullptr)
+   {
+      printf("PITCHTEST no Pitch Shifter EffectDef  FAIL\n");
+      return false;
+   }
+   // Classic (time-domain, correlation-spliced) engine. Before it, the
+   // two-tap kernel read: purity -27.9 / -25.6 / -9.1 dB (+7 / -12 / +12 st),
+   // chord -28.0 dB, unity null 0.0 dB (a permanent comb), transient 14.4 ms.
+   std::vector<Line> lines = {
+      { "classic purity +7 st (80 ms grain)", Purity(7.0f, 80.0f, 0.0f, 241), -60.0, "dB" },
+      { "classic purity -12 st (80 ms grain)", Purity(-12.0f, 80.0f, 0.0f, 121), -75.0, "dB" },
+      { "classic purity +12 st (80 ms grain)", Purity(12.0f, 80.0f, 0.0f, 481), -68.0, "dB" },
+      { "classic chord +5 st (80 ms grain)", Chord(5.0f, 80.0f, 0.0f), -28.0, "dB" },
+      { "classic unity 0 st null (80 ms grain)", Unity(80.0f, 0.0f), -120.0, "dB" },
+      { "classic transient +7 st 90% width", TransientWidthMs(80.0f, 0.0f), 20.0, "ms" },
+   };
+   bool all = true;
+   int gated = 0;
+   for (const Line& l : lines)
+   {
+      const char* verdict = "info";
+      static char buf[48];
+      if (l.gate != 0.0)
+      {
+         const bool ok = l.value <= l.gate;
+         snprintf(buf, sizeof(buf), "gate %.1f %s %s", l.gate, l.unit, ok ? "OK" : "FAIL");
+         verdict = buf;
+         all &= ok;
+         gated++;
+      }
+      printf("PITCHTEST %-42s %8.1f %s  %s\n", l.label, l.value, l.unit, verdict);
+   }
+   printf("PITCHTEST %d gated case(s) at their limits  %s\n", gated, all ? "OK" : "FAIL");
+   return all;
+}
+}

@@ -451,7 +451,7 @@ namespace
       }
 
       // ---------------------------------------------------------- Pitch Shifter
-      // The two-tap crossfaded delay-line pitch shifter (see
+      // The correlation-spliced delay-line pitch shifter (see
       // PitchShiftKernel.h). `pitch`/`grain` matches the KHS Audio Pitch
       // Shifter module's big display + Grain Size knob; `jitter`/
       // `correlate` from the reference image are cut per
@@ -463,7 +463,9 @@ namespace
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kPitchShiftDisplay;
          def.params.push_back({ "pitch", -24.0f, 24.0f, 0.0f });
-         def.params.push_back({ "grain", 10.0f, 250.0f, 80.0f });
+         // At 0 st the shifter is a transparent 1-sample delay, so `grain` (the
+         // splice distance) only has anything to act on once there is a shift.
+         def.params.push_back({ "grain", 10.0f, 250.0f, 80.0f, false, { { "pitch", 7.0f } } });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f, false, { { "pitch", 7.0f } } });
          def.makeKernel = []() { return std::make_unique<PitchShiftKernel>(); };
          defs.push_back(std::move(def));

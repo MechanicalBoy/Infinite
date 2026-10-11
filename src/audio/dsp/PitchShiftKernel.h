@@ -10,7 +10,29 @@
 #include "audio/DspMath.h"
 #include "audio/ParamMailbox.h"
 
-// Pitch Shifter's kernel - two-tap crossfaded delay-line pitch shifter with analog mode.
+// Pitch Shifter's kernel - a time-domain (delay-line) pitch shifter with
+// correlation-chosen splices, plus an analog mode.
+//
+// One read tap moves through a delay line at `ratio` times real time, so it
+// plays the input at the shifted pitch. Moving at that rate it slowly runs
+// out of room - toward zero delay when shifting up, toward the line's end
+// when shifting down - and has to jump back by about one `grain`. Where it
+// jumps to is chosen, not fixed: the candidate positions within the grain
+// are compared against where the tap is now by normalised cross-correlation
+// (on the L+R sum, so both channels splice together and the image holds),
+// and the best-matching one is taken, so the two signals being crossfaded
+// are in phase. The crossfade is raised-cosine and linear-sum, right for two
+// aligned copies of the same waveform. This is the "deglitched" splice of
+// classic digital harmonizers (cf. WSOLA, Verhelst & Roelands, ICASSP 1993,
+// for the correlation search).
+//
+// At 0 semitones the tap sits still one sample behind the input, so the
+// effect is transparent (latency 1 sample, reported).
+//
+// The previous kernel summed two taps half a grain apart with permanent
+// triangular weights - a comb filter that never went away, even at
+// 0 semitones (PITCHTEST: no null at all), and blind splices that left
+// grain-rate amplitude modulation (-9 dB of artifacts at +12 st).
 class AudioEffectNode;
 
 class PitchShiftKernel : public IEffectKernel
@@ -46,9 +68,10 @@ public:
    {
       mLineL.Reset();
       mLineR.Reset();
-      mTap0 = 0.0f;
-      mTap1 = 0.0f;
-      mTapsInitialized = false;
+      mDelay = 1.0;
+      mNextDelay = 1.0;
+      mFadePos = 0;
+      mFadeLen = 0;
       mJitterPhase = 0.0f;
       for (int i = 0; i < 2; i++)
       {
@@ -61,16 +84,21 @@ public:
 
    void ProcessBlock(const AudioBuffer& in, const AudioBuffer* sidechain, AudioBuffer& out) override;
 
-   int LatencySamples() const override { return 0; }
+   int LatencySamples() const override { return 1; }
 
 private:
    ParamMailbox mMailbox;
    double mSampleRate = 44100.0;
    std::atomic<int> mAnalog { 0 };
 
+   // Picks where a splice lands: the integer offset in [jMin, jMax] (added to
+   // `from`, sign included) whose recent past best matches the tap's own.
+   double FindSplice(double from, int jMin, int jMax, int sign, int window) const;
+
    DelayLine mLineL, mLineR;
-   float mTap0 = 0.0f, mTap1 = 0.0f;
-   bool mTapsInitialized = false;
+   double mDelay = 1.0;     // active tap, samples behind the newest input
+   double mNextDelay = 1.0; // the tap being faded in during a splice
+   int mFadePos = 0, mFadeLen = 0; // splice in progress while mFadeLen > 0
 
    // Analog mode components
    float mJitterPhase = 0.0f;
