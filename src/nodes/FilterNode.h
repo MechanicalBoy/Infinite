@@ -39,13 +39,14 @@ public:
    // Direct handle for widgets that edit in place (colour picker).
    float* ParamPtr(size_t paramIndex) { return mParamValues[paramIndex].data(); }
 
-   // Patches saved before linear light existed lack the uLinear key: they
-   // keep the gamma-space look they were made with. New nodes default on.
+   // Params added after a patch was saved (linear light, the corrected
+   // modes) are missing from it: they load at their legacyVal so the patch
+   // keeps the look it was made with. New nodes keep the defaults.
    void BeforeLoadParams() override
    {
       for (size_t i = 0; i < mDef.params.size(); i++)
-         if (mDef.params[i].uniformName == "uLinear")
-            mParamValues[i][0] = 0.0f;
+         if (mDef.params[i].hasLegacy)
+            mParamValues[i][0] = mDef.params[i].legacyVal;
    }
 
    // Keyed by uniformName rather than by index: the FilterDef table is shared

@@ -41,6 +41,12 @@ struct FilterParamDef
    // `integer` snaps the slider to whole numbers; the stored value stays a float so saved patches are unchanged.
    std::string format;
    bool integer = false;
+
+   // Migration: when set, a patch saved before this param existed loads it at
+   // legacyVal instead of defaultVal[0], so the old look is kept while new
+   // nodes get the corrected default (FilterNode::BeforeLoadParams).
+   bool hasLegacy = false;
+   float legacyVal = 0.0f;
 };
 
 struct FilterDef

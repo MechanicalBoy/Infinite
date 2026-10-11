@@ -29,7 +29,12 @@ namespace
    const char* kPreambleTail =
       "vec3 ImgDecode(vec3 c) { return uLinear == 0 ? c : SrgbDecode(c); }\n"
       "vec3 ImgEncode(vec3 c) { return uLinear == 0 ? c : SrgbEncode(c); }\n"
-      "vec4 ImgSrc(vec2 uv) { vec4 c = texture(uSrc, uv); return vec4(ImgDecode(c.rgb), c.a); }\n";
+      "vec4 ImgSrc(vec2 uv) { vec4 c = texture(uSrc, uv); return vec4(ImgDecode(c.rgb), c.a); }\n"
+      // Multi-tap filters: average premultiplied light (Porter-Duff), then
+      // divide alpha back out, so colour under alpha 0 weighs nothing. With
+      // linear light off both are the old straight-alpha pass-through.
+      "vec4 ImgTap(vec2 uv) { vec4 c = ImgSrc(uv); return uLinear == 0 ? c : vec4(c.rgb * c.a, c.a); }\n"
+      "vec4 ImgUnpremul(vec4 c) { return (uLinear == 0 || c.a <= 0.0) ? c : vec4(c.rgb / c.a, c.a); }\n";
 
    const std::string& Preamble()
    {

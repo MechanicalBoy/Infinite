@@ -598,6 +598,34 @@ namespace
          }
          Spec(flag, "color adjustments", "sat 0 = Rec.709 luminance", worst, 0.01f, "linear");
 
+         // ASC CDL v1.2 against a CPU reference: clamp(in*slope+offset)^power, then sat about Rec.709 luma.
+         {
+            r.Set("uSaturation", 1.0f);
+            const float slope[3] = { 1.2f, 0.9f, 1.1f }, offs[3] = { 0.02f, -0.01f, 0.0f }, pw[3] = { 1.1f, 0.95f, 1.0f };
+            const float sat = 0.8f;
+            const char* sN[3] = { "uSlopeR", "uSlopeG", "uSlopeB" };
+            const char* oN[3] = { "uOffsetR", "uOffsetG", "uOffsetB" };
+            const char* pN[3] = { "uPowerR", "uPowerG", "uPowerB" };
+            for (int c = 0; c < 3; c++) { r.Set(sN[c], slope[c]); r.Set(oN[c], offs[c]); r.Set(pN[c], pw[c]); }
+            r.Set("uCdlSat", sat);
+            Image in = RandomColours(64, 64, 3), want = in;
+            for (int y = 0; y < in.h; y++)
+               for (int x = 0; x < in.w; x++)
+               {
+                  float* o = want.At(x, y);
+                  float v[3];
+                  for (int c = 0; c < 3; c++)
+                     v[c] = std::pow(std::min(1.0f, std::max(0.0f, o[c] * slope[c] + offs[c])), pw[c]);
+                  const float l = 0.2126f * v[0] + 0.7152f * v[1] + 0.0722f * v[2];
+                  for (int c = 0; c < 3; c++)
+                     o[c] = std::min(1.0f, std::max(0.0f, l + (v[c] - l) * sat));
+               }
+            r.Run(in, out);
+            Spec(flag, "color adjustments", "ASC CDL v1.2 reference", MaxAbsDiffRgb(out, want), 1e-3f, "");
+            for (int c = 0; c < 3; c++) { r.Set(sN[c], 1.0f); r.Set(oN[c], 0.0f); r.Set(pN[c], 1.0f); }
+            r.Set("uCdlSat", 1.0f);
+         }
+
          // 10-node chain: gamma 1.25 then 0.8, five times - ideally identity.
          std::vector<std::unique_ptr<FilterRig>> chain;
          TexSource head;
