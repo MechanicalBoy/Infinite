@@ -11,7 +11,7 @@
 namespace
 {
    // Shared preamble every FilterDef's fragmentBody is appended to.
-   const char* kPreamble =
+   const char* kPreambleHead =
       "#version 150\n"
       "in vec2 vUv;\n"
       "out vec4 fragColor;\n"
@@ -25,18 +25,17 @@ namespace
       // when uLinear is on and passes it through untouched when off; the
       // main pass encodes on the way out. A pre-pass writes linear values
       // to its float scratch, so uPass samples need no decode.
-      "uniform int uLinear;\n"
-      "vec3 ImgDecode(vec3 c) {\n"
-      "   if (uLinear == 0) return c;\n"
-      "   vec3 a = abs(c);\n"
-      "   return sign(c) * mix(a / 12.92, pow((a + 0.055) / 1.055, vec3(2.4)), step(0.04045, a));\n"
-      "}\n"
-      "vec3 ImgEncode(vec3 c) {\n"
-      "   if (uLinear == 0) return c;\n"
-      "   vec3 a = abs(c);\n"
-      "   return sign(c) * mix(a * 12.92, 1.055 * pow(a, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, a));\n"
-      "}\n"
+      "uniform int uLinear;\n";
+   const char* kPreambleTail =
+      "vec3 ImgDecode(vec3 c) { return uLinear == 0 ? c : SrgbDecode(c); }\n"
+      "vec3 ImgEncode(vec3 c) { return uLinear == 0 ? c : SrgbEncode(c); }\n"
       "vec4 ImgSrc(vec2 uv) { vec4 c = texture(uSrc, uv); return vec4(ImgDecode(c.rgb), c.a); }\n";
+
+   const std::string& Preamble()
+   {
+      static const std::string s = std::string(kPreambleHead) + GLUtil::kSrgbGlsl + kPreambleTail;
+      return s;
+   }
 
 
 }
@@ -72,14 +71,14 @@ bool FilterNode::EnsureShader()
 
    if (!mDef.prePassBody.empty())
    {
-      std::string preSrc = std::string(kPreamble) + mDef.prePassBody;
+      std::string preSrc = Preamble() + mDef.prePassBody;
       mPreProgram = GLUtil::CompileProgram(preSrc.c_str());
       if (mPreProgram == 0)
          return false;
       LookupLocs(mPreProgram, mPreLocs);
    }
 
-   std::string src = GLUtil::WithClampedOutput(std::string(kPreamble) + mDef.fragmentBody, "fragColor.rgb = ImgEncode(fragColor.rgb);");
+   std::string src = GLUtil::WithClampedOutput(Preamble() + mDef.fragmentBody, "fragColor.rgb = ImgEncode(fragColor.rgb);");
    mProgram = GLUtil::CompileProgram(src.c_str());
    if (mProgram == 0)
       return false;

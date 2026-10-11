@@ -21,7 +21,9 @@ namespace
             "uniform sampler2D uTex3;\n"
             "uniform int uActive[4];\n"
             "uniform int uModes[4];\n"
-            "uniform float uOpacity[4];\n")
+            "uniform float uOpacity[4];\n"
+            "uniform int uLinear;\n")
+         + GLUtil::kSrgbGlsl
          + BlendModes::kBlendGLSL
          + "vec4 fetch(int i) {\n"
            "   if (i == 0) return texture(uTex0, vUv);\n"
@@ -35,6 +37,7 @@ namespace
            "   for (int i = 0; i < 4; i++) {\n"
            "      if (uActive[i] == 0) continue;\n"
            "      vec4 layer = fetch(i);\n"
+           "      if (uLinear == 1) layer.rgb = SrgbDecode(layer.rgb);\n"
            "      float amt = uOpacity[i] * layer.a;\n"
            "      if (!haveBase) { acc = vec4(layer.rgb, layer.a * uOpacity[i]); haveBase = true; continue; }\n"
            "      if (uModes[i] == " + std::to_string(BlendModes::kEraseMode) + ") { acc.a *= (1.0 - amt); continue; }\n"
@@ -83,7 +86,7 @@ bool LayerStackNode::EnsureShader()
    if (mShaderTried)
       return mProgram != 0;
    mShaderTried = true;
-   mProgram = GLUtil::CompileProgram(GLUtil::WithClampedOutput(FragSrc()).c_str());
+   mProgram = GLUtil::CompileProgram(GLUtil::WithClampedOutput(FragSrc(), "if (uLinear == 1) fragColor.rgb = SrgbEncode(fragColor.rgb);").c_str());
    return mProgram != 0;
 }
 
@@ -128,5 +131,6 @@ void LayerStackNode::CookIfNeeded(int frameId)
       glUniform1iv(glGetUniformLocation(mProgram, "uActive"), kSlots, active);
       glUniform1iv(glGetUniformLocation(mProgram, "uModes"), kSlots, modes);
       glUniform1fv(glGetUniformLocation(mProgram, "uOpacity"), kSlots, opacities);
+      glUniform1i(glGetUniformLocation(mProgram, "uLinear"), linear ? 1 : 0);
    });
 }

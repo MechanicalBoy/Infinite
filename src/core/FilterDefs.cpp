@@ -509,7 +509,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "uniform float uIntensity;\n"
         "uniform float uRadius;\n"
         "void main() {\n"
-        "   vec4 c = texture(uSrc, vUv);\n"
+        "   vec4 c = ImgSrc(vUv);\n"
         "   vec3 bloom = vec3(0.0); float total = 0.0;\n"
         "   for (int y = -5; y <= 5; y++) {\n"
         "      float w = exp(-float(y*y) / 12.0);\n"
@@ -520,15 +520,19 @@ const std::vector<FilterDef>& GetFilterDefs()
         "}\n",
         { P("Threshold", "uThreshold", T::Float, 0.0f, 1.0f, 0.6f),
           P("Intensity", "uIntensity", T::Float, 0.0f, 5.0f, 1.4f),
-          F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)) }, 1,
+          F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)), LIN() }, 1,
         "uniform float uThreshold;\n"
         "uniform float uRadius;\n"
         "void main() {\n"
+        // linear light: the threshold knob keeps its perceptual meaning and
+        // luminance uses the Rec.709 weights that apply to linear RGB
+        "   float thr = ImgDecode(vec3(uThreshold)).x;\n"
+        "   vec3 lw = uLinear == 1 ? vec3(0.2126, 0.7152, 0.0722) : vec3(0.299, 0.587, 0.114);\n"
         "   vec3 bloom = vec3(0.0); float total = 0.0;\n"
         "   for (int x = -5; x <= 5; x++) {\n"
-        "      vec3 s = texture(uSrc, vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)).rgb;\n"
-        "      float lum = dot(s, vec3(0.299, 0.587, 0.114));\n"
-        "      vec3 bright = max(s - vec3(uThreshold), vec3(0.0)) * step(uThreshold, lum);\n"
+        "      vec3 s = ImgSrc(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)).rgb;\n"
+        "      float lum = dot(s, lw);\n"
+        "      vec3 bright = max(s - vec3(thr), vec3(0.0)) * step(thr, lum);\n"
         "      float w = exp(-float(x*x) / 12.0);\n"
         "      bloom += bright * w; total += w;\n"
         "   }\n"
@@ -539,7 +543,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "uniform float uAmount;\n"
         "uniform float uRadius;\n"
         "void main() {\n"
-        "   vec4 c = texture(uSrc, vUv);\n"
+        "   vec4 c = ImgSrc(vUv);\n"
         "   vec3 blur = vec3(0.0); float total = 0.0;\n"
         "   for (int y = -4; y <= 4; y++) {\n"
         "      float w = exp(-float(y*y) / 10.0);\n"
@@ -550,13 +554,13 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   fragColor = vec4(mix(c.rgb, screen, uAmount), c.a);\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 1.0f, 0.6f),
-          F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)) }, 1,
+          F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)), LIN() }, 1,
         "uniform float uRadius;\n"
         "void main() {\n"
         "   vec3 blur = vec3(0.0); float total = 0.0;\n"
         "   for (int x = -4; x <= 4; x++) {\n"
         "      float w = exp(-float(x*x) / 10.0);\n"
-        "      blur += texture(uSrc, vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)).rgb * w; total += w;\n"
+        "      blur += ImgSrc(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)).rgb * w; total += w;\n"
         "   }\n"
         "   fragColor = vec4(blur / max(total, 1e-4), 1.0);\n"
         "}\n" },
@@ -1144,7 +1148,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "uniform float uAmount;\n"
         "uniform vec3 uColor;\n"
         "void main() {\n"
-        "   vec4 c = texture(uSrc, vUv);\n"
+        "   vec4 c = ImgSrc(vUv);\n"
         "   vec4 blur = vec4(0.0); float total = 0.0;\n"
         "   for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) {\n"
         "      vec2 off = vec2(float(x), float(y)) * uTexelSize * 4.0;\n"
@@ -1152,11 +1156,11 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      blur += texture(uSrc, vUv + off) * w; total += w;\n"
         "   }\n"
         "   blur /= total;\n"
-        "   vec3 glow = uColor * blur.a * uAmount;\n"
+        "   vec3 glow = ImgDecode(uColor) * blur.a * uAmount;\n"
         "   fragColor = vec4(c.rgb + glow * (1.0 - c.a), max(c.a, blur.a * uAmount));\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 2.0f, 1.0f),
-          P("Color", "uColor", T::Color, 0.0f, 1.0f, 1.0f, 0.9f, 0.3f) } },
+          P("Color", "uColor", T::Color, 0.0f, 1.0f, 1.0f, 0.9f, 0.3f), LIN() } },
 
       { "coloroverlay", "Compositing",
         "uniform vec3 uColor;\n"

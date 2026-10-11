@@ -818,14 +818,14 @@ R"AISKILL(| `Select` | geo:geometry | out:geometry | 67 | bypass |
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Audio Color Ramp` | img:image, audio:audio | out:image | 28 |  |
-| `Blend` | input:image, input_2:image | out:image | 2 |  |
+| `Blend` | input:image, input_2:image | out:image | 3 |  |
 | `Color Ramp` | input:image | out:image | 67 | bypass |
 | `Comment` | none | out:image | 5 |  |
 | `Curves` | input:image | out:image | 6 | bypass |
 | `Feedback` | input:image | out:image | 1 | bypass |
 | `Fit` | input:image | out:image | 8 | bypass |
 | `Group` | none | out:image | 4 | bypass |
-| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 8 |  |
+| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 9 |  |
 | `Null` | in:image | out:image | 0 | bypass |
 | `Reaction Diffusion` | input:image | out:image | 11 | bypass |
 | `Remove Background` | input:image | out:image | 9 | bypass |
@@ -846,7 +846,7 @@ R"AISKILL(| `Select` | geo:geometry | out:geometry | 67 | bypass |
 | `luma key` | input:image | out:image | 5 | bypass |
 | `lut` | input:image, input_2:image | out:image | 2 |  |
 | `opacity` | input:image | out:image | 1 | bypass |
-| `outerglow` | input:image | out:image | 2 | bypass |
+| `outerglow` | input:image | out:image | 3 | bypass |
 | `posterize` | input:image | out:image | 1 | bypass |
 | `premultiply` | input:image | out:image | 1 | bypass |
 | `set alpha` | input:image, input_2:image | out:image | 0 |  |
@@ -860,11 +860,11 @@ R"AISKILL(| `Select` | geo:geometry | out:geometry | 67 | bypass |
 |---|---|---|---|---|
 | `Resynthesize` | input:image | out:image | 20 | bypass |
 | `addnoise` | input:image | out:image | 1 | bypass |
-| `bloom` | input:image | out:image | 3 | bypass |
+| `bloom` | input:image | out:image | 4 | bypass |
 | `boxblur` | input:image | out:image | 2 | bypass |
 | `convolve` | input:image | out:image | 13 | bypass |
 | `crop` | input:image | out:image | 6 | bypass |
-| `diffuseglow` | input:image | out:image | 2 | bypass |
+| `diffuseglow` | input:image | out:image | 3 | bypass |
 | `displace` | input:image, input_2:image | out:image | 2 |  |
 | `edge outline` | input:image | out:image | 3 | bypass |
 | `edge sobel` | input:image | out:image | 2 | bypass |

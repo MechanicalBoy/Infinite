@@ -76,6 +76,12 @@ namespace GLUtil
    // codes dithers instead of banding. Paste after `out vec4 fragColor;`.
    extern const char* const kOutputDitherGlsl;
 
+   // GLSL: `vec3 SrgbDecode(vec3)` / `vec3 SrgbEncode(vec3)`, the IEC
+   // 61966-2-1 transfer pair for nodes that do their maths in linear light
+   // (FilterNode's "Linear light", Blend, Layer Stack). Decode is a fit, exact
+   // at 8 bits and cheap enough to call per blur tap; encode is exact.
+   extern const char* const kSrgbGlsl;
+
    // Compiles fragSrc against a shared fullscreen-quad vertex shader (attributes
    // aPos/aUv at locations 0/1). Returns 0 on failure; if outError is non-null the
    // compile/link log is written there instead of stderr (used by FormulaNode to

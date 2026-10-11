@@ -29,9 +29,14 @@ public:
 
    int modes[kSlots] = { 0, 0, 0, 0 };
    float opacities[kSlots] = { 1.0f, 1.0f, 1.0f, 1.0f };
+   bool linear = true; // composite in linear light
+
+   // Patches saved before linear light existed keep their gamma-space look.
+   void BeforeLoadParams() override { linear = false; }
 
    void VisitParams(ParamVisitor& v) override
    {
+      v.Bool("linear", linear);
       static const char* kModeKeys[kSlots] = { "mode0", "mode1", "mode2", "mode3" };
       static const char* kOpKeys[kSlots] = { "opacity0", "opacity1", "opacity2", "opacity3" };
       for (int i = 0; i < kSlots; i++)

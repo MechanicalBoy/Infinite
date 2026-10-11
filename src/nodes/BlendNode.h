@@ -28,10 +28,15 @@ public:
    ImageCable& InputB() { return mInputB; }
    int& ModeIndex() { return mModeIndex; }
    float& Mix() { return mMix; }
+   bool& Linear() { return mLinear; }
+
+   // Patches saved before linear light existed lack the key: they keep the
+   // gamma-space look they were made with. New nodes default on.
+   void BeforeLoadParams() override { mLinear = false; }
 
    void VisitParams(ParamVisitor& v) override
    {
-      v.Int("mode", mModeIndex); v.Float("mix", mMix);
+      v.Int("mode", mModeIndex); v.Float("mix", mMix); v.Bool("linear", mLinear);
    }
 
 private:
@@ -41,6 +46,7 @@ private:
    ImageCable mInputB;
    int mModeIndex = 0;
    float mMix = 1.0f;
+   bool mLinear = true;
 
    GLUtil::Fbo mOut;
    unsigned int mProgram = 0;

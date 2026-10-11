@@ -12,7 +12,9 @@
 //   bleed   visible (premultiplied) change in output when only the colour
 //           hidden under alpha 0 changes - should be 0 (Porter-Duff 1984)
 //   id      max |out - in| at the node's own defaults (informative only)
-//   gpu     ms per cook at 1920x1080
+//   gpu     ms per cook at 1920x1080 (A/B the cost of linear light in one
+//           binary: INFINITE_IMGAUDIT_LEGACY=1 INFINITE_IMAGE_RGBA8=1 is the
+//           old 8-bit gamma-space chain)
 //
 // plus SPEC lines: per-node truths against the published formula - sRGB
 // transfer (IEC 61966-2-1), exposure in stops of linear light, Rec.709 luma,
@@ -32,8 +34,10 @@
 #include "core/FilterDefs.h"
 #include "core/GLUtil.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <random>
@@ -174,6 +178,11 @@ namespace
          node->Input().Connect(&src);
          if (def.inputs > 1)
             node->Input2().Connect(&src2);
+         // INFINITE_IMGAUDIT_LEGACY=1: nodes as an old patch loads them
+         // (linear light off), for same-binary A/B timing
+         static const bool legacy = std::getenv("INFINITE_IMGAUDIT_LEGACY") != nullptr;
+         if (legacy)
+            node->BeforeLoadParams();
       }
       bool Set(const char* uniform, float v, int comp = 0)
       {
@@ -791,6 +800,7 @@ namespace
       bl.InputA().Connect(&sa);
       bl.InputB().Connect(&sb);
       bl.Mix() = 1.0f;
+      bl.Linear() = false; // the W3C formulas are written for encoded values
       Image a = RandomColours(32, 32, 21), b = RandomColours(32, 32, 22), out;
       sa.Set(a);
       sb.Set(b);
@@ -821,6 +831,57 @@ namespace
       }
       printf("IMGAUDIT SPEC Blend %d colour modes vs W3C/Photoshop reference: %d off by > 2 codes\n",
              (int)names.size() - 2, bad);
+
+      // Linear light: the same formulas applied to decoded light, re-encoded.
+      bl.Linear() = true;
+      int badLin = 0;
+      std::string badLinNames;
+      for (int m = 0; m < (int)names.size(); m++)
+      {
+         if (m == BlendModes::kEraseMode || m == BlendModes::kAntiEraseMode)
+            continue;
+         bl.ModeIndex() = m;
+         sa.Touch();
+         Read(bl, out);
+         float worst = 0.0f;
+         for (int y = 0; y < a.h; y++)
+            for (int x = 0; x < a.w; x++)
+            {
+               const float* pa = a.At(x, y);
+               const float* pb = b.At(x, y);
+               const V3 la = { SrgbToLinear(pa[0]), SrgbToLinear(pa[1]), SrgbToLinear(pa[2]) };
+               const V3 lb = { SrgbToLinear(pb[0]), SrgbToLinear(pb[1]), SrgbToLinear(pb[2]) };
+               // Darker/Lighter Color pick a whole pixel by luminance: on a
+               // near-tie either pick is right, so don't score it
+               if ((m == 5 || m == 10) && std::fabs(Lum(la) - Lum(lb)) < 2e-3f)
+                  continue;
+               V3 ref = RefBlend(m, la, lb);
+               ref = { LinearToSrgb(std::clamp(ref.r, 0.0f, 1.0f)), LinearToSrgb(std::clamp(ref.g, 0.0f, 1.0f)),
+                       LinearToSrgb(std::clamp(ref.b, 0.0f, 1.0f)) };
+               const float* po = out.At(x, y);
+               worst = std::max({ worst, std::fabs(po[0] - ref.r), std::fabs(po[1] - ref.g), std::fabs(po[2] - ref.b) });
+            }
+         if (worst > kFlagSpecErr)
+         {
+            badLin++;
+            badLinNames += " " + names[m] + "(" + std::to_string((int)std::lround(worst * 255.0f)) + ")";
+         }
+      }
+      printf("IMGAUDIT SPEC Blend %d colour modes in linear light vs reference: %d off by > 2 codes:%s\n",
+             (int)names.size() - 2, badLin, badLinNames.c_str());
+
+      // 50% white over black is half the light: 0.5 linear, 0.735 encoded.
+      Image white(8, 8), black(8, 8);
+      white.Fill(1.0f, 1.0f, 1.0f, 1.0f);
+      black.Fill(0.0f, 0.0f, 0.0f, 1.0f);
+      sa.Set(black);
+      sb.Set(white);
+      bl.ModeIndex() = 0;
+      bl.Mix() = 0.5f;
+      Read(bl, out);
+      Spec(flag, "Blend", "50% white over black, linear", std::fabs(out.At(4, 4)[0] - LinearToSrgb(0.5f)), kOneCode, "half the light");
+      bl.Mix() = 1.0f;
+      bl.Linear() = false;
 
       // Porter-Duff: two 50% layers cover 75%.
       Image ha(8, 8), hb(8, 8);

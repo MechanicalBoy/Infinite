@@ -1787,6 +1787,7 @@ namespace app
       DropdownButton("mode", BlendNode::ModeNames(), n->ModeIndex(),
                      [n](int i) { n->ModeIndex() = i; });
       ModSlider("opacity", &n->Mix(), 0.0f, 1.0f);
+      ModCheckbox("linear light", &n->Linear());
    }
 
 
@@ -1885,6 +1886,8 @@ namespace app
             }
          }
       }
+
+      ModCheckbox("linear light", &n->linear);
    }
 
 

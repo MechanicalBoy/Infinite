@@ -281,6 +281,22 @@ namespace GLUtil
       "   return c + (n - 0.5) * (0.999 / 255.0);\n"
       "}\n";
 
+   // The curved decode segment is a degree-5 fit of ((c+0.055)/1.055)^2.4 on
+   // [0.04045, 1] pinned to the exact values at both ends (continuous with
+   // the linear segment, white stays 1.0 for the dividing blend modes), max
+   // error 0.03 of an 8-bit code: every 8-bit code round trips through
+   // SrgbEncode unchanged. Negatives take the linear segment,
+   // which is already odd-symmetric.
+   const char* const kSrgbGlsl =
+      "vec3 SrgbDecode(vec3 c) {\n"
+      "   vec3 curve = 0.0008922681118 + c * (0.03350293781 + c * (0.5124953018 + c * (0.6903623787 + c * (-0.3381287731 + c * 0.1008758867))));\n"
+      "   return mix(c / 12.92, curve, step(0.04045, c));\n"
+      "}\n"
+      "vec3 SrgbEncode(vec3 c) {\n"
+      "   vec3 a = abs(c);\n"
+      "   return sign(c) * mix(a * 12.92, 1.055 * pow(a, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, a));\n"
+      "}\n";
+
    unsigned int CompileProgram(const char* fragSrc, std::string* outError)
    {
       auto fail = [outError](const char* stage, const std::string& log) -> unsigned int
