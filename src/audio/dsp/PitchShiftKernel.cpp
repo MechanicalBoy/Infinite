@@ -8,6 +8,7 @@ void PitchShiftKernel::PushParams(const AudioEffectNode& node, double sampleRate
    mMailbox.Push(kSemitones, node.Param("pitch"));
    mMailbox.Push(kGrainMs, node.Param("grain"));
    mAnalog.store(node.Param("analog") != 0.0f ? 1 : 0, std::memory_order_relaxed);
+   mSpectral.store(node.Param("spectral") != 0.0f ? 1 : 0, std::memory_order_relaxed);
 }
 
 double PitchShiftKernel::FindSplice(double from, int jMin, int jMax, int sign, int window) const
@@ -71,6 +72,23 @@ void PitchShiftKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*
    const bool analog = mAnalog.load(std::memory_order_relaxed) != 0;
    const double maxDelay = (double)mLineL.size - 4.0;
 
+   // A mode switch starts the newly active engine from silence rather than
+   // from whatever it held the last time it ran.
+   const int spectral = mSpectral.load(std::memory_order_relaxed);
+   if (spectral != mActiveSpectral)
+   {
+      if (spectral)
+         mSpectralEngine.Reset();
+      else
+      {
+         mLineL.Reset();
+         mLineR.Reset();
+         mDelay = mNextDelay = 1.0;
+         mFadeLen = 0;
+      }
+      mActiveSpectral = spectral;
+   }
+
    for (int i = 0; i < out.numFrames; i++)
    {
       const float semitones = mMailbox.SmoothedValue(kSemitones);
@@ -81,6 +99,24 @@ void PitchShiftKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*
 
       const float inL = in.channels[0][i];
       const float inR = numChannels >= 2 ? in.channels[1][i] : inL;
+
+      if (spectral)
+      {
+         float outL = mSpectralEngine.Process(0, inL, ratio);
+         float outR = numChannels >= 2 ? mSpectralEngine.Process(1, inR, ratio) : outL;
+         if (analog)
+         {
+            outL = AnalogDsp::AsymTanh(mFilterL[1].Process(mFilterL[0].Process(outL).low).low, 0.12f);
+            outR = AnalogDsp::AsymTanh(mFilterR[1].Process(mFilterR[0].Process(outR).low).low, 0.12f);
+         }
+         out.channels[0][i] = outL;
+         if (numChannels >= 2)
+            out.channels[1][i] = outR;
+         for (int ch = 2; ch < out.numChannels; ch++)
+            out.channels[ch][i] = 0.0f;
+         continue;
+      }
+
       mLineL.Write(inL);
       mLineR.Write(inR);
 

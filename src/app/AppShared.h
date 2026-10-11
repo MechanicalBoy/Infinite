@@ -4822,6 +4822,13 @@ bool StartAudioEngine(std::string& outError);
 
 void PollAudioRecovery();
 
+// Re-runs PDC when a node's reported latency changed since the last topology
+// rebuild (AudioTopology.cpp). Once a frame, main thread.
+void PollAudioLatencyChanges();
+// The latency `node` reported when PDC was last built, or -1 if it is not in
+// the topology (for tests).
+int AudioTopologyLatencyOf(const AudioNode* node);
+
 INode* FindHardwareDrivenNode();
 
 INode* FindHardwareDrivenNodeInArrangeRange(int64_t startTick, int64_t endTick,

@@ -1912,9 +1912,13 @@ namespace app
    void DrawPitchShiftBody(GraphNode& gn, AudioEffectNode* n)
    {
       const bool analog = n->Param("analog") != 0.0f;
+      const bool spectral = n->Param("spectral") != 0.0f;
       char stat[96];
-      snprintf(stat, sizeof(stat), "%+.1f st - %.0f ms grain%s", n->Param("pitch"), n->Param("grain"),
-               analog ? " - analog" : "");
+      if (spectral)
+         snprintf(stat, sizeof(stat), "%+.1f st - spectral%s", n->Param("pitch"), analog ? " - analog" : "");
+      else
+         snprintf(stat, sizeof(stat), "%+.1f st - %.0f ms grain%s", n->Param("pitch"), n->Param("grain"),
+                  analog ? " - analog" : "");
 
       BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
       DrawPitchShiftVisualizer(n);
@@ -1944,7 +1948,16 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("analog") = analogBool ? 1.0f : 0.0f;
          }
-         row.Skip();
+         // Phase-vocoder mode: keeps chords and mixes intact, at ~85 ms of
+         // latency (compensated). The grain knob only shapes the default mode.
+         bool spectralBool = spectral;
+         bool spectralUserChanged = false;
+         if (row.Checkbox("spectral##pitchShiftSpectral", &spectralBool, &spectralUserChanged))
+         {
+            if (spectralUserChanged)
+               PushUndoCheckpoint();
+            *n->ParamPtr("spectral") = spectralBool ? 1.0f : 0.0f;
+         }
          row.Skip();
          row.End();
       }

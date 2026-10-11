@@ -600,6 +600,7 @@ set(COMMON_SOURCES
     src/audio/dsp/DriveKernel.cpp
     src/audio/dsp/StereoKernel.cpp
     src/audio/dsp/PitchShiftKernel.cpp
+    src/audio/dsp/SpectralPitchShifter.cpp
     src/audio/dsp/ChorusKernel.cpp
     src/audio/dsp/FlangerKernel.cpp
     src/audio/dsp/PhaserKernel.cpp

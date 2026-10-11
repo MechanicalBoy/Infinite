@@ -7,6 +7,7 @@
 #include "IEffectKernel.h"
 #include "DelayKernel.h" // reuses DelayLine's Hermite-interpolated fractional read
 #include "AnalogPrimitives.h"
+#include "SpectralPitchShifter.h"
 #include "audio/DspMath.h"
 #include "audio/ParamMailbox.h"
 
@@ -28,6 +29,12 @@
 //
 // At 0 semitones the tap sits still one sample behind the input, so the
 // effect is transparent (latency 1 sample, reported).
+//
+// `spectral` switches to SpectralPitchShifter (a phase-locked phase vocoder)
+// for chords and full mixes, where one splice cannot align every partial.
+// It costs 4096 samples of latency (~85 ms at 48 kHz), so it is a choice,
+// not the default; the reported latency follows the mode and
+// PollAudioLatencyChanges() re-runs PDC when it flips.
 //
 // The previous kernel summed two taps half a grain apart with permanent
 // triangular weights - a comb filter that never went away, even at
@@ -54,6 +61,7 @@ public:
       const int maxSamples = (int)std::ceil(kMaxGrainMs * 0.001 * sampleRate) * 2 + 16;
       mLineL.Prepare(maxSamples);
       mLineR.Prepare(maxSamples);
+      mSpectralEngine.Prepare(sampleRate);
       for (int i = 0; i < 2; i++)
       {
          mFilterL[i].SetSampleRate(sampleRate);
@@ -73,6 +81,8 @@ public:
       mFadePos = 0;
       mFadeLen = 0;
       mJitterPhase = 0.0f;
+      mSpectralEngine.Reset();
+      mActiveSpectral = mSpectral.load(std::memory_order_relaxed);
       for (int i = 0; i < 2; i++)
       {
          mFilterL[i].Reset();
@@ -84,16 +94,24 @@ public:
 
    void ProcessBlock(const AudioBuffer& in, const AudioBuffer* sidechain, AudioBuffer& out) override;
 
-   int LatencySamples() const override { return 1; }
+   int LatencySamples() const override
+   {
+      return mSpectral.load(std::memory_order_relaxed) ? SpectralPitchShifter::kFftSize : 1;
+   }
+   int MaxLatencySamples() const override { return SpectralPitchShifter::kFftSize; }
 
 private:
    ParamMailbox mMailbox;
    double mSampleRate = 44100.0;
    std::atomic<int> mAnalog { 0 };
+   std::atomic<int> mSpectral { 0 };
+   int mActiveSpectral = 0; // audio thread: the mode last processed
 
    // Picks where a splice lands: the integer offset in [jMin, jMax] (added to
    // `from`, sign included) whose recent past best matches the tap's own.
    double FindSplice(double from, int jMin, int jMax, int sign, int window) const;
+
+   SpectralPitchShifter mSpectralEngine;
 
    DelayLine mLineL, mLineR;
    double mDelay = 1.0;     // active tap, samples behind the newest input

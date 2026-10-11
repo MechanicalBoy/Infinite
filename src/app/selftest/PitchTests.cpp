@@ -23,6 +23,7 @@
 // numbers are visible before and after a change.
 #include "app/AppShared.h"
 #include "audio/dsp/PortableFft.h"
+#include "audio/dsp/SpectralPitchShifter.h"
 
 namespace app
 {
@@ -205,6 +206,13 @@ bool RunPitchTest()
       { "classic chord +5 st (80 ms grain)", Chord(5.0f, 80.0f, 0.0f), -28.0, "dB" },
       { "classic unity 0 st null (80 ms grain)", Unity(80.0f, 0.0f), -120.0, "dB" },
       { "classic transient +7 st 90% width", TransientWidthMs(80.0f, 0.0f), 20.0, "ms" },
+      // Spectral (phase-vocoder) mode - the chord is what it is for.
+      { "spectral purity +7 st", Purity(7.0f, 80.0f, 1.0f, 241), -65.0, "dB" },
+      { "spectral purity -12 st", Purity(-12.0f, 80.0f, 1.0f, 121), -50.0, "dB" },
+      { "spectral purity +12 st", Purity(12.0f, 80.0f, 1.0f, 481), -57.0, "dB" },
+      { "spectral chord +5 st", Chord(5.0f, 80.0f, 1.0f), -48.0, "dB" },
+      { "spectral unity 0 st null", Unity(80.0f, 1.0f), -120.0, "dB" },
+      { "spectral transient +7 st 90% width", TransientWidthMs(80.0f, 1.0f), 20.0, "ms" },
    };
    bool all = true;
    int gated = 0;
@@ -222,6 +230,74 @@ bool RunPitchTest()
       }
       printf("PITCHTEST %-42s %8.1f %s  %s\n", l.label, l.value, l.unit, verdict);
    }
+   // The dry path follows a mode switch mid-stream: at mix 0 the output is the
+   // dry signal alone, and it must arrive exactly LatencySamples() late
+   // whichever mode is on - including after switching on a live node.
+   {
+      auto node = MakeShifter(7.0f, 80.0f, 0.0f);
+      node->mix = 0.0f;
+      node->CookIfNeeded(2);
+      bool ok = true;
+      int frame = 3;
+      for (float mode : { 1.0f, 0.0f, 1.0f })
+      {
+         *node->ParamPtr("spectral") = mode;
+         node->CookIfNeeded(frame++);
+         const int latency = node->GetAudioNode()->LatencySamples();
+         const int warm = 4800;
+         const auto y = Render(*node, warm + latency + 64, [&](int i) { return i == warm ? 0.5f : 0.0f; });
+         int peak = -1;
+         float pv = 0.0f;
+         for (size_t i = (size_t)warm; i < y.size(); i++)
+            if (std::fabs(y[i]) > pv)
+            {
+               pv = std::fabs(y[i]);
+               peak = (int)i - warm;
+            }
+         const bool thisOk = peak == latency && std::fabs(pv - 0.5f) < 1e-3f;
+         printf("PITCHTEST   dry path after switching spectral=%d: latency %d, impulse at %d (%.3f)\n", (int)mode,
+                latency, peak, pv);
+         ok &= thisOk;
+      }
+      printf("PITCHTEST dry path follows a live mode switch  %s\n", ok ? "OK" : "FAIL");
+      all &= ok;
+   }
+
+   // PDC follows it too: a Pitch Shifter wired to an Audio Out, the topology
+   // built in classic mode, then switched to spectral. PollAudioLatencyChanges
+   // (once a frame in the app) must rebuild PDC with the new latency.
+   {
+      // Indices, not pointers: SpawnNode returns &gNodes.back(), which the
+      // next spawn's push_back can move.
+      GraphNode* g1 = SpawnNode("Pitch Shifter", "AudioEffects", 0.0f, 0.0f);
+      const int shifterIdx = g1 ? g1->index : -1;
+      GraphNode* g2 = SpawnNode("Audio Out", "Utility", 400.0f, 0.0f);
+      const int outIdx = g2 ? g2->index : -1;
+      GraphNode* shifter = shifterIdx >= 0 ? FindNodeByIndex(shifterIdx) : nullptr;
+      GraphNode* out = outIdx >= 0 ? FindNodeByIndex(outIdx) : nullptr;
+      bool ok = shifter != nullptr && out != nullptr && dynamic_cast<AudioEffectNode*>(shifter->node.get()) != nullptr;
+      if (ok)
+      {
+         auto* fx = static_cast<AudioEffectNode*>(shifter->node.get());
+         *fx->ParamPtr("pitch") = 7.0f;
+         fx->CookIfNeeded(100);
+         static_cast<AudioOutputNode*>(out->node.get())->input.Connect(fx);
+         RebuildAudioTopology();
+         AudioNode* an = fx->GetAudioNode();
+         const int before = AudioTopologyLatencyOf(an);
+         *fx->ParamPtr("spectral") = 1.0f;
+         fx->CookIfNeeded(101);
+         PollAudioLatencyChanges();
+         const int after = AudioTopologyLatencyOf(an);
+         ok = before == 1 && after == SpectralPitchShifter::kFftSize;
+         printf("PITCHTEST PDC rebuilt on a latency change: built with %d, after switching %d (want 1 -> %d)  %s\n",
+                before, after, SpectralPitchShifter::kFftSize, ok ? "OK" : "FAIL");
+      }
+      else
+         printf("PITCHTEST PDC rebuilt on a latency change: could not spawn nodes  FAIL\n");
+      all &= ok;
+   }
+
    printf("PITCHTEST %d gated case(s) at their limits  %s\n", gated, all ? "OK" : "FAIL");
    return all;
 }

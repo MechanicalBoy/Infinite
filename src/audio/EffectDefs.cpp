@@ -467,6 +467,9 @@ namespace
          // splice distance) only has anything to act on once there is a shift.
          def.params.push_back({ "grain", 10.0f, 250.0f, 80.0f, false, { { "pitch", 7.0f } } });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f, false, { { "pitch", 7.0f } } });
+         // Appended, never inserted (saved patches' param order). Phase-vocoder
+         // mode for chords/mixes; adds 4096 samples of latency (see the kernel).
+         def.params.push_back({ "spectral", 0.0f, 1.0f, 0.0f, false, { { "pitch", 7.0f } } });
          def.makeKernel = []() { return std::make_unique<PitchShiftKernel>(); };
          defs.push_back(std::move(def));
       }

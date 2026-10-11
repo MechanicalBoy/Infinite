@@ -366,6 +366,10 @@ void DrawFramePump(FrameCtx& fc)
       // thread only.
       PollAudioRecovery();
 
+      // A node's latency can change with a setting (Pitch Shifter's spectral
+      // mode); keep PDC in step with it - once a frame, main thread.
+      PollAudioLatencyChanges();
+
       // Timeline audio schedule: rebuild the topology only when the schedule
       // itself changed, at most once a frame - see ArrangeAudioRebuildIfStale
       // for what counts. This replaced a per-frame std::set<int> of the clips

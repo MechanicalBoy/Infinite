@@ -53,6 +53,9 @@ public:
       mDryPos = 0;
    }
 
+   // The dry path's delay this block: the kernel's current latency, which a
+   // mode-switching kernel may change at any time (never above the ring).
+
    void ProcessBlock(const AudioBuffer* const* inputs, int numInputs, AudioBuffer& output) override
    {
       const AudioBuffer* inPtr = (numInputs > 0) ? inputs[0] : nullptr;
@@ -74,6 +77,8 @@ public:
       // numInputs never exceeds 1 for them, per AudioEffectNode's
       // AudioInputSlot(1) - see §0.5.
       const AudioBuffer* sidechainPtr = (numInputs > 1 && inputs[1] != nullptr) ? inputs[1] : nullptr;
+
+      const int dryDelay = std::clamp(mKernel->LatencySamples(), 0, mDryLength - 1);
 
       AudioBuffer wet;
       wet.channels = mWetChannels;
@@ -109,19 +114,21 @@ public:
          for (int ch = 0; ch < numChannels; ch++)
          {
             float dry = in.channels[ch][i];
-            if (mDryLength > 0)
+            if (mDryLength > 1)
             {
-               float& slot = mDryStorage[(size_t)ch * mDryLength + mDryPos];
-               const float delayed = slot;
-               slot = dry;
-               dry = delayed;
+               float* ring = &mDryStorage[(size_t)ch * mDryLength];
+               ring[mDryPos] = dry;
+               int readPos = mDryPos - dryDelay;
+               if (readPos < 0)
+                  readPos += mDryLength;
+               dry = ring[readPos];
             }
             const float v = dry * dryGain + wet.channels[ch][i] * wetGain;
             output.channels[ch][i] = v;
             peak = std::max(peak, std::fabs(v));
             monoSum += v;
          }
-         if (mDryLength > 0 && ++mDryPos >= mDryLength)
+         if (mDryLength > 1 && ++mDryPos >= mDryLength)
             mDryPos = 0;
          monoBuf[i] = numChannels > 0 ? monoSum / (float)numChannels : 0.0f;
       }
@@ -155,7 +162,9 @@ private:
          mWetChannels[ch] = mWetStorage.data() + (size_t)ch * mMaxBlockSize;
       // The kernel has just been prepared, so its latency for this rate is
       // known. Sized here, on the main thread, never in ProcessBlock.
-      mDryLength = std::max(0, mKernel->LatencySamples());
+      // One slot more than the longest delay: the ring holds the sample just
+      // written plus MaxLatencySamples() of history.
+      mDryLength = std::max(0, mKernel->MaxLatencySamples()) + 1;
       mDryStorage.assign((size_t)mDryLength * kMaxChannels, 0.0f);
       mDryPos = 0;
    }
@@ -170,7 +179,8 @@ private:
    std::vector<float> mSilence;
    int mMaxBlockSize = 0;
 
-   // Dry-path delay line, one ring of mDryLength samples per channel.
+   // Dry-path delay line, one ring of mDryLength samples per channel; read
+   // `LatencySamples()` behind the write.
    std::vector<float> mDryStorage;
    int mDryLength = 0;
    int mDryPos = 0;

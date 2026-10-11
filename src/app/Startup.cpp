@@ -504,7 +504,10 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
 
    // Pitch Shifter quality: purity, chord, unity null, transients (selftest/PitchTests.cpp).
    if (getenv("INFINITE_PITCHTEST") != nullptr)
+   {
+      RegisterNodes(); // its PDC check spawns real nodes; no GL involved
       return RunPitchTest() ? 0 : 1;
+   }
 
    // The --audio-summary maths on synthesized signals with known answers
    // (docs/fix-briefs/headless-engine.md 2.1).
