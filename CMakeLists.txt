@@ -487,6 +487,7 @@ set(COMMON_SOURCES
     src/app/selftest/DspFixtures1.cpp
     src/app/selftest/DspFixtures2.cpp
     src/app/selftest/DspFixtures3.cpp
+    src/app/selftest/DspFixtures4.cpp
     src/app/selftest/FieldTests1.cpp
     src/app/selftest/FieldTests2.cpp
     src/app/selftest/Headless.cpp

@@ -4,6 +4,8 @@
 // block, so what is measured is what a patch hears.
 #include "app/AppShared.h"
 
+namespace app
+{
 namespace
 {
    const EffectDef* FindEffectDef(const char* name)
@@ -239,4 +241,5 @@ bool RunEffectMixAndLimiterFixture()
    }
 
    return all;
+}
 }

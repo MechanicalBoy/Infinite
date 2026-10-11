@@ -3581,6 +3581,8 @@ static bool RunMpcFixture()
    return ok;
 }
 
+bool RunEffectMixAndLimiterFixture(); // DspFixtures4.cpp
+
 int RunDspTest()
 {
    const bool gainOk = RunGainFixture();
@@ -3610,11 +3612,12 @@ int RunDspTest()
    const bool waveTerrainOk = RunWaveTerrainFixture();
    const bool equationOk = RunEquationFixture();
    const bool audioDisplacementOk = RunAudioDisplacementFixture();
+   const bool effectMixLimiterOk = RunEffectMixAndLimiterFixture();
    const bool all = gainOk && filterOk && oscWaveformOk && noteSchedulingOk && envelopeOk && voiceStealOk &&
                     musicTimeOk && audioFilterOk && dynamicsOk && delayOk && reverbOk && samplerOk && slicerOk &&
                     paulStretchOk && granularOk && drumSeqOk && looperOk && mpcOk && wavetableShaperOk && eqOk && noteStackOk &&
                     freqShifterOk && spectralSynthOk && waveTerrainOk && equationOk && audioDisplacementOk &&
-                    portableFftOk;
+                    portableFftOk && effectMixLimiterOk;
    printf("%s\n", all ? "DSPTEST OK" : "DSPTEST SUSPECT");
    return all ? 0 : 1;
 }
