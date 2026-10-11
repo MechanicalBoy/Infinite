@@ -115,16 +115,28 @@ namespace DriveDsp
    // the average of the curve over the straight line joining them, instead
    // of its value at one point. Falls back to the midpoint value when the
    // step is too small for the difference quotient to be meaningful.
+   //
+   // prevF must come from the *same* curve as F: while drive/bias/color are
+   // smoothing, the previous sample's antiderivative belongs to a different
+   // curve, and dividing that mismatch by a small dx turned a color sweep
+   // into an +80 dB spike (and an all-max preset into a peak of ~950). So it
+   // is re-evaluated whenever the curve changed since the last sample.
    struct Adaa
    {
       double prevX = 0.0;
       double prevF = 0.0;
+      double prevGain = 0.0, prevBias = 0.0, prevColor = 0.0;
       bool primed = false;
 
       void Reset() { primed = false; }
 
       float Process(float x, const ShapeParams& p)
       {
+         if (primed && (p.gain != prevGain || p.bias != prevBias || p.color != prevColor))
+            prevF = p.Antiderivative(prevX);
+         prevGain = p.gain;
+         prevBias = p.bias;
+         prevColor = p.color;
          const double F = p.Antiderivative(x);
          double y;
          const double dx = (double)x - prevX;

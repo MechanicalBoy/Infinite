@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/AudioBuffer.h"
+#include "audio/DspMath.h"
 #include "nodes/AudioEffectNode.h"
 #include "nodes/Geometry3DNodes.h"
 
@@ -28,21 +29,6 @@ namespace
             const uint32_t v = (uint32_t)(j * (nx + 1) + i);
             idx.insert(idx.end(), { v, v + 1, v + nx + 2, v, v + nx + 2, v + nx + 1 });
          }
-   }
-}
-
-namespace
-{
-   // Identity below kKnee, then a tanh shoulder that is C1 at the knee and
-   // tops out at 1.
-   inline float SafetyClip(float x)
-   {
-      constexpr float kKnee = 0.8f;
-      const float a = std::fabs(x);
-      if (a <= kKnee)
-         return x;
-      const float y = kKnee + (1.0f - kKnee) * std::tanh((a - kKnee) / (1.0f - kKnee));
-      return x < 0.0f ? -y : y;
    }
 }
 
@@ -196,6 +182,7 @@ void ShapeResonatorKernel::PushParams(const AudioEffectNode& node, double sample
       const float nyq = (float)(0.45 * sampleRate);
       const int pickIn = std::clamp((int)(pos * MeshModalSolver::kPickPoints), 0, MeshModalSolver::kPickPoints - 1);
       const int pickOut = MeshModalSolver::kPickPoints - 1 - pickIn;
+      const float rateRef = std::sqrt(48000.0f / (float)sampleRate);
       float norm = 0.0f;
       for (int i = 0; i < std::min(wantModes, mModes.count); i++)
       {
@@ -213,7 +200,10 @@ void ShapeResonatorKernel::PushParams(const AudioEffectNode& node, double sample
          // broadband hit equally (no 1/f tilt), a hit carries the same energy
          // whatever the decay (longer decay = quieter but longer ring), and with
          // unit-RMS shapes and sum(gOut^2) = 1 broadband in ~= broadband out.
-         c.bIn[k] = 2.0f * std::sin(w) * std::sqrt(1.0f - r) * mModes.shape[i][pickIn];
+         // Referenced to 48 kHz: real input has a fixed spectral density, not a
+         // fixed per-sample power, so without rateRef a mode would ring 3 dB
+         // louder each time the rate doubles.
+         c.bIn[k] = 2.0f * std::sin(w) * std::sqrt(1.0f - r) * rateRef * mModes.shape[i][pickIn];
          c.gOut[k] = mModes.shape[i][pickOut];
          mFreqs[k] = f;
          norm += c.gOut[k] * c.gOut[k];
@@ -289,7 +279,7 @@ void ShapeResonatorKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer
          // Safety clip only: linear below the knee, so normal hits pass clean;
          // a sustained tone parked on a long-ringing mode still builds (a
          // resonator's steady-state gain is ~1/sqrt(1-r)) and is bounded here.
-         y[s] = SafetyClip(sum);
+         y[s] = DspMath::SoftCeiling(sum);
       }
    }
 }

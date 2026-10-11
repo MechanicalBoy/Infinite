@@ -56,7 +56,8 @@ void WavetableShaperKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffe
             const double phase = WavetableShaperDsp::ReadPhase(os[k], driveDb, bias);
             const float slewMip = WavetableShaperDsp::MipForPhaseSpeed(std::fabs(phase - mPrevPhase[ch]));
             mPrevPhase[ch] = phase;
-            os[k] = WavetableShaperDsp::ReadAtMip(phase, table, chPosition, std::max(smoothMip, slewMip)) - zeroRef;
+            // Negated, as in WavetableShaperDsp::RawShape.
+            os[k] = zeroRef - WavetableShaperDsp::ReadAtMip(phase, table, chPosition, std::max(smoothMip, slewMip));
          }
          float x = mOversampler.Down(ch, os);
          x = mDcBlockers[ch].Process(x);

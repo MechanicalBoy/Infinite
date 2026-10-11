@@ -215,6 +215,7 @@ void ReverbKernel::PushParams(const AudioEffectNode& node, double sampleRate)
    mMailbox.Push(kDamping, node.Param("damping"));
    mMailbox.Push(kPredelayMs, node.Param("predelay"));
    mMailbox.Push(kWidth, node.Param("width"));
+   mPushed.store(true, std::memory_order_release);
    mAnalog.store(node.Param("analog") != 0.0f ? 1 : 0, std::memory_order_relaxed);
 }
 
@@ -223,9 +224,17 @@ void ReverbKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* sidech
    ProcessBlockSimd(in, sidechain, out);
 }
 
+// Predelay tap crossfade length - see ReverbKernel::mPredelayTap.
+static constexpr float kPredelayFadeMs = 20.0f;
+// Line-length slew for a size change - see ReverbKernel::mLineLen. 0.03
+// samples per sample is a glide of at most half a semitone.
+static constexpr float kLineSlew = 0.03f;
+
 void ReverbKernel::ProcessBlockSimd(const AudioBuffer& in, const AudioBuffer* /*sidechain*/, AudioBuffer& out)
 {
    using namespace ReverbDsp;
+
+   SnapParamsIfPending();
 
    const int numChannels = std::min(in.numChannels, std::min(out.numChannels, 2));
    const float rateScale = (float)(mSampleRate / 44100.0);
@@ -285,14 +294,35 @@ void ReverbKernel::ProcessBlockSimd(const AudioBuffer& in, const AudioBuffer* /*
       const int predelaySamples = cachedPredelaySamples;
       mPredelayL[(size_t)mPredelayWrite] = inL;
       mPredelayR[(size_t)mPredelayWrite] = inR;
-      // mPredelayWrite and predelaySamples are both in [0, capacity), so the
+      if (mPredelayTap < 0)
+         mPredelayTap = predelaySamples;
+      else if (mPredelayFade >= 1.0f && predelaySamples != mPredelayTap)
+      {
+         mPredelayNextTap = predelaySamples;
+         mPredelayFade = 0.0f;
+      }
+      // mPredelayWrite and a tap are both in [0, capacity), so the
       // difference is in (-capacity, capacity): one conditional add wraps it
       // (the old `%= capacity` was a no-op on that range).
-      int readPos = mPredelayWrite - predelaySamples;
+      int readPos = mPredelayWrite - mPredelayTap;
       if (readPos < 0)
          readPos += mPredelayCapacity;
-      const float predelayedL = mPredelayL[(size_t)readPos];
-      const float predelayedR = mPredelayR[(size_t)readPos];
+      float predelayedL = mPredelayL[(size_t)readPos];
+      float predelayedR = mPredelayR[(size_t)readPos];
+      if (mPredelayFade < 1.0f)
+      {
+         int nextPos = mPredelayWrite - mPredelayNextTap;
+         if (nextPos < 0)
+            nextPos += mPredelayCapacity;
+         // Equal-power: the two taps of a diffuse input are uncorrelated.
+         const float a = mPredelayFade * 1.5707963f;
+         const float gOld = std::cos(a), gNew = std::sin(a);
+         predelayedL = predelayedL * gOld + mPredelayL[(size_t)nextPos] * gNew;
+         predelayedR = predelayedR * gOld + mPredelayR[(size_t)nextPos] * gNew;
+         mPredelayFade += 1.0f / (kPredelayFadeMs * 0.001f * (float)mSampleRate);
+         if (mPredelayFade >= 1.0f)
+            mPredelayTap = mPredelayNextTap;
+      }
       mPredelayWrite++;
       if (mPredelayWrite >= mPredelayCapacity)
          mPredelayWrite = 0;
@@ -347,6 +377,17 @@ void ReverbKernel::ProcessBlockSimd(const AudioBuffer& in, const AudioBuffer* /*
             cachedDecayGain[l] = std::exp(decayExpConst * (float)cachedActiveLen[l]);
          }
       }
+      float lineLen[kNumLines];
+      for (int l = 0; l < kNumLines; l++)
+      {
+         const float target = (float)cachedActiveLen[l];
+         float& len = mLineLen[l];
+         if (len < 0.0f)
+            len = target;
+         else if (len != target)
+            len = len < target ? std::min(target, len + kLineSlew) : std::max(target, len - kLineSlew);
+         lineLen[l] = len;
+      }
 
 #if defined(REVERB_SIMD_NEON)
       float32x4_t delayedOut_v[4];
@@ -366,10 +407,8 @@ void ReverbKernel::ProcessBlockSimd(const AudioBuffer& in, const AudioBuffer* /*
             const int cap = lineCapacities[line];
             const int wp = lineWritePos[line];
             const float* buf = lineBufs[line];
-            const int activeLen = cachedActiveLen[line];
-
             const float lfoVal = lfoVals[line];
-            const float modDelay = std::clamp((float)activeLen + lfoVal * modDepthSamples, 4.0f, (float)(cap - 4));
+            const float modDelay = std::clamp(lineLen[line] + lfoVal * modDepthSamples, 4.0f, (float)(cap - 4));
             const int iDelay = (int)modDelay;
             frac_arr[k] = modDelay - (float)iDelay;
 
@@ -467,10 +506,8 @@ void ReverbKernel::ProcessBlockSimd(const AudioBuffer& in, const AudioBuffer* /*
             const int cap = lineCapacities[line];
             const int wp = lineWritePos[line];
             const float* buf = lineBufs[line];
-            const int activeLen = cachedActiveLen[line];
-
             const float lfoVal = lfoVals[line];
-            const float modDelay = std::clamp((float)activeLen + lfoVal * modDepthSamples, 4.0f, (float)(cap - 4));
+            const float modDelay = std::clamp(lineLen[line] + lfoVal * modDepthSamples, 4.0f, (float)(cap - 4));
             const int iDelay = (int)modDelay;
             frac_arr[k] = modDelay - (float)iDelay;
 
@@ -558,10 +595,8 @@ void ReverbKernel::ProcessBlockSimd(const AudioBuffer& in, const AudioBuffer* /*
          const int cap = lineCapacities[line];
          const int wp = lineWritePos[line];
          const float* buf = lineBufs[line];
-         const int activeLen = cachedActiveLen[line];
-
          const float lfoVal = lfoVals[line];
-         const float modDelay = std::clamp((float)activeLen + lfoVal * modDepthSamples, 4.0f, (float)(cap - 4));
+         const float modDelay = std::clamp(lineLen[line] + lfoVal * modDepthSamples, 4.0f, (float)(cap - 4));
          const int iDelay = (int)modDelay;
          const float frac = modDelay - (float)iDelay;
 
@@ -652,6 +687,8 @@ void ReverbKernel::ProcessBlockSimd(const AudioBuffer& in, const AudioBuffer* /*
 void ReverbKernel::ProcessBlockScalar(const AudioBuffer& in, const AudioBuffer* /*sidechain*/, AudioBuffer& out)
 {
    using namespace ReverbDsp;
+
+   SnapParamsIfPending();
 
    const int numChannels = std::min(in.numChannels, std::min(out.numChannels, 2));
    const float rateScale = (float)(mSampleRate / 44100.0);

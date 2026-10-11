@@ -98,6 +98,19 @@ namespace DspMath
       return std::fabs(x) < 1.0e-20f ? 0.0f : x;
    }
 
+   // Soft ceiling: the identity below `knee`, then a tanh shoulder that is C1
+   // at the knee and tops out at 1. For a feedback loop or a resonator that
+   // must stay bounded without colouring anything at normal levels -
+   // bit-identical to no limiter at all while |x| <= knee.
+   inline float SoftCeiling(float x, float knee = 0.8f)
+   {
+      const float a = std::fabs(x);
+      if (a <= knee)
+         return x;
+      const float y = knee + (1.0f - knee) * std::tanh((a - knee) / (1.0f - knee));
+      return x < 0.0f ? -y : y;
+   }
+
    // ------------------------------------------------------------- Fast tanh
    // Pade-style rational approximation, x*(27+x*x)/(27+9*x*x), clamped
    // outside +/-3 where the rational form stops tracking tanh (saturates to

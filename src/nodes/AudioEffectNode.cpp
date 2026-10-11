@@ -35,6 +35,7 @@ public:
    {
       static constexpr double kFallbackSampleRate = 48000.0;
       mKernel->PrepareToPlay(kFallbackSampleRate, kAudioMaxBlockFrames);
+      mPreparedRate.store(kFallbackSampleRate, std::memory_order_relaxed);
       ResizeBuffers(kAudioMaxBlockFrames);
    }
 
@@ -43,8 +44,14 @@ public:
       mMixSmoother.SetTimeConstant(0.005f, sampleRate);
       mMixSmoother.SetImmediate(mMixTarget.load(std::memory_order_relaxed));
       mKernel->PrepareToPlay(sampleRate, maxBlockSize);
+      mPreparedRate.store(sampleRate, std::memory_order_relaxed);
       ResizeBuffers(maxBlockSize);
    }
+
+   // The rate the kernel was last prepared at - the one its coefficients must
+   // be computed for. Not AudioEngine::SampleRate(): with no device open
+   // (offline render, self-tests) that reads 0 while the kernel still runs.
+   double PreparedRate() const { return mPreparedRate.load(std::memory_order_relaxed); }
 
    void Reset() override
    {
@@ -173,6 +180,7 @@ private:
    const bool mLinearMix;
    DspMath::OnePole mMixSmoother;
    std::atomic<float> mMixTarget { 1.0f };
+   std::atomic<double> mPreparedRate { 0.0 };
 
    std::vector<float> mWetStorage;
    float* mWetChannels[kMaxChannels] = {};
@@ -225,11 +233,10 @@ void AudioEffectNode::CookIfNeeded(int frameId)
    // than leaving it silently blended with no UI to see or fix it.
    mAudioNode->PushMix(mDef.forceFullyWet ? 1.0f : mix);
    // A kernel that derives run-time coefficients (Audio Filter's tan()) needs
-   // the real device rate; falls back to a sane default when no device is
-   // open yet so a patch built before pressing play still shows a sensible
-   // response curve.
-   const double sampleRate = AudioEngine::Instance().SampleRate();
-   mAudioNode->Kernel().PushParams(*this, sampleRate > 0.0 ? sampleRate : 44100.0);
+   // the rate it actually runs at: the one it was prepared at (the device's,
+   // or the offline render's when no device is open).
+   const double sampleRate = mAudioNode->PreparedRate();
+   mAudioNode->Kernel().PushParams(*this, sampleRate > 0.0 ? sampleRate : 48000.0);
 
    float peak = 0.0f;
    if (mAudioNode->Meter().ReadLatest(peak))

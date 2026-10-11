@@ -146,9 +146,9 @@ namespace
       return 10.0 * std::log10(std::max(e, 1e-30) / s);
    }
 
-   double TransientWidthMs(float grainMs, float spectral)
+   double TransientWidthMs(float grainMs, float spectral, float semitones = 7.0f)
    {
-      auto node = MakeShifter(7.0f, grainMs, spectral);
+      auto node = MakeShifter(semitones, grainMs, spectral);
       const int period = (int)(0.25 * kRate);
       const auto y = Render(*node, period * 8, [&](int i) { return (i % period) == period / 2 ? 1.0f : 0.0f; });
       // Average the 90%-energy width over clicks 3..7 (past start-up).
@@ -160,8 +160,14 @@ namespace
          double e = 0.0;
          for (size_t i = a; i < b; i++)
             e += (double)y[i] * y[i];
-         if (e <= 0.0)
+         // A dropped click (a forward splice skipping it) is the worst
+         // transient result there is, not one to leave out of the average.
+         if (e < 0.1)
+         {
+            total += 1000.0;
+            count++;
             continue;
+         }
          // Smallest window around the energy centroid holding 90%.
          std::vector<double> cum(b - a + 1, 0.0);
          for (size_t i = a; i < b; i++)
@@ -205,7 +211,10 @@ bool RunPitchTest()
       { "classic purity +12 st (80 ms grain)", Purity(12.0f, 80.0f, 0.0f, 481), -68.0, "dB" },
       { "classic chord +5 st (80 ms grain)", Chord(5.0f, 80.0f, 0.0f), -28.0, "dB" },
       { "classic unity 0 st null (80 ms grain)", Unity(80.0f, 0.0f), -120.0, "dB" },
-      { "classic transient +7 st 90% width", TransientWidthMs(80.0f, 0.0f), 20.0, "ms" },
+      // Splices steer around the last onset: before that, a click that fell
+      // inside a jump came out doubled (32 ms at +7 st) or dropped.
+      { "classic transient +7 st 90% width", TransientWidthMs(80.0f, 0.0f), 15.0, "ms" },
+      { "classic transient -7 st 90% width", TransientWidthMs(80.0f, 0.0f, -7.0f), 15.0, "ms" },
       // Spectral (phase-vocoder) mode - the chord is what it is for.
       { "spectral purity +7 st", Purity(7.0f, 80.0f, 1.0f, 241), -65.0, "dB" },
       { "spectral purity -12 st", Purity(-12.0f, 80.0f, 1.0f, 121), -50.0, "dB" },

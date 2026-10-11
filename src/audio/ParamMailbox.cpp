@@ -38,3 +38,11 @@ void ParamMailbox::SetImmediate(int paramId, float value)
    mTarget[paramId].store(value, std::memory_order_release);
    mSmoothers[paramId].SetImmediate(value);
 }
+
+void ParamMailbox::SnapToTarget(int paramId)
+{
+   assert(paramId >= 0 && paramId < kMaxParams);
+   if (paramId < 0 || paramId >= kMaxParams)
+      return;
+   mSmoothers[paramId].SetImmediate(mTarget[paramId].load(std::memory_order_acquire));
+}

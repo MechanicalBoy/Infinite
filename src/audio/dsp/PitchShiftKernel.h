@@ -27,6 +27,13 @@
 // classic digital harmonizers (cf. WSOLA, Verhelst & Roelands, ICASSP 1993,
 // for the correlation search).
 //
+// Splices also steer around transients. A jump back (shifting up) replays
+// the material it jumps over and a jump forward (shifting down) drops it, so
+// a drum hit inside that span came out doubled, or not at all. The last
+// onset in the line is tracked (fast/slow envelope on the input), and a
+// splice whose span would cross it is shortened to land just short of it,
+// with a shorter crossfade when the room left needs one.
+//
 // At 0 semitones the tap sits still one sample behind the input, so the
 // effect is transparent (latency 1 sample, reported).
 //
@@ -81,6 +88,9 @@ public:
       mFadePos = 0;
       mFadeLen = 0;
       mJitterPhase = 0.0f;
+      mEnvFast = mEnvSlow = 0.0f;
+      mOnsetArmed = true;
+      mOnsetDelay = -1.0;
       mSpectralEngine.Reset();
       mActiveSpectral = mSpectral.load(std::memory_order_relaxed);
       for (int i = 0; i < 2; i++)
@@ -117,6 +127,11 @@ private:
    double mDelay = 1.0;     // active tap, samples behind the newest input
    double mNextDelay = 1.0; // the tap being faded in during a splice
    int mFadePos = 0, mFadeLen = 0; // splice in progress while mFadeLen > 0
+
+   // Onset tracking for transient-safe splices (see the header comment).
+   float mEnvFast = 0.0f, mEnvSlow = 0.0f;
+   bool mOnsetArmed = true;
+   double mOnsetDelay = -1.0; // delay of the last onset; < 0 = none in the line
 
    // Analog mode components
    float mJitterPhase = 0.0f;

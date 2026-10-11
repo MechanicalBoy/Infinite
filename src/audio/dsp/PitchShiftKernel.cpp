@@ -89,6 +89,8 @@ void PitchShiftKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*
       mActiveSpectral = spectral;
    }
 
+   const float aFast = 1.0f - std::exp(-1.0f / (0.0005f * (float)mSampleRate));
+   const float aSlow = 1.0f - std::exp(-1.0f / (0.050f * (float)mSampleRate));
    for (int i = 0; i < out.numFrames; i++)
    {
       const float semitones = mMailbox.SmoothedValue(kSemitones);
@@ -120,6 +122,23 @@ void PitchShiftKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*
       mLineL.Write(inL);
       mLineR.Write(inR);
 
+      // Onset: a fast (0.5 ms) envelope jumping well above a slow (50 ms)
+      // one; re-armed once it settles back near it.
+      {
+         const float x = std::fabs(inL) + std::fabs(inR);
+         mEnvFast += (x - mEnvFast) * aFast;
+         mEnvSlow += (x - mEnvSlow) * aSlow;
+         if (mOnsetDelay >= 0.0 && ++mOnsetDelay > maxDelay)
+            mOnsetDelay = -1.0;
+         if (mOnsetArmed && mEnvFast > 4.0f * mEnvSlow + 1.0e-3f)
+         {
+            mOnsetDelay = 1.0;
+            mOnsetArmed = false;
+         }
+         else if (!mOnsetArmed && mEnvFast < 1.5f * mEnvSlow)
+            mOnsetArmed = true;
+      }
+
       // Splice geometry, from the grain: jump by 0.5..1 grain (the search
       // range), crossfade over 0.3 grain (3..30 ms), compare 15 ms of signal.
       const int jMax = std::max(4, (int)grain);
@@ -127,22 +146,50 @@ void PitchShiftKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*
       const int fadeLen = (int)std::clamp(0.3 * grain, 0.003 * mSampleRate, 0.030 * mSampleRate);
       const int window = (int)std::min((double)fadeLen, 0.015 * mSampleRate);
 
+      // A splice's jump, shortened so it does not cross the last onset:
+      // `room` is the distance from the tap to the onset in the jump's
+      // direction, less a 1 ms pre-roll so the attack's front stays intact.
+      // Only when the room left still fits a crossfade of at least 3 ms;
+      // otherwise the hit cannot be avoided and the splice is left as is.
+      auto steer = [&](int sign, int& lo, int& hi, int& fade) {
+         if (mOnsetDelay < 0.0)
+            return;
+         const double room = sign > 0 ? mOnsetDelay - mDelay : mDelay - mOnsetDelay;
+         const int limit = (int)(room - 0.001 * mSampleRate);
+         if (room <= 0.0 || limit >= hi)
+            return;
+         const int minFade = (int)(0.003 * mSampleRate);
+         // Shifting up, the new tap must not reach the newest sample before
+         // its fade ends; shifting down, the jump only has to be a jump.
+         const int need = sign > 0 ? (int)std::ceil(-drift * minFade) + 4 : 4;
+         if (limit < need)
+            return;
+         hi = limit;
+         lo = std::min(lo, limit);
+         if (sign > 0)
+            fade = std::clamp((int)((limit - 4) / -drift), minFade, fade);
+      };
+
       if (mFadeLen == 0)
       {
          if (drift < -1.0e-9 && mDelay + drift * fadeLen <= 2.0)
          {
             // Shifting up: about to run into the newest sample - jump back.
-            const double target = std::min(FindSplice(mDelay, jMin, jMax, +1, window), maxDelay);
+            int lo = jMin, hi = jMax, fade = fadeLen;
+            steer(+1, lo, hi, fade);
+            const double target = std::min(FindSplice(mDelay, lo, hi, +1, std::min(window, fade)), maxDelay);
             mNextDelay = target;
-            mFadeLen = fadeLen;
+            mFadeLen = fade;
             mFadePos = 0;
          }
          else if (drift > 1.0e-9 && mDelay + drift * fadeLen >= std::min(maxDelay, (double)jMax + fadeLen + 2.0))
          {
             // Shifting down: about to fall off the end - jump forward.
-            const double target = std::max(FindSplice(mDelay, jMin, jMax, -1, window), 1.0);
+            int lo = jMin, hi = jMax, fade = fadeLen;
+            steer(-1, lo, hi, fade);
+            const double target = std::max(FindSplice(mDelay, lo, hi, -1, window), 1.0);
             mNextDelay = target;
-            mFadeLen = fadeLen;
+            mFadeLen = fade;
             mFadePos = 0;
          }
          else if (std::fabs(drift) <= 1.0e-9 && mDelay != 1.0)

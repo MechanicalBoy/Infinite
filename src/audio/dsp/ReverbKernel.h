@@ -185,6 +185,7 @@ public:
    {
       mSampleRate = sampleRate;
       mMailbox.PrepareToPlay(sampleRate);
+      mPushed.store(false, std::memory_order_relaxed);
       const float rateScale = (float)(sampleRate / 44100.0);
 
       for (int i = 0; i < ReverbDsp::kNumLines; i++)
@@ -218,6 +219,7 @@ public:
 
    void Reset() override
    {
+      mSnapPending = true;
       for (auto& line : mLines)
          line.Reset();
       for (auto& lfo : mLfo)
@@ -233,6 +235,10 @@ public:
       std::fill(mPredelayL.begin(), mPredelayL.end(), 0.0f);
       std::fill(mPredelayR.begin(), mPredelayR.end(), 0.0f);
       mPredelayWrite = 0;
+      mPredelayTap = -1;
+      mPredelayFade = 1.0f;
+      for (float& len : mLineLen)
+         len = -1.0f;
       mInputEnv = 0.0f;
    }
 
@@ -245,11 +251,28 @@ public:
    // the Block 1 perf work, for DSPTEST's old-vs-new comparison.
    void ProcessBlockLegacy(const AudioBuffer& in, const AudioBuffer* sidechain, AudioBuffer& out);
 
+   // Audio thread only. A freshly prepared or reset reverb starts at the
+   // settings it was given, not ramping up to them from 0: the param
+   // smoothers jump to their pushed targets on the first block after a
+   // push. (From 0, `size` swept the lines from their shortest length,
+   // which the slewed line lengths below would have carried for seconds.)
+   // ProcessBlockSimd/Scalar call it; DSPTEST calls it for the legacy path.
+   void SnapParamsIfPending()
+   {
+      if (!mSnapPending || !mPushed.load(std::memory_order_acquire))
+         return;
+      for (int id = 0; id < kNumSlots; id++)
+         mMailbox.SnapToTarget(id);
+      mSnapPending = false;
+   }
+
    int LatencySamples() const override { return 0; }
    MeterRing* ExtraMeter() override { return &mLevelMeter; }
 
 private:
    ParamMailbox mMailbox;
+   std::atomic<bool> mPushed { false }; // a PushParams has landed since PrepareToPlay
+   bool mSnapPending = true;            // audio thread: snap on the next block
    double mSampleRate = 44100.0;
    std::atomic<int> mAnalog { 0 };
 
@@ -268,6 +291,22 @@ private:
    std::vector<float> mPredelayL, mPredelayR;
    int mPredelayCapacity = 1;
    int mPredelayWrite = 0;
+   // Live path only: the predelay tap being read, and a crossfade toward a
+   // new one. Moving the tap a sample at a time as the knob smooths read a
+   // jagged, discontinuous signal (a +21 dB click on a 30->70% step);
+   // instead the old and new taps are crossfaded over kPredelayFadeMs, then
+   // the next change starts. -1 = not primed: the first sample snaps.
+   int mPredelayTap = -1;
+   int mPredelayNextTap = 0;
+   float mPredelayFade = 1.0f;
+   // Live path only: each FDN line's read length, slewed toward the length
+   // `size` asks for at kLineSlew samples per sample. Jumping it to a new
+   // integer as the knob smoothed read the line at a fresh position every
+   // sample (a +20 dB click on a size step); slewed, a size move is a short,
+   // gentle pitch glide. At rest it equals the integer length exactly, so
+   // static output is unchanged. -1 = not primed: the first sample snaps.
+   float mLineLen[ReverbDsp::kNumLines] = { -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f,
+                                            -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f };
 
    MeterRing mLevelMeter;
 };

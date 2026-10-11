@@ -95,9 +95,15 @@ namespace WavetableShaperDsp
 
    inline float SmoothToMip(float smooth) { return std::clamp(smooth, 0.0f, 1.0f) * (float)(Wavetable::kMipLevels - 1); }
 
+   // The curve is the table read negated: x = 0 sits at phase 0.5, where a
+   // sine frame falls, so the raw read is -sin(pi x) - polarity-inverting.
+   // Under Wavetable Shaper's linear mix that inverted wet cancelled the dry
+   // fundamental (a null near mix 0.24); negated, the spawn default is
+   // sin(pi x), in phase with its input. The kernel applies the same sign
+   // (zeroRef - read).
    inline float RawShape(float x, int table, float position, float driveDb, float bias, float smooth)
    {
-      return ReadAtMip(ReadPhase(x, driveDb, bias), table, position, SmoothToMip(smooth));
+      return -ReadAtMip(ReadPhase(x, driveDb, bias), table, position, SmoothToMip(smooth));
    }
 
    // The coarsest-needed mip for a read phase moving `phaseInc` cycles per

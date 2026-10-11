@@ -44,6 +44,9 @@ public:
    // (e.g. at startup, before the first block).
    void SetImmediate(int paramId, float value);
 
+   // Audio thread only: jump the smoother straight to the last pushed target.
+   void SnapToTarget(int paramId);
+
 private:
    std::atomic<float> mTarget[kMaxParams] {};
    DspMath::OnePole mSmoothers[kMaxParams];
