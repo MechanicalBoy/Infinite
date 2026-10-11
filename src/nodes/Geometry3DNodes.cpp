@@ -638,28 +638,28 @@ namespace
       "   vec3 n = normalize(vNormal);\n"
       "   if (uRenderPass == 1) {\n"
       "      float d = clamp((length(vWorldPos - uCamPos) - uNear) / max(0.001, uFar - uNear), 0.0, 1.0);\n"
-      "      fragColor = vec4(vec3(d), uOpacity);\n"
+      "      fragColor = vec4(vec3(d), alpha);\n"
       "      return;\n"
       "   }\n"
       "   if (uRenderPass == 2) {\n"
-      "      fragColor = vec4(vec3(gl_FragCoord.z), uOpacity);\n"
+      "      fragColor = vec4(vec3(gl_FragCoord.z), alpha);\n"
       "      return;\n"
       "   }\n"
       "   if (uRenderPass == 3) {\n"
-      "      fragColor = vec4(n * 0.5 + 0.5, uOpacity);\n"
+      "      fragColor = vec4(n * 0.5 + 0.5, alpha);\n"
       "      return;\n"
       "   }\n"
       "   if (uRenderPass == 4) {\n"
-      "      fragColor = vec4(vWorldPos, uOpacity);\n"
+      "      fragColor = vec4(vWorldPos, alpha);\n"
       "      return;\n"
       "   }\n"
-      "   if (uShading == 1) { fragColor = vec4(n * 0.5 + 0.5, uOpacity); return; }\n"
-      "   if (uShading == 2) { fragColor = vec4(vUv, 0.0, uOpacity); return; }\n"
+      "   if (uShading == 1) { fragColor = vec4(n * 0.5 + 0.5, alpha); return; }\n"
+      "   if (uShading == 2) { fragColor = vec4(vUv, 0.0, alpha); return; }\n"
       "\n"
       "   vec2 mapUv = computeMapUv(n);\n"
       "   vec3 base = toLinear(uBaseColor) * vInstanceColor * vVertexColor;\n"
       "   if (uHasTexture == 1) base *= toLinear(sampleMap(uTexture, n, mapUv).rgb);\n"
-      "   if (uShading == 3) { fragColor = vec4(toSrgb(base), uOpacity); return; }\n"
+      "   if (uShading == 3) { fragColor = vec4(toSrgb(base), alpha); return; }\n"
       "\n"
       "   vec3 viewDir = normalize(uCamPos - vWorldPos);\n"
       "   float rough = uRoughness;\n"
@@ -1394,10 +1394,12 @@ namespace
       if (source == nullptr || (int)out.size() >= maxCount)
          return;
       const int children = source->GroupChildCount();
-      if (children > 0 && depth < 8)
+      if (children > 0)
       {
-         for (int i = 0; i < children; i++)
-            FlattenGeometry(source->GroupChild(i), depth + 1, maxCount, out);
+         // Past the depth cap the group is dropped, not drawn: its own mesh is a bake of the same children.
+         if (depth < 8)
+            for (int i = 0; i < children; i++)
+               FlattenGeometry(source->GroupChild(i), depth + 1, maxCount, out);
          return;
       }
       out.push_back(source);
@@ -2315,8 +2317,16 @@ void Render3DNode::CookIfNeeded(int frameId)
          // own revision, since it never touches the instancer - so it has to be
          // compared on its own to catch a param edit with no other change.
          const Mat4 groupMatrix = source->GetInstanceGroupMatrix();
+         // Blended copies of one mesh are drawn in a single call with depth writes off (the translucent pass), so
+         // they composite in buffer order: unsorted, a near plane drawn first is painted over by the ones behind it.
+         // Same test as isTranslucentMesh below.
+         const bool sortInstances = (material.opacity < 0.999f || material.textureAlpha) &&
+                                    material.transmission <= 0.001f;
+         const bool eyeMoved = gpu.instanceSortEye[0] != eye[0] || gpu.instanceSortEye[1] != eye[1] ||
+                               gpu.instanceSortEye[2] != eye[2];
          if (gpu.instanceRevision != instanceRevision || !gpu.instanceAttribsOn ||
-             !(gpu.instanceGroupMatrix == groupMatrix) || gpu.instanceOverrideRevision != revision)
+             !(gpu.instanceGroupMatrix == groupMatrix) || gpu.instanceOverrideRevision != revision ||
+             sortInstances != gpu.instanceSorted || (sortInstances && eyeMoved))
          {
             const std::vector<Mat4>& xforms = ResolveInstanceTransforms(source, instancer);
             std::vector<Mat4> composed;
@@ -2328,6 +2338,47 @@ void Render3DNode::CookIfNeeded(int frameId)
                   composed.push_back(Mat4::Multiply(groupMatrix, x));
                uploadXforms = &composed;
             }
+            const std::vector<float>& srcColors = instancer->InstanceColors();
+            std::vector<Mat4> sorted;
+            std::vector<float> sortedColors;
+            const bool colorsPerInstance = srcColors.size() == uploadXforms->size() * 3;
+            if (sortInstances && uploadXforms->size() > 1)
+            {
+               // Distance from the eye to each copy's bounds centre, farthest first.
+               const float c[3] = { gpu.hasBounds ? 0.5f * (gpu.lo[0] + gpu.hi[0]) : 0.0f,
+                                    gpu.hasBounds ? 0.5f * (gpu.lo[1] + gpu.hi[1]) : 0.0f,
+                                    gpu.hasBounds ? 0.5f * (gpu.lo[2] + gpu.hi[2]) : 0.0f };
+               const std::vector<Mat4>& in = *uploadXforms;
+               std::vector<std::pair<float, unsigned>> order(in.size());
+               for (size_t k = 0; k < in.size(); k++)
+               {
+                  const float* m = in[k].m;
+                  float d2 = 0.0f;
+                  for (int a = 0; a < 3; a++)
+                  {
+                     const float w = m[a] * c[0] + m[4 + a] * c[1] + m[8 + a] * c[2] + m[12 + a] - eye[a];
+                     d2 += w * w;
+                  }
+                  order[k] = { d2, (unsigned)k };
+               }
+               std::stable_sort(order.begin(), order.end(),
+                                [](const auto& a, const auto& b) { return a.first > b.first; });
+               sorted.reserve(in.size());
+               for (const auto& o : order)
+                  sorted.push_back(in[o.second]);
+               if (colorsPerInstance)
+               {
+                  sortedColors.reserve(srcColors.size());
+                  for (const auto& o : order)
+                     sortedColors.insert(sortedColors.end(), srcColors.begin() + o.second * 3,
+                                         srcColors.begin() + o.second * 3 + 3);
+               }
+               uploadXforms = &sorted;
+            }
+            gpu.instanceSorted = sortInstances;
+            gpu.instanceSortEye[0] = eye[0];
+            gpu.instanceSortEye[1] = eye[1];
+            gpu.instanceSortEye[2] = eye[2];
             glBindBuffer(GL_ARRAY_BUFFER, gpu.instanceVbo);
             glBufferData(GL_ARRAY_BUFFER, uploadXforms->size() * sizeof(Mat4), uploadXforms->data(),
                          GL_STATIC_DRAW);
@@ -2344,7 +2395,7 @@ void Render3DNode::CookIfNeeded(int frameId)
             // Per-instance colours travel in their own buffer rather than being
             // packed into the transform, so the common case - instances sharing
             // one material - uploads nothing extra at all.
-            const std::vector<float>& colors = instancer->InstanceColors();
+            const std::vector<float>& colors = (!sorted.empty() && colorsPerInstance) ? sortedColors : srcColors;
             if (!colors.empty())
             {
                if (gpu.instanceColorVbo == 0)

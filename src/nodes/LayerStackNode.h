@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "INode.h"
 #include "ImageCable.h"
 #include "GLUtil.h"
@@ -27,6 +30,19 @@ public:
    // the UI moves the whole layer rather than just its settings.
    void SwapLayers(int a, int b);
 
+   // How a layer whose aspect differs from the canvas (the first connected
+   // layer's size) is placed. Stretch is how every patch saved before this
+   // option existed composited, so PatchLoad sets it before reading a record
+   // that has no "fit" key; a new node starts at Fit.
+   enum Fit
+   {
+      kStretch = 0, // fill the canvas, distorting the aspect
+      kFit,         // whole layer visible, aspect kept, transparent bars
+      kFill,        // canvas covered, aspect kept, overflow cropped
+   };
+   static const std::vector<std::string>& FitNames();
+   int fit = kFit;
+
    int modes[kSlots] = { 0, 0, 0, 0 };
    float opacities[kSlots] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
@@ -34,6 +50,7 @@ public:
    {
       static const char* kModeKeys[kSlots] = { "mode0", "mode1", "mode2", "mode3" };
       static const char* kOpKeys[kSlots] = { "opacity0", "opacity1", "opacity2", "opacity3" };
+      v.Int("fit", fit);
       for (int i = 0; i < kSlots; i++)
       {
          v.Int(kModeKeys[i], modes[i]);

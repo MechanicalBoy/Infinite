@@ -116,24 +116,43 @@ SampleScanner::~SampleScanner()
       mScanThread.join();
 }
 
+std::string SampleScanner::PathKey(const std::string& path)
+{
+   std::string key = path;
+   std::replace(key.begin(), key.end(), '\\', '/');
+   // Keep a root's own slash ("/" and "C:/").
+   while (key.size() > 1 && key.back() == '/' && !(key.size() == 3 && key[1] == ':'))
+      key.pop_back();
+#ifdef _WIN32
+   key = ToLower(key);
+#endif
+   return key;
+}
+
 void SampleScanner::AddFolder(const std::string& path)
 {
-   if (std::find(mFolders.begin(), mFolders.end(), path) != mFolders.end())
-      return;
+   const std::string key = PathKey(path);
+   for (const std::string& f : mFolders)
+      if (PathKey(f) == key)
+         return; // already there under another spelling - a second copy would list every file twice
    mFolders.push_back(path);
    SaveFoldersToDisk();
 }
 
 void SampleScanner::RemoveFolder(const std::string& path)
 {
-   mFolders.erase(std::remove(mFolders.begin(), mFolders.end(), path), mFolders.end());
+   // By key, not exact text: lists saved before AddFolder normalised can hold the same folder twice, and
+   // removing one spelling must not leave the other listing the same files.
+   const std::string key = PathKey(path);
+   auto sameFolder = [&](const std::string& f) { return PathKey(f) == key; };
+   mFolders.erase(std::remove_if(mFolders.begin(), mFolders.end(), sameFolder), mFolders.end());
    SaveFoldersToDisk();
    ++mIndexVersion;
    // Drop the folder's entries now. A later scan only replaces entries from folders it covers, and a removed
    // folder is never covered again, so leaving them would list its files forever. (A scan already in flight
    // for it is filtered out in PollResults.)
-   mIndex.erase(std::remove_if(mIndex.begin(), mIndex.end(), [&](const Entry& e) { return e.folderRoot == path; }), mIndex.end());
-   mMissingFolders.erase(std::remove(mMissingFolders.begin(), mMissingFolders.end(), path), mMissingFolders.end());
+   mIndex.erase(std::remove_if(mIndex.begin(), mIndex.end(), [&](const Entry& e) { return sameFolder(e.folderRoot); }), mIndex.end());
+   mMissingFolders.erase(std::remove_if(mMissingFolders.begin(), mMissingFolders.end(), sameFolder), mMissingFolders.end());
    SaveIndexToDisk();
 }
 
@@ -159,7 +178,7 @@ void SampleScanner::ScanThreadMain(std::vector<std::string> folders)
    {
       {
          std::error_code rootEc;
-         if (!fs::is_directory(root, rootEc))
+         if (!fs::is_directory(fs::u8path(root), rootEc))
             missing.push_back(root);   // reported to the UI; the walk below then finds nothing
       }
       // Manual stack-based walk rather than recursive_directory_iterator:
@@ -171,7 +190,7 @@ void SampleScanner::ScanThreadMain(std::vector<std::string> folders)
       // bad entry only ends that one directory's remaining siblings; every
       // other directory already queued on the stack still gets scanned.
       std::vector<fs::path> dirStack;
-      dirStack.push_back(root);
+      dirStack.push_back(fs::u8path(root)); // UTF-8 in and out: plain path/string() goes through the ANSI code page on Windows
 
       while (!dirStack.empty())
       {
@@ -188,7 +207,7 @@ void SampleScanner::ScanThreadMain(std::vector<std::string> folders)
          {
             const fs::directory_entry entry = *it;
             std::error_code entryEc;
-            const std::string name = entry.path().filename().string();
+            const std::string name = entry.path().filename().u8string();
             const bool isHidden = (!name.empty() && name[0] == '.');
             const bool isSymlink = entry.is_symlink(entryEc) && !entryEc;
 
@@ -206,7 +225,7 @@ void SampleScanner::ScanThreadMain(std::vector<std::string> folders)
                if (HasExtensionForKind(mKind, extNoDot))
                {
                   Entry e;
-                  e.path = entry.path().string();
+                  e.path = entry.path().u8string();
                   e.fileName = name;
                   e.fileNameLower = ToLower(name);
                   e.folderRoot = root;
@@ -280,7 +299,13 @@ void SampleScanner::LoadFromDisk()
       {
          for (const crude_json::value& v : json.get<crude_json::array>())
             if (v.is_string())
-               mFolders.push_back(v.get<crude_json::string>());
+            {
+               // Drop repeats of one folder that older builds let in, so each can be removed with one click.
+               const std::string& folder = v.get<crude_json::string>();
+               const std::string key = PathKey(folder);
+               if (std::none_of(mFolders.begin(), mFolders.end(), [&](const std::string& f) { return PathKey(f) == key; }))
+                  mFolders.push_back(folder);
+            }
       }
    }
 

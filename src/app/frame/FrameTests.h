@@ -68,6 +68,7 @@ void FrameTest_ROUNDTRIPTEST(int frameId, GLFWwindow* window);
 void FrameTest_PHASEFTEST(int frameId, GLFWwindow* window);
 void FrameTest_PHASEETEST(int frameId, GLFWwindow* window);
 void FrameTest_GROUP3DTEST(int frameId, GLFWwindow* window);
+void FrameTest_LAYERSTACKFITTEST(int frameId, GLFWwindow* window);
 void FrameTest_WRAPTEST(int frameId, GLFWwindow* window);
 void FrameTest_PHASEDTEST(int frameId, GLFWwindow* window);
 void FrameTest_PHASECTEST(int frameId, GLFWwindow* window);

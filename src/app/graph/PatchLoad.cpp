@@ -124,6 +124,9 @@ namespace app
          // still gets overwritten to the saved value by LoadParams below.
          if (auto* fgn = dynamic_cast<FieldGraphNode*>(spawned->node.get()))
             fgn->encapsulated = false;
+         // Same trap for Layer Stack's "fit": patches from before it existed composited stretched.
+         if (auto* stack = dynamic_cast<LayerStackNode*>(spawned->node.get()))
+            stack->fit = LayerStackNode::kStretch;
          Patch::LoadParams(spawned->node.get(), rec.params);
          ReloadDerivedState(spawned->node.get());
          // Phase 4 (selection as an input): rewrites a saved kDeleteSelected/

@@ -1800,6 +1800,9 @@ namespace app
       static float sDragAccum = 0.0f;
       const float rowHeight = ImGui::GetTextLineHeightWithSpacing();
 
+      // Layers whose aspect differs from the canvas (the first connected layer's size): stretch, fit inside, or fill and crop.
+      DropdownButton("fit", LayerStackNode::FitNames(), n->fit, [n](int i) { PushUndoCheckpoint(); n->fit = i; });
+
       for (int slot = 0; slot < LayerStackNode::kSlots; slot++)
       {
          ImGui::PushID(slot);

@@ -3303,4 +3303,59 @@ void FrameTest_UIGALLERY(int frameId, GLFWwindow*)
    UiGallery::Draw();
 }
 
+
+// v0.5.0 bug report: Layer Stack stretched any layer whose aspect differed
+// from the canvas. A 2:1 layer over a 1:1 base: Fit must leave the base
+// showing above and below it, Stretch and Fill must cover the base.
+void FrameTest_LAYERSTACKFITTEST(int frameId, GLFWwindow*)
+{
+   if (getenv("INFINITE_LAYERSTACKFITTEST") == nullptr || frameId != 4)
+      return;
+   ShapeNode base, wide;
+   base.width = 64.0f; base.height = 64.0f;
+   base.bgColor[0] = 1.0f; base.bgColor[1] = 0.0f; base.bgColor[2] = 0.0f; base.bgOpacity = 1.0f;
+   base.fillOpacity = 0.0f;
+   wide.width = 128.0f; wide.height = 64.0f;
+   wide.bgColor[0] = 0.0f; wide.bgColor[1] = 1.0f; wide.bgColor[2] = 0.0f; wide.bgOpacity = 1.0f;
+   wide.fillOpacity = 0.0f;
+
+   LayerStackNode stack;
+   stack.Input(0).Connect(&base);
+   stack.Input(1).Connect(&wide);
+
+   unsigned int scratchFbo = 0;
+   auto greenAt = [&](int x, int y)
+   {
+      std::vector<float> px;
+      GLUtil::ReadTexturePixels(scratchFbo, stack.GetOutputTexture(), 64, 64, px);
+      const size_t i = ((size_t)y * 64 + (size_t)x) * 4;
+      return px.size() > i + 1 && px[i + 1] > 0.5f && px[i] < 0.5f;
+   };
+
+   bool ok = true;
+   const char* names[] = { "stretch", "fit", "fill" };
+   const bool expectEdgeGreen[] = { true, false, true };
+   for (int mode = 0; mode < 3; mode++)
+   {
+      stack.fit = mode;
+      stack.CookIfNeeded(1000 + mode);
+      const bool sizeOk = stack.GetOutputWidth() == 64 && stack.GetOutputHeight() == 64;
+      const bool centre = greenAt(32, 32);
+      const bool edgeTop = greenAt(32, 2), edgeBottom = greenAt(32, 61);
+      const bool modeOk = sizeOk && centre && edgeTop == expectEdgeGreen[mode] && edgeBottom == expectEdgeGreen[mode];
+      printf("  %-7s centre %s, top/bottom edge %s/%s (expect %s)  %s\n", names[mode], centre ? "layer" : "base",
+             edgeTop ? "layer" : "base", edgeBottom ? "layer" : "base", expectEdgeGreen[mode] ? "layer" : "base",
+             modeOk ? "OK" : "FAIL");
+      ok = ok && modeOk;
+   }
+   if (scratchFbo != 0)
+      glDeleteFramebuffers(1, &scratchFbo);
+
+   // Patches saved before "fit" existed reopen stretched; a new node starts at Fit.
+   LayerStackNode fresh;
+   const bool defaultOk = fresh.fit == LayerStackNode::kFit;
+   printf("  new node defaults to Fit  %s\n", defaultOk ? "OK" : "FAIL");
+   printf("%s\n", (ok && defaultOk) ? "LAYERSTACKFITTEST OK" : "LAYERSTACKFITTEST FAIL - BUG");
+}
+
 }

@@ -712,6 +712,10 @@ private:
       // mirrors `revision`/`meshRevision` at the point the instance buffer was
       // last uploaded.
       unsigned long long instanceOverrideRevision = 0;
+      // A translucent instanced mesh uploads its copies sorted far-to-near from the camera (see drawSlot); the eye
+      // they were sorted for, so a camera move re-sorts and a still camera uploads nothing.
+      bool instanceSorted = false;
+      float instanceSortEye[3] = { 0.0f, 0.0f, 0.0f };
    };
 
    bool EnsureResources(int w, int h, int sampleCount);
