@@ -784,7 +784,9 @@ namespace
          def.defaultMix = 1.0f;
          def.params.push_back({ "waveform",   0.0f,   2.0f,   0.0f });
          def.params.push_back({ "threshold", -60.0f,   0.0f, -36.0f, false, {}, { 0.0f, -3.0f, -6.0f, -60.0f } });
-         def.params.push_back({ "smooth",     0.0f,  32.0f,   8.0f });
+         // `smooth` is the edge length of the square/triangle (CycleShaperKernel.h);
+         // a sine has no edges, so it is only observable on those two.
+         def.params.push_back({ "smooth",     0.0f,  32.0f,   8.0f, false, { { "waveform", 1.0f } } });
          def.params.push_back({ "analog",     0.0f,   1.0f,   0.0f });
          def.makeKernel = []() { return std::make_unique<CycleShaperKernel>(); };
          defs.push_back(std::move(def));

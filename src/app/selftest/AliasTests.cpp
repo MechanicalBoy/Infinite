@@ -45,7 +45,7 @@ namespace
       double harmonicDb = 0.0; // in-band harmonic energy re fundamental
    };
 
-   AliasMeasurement Measure(const std::vector<float>& x)
+   AliasMeasurement Measure(const std::vector<float>& x, int fundBin)
    {
       std::vector<float> windowed((size_t)kN);
       for (int i = 0; i < kN; i++)
@@ -62,10 +62,10 @@ namespace
       std::vector<char> harmonic((size_t)kN / 2, 0);
       for (int k = 0; k <= kLobe; k++)
          harmonic[(size_t)k] = 1; // DC
-      for (int h = 1; h * kFundBin - kLobe < kN / 2; h++)
+      for (int h = 1; h * fundBin - kLobe < kN / 2; h++)
          for (int d = -kLobe; d <= kLobe; d++)
          {
-            const int k = h * kFundBin + d;
+            const int k = h * fundBin + d;
             if (k > 0 && k < kN / 2)
                harmonic[(size_t)k] = 1;
          }
@@ -77,7 +77,7 @@ namespace
          if (k > audibleTop && !harmonic[(size_t)k])
             continue;
          const double p = (double)re[(size_t)k] * re[(size_t)k] + (double)im[(size_t)k] * im[(size_t)k];
-         if (std::abs(k - kFundBin) <= kLobe)
+         if (std::abs(k - fundBin) <= kLobe)
             fund += p;
          else if (harmonic[(size_t)k])
             harm += p;
@@ -98,6 +98,7 @@ namespace
       std::vector<std::pair<const char*, float>> params; // value as a fraction of the param's range
       double gateDb = 0.0; // 0 = report only; otherwise the case must reach this
       bool control = false;
+      int fundBin = kFundBin; // odd; 171 = 501 Hz
    };
 
    bool RunCase(const AliasCase& c, AliasMeasurement& out)
@@ -122,14 +123,14 @@ namespace
       node->GetAudioNode()->PrepareToPlay(kRate, 512);
       node->CookIfNeeded(1);
 
-      const double omega = 2.0 * M_PI * (double)kFundBin / (double)kN;
+      const double omega = 2.0 * M_PI * (double)c.fundBin / (double)kN;
       const int warm = (int)(0.3 * kRate);
       std::vector<std::vector<float>> rendered;
       DelayTest::RunSamples(
          *node, warm + kN, 1,
          [omega](int i, int) { return kAmplitude * (float)std::sin(omega * (double)i); }, &rendered);
       std::vector<float> tail(rendered[0].begin() + warm, rendered[0].end());
-      out = Measure(tail);
+      out = Measure(tail, c.fundBin);
       return true;
    }
 }
@@ -151,7 +152,16 @@ bool RunAliasTest()
       { "Wavetable Shaper, drive 100%", "Wavetable Shaper", { { "drive", 1.0f } }, -65.0 },
       { "Dynamics analog, -30 dB / 8:1", "Dynamics",
         { { "analog", 1.0f }, { "threshold", 0.5f }, { "ratio", 7.0f / 19.0f } } },
-      { "Cycle Shaper (default)", "Cycle Shaper", {} },
+      // Cycle Shaper: phase-locked oscillator on band-limited tables
+      // (CycleShaperKernel.h). Before: -10 dB on the default sine at 5 kHz.
+      // At 5 kHz a cycle is under 10 samples, so cycle tracking sets the
+      // floor; at musical pitches it is far lower.
+      { "Cycle Shaper sine (default)", "Cycle Shaper", {}, -45.0 },
+      { "Cycle Shaper square, smooth 0", "Cycle Shaper", { { "waveform", 0.5f }, { "smooth", 0.0f } }, -45.0 },
+      { "Cycle Shaper triangle, smooth 0", "Cycle Shaper", { { "waveform", 1.0f }, { "smooth", 0.0f } }, -45.0 },
+      { "Cycle Shaper sine @ 500 Hz", "Cycle Shaper", {}, -95.0, false, 171 },
+      { "Cycle Shaper square @ 500 Hz", "Cycle Shaper", { { "waveform", 0.5f }, { "smooth", 0.0f } }, -75.0, false,
+        171 },
       { "Bitcrush (aliasing is the effect)", "Bitcrush", {} },
    };
 
@@ -182,7 +192,7 @@ bool RunAliasTest()
          all &= ok;
          gated++;
       }
-      printf("ALIASTEST %-36s alias<20k %7.1f dB  harmonics %7.1f dB  (re fundamental, 5 kHz @ -6 dBFS, 48 kHz)  %s\n",
+      printf("ALIASTEST %-36s alias<20k %7.1f dB  harmonics %7.1f dB  (re fundamental, -6 dBFS, 48 kHz)  %s\n",
              c.label, m.aliasDb, m.harmonicDb, verdict);
    }
    printf("ALIASTEST %d gated case(s) at their limits  %s\n", gated, all ? "OK" : "FAIL");
