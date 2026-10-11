@@ -45,6 +45,7 @@ Tools must stay **MIT-clean** (no GPL code pasted in), **three-platform aware** 
 | Node facts for patch writing | `Infinite --describe --json`; `tools/gen-patch-skill.py` |
 | Same output twice? | `tools/determinism-check.py` |
 | Golden image/audio regression | `tools/render-check.py` (`tests/render/`) |
+| 2D effect quality vs industry formulas (format, headroom, banding, alpha bleed, blur, grade, LUT, blend modes) | `INFINITE_IMGAUDIT=1 INFINITE_EXITAFTER=1 Infinite`; baseline in `docs/plans/image-fx/README.md` |
 | Lay out / preview an .inf without GUI | `tools/patch-layout.py`, `tools/patch-layout-preview.py` |
 | Every node spawned, wired, checked | `scripts/node_census.py` |
 | Node screenshots | `scripts/node_screenshot.py`, `scripts/screenshot_all_nodes.py` |

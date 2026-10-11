@@ -5891,6 +5891,7 @@ bool RunGrainMolderFixture();
 bool RunMolderFixture();
 
 bool RunSpoutLoopTest();
+bool RunImgAudit();
 
 bool RunGranularFixture();
 

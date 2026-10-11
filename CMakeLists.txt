@@ -482,6 +482,7 @@ set(COMMON_SOURCES
     src/app/panels/ViewportPanel.cpp
     src/app/selftest/AudioSweepTests.cpp
     src/app/selftest/AvRecTests.cpp
+    src/app/selftest/ImgAudit.cpp
     src/app/selftest/MidiOutTests.cpp
     src/app/selftest/BenchScenes.cpp
     src/app/selftest/DspFixtures1.cpp
