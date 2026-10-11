@@ -15,6 +15,7 @@
 #include "audio/ParamMailbox.h"
 #include "audio/SynthModes.h"
 #include "audio/Wavetable.h"
+#include "audio/dsp/BlepOscillator.h"
 
 namespace WavetableSynthCore
 {
@@ -231,6 +232,80 @@ namespace WavetableSynthCore
       return mode == SynthModes::kWarpOddOnly || mode == SynthModes::kWarpEvenOnly;
    }
 
+   // ------------------------------------------------- warp anti-aliasing
+   // A phase warp changes how fast the table is read (sync up to 16x, the
+   // bends and skews locally), so the mip the voice's pitch alone would pick
+   // can hold harmonics that land above Nyquist. These warps choose the mip
+   // from the read's local speed instead (WarpReadSpeed), crossfaded between
+   // two levels.
+   inline bool WarpIsPhaseDomain(int mode)
+   {
+      switch (mode)
+      {
+         case SynthModes::kWarpFM:
+         case SynthModes::kWarpPD:
+         case SynthModes::kWarpSync:
+         case SynthModes::kWarpBendPlus:
+         case SynthModes::kWarpBendMinus:
+         case SynthModes::kWarpAsymPlus:
+         case SynthModes::kWarpAsymMinus:
+         case SynthModes::kWarpMirror:
+         case SynthModes::kWarpQuantize:
+            return true;
+         default:
+            return false;
+      }
+   }
+
+   // Read-phase cycles per sample at base phase p: |d(read)/dp| * inc, from a
+   // one-sided difference so a jump (sync wrap, quantize step) does not count
+   // as speed - those are band-limited separately, as discontinuities.
+   inline double WarpReadSpeed(int mode, float amount, float ratio, double p, float mod, double inc)
+   {
+      constexpr double kDelta = 1.0e-4;
+      const double a = WarpReadPhase(mode, amount, ratio, p, mod);
+      double b = WarpReadPhase(mode, amount, ratio, p + kDelta, mod);
+      double d = b - a;
+      d -= std::floor(d + 0.5); // wrap: a read wrap is not a jump
+      if (std::fabs(d) > 0.25)  // a real jump inside the probe: read the other side
+      {
+         b = WarpReadPhase(mode, amount, ratio, p - kDelta, mod);
+         d = a - b;
+         d -= std::floor(d + 0.5);
+      }
+      return std::fabs(d / kDelta) * std::fabs(inc);
+   }
+
+   // The base phases in (0, 1] at which a warp has a value or slope
+   // discontinuity, in increasing order; returns how many.
+   inline int WarpBreakpoints(int mode, float amount, double* out, int maxOut)
+   {
+      // FM's read is continuous across the wrap. The power-law skews are
+      // continuous in value too, but asym+'s p^e (e < 1) has an unbounded
+      // slope there - a cusp, not a corner - so a slope-change correction has
+      // no finite size; and regularising the curve (tried) only turns the cusp
+      // into a sub-sample sweep through most of a cycle, which is worse. Both
+      // skews rely on the read-speed mip alone; asym+ at high depth (which is
+      // meant to approach a pulse) still aliases and would need the voice
+      // oversampled to fix. Every other phase warp has a corner or a jump at
+      // the wrap.
+      if (amount <= 0.0f || !WarpIsPhaseDomain(mode) || mode == SynthModes::kWarpFM ||
+          mode == SynthModes::kWarpAsymPlus || mode == SynthModes::kWarpAsymMinus)
+         return 0;
+      int n = 0;
+      if (mode == SynthModes::kWarpMirror)
+         out[n++] = 0.5;
+      if (mode == SynthModes::kWarpQuantize)
+      {
+         const double inv = 1.0 - (double)amount;
+         const int steps = 2 + (int)(inv * inv * 62.0);
+         for (int k = 1; k < steps && n < maxOut - 1; k++)
+            out[n++] = (double)k / (double)steps;
+      }
+      out[n++] = 1.0;
+      return n;
+   }
+
    // TPT SVF coefficients, computed once per engine per sample and copied into
    // every stage of the cascade. TptSvf::SetCutoff would recompute the same
    // tanf per stage per channel - six times over for a 36 dB stereo filter -
@@ -261,6 +336,12 @@ namespace WavetableSynthCore
 class AudioWavetableNode : public AudioNode
 {
 public:
+   AudioWavetableNode() { BlepOsc::EnsureTables(); } // main thread, before any audio-thread use
+
+   // The warp anti-aliasing's linear-phase correction kernel: every voice
+   // passes through it, so the latency is fixed whatever the warp.
+   int LatencySamples() const override { return BlepOsc::kLatency; }
+
    void PrepareToPlay(double sampleRate, int /*maxBlockSize*/) override
    {
       using namespace WavetableSynthCore;
@@ -674,6 +755,10 @@ private:
    struct EngineState
    {
       double phase[WavetableSynthCore::kMaxUnison] = {};
+      // Band-limits the warps' discontinuities, one per unison voice; every
+      // voice output passes through it (BlepOsc::kLatency samples late).
+      BlepOsc::Corrector blep[WavetableSynthCore::kMaxUnison];
+      float prevRaw[WavetableSynthCore::kMaxUnison] = {}; // pre-rectify sample, for its zero-crossing kinks
       double opPhase = 0.0; // internal cross-mod operator, used when the other engine is off
       float lastOut = 0.0f; // previous sample, read by the other engine's cross-mod
       DspMath::TptSvf filter[2][WavetableSynthCore::kMaxStages];
@@ -682,7 +767,11 @@ private:
       void Reset(double sampleRate)
       {
          for (int u = 0; u < WavetableSynthCore::kMaxUnison; u++)
+         {
             phase[u] = 0.0;
+            blep[u].Reset();
+            prevRaw[u] = 0.0f;
+         }
          opPhase = 0.0;
          lastOut = 0.0f;
          for (int ch = 0; ch < 2; ch++)
@@ -771,6 +860,9 @@ private:
       const float frameFrac = framePos - (float)frameLo;
 
       const bool needHalf = WarpNeedsHalfCycle(eb.warpMode) && se.warpAmount > 0.0f;
+      const bool phaseWarp = WarpIsPhaseDomain(eb.warpMode) && se.warpAmount > 0.0f;
+      double breaks[72];
+      const int numBreaks = WarpBreakpoints(eb.warpMode, se.warpAmount, breaks, 72);
 
       float sumL = 0.0f, sumR = 0.0f, sumMono = 0.0f;
       for (int u = 0; u < eb.unison; u++)
@@ -784,19 +876,84 @@ private:
          const float voiceFreq = freq * powf(2.0f, spread / 1200.0f);
          const double inc = (double)voiceFreq / mSampleRate;
 
-         // abs(): through-zero FM can make inc negative, but mip selection is
-         // about the rate of change's magnitude (aliasing risk), not its sign.
-         const int mip = Wavetable::MipForPhaseInc(std::abs(inc));
-         const float* lo = Wavetable::Frame(eb.table, frameLo, mip);
-         const float* hi = Wavetable::Frame(eb.table, frameHi, mip);
-
          const double randOffset = (double)se.phaseRand * (double)kVoicePhaseSeed[u];
          const double basePhase = st.phase[u] + (double)se.phase + randOffset + (double)fmPhaseOffset;
          const double readPhase = WarpReadPhase(eb.warpMode, se.warpAmount, se.warpRatio, basePhase, mod);
 
-         float s = Wavetable::Sample(lo, hi, frameFrac, readPhase);
-         const float half = needHalf ? Wavetable::Sample(lo, hi, frameFrac, readPhase + 0.5) : 0.0f;
-         s = WarpSample(eb.warpMode, se.warpAmount, s, half, mod);
+         // Mip: from the voice's pitch (abs(): through-zero FM can make inc
+         // negative; aliasing risk is about magnitude) - exactly as before
+         // for plain playback - or, under a phase warp, from the read's own
+         // speed, crossfaded continuously one level on the safe side.
+         int mipLo = Wavetable::MipForPhaseInc(std::abs(inc));
+         int mipHi = mipLo;
+         float mipFrac = 0.0f;
+         if (phaseWarp)
+         {
+            const double speed = WarpReadSpeed(eb.warpMode, se.warpAmount, se.warpRatio, basePhase, mod, inc);
+            const float pos = std::clamp(
+               1.0f + (float)std::log2(std::max(1.0e-9, 2.0 * Wavetable::kMaxHarmonic * speed)), 0.0f,
+               (float)(Wavetable::kMipLevels - 1));
+            mipLo = (int)pos;
+            mipHi = std::min(mipLo + 1, Wavetable::kMipLevels - 1);
+            mipFrac = pos - (float)mipLo;
+         }
+         const float* lo0 = Wavetable::Frame(eb.table, frameLo, mipLo);
+         const float* hi0 = Wavetable::Frame(eb.table, frameHi, mipLo);
+         const float* lo1 = Wavetable::Frame(eb.table, frameLo, mipHi);
+         const float* hi1 = Wavetable::Frame(eb.table, frameHi, mipHi);
+         auto read = [&](double rp) {
+            const float a = Wavetable::Sample(lo0, hi0, frameFrac, rp);
+            return mipFrac > 0.0f ? a + (Wavetable::Sample(lo1, hi1, frameFrac, rp) - a) * mipFrac : a;
+         };
+         // The full warped value at base phase p (same mip, same modulator).
+         auto valueAt = [&](double p) {
+            const double rp = WarpReadPhase(eb.warpMode, se.warpAmount, se.warpRatio, p, mod);
+            const float h = needHalf ? read(rp + 0.5) : 0.0f;
+            return (double)WarpSample(eb.warpMode, se.warpAmount, read(rp), h, mod);
+         };
+
+         const float raw = read(readPhase);
+         const float half = needHalf ? read(readPhase + 0.5) : 0.0f;
+         float s = WarpSample(eb.warpMode, se.warpAmount, raw, half, mod);
+
+         // Discontinuities the warp put between the previous sample and this
+         // one, band-limited at their exact time: each breakpoint's value jump
+         // and slope change, measured from the warp itself (BlepOscillator.h).
+         BlepOsc::Corrector& corr = st.blep[u];
+         if (numBreaks > 0 && inc > 0.0)
+         {
+            constexpr double kD = 1.0e-5;
+            const double pNow = basePhase - std::floor(basePhase);
+            const double pPrev = pNow - inc; // may be negative: the wrap is in this step
+            for (int b = 0; b < numBreaks; b++)
+            {
+               for (double bp : { breaks[b] - 1.0, breaks[b] })
+               {
+                  if (bp <= pPrev || bp > pNow)
+                     continue;
+                  const double tau = (bp - pPrev) / inc;
+                  const double vMinus = valueAt(bp - kD), vPlus = valueAt(bp + kD);
+                  const double sMinus = (vMinus - valueAt(bp - 2.0 * kD)) / kD;
+                  const double sPlus = (valueAt(bp + 2.0 * kD) - vPlus) / kD;
+                  corr.AddEvent(tau, vPlus - vMinus, (sPlus - sMinus) * inc);
+               }
+            }
+         }
+         if (eb.warpMode == SynthModes::kWarpRectify && se.warpAmount > 0.0f)
+         {
+            // |s| folds at each zero crossing of the raw read: a slope change
+            // of twice the slope there, scaled by the blend.
+            const float prev = st.prevRaw[u];
+            if ((prev < 0.0f) != (raw < 0.0f) && prev != raw)
+            {
+               const double tau = (double)prev / ((double)prev - (double)raw);
+               const double slope = (double)raw - (double)prev;
+               corr.AddEvent(std::clamp(tau, 1.0e-6, 1.0), 0.0, 2.0 * std::fabs(slope) * se.warpAmount);
+            }
+         }
+         st.prevRaw[u] = raw;
+         const float naive = s;
+         s = corr.Push(s);
 
          st.phase[u] += inc;
          st.phase[u] -= floor(st.phase[u]);
@@ -808,7 +965,7 @@ private:
          DspMath::EqualPowerPan(std::clamp(se.pan + spreadPan, -1.0f, 1.0f), lg, rg);
          sumL += s * lg;
          sumR += s * rg;
-         sumMono += s;
+         sumMono += naive; // the other engine's cross-mod reads this sample now, uncorrected
       }
 
       const float norm = 1.0f / sqrtf((float)eb.unison); // more voices != louder

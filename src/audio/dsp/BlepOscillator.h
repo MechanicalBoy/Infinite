@@ -130,6 +130,75 @@ namespace BlepOsc
       return *tables;
    }
 
+   // The correction machinery on its own, for any signal whose
+   // discontinuities the caller can locate: push one naive sample per step,
+   // add each step's events (a value jump and/or a slope change at a
+   // fraction of the step) before pushing, and read back the band-limited
+   // signal kLatency samples late. Used by Oscillator below and by the
+   // Wavetable synth's phase warps (WavetableSynthCore.h).
+   class Corrector
+   {
+   public:
+      void Reset()
+      {
+         std::fill(mNaive, mNaive + kRing, 0.0f);
+         std::fill(mCorr, mCorr + kRing, 0.0f);
+         mTime = 0;
+      }
+
+      // The step being built runs from Time() to Time() + 1.
+      long Time() const { return mTime; }
+
+      // A step of `dv` and a slope change of `ds` (per sample) at fraction
+      // `tau` in (0, 1] of the step being built.
+      void AddEvent(double tau, double dv, double ds) { AddEventAt((double)mTime + tau, dv, ds); }
+
+      // Same, at absolute time `t` in (Time(), Time() + 1].
+      void AddEventAt(double t, double dv, double ds)
+      {
+         if (std::fabs(dv) < 1e-9 && std::fabs(ds) < 1e-12)
+            return;
+         const Tables& tb = EnsureTables();
+         // frac in (0, 1]: an event exactly on a sample time belongs to the
+         // step that ends there (that sample already includes it).
+         const double whole = std::ceil(t) - 1.0;
+         const double pos = (t - whole) * kTableRes;
+         const int r = std::min((int)pos, kTableRes - 1);
+         const float f = (float)(pos - r);
+         const long base = (long)whole - (kKernelHalf - 1);
+         const float* s0 = tb.step[r];
+         const float* s1 = tb.step[r + 1];
+         const float* r0 = tb.ramp[r];
+         const float* r1 = tb.ramp[r + 1];
+         const float fdv = (float)dv, fds = (float)ds;
+         for (int j = 0; j < kTaps; j++)
+         {
+            const float st = s0[j] + (s1[j] - s0[j]) * f;
+            const float rp = r0[j] + (r1[j] - r0[j]) * f;
+            mCorr[(unsigned)(base + j) & kMask] += fdv * st + fds * rp;
+         }
+      }
+
+      // Ends the step: `naive` is the uncorrected value at its end. Returns
+      // the corrected signal kLatency samples late.
+      float Push(float naive)
+      {
+         mTime++;
+         mNaive[(unsigned)mTime & kMask] = naive;
+         const unsigned out = ((unsigned)mTime - kLatency) & kMask;
+         const float y = mNaive[out] + mCorr[out];
+         mCorr[out] = 0.0f;
+         return y;
+      }
+
+   private:
+      static constexpr int kRing = 32;
+      static constexpr unsigned kMask = kRing - 1;
+      float mNaive[kRing] = {};
+      float mCorr[kRing] = {};
+      long mTime = 0;
+   };
+
    class Oscillator
    {
    public:
@@ -140,9 +209,7 @@ namespace BlepOsc
       {
          phase = startPhase - std::floor(startPhase);
          inc = 0.0;
-         std::fill(mNaive, mNaive + kRing, 0.0f);
-         std::fill(mCorr, mCorr + kRing, 0.0f);
-         mTime = 0;
+         mCorr.Reset();
       }
 
       void SetFrequency(double hz, double sampleRate) { inc = (sampleRate > 0.0) ? hz / sampleRate : 0.0; }
@@ -167,7 +234,7 @@ namespace BlepOsc
       float Step(int waveform, float pulseWidth, double syncAt = -1.0)
       {
          const double pw = Pw(pulseWidth);
-         const double t0 = (double)mTime; // this step runs from t0 to t0 + 1
+         const double t0 = (double)mCorr.Time(); // this step runs from t0 to t0 + 1
          if (syncAt > 0.0 && syncAt <= 1.0)
          {
             Advance(waveform, pw, t0, syncAt);
@@ -182,19 +249,10 @@ namespace BlepOsc
             Advance(waveform, pw, t0, 1.0);
          }
 
-         mTime++;
-         const unsigned now = (unsigned)mTime & kMask;
-         mNaive[now] = Value(waveform, pw, phase);
-
-         const unsigned out = ((unsigned)mTime - kLatency) & kMask;
-         const float y = mNaive[out] + mCorr[out];
-         mCorr[out] = 0.0f;
-         return y;
+         return mCorr.Push(Value(waveform, pw, phase));
       }
 
    private:
-      static constexpr int kRing = 32;
-      static constexpr unsigned kMask = kRing - 1;
 
       static double Pw(float pulseWidth)
       {
@@ -273,34 +331,8 @@ namespace BlepOsc
          }
       }
 
-      // Adds a step of `dv` and a slope change of `ds` (per sample) at time `t`.
-      void AddEvent(double t, double dv, double ds)
-      {
-         if (std::fabs(dv) < 1e-9 && std::fabs(ds) < 1e-12)
-            return;
-         const Tables& tb = EnsureTables();
-         // frac in (0, 1]: an event exactly on a sample time belongs to the
-         // step that ends there (that sample already includes it).
-         const double whole = std::ceil(t) - 1.0;
-         const double pos = (t - whole) * kTableRes;
-         const int r = std::min((int)pos, kTableRes - 1);
-         const float f = (float)(pos - r);
-         const long base = (long)whole - (kKernelHalf - 1);
-         const float* s0 = tb.step[r];
-         const float* s1 = tb.step[r + 1];
-         const float* r0 = tb.ramp[r];
-         const float* r1 = tb.ramp[r + 1];
-         const float fdv = (float)dv, fds = (float)ds;
-         for (int j = 0; j < kTaps; j++)
-         {
-            const float st = s0[j] + (s1[j] - s0[j]) * f;
-            const float rp = r0[j] + (r1[j] - r0[j]) * f;
-            mCorr[(unsigned)(base + j) & kMask] += fdv * st + fds * rp;
-         }
-      }
+      void AddEvent(double t, double dv, double ds) { mCorr.AddEventAt(t, dv, ds); }
 
-      float mNaive[kRing] = {};
-      float mCorr[kRing] = {};
-      long mTime = 0;
+      Corrector mCorr;
    };
 }

@@ -26,6 +26,7 @@
 #include "app/AppShared.h"
 #include "audio/dsp/PortableFft.h"
 #include "nodes/AnalogNode.h"
+#include "nodes/WavetableNode.h"
 
 namespace app
 {
@@ -146,18 +147,11 @@ namespace
       double gateDb = 0.0;
    };
 
-   AliasMeasurement RunSynthCase(const SynthCase& c)
+   // Renders any free-running IAudioSource-style node (stereo out, no
+   // inputs) after warm-up and measures its left channel.
+   template <typename Node>
+   AliasMeasurement MeasureSource(Node& node, int fundBin)
    {
-      AnalogNode node;
-      node.freq = (float)((double)c.fundBin * kRate / (double)kN);
-      node.analog = false;
-      node.filterType = kAFilterOff;
-      node.oscMix = 0.0f; // osc1 only unless the case mixes osc2 in
-      node.sub = 0.0f;
-      node.noise = 0.0f;
-      node.voices = 1.0f;
-      node.volume = 0.5f;
-      c.setup(node);
       node.GetAudioNode()->PrepareToPlay(kRate, 512);
       node.CookIfNeeded(1);
 
@@ -175,7 +169,46 @@ namespace
          all.insert(all.end(), l.begin(), l.end());
       }
       std::vector<float> tail(all.begin() + warm, all.begin() + warm + kN);
-      return Measure(tail, c.fundBin);
+      return Measure(tail, fundBin);
+   }
+
+   AliasMeasurement RunSynthCase(const SynthCase& c)
+   {
+      AnalogNode node;
+      node.freq = (float)((double)c.fundBin * kRate / (double)kN);
+      node.analog = false;
+      node.filterType = kAFilterOff;
+      node.oscMix = 0.0f; // osc1 only unless the case mixes osc2 in
+      node.sub = 0.0f;
+      node.noise = 0.0f;
+      node.voices = 1.0f;
+      node.volume = 0.5f;
+      c.setup(node);
+      return MeasureSource(node, c.fundBin);
+   }
+
+   // The Wavetable synth (and the Oscillator node, which runs the same
+   // WavetableSynthCore): engine A only, free-running, filter off.
+   struct WavetableCase
+   {
+      const char* label;
+      int fundBin;
+      std::function<void(WavetableEngine&)> setup;
+      double gateDb = 0.0;
+   };
+
+   AliasMeasurement RunWavetableCase(const WavetableCase& c)
+   {
+      WavetableNode node;
+      node.frequency = (float)((double)c.fundBin * kRate / (double)kN);
+      node.mix = 0.0f;
+      node.volume = 0.5f;
+      node.engines[1].on = false;
+      WavetableEngine& e = node.engines[0];
+      e.unison = 1;
+      e.filterType = SynthModes::kFilterOff;
+      c.setup(e);
+      return MeasureSource(node, c.fundBin);
    }
 }
 
@@ -285,6 +318,73 @@ bool RunAliasTest()
    for (const SynthCase& c : synthCases)
    {
       const AliasMeasurement m = RunSynthCase(c);
+      const char* verdict = "info";
+      static char buf[48];
+      if (c.gateDb < 0.0)
+      {
+         const bool ok = m.aliasDb <= c.gateDb;
+         snprintf(buf, sizeof(buf), "gate %.0f dB %s", c.gateDb, ok ? "OK" : "FAIL");
+         verdict = buf;
+         all &= ok;
+         gated++;
+      }
+      printf("ALIASTEST %-36s alias<20k %7.1f dB  harmonics %7.1f dB  (re fundamental)  %s\n", c.label, m.aliasDb,
+             m.harmonicDb, verdict);
+   }
+
+   // Wavetable synth / Oscillator node (table 0 is a pure sine, so a warp's
+   // harmonics are all its own). Before, same metric: sync -8.4 / -17.2 dB
+   // (1.75 kHz / 220 Hz), bend -43.4, mirror -34.4, quantize -27.5, PD -54.1,
+   // rectify -42.7; on a saw table sync -2.4, bend -24.9. Now: read-speed mip
+   // for phase warps + BLEP/BLAMP at each warp's breakpoints. Asym (a cusp,
+   // see WarpBreakpoints) is reported, not gated.
+   using SM = SynthModes::WarpMode;
+   auto warp = [](int mode, float amount, float ratio = 1.0f) {
+      return [=](WavetableEngine& e) {
+         e.warpMode = mode;
+         e.warpAmount = amount;
+         e.warpRatio = ratio;
+      };
+   };
+   const std::vector<WavetableCase> wtCases = {
+      { "Wavetable plain 1.75 kHz", 597, warp(SM::kWarpOff, 0.0f), -110.0 },
+      { "Wavetable plain 220 Hz", 75, warp(SM::kWarpOff, 0.0f), -110.0 },
+      { "Wavetable sync x2.7 1.75 kHz", 597, warp(SM::kWarpSync, 1.0f, 2.7f), -42.0 },
+      { "Wavetable sync x2.7 220 Hz", 75, warp(SM::kWarpSync, 1.0f, 2.7f), -88.0 },
+      { "Wavetable bend+ 100% 1.75 kHz", 597, warp(SM::kWarpBendPlus, 1.0f), -78.0 },
+      { "Wavetable asym+ 100% 1.75 kHz", 597, warp(SM::kWarpAsymPlus, 1.0f) },
+      { "Wavetable mirror 100% 1.75 kHz", 597, warp(SM::kWarpMirror, 1.0f), -70.0 },
+      { "Wavetable quantize 50% 1.75 kHz", 597, warp(SM::kWarpQuantize, 0.5f), -88.0 },
+      { "Wavetable PD 50% (op x1) 1.75 kHz", 597, warp(SM::kWarpPD, 0.5f, 1.0f), -66.0 },
+      { "Wavetable FM 30% (op x1) 1.75 kHz", 597, warp(SM::kWarpFM, 0.3f, 1.0f), -108.0 },
+      { "Wavetable rectify 50% 1.75 kHz", 597, warp(SM::kWarpRectify, 0.5f), -80.0 },
+      // A bright table: "Multi Saw" (24), so read-speed aliasing shows too.
+      { "Wavetable[saw] plain 1.75 kHz", 597, [](WavetableEngine& e) { e.table = 24; }, -90.0 },
+      { "Wavetable[saw] sync x2.7 1.75 kHz", 597,
+        [](WavetableEngine& e) {
+           e.table = 24;
+           e.warpMode = SynthModes::kWarpSync;
+           e.warpAmount = 1.0f;
+           e.warpRatio = 2.7f;
+        },
+        -37.0 },
+      { "Wavetable[saw] asym+ 100% 1.75 kHz", 597,
+        [](WavetableEngine& e) {
+           e.table = 24;
+           e.warpMode = SynthModes::kWarpAsymPlus;
+           e.warpAmount = 1.0f;
+        } },
+      { "Wavetable[saw] bend+ 100% 1.75 kHz", 597,
+        [](WavetableEngine& e) {
+           e.table = 24;
+           e.warpMode = SynthModes::kWarpBendPlus;
+           e.warpAmount = 1.0f;
+        },
+        -38.0 },
+   };
+   for (const WavetableCase& c : wtCases)
+   {
+      const AliasMeasurement m = RunWavetableCase(c);
       const char* verdict = "info";
       static char buf[48];
       if (c.gateDb < 0.0)
