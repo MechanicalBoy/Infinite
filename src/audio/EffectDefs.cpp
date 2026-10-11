@@ -43,6 +43,7 @@ namespace
       {
          EffectDef def;
          def.name = "Audio Filter";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kFilterResponse;
@@ -100,6 +101,7 @@ namespace
       {
          EffectDef def;
          def.name = "EQ";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kEqCurve;
@@ -200,6 +202,7 @@ namespace
       {
          EffectDef def;
          def.name = "Dynamics";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kDynamicsTransfer;
@@ -241,6 +244,7 @@ namespace
       {
          EffectDef def;
          def.name = "Limiter";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kLimiterMeter;
@@ -393,6 +397,7 @@ namespace
       {
          EffectDef def;
          def.name = "Drive";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kDriveCurve;
@@ -426,6 +431,7 @@ namespace
       {
          EffectDef def;
          def.name = "Stereo";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kStereoGoniometer;
@@ -505,6 +511,7 @@ namespace
       {
          EffectDef def;
          def.name = "Flanger";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kFlangerScatter;
@@ -534,6 +541,7 @@ namespace
       {
          EffectDef def;
          def.name = "Phaser";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kPhaserScatter;
@@ -559,6 +567,7 @@ namespace
       {
          EffectDef def;
          def.name = "Bitcrush";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kBitcrushWave;
@@ -577,6 +586,7 @@ namespace
       {
          EffectDef def;
          def.name = "Transient Shaper";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kTransientEnvelope;
@@ -676,6 +686,7 @@ namespace
       {
          EffectDef def;
          def.name = "Tremolo";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kTremoloWave;
@@ -710,6 +721,7 @@ namespace
       {
          EffectDef def;
          def.name = "Wavetable Shaper";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kWavetableShaperCurve;
@@ -765,6 +777,7 @@ namespace
       {
          EffectDef def;
          def.name = "Cycle Shaper";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kCycleShaperWave;

@@ -12,7 +12,11 @@
 // The runtime every EffectDef's kernel is wrapped in - the concrete home for
 // §0.5's shared conventions (mix, denormal guard) so no individual kernel has
 // to reimplement them. Latency is reported straight from the kernel
-// (LatencySamples below); nothing to wrap there.
+// (LatencySamples below), and the dry half of the mix is delayed by that same
+// amount: PDC aligns this node's whole output with its siblings, so an
+// undelayed dry copy would land early against the wet one - a comb for the
+// Limiter's 1.5 ms look-ahead, a ~46 ms slapback for the 2048-point spectral
+// effects - at any mix below 100%.
 class AudioEffectRuntime : public AudioNode
 {
 public:
@@ -27,7 +31,7 @@ public:
    // PrepareToPlay (with the device's actual sample rate) always follows
    // once a topology rebuild sees sampleRate > 0, so this fallback rate only
    // matters for the window before that, or when no device ever opens.
-   explicit AudioEffectRuntime(const EffectDef& def) : mKernel(def.makeKernel())
+   explicit AudioEffectRuntime(const EffectDef& def) : mKernel(def.makeKernel()), mLinearMix(def.linearMix)
    {
       static constexpr double kFallbackSampleRate = 48000.0;
       mKernel->PrepareToPlay(kFallbackSampleRate, kAudioMaxBlockFrames);
@@ -42,7 +46,12 @@ public:
       ResizeBuffers(maxBlockSize);
    }
 
-   void Reset() override { mKernel->Reset(); }
+   void Reset() override
+   {
+      mKernel->Reset();
+      std::fill(mDryStorage.begin(), mDryStorage.end(), 0.0f);
+      mDryPos = 0;
+   }
 
    void ProcessBlock(const AudioBuffer* const* inputs, int numInputs, AudioBuffer& output) override
    {
@@ -78,19 +87,42 @@ public:
       for (int i = 0; i < output.numFrames; i++)
       {
          const float m = std::clamp(mMixSmoother.Process(mMixTarget.load(std::memory_order_relaxed)), 0.0f, 1.0f);
-         // Equal-power crossfade (§0.5), not linear - so a mix of 0.5 doesn't
-         // read as quieter than either extreme.
-         const float angle = m * (float)M_PI * 0.5f;
-         const float dryGain = cosf(angle);
-         const float wetGain = sinf(angle);
+         // Equal-power crossfade (§0.5) for a wet signal that is decorrelated
+         // from the dry (reverb, delay, pitch, spectral) - so a mix of 0.5
+         // doesn't read as quieter than either extreme. A linear one for a wet
+         // signal that is still essentially the dry one, processed (dynamics,
+         // drive, filtering) - two near-identical signals summed at
+         // cos + sin = 1.414 would make the half-way setting +3 dB louder.
+         float dryGain, wetGain;
+         if (mLinearMix)
+         {
+            dryGain = 1.0f - m;
+            wetGain = m;
+         }
+         else
+         {
+            const float angle = m * (float)M_PI * 0.5f;
+            dryGain = cosf(angle);
+            wetGain = sinf(angle);
+         }
          float monoSum = 0.0f;
          for (int ch = 0; ch < numChannels; ch++)
          {
-            const float v = in.channels[ch][i] * dryGain + wet.channels[ch][i] * wetGain;
+            float dry = in.channels[ch][i];
+            if (mDryLength > 0)
+            {
+               float& slot = mDryStorage[(size_t)ch * mDryLength + mDryPos];
+               const float delayed = slot;
+               slot = dry;
+               dry = delayed;
+            }
+            const float v = dry * dryGain + wet.channels[ch][i] * wetGain;
             output.channels[ch][i] = v;
             peak = std::max(peak, std::fabs(v));
             monoSum += v;
          }
+         if (mDryLength > 0 && ++mDryPos >= mDryLength)
+            mDryPos = 0;
          monoBuf[i] = numChannels > 0 ? monoSum / (float)numChannels : 0.0f;
       }
       mMeter.Write(&peak, 1);
@@ -121,9 +153,15 @@ private:
       mSilence.assign((size_t)mMaxBlockSize, 0.0f);
       for (int ch = 0; ch < kMaxChannels; ch++)
          mWetChannels[ch] = mWetStorage.data() + (size_t)ch * mMaxBlockSize;
+      // The kernel has just been prepared, so its latency for this rate is
+      // known. Sized here, on the main thread, never in ProcessBlock.
+      mDryLength = std::max(0, mKernel->LatencySamples());
+      mDryStorage.assign((size_t)mDryLength * kMaxChannels, 0.0f);
+      mDryPos = 0;
    }
 
    std::unique_ptr<IEffectKernel> mKernel;
+   const bool mLinearMix;
    DspMath::OnePole mMixSmoother;
    std::atomic<float> mMixTarget { 1.0f };
 
@@ -131,6 +169,11 @@ private:
    float* mWetChannels[kMaxChannels] = {};
    std::vector<float> mSilence;
    int mMaxBlockSize = 0;
+
+   // Dry-path delay line, one ring of mDryLength samples per channel.
+   std::vector<float> mDryStorage;
+   int mDryLength = 0;
+   int mDryPos = 0;
 
    MeterRing mMeter;
    MeterRing mSpectrumRing;
