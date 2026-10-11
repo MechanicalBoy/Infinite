@@ -44,6 +44,7 @@ public:
    // the first solve is still running.
    int SolvedModeCount() const { return mModes.valid ? mModes.count : 0; }
    bool Solving() const { return mJobRunning; }
+   bool Preparing() const override { return !mHaveRequest || mJobRunning; }
 
 private:
    struct Coeffs

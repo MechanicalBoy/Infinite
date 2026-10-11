@@ -206,6 +206,11 @@ int AudioEffectNode::ParamIndex(const char* name) const
    return -1;
 }
 
+bool AudioEffectNode::KernelPreparing() const
+{
+   return mAudioNode && mAudioNode->Kernel().Preparing();
+}
+
 void AudioEffectNode::CookIfNeeded(int frameId)
 {
    if (frameId == mLastCookFrame)

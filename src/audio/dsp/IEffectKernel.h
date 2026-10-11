@@ -61,4 +61,10 @@ public:
    // thread) via AudioEffectNode::ExtraMeterValue() - same MeterRing
    // discipline as every other audio->main readback in this tree.
    virtual MeterRing* ExtraMeter() { return nullptr; }
+
+   // Main thread only. True while the kernel is still building what it needs
+   // to sound (Shape Resonator's background mode solve). An offline render
+   // (--audio-summary / --render) waits on this before its first sample, so a
+   // render that runs faster than real time does not start into silence.
+   virtual bool Preparing() const { return false; }
 };

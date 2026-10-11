@@ -114,6 +114,8 @@ public:
    // ringing; *solving is set while a mesh solve is still running. 0 for any
    // other effect.
    int ReadModeFrequencies(float* out, int maxCount, bool* solving = nullptr);
+   // Main thread only. See IEffectKernel::Preparing.
+   bool KernelPreparing() const;
    // Kernel-published extra meter values beyond AudioEffectRuntime's own
    // generic post-mix peak - Dynamics publishes {instantaneous input dB,
    // gain-reduction dB} for its transfer-curve visualizer's operating-point

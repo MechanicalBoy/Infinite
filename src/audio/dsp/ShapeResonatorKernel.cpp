@@ -31,6 +31,21 @@ namespace
    }
 }
 
+namespace
+{
+   // Identity below kKnee, then a tanh shoulder that is C1 at the knee and
+   // tops out at 1.
+   inline float SafetyClip(float x)
+   {
+      constexpr float kKnee = 0.8f;
+      const float a = std::fabs(x);
+      if (a <= kKnee)
+         return x;
+      const float y = kKnee + (1.0f - kKnee) * std::tanh((a - kKnee) / (1.0f - kKnee));
+      return x < 0.0f ? -y : y;
+   }
+}
+
 ShapeResonatorKernel::ShapeResonatorKernel() = default;
 
 ShapeResonatorKernel::~ShapeResonatorKernel()
@@ -193,9 +208,12 @@ void ShapeResonatorKernel::PushParams(const AudioEffectNode& node, double sample
          const int k = c.n++;
          c.a1[k] = 2.0f * r * std::cos(w);
          c.a2[k] = r * r;
-         // sqrt(1-r): impulse and noise excitation ring at a level that does
-         // not collapse as decay grows (a flat (1-r) gain is silent for a hit).
-         c.bIn[k] = std::sqrt(1.0f - r) * mModes.shape[i][pickIn];
+         // 2 sin(w) sqrt(1-r): unity white-noise power gain per mode (the ring's
+         // sum of h^2 is about b^2 / (4 (1-r) sin^2 w)). So every mode answers a
+         // broadband hit equally (no 1/f tilt), a hit carries the same energy
+         // whatever the decay (longer decay = quieter but longer ring), and with
+         // unit-RMS shapes and sum(gOut^2) = 1 broadband in ~= broadband out.
+         c.bIn[k] = 2.0f * std::sin(w) * std::sqrt(1.0f - r) * mModes.shape[i][pickIn];
          c.gOut[k] = mModes.shape[i][pickOut];
          mFreqs[k] = f;
          norm += c.gOut[k] * c.gOut[k];
@@ -268,9 +286,10 @@ void ShapeResonatorKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer
             y1[k] = v;
             sum += mCur.gOut[k] * v;
          }
-         // A tone sitting on a long-ringing mode can build large; keep the wet
-         // path bounded (unity gain for small signals).
-         y[s] = std::tanh(sum);
+         // Safety clip only: linear below the knee, so normal hits pass clean;
+         // a sustained tone parked on a long-ringing mode still builds (a
+         // resonator's steady-state gain is ~1/sqrt(1-r)) and is bounded here.
+         y[s] = SafetyClip(sum);
       }
    }
 }
