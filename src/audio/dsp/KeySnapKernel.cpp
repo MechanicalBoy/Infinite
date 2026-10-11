@@ -101,13 +101,22 @@ void KeySnapKernel::PrepareToPlay(double sampleRate, int /*maxBlockSize*/)
    mInstBin.assign(kNumBins + 1, 0.0f);
 
    for (int ch = 0; ch < kMaxChannels; ch++)
+   {
       mChannels[ch].Init();
+      mChRe[ch].assign(kNumBins, 0.0f);
+      mChIm[ch].assign(kNumBins, 0.0f);
+   }
+   mMid.Init();
+   mMapTarget.assign(kNumBins, -1);
+   mMapRc.assign(kNumBins, 1.0f);
+   mMapRs.assign(kNumBins, 0.0f);
 }
 
 void KeySnapKernel::Reset()
 {
    for (int ch = 0; ch < kMaxChannels; ch++)
       mChannels[ch].Reset();
+   mMid.Reset();
 }
 
 void KeySnapKernel::PushParams(const AudioEffectNode& node, double sampleRate)
@@ -135,40 +144,51 @@ void KeySnapKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
    const float normScale = 1.0f / ((float)kFftSize * 1.5f);
    const int olaMask = kOlaSize - 1;
 
-   for (int ch = 0; ch < numChannels; ch++)
+   for (int i = 0; i < out.numFrames; i++)
    {
-      ChannelState& st = mChannels[ch];
-      const float* inData = in.channels[ch];
-      float* outData = out.channels[ch];
-
-      for (int i = 0; i < out.numFrames; i++)
+      // Pop first so the latency is exactly kFftSize. Every channel's FIFO
+      // fills on the same sample, so their frames are processed together.
+      for (int ch = 0; ch < numChannels; ch++)
       {
-         // Pop first so the latency is exactly kFftSize.
-         outData[i] = DspMath::FlushDenormal(st.outputOla[st.olaRead]);
+         ChannelState& st = mChannels[ch];
+         out.channels[ch][i] = DspMath::FlushDenormal(st.outputOla[st.olaRead]);
          st.outputOla[st.olaRead] = 0.0f;
          st.olaRead = (st.olaRead + 1) & olaMask;
+         st.inputFifo[st.fifoSamples++] = in.channels[ch][i];
+      }
+      if (numChannels == 0 || mChannels[0].fifoSamples < kFftSize)
+         continue;
 
-         st.inputFifo[st.fifoSamples++] = inData[i];
-         if (st.fifoSamples >= kFftSize)
+      // Every channel's spectrum, and their average (the mid).
+      std::fill(mRe.begin(), mRe.end(), 0.0f);
+      std::fill(mIm.begin(), mIm.end(), 0.0f);
+      const float avg = 1.0f / (float)numChannels;
+      for (int ch = 0; ch < numChannels; ch++)
+      {
+         ChannelState& st = mChannels[ch];
+         for (int n = 0; n < kFftSize; n++)
+            mTime[n] = st.inputFifo[n] * mWindow[n];
+         mFft.Forward(mTime.data(), kLog2Fft, mChRe[ch].data(), mChIm[ch].data());
+         for (int k = 0; k < kNumBins; k++)
          {
-            for (int n = 0; n < kFftSize; n++)
-               mTime[n] = st.inputFifo[n] * mWindow[n];
-            mFft.Forward(mTime.data(), kLog2Fft, mRe.data(), mIm.data());
-            for (int k = 0; k < kNumBins; k++)
-            {
-               mRe[k] *= 0.5f;
-               mIm[k] *= 0.5f;
-            }
-
-            ProcessFrame(st);
-
-            mFft.Inverse(mOutRe.data(), mOutIm.data(), kLog2Fft, mTime.data());
-            for (int n = 0; n < kFftSize; n++)
-               st.outputOla[(st.olaRead + n) & olaMask] += mTime[n] * mWindow[n] * normScale;
-
-            std::memmove(st.inputFifo.data(), st.inputFifo.data() + kHopSize, (kFftSize - kHopSize) * sizeof(float));
-            st.fifoSamples = kFftSize - kHopSize;
+            mChRe[ch][k] *= 0.5f;
+            mChIm[ch][k] *= 0.5f;
+            mRe[k] += mChRe[ch][k] * avg;
+            mIm[k] += mChIm[ch][k] * avg;
          }
+      }
+
+      ProcessFrame(mMid); // decides the mapping on the mid
+
+      for (int ch = 0; ch < numChannels; ch++)
+      {
+         ChannelState& st = mChannels[ch];
+         ApplyMapping(mChRe[ch].data(), mChIm[ch].data());
+         mFft.Inverse(mOutRe.data(), mOutIm.data(), kLog2Fft, mTime.data());
+         for (int n = 0; n < kFftSize; n++)
+            st.outputOla[(st.olaRead + n) & olaMask] += mTime[n] * mWindow[n] * normScale;
+         std::memmove(st.inputFifo.data(), st.inputFifo.data() + kHopSize, (kFftSize - kHopSize) * sizeof(float));
+         st.fifoSamples = kFftSize - kHopSize;
       }
    }
 
@@ -177,7 +197,34 @@ void KeySnapKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
          out.channels[ch][i] = 0.0f;
 }
 
-// Analyse mRe/mIm, correct every peak, write the result to mOutRe/mOutIm.
+void KeySnapKernel::ApplyMapping(const float* re, const float* im)
+{
+   // DC and Nyquist pass through untouched.
+   mOutRe[0] = re[0];
+   mOutIm[0] = im[0];
+   if (mMapPassthrough)
+   {
+      for (int k = 1; k < kNumBins; k++)
+      {
+         mOutRe[k] = re[k];
+         mOutIm[k] = im[k];
+      }
+      return;
+   }
+   std::fill(mOutRe.begin() + 1, mOutRe.end(), 0.0f);
+   std::fill(mOutIm.begin() + 1, mOutIm.end(), 0.0f);
+   for (int k = 1; k < kNumBins; k++)
+   {
+      const int kt = mMapTarget[k];
+      if (kt < 1)
+         continue;
+      mOutRe[kt] += re[k] * mMapRc[k] - im[k] * mMapRs[k];
+      mOutIm[kt] += re[k] * mMapRs[k] + im[k] * mMapRc[k];
+   }
+}
+
+// Analyse mRe/mIm (the mid), correct every peak, and record the result as a
+// per-source-bin mapping (mMapTarget/mMapRc/mMapRs) for ApplyMapping.
 void KeySnapKernel::ProcessFrame(ChannelState& st)
 {
    const float snap = mSnap.load(std::memory_order_relaxed);
@@ -203,11 +250,8 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
       maxMag = std::max(maxMag, mag);
    }
 
-   // DC and Nyquist pass through untouched.
-   mOutRe[0] = mRe[0];
-   mOutIm[0] = mIm[0];
-   std::fill(mOutRe.begin() + 1, mOutRe.end(), 0.0f);
-   std::fill(mOutIm.begin() + 1, mOutIm.end(), 0.0f);
+   std::fill(mMapTarget.begin(), mMapTarget.end(), -1);
+   mMapPassthrough = false;
 
    // 2. Peaks.
    int peaks[kMaxPeaks];
@@ -224,11 +268,7 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
 
    if (numPeaks == 0)
    {
-      for (int k = 1; k < kNumBins; k++)
-      {
-         mOutRe[k] = mRe[k];
-         mOutIm[k] = mIm[k];
-      }
+      mMapPassthrough = true;
       st.hasSynth.swap(st.hasSynthNext);
       return;
    }
@@ -319,8 +359,11 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
          const int kt = k + shift;
          if (kt < 1 || kt >= kNumBins)
             continue;
-         mOutRe[kt] += mRe[k] * rc - mIm[k] * rs;
-         mOutIm[kt] += mRe[k] * rs + mIm[k] * rc;
+         // Last region to claim a shared valley bin wins - as before, where
+         // the bin was summed into both; this keeps it counted once.
+         mMapTarget[k] = kt;
+         mMapRc[k] = rc;
+         mMapRs[k] = rs;
       }
 
       st.synthPhaseNext[pTarget] = newPhase;

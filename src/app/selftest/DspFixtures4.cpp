@@ -393,6 +393,114 @@ bool RunEffectMixAndLimiterFixture()
       all &= ok;
    }
 
+   // 9) Stereo coherence of the spectral effects. Real stereo is mostly the
+   //    same sources at different pans, so L and R are different mixes of
+   //    the same partials (here two note groups panned apart, input L/R
+   //    correlation ~0.9). The output must stay about as correlated: a phase
+   //    vocoder that accumulates each channel's output phases on its own
+   //    lets them random-walk apart, and the result cancels in mono.
+   {
+      struct Case
+      {
+         const char* effect;
+         std::vector<std::pair<const char*, float>> params;
+      };
+      const Case cases[] = {
+         { "Spectrum Slide", { { "slide", 0.5f } } },
+         { "Key-Snap", {} },
+         { "Spec Blur", { { "diffusion", 0.0f } } },
+         { "Pitch Shifter", { { "pitch", 7.0f }, { "spectral", 1.0f } } },
+      };
+      bool ok = true;
+      for (const Case& c : cases)
+      {
+         const EffectDef* def = FindEffectDef(c.effect);
+         if (def == nullptr)
+         {
+            ok = false;
+            continue;
+         }
+         auto node = std::make_unique<AudioEffectNode>(*def);
+         node->mix = 1.0f;
+         for (const auto& [k, v] : c.params)
+            if (float* p = node->ParamPtr(k))
+               *p = v;
+         node->GetAudioNode()->PrepareToPlay(sampleRate, 512);
+         node->CookIfNeeded(1);
+         const int n = (int)(3.0 * sampleRate);
+         Lcg rng;
+         std::vector<float> noiseR((size_t)n);
+         for (float& v : noiseR)
+            v = 0.004f * rng.Next();
+         // Group 1 (A3, E4, E6) panned left of centre, group 2 (C#4 + B4)
+         // right of centre.
+         auto groupA = [&](int i) {
+            const double t = (double)i / sampleRate;
+            return 0.2 * std::sin(2 * M_PI * 220.0 * t) + 0.12 * std::sin(2 * M_PI * 329.6 * t + 0.4) +
+                   0.05 * std::sin(2 * M_PI * 1318.5 * t);
+         };
+         auto groupB = [&](int i) {
+            const double t = (double)i / sampleRate;
+            return 0.15 * std::sin(2 * M_PI * 277.2 * t) + 0.1 * std::sin(2 * M_PI * 493.9 * t + 1.1);
+         };
+         auto music = [&](int i, int ch) {
+            return (float)(ch == 0 ? groupA(i) + 0.6 * groupB(i) : 0.6 * groupA(i) + groupB(i));
+         };
+         // Two-input effects (Spectrum Slide's "to") get a second near-mono
+         // signal there - with no cable, Spectrum Slide mirrors A into B and
+         // would hide the problem.
+         auto other = [&](int i) {
+            const double t = (double)i / sampleRate;
+            return (float)(0.25 * std::sin(2 * M_PI * 440.0 * t) + 0.1 * std::sin(2 * M_PI * 660.0 * t + 1.0));
+         };
+         std::vector<std::vector<float>> out(2);
+         {
+            AudioNode* an = node->GetAudioNode();
+            float inA[2], inB[2], o[2];
+            float* pa[2] = { &inA[0], &inA[1] };
+            float* pb[2] = { &inB[0], &inB[1] };
+            float* po[2] = { &o[0], &o[1] };
+            AudioBuffer ba, bb, bo;
+            ba.channels = pa;
+            bb.channels = pb;
+            bo.channels = po;
+            ba.numChannels = bb.numChannels = bo.numChannels = 2;
+            ba.numFrames = bb.numFrames = bo.numFrames = 1;
+            const AudioBuffer* inputs[2] = { &ba, &bb };
+            const int numInputs = def->hasSidechain ? 2 : 1;
+            for (int i = 0; i < n; i++)
+            {
+               for (int ch = 0; ch < 2; ch++)
+               {
+                  inA[ch] = music(i, ch) + (ch == 1 ? noiseR[(size_t)i] : 0.0f);
+                  inB[ch] = other(i) + (ch == 1 ? 0.5f * noiseR[(size_t)i] : 0.0f);
+               }
+               an->ProcessBlock(inputs, numInputs, bo);
+               out[0].push_back(o[0]);
+               out[1].push_back(o[1]);
+            }
+         }
+         auto correlation = [&](auto&& l, auto&& r) {
+            double lr = 0.0, ll = 0.0, rr = 0.0;
+            for (int i = n / 3; i < n; i++)
+            {
+               lr += (double)l(i) * r(i);
+               ll += (double)l(i) * l(i);
+               rr += (double)r(i) * r(i);
+            }
+            return lr / std::sqrt(std::max(ll * rr, 1e-30));
+         };
+         const double inCorr = correlation([&](int i) { return music(i, 0); }, [&](int i) { return music(i, 1); });
+         const double corr =
+            correlation([&](int i) { return out[0][(size_t)i]; }, [&](int i) { return out[1][(size_t)i]; });
+         const bool thisOk = corr > inCorr - 0.1;
+         printf("DSPTEST %s stereo coherence: input L/R correlation %.3f, output %.3f (want within 0.1)  %s\n",
+                c.effect, inCorr, corr, thisOk ? "OK" : "FAIL");
+         ok &= thisOk;
+      }
+      all &= ok;
+   }
+
    return all;
 }
 }

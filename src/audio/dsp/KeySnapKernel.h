@@ -61,7 +61,11 @@ public:
    static uint32_t ScaleMask(int scale, int root);
 
 private:
+   // Decides the frame on `st`'s spectrum (mRe/mIm): which bins move where,
+   // and by what rotation, into mMapTarget/mMapRc/mMapRs.
    void ProcessFrame(ChannelState& st);
+   // Applies that mapping to one channel's own spectrum (re/im) -> mOutRe/mOutIm.
+   void ApplyMapping(const float* re, const float* im);
 
    double mSampleRate = 44100.0;
 
@@ -77,4 +81,18 @@ private:
    std::atomic<uint32_t> mMask { 0xFFFu };
 
    ChannelState mChannels[kMaxChannels];
+
+   // Stereo link. Each frame is decided once, on the mid spectrum (the
+   // average of the channels' spectra, tracked by mMid's phase state), and
+   // the same per-bin move and rotation is applied to every channel's own
+   // spectrum - so the channels' phase and level differences (the stereo
+   // image) pass through untouched and both sides always snap alike.
+   // Deciding per channel let each side's synthesis phases random-walk on
+   // their own and let a note exactly between two scale notes snap up on one
+   // side and down on the other (DSPTEST: L/R correlation 0.89 -> 0.51).
+   ChannelState mMid;
+   std::vector<float> mChRe[kMaxChannels], mChIm[kMaxChannels];
+   std::vector<int> mMapTarget; // per source bin: target bin, or -1 (dropped)
+   std::vector<float> mMapRc, mMapRs;
+   bool mMapPassthrough = false;
 };
