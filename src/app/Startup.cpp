@@ -1148,6 +1148,13 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       }
    }
    ImGui::GetIO().IniFilename = iniPath.c_str();
+#ifdef NDEBUG
+   // Dear ImGui's duplicate-ID highlighter is a developer aid (red boxes + "Message from Dear ImGui" popup). It defaults to on
+   // even in Release, so a shipped build must switch it off; debug builds keep it to catch the conflicts.
+   ImGui::GetIO().ConfigDebugHighlightIdConflicts = false;
+   // Same for the error-recovery tooltip shown on an unbalanced Push/Pop: recovery itself stays on, only the red tooltip goes.
+   ImGui::GetIO().ConfigErrorRecoveryEnableTooltip = false;
+#endif
 
    ed::Config config;
    config.SettingsFile = graphPath.c_str();
