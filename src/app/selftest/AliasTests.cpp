@@ -145,8 +145,10 @@ bool RunAliasTest()
       { "Drive atan, drive 50%", "Drive", { { "drive", 0.5f }, { "color", 1.0f } }, -100.0 },
       { "Drive tanh, drive 100%", "Drive", { { "drive", 1.0f }, { "color", 0.0f } }, -60.0 },
       { "Drive asymmetric, drive 50%", "Drive", { { "drive", 0.5f }, { "bias", 0.75f } }, -100.0 },
-      { "Wavetable Shaper, drive 50%", "Wavetable Shaper", { { "drive", 0.5f } } },
-      { "Wavetable Shaper, drive 100%", "Wavetable Shaper", { { "drive", 1.0f } } },
+      // Wavetable Shaper: 8x oversampling + slew-tracking mip (WavetableShaperKernel.h).
+      // Before (same metric): -2.9 dB at 50% drive, +10.3 dB at 100%.
+      { "Wavetable Shaper, drive 50%", "Wavetable Shaper", { { "drive", 0.5f } }, -90.0 },
+      { "Wavetable Shaper, drive 100%", "Wavetable Shaper", { { "drive", 1.0f } }, -65.0 },
       { "Dynamics analog, -30 dB / 8:1", "Dynamics",
         { { "analog", 1.0f }, { "threshold", 0.5f }, { "ratio", 7.0f / 19.0f } } },
       { "Cycle Shaper (default)", "Cycle Shaper", {} },
