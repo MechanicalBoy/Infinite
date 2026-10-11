@@ -29,14 +29,16 @@ public:
    int& ModeIndex() { return mModeIndex; }
    float& Mix() { return mMix; }
    bool& Linear() { return mLinear; }
+   bool& W3CModes() { return mW3C; }
 
    // Patches saved before linear light existed lack the key: they keep the
-   // gamma-space look they were made with. New nodes default on.
-   void BeforeLoadParams() override { mLinear = false; }
+   // gamma-space look they were made with. New nodes default on. Same for
+   // the W3C fix of Overlay, Soft Light, Hard Light and Hard Mix.
+   void BeforeLoadParams() override { mLinear = false; mW3C = false; }
 
    void VisitParams(ParamVisitor& v) override
    {
-      v.Int("mode", mModeIndex); v.Float("mix", mMix); v.Bool("linear", mLinear);
+      v.Int("mode", mModeIndex); v.Float("mix", mMix); v.Bool("linear", mLinear); v.Bool("w3cModes", mW3C);
    }
 
 private:
@@ -47,6 +49,7 @@ private:
    int mModeIndex = 0;
    float mMix = 1.0f;
    bool mLinear = true;
+   bool mW3C = true;
 
    GLUtil::Fbo mOut;
    unsigned int mProgram = 0;

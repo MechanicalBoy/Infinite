@@ -74,5 +74,20 @@ namespace BlendModes
       "   if (mode == 28) return min(a*a / max(1.0-b, 1e-4), vec3(1.0));\n"
       "   if (mode == 29) return min(b*b / max(1.0-a, 1e-4), vec3(1.0));\n"
       "   return a;\n"
+      "}\n"
+      // The W3C Compositing and Blending Level 1 forms of the four modes
+      // blendMode() gets wrong (a = backdrop, b = source). blendMode() keeps
+      // the old maths for patches saved before the fix and for the timeline.
+      // Overlay keys on the backdrop, Hard Light on the source, Soft Light
+      // uses the polynomial below 0.25, Hard Mix is a + b >= 1.
+      "vec3 blendModeW3C(int mode, vec3 a, vec3 b) {\n"
+      "   if (mode == 11) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, a));\n"
+      "   if (mode == 12) {\n"
+      "      vec3 d = mix(((16.0*a-12.0)*a+4.0)*a, sqrt(a), step(0.25, a));\n"
+      "      return mix(a - (1.0-2.0*b)*a*(1.0-a), a + (2.0*b-1.0)*(d-a), step(0.5, b));\n"
+      "   }\n"
+      "   if (mode == 13) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, b));\n"
+      "   if (mode == 17) return step(1.0, a + b);\n"
+      "   return blendMode(mode, a, b);\n"
       "}\n";
 }
