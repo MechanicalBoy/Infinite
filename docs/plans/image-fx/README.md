@@ -44,21 +44,21 @@ different: the same maths running live, with every parameter modulatable.
 |---|---|---|---|
 | 1 | `feature/image-fx-audit` | IMGAUDIT and this baseline | done |
 | 2 | `feature/image-fx-float` | RGBA16F linear-light chain: decode at sources, encode and dither at outputs | done (GPU over budget, see below) |
-| 3 | — | Node maths: grade, Curves, blurs, LUT, lookup, glows, blend modes | next |
+| 3 | `feature/image-fx-maths` | Node maths: grade, Curves, blurs, LUT, lookup, glows, blend modes | done, not merged (blur GPU over budget, see below) |
 
 ## 6. Success metrics
 
-| Metric | Target | Baseline | After Block 2 |
-|---|---|---|---|
-| Identity settings change no pixel values | 0 codes | Curves 0.097; most filters 0.002 (8-bit) | filters 0.0005; Curves Block 3 |
-| 10-node chain keeps dark levels | ≥ 100 of 103 | 26 | **102** (1024/1024 levels) |
-| Blur edge in linear light (red/green) | dip ≥ 0.98 | 0.69–0.70 | **0.999** |
-| Blur energy | 1.000 ± 0.02 | 0.988–1.004 (pass) | 0.999 |
-| Exposure +1 EV on 18% grey | 0.360 | 0.831 | **0.360** |
-| 50% white over black (linear) | half the light | n/a | err 0.0000 |
-| Grade sat 0 = Rec.709 luminance | ≤ 1e-3 | 0.93 off (HSV gives white) | Block 3 |
-| LUT identity round trip | ≤ 0.5/255 | 0.50 (128 codes) | Block 3 |
-| GPU time | ≤ +10% | column below | **+15% over the 8-bit chain (miss)** |
+| Metric | Target | Baseline | After Block 2 | After Block 3 |
+|---|---|---|---|---|
+| Identity settings change no pixel values | 0 codes | Curves 0.097; most filters 0.002 (8-bit) | filters 0.0005; Curves Block 3 | filters 0.0005; **Curves 0.001** |
+| 10-node chain keeps dark levels | ≥ 100 of 103 | 26 | **102** (1024/1024 levels) | 102 |
+| Blur edge in linear light (red/green) | dip ≥ 0.98 | 0.69–0.70 | **0.999** | 0.999 |
+| Blur energy | 1.000 ± 0.02 | 0.988–1.004 (pass) | 0.999 | 0.999 |
+| Exposure +1 EV on 18% grey | 0.360 | 0.831 | **0.360** | 0.360 |
+| 50% white over black (linear) | half the light | n/a | err 0.0000 | err 0.0000 |
+| Grade sat 0 = Rec.709 luminance | ≤ 1e-3 | 0.93 off (HSV gives white) | Block 3 | **0.0003** |
+| LUT identity round trip | ≤ 0.5/255 | 0.50 (128 codes) | Block 3 | **0.0005** |
+| GPU time | ≤ +10% | column below | **+15% over the 8-bit chain (miss)** | blurs miss, see Block 3 results |
 
 ## 7. Findings from the baseline
 
@@ -201,3 +201,41 @@ INFINITE_IMGAUDIT=1 INFINITE_EXITAFTER=1 build/Infinite.app/Contents/MacOS/Infin
 | coloroverlay | RGBA8 | 1.00 | 13 | 0.00 | 0.502 | 0.06 |
 | dropshadow | RGBA8 | 1.00 | 27 | 0.00 | 0.002 | 0.06 |
 | Curves | RGBA8 | – | 10 | – | 0.097 | – |
+
+## Block 3 results (branch `feature/image-fx-maths`)
+
+Old patches keep their old look: every fix is a param or flag that loads at its
+legacy value (`OLD(...)`, `w3cModes`, `exactLine`). `INFINITE_IMGAUDIT_LEGACY=1`
+shows the old numbers again for exposure, saturation, LUT, lookup and blurs.
+
+| Fix | Result (new defaults) |
+|---|---|
+| Blend modes (W3C) | 0 of 30 off by > 2 codes; linear light: only Vivid Light (3 codes) |
+| Curves exact line | identity 0.001 at 0.999 (was 0.097) |
+| LUT tetrahedral, texel centres | identity err 0.0005 (was 0.50) |
+| Lookup `ends` = Exact | identity err 0.0005 (was 1.0) |
+| Saturation Rec.709 | sat 0 within 0.0003 of luminance |
+| ASC CDL v1.2 | CPU reference err 0.0005 (tolerance 1e-3) |
+| Gaussian / Box Smooth | 0 ripples at radius 2 and 10; Classic keeps 8 |
+| Blur bleed | 0.00 for Gaussian, Box |
+
+GPU, 1080p, same binary, 3 interleaved pairs (legacy vs new, load < 6), ms:
+
+| Filter | Legacy | New | Change |
+|---|---|---|---|
+| Gaussian | 1.85 | 2.83 | **+53% (miss)** |
+| Box | 1.42 | 2.52 | **+77% (miss)** |
+| Bloom | 2.04 | 2.57 | +26% |
+| Diffuse Glow | 1.88 | 2.03 | +8% |
+| LUT | 0.39 | 0.14 | -64% |
+| Lookup, Grade | 0.08, 0.07 | 0.08, 0.07 | 0 |
+
+Misses and open items:
+- Blur GPU is well over the +10% target. The cost comes from the premultiplied
+  taps and the extra vertical-pass work. Not tuned in this block.
+- Values above 1.0 are still clipped (exposure +1 EV on 80% gives 1.000).
+- Still flagged, not in scope: bleed on motion blur (0.08), radial blur (0.02),
+  warps (0.13-0.25), emboss, normal map; Vivid Light 3 codes.
+- Timeline still uses the old `blendMode()`.
+- The audit does not switch Blend or Curves to legacy, so their legacy look is
+  covered by the load-time flag code only, not by a number.
