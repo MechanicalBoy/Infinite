@@ -9,7 +9,9 @@
 namespace
 {
    const std::vector<std::string> kChannelNames = { "RGB", "Red", "Green", "Blue" };
-   const int kLutSize = 256;
+   // Float LUT, sampled at texel centres: 1024 entries in R16F keep the
+   // curve finer than a half-float step on the 16F image chain.
+   const int kLutSize = 1024;
 
    const char* kFragSrc =
       "#version 150\n"
@@ -18,15 +20,17 @@ namespace
       "uniform sampler2D uSrc;\n"
       "uniform sampler2D uLut;\n"
       "uniform float uMix;\n"
+      "const float N = 1024.0;\n"
+      "float L(float x, float row) { return texture(uLut, vec2((clamp(x, 0.0, 1.0) * (N - 1.0) + 0.5) / N, row)).r; }\n"
       "void main() {\n"
       "   vec4 c = texture(uSrc, vUv);\n"
       "   // row 0 is the master curve, rows 1-3 are per-channel\n"
-      "   float r = texture(uLut, vec2(c.r, 0.125)).r;\n"
-      "   float g = texture(uLut, vec2(c.g, 0.375)).r;\n"
-      "   float b = texture(uLut, vec2(c.b, 0.625)).r;\n"
-      "   r = texture(uLut, vec2(r, 0.875)).r;\n"
-      "   g = texture(uLut, vec2(g, 0.875)).r;\n"
-      "   b = texture(uLut, vec2(b, 0.875)).r;\n"
+      "   float r = L(c.r, 0.125);\n"
+      "   float g = L(c.g, 0.375);\n"
+      "   float b = L(c.b, 0.625);\n"
+      "   r = L(r, 0.875);\n"
+      "   g = L(g, 0.875);\n"
+      "   b = L(b, 0.875);\n"
       "   fragColor = vec4(mix(c.rgb, vec3(r, g, b), uMix), c.a);\n"
       "}\n";
 }
@@ -40,6 +44,7 @@ CurvesNode::CurvesNode()
 {
    for (int c = 0; c < kChannelCount; c++)
       ResetChannel(c);
+   SetExactLine(true);
 }
 
 CurvesNode::~CurvesNode()
@@ -89,7 +94,7 @@ float CurvesNode::Evaluate(int channel, float x) const
 void CurvesNode::RebuildLut()
 {
    // one row per channel: R, G, B, then the master curve applied last
-   std::vector<unsigned char> lut(kLutSize * 4, 0);
+   std::vector<float> lut(kLutSize * 4, 0.0f);
    const int rowChannel[4] = { kRed, kGreen, kBlue, kRGB };
    for (int row = 0; row < 4; row++)
    {
@@ -97,7 +102,7 @@ void CurvesNode::RebuildLut()
       {
          const float x = (float)i / (float)(kLutSize - 1);
          const float y = Evaluate(rowChannel[row], x);
-         lut[row * kLutSize + i] = (unsigned char)(std::min(1.0f, std::max(0.0f, y)) * 255.0f + 0.5f);
+         lut[row * kLutSize + i] = std::min(1.0f, std::max(0.0f, y));
       }
    }
 
@@ -105,7 +110,7 @@ void CurvesNode::RebuildLut()
       glGenTextures(1, &mLutTex);
    glBindTexture(GL_TEXTURE_2D, mLutTex);
    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-   glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kLutSize, 4, 0, GL_RED, GL_UNSIGNED_BYTE, lut.data());
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, kLutSize, 4, 0, GL_RED, GL_FLOAT, lut.data());
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);

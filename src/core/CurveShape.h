@@ -24,6 +24,21 @@ struct CurveShape
    // remember to say so explicitly.
    unsigned long long version = 0;
 
+   // false: the original Catmull-Rom with duplicated ends, which bends even a
+   // straight two-point line (kept for ModCurveNode and for Curves patches
+   // saved before the fix). true: cubic Hermite with slopes taken over the
+   // real x spacing (secant slopes at the ends), so collinear points give an
+   // exact straight line. Change it through SetExactLine so caches rebuild.
+   bool exactLine = false;
+   void SetExactLine(bool on)
+   {
+      if (on != exactLine)
+      {
+         exactLine = on;
+         version++;
+      }
+   }
+
    CurveShape() { Reset(); }
 
    void Reset();
