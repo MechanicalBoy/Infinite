@@ -223,7 +223,10 @@ void DrawNodeBodies(FrameCtx& fc)
          const ImVec2 topRowPos = ImGui::GetCursorPos();
          int inputs = InputCountFor(gn);
          float maxInputY = topRowPos.y;
-         float headerRightX = 0.0f;   // screen x of the pin header's right edge: a long header sets the node width, so `out` aligns to it too
+         // Screen x of the pin header's right edge: a long header sets the node width, so `out` aligns to it too. It starts
+         // at the header's own left edge, not 0: screen x is canvas space here, so with no input pins a 0 measured the
+         // node out to the canvas origin and stretched any node left of it to x = 0.
+         float headerRightX = ImGui::GetCursorScreenPos().x;
 
          if (mixerNode != nullptr && mixerNode->numChannels > 0)
          {
@@ -1215,9 +1218,9 @@ void DrawNodeBodies(FrameCtx& fc)
                   }
                   if (!n->RecordStatus().empty())
                   {
-                     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+                     PushTextWrapWidth(kPreviewSize);
                      ImGui::TextDisabled("%s", n->RecordStatus().c_str());
-                     ImGui::PopTextWrapPos();
+                     PopTextWrapWidth();
                   }
 
                   ImGui::Dummy(ImVec2(0, 8));

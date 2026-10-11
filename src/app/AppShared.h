@@ -4168,6 +4168,13 @@ const char* EmptyPreviewLabel(INode* node, const char* fallback);
 float WideNodeCentreOffset(const INode* node, float contentW);
 float CachedCentreOffset(const INode* node, float contentW);
 void CacheNodeWidth(const INode* node, float width);
+// Called when a retired node is freed: the cache is keyed by address, and the next node allocated there must not open
+// at the dead node's width.
+void ForgetNodeWidth(const INode* node);
+// Wrap text `width` past the cursor. Use in node bodies instead of PushTextWrapPos(GetCursorPosX() + width), which
+// stops wrapping once the node is left of the canvas origin. Only text between the pair.
+void PushTextWrapWidth(float width);
+void PopTextWrapWidth();
 
 void DrawPreview(INode* node);
 

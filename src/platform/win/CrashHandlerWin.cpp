@@ -17,7 +17,14 @@
 #include <dbghelp.h>
 #pragma comment(lib, "dbghelp.lib")
 
+#include <intrin.h>
+
+#include <atomic>
+#include <csignal>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <exception>
 #include <string>
 
 namespace
@@ -75,10 +82,11 @@ namespace
    std::string gCrashDir;
    std::string gLogPath;
 
-   LONG WINAPI WriteCrashReport(EXCEPTION_POINTERS* info)
+   // `what` names how the process died; `detail` is optional extra text (an exception's what()).
+   void WriteReport(EXCEPTION_POINTERS* info, const char* what, const char* detail)
    {
       if (gCrashDir.empty())
-         return EXCEPTION_EXECUTE_HANDLER;
+         return;
 
       const std::string& crashDir = gCrashDir;
       AppPaths::EnsureDir(crashDir);
@@ -109,15 +117,84 @@ namespace
       const DWORD code = (info && info->ExceptionRecord) ? info->ExceptionRecord->ExceptionCode : 0;
       const void* addr = (info && info->ExceptionRecord) ? info->ExceptionRecord->ExceptionAddress
                                                           : nullptr;
-      char msg[256];
+      char msg[512];
       snprintf(msg, sizeof(msg),
-               "unhandled exception 0x%08lX at %p - %s%s",
-               (unsigned long)code, addr,
+               "%s 0x%08lX at %p%s%s - %s%s",
+               what, (unsigned long)code, addr, detail != nullptr ? ": " : "", detail != nullptr ? detail : "",
                dumpWritten ? "dump written: " : "dump FAILED to write: ", dumpName.c_str());
       const std::string logLine = TimestampPrefix() + "[CRASH] " + msg + "\r\n";
       AppendToFileW(WinCommon::Utf8ToWide(gLogPath), logLine);
+   }
 
+   LONG WINAPI WriteCrashReport(EXCEPTION_POINTERS* info)
+   {
+      WriteReport(info, "unhandled exception", nullptr);
       return EXCEPTION_EXECUTE_HANDLER;
+   }
+
+   // abort(), std::terminate (an uncaught C++ exception, std::bad_alloc included), a CRT invalid-parameter check and
+   // a pure virtual call never reach the filter above: the release CRT ends the process through __fastfail, which
+   // skips it, so the window just vanished and left neither a dump nor a log line. Each routes here instead, writes
+   // the same report with the current thread's stack, and ends the process the way the CRT would have.
+   constexpr DWORD kFatalTerminate = 0xE0000001;
+   constexpr DWORD kFatalAbort = 0xE0000002;
+   constexpr DWORD kFatalInvalidParameter = 0xE0000003;
+   constexpr DWORD kFatalPureCall = 0xE0000004;
+   std::atomic<bool> gFatalReported{ false };
+
+   __declspec(noinline) void FatalReport(DWORD code, const char* what, const char* detail)
+   {
+      if (!gFatalReported.exchange(true))
+      {
+         CONTEXT context{};
+         RtlCaptureContext(&context);
+         EXCEPTION_RECORD record{};
+         record.ExceptionCode = code;
+         record.ExceptionAddress = _ReturnAddress();
+         EXCEPTION_POINTERS pointers{ &record, &context };
+         WriteReport(&pointers, what, detail);
+      }
+      TerminateProcess(GetCurrentProcess(), 3);
+   }
+
+   void OnTerminate()
+   {
+      // The exception's own text says which failure it was ("bad allocation" is memory running out). Copied into a
+      // static buffer: by now the heap may be the thing that failed.
+      static char detail[160];
+      const char* shown = nullptr;
+      if (std::exception_ptr current = std::current_exception())
+      {
+         try
+         {
+            std::rethrow_exception(current);
+         }
+         catch (const std::exception& e)
+         {
+            strncpy_s(detail, sizeof(detail), e.what(), _TRUNCATE);
+            shown = detail;
+         }
+         catch (...)
+         {
+            shown = "non-std exception";
+         }
+      }
+      FatalReport(kFatalTerminate, "std::terminate", shown);
+   }
+
+   void OnAbortSignal(int)
+   {
+      FatalReport(kFatalAbort, "abort", nullptr);
+   }
+
+   void OnInvalidParameter(const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, uintptr_t)
+   {
+      FatalReport(kFatalInvalidParameter, "CRT invalid parameter", nullptr);
+   }
+
+   void OnPureCall()
+   {
+      FatalReport(kFatalPureCall, "pure virtual call", nullptr);
    }
 }
 
@@ -135,6 +212,10 @@ namespace Platform
          }
       }
       SetUnhandledExceptionFilter(WriteCrashReport);
+      std::set_terminate(OnTerminate);
+      signal(SIGABRT, OnAbortSignal);
+      _set_invalid_parameter_handler(OnInvalidParameter);
+      _set_purecall_handler(OnPureCall);
 
       // Redirects the process's actual stderr stream into the rolling log,
       // rather than routing individual call sites through AppendLogLine -

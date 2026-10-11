@@ -266,30 +266,30 @@ namespace app
 
          if (!n->LastError().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (n->WasTruncated())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_800_200_1000), "Truncated to %d vertices", n->ActualElementCount());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (!n->Notice().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_700_200_1000), "%s", n->Notice().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (n->State().CellCount() > 0)
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextDisabled("%s", n->CostReadout());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -313,9 +313,9 @@ namespace app
          }
          if (!gParamRegisterOnly && !n->pinRefusal.empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->pinRefusal.c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -341,30 +341,30 @@ namespace app
 
          if (!n->LastError().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (n->WasTruncated())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_800_200_1000), "Truncated to %d vertices", n->ActualElementCount());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (!n->Notice().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_700_200_1000), "%s", n->Notice().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (n->State().CellCount() > 0)
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextDisabled("%s", n->CostReadout());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -392,9 +392,9 @@ namespace app
          }
          if (!gParamRegisterOnly && !n->pinRefusal.empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->pinRefusal.c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -420,24 +420,24 @@ namespace app
 
          if (!n->LastError().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (!n->Notice().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_700_200_1000), "%s", n->Notice().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          uint64_t faults = n->FaultCount();
          if (faults > 0)
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%llu NaN/inf recovery event(s)", (unsigned long long)faults);
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -457,9 +457,9 @@ namespace app
          }
          if (!gParamRegisterOnly && !n->pinRefusal.empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->pinRefusal.c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -485,24 +485,24 @@ namespace app
 
          if (!n->LastError().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (!n->Notice().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_700_200_1000), "%s", n->Notice().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          uint64_t faults = n->FaultCount();
          if (faults > 0)
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%llu NaN/inf recovery event(s)", (unsigned long long)faults);
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -530,9 +530,9 @@ namespace app
          }
          if (!gParamRegisterOnly && !n->pinRefusal.empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->pinRefusal.c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -558,23 +558,23 @@ namespace app
 
          if (!n->LastError().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (!n->Notice().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_700_200_1000), "%s", n->Notice().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (n->DroppedTotal() > 0)
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%llu note(s) dropped", (unsigned long long)n->DroppedTotal());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -630,16 +630,16 @@ namespace app
 
          if (!n->LastError().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (!n->Notice().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_700_200_1000), "%s", n->Notice().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -659,9 +659,9 @@ namespace app
          }
          if (!gParamRegisterOnly && !n->pinRefusal.empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->pinRefusal.c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -687,29 +687,29 @@ namespace app
 
          if (!n->LastError().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (n->BranchCount() > 0)
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             char bBuf[64];
             snprintf(bBuf, sizeof(bBuf), "%d branch%s -> %d paths evaluated per pixel",
                      n->BranchCount(), n->BranchCount() == 1 ? "" : "es", 1 << n->BranchCount());
             ImGui::TextDisabled("%s", bBuf);
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (n->StateCellCount() > 0)
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             char sBuf[64];
             snprintf(sBuf, sizeof(sBuf), "%d state cell%s (RGBA16F ping-pong)",
                      n->StateCellCount(), n->StateCellCount() == 1 ? "" : "s");
             ImGui::TextDisabled("%s", sBuf);
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 
@@ -733,9 +733,9 @@ namespace app
          }
          if (!gParamRegisterOnly && !n->pinRefusal.empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->pinRefusal.c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 

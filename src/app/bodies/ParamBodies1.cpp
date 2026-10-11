@@ -60,9 +60,9 @@ namespace app
       {
          // wrap pos is window-relative; passing a bare width put it left of the
          // cursor and wrapped every single character onto its own line
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (!n->LoadedPath().empty())
       {
@@ -70,9 +70,9 @@ namespace app
          size_t slash = file.find_last_of('/');
          if (slash != std::string::npos)
             file = file.substr(slash + 1);
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%s  (%dx%d)", file.c_str(), n->GetOutputWidth(), n->GetOutputHeight());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
    }
 
@@ -97,7 +97,7 @@ namespace app
       ModSlider("width", &n->width, 16.0f, 4096.0f, "%.0f");
       ModSlider("height", &n->height, 16.0f, 4096.0f, "%.0f");
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (!n->LastError().empty())
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
       if (n->ImageCount() > 0)
@@ -105,7 +105,7 @@ namespace app
          const std::string file = n->CurrentFileName();
          ImGui::TextDisabled("%d/%d  %s", n->CurrentImageNumber(), n->ImageCount(), file.c_str());
       }
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
       if (n->ImageCount() == 0)
          EmptyBlock("No images", "Choose a folder containing images");
    }
@@ -114,9 +114,9 @@ namespace app
    void DrawSyphonOutParams(SyphonOutNode* n)
    {
 #if !defined(__APPLE__) && !defined(_WIN32)
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("Syphon/Spout texture sharing is unavailable on Linux.");
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
       return;
 #else
       ImGui::SetNextItemWidth(kPreviewSize);
@@ -129,7 +129,7 @@ namespace app
          n->SetServerName(n->serverNameInput);
       }
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (n->PublishedWidth() > 0 && n->PublishedHeight() > 0)
       {
          ImGui::TextColored(tok::V4(tok::palf::v_400_1000_500_1000), "Broadcasting: %dx%d", n->PublishedWidth(), n->PublishedHeight());
@@ -144,7 +144,7 @@ namespace app
       {
          ImGui::TextDisabled("Connect an image input to publish");
       }
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 #endif
    }
 
@@ -152,9 +152,9 @@ namespace app
    void DrawSyphonInParams(SyphonInNode* n)
    {
 #if !defined(__APPLE__) && !defined(_WIN32)
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("Syphon/Spout texture sharing is unavailable on Linux.");
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
       return;
 #else
       if (ActionButton::Draw("Refresh Servers", ImVec2(kPreviewSize, 0)))
@@ -189,7 +189,7 @@ namespace app
             n->SelectServer(idx);
          }, kPreviewSize);
 
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          if (n->IsConnected())
          {
             ImGui::TextColored(tok::V4(tok::palf::v_400_1000_500_1000), "Receiving: %dx%d", n->GetOutputWidth(), n->GetOutputHeight());
@@ -198,7 +198,7 @@ namespace app
          {
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "Connecting...");
          }
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
 #endif
    }
@@ -218,7 +218,7 @@ namespace app
       if (ImGui::IsItemDeactivatedAfterEdit())
          n->SetSourceName(n->sourceNameInput);
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (n->IsPublishing())
       {
          ImGui::TextColored(tok::V4(tok::palf::v_400_1000_500_1000), "Broadcasting: %dx%d", n->PublishedWidth(), n->PublishedHeight());
@@ -229,20 +229,20 @@ namespace app
       }
       else
          ImGui::TextDisabled("Connect an image input to publish");
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
    }
 
 
    void DrawNdiInParams(NdiInNode* n)
    {
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (!Ndi::Available())
       {
          ImGui::TextDisabled("NDI runtime not found (install from ndi.video)");
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
          return;
       }
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       const std::vector<std::string> sources = n->AvailableSources();
       if (sources.empty())
@@ -263,14 +263,14 @@ namespace app
          n->SelectSource(sources[(size_t)idx]);
       }, kPreviewSize);
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (n->SourceName().empty())
          ImGui::TextDisabled("Pick a source");
       else if (n->IsReceiving())
          ImGui::TextColored(tok::V4(tok::palf::v_400_1000_500_1000), "Receiving: %dx%d", n->GetOutputWidth(), n->GetOutputHeight());
       else
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "Waiting for frames...");
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
    }
 
 
@@ -307,9 +307,9 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (!n->LoadedPath().empty())
       {
@@ -317,15 +317,15 @@ namespace app
          size_t slash = file.find_last_of('/');
          if (slash != std::string::npos)
             file = file.substr(slash + 1);
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%s  (%dx%d)", file.c_str(), n->GetOutputWidth(), n->GetOutputHeight());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("no image: Render 3D uses its procedural sky");
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
 
       ModSlider("intensity", &n->intensity, 0.0f, 8.0f);
@@ -400,9 +400,9 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
 
       ModSlider("width", &n->width, 16.0f, 4096.0f, "%.0f");
@@ -480,9 +480,9 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (!n->LoadedPath().empty())
       {
@@ -490,9 +490,9 @@ namespace app
          size_t slash = file.find_last_of('/');
          if (slash != std::string::npos)
             file = file.substr(slash + 1);
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%s", file.c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
          ImGui::TextDisabled("%dx%d  %.1fs / %.1fs", n->GetOutputWidth(), n->GetOutputHeight(),
                              n->Position(), n->Duration());
       }
@@ -514,9 +514,9 @@ namespace app
       else if (!n->AudioError().empty())
       {
          NodeSeparator();
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("audio: %s", n->AudioError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
    }
 
@@ -531,9 +531,9 @@ namespace app
       const auto& devices = n->AvailableDevices();
       if (devices.empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("No camera devices found.");
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else
       {
@@ -562,15 +562,15 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (n->IsRunning() && n->GetOutputWidth() > 0 && n->GetOutputHeight() > 0)
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%dx%d", n->GetOutputWidth(), n->GetOutputHeight());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
    }
 
@@ -1026,7 +1026,7 @@ namespace app
 
       const float labelRowH = ImGui::GetFontSize() + 5.0f;
       ImGui::SetCursorScreenPos(ImVec2(origin.x, br.y + labelRowH));
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + size);
+      PushTextWrapWidth(size);
       if (hoverStep >= 0)
       {
          ImGui::TextDisabled("step %d: %.2f", hoverStep + 1, n->steps[hoverStep]);
@@ -1035,7 +1035,7 @@ namespace app
       {
          ImGui::TextDisabled("%d steps, looped", count);
       }
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
    }
 
 
@@ -1722,9 +1722,9 @@ namespace app
          MidiLearnCancelAll();
          n->StartLearn();
       }
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("%s", n->Status().c_str());
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       if (n->IsBound())
          ImGui::Text("bound: %s", n->BindingLabel().c_str());
@@ -1754,9 +1754,9 @@ namespace app
             n->StartLearn();
          }
       }
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("%s", n->Status().c_str());
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       if (n->IsBound())
          ImGui::Text("bound: %s", n->BindingLabel().c_str());

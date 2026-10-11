@@ -2136,17 +2136,36 @@ void FrameTest_NODEDRAGWIDTHTEST(int frameId, GLFWwindow* window)
       }
       return;
    }
-   if (r >= 16)
+   if (r == 16 && sGrabbed)
    {
-      if (sGrabbed)
+      const bool moved = std::fabs(pos.x - sRestPos.x) > 10.0f || std::fabs(pos.y - sRestPos.y) > 10.0f;
+      if (!moved)
+         printf("NODEDRAGWIDTHTEST note: %s did not move; the grab point hit a control, not the node\n", typeName);
+      if (std::fabs(size.x - sRestW) > 0.5f)
+         fail("after the drag");
+   }
+   if (r >= 16 && r < 40)
+   {
+      // Moved by the editor itself, left then right, a step per frame, through the canvas origin and well past it:
+      // whatever the mouse gesture hit, the node changes position, and a width that reads a canvas x as a size (a 0
+      // start for a max over screen x, a window-local wrap position) grows here. 1 px is ImGui truncating toward
+      // zero, which rounds a fractional edge the other way once it is left of the origin.
+      if (r > 16 && std::fabs(size.x - sRestW) > 1.5f)
       {
-         sChecked++;
-         const bool moved = std::fabs(pos.x - sRestPos.x) > 10.0f || std::fabs(pos.y - sRestPos.y) > 10.0f;
-         if (!moved)
-            printf("NODEDRAGWIDTHTEST note: %s did not move; the grab point hit a control, not the node\n", typeName);
-         if (std::fabs(size.x - sRestW) > 0.5f)
-            fail("after the drag");
+         fail(r < 28 ? "while moved left" : "while moved right");
+         sIndex = -1;
+         if (!patchMode)
+            RemoveNodeByIndex(gn->index);
+         else
+            ed::SetNodeZPosition(gn->NodeId(), 0.0f);
+         return;
       }
+      ed::SetNodePosition(gn->NodeId(), ImVec2(pos.x + (r < 28 ? -37.0f : 61.0f), pos.y + (r < 28 ? 9.0f : -5.0f)));
+      return;
+   }
+   if (r >= 40)
+   {
+      sChecked++;
       sIndex = -1;
       if (!patchMode)
          RemoveNodeByIndex(gn->index);

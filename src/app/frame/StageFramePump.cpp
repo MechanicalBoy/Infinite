@@ -417,11 +417,29 @@ void DrawFramePump(FrameCtx& fc)
             std::remove_if(gRetiredNodes.begin(), gRetiredNodes.end(),
                             [&](RetiredNode& retired)
                             {
-                               return !audioRaceable || completedGeneration > retired.safeAfterGeneration;
+                               const bool drop = !audioRaceable || completedGeneration > retired.safeAfterGeneration;
+                               if (drop)
+                                  ForgetNodeWidth(retired.node.get());   // the address is free for the next node from here
+                               return drop;
                             }),
             gRetiredNodes.end());
       }
       gRetiredViewports.clear();
+
+      // One memory line in log.txt every five minutes. A process that dies after half an hour of use from memory
+      // growth leaves a log with a climb in it; one that does not leaves a flat line, and either answers the report.
+      {
+         static double sNextMemLogS = 300.0;
+         const double nowS = glfwGetTime();
+         if (nowS >= sNextMemLogS)
+         {
+            sNextMemLogS = nowS + 300.0;
+            char line[160];
+            snprintf(line, sizeof(line), "[mem] %.0f min: footprint %.0f MB, resident %.0f MB, %zu nodes",
+                     nowS / 60.0, Platform::ProcessFootprintMb(), Platform::ProcessRssMb(), gNodes.size());
+            Platform::AppendLogLine(line);
+         }
+      }
 
       // dev-only: drive copy/paste/delete with synthetic key events so the
       // shortcuts can be verified without a human at the keyboard
