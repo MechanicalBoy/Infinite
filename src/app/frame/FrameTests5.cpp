@@ -2093,7 +2093,11 @@ void FrameTest_NODEDRAGWIDTHTEST(int frameId, GLFWwindow* window)
    {
       // Rest: the width must settle and then hold with no input at all.
       if (r == 4)
+      {
          sRestW = size.x;
+         if (size.x > 700.0f || size.y > 1500.0f)
+            printf("NODEDRAGWIDTHTEST note: %s rests at %.0f x %.0f\n", typeName, size.x, size.y);
+      }
       else if (r == 5 && std::fabs(size.x - sRestW) > 0.5f)
          fail("after settling without any drag");
       return;

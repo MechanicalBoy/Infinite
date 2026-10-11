@@ -41,7 +41,7 @@ void DrawCookOverlay()
    float maxVideo = kMinMs, maxAudio = 0.01f;
    for (const GraphNode& gn : gNodes)
    {
-      if (gn.node == nullptr || gn.node->bypassed) continue;
+      if (gn.node == nullptr || gn.node->bypassed || dynamic_cast<GroupNode*>(gn.node.get()) != nullptr) continue;   // a group cooks nothing; its box is the size of its members
       if (AudioNode* an = AudioOf(gn.node.get()))
       {
          const float share = an->costMs.load(std::memory_order_relaxed) / budget;
