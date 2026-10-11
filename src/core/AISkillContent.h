@@ -569,8 +569,12 @@ measure = mod(t * 0.5, 1)
    inline const char* kPatchAuthoringMarkdown =
 R"AISKILL(---
 name: infinite-patch-authoring
-description: Write, check and render Infinite patches (.inf text files) headless, without the UI. Use whenever the user asks you to build, change or debug an Infinite patch, wire nodes, add modulation, or render a frame, video or audio measurement from a patch file.
+description: "Write, check and render Infinite .inf patches headless. Use whenever the user asks to build, change or debug a patch, wire nodes, add modulation, or render from a patch file."
 ---
+
+## When to use (full scope)
+
+Write, check and render Infinite patches (.inf text files) headless, without the UI. Use whenever the user asks you to build, change or debug an Infinite patch, wire nodes, add modulation, or render a frame, video or audio measurement from a patch file.
 
 # Authoring Infinite patches headless
 
@@ -752,11 +756,11 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Resynthesize 3D` | geo:geometry | out:geometry | 13 | bypass |
 | `Rounded Cube` | texture:image | out:geometry | 50 | bypass |
 | `Screw` | geo:geometry | out:geometry | 67 | bypass |
-| `Select` | geo:geometry | out:geometry | 67 | bypass |
+)AISKILL"
+R"AISKILL(| `Select` | geo:geometry | out:geometry | 67 | bypass |
 | `Set Vertex Color` | geo:geometry, texture:image, palette:palette | out:geometry | 6 |  |
 | `Sketch 3D` | none | out:geometry | 4 | bypass |
-)AISKILL"
-R"AISKILL(| `Smooth` | geo:geometry | out:geometry | 67 | bypass |
+| `Smooth` | geo:geometry | out:geometry | 67 | bypass |
 | `Solidify` | geo:geometry | out:geometry | 67 | bypass |
 | `Sphere` | texture:image | out:geometry | 50 | bypass |
 | `Star 3D` | texture:image | out:geometry | 50 | bypass |
@@ -835,7 +839,7 @@ R"AISKILL(| `Smooth` | geo:geometry | out:geometry | 67 | bypass |
 | `color adjustments` | input:image | out:image | 23 | bypass |
 | `coloroverlay` | input:image | out:image | 2 | bypass |
 | `dropshadow` | input:image | out:image | 4 | bypass |
-| `exposure` | input:image | out:image | 1 | bypass |
+| `exposure` | input:image | out:image | 2 | bypass |
 | `gradientmap` | input:image | out:image | 3 | bypass |
 | `invert` | input:image | out:image | 0 | bypass |
 | `lookup` | input:image, input_2:image | out:image | 3 |  |
@@ -857,7 +861,7 @@ R"AISKILL(| `Smooth` | geo:geometry | out:geometry | 67 | bypass |
 | `Resynthesize` | input:image | out:image | 20 | bypass |
 | `addnoise` | input:image | out:image | 1 | bypass |
 | `bloom` | input:image | out:image | 3 | bypass |
-| `boxblur` | input:image | out:image | 1 | bypass |
+| `boxblur` | input:image | out:image | 2 | bypass |
 | `convolve` | input:image | out:image | 13 | bypass |
 | `crop` | input:image | out:image | 6 | bypass |
 | `diffuseglow` | input:image | out:image | 2 | bypass |
@@ -865,18 +869,18 @@ R"AISKILL(| `Smooth` | geo:geometry | out:geometry | 67 | bypass |
 | `edge outline` | input:image | out:image | 3 | bypass |
 | `edge sobel` | input:image | out:image | 2 | bypass |
 | `emboss` | input:image | out:image | 4 | bypass |
-| `gaussianblur` | input:image | out:image | 2 | bypass |
+| `gaussianblur` | input:image | out:image | 3 | bypass |
 | `glitch` | input:image | out:image | 5 | bypass |
 | `halftone` | input:image | out:image | 3 | bypass |
 | `kaleidoscope` | input:image | out:image | 5 | bypass |
 | `lensdistortion` | input:image | out:image | 3 | bypass |
 | `liquify` | input:image | out:image | 3 | bypass |
 | `mirror tile` | input:image | out:image | 1 | bypass |
-| `motionblur` | input:image | out:image | 2 | bypass |
+| `motionblur` | input:image | out:image | 3 | bypass |
 | `normal map` | input:image | out:image | 3 | bypass |
 | `pinchpunch` | input:image | out:image | 4 | bypass |
 | `pixelate` | input:image | out:image | 1 | bypass |
-| `radialblur` | input:image | out:image | 3 | bypass |
+| `radialblur` | input:image | out:image | 4 | bypass |
 | `ripple` | input:image | out:image | 5 | bypass |
 | `symmetry` | input:image | out:image | 4 | bypass |
 | `twirl` | input:image | out:image | 4 | bypass |
@@ -977,12 +981,12 @@ R"AISKILL(| `Smooth` | geo:geometry | out:geometry | 67 | bypass |
 | `Arrow` | none | out:image | 20 | bypass |
 | `Audio Texture` | input:audio | out:image | 4 | bypass |
 | `Blob` | none | out:image | 20 | bypass |
-| `Chevron` | none | out:image | 20 | bypass |
+)AISKILL"
+R"AISKILL(| `Chevron` | none | out:image | 20 | bypass |
 | `Circle` | none | out:image | 20 | bypass |
 | `Crescent` | none | out:image | 20 | bypass |
 | `Cross` | none | out:image | 20 | bypass |
-)AISKILL"
-R"AISKILL(| `Draw` | input:image | out:image | 13 | bypass |
+| `Draw` | input:image | out:image | 13 | bypass |
 | `Ellipse` | none | out:image | 20 | bypass |
 | `FieldPixel` | none | out:image | 9 | bypass |
 | `Formula` | none | out:image | 8 | bypass |

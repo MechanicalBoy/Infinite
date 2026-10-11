@@ -44,6 +44,16 @@ namespace
    }
 
    // Display format (carries the unit) and whole-number snapping; storage is untouched.
+   // "Linear light": the filter decodes sRGB to linear light before its
+   // maths and encodes after (Nuke/Resolve/AE 32-bit). On for a new node;
+   // FilterNode::BeforeLoadParams turns it off for patches saved before it
+   // existed, so their look is unchanged. Always the LAST param of a def, so
+   // existing modulation indices stay put. Bodies sample with ImgSrc().
+   FilterParamDef LIN()
+   {
+      return P("Linear light", "uLinear", FilterParamDef::Type::Bool, 0.0f, 1.0f, 1.0f);
+   }
+
    FilterParamDef F(const char* fmt, FilterParamDef p)
    {
       p.format = fmt;
@@ -118,7 +128,8 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   fragColor = sum / total;\n"
         "}\n",
         { F("%.1f px", P("Radius", "uRadius", T::Float, 0.0f, 10.0f, 2.0f)),
-          E("Quality", "uQuality", { "Classic", "Smooth" }, 0) }, 1,
+          E("Quality", "uQuality", { "Classic", "Smooth" }, 0),
+          LIN() }, 1,
         "uniform float uRadius;\n"
         "uniform int uQuality;\n"
         "void main() {\n"
@@ -126,7 +137,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   if (uQuality == 0) {\n"
         "      for (int x = -4; x <= 4; x++) {\n"
         "         float w = exp(-float(x*x) / 8.0);\n"
-        "         sum += texture(uSrc, vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)) * w; total += w;\n"
+        "         sum += ImgSrc(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)) * w; total += w;\n"
         "      }\n"
         "   } else {\n"
         "      float r = max(uRadius, 0.001);\n"
@@ -134,7 +145,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      for (int x = -n; x <= n; x++) {\n"
         "         float d = float(x) / r;\n"
         "         float w = exp(-d * d / 8.0);\n"
-        "         sum += texture(uSrc, vUv + vec2(float(x) * uTexelSize.x, 0.0)) * w; total += w;\n"
+        "         sum += ImgSrc(vUv + vec2(float(x) * uTexelSize.x, 0.0)) * w; total += w;\n"
         "      }\n"
         "   }\n"
         "   fragColor = sum / total;\n"
@@ -148,12 +159,12 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      sum += texture(uPass, vUv + vec2(0.0, float(y) * uTexelSize.y * uRadius));\n"
         "   fragColor = sum / 9.0;\n"
         "}\n",
-        { F("%.1f px", P("Radius", "uRadius", T::Float, 0.0f, 10.0f, 2.0f)) }, 1,
+        { F("%.1f px", P("Radius", "uRadius", T::Float, 0.0f, 10.0f, 2.0f)), LIN() }, 1,
         "uniform float uRadius;\n"
         "void main() {\n"
         "   vec4 sum = vec4(0.0);\n"
         "   for (int x = -4; x <= 4; x++)\n"
-        "      sum += texture(uSrc, vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0));\n"
+        "      sum += ImgSrc(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0));\n"
         "   fragColor = sum / 9.0;\n"
         "}\n" },
 
@@ -165,12 +176,13 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   vec4 sum = vec4(0.0); const int N = 16;\n"
         "   for (int i = 0; i < N; i++) {\n"
         "      float t = float(i) / float(N - 1) - 0.5;\n"
-        "      sum += texture(uSrc, vUv + dir * t);\n"
+        "      sum += ImgSrc(vUv + dir * t);\n"
         "   }\n"
         "   fragColor = sum / float(N);\n"
         "}\n",
         { F("%.2f rad", P("Angle", "uAngle", T::Float, 0.0f, 6.2832f, 0.0f)),
-          F("%.0f px", P("Distance", "uDistance", T::Float, 0.0f, 60.0f, 15.0f)) } },
+          F("%.0f px", P("Distance", "uDistance", T::Float, 0.0f, 60.0f, 15.0f)),
+          LIN() } },
 
       { "radialblur", "Effects",
         "uniform float uAmount;\n"
@@ -182,13 +194,14 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   vec4 sum = vec4(0.0); const int N = 16;\n"
         "   for (int i = 0; i < N; i++) {\n"
         "      float t = float(i) / float(N - 1);\n"
-        "      sum += texture(uSrc, vUv - dir * uAmount * t * 0.1);\n"
+        "      sum += ImgSrc(vUv - dir * uAmount * t * 0.1);\n"
         "   }\n"
         "   fragColor = sum / float(N);\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 5.0f, 1.0f),
           P("Center X", "uCenterX", T::Float, 0.0f, 1.0f, 0.5f),
-          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f) } },
+          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f),
+          LIN() } },
 
       // ---------------- Effects: sharpen ----------------
       { "unsharpmask", "Effects",
@@ -410,11 +423,10 @@ const std::vector<FilterDef>& GetFilterDefs()
       { "exposure", "Compositing",
         "uniform float uExposure;\n"
         "void main() {\n"
-        "   vec4 c = texture(uSrc, vUv);\n"
-        "   vec3 col = c.rgb * pow(2.0, uExposure);\n"
-        "   fragColor = vec4(clamp(col, 0.0, 1.0), c.a);\n"
+        "   vec4 c = ImgSrc(vUv);\n"
+        "   fragColor = vec4(c.rgb * pow(2.0, uExposure), c.a);\n"
         "}\n",
-        { F("%.2f EV", P("Exposure", "uExposure", T::Float, -3.0f, 3.0f, 0.0f)) } },
+        { F("%.2f EV", P("Exposure", "uExposure", T::Float, -3.0f, 3.0f, 0.0f)), LIN() } },
 
       // ---------------- Alpha / opacity operators ----------------
       // Nothing above edits an existing alpha channel directly - chroma/luma

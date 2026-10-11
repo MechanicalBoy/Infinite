@@ -66,7 +66,9 @@ namespace GLUtil
    // RGBA8 target used to clamp to for free. Keeps the look of existing
    // patches while the chain stores float; nodes that want headroom opt out
    // by not using it. Renames the source's `void main()`.
-   std::string WithClampedOutput(const std::string& fragSrc);
+   // `beforeClamp` is spliced in after the original main returns (FilterNode
+   // encodes linear light back to sRGB there).
+   std::string WithClampedOutput(const std::string& fragSrc, const char* beforeClamp = "");
 
    // GLSL: `vec3 OutputDither(vec3 c)` adds a fixed per-pixel offset in
    // +-0.5/255, so a value already on an 8-bit code rounds back to the same

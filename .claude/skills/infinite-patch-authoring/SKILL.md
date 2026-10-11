@@ -269,7 +269,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `color adjustments` | input:image | out:image | 23 | bypass |
 | `coloroverlay` | input:image | out:image | 2 | bypass |
 | `dropshadow` | input:image | out:image | 4 | bypass |
-| `exposure` | input:image | out:image | 1 | bypass |
+| `exposure` | input:image | out:image | 2 | bypass |
 | `gradientmap` | input:image | out:image | 3 | bypass |
 | `invert` | input:image | out:image | 0 | bypass |
 | `lookup` | input:image, input_2:image | out:image | 3 |  |
@@ -291,7 +291,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Resynthesize` | input:image | out:image | 20 | bypass |
 | `addnoise` | input:image | out:image | 1 | bypass |
 | `bloom` | input:image | out:image | 3 | bypass |
-| `boxblur` | input:image | out:image | 1 | bypass |
+| `boxblur` | input:image | out:image | 2 | bypass |
 | `convolve` | input:image | out:image | 13 | bypass |
 | `crop` | input:image | out:image | 6 | bypass |
 | `diffuseglow` | input:image | out:image | 2 | bypass |
@@ -299,18 +299,18 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `edge outline` | input:image | out:image | 3 | bypass |
 | `edge sobel` | input:image | out:image | 2 | bypass |
 | `emboss` | input:image | out:image | 4 | bypass |
-| `gaussianblur` | input:image | out:image | 2 | bypass |
+| `gaussianblur` | input:image | out:image | 3 | bypass |
 | `glitch` | input:image | out:image | 5 | bypass |
 | `halftone` | input:image | out:image | 3 | bypass |
 | `kaleidoscope` | input:image | out:image | 5 | bypass |
 | `lensdistortion` | input:image | out:image | 3 | bypass |
 | `liquify` | input:image | out:image | 3 | bypass |
 | `mirror tile` | input:image | out:image | 1 | bypass |
-| `motionblur` | input:image | out:image | 2 | bypass |
+| `motionblur` | input:image | out:image | 3 | bypass |
 | `normal map` | input:image | out:image | 3 | bypass |
 | `pinchpunch` | input:image | out:image | 4 | bypass |
 | `pixelate` | input:image | out:image | 1 | bypass |
-| `radialblur` | input:image | out:image | 3 | bypass |
+| `radialblur` | input:image | out:image | 4 | bypass |
 | `ripple` | input:image | out:image | 5 | bypass |
 | `symmetry` | input:image | out:image | 4 | bypass |
 | `twirl` | input:image | out:image | 4 | bypass |

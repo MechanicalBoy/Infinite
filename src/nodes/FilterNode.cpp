@@ -20,7 +20,23 @@ namespace
       "uniform float uTime;\n"
       "uniform sampler2D uSrc2;\n"
       "uniform int uHasSrc2;\n"
-      "uniform sampler2D uPass;\n"; // prePassBody's output, two-pass filters only
+      "uniform sampler2D uPass;\n" // prePassBody's output, two-pass filters only
+      // Linear light (FilterDefs LIN()): ImgSrc decodes the input to linear
+      // when uLinear is on and passes it through untouched when off; the
+      // main pass encodes on the way out. A pre-pass writes linear values
+      // to its float scratch, so uPass samples need no decode.
+      "uniform int uLinear;\n"
+      "vec3 ImgDecode(vec3 c) {\n"
+      "   if (uLinear == 0) return c;\n"
+      "   vec3 a = abs(c);\n"
+      "   return sign(c) * mix(a / 12.92, pow((a + 0.055) / 1.055, vec3(2.4)), step(0.04045, a));\n"
+      "}\n"
+      "vec3 ImgEncode(vec3 c) {\n"
+      "   if (uLinear == 0) return c;\n"
+      "   vec3 a = abs(c);\n"
+      "   return sign(c) * mix(a * 12.92, 1.055 * pow(a, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, a));\n"
+      "}\n"
+      "vec4 ImgSrc(vec2 uv) { vec4 c = texture(uSrc, uv); return vec4(ImgDecode(c.rgb), c.a); }\n";
 
 
 }
@@ -63,7 +79,7 @@ bool FilterNode::EnsureShader()
       LookupLocs(mPreProgram, mPreLocs);
    }
 
-   std::string src = GLUtil::WithClampedOutput(std::string(kPreamble) + mDef.fragmentBody);
+   std::string src = GLUtil::WithClampedOutput(std::string(kPreamble) + mDef.fragmentBody, "fragColor.rgb = ImgEncode(fragColor.rgb);");
    mProgram = GLUtil::CompileProgram(src.c_str());
    if (mProgram == 0)
       return false;

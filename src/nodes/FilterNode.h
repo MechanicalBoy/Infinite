@@ -39,6 +39,15 @@ public:
    // Direct handle for widgets that edit in place (colour picker).
    float* ParamPtr(size_t paramIndex) { return mParamValues[paramIndex].data(); }
 
+   // Patches saved before linear light existed lack the uLinear key: they
+   // keep the gamma-space look they were made with. New nodes default on.
+   void BeforeLoadParams() override
+   {
+      for (size_t i = 0; i < mDef.params.size(); i++)
+         if (mDef.params[i].uniformName == "uLinear")
+            mParamValues[i][0] = 0.0f;
+   }
+
    // Keyed by uniformName rather than by index: the FilterDef table is shared
    // across every FilterNode of this kind, so the name is the one thing stable
    // enough to survive across app versions if params are reordered.

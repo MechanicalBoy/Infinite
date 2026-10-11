@@ -295,7 +295,7 @@ namespace
       std::vector<float> v(w);
       for (int x = 0; x < w; x++)
       {
-         v[x] = out.At(x, 4)[0];
+         v[x] = SrgbToLinear(out.At(x, 4)[0]); // energy is light: measure it linear
          sum += v[x];
          m2 += (double)v[x] * (x - w / 2) * (x - w / 2);
       }

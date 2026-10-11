@@ -263,14 +263,14 @@ namespace GLUtil
       return sFormat;
    }
 
-   std::string WithClampedOutput(const std::string& fragSrc)
+   std::string WithClampedOutput(const std::string& fragSrc, const char* beforeClamp)
    {
       std::string src = fragSrc;
       const size_t at = src.find("void main()");
       if (at == std::string::npos)
          return src;
       src.replace(at, 11, "void imageMain()");
-      src += "\nvoid main() { imageMain(); fragColor = clamp(fragColor, 0.0, 1.0); }\n";
+      src += std::string("\nvoid main() { imageMain(); ") + beforeClamp + " fragColor = clamp(fragColor, 0.0, 1.0); }\n";
       return src;
    }
 
