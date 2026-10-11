@@ -545,6 +545,41 @@ namespace
             flag(fx, "fb", "feedback 110%% runs to %.1f dBFS", late);
       }
 
+      if (fx == "Phaser")
+      {
+         // Analog mode across rates: octave-band power re the input, three
+         // noise seeds, like the defaults rate check above.
+         const double tones[3] = { 100.0, 1000.0, 6000.0 };
+         double lv[3][3] = {};
+         for (int ri = 0; ri < 3; ri++)
+         {
+            const double rr = rates[ri];
+            double pin[3] = {}, pout[3] = {};
+            for (unsigned seed : { 11u, 12u, 13u })
+            {
+               auto rig = MakeRig(def, rr, { { "analog", 1.0f } });
+               std::vector<float> in = Noise((int)(4.0 * rr), 0.1f, seed), oL, oR;
+               Process(*rig, in, in, oL, oR);
+               for (int ti = 0; ti < 3; ti++)
+               {
+                  const std::vector<float> bi = Band(in, tones[ti], rr), bl = Band(oL, tones[ti], rr),
+                                           br = Band(oR, tones[ti], rr);
+                  pin[ti] += std::pow(Rms(bi, (size_t)rr, bi.size()), 2);
+                  pout[ti] += 0.5 * (std::pow(Rms(bl, (size_t)rr, bl.size()), 2) + std::pow(Rms(br, (size_t)rr, br.size()), 2));
+               }
+            }
+            for (int ti = 0; ti < 3; ti++)
+               lv[ri][ti] = Db(std::sqrt(pout[ti]) / std::max(1e-12, std::sqrt(pin[ti])));
+         }
+         double spread = 0.0;
+         for (int ti = 0; ti < 3; ti++)
+            spread = std::max(spread, std::max({ lv[0][ti], lv[1][ti], lv[2][ti] }) - std::min({ lv[0][ti], lv[1][ti], lv[2][ti] }));
+         printf("FXAUDIT SPEC Phaser analog 44.1/48/96 kHz: 100 Hz %+.2f/%+.2f/%+.2f, 1 kHz %+.2f/%+.2f/%+.2f, 6 kHz %+.2f/%+.2f/%+.2f dB -> spread %.2f dB\n",
+                lv[0][0], lv[1][0], lv[2][0], lv[0][1], lv[1][1], lv[2][1], lv[0][2], lv[1][2], lv[2][2], spread);
+         if (spread > 1.0)
+            flag(fx, "rate", "analog mode level differs %.1f dB across 44.1/48/96 kHz", spread);
+      }
+
       if (fx == "Tremolo")
          for (double rr : { 48000.0, 96000.0 })
          {
@@ -633,6 +668,9 @@ namespace
             { EqDsp::kHighShelf, 12000.0f, 0.707f, -9.0f }, { EqDsp::kLowShelf, 100.0f, 0.707f, 6.0f },
             { EqDsp::kLp24, 15000.0f, 0.707f, 0.0f }, { EqDsp::kHp36, 50.0f, 0.707f, 0.0f },
             { EqDsp::kLp12, 8000.0f, 2.0f, 0.0f }, { EqDsp::kBP, 12000.0f, 2.0f, 0.0f },
+            // Resonant shelves: the overshoot bump next to the corner.
+            { EqDsp::kHighShelf, 10000.0f, 3.0f, 9.0f }, { EqDsp::kHighShelf, 6000.0f, 2.0f, -9.0f },
+            { EqDsp::kLowShelf, 200.0f, 3.0f, 9.0f }, { EqDsp::kLowShelf, 80.0f, 2.0f, -9.0f },
          };
          auto kindOf = [](int t) {
             switch (t)

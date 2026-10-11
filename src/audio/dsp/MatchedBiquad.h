@@ -114,6 +114,52 @@ namespace MatchedBiquad
       c.b2 = c.b0 > 0.0 ? -B2 / (4.0 * c.b0) : 0.0;
    }
 
+   // |H(e^jw)|^2 of a designed biquad.
+   inline double DigitalMag2(const Coeffs& c, double w)
+   {
+      const std::complex<double> z1 = std::polar(1.0, -w), z2 = z1 * z1;
+      return std::norm(c.b0 + c.b1 * z1 + c.b2 * z2) / std::max(1e-300, std::norm(1.0 + c.a1 * z1 + c.a2 * z2));
+   }
+
+   // A resonant shelf or peak (Q above Butterworth) has its overshoot bump
+   // off w0, where a w0 match leaves it unconstrained: a Q 3 high shelf at
+   // 10 kHz read 2.4 dB off the analog curve at 13.7 kHz (44.1 kHz). Try
+   // match points around w0 and keep the one with the smallest worst-case
+   // dB error over the band; w0 itself is a candidate, so this never does
+   // worse than the plain match. ~500 magnitude evaluations, main thread.
+   inline void MatchThreePointMinimax(const Proto& p, double w0, Coeffs& c)
+   {
+      const double wTop = 0.9 * M_PI;
+      const double gLo = std::max(w0 / 8.0, 1e-4), gHi = std::min(w0 * 8.0, 0.95 * M_PI);
+      constexpr int kGrid = 32, kCand = 16;
+      double gridW[kGrid], gridRef[kGrid];
+      for (int i = 0; i < kGrid; i++)
+      {
+         gridW[i] = gLo * pow(gHi / gLo, (double)i / (kGrid - 1));
+         gridRef[i] = 10.0 * log10(std::max(1e-300, AnalogMag2(p, gridW[i] / w0)));
+      }
+      auto worst = [&](const Coeffs& t) {
+         double e = 0.0;
+         for (int i = 0; i < kGrid; i++)
+            e = std::max(e, std::fabs(10.0 * log10(std::max(1e-300, DigitalMag2(t, gridW[i]))) - gridRef[i]));
+         return e;
+      };
+      MatchThreePoint(p, w0, std::min(w0, wTop), c);
+      double best = worst(c);
+      const double cLo = w0 * 0.5, cHi = std::min(w0 * 3.0, wTop);
+      for (int k = 0; k < kCand && cHi > cLo; k++)
+      {
+         Coeffs t;
+         MatchThreePoint(p, w0, cLo * pow(cHi / cLo, (double)k / (kCand - 1)), t);
+         const double e = worst(t);
+         if (e < best)
+         {
+            best = e;
+            c = t;
+         }
+      }
+   }
+
    inline Coeffs Invert(const Coeffs& c)
    {
       return { 1.0 / c.b0, c.a1 / c.b0, c.a2 / c.b0, c.b1 / c.b0, c.b2 / c.b0 };
@@ -133,7 +179,11 @@ namespace MatchedBiquad
          // The cut side of each shelf/peak puts its zeros where the boost's
          // poles were; design the boost and swap.
          const bool invert = (kind == kHighShelf) ? gainDb > 0.0 : gainDb < 0.0;
-         MatchThreePoint(MakeProto(kind, q, invert ? -gainDb : gainDb), w0, wm, c);
+         const Proto proto = MakeProto(kind, q, invert ? -gainDb : gainDb);
+         if (q > 0.75)
+            MatchThreePointMinimax(proto, w0, c);
+         else
+            MatchThreePoint(proto, w0, wm, c);
          return invert ? Invert(c) : c;
       }
 
