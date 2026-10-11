@@ -2480,9 +2480,8 @@ void FrameTest_GROUP3DTEST(int frameId, GLFWwindow* window)
          printf("  self-referencing group flattens to %zu (cap %d)  %s\n", loopFlat,
                 Render3DNode::kMaxDraw, loopOk ? "OK" : "FAIL");
 
-         // The group's own thumbnail: Group 3D hands out an empty mesh, so the
-         // node viewport has to bake the children itself. It used to read
-         // "no geometry" for any group.
+         // The group's own thumbnail bakes the children (the same bake the
+         // group hands mesh consumers). It used to read "no geometry".
          NodeViewport viewport;
          const size_t previewTris = viewport.GroupPreviewMesh(&outer).indices.size() / 3;
          const bool previewOk = previewTris == perCube * 6;
@@ -2505,7 +2504,45 @@ void FrameTest_GROUP3DTEST(int frameId, GLFWwindow* window)
          const bool loopPreviewOk = viewport.GroupPreviewMesh(&loop).indices.size() / 3 <= perCube * 64;
          printf("  self-referencing group preview terminates  %s\n", loopPreviewOk ? "OK" : "FAIL");
 
-         const bool allOk = flatOk && trisOk && loopOk && previewOk && steadyOk && movedOk && loopPreviewOk;
+         // v0.5.0 bug report: a group fed into Join Geometry or Transform gave
+         // "0 triangles" - both read the group's GetMesh(), which was empty.
+         JoinGeometryNode join;
+         join.inputs[0] = &outer;
+         join.CookIfNeeded(frameId);
+         const size_t joinTris = join.GetMesh().indices.size() / 3;
+         const bool joinOk = joinTris == perCube * 6;
+         printf("  group into Join Geometry: %zu triangles (expect %zu)  %s\n", joinTris, perCube * 6,
+                joinOk ? "OK" : "FAIL");
+
+         GeometryOpNode xform;
+         xform.op = GeometryOpNode::kTransform;
+         xform.offsetX = 10.0f;
+         xform.input = &outer;
+         xform.CookIfNeeded(frameId);
+         float minX = 1e9f;
+         for (const Vertex& v : xform.GetMesh().vertices)
+            minX = std::min(minX, v.px);
+         const size_t xformTris = xform.GetMesh().indices.size() / 3;
+         const unsigned long long xformRev = xform.MeshRevision();
+         // Moving a child inside the group must reach the Transform too.
+         cubes[0]->posX = -2.0f;
+         xform.CookIfNeeded(frameId + 1);
+         xform.GetMesh();
+         const bool xformOk = xformTris == perCube * 6 && minX > 8.0f && xform.MeshRevision() != xformRev;
+         printf("  group into Transform: %zu triangles, min x %.2f, rebuilt on child move  %s\n", xformTris, minX,
+                xformOk ? "OK" : "FAIL");
+
+         // A self-referencing group handed to a mesh consumer must also terminate,
+         // with exactly what Render 3D draws for it (one cube per nesting level).
+         JoinGeometryNode loopJoin;
+         loopJoin.inputs[0] = &loop;
+         loopJoin.CookIfNeeded(frameId);
+         const bool loopJoinOk = loopJoin.GetMesh().indices.size() / 3 == perCube * loopFlat;
+         printf("  self-referencing group into Join: %zu triangles (expect %zu)  %s\n",
+                loopJoin.GetMesh().indices.size() / 3, perCube * loopFlat, loopJoinOk ? "OK" : "FAIL");
+
+         const bool allOk = flatOk && trisOk && loopOk && previewOk && steadyOk && movedOk && loopPreviewOk &&
+                            joinOk && xformOk && loopJoinOk;
          printf("%s\n", allOk ? "GROUP3DTEST OK" : "GROUP3DTEST FAIL - BUG");
       }
 }

@@ -231,7 +231,13 @@ namespace app
    // no-device pump (AudioEngine::PumpNoteNodesWithoutDevice, wall-clock driven) already ran keeps the
    // generator state those blocks left, and RebuildAudioTopology skips it because it is "already
    // prepared" at this rate - so two renders of one patch started from different random draws.
-   void ForceAudioRepare()
+   // Each audio node's LatencySamples() as of the last RebuildAudioTopology,
+   // keyed by pointer. Only ever used as a key - never dereferenced - so a
+   // node deleted since then cannot be touched through it.
+   static std::unordered_map<const AudioNode*, int> gTopologyLatencySnapshot;
+
+   template <typename Fn>
+   static void ForEachGraphAudioNode(Fn&& fn)
    {
       for (GraphNode& gn : gNodes)
       {
@@ -244,8 +250,40 @@ namespace app
          if (an == nullptr)
             an = gn.node->AudioNodeForNotePorts();
          if (an != nullptr)
-            an->preparedForSampleRate = -1.0;
+            fn(an);
       }
+   }
+
+   // A node whose latency depends on a setting (Pitch Shifter's spectral
+   // mode) changes what LatencySamples() reports at run time. PDC is
+   // computed in RebuildAudioTopology, so without this the compensating
+   // delays would stay sized for the old latency until the next graph edit -
+   // a comb or an echo against every parallel branch. Once a frame, main
+   // thread: if any live node reports a latency other than the one PDC was
+   // built with, rebuild (what a DAW does when a plugin reports new latency).
+   int AudioTopologyLatencyOf(const AudioNode* node)
+   {
+      const auto it = gTopologyLatencySnapshot.find(node);
+      return it == gTopologyLatencySnapshot.end() ? -1 : it->second;
+   }
+
+   void PollAudioLatencyChanges()
+   {
+      if (gDeferAudioRebuild || gTopologyLatencySnapshot.empty())
+         return;
+      bool changed = false;
+      ForEachGraphAudioNode([&](AudioNode* an) {
+         const auto it = gTopologyLatencySnapshot.find(an);
+         if (it != gTopologyLatencySnapshot.end() && it->second != an->LatencySamples())
+            changed = true;
+      });
+      if (changed)
+         RebuildAudioTopology();
+   }
+
+   void ForceAudioRepare()
+   {
+      ForEachGraphAudioNode([](AudioNode* an) { an->preparedForSampleRate = -1.0; });
    }
 
 
@@ -703,9 +741,11 @@ namespace app
       // their own (MIDI events aren't delayed by this pass at all) and
       // aren't represented in inputBufferIndices, so they don't factor in.
       std::vector<int> cumulativeLatencyByBuffer(nextBufferIndex, 0);
+      gTopologyLatencySnapshot.clear();
       for (size_t k = 0; k < order.size(); k++)
       {
          AudioTopologyEntry& entry = order[k];
+         gTopologyLatencySnapshot[entry.node] = entry.node->LatencySamples();
          int maxUpstream = 0;
          for (int i = 0; i < entry.numInputs; i++)
          {

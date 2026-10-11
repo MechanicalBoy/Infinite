@@ -4168,6 +4168,13 @@ const char* EmptyPreviewLabel(INode* node, const char* fallback);
 float WideNodeCentreOffset(const INode* node, float contentW);
 float CachedCentreOffset(const INode* node, float contentW);
 void CacheNodeWidth(const INode* node, float width);
+// Called when a retired node is freed: the cache is keyed by address, and the next node allocated there must not open
+// at the dead node's width.
+void ForgetNodeWidth(const INode* node);
+// Wrap text `width` past the cursor. Use in node bodies instead of PushTextWrapPos(GetCursorPosX() + width), which
+// stops wrapping once the node is left of the canvas origin. Only text between the pair.
+void PushTextWrapWidth(float width);
+void PopTextWrapWidth();
 
 void DrawPreview(INode* node);
 
@@ -4821,6 +4828,13 @@ bool ArrangeAudioRebuildIfStale();
 bool StartAudioEngine(std::string& outError);
 
 void PollAudioRecovery();
+
+// Re-runs PDC when a node's reported latency changed since the last topology
+// rebuild (AudioTopology.cpp). Once a frame, main thread.
+void PollAudioLatencyChanges();
+// The latency `node` reported when PDC was last built, or -1 if it is not in
+// the topology (for tests).
+int AudioTopologyLatencyOf(const AudioNode* node);
 
 INode* FindHardwareDrivenNode();
 

@@ -1009,6 +1009,23 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
          return;
       }
 
+      // An offline render outruns real time, so an effect still building in
+      // the background (Shape Resonator's mode solve) would miss the start.
+      // Wait for it, bounded so a patch that keeps re-solving still renders.
+      if (job.mode == Headless::Mode::AudioSummary || job.mode == Headless::Mode::Render)
+      {
+         static int sPrepTicks = 0;
+         bool preparing = false;
+         for (GraphNode& g : gNodes)
+            if (auto* fx = dynamic_cast<AudioEffectNode*>(g.node.get()))
+               preparing = preparing || fx->KernelPreparing();
+         if (preparing && ++sPrepTicks < 4 * kHeadlessProbeCapTicks)
+         {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            return;
+         }
+      }
+
       if (job.mode == Headless::Mode::AudioSummary)
       {
          // Offline audio only: nothing is encoded. The graph is stepped the

@@ -1827,8 +1827,31 @@ namespace app
    }
 
 
+   // PushTextWrapPos takes a window-local x and reads <= 0 as "do not wrap" (or "wrap at the window edge"). Inside the
+   // node canvas the window sits at canvas 0, so GetCursorPosX() + width went negative for any node left of the canvas
+   // origin, its text stopped wrapping and the node grew to the text's full length. Scroll.x is shifted for the span so
+   // the cursor reads local 0 and the wrap is `width` from it wherever the node is; only text goes between the pair.
+   static std::vector<float> gWrapScrollStack;
+   void PushTextWrapWidth(float width)
+   {
+      ImGuiWindow* window = ImGui::GetCurrentWindow();
+      gWrapScrollStack.push_back(window->Scroll.x);
+      window->Scroll.x = window->Pos.x - window->DC.CursorPos.x;
+      ImGui::PushTextWrapPos(width);
+   }
+   void PopTextWrapWidth()
+   {
+      ImGui::PopTextWrapPos();
+      if (!gWrapScrollStack.empty())
+      {
+         ImGui::GetCurrentWindow()->Scroll.x = gWrapScrollStack.back();
+         gWrapScrollStack.pop_back();
+      }
+   }
+
    static std::unordered_map<const INode*, float> gNodeWidthCache;
    void CacheNodeWidth(const INode* node, float width) { gNodeWidthCache[node] = width; }
+   void ForgetNodeWidth(const INode* node) { gNodeWidthCache.erase(node); }
    // Like WideNodeCentreOffset but with no first-frame fallback: 0 until the node has been laid out once, so a
    // small node never opens wide.
    float CachedCentreOffset(const INode* node, float contentW)

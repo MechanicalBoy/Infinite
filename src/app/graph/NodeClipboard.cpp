@@ -138,6 +138,8 @@ NodePasteResult NodeClipboardPaste(const std::string& text, const ImVec2& at)
       spawned->showAdvancedParams = rec.showAdvancedParams;
       if (auto* fgn = dynamic_cast<FieldGraphNode*>(spawned->node.get()))
          fgn->encapsulated = false;
+      if (auto* stack = dynamic_cast<LayerStackNode*>(spawned->node.get()))
+         stack->fit = LayerStackNode::kStretch; // see PatchLoad
       Patch::LoadParams(spawned->node.get(), rec.params);
       ReloadDerivedState(spawned->node.get());
       if (auto* geomOp = dynamic_cast<GeometryOpNode*>(spawned->node.get()))

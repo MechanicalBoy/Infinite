@@ -31,15 +31,13 @@ void EqKernel::PushParams(const AudioEffectNode& node, double sampleRate)
       const bool on = node.Param(kOnNames[b]) >= 0.5f;
       const int activeStages = on ? EqDsp::StageCount(type) : 0;
 
-      DspMath::Biquad activeBq;
-      if (on)
-         EqDsp::ConfigureBiquad(activeBq, type, freq, q, gainDb, sampleRate);
-      DspMath::Biquad bypassBq;
-      EqDsp::ConfigureBypass(bypassBq);
-
       for (int st = 0; st < kMaxStagesPerBand; st++)
       {
-         const DspMath::Biquad& bq = (st < activeStages) ? activeBq : bypassBq;
+         DspMath::Biquad bq;
+         if (st < activeStages)
+            EqDsp::ConfigureStage(bq, type, st, freq, q, gainDb, sampleRate);
+         else
+            EqDsp::ConfigureBypass(bq);
          const int slot = (b * kMaxStagesPerBand + st) * kCoeffsPerStage;
          mMailbox.Push(slot + 0, bq.b0);
          mMailbox.Push(slot + 1, bq.b1);

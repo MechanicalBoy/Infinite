@@ -43,6 +43,7 @@ namespace
       {
          EffectDef def;
          def.name = "Audio Filter";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kFilterResponse;
@@ -100,6 +101,7 @@ namespace
       {
          EffectDef def;
          def.name = "EQ";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kEqCurve;
@@ -200,6 +202,7 @@ namespace
       {
          EffectDef def;
          def.name = "Dynamics";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kDynamicsTransfer;
@@ -226,6 +229,9 @@ namespace
          // implementation; correct by inspection.
          def.params.push_back({ "sidechainExternal", 0.0f, 1.0f, 0.0f });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f });
+         // Appended (saved patches' param order). Detector-only 90 Hz high-pass,
+         // off by default so existing patches compress exactly as before.
+         def.params.push_back({ "scHpf", 0.0f, 1.0f, 0.0f });
          // mix is AudioEffectNode's universal field, not a second param here.
 
          def.makeKernel = []() { return std::make_unique<DynamicsKernel>(); };
@@ -241,6 +247,7 @@ namespace
       {
          EffectDef def;
          def.name = "Limiter";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kLimiterMeter;
@@ -393,6 +400,7 @@ namespace
       {
          EffectDef def;
          def.name = "Drive";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kDriveCurve;
@@ -426,6 +434,7 @@ namespace
       {
          EffectDef def;
          def.name = "Stereo";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kStereoGoniometer;
@@ -445,7 +454,7 @@ namespace
       }
 
       // ---------------------------------------------------------- Pitch Shifter
-      // The two-tap crossfaded delay-line pitch shifter (see
+      // The correlation-spliced delay-line pitch shifter (see
       // PitchShiftKernel.h). `pitch`/`grain` matches the KHS Audio Pitch
       // Shifter module's big display + Grain Size knob; `jitter`/
       // `correlate` from the reference image are cut per
@@ -457,8 +466,13 @@ namespace
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kPitchShiftDisplay;
          def.params.push_back({ "pitch", -24.0f, 24.0f, 0.0f });
-         def.params.push_back({ "grain", 10.0f, 250.0f, 80.0f });
+         // At 0 st the shifter is a transparent 1-sample delay, so `grain` (the
+         // splice distance) only has anything to act on once there is a shift.
+         def.params.push_back({ "grain", 10.0f, 250.0f, 80.0f, false, { { "pitch", 7.0f } } });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f, false, { { "pitch", 7.0f } } });
+         // Appended, never inserted (saved patches' param order). Phase-vocoder
+         // mode for chords/mixes; adds 4096 samples of latency (see the kernel).
+         def.params.push_back({ "spectral", 0.0f, 1.0f, 0.0f, false, { { "pitch", 7.0f } } });
          def.makeKernel = []() { return std::make_unique<PitchShiftKernel>(); };
          defs.push_back(std::move(def));
       }
@@ -505,6 +519,7 @@ namespace
       {
          EffectDef def;
          def.name = "Flanger";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kFlangerScatter;
@@ -534,6 +549,7 @@ namespace
       {
          EffectDef def;
          def.name = "Phaser";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kPhaserScatter;
@@ -559,12 +575,17 @@ namespace
       {
          EffectDef def;
          def.name = "Bitcrush";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kBitcrushWave;
          def.params.push_back({ "rate", 200.0f, 44100.0f, 6000.0f });
          def.params.push_back({ "bits", 1.0f, 16.0f, 8.0f });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f });
+         // Appended (saved patches' param order). TPDF dither, off by default:
+         // undithered crush is the classic character; dither trades its
+         // distortion for a clean noise floor (BitcrushKernel.h).
+         def.params.push_back({ "dither", 0.0f, 1.0f, 0.0f });
          def.makeKernel = []() { return std::make_unique<BitcrushKernel>(); };
          defs.push_back(std::move(def));
       }
@@ -577,6 +598,7 @@ namespace
       {
          EffectDef def;
          def.name = "Transient Shaper";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kTransientEnvelope;
@@ -676,6 +698,7 @@ namespace
       {
          EffectDef def;
          def.name = "Tremolo";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kTremoloWave;
@@ -710,6 +733,7 @@ namespace
       {
          EffectDef def;
          def.name = "Wavetable Shaper";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kWavetableShaperCurve;
@@ -765,13 +789,16 @@ namespace
       {
          EffectDef def;
          def.name = "Cycle Shaper";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
          def.category = "AudioEffects";
          def.bodyWidth = 440.0f;
          def.visualizerId = EffectVisualizerId::kCycleShaperWave;
          def.defaultMix = 1.0f;
          def.params.push_back({ "waveform",   0.0f,   2.0f,   0.0f });
          def.params.push_back({ "threshold", -60.0f,   0.0f, -36.0f, false, {}, { 0.0f, -3.0f, -6.0f, -60.0f } });
-         def.params.push_back({ "smooth",     0.0f,  32.0f,   8.0f });
+         // `smooth` is the edge length of the square/triangle (CycleShaperKernel.h);
+         // a sine has no edges, so it is only observable on those two.
+         def.params.push_back({ "smooth",     0.0f,  32.0f,   8.0f, false, { { "waveform", 1.0f } } });
          def.params.push_back({ "analog",     0.0f,   1.0f,   0.0f });
          def.makeKernel = []() { return std::make_unique<CycleShaperKernel>(); };
          defs.push_back(std::move(def));

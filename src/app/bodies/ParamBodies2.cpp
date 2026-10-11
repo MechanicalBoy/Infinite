@@ -238,11 +238,11 @@ namespace app
       if (ActionButton::Draw("Remove Background", ImVec2(kPreviewSize, 0)))
          n->RequestMask();
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("%s", n->Status().c_str());
       if (ImGui::IsItemHovered())
          ImGui::SetTooltip("engine: %s", Platform::MattingBackend().c_str());
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       ModSlider("feather", &n->feather, 0.0f, 4.0f);
       ModSlider("threshold", &n->threshold, 0.0f, 1.0f);
@@ -361,9 +361,9 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (!n->LoadedPath().empty())
       {
@@ -371,9 +371,9 @@ namespace app
          const size_t slash = file.find_last_of('/');
          if (slash != std::string::npos)
             file = file.substr(slash + 1);
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%s", file.c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       ModSliderInt("swatches", &n->swatchCount, 2, PaletteNode::kMaxSwatches);
       DropdownButton("order", PaletteNode::SortNames(), n->sortMode,

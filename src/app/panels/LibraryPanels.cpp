@@ -1,4 +1,5 @@
 // Library / plugin / field search panels (moved verbatim from main.cpp).
+#include <unordered_set>
 #include "app/ui/design/components/MenuParts.h"
 #include "app/ui/design/GlyphDraw.h"
 #include "app/ui/design/components/EmptyState.h"
@@ -129,8 +130,14 @@ namespace app
    {
       std::vector<const SampleScanner::Entry*> filtered;
       filtered.reserve(index.size());
+      // Folders that overlap (one added inside another) index the same file once per folder; list it once.
+      // The index itself keeps both, so removing either folder still leaves the other's copy.
+      std::unordered_set<std::string> seen;
+      seen.reserve(index.size());
       for (const SampleScanner::Entry& entry : index)
       {
+         if (!seen.insert(SampleScanner::PathKey(entry.path)).second)
+            continue;
          if (!lowerQuery.empty() && entry.fileNameLower.find(lowerQuery) == std::string::npos)
             continue;
          const bool typeMatch = mediaKind ? MediaEntryMatchesTypeFilter(entry, state.typeFilter)

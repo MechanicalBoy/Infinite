@@ -9,10 +9,14 @@
 #include "IEffectKernel.h"
 #include "audio/DspMath.h"
 #include "audio/ParamMailbox.h"
+#include "MatchedBiquad.h"
 
 // EQ's kernel: 5 fixed bands in series, each supporting 12 filter types:
 // low shelf, peak, high shelf, hp 12/24/36, lp 12/24/36, bp, notch, all-pass.
-// Multi-slope (24/36 dB) filters cascade up to 3 single-stage RBJ biquads.
+// Multi-slope (24/36 dB) filters cascade up to 3 biquads with Butterworth
+// stage Qs. Every biquad is a matched-magnitude design (MatchedBiquad.h), so
+// bands near the top of the spectrum keep their analog shape instead of
+// cramping toward Nyquist.
 //
 // Every type here is one surgical move at one frequency, which is what an EQ
 // band is for. Comb + / Comb - were briefly in this list and are not any
@@ -90,23 +94,50 @@ namespace EqDsp
 
    inline bool UsesGain(int type) { return type == kLowShelf || type == kPeak || type == kHighShelf; }
 
-   // Configures a scratch Biquad for one band type. Shared by PushParams and
-   // the visualizer/tests, so the picture, the running filter and the DSP
-   // fixture can never disagree about what a given band computes.
+   // Configures a scratch Biquad for one band type (one stage, at the
+   // band's own Q). Shared by PushParams and the visualizer/tests, so the
+   // picture, the running filter and the DSP fixture can never disagree
+   // about what a given band computes.
    inline void ConfigureBiquad(DspMath::Biquad& bq, int type, double freq, double q, double gainDb,
                                 double sampleRate)
    {
+      MatchedBiquad::Kind kind;
       switch (type)
       {
-         case kLowShelf: bq.SetLowShelf(freq, q, gainDb, sampleRate); break;
-         case kHighShelf: bq.SetHighShelf(freq, q, gainDb, sampleRate); break;
-         case kHp12: case kHp24: case kHp36: bq.SetHighpass(freq, q, sampleRate); break;
-         case kLp12: case kLp24: case kLp36: bq.SetLowpass(freq, q, sampleRate); break;
-         case kBP: bq.SetBandpass(freq, q, sampleRate); break;
-         case kNotch: bq.SetNotch(freq, q, sampleRate); break;
-         case kAllpass: bq.SetAllpass(freq, q, sampleRate); break;
-         case kPeak: default: bq.SetPeaking(freq, q, gainDb, sampleRate); break;
+         case kLowShelf: kind = MatchedBiquad::kLowShelf; break;
+         case kHighShelf: kind = MatchedBiquad::kHighShelf; break;
+         case kHp12: case kHp24: case kHp36: kind = MatchedBiquad::kHighpass; break;
+         case kLp12: case kLp24: case kLp36: kind = MatchedBiquad::kLowpass; break;
+         case kBP: kind = MatchedBiquad::kBandpass; break;
+         case kNotch: kind = MatchedBiquad::kNotch; break;
+         case kAllpass: kind = MatchedBiquad::kAllpass; break;
+         case kPeak: default: kind = MatchedBiquad::kPeak; break;
       }
+      MatchedBiquad::Apply(MatchedBiquad::Design(kind, freq, q, gainDb, sampleRate), bq);
+   }
+
+   // Q of stage `stage` of a multi-stage band. A 24/36 dB slope is a 4th/6th
+   // order Butterworth (stage Qs 0.541/1.307 and 0.518/0.707/1.932), not the
+   // same biquad repeated - repeating a Q 0.707 stage n times is -3n dB at
+   // the corner and a rounded knee. The band's Q knob acts as resonance on
+   // the sharpest stage only, scaled so the default 0.707 is exact
+   // Butterworth. Single-stage types use the knob's Q directly.
+   inline double StageQ(int type, int stage, double q)
+   {
+      static const double kBw4[2] = { 0.54119610, 1.30656296 };
+      static const double kBw6[3] = { 0.51763809, 0.70710678, 1.93185165 };
+      const int n = StageCount(type);
+      if (n == 1)
+         return q;
+      const double* bw = (n == 2) ? kBw4 : kBw6;
+      const int s = std::clamp(stage, 0, n - 1);
+      return (s == n - 1) ? bw[s] * q / 0.70710678 : bw[s];
+   }
+
+   inline void ConfigureStage(DspMath::Biquad& bq, int type, int stage, double freq, double q, double gainDb,
+                               double sampleRate)
+   {
+      ConfigureBiquad(bq, type, freq, StageQ(type, stage, q), gainDb, sampleRate);
    }
 
    // Bypass coefficients - a true identity filter (y[n] = x[n]), pushed for
@@ -118,7 +149,7 @@ namespace EqDsp
       bq.b0 = 1.0f; bq.b1 = 0.0f; bq.b2 = 0.0f; bq.a1 = 0.0f; bq.a2 = 0.0f;
    }
 
-   // |H(e^-jw)| of one RBJ biquad, in dB, evaluated at evalHz. Computed
+   // |H(e^-jw)| of one biquad, in dB, evaluated at evalHz. Computed
    // directly from the (already-settled, no-transient) transfer function
    // instead of rendering a settled sine through a scratch filter
    // (AudioFilterDsp::MagnitudeDb's approach) - affordable at 5 bands x 160
@@ -169,8 +200,8 @@ namespace EqDsp
    // One band's coefficients, configured once for a whole sweep.
    struct BandEval
    {
-      DspMath::Biquad bq;
-      float stages = 1.0f;
+      DspMath::Biquad bq[3];
+      int stages = 1;
       bool enabled = false;
    };
 
@@ -180,8 +211,9 @@ namespace EqDsp
       b.enabled = enabled;
       if (!enabled)
          return b;
-      ConfigureBiquad(b.bq, type, freq, q, gainDb, sampleRate);
-      b.stages = (float)StageCount(type);
+      b.stages = StageCount(type);
+      for (int st = 0; st < b.stages; st++)
+         ConfigureStage(b.bq[st], type, st, freq, q, gainDb, sampleRate);
       return b;
    }
 
@@ -189,7 +221,10 @@ namespace EqDsp
    {
       if (!b.enabled)
          return 0.0f;
-      return BiquadMagnitudeDbAt(b.bq, t) * b.stages;
+      float db = 0.0f;
+      for (int st = 0; st < b.stages; st++)
+         db += BiquadMagnitudeDbAt(b.bq[st], t);
+      return db;
    }
 
    // Convenience: magnitude of one band directly from type/freq/q/gain,
@@ -205,7 +240,7 @@ namespace EqDsp
 class AudioEffectNode;
 
 // AudioEffectNode's kernel for the EQ node: 5 bands in series, each cascading
-// up to 3 RBJ biquads (for 12/24/36 dB/oct slopes). See IEffectKernel.h for
+// up to 3 matched biquads (for 12/24/36 dB/oct slopes). See IEffectKernel.h for
 // the PushParams/ProcessBlock split this obeys - PushParams (main thread)
 // computes coefficients, ProcessBlock (audio thread) only ever applies them.
 class EqKernel : public IEffectKernel

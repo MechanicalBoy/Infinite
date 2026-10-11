@@ -129,6 +129,13 @@ struct EffectDef
    bool forceFullyWet = false;
    // True if slot 1 is a geometry input ("shape") instead of a sidechain.
    bool hasGeometryInput = false;
+   // Mix law. False (the default) is an equal-power crossfade, right when the
+   // wet signal is decorrelated from the dry (reverb, delay, pitch, spectral
+   // effects). True is a linear crossfade, for effects whose wet signal is
+   // still essentially the dry one processed - dynamics, saturation,
+   // filtering, comb-style modulation - where equal power would make mix 0.5
+   // up to +3 dB louder than either end of the knob.
+   bool linearMix = false;
 };
 
 const std::vector<EffectDef>& GetEffectDefs();

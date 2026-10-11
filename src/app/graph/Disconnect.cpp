@@ -34,22 +34,12 @@ namespace app
          else if (slot > Render3DNode::kSlots && slot < Render3DNode::kEnvSlot)
             render->lights[slot - Render3DNode::kSlots - 1] = nullptr;
       }
-      else if (auto* geoOp = dynamic_cast<GeometryOpNode*>(dst->node.get()))
+      // Every other geometry input goes through the same slot accessor that wired it (Wiring.cpp). A per-type
+      // list here missed Group 3D, Wrap and Set Color, whose cables could then never be deleted (the link list is
+      // re-derived from these pointers each frame), and sent Instance on Points' cloud slot to its shape slot.
+      else if (IGeometrySource** geoField = dst->node->GeometryInputSlot(GraphNode::InputSlotFromPin(dstPin)))
       {
-         geoOp->input = nullptr;
-      }
-      else if (auto* inst = dynamic_cast<InstanceOnPointsNode*>(dst->node.get()))
-      {
-         if (GraphNode::InputSlotFromPin(dstPin) == 0)
-            inst->pointSource = nullptr;
-         else
-            inst->instanceShape = nullptr;
-      }
-      else if (auto* sw3 = dynamic_cast<Switcher3DNode*>(dst->node.get()))
-      {
-         const int slot = GraphNode::InputSlotFromPin(dstPin);
-         if (slot >= 0 && slot < Switcher3DNode::kSlots)
-            sw3->inputs[slot] = nullptr;
+         *geoField = nullptr;
       }
       else if (IModulator** slotField = dst->node->ModulatorInputSlot(GraphNode::InputSlotFromPin(dstPin)))
       {

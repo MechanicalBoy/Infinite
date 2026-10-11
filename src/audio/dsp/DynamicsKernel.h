@@ -42,6 +42,11 @@ class DynamicsKernel : public IEffectKernel
 public:
    static constexpr int kMaxChannels = 8;
    static constexpr float kRmsWindowMs = 20.0f;
+   // `scHpf`: a 12 dB/oct high-pass on the detector signal only (the audio
+   // path is untouched), so bass energy stops driving the gain - the
+   // "pumping on the kick" a full-band detector causes. 90 Hz, as on most
+   // console and bus compressors' sidechain filter.
+   static constexpr float kScHpfHz = 90.0f;
 
    enum ParamSlot
    {
@@ -58,7 +63,11 @@ public:
       mSampleRate = sampleRate;
       mMailbox.PrepareToPlay(sampleRate);
       for (int ch = 0; ch < kMaxChannels; ch++)
+      {
          mWarmLp[ch].SetCutoff(20000.0f, sampleRate);
+         mScHpf[ch].SetSampleRate(sampleRate);
+         mScHpf[ch].SetCutoff(kScHpfHz, 0.707f);
+      }
       Reset();
    }
 
@@ -69,7 +78,10 @@ public:
       mLastInputDb = -100.0f;
       mOptoMemoryDb = 0.0f;
       for (int ch = 0; ch < kMaxChannels; ch++)
+      {
          mWarmLp[ch].Reset();
+         mScHpf[ch].Reset();
+      }
    }
 
    void PushParams(const AudioEffectNode& node, double sampleRate) override;
@@ -80,6 +92,7 @@ public:
       const bool useRms = mDetectorRms.load(std::memory_order_relaxed) != 0;
       const bool useSidechain = sidechain != nullptr && mSidechainExternal.load(std::memory_order_relaxed) != 0;
       const bool analog = mAnalog.load(std::memory_order_relaxed) != 0;
+      const bool scHpf = mScHpfOn.load(std::memory_order_relaxed) != 0;
 
       const float rmsCoeff = expf(-1.0f / (kRmsWindowMs * 0.001f * (float)mSampleRate));
 
@@ -96,8 +109,10 @@ public:
          float linkedLevel = 0.0f;
          for (int ch = 0; ch < numChannels; ch++)
          {
-            const float s = useSidechain ? sidechain->channels[std::min(ch, sidechain->numChannels - 1)][i]
-                                         : in.channels[ch][i];
+            float s = useSidechain ? sidechain->channels[std::min(ch, sidechain->numChannels - 1)][i]
+                                   : in.channels[ch][i];
+            if (scHpf)
+               s = mScHpf[ch].Process(s).high;
             linkedLevel = std::max(linkedLevel, std::fabs(s));
          }
 
@@ -173,6 +188,7 @@ private:
    std::atomic<int> mDetectorRms { 0 };
    std::atomic<int> mSidechainExternal { 0 };
    std::atomic<int> mAnalog { 0 };
+   std::atomic<int> mScHpfOn { 0 };
 
    float mRmsMeanSq = 0.0f;
    float mSmoothedReductionDb = 0.0f;
@@ -180,6 +196,7 @@ private:
    float mOptoMemoryDb = 0.0f;
 
    AnalogDsp::OnePoleLP mWarmLp[kMaxChannels];
+   DspMath::TptSvf mScHpf[kMaxChannels]; // detector-only high-pass (kScHpfHz)
 
    MeterRing mGrMeter;
 };

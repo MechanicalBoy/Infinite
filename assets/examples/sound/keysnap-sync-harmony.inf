@@ -1,0 +1,64 @@
+infinite-patch 1
+# Key-Snap + spectral Pitch Shifter: a hard-sync lead whose partials are pulled into a scale, with a clean octave below.
+# band Sound
+node 1 Notes Random Note Generator
+  id notes
+  pos 0 600
+  i scale chromatic
+  i root C
+  i rangeLow 55
+  i rangeHigh 72
+  f rateBeats 1
+end
+node 2 Synths Analog
+  id lead
+  pos 480 600
+  b sync 1
+  f semi2 7
+  f oscMix 1
+  f cutoff 7000
+  f volume 0.5
+end
+node 3 AudioEffects Key-Snap
+  id snap
+  pos 1340 746
+  f scale 10
+  f root 9
+end
+node 4 AudioEffects Pitch Shifter
+  id octave
+  pos 1960 746
+  f pitch -12
+  f spectral 1
+  f mix 0.5
+end
+node 5 Utility Audio Out
+  id speakers
+  pos 2580 600
+end
+node 6 Compositing Comment
+  pos 1340 600
+  s text Key-Snap moves every partial of the sync lead to the nearest note of A minor pentatonic, so random chromatic notes and the sync's inharmonic edge come out in key.
+  f width 360
+  f height 110
+end
+node 7 Compositing Comment
+  pos 1960 600
+  s text Pitch Shifter in spectral mode adds the octave below: each partial is moved on its own, so the whole snapped chord drops cleanly instead of warbling.
+  f width 360
+  f height 110
+end
+node 8 Source Shape
+  id picture
+  pos 0 0
+  i shapeType Star
+end
+node 9 Utility Output
+  id out
+  pos 460 0
+end
+note lead 0 notes
+aud snap 0 lead
+aud octave 0 snap
+aud speakers 0 octave
+cable out 0 picture

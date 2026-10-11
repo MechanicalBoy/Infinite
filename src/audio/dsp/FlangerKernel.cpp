@@ -39,6 +39,12 @@ void FlangerKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
          rateHz = std::max(0.0f, mMailbox.SmoothedValue(kRateHz));
       const float feedback = std::clamp(mMailbox.SmoothedValue(kFeedback), -0.95f, 0.95f);
       const float spread = std::clamp(mMailbox.SmoothedValue(kSpread), 0.0f, 1.0f);
+      // A feedback comb's white-noise power gain is 1/(1 - fb^2): +10 dB at
+      // fb 0.95, with its peaks at +26 dB (a 0 dBFS input left the wet at
+      // ~8x full scale). Scaling the wet by sqrt(1 - fb^2) keeps the overall
+      // level where the feedback knob found it while the comb's peaks and
+      // notches - the sound - stay exactly as deep.
+      const float fbComp = std::sqrt(1.0f - feedback * feedback);
 
       mPhase += rateHz / mSampleRate;
       if (mPhase >= 1.0)
@@ -68,9 +74,9 @@ void FlangerKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
          delayedL = mFilterL[1].Process(mFilterL[0].Process(delayedL).low).low;
          delayedR = mFilterR[1].Process(mFilterR[0].Process(delayedR).low).low;
 
-         out.channels[0][i] = delayedL;
+         out.channels[0][i] = delayedL * fbComp;
          if (numChannels >= 2)
-            out.channels[1][i] = delayedR;
+            out.channels[1][i] = delayedR * fbComp;
       }
       else
       {
@@ -86,9 +92,9 @@ void FlangerKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
          mLineL.Write(inL + dampedL * feedback);
          mLineR.Write(inR + dampedR * feedback);
 
-         out.channels[0][i] = delayedL;
+         out.channels[0][i] = delayedL * fbComp;
          if (numChannels >= 2)
-            out.channels[1][i] = delayedR;
+            out.channels[1][i] = delayedR * fbComp;
       }
 
       for (int ch = 2; ch < out.numChannels; ch++)

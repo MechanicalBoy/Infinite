@@ -76,8 +76,26 @@ void PhaserKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*side
          const float aL = AllpassCoeff(fcL, (float)mSampleRate);
          const float aR = AllpassCoeff(fcR, (float)mSampleRate);
 
-         float xL = in.channels[0][i] + kFeedbackDigital * mFbL;
-         float xR = (numChannels >= 2 ? in.channels[1][i] : in.channels[0][i]) + kFeedbackDigital * mFbR;
+         // Delay-free feedback: the cascade's output is y = G u + S (G the
+         // product of the stage coefficients, S what the stage states already
+         // fix), and u = x + k y, so y = (G x + S) / (1 - k G) and the loop
+         // needs no unit delay. A z^-1 in the loop is a different time at each
+         // rate, so it moved the feedback's peaks (6 kHz read 1.4 dB apart
+         // between 44.1 and 96 kHz); this is the analog loop at every rate.
+         float gL = 1.0f, sL = 0.0f, gR = 1.0f, sR = 0.0f;
+         for (int s = 0; s < stages; s++)
+         {
+            gL *= aL;
+            sL = aL * sL + mStagesL[s].State(aL);
+            gR *= aR;
+            sR = aR * sR + mStagesR[s].State(aR);
+         }
+         const float inL = in.channels[0][i];
+         const float inR = numChannels >= 2 ? in.channels[1][i] : in.channels[0][i];
+         const float yL = (gL * inL + sL) / (1.0f - kFeedbackDigital * gL);
+         const float yR = (gR * inR + sR) / (1.0f - kFeedbackDigital * gR);
+         float xL = inL + kFeedbackDigital * yL;
+         float xR = inR + kFeedbackDigital * yR;
          for (int s = 0; s < stages; s++)
          {
             xL = mStagesL[s].Process(xL, aL);

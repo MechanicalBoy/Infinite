@@ -21,13 +21,17 @@ namespace
             "uniform sampler2D uTex3;\n"
             "uniform int uActive[4];\n"
             "uniform int uModes[4];\n"
-            "uniform float uOpacity[4];\n")
+            "uniform float uOpacity[4];\n"
+            "uniform vec2 uUvScale[4];\n")
          + BlendModes::kBlendGLSL
          + "vec4 fetch(int i) {\n"
-           "   if (i == 0) return texture(uTex0, vUv);\n"
-           "   if (i == 1) return texture(uTex1, vUv);\n"
-           "   if (i == 2) return texture(uTex2, vUv);\n"
-           "   return texture(uTex3, vUv);\n"
+           // Per-layer aspect placement (see LayerStackNode::Fit); outside the layer is transparent.
+           "   vec2 uv = (vUv - 0.5) * uUvScale[i] + 0.5;\n"
+           "   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);\n"
+           "   if (i == 0) return texture(uTex0, uv);\n"
+           "   if (i == 1) return texture(uTex1, uv);\n"
+           "   if (i == 2) return texture(uTex2, uv);\n"
+           "   return texture(uTex3, uv);\n"
            "}\n"
            "void main() {\n"
            "   vec4 acc = vec4(0.0);\n"
@@ -49,6 +53,12 @@ namespace
            "}\n";
       return src;
    }
+}
+
+const std::vector<std::string>& LayerStackNode::FitNames()
+{
+   static const std::vector<std::string> names = { "Stretch", "Fit", "Fill" };
+   return names;
 }
 
 LayerStackNode::~LayerStackNode()
@@ -111,12 +121,42 @@ void LayerStackNode::CookIfNeeded(int frameId)
    if (w == 0 || h == 0)
       return;
 
+   // UV scale per layer about the centre: 1,1 is stretch. r > 1 means the layer is wider than the canvas.
+   float uvScale[kSlots * 2];
+   for (int i = 0; i < kSlots; i++)
+   {
+      float sx = 1.0f, sy = 1.0f;
+      const int lw = mInputs[i].Width(), lh = mInputs[i].Height();
+      if (active[i] && fit != kStretch && lw > 0 && lh > 0)
+      {
+         const float r = ((float)lw / (float)lh) / ((float)w / (float)h);
+         if (fit == kFit)
+         {
+            // Whole layer visible: a wider layer gets bars above and below, a taller one at the sides.
+            if (r > 1.0f)
+               sy = r;
+            else
+               sx = 1.0f / r;
+         }
+         else
+         {
+            // Canvas covered: a wider layer is cropped at the sides, a taller one top and bottom.
+            if (r > 1.0f)
+               sx = 1.0f / r;
+            else
+               sy = r;
+         }
+      }
+      uvScale[i * 2] = sx;
+      uvScale[i * 2 + 1] = sy;
+   }
+
    if (!EnsureShader())
       return;
    if (!GLUtil::EnsureFbo(mOut, w, h))
       return;
 
-   GLUtil::RunShaderPass(mOut, mProgram, [this, &tex, &active]()
+   GLUtil::RunShaderPass(mOut, mProgram, [this, &tex, &active, &uvScale]()
    {
       static const char* kTexNames[kSlots] = { "uTex0", "uTex1", "uTex2", "uTex3" };
       for (int i = 0; i < kSlots; i++)
@@ -128,5 +168,6 @@ void LayerStackNode::CookIfNeeded(int frameId)
       glUniform1iv(glGetUniformLocation(mProgram, "uActive"), kSlots, active);
       glUniform1iv(glGetUniformLocation(mProgram, "uModes"), kSlots, modes);
       glUniform1fv(glGetUniformLocation(mProgram, "uOpacity"), kSlots, opacities);
+      glUniform2fv(glGetUniformLocation(mProgram, "uUvScale"), kSlots, uvScale);
    });
 }

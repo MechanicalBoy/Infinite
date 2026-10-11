@@ -20,16 +20,16 @@ namespace app
 
          if (!n->LastError().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", n->LastError().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
 
          if (!n->Notice().empty())
          {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+            PushTextWrapWidth(kPreviewSize);
             ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(tok::U32(tok::modulation)), "%s", n->Notice().c_str());
-            ImGui::PopTextWrapPos();
+            PopTextWrapWidth();
          }
       }
 

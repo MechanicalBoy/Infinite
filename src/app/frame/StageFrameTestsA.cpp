@@ -2400,6 +2400,8 @@ void DrawFrameTestsA(FrameCtx& fc)
 
       FrameTest_GROUP3DTEST(frameId, window);
 
+      FrameTest_LAYERSTACKFITTEST(frameId, window);
+
       FrameTest_WRAPTEST(frameId, window);
 
       FrameTest_PHASEDTEST(frameId, window);

@@ -1167,7 +1167,7 @@ namespace app
          row.End();
       }
       {
-         AudioKnobRow row(3, 20.0f, 0.0f, false);
+         AudioKnobRow row(4, 20.0f, 0.0f, false);
          bool rms = n->Param("detectorRms") != 0.0f;
          bool rmsUserChanged = false;
          if (row.Checkbox("RMS##dynRms", &rms, &rmsUserChanged))
@@ -1191,6 +1191,15 @@ namespace app
             if (analogBoolUserChanged) // a cable flip writes the value but never checkpoints
                PushUndoCheckpoint();
             *n->ParamPtr("analog") = analogBool ? 1.0f : 0.0f;
+         }
+         // Detector-only 90 Hz high-pass: bass stops pumping the gain.
+         bool scHpf = n->Param("scHpf") != 0.0f;
+         bool scHpfUserChanged = false;
+         if (row.Checkbox("sc hpf##dynScHpf", &scHpf, &scHpfUserChanged))
+         {
+            if (scHpfUserChanged)
+               PushUndoCheckpoint();
+            *n->ParamPtr("scHpf") = scHpf ? 1.0f : 0.0f;
          }
          row.End();
       }
@@ -1912,9 +1921,13 @@ namespace app
    void DrawPitchShiftBody(GraphNode& gn, AudioEffectNode* n)
    {
       const bool analog = n->Param("analog") != 0.0f;
+      const bool spectral = n->Param("spectral") != 0.0f;
       char stat[96];
-      snprintf(stat, sizeof(stat), "%+.1f st - %.0f ms grain%s", n->Param("pitch"), n->Param("grain"),
-               analog ? " - analog" : "");
+      if (spectral)
+         snprintf(stat, sizeof(stat), "%+.1f st - spectral%s", n->Param("pitch"), analog ? " - analog" : "");
+      else
+         snprintf(stat, sizeof(stat), "%+.1f st - %.0f ms grain%s", n->Param("pitch"), n->Param("grain"),
+                  analog ? " - analog" : "");
 
       BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
       DrawPitchShiftVisualizer(n);
@@ -1944,7 +1957,16 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("analog") = analogBool ? 1.0f : 0.0f;
          }
-         row.Skip();
+         // Phase-vocoder mode: keeps chords and mixes intact, at ~85 ms of
+         // latency (compensated). The grain knob only shapes the default mode.
+         bool spectralBool = spectral;
+         bool spectralUserChanged = false;
+         if (row.Checkbox("spectral##pitchShiftSpectral", &spectralBool, &spectralUserChanged))
+         {
+            if (spectralUserChanged)
+               PushUndoCheckpoint();
+            *n->ParamPtr("spectral") = spectralBool ? 1.0f : 0.0f;
+         }
          row.Skip();
          row.End();
       }

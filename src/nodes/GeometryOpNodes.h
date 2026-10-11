@@ -16,6 +16,12 @@ bool WrapsInstancer(IGeometrySource* source);
 const std::vector<Mat4>& ResolveInstanceTransforms(IGeometrySource* source, InstanceOnPointsNode* instancer);
 const std::vector<unsigned char>* ResolveInstanceSelection(IGeometrySource* source);
 
+// Bakes what a Group 3D carries into one mesh: nested groups expanded, each leaf placed by its own model matrix
+// (or realized through its instancer), a tinted leaf's colour baked into vertex colour. `signature` is the
+// caller's rebuild gate - returns false and leaves `out` untouched when no leaf changed since the last call.
+// Shared by the group's own GetMesh() and the node thumbnail so the two can never disagree.
+bool BakeGroupMesh(IGeometrySource* group, unsigned long long& signature, Mesh& out);
+
 // One class for every mesh -> mesh operator, chosen by a dropdown - the same
 // table-driven approach FilterNode uses for image effects, so adding an
 // operator is a case in a switch rather than a new node type.

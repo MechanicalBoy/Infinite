@@ -1441,3 +1441,114 @@ void SetColorNode::CookIfNeeded(int frameId)
       mHasTexHash = false;
    }
 }
+
+
+// ========================================================= Group 3D bake
+
+namespace
+{
+   constexpr int kGroupBakeMaxDepth = 8;      // matches Render3DNode's FlattenGeometry
+   constexpr size_t kGroupBakeMaxLeaves = 64;
+   constexpr size_t kGroupBakeMaxVertices = 600000;
+   constexpr int kGroupBakeMaxInstances = 256;
+
+   // Depth-first expansion of nested groups into the sources they hold, bounded
+   // twice over so a group patched into itself cannot spin.
+   void FlattenGroupLeaves(IGeometrySource* source, int depth, std::vector<IGeometrySource*>& out)
+   {
+      if (source == nullptr || out.size() >= kGroupBakeMaxLeaves)
+         return;
+      const int children = source->GroupChildCount();
+      if (children > 0)
+      {
+         // A group past the depth cap (a group patched into itself) is dropped, not kept as a leaf: its
+         // GetMesh() is a bake of its own, so keeping it would recurse.
+         if (depth < kGroupBakeMaxDepth)
+            for (int i = 0; i < children; i++)
+               FlattenGroupLeaves(source->GroupChild(i), depth + 1, out);
+         return;
+      }
+      out.push_back(source);
+   }
+
+   void HashBytes(unsigned long long& h, const void* data, size_t size)
+   {
+      const unsigned char* bytes = static_cast<const unsigned char*>(data);
+      for (size_t i = 0; i < size; i++)
+      {
+         h ^= bytes[i];
+         h *= 1099511628211ull;
+      }
+   }
+}
+
+bool BakeGroupMesh(IGeometrySource* group, unsigned long long& signature, Mesh& out)
+{
+   std::vector<IGeometrySource*> leaves;
+   FlattenGroupLeaves(group, 0, leaves);
+   leaves.erase(std::remove(leaves.begin(), leaves.end(), group), leaves.end()); // an empty group is its own leaf
+
+   // Nothing in a leaf's mesh revision covers its model matrix, its colour or
+   // its instancer, so the rebuild gate hashes all of them.
+   unsigned long long next = 1469598103934665603ull;
+   for (IGeometrySource* leaf : leaves)
+   {
+      const unsigned long long revision = leaf->MeshRevision();
+      const Mat4 model = leaf->GetModelMatrix();
+      const Material material = leaf->GetMaterial();
+      HashBytes(next, &leaf, sizeof(leaf));
+      HashBytes(next, &revision, sizeof(revision));
+      HashBytes(next, model.m, sizeof(model.m));
+      HashBytes(next, material.color, sizeof(material.color));
+      InstanceOnPointsNode* instancer = FindInstancer(leaf);
+      if (instancer != nullptr)
+      {
+         const unsigned long long instanceRevision = instancer->InstanceRevision();
+         const Mat4 groupMatrix = leaf->GetInstanceGroupMatrix();
+         HashBytes(next, &instanceRevision, sizeof(instanceRevision));
+         HashBytes(next, groupMatrix.m, sizeof(groupMatrix.m));
+      }
+   }
+   if (next == signature)
+      return false;
+
+   Mesh combined;
+   for (IGeometrySource* leaf : leaves)
+   {
+      if (combined.vertices.size() >= kGroupBakeMaxVertices)
+         break;
+      const Mesh& mesh = leaf->GetMesh();
+      if (mesh.vertices.empty())
+         continue;
+
+      Mesh placed;
+      InstanceOnPointsNode* instancer = FindInstancer(leaf);
+      if (instancer != nullptr && instancer->InstanceCount() > 0)
+         placed = MeshOps::RealizeInstances(mesh, ResolveInstanceTransforms(leaf, instancer),
+                                            leaf->GetInstanceGroupMatrix(), nullptr,
+                                            kGroupBakeMaxInstances);
+      else
+         placed = MeshOps::Transform(mesh, leaf->GetModelMatrix());
+
+      // Only bake a colour where there is one to carry: a white, colourless
+      // child stays colourless, so a group of plain meshes does not grow a
+      // vertex-colour array that the thumbnail then has to upload.
+      const Material material = leaf->GetMaterial();
+      const bool tinted = material.color[0] != 1.0f || material.color[1] != 1.0f ||
+                          material.color[2] != 1.0f;
+      if (tinted)
+      {
+         if (placed.vertexColor.empty())
+            placed.vertexColor.assign(placed.vertices.size() * 3, 1.0f);
+         for (size_t v = 0; v < placed.vertices.size(); v++)
+            for (int c = 0; c < 3; c++)
+               placed.vertexColor[v * 3 + c] *= material.color[c];
+      }
+      MeshOps::AppendMesh(combined, placed);
+   }
+
+   out = std::move(combined);
+   signature = next;
+   return true;
+}
+
