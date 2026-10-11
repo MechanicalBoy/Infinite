@@ -201,6 +201,7 @@ void ReverbKernel::ProcessBlockLegacy(const AudioBuffer& in, const AudioBuffer* 
 
    float prevSize = -1.0f;
    float prevDecaySeconds = -1.0f;
+   float prevDecayCutoff = -1.0f;
    int cachedActiveLen[kNumLines];
    float cachedDecayGain[kNumLines];
 
@@ -255,15 +256,17 @@ void ReverbKernel::ProcessBlockLegacy(const AudioBuffer& in, const AudioBuffer* 
       const float dampCoeff = 1.0f - std::exp(-2.0f * 3.14159265f * cutoffHz / (float)mSampleRate);
       const float modDepthSamples = analog ? 10.0f : 4.0f;
 
-      if (size != prevSize || decaySeconds != prevDecaySeconds)
+      if (size != prevSize || decaySeconds != prevDecaySeconds || baseCutoff != prevDecayCutoff)
       {
          prevSize = size;
          prevDecaySeconds = decaySeconds;
+         prevDecayCutoff = baseCutoff;
+         const float comp = DampCompensation(baseCutoff, (float)mSampleRate);
          const float decayExpConst = -3.0f * 2.302585092994046f / ((float)mSampleRate * decaySeconds);
          for (int l = 0; l < kNumLines; l++)
          {
             cachedActiveLen[l] = std::clamp((int)std::lround(kBaseLengths44k[l] * rateScale * scaleFactor), 8, lineCapacities[l] - 32);
-            cachedDecayGain[l] = std::exp(decayExpConst * (float)cachedActiveLen[l]);
+            cachedDecayGain[l] = CompensatedDecayGain(std::exp(decayExpConst * (float)cachedActiveLen[l]), comp);
          }
       }
 

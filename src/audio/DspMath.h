@@ -33,7 +33,14 @@ namespace DspMath
 
       float Process(float target)
       {
-         current = target + (current - target) * coeff;
+         // In float the step stops moving once it rounds back to `current`,
+         // ~0.5 ulp / (1 - coeff) short of target (hundreds of ulps at 96 kHz
+         // with a 5 ms time constant). Harmless for a gain; fatal for a
+         // smoothed biquad coefficient, where a 50 Hz band's 1 + a1 + a2 is
+         // ~1e-5 and that error moved its response by up to 18 dB. Snap
+         // when a step makes no progress.
+         const float next = target + (current - target) * coeff;
+         current = (next == current) ? target : next;
          return current;
       }
    };

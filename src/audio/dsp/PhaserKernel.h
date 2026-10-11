@@ -27,6 +27,9 @@ struct AllpassStage
 
    void Reset() { x1 = y1 = 0.0f; }
 
+   // y = a x + State(a): the part of the output already fixed by the past.
+   float State(float a) const { return x1 - a * y1; }
+
    float Process(float x, float a)
    {
       const float y = a * x + x1 - a * y1;

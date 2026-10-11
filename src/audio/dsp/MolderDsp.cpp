@@ -365,8 +365,9 @@ namespace MolderDsp
       // fit - the difference matters because a partial rendered even a
       // fraction of a Hz off drifts audibly out of phase with the source
       // over a one-second render.
-      std::vector<float> prevPartialPhase(kMaxPartials, 0.0f);
+      std::vector<float> prevPhaseSpectrum(nBins + 1, 0.0f);
       std::vector<bool> havePrevPartialPhase(kMaxPartials, false);
+      std::vector<uint8_t> freqMeasured((size_t)out.numFrames * kMaxPartials, 0);
       float prevF0Phase = 0.0f;
       int prevF0Bin = -1;
 
@@ -490,6 +491,7 @@ namespace MolderDsp
 
          // -- partial extraction: peak mag in a spacing-proportional window
          const int r = std::max(1, (int)radius);
+         float rawFrameEnergy = 0.0f; // pre-scalloping-correction, picks the peak frame
          for (int h = 0; h < out.numPartials; ++h)
          {
             const float harmonicFreq = trackedF0 * (float)(h + 1);
@@ -510,6 +512,7 @@ namespace MolderDsp
             // Analytic scaling: a Hann-windowed sine of amplitude A reads
             // as A*N/4 in this magnitude spectrum -> partial envelopes get 4/N.
             const float partialAmpVal = peakMag * (4.0f / (float)fftSize) * voicing;
+            rawFrameEnergy += partialAmpVal;
             out.partialAmp[(size_t)f * kMaxPartials + h] = partialAmpVal;
             // Nominal fallback - overwritten below whenever the
             // phase-vocoder estimate is available this frame.
@@ -517,17 +520,21 @@ namespace MolderDsp
 
             if (voicing > 0.3f && peakMag > 1e-6f)
             {
-               // Phase-vocoder instantaneous frequency at the fixed nominal
-               // bin `center` (not the wandering peakBin - the phase-diff
-               // trick needs a stable bin index frame to frame).
-               const float thisPhase = fft.phase[center];
+               // Phase-vocoder instantaneous frequency: this frame's and the
+               // previous frame's phase at the SAME bin. That bin is the
+               // peak bin (where the partial dominates leakage); reading
+               // the previous phase from the previous frame's own nominal
+               // bin instead mixed two bins whenever trackedF0 jitter moved
+               // `center`, reading ~+/-90Hz off at a high harmonic.
+               const float thisPhase = fft.phase[peakBin];
                if (havePrevPartialPhase[h])
                {
-                  const float expectedAdvance = kTwoPi * (float)center * binHz * (float)hop / (float)sr;
-                  float delta = thisPhase - prevPartialPhase[h] - expectedAdvance;
+                  const float expectedAdvance = kTwoPi * (float)peakBin * binHz * (float)hop / (float)sr;
+                  float delta = thisPhase - prevPhaseSpectrum[peakBin] - expectedAdvance;
                   delta = delta - kTwoPi * roundf(delta / kTwoPi); // wrap to (-pi, pi]
-                  const float instFreq = (float)center * binHz + delta * (float)sr / (kTwoPi * (float)hop);
+                  const float instFreq = (float)peakBin * binHz + delta * (float)sr / (kTwoPi * (float)hop);
                   out.partialFreq[(size_t)f * kMaxPartials + h] = instFreq;
+                  freqMeasured[(size_t)f * kMaxPartials + h] = 1;
                   // Accumulate the absolute frequency, not frequency/trackedF0:
                   // trackedF0 jitters frame to frame and gets box-smoothed
                   // afterward for Render's use, so dividing by it here would
@@ -539,20 +546,33 @@ namespace MolderDsp
                   measuredRatioAccum[h] += instFreq * weight;
                   measuredRatioWeight[h] += weight;
                }
-               prevPartialPhase[h] = thisPhase;
                havePrevPartialPhase[h] = true;
             }
             else
             {
                havePrevPartialPhase[h] = false; // gap in voicing breaks the phase chain
             }
+
+            // Scalloping: a Hann-windowed tone d bins off the peak bin
+            // reads sinc(d)/(1-d^2) of its on-bin magnitude (down to
+            // -1.42dB at d=0.5). Undo it with the measured frequency's
+            // offset, only when this frame measured one (the nominal
+            // fallback's offset means nothing).
+            const bool measured = freqMeasured[(size_t)f * kMaxPartials + h] != 0;
+            const float d = std::clamp(out.partialFreq[(size_t)f * kMaxPartials + h] / binHz - (float)peakBin, -0.5f, 0.5f);
+            if (measured && std::fabs(d) > 1e-4f)
+            {
+               const float pd = kPi * d;
+               const float response = (std::sin(pd) / pd) / (1.0f - d * d);
+               out.partialAmp[(size_t)f * kMaxPartials + h] = partialAmpVal / response;
+            }
          }
+
+         std::copy(fft.phase.begin(), fft.phase.begin() + (nBins + 1), prevPhaseSpectrum.begin());
 
          // -- track the frame with the most voiced energy, for phase/envelope
          //    seeding and the "peak frame" pivot the render time-warp uses --
-         float frameEnergy = 0.0f;
-         for (int h = 0; h < out.numPartials; ++h)
-            frameEnergy += out.partialAmp[(size_t)f * kMaxPartials + h];
+         const float frameEnergy = rawFrameEnergy;
          if (frameEnergy > bestFrameEnergy)
          {
             bestFrameEnergy = frameEnergy;
@@ -662,6 +682,30 @@ namespace MolderDsp
          out.frameF0 = std::move(smoothed);
       }
 
+      // Frames that measured no frequency for a partial (onset, release,
+      // a voicing gap) hold only the nominal trackedF0*(h+1) fallback, and
+      // Render integrates phase through them: a fraction of a percent off
+      // at a high harmonic is a full cycle of drift within tens of ms,
+      // which garbled the attack and release. Hold the nearest measured
+      // value instead (backward into the onset, forward into the tail).
+      for (int h = 0; h < out.numPartials; ++h)
+      {
+         int last = -1;
+         for (int f = 0; f < out.numFrames; ++f)
+         {
+            if (freqMeasured[(size_t)f * kMaxPartials + h])
+            {
+               const float v = out.partialFreq[(size_t)f * kMaxPartials + h];
+               for (int g = last + 1; g < f; ++g)
+                  out.partialFreq[(size_t)g * kMaxPartials + h] = v; // fills gaps from the later side
+               last = f;
+            }
+         }
+         if (last >= 0)
+            for (int g = last + 1; g < out.numFrames; ++g)
+               out.partialFreq[(size_t)g * kMaxPartials + h] = out.partialFreq[(size_t)last * kMaxPartials + h];
+      }
+
       // -- finalize per-partial measured ratio, envelope, seed phase ------
       for (int h = 0; h < out.numPartials; ++h)
       {
@@ -671,63 +715,129 @@ namespace MolderDsp
       }
 
       // Seed phase + spectral envelope from the peak (most voiced) frame.
+      //
+      // Phase comes from a joint least-squares fit of every partial at once
+      // over the peak frame's analysis buffer, not from one FFT bin per
+      // partial: a bin also holds its neighbours' leakage and needs a
+      // window/fractional-bin phase correction, which is what held
+      // reconstruction of a dense harmonic source at -6.7dB. Fitting
+      // a*cos + b*sin for all partials together separates them exactly
+      // (the fit is the "subtract each neighbour's leakage" step done in
+      // closed form) and references the phase to a known sample. The seed
+      // is then carried back to sample 0 along the same per-frame
+      // frequency path Render integrates, so baseline playback lands on
+      // the fitted phase at that sample.
       if (Aborted(abort))
          return;
-      fft.AnalyzeFrame(mono, len, hop, out.peakFrame, nullptr);
-      // Empirically (confirmed by INFINITE_MOLDERTEST's cross-correlation
-      // check), a bin's phase here is referenced to sample 0 of the
-      // analysis BUFFER (start = frame*hop - fftSize/2), not the window's
-      // arithmetic centre (frame*hop) - the periodic/DFT-even Hann window
-      // used here (denominator N, not the symmetric-window's N-1) isn't
-      // actually symmetric about that centre, so the standard
-      // linear-phase-kernel argument for a centre reference doesn't apply
-      // as-is. Using the centre measurably worsens reconstruction.
-      const float peakTimeSec = (float)(out.peakFrame * hop - fftSize / 2) / (float)sr;
-      for (int h = 0; h < out.numPartials; ++h)
       {
-         // Use the exact per-frame measured frequency at the peak frame -
-         // the same value Render interpolates through - rather than
-         // re-deriving it from the global measuredRatio average, so the
-         // seed phase and Render's baseline playback agree exactly at t =
-         // peakFrame.
-         const float harmonicFreq = out.partialFreq[(size_t)out.peakFrame * kMaxPartials + h];
-         if (harmonicFreq <= 0.0f || harmonicFreq >= (float)(sr * 0.45))
-            continue;
-         const int bin = std::clamp((int)(harmonicFreq / binHz + 0.5f), 0, nBins);
-         // Fractional-bin correction: the true frequency rarely lands
-         // exactly on a bin, and a windowed DFT bin's phase differs from
-         // the true off-bin sinusoid's phase by a term linear in the
-         // fractional offset - left uncorrected, each harmonic (with its
-         // own distinct fractional offset) picks up a different phase
-         // error, scrambling the RELATIVE phase between harmonics even
-         // though each one's own frequency and amplitude are accurate.
-         // Derivation: this engine's window is the periodic Hann
-         // w[n] = 0.5*(1-cos(2*pi*n/N)), n=0..N-1, which satisfies
-         // w[n] = w[N-n] for n=1..N-1 (w[0]=0) - i.e. symmetric about N/2.
-         // For an off-bin complex exponential e^{j2*pi*(k0+d)*n/N + j*phi0}
-         // (d = fracBin, |d|<=0.5), substituting n = N/2 + m and using that
-         // symmetry collapses the window's own contribution to a REAL sum
-         // (imaginary parts cancel pairwise), leaving
-         // X[k0] = e^{j*phi0} * e^{j*pi*d} * R(d) with R(d) real and
-         // positive for |d|<=0.5 - so the isolated-tone analysis bin's
-         // phase leads the true phi0 by exactly pi*d. In a dense harmonic
-         // series (this test's 220Hz sawtooth, ~10 bins apart at 2048pt/
-         // 44.1kHz) neighbouring harmonics' mainlobes still overlap this
-         // bin enough to skew the effective correction slightly off the
-         // isolated-tone value - empirically -0.6*pi*d tracks measurably
-         // better against INFINITE_MOLDERTEST than the isolated-tone -pi*d
-         // (confirmed: -6.7dB vs -5.4dB reconstruction error). Closing the
-         // remaining gap to this test's -20dB bar needs actual per-harmonic
-         // mainlobe-overlap compensation (subtracting each neighbour's
-         // predicted leakage before re-estimating), not a bigger fitted
-         // coefficient - flagging rather than chasing further with magic
-         // numbers.
-         const float fracBin = harmonicFreq / binHz - (float)bin;
-         const float phaseAtPeak = fft.phase[bin] - 0.6f * kPi * fracBin;
-         // Back-propagate to sample 0: phase(0) = phase(t_peak) - 2*pi*f*t_peak.
-         out.seedPhase[h] = phaseAtPeak - kTwoPi * harmonicFreq * peakTimeSec;
-         out.envelopeFreq[h] = harmonicFreq;
-         out.envelopeAmp[h] = std::max(1e-6f, out.partialAmp[(size_t)out.peakFrame * kMaxPartials + h]);
+         constexpr double kPiD = 3.14159265358979323846;
+         const int centre = std::clamp(out.peakFrame * hop, 0, len - 1);
+         const int fitStart = std::max(0, centre - fftSize / 2);
+         const int fitEnd = std::min(len, centre + fftSize / 2);
+         std::vector<int> fitIdx;
+         std::vector<double> fitW;
+         for (int h = 0; h < out.numPartials; ++h)
+         {
+            const float hf = out.partialFreq[(size_t)out.peakFrame * kMaxPartials + h];
+            if (hf > 0.0f && hf < (float)(sr * 0.45))
+               fitIdx.push_back(h);
+         }
+         const int k = (int)fitIdx.size();
+         const int dim = 2 * k;
+         std::vector<double> normal((size_t)dim * dim, 0.0), rhs(dim, 0.0), basis(dim), coef(dim, 0.0);
+         std::vector<double> omega(k);
+         for (int j = 0; j < k; ++j)
+            omega[j] = 2.0 * kPiD * (double)out.partialFreq[(size_t)out.peakFrame * kMaxPartials + fitIdx[j]] / sr;
+         const int span = std::max(1, fitEnd - fitStart);
+         for (int n = fitStart; n < fitEnd; ++n)
+         {
+            const double w = 0.5 - 0.5 * std::cos(2.0 * kPiD * (double)(n - fitStart + 0.5) / (double)span);
+            const double t = (double)(n - centre);
+            for (int j = 0; j < k; ++j)
+            {
+               basis[2 * j] = std::cos(omega[j] * t);
+               basis[2 * j + 1] = std::sin(omega[j] * t);
+            }
+            for (int r = 0; r < dim; ++r)
+            {
+               const double br = w * basis[r];
+               rhs[r] += br * (double)mono[n];
+               double* row = &normal[(size_t)r * dim];
+               for (int c = 0; c <= r; ++c)
+                  row[c] += br * basis[c];
+            }
+         }
+         // Cholesky (lower triangle), with a tiny ridge for partials the
+         // buffer cannot tell apart.
+         double trace = 0.0;
+         for (int r = 0; r < dim; ++r)
+            trace += normal[(size_t)r * dim + r];
+         const double ridge = 1e-9 * trace / std::max(1, dim);
+         bool solved = dim > 0;
+         for (int r = 0; r < dim && solved; ++r)
+         {
+            for (int c = 0; c <= r; ++c)
+            {
+               double v = normal[(size_t)r * dim + c] + (r == c ? ridge : 0.0);
+               for (int m = 0; m < c; ++m)
+                  v -= normal[(size_t)r * dim + m] * normal[(size_t)c * dim + m];
+               if (r == c)
+               {
+                  if (!(v > 0.0))
+                  {
+                     solved = false;
+                     break;
+                  }
+                  normal[(size_t)r * dim + r] = std::sqrt(v);
+               }
+               else
+                  normal[(size_t)r * dim + c] = v / normal[(size_t)c * dim + c];
+            }
+         }
+         if (solved)
+         {
+            for (int r = 0; r < dim; ++r)
+            {
+               double v = rhs[r];
+               for (int m = 0; m < r; ++m)
+                  v -= normal[(size_t)r * dim + m] * coef[m];
+               coef[r] = v / normal[(size_t)r * dim + r];
+            }
+            for (int r = dim - 1; r >= 0; --r)
+            {
+               double v = coef[r];
+               for (int m = r + 1; m < dim; ++m)
+                  v -= normal[(size_t)m * dim + r] * coef[m];
+               coef[r] = v / normal[(size_t)r * dim + r];
+            }
+         }
+
+         for (int j = 0; j < k; ++j)
+         {
+            const int h = fitIdx[j];
+            const float harmonicFreq = out.partialFreq[(size_t)out.peakFrame * kMaxPartials + h];
+            // a*cos(wt) + b*sin(wt) = A*cos(wt + phi) with phi = atan2(-b, a).
+            const double phiAtCentre = solved ? std::atan2(-coef[2 * j + 1], coef[2 * j]) : 0.0;
+            // Render advances phase before using it, through the per-frame
+            // measured frequency interpolated at i/hop: subtract exactly
+            // that advance over samples 0..centre.
+            double advance = 0.0;
+            for (int i = 0; i <= centre; ++i)
+            {
+               const float framePos = (float)i / (float)hop;
+               const int f0i = std::clamp((int)framePos, 0, out.numFrames - 1);
+               const int f1i = std::min(f0i + 1, out.numFrames - 1);
+               const float frac = framePos - (float)f0i;
+               const float a = out.partialFreq[(size_t)f0i * kMaxPartials + h];
+               const float b = out.partialFreq[(size_t)f1i * kMaxPartials + h];
+               advance += 2.0 * kPiD * (double)(a + (b - a) * frac) / sr;
+            }
+            double seed = phiAtCentre - advance;
+            seed -= 2.0 * kPiD * std::floor((seed + kPiD) / (2.0 * kPiD));
+            out.seedPhase[h] = (float)seed;
+            out.envelopeFreq[h] = harmonicFreq;
+            out.envelopeAmp[h] = std::max(1e-6f, out.partialAmp[(size_t)out.peakFrame * kMaxPartials + h]);
+         }
       }
 
       // -- residual band decomposition (fixed octave bands, TptSvf) -------

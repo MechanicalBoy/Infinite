@@ -1145,14 +1145,15 @@ bool RunCycleShaperFixture()
             outRec[b * blockSize + i] = outL[i];
       }
 
-      // One wavecycle at 200 Hz is exactly 240 samples. Output should match input shifted by 240 samples.
+      // One wavecycle at 200 Hz is exactly 240 samples. Output should match input shifted by 240 samples,
+      // plus the crossing estimator's look-ahead.
       const int cycleLen = (int)(sr / freq); // 240
       float maxDiff = 0.0f;
       const int startTest = (int)(0.1 * sr);
       const int endTest = (int)(0.4 * sr);
       for (int i = startTest; i < endTest; i++)
       {
-         const float diff = std::fabs(outRec[i] - inRec[i - cycleLen]);
+         const float diff = std::fabs(outRec[i] - inRec[i - cycleLen - kernel.LatencySamples()]);
          maxDiff = std::max(maxDiff, diff);
       }
 
@@ -2697,28 +2698,15 @@ bool RunMolderFixture()
          };
 
          // 3. Baseline genome must reconstruct the source to < -20dB RMS error.
-         // KNOWN GAP: a single sustained partial (pure sine) clears this bar
-         // comfortably (~-22dB) once past the analysis's inherent onset
-         // latency; a dense, unbandlimited 48-harmonic sawtooth (harmonics
-         // only ~10 bins apart at 220Hz/2048-pt FFT, well inside reach of
-         // each other's Hann mainlobe) currently lands around -6 to -7dB.
-         // Two genuine bugs were found and fixed getting here (on top of
-         // the phase back-propagation reference, warp-curve clamp, and
-         // per-frame frequency drift fixes from before): (1) the
-         // fractional-bin phase correction below had the wrong sign and
-         // was half the analytically-derived magnitude, scrambling
-         // relative phase between harmonics with distinct fractional-bin
-         // offsets; (2) Render's oscillator used sinf(phase) while the
-         // analysis extracts phase in the atan2/cosine convention (a real
-         // DFT bin's phase is defined for x[n]=A*cos(wn+phase), not
-         // A*sin(wn+phase)) - a systematic pi/2 error on every partial.
-         // Fixing both took this from -1.5dB to -6.7dB (harmonic count 1/2
-         // individually clear -20dB; error grows with harmonic count as
-         // mainlobes increasingly overlap). What's left is a harder
-         // problem than either of those: real per-harmonic mainlobe-overlap
-         // compensation (subtracting each neighbour's predicted leakage
-         // before re-estimating a harmonic's own magnitude/phase) or a
-         // proper spectral-envelope phase model - not a tuning constant.
+         // A dense 48-harmonic sawtooth (harmonics ~10 bins apart at
+         // 220Hz/2048-pt) sat at -6.7dB for a long time; three analysis
+         // bugs, not the additive model, held it there: the phase-vocoder
+         // frequency diffed two different bins whenever trackedF0 jitter
+         // moved a partial's nominal bin (+/-90Hz at a high harmonic), the
+         // seed phase came from one FFT bin plus a fitted fractional-bin
+         // correction (now a joint least-squares fit of all partials), and
+         // Hann scalloping read off-bin partials up to 1.4dB low. With those
+         // fixed it reads about -26dB (sustain -30dB, attack/release -20dB).
          MolderDsp::Genome baseline;
          std::vector<float> rendered;
          MolderDsp::Render(a, baseline, rendered);
@@ -2728,6 +2716,8 @@ bool RunMolderFixture()
             printf("MOLDERTEST reconstruction error %.1f dB FAIL\n", errDb);
             ok = false;
          }
+         else
+            printf("MOLDERTEST reconstruction error %.1f dB OK\n", errDb);
 
          // 4. Every partial silenced -> render equals the residual alone,
          // within -40dB (compare against tonal-bank-off, residual-only render).

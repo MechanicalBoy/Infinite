@@ -44,6 +44,29 @@ namespace ReverbDsp
    constexpr float kDiffusionGains[kNumDiffusionStages] = { 0.75f, 0.75f, 0.625f, 0.625f };
    constexpr int kDiffusionROffset44k = 23;
 
+   // The damping one-pole in the feedback path also loses a little level on
+   // every pass below its corner, which made the 1 kHz RT60 run short of the
+   // decay knob (about 10% at 4 s). This is 1 / |H| of y += a (x - y) at the
+   // reference frequency - 1 kHz, or two octaves under the damping corner
+   // when that is lower (heavy damping is meant to shorten 1 kHz) - and the
+   // line gains are scaled by it, so the knob is the mid-band RT60 and
+   // damping only shortens what is above it.
+   inline float DampCompensation(float cutoffHz, float sampleRate)
+   {
+      const float a = 1.0f - std::exp(-2.0f * 3.14159265f * cutoffHz / sampleRate);
+      const float w = 2.0f * 3.14159265f * std::min(1000.0f, 0.25f * cutoffHz) / sampleRate;
+      const float re = 1.0f - (1.0f - a) * std::cos(w), im = (1.0f - a) * std::sin(w);
+      return std::sqrt(re * re + im * im) / a;
+   }
+
+   // Compensated loop gain. The compensation lifts DC above the knob too;
+   // capped at g^0.8 (DC RT60 at most 25% over the knob), which also keeps
+   // the loop under unity however long the decay.
+   inline float CompensatedDecayGain(float decayGain, float comp)
+   {
+      return std::max(decayGain, std::min(decayGain * comp, std::pow(decayGain, 0.8f)));
+   }
+
    // Prime-detuned LFO rates, one per line, so no two lines' modulation ever
    // phase-locks - shared by both the digital and analog character modes.
    constexpr float kLfoRates[kNumLines] = {

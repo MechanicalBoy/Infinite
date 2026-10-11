@@ -28,6 +28,7 @@
 // params legitimately reach +24 dB or more. Everything else is reported, with FLAG lines past
 // the thresholds below, for a person to triage.
 #include "app/AppShared.h"
+#include "audio/dsp/EqKernel.h"
 
 #include <chrono>
 #include <map>
@@ -398,19 +399,27 @@ namespace
                // A decorrelating wet (reverb, delay, modulation, spectral):
                // one sine lands on or between its modes, which moves with
                // the rate, so it is noise in octave bands re the input's.
-               auto rig = MakeRig(def, rr);
-               const int n = (int)(4.0 * rr);
-               std::vector<float> in = Noise(n, 0.1f, 11), oL, oR;
-               Process(*rig, in, in, oL, oR);
-               for (int ti = 0; ti < 3; ti++)
+               // Power averaged over three noise seeds: a wet that repeats
+               // a short slice (Stutter) leaves only a couple of harmonics
+               // in the 100 Hz band, and one seed's luck read 1.9 dB apart.
+               double pin[3] = {}, pout[3] = {};
+               for (unsigned seed : { 11u, 12u, 13u })
                {
-                  const std::vector<float> bi = Band(in, tones[ti], rr), bl = Band(oL, tones[ti], rr),
-                                           br = Band(oR, tones[ti], rr);
-                  const double ref = Rms(bi, (size_t)rr, bi.size());
-                  const double o = std::sqrt(0.5 * (std::pow(Rms(bl, (size_t)rr, bl.size()), 2) +
-                                                    std::pow(Rms(br, (size_t)rr, br.size()), 2)));
-                  lv[ri][ti] = Db(o / std::max(1e-12, ref) * 0.1);
+                  auto rig = MakeRig(def, rr);
+                  const int n = (int)(4.0 * rr);
+                  std::vector<float> in = Noise(n, 0.1f, seed), oL, oR;
+                  Process(*rig, in, in, oL, oR);
+                  for (int ti = 0; ti < 3; ti++)
+                  {
+                     const std::vector<float> bi = Band(in, tones[ti], rr), bl = Band(oL, tones[ti], rr),
+                                              br = Band(oR, tones[ti], rr);
+                     pin[ti] += std::pow(Rms(bi, (size_t)rr, bi.size()), 2);
+                     pout[ti] += 0.5 * (std::pow(Rms(bl, (size_t)rr, bl.size()), 2) +
+                                        std::pow(Rms(br, (size_t)rr, br.size()), 2));
+                  }
                }
+               for (int ti = 0; ti < 3; ti++)
+                  lv[ri][ti] = Db(std::sqrt(pout[ti]) / std::max(1e-12, std::sqrt(pin[ti])) * 0.1);
             }
             auto rig = MakeRig(def, rr);
             const int nb = (int)(1.0 * rr), ns = (int)(8.0 * rr);
@@ -608,6 +617,77 @@ namespace
          printf("FXAUDIT SPEC Audio Filter 18 kHz q 18 @ 44.1 kHz, -6 dBFS noise -> peak %.2f\n", pk);
          if (pk > 16.0f)
             flag(fx, "reso", "peak %.1f at 18 kHz q 18", pk);
+      }
+
+      if (fx == "EQ")
+      {
+         // Analog reference: one band at a time, impulse through the real node,
+         // magnitude vs the analog prototype (cascaded per stage with the same
+         // Butterworth stage Qs) from 20 Hz to min(20 kHz, 0.42 fs), skipping
+         // deep stopband below -30 dB. The bilinear (RBJ) EQ this replaced was
+         // off by 10-30 dB near the top of the band at 44.1 kHz.
+         struct Case { int type; float freq, q, gain; };
+         const Case cases[] = {
+            { EqDsp::kPeak, 10000.0f, 1.0f, 12.0f }, { EqDsp::kPeak, 12000.0f, 2.0f, -12.0f },
+            { EqDsp::kPeak, 1000.0f, 0.707f, 6.0f }, { EqDsp::kHighShelf, 8000.0f, 0.707f, 6.0f },
+            { EqDsp::kHighShelf, 12000.0f, 0.707f, -9.0f }, { EqDsp::kLowShelf, 100.0f, 0.707f, 6.0f },
+            { EqDsp::kLp24, 15000.0f, 0.707f, 0.0f }, { EqDsp::kHp36, 50.0f, 0.707f, 0.0f },
+            { EqDsp::kLp12, 8000.0f, 2.0f, 0.0f }, { EqDsp::kBP, 12000.0f, 2.0f, 0.0f },
+         };
+         auto kindOf = [](int t) {
+            switch (t)
+            {
+               case EqDsp::kLowShelf: return MatchedBiquad::kLowShelf;
+               case EqDsp::kHighShelf: return MatchedBiquad::kHighShelf;
+               case EqDsp::kHp12: case EqDsp::kHp24: case EqDsp::kHp36: return MatchedBiquad::kHighpass;
+               case EqDsp::kLp12: case EqDsp::kLp24: case EqDsp::kLp36: return MatchedBiquad::kLowpass;
+               case EqDsp::kBP: return MatchedBiquad::kBandpass;
+               case EqDsp::kNotch: return MatchedBiquad::kNotch;
+               case EqDsp::kAllpass: return MatchedBiquad::kAllpass;
+               default: return MatchedBiquad::kPeak;
+            }
+         };
+         for (double rr : rates)
+         {
+            double worst = 0.0;
+            const char* worstName = "";
+            float worstF = 0.0f, worstAt = 0.0f;
+            for (const Case& c : cases)
+            {
+               std::map<std::string, float> over;
+               for (int b = 1; b <= 5; b++)
+                  over["band" + std::to_string(b) + "On"] = b == 3 ? 1.0f : 0.0f;
+               over["band3Type"] = (float)c.type;
+               over["band3Freq"] = c.freq;
+               over["band3Q"] = c.q;
+               over["band3Gain"] = c.gain;
+               auto rig = MakeRig(def, rr, over);
+               std::vector<float> l, r;
+               impulse(*rig, 1.0, l, r);
+               for (double f = 20.0; f <= std::min(20000.0, 0.42 * rr); f *= 1.03)
+               {
+                  double ana2 = 1.0;
+                  for (int st = 0; st < EqDsp::StageCount(c.type); st++)
+                     ana2 *= MatchedBiquad::AnalogMag2(
+                        MatchedBiquad::MakeProto(kindOf(c.type), EqDsp::StageQ(c.type, st, c.q), c.gain), f / c.freq);
+                  const double ana = 10.0 * std::log10(std::max(ana2, 1e-30));
+                  if (ana < -30.0)
+                     continue;
+                  const double err = std::fabs(Db(MagAt(l, f, rr)) - ana);
+                  if (err > worst)
+                  {
+                     worst = err;
+                     worstName = EqDsp::TypeName(c.type);
+                     worstF = c.freq;
+                     worstAt = (float)f;
+                  }
+               }
+            }
+            printf("FXAUDIT SPEC EQ vs analog prototype @ %.1f kHz -> worst %.2f dB (%s %.0f Hz, at %.0f Hz)\n",
+                   rr / 1000.0, worst, worstName, worstF, worstAt);
+            if (worst > 1.5)
+               flag(fx, "analog", "%.2f dB off the analog prototype", worst);
+         }
       }
 
       if (fx == "Resonator Bank")

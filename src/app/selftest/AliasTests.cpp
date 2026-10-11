@@ -47,7 +47,12 @@ namespace
       double harmonicDb = 0.0; // in-band harmonic energy re fundamental
    };
 
-   AliasMeasurement Measure(const std::vector<float>& x, int fundBin)
+   // carrierBin > 0: a ring modulator's output, whose legitimate components
+   // are every |h * fundBin +- m * carrierBin| (input harmonic h times
+   // carrier harmonic m), all of them counted as "fundamental". Bins 1707 or
+   // 171 against carrier bin 211 (prime, odd) keep folded products off that
+   // set to within the window's main lobe.
+   AliasMeasurement Measure(const std::vector<float>& x, int fundBin, int carrierBin = 0)
    {
       std::vector<float> windowed((size_t)kN);
       for (int i = 0; i < kN; i++)
@@ -71,15 +76,31 @@ namespace
             if (k > 0 && k < kN / 2)
                harmonic[(size_t)k] = 1;
          }
+      std::vector<char> sideband((size_t)kN / 2, 0);
+      if (carrierBin > 0)
+      {
+         std::fill(harmonic.begin(), harmonic.end(), 0);
+         // h = 0..4: the analog mode's input shaping adds input harmonics
+         // and its carrier bleed adds the carrier alone, both real products.
+         for (int h = 0; h <= 4; h++)
+            for (int m = 0; m * carrierBin - h * fundBin - kLobe < kN / 2; m++)
+               for (int sgn : { -1, 1 })
+                  for (int d = -kLobe; d <= kLobe; d++)
+                  {
+                     const int k = std::abs(h * fundBin + sgn * m * carrierBin) + d;
+                     if (k > 0 && k < kN / 2)
+                        sideband[(size_t)k] = 1;
+                  }
+      }
 
       double fund = 0.0, alias = 0.0, harm = 0.0;
       const int audibleTop = (int)(kAudibleHz / kRate * kN);
       for (int k = 1; k < kN / 2; k++)
       {
-         if (k > audibleTop && !harmonic[(size_t)k])
+         if (k > audibleTop && !harmonic[(size_t)k] && !sideband[(size_t)k])
             continue;
          const double p = (double)re[(size_t)k] * re[(size_t)k] + (double)im[(size_t)k] * im[(size_t)k];
-         if (std::abs(k - fundBin) <= kLobe)
+         if (sideband[(size_t)k] || (carrierBin == 0 && std::abs(k - fundBin) <= kLobe))
             fund += p;
          else if (harmonic[(size_t)k])
             harm += p;
@@ -101,6 +122,7 @@ namespace
       double gateDb = 0.0; // 0 = report only; otherwise the case must reach this
       bool control = false;
       int fundBin = kFundBin; // odd; 171 = 501 Hz
+      int carrierBin = 0;     // Ring Mod: carrier on this (odd) bin, see Measure
    };
 
    bool RunCase(const AliasCase& c, AliasMeasurement& out)
@@ -122,6 +144,8 @@ namespace
             return false;
          *p = pd->minVal + frac * (pd->maxVal - pd->minVal);
       }
+      if (c.carrierBin > 0)
+         *node->ParamPtr("freq") = (float)(c.carrierBin * kRate / kN);
       node->GetAudioNode()->PrepareToPlay(kRate, 512);
       node->CookIfNeeded(1);
 
@@ -132,7 +156,7 @@ namespace
          *node, warm + kN, 1,
          [omega](int i, int) { return kAmplitude * (float)std::sin(omega * (double)i); }, &rendered);
       std::vector<float> tail(rendered[0].begin() + warm, rendered[0].end());
-      out = Measure(tail, c.fundBin);
+      out = Measure(tail, c.fundBin, c.carrierBin);
       return true;
    }
 
@@ -233,14 +257,23 @@ bool RunAliasTest()
       // Cycle Shaper: phase-locked oscillator on band-limited tables
       // (CycleShaperKernel.h). Before: -10 dB on the default sine at 5 kHz.
       // At 5 kHz a cycle is under 10 samples, so cycle tracking sets the
-      // floor; at musical pitches it is far lower.
-      { "Cycle Shaper sine (default)", "Cycle Shaper", {}, -45.0 },
-      { "Cycle Shaper square, smooth 0", "Cycle Shaper", { { "waveform", 0.5f }, { "smooth", 0.0f } }, -45.0 },
-      { "Cycle Shaper triangle, smooth 0", "Cycle Shaper", { { "waveform", 1.0f }, { "smooth", 0.0f } }, -45.0 },
-      { "Cycle Shaper sine @ 500 Hz", "Cycle Shaper", {}, -95.0, false, 171 },
+      // floor; at musical pitches it is far lower. Linear crossing/peak
+      // estimates read -50 here; the quintic interpolant reads -75.
+      { "Cycle Shaper sine (default)", "Cycle Shaper", {}, -70.0 },
+      { "Cycle Shaper square, smooth 0", "Cycle Shaper", { { "waveform", 0.5f }, { "smooth", 0.0f } }, -70.0 },
+      { "Cycle Shaper triangle, smooth 0", "Cycle Shaper", { { "waveform", 1.0f }, { "smooth", 0.0f } }, -70.0 },
+      { "Cycle Shaper sine @ 500 Hz", "Cycle Shaper", {}, -105.0, false, 171 },
       { "Cycle Shaper square @ 500 Hz", "Cycle Shaper", { { "waveform", 0.5f }, { "smooth", 0.0f } }, -75.0, false,
         171 },
       { "Bitcrush (aliasing is the effect)", "Bitcrush", {} },
+      // Carrier 618 Hz (bin 211). Before 4x oversampling (same metric):
+      // square -38, saw -36, square @ 500 Hz -41 dB. Analog mode's diode
+      // dead zone is a hard kink, so some of its products still fold at 4x.
+      { "Ring Mod square carrier", "Ring Mod", { { "waveform", 1.0f } }, -75.0, false, kFundBin, 211 },
+      { "Ring Mod saw carrier", "Ring Mod", { { "waveform", 2.0f / 3.0f } }, -75.0, false, kFundBin, 211 },
+      { "Ring Mod square, analog", "Ring Mod", { { "waveform", 1.0f }, { "analog", 1.0f } }, -40.0, false, kFundBin,
+        211 },
+      { "Ring Mod square @ 500 Hz input", "Ring Mod", { { "waveform", 1.0f } }, -78.0, false, 171, 211 },
    };
 
    bool all = true;

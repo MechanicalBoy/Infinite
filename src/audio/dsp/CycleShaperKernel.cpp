@@ -18,35 +18,73 @@ void CycleShaperKernel::PushParams(const AudioEffectNode& node, double /*sampleR
 
 namespace
 {
-   // Where the quadratic through (-1, x0), (0, x1), (1, x2) crosses zero
-   // upward between 0 and 1, as a fraction past x1. Falls back to the
-   // straight line between x1 and x2.
-   inline double CrossingFraction(double x0, double x1, double x2)
+   // Lagrange quintic through h[0..5] at t = -2..3, evaluated at t (h[2] is
+   // t = 0, h[3] is t = 1).
+   inline double Interp6(const float* h, double t)
    {
-      const double lin = x1 / (x1 - x2);
-      const double a = 0.5 * (x2 + x0) - x1, b = 0.5 * (x2 - x0), c = x1;
-      if (std::fabs(a) < 1.0e-12)
-         return lin;
-      const double disc = b * b - 4.0 * a * c;
-      if (disc < 0.0)
-         return lin;
-      const double sq = std::sqrt(disc);
-      for (double r : { (-b + sq) / (2.0 * a), (-b - sq) / (2.0 * a) })
-         if (r >= 0.0 && r <= 1.0)
-            return r;
-      return lin;
+      double sum = 0.0;
+      for (int k = 0; k < 6; k++)
+      {
+         double w = 1.0;
+         for (int j = 0; j < 6; j++)
+            if (j != k)
+               w *= (t - (double)(j - 2)) / (double)(k - j);
+         sum += w * (double)h[k];
+      }
+      return sum;
    }
 
-   // Vertex height of the quadratic through three samples around a local
-   // extreme of |x| (x1 the largest): the crest between samples.
-   inline float CrestHeight(float x0, float x1, float x2)
+   // Upward zero crossing of the interpolant between h[2] (<= 0) and h[3]
+   // (> 0), as a fraction past h[2]. Bisection-safeguarded Newton from the
+   // straight-line guess; the bracket always holds a root.
+   inline double CrossingFraction(const float* h)
    {
-      const float den = x0 - 2.0f * x1 + x2;
-      if (std::fabs(den) < 1.0e-12f)
-         return std::fabs(x1);
-      const float p = std::clamp(0.5f * (x0 - x2) / den, -0.5f, 0.5f);
-      return std::fabs(x1 - 0.25f * (x0 - x2) * p);
+      double lo = 0.0, hi = 1.0;
+      double t = (double)h[2] / ((double)h[2] - (double)h[3]);
+      for (int it = 0; it < 8; it++)
+      {
+         const double v = Interp6(h, t);
+         if (v > 0.0)
+            hi = t;
+         else
+            lo = t;
+         const double d = (Interp6(h, t + 1.0e-4) - Interp6(h, t - 1.0e-4)) / 2.0e-4;
+         double next = (d > 0.0) ? t - v / d : 0.5 * (lo + hi);
+         if (!(next > lo && next < hi))
+            next = 0.5 * (lo + hi);
+         if (std::fabs(next - t) < 1.0e-9)
+            return next;
+         t = next;
+      }
+      return t;
    }
+
+   // |interpolant| at its extreme within half a sample of h[2] (the crest
+   // between samples). Golden-section search; |h[2]| is the floor.
+   inline float CrestHeight(const float* h)
+   {
+      const double g = 0.6180339887;
+      double a = -0.5, b = 0.5;
+      double c = b - g * (b - a), d = a + g * (b - a);
+      double fc = std::fabs(Interp6(h, c)), fd = std::fabs(Interp6(h, d));
+      for (int it = 0; it < 24; it++)
+      {
+         if (fc > fd)
+         {
+            b = d; d = c; fd = fc;
+            c = b - g * (b - a);
+            fc = std::fabs(Interp6(h, c));
+         }
+         else
+         {
+            a = c; c = d; fc = fd;
+            d = a + g * (b - a);
+            fd = std::fabs(Interp6(h, d));
+         }
+      }
+      return std::max(std::fabs(h[2]), (float)std::max(fc, fd));
+   }
+
    inline float ReadTable(const float* t, double phase)
    {
       const double x = phase * CycleShaperKernel::kTableSize;
@@ -75,14 +113,20 @@ void CycleShaperKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /
 
       for (int i = 0; i < out.numFrames; i++)
       {
-         const float x = inData[i];
+         // Everything below runs kLookAhead samples behind the input: x is
+         // hist[3], with hist[4..5] still to come.
+         for (int k = 0; k < 5; k++)
+            s.hist[k] = s.hist[k + 1];
+         s.hist[5] = inData[i];
+         const float* h = s.hist;
+         const float x = h[3];
          s.sinceCrossing += 1.0;
 
-         if (s.prevSample <= 0.0f && x > 0.0f)
+         if (h[2] <= 0.0f && x > 0.0f)
          {
             // Crossing between the previous sample and this one, `after`
             // samples before this one.
-            const double frac = CrossingFraction(s.prevSample2, s.prevSample, x);
+            const double frac = CrossingFraction(h);
             const double after = 1.0 - frac;
             const double measured = s.sinceCrossing - after;
             // Smooth the period across cycles: steady pitch stays steady,
@@ -127,8 +171,8 @@ void CycleShaperKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /
          {
             // The previous sample was a crest of |x|: take the true peak
             // between samples, not the nearest sample.
-            if (std::fabs(s.prevSample) >= std::fabs(s.prevSample2) && std::fabs(s.prevSample) >= std::fabs(x))
-               s.cyclePeak = std::max(s.cyclePeak, CrestHeight(s.prevSample2, s.prevSample, x));
+            if (std::fabs(h[2]) >= std::fabs(h[1]) && std::fabs(h[2]) >= std::fabs(x))
+               s.cyclePeak = std::max(s.cyclePeak, CrestHeight(h));
             s.cyclePeak = std::max(s.cyclePeak, std::fabs(x));
             if (s.sinceCrossing > (double)kMaxCycleSamples)
             {
@@ -185,8 +229,6 @@ void CycleShaperKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /
          }
 
          outData[i] = DspMath::FlushDenormal(s.gate * y + (1.0f - s.gate) * x);
-         s.prevSample2 = s.prevSample;
-         s.prevSample = x;
       }
    }
 

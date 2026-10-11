@@ -50,9 +50,13 @@ private:
    struct Coeffs
    {
       int n = 0;
+      // Each mode is a coupled-form (rotating phasor) resonator: the state
+      // turns by (c, s) = r (cos w, sin w) per sample. Unlike a direct-form
+      // two-pole, its stored energy does not depend on w, so moving tune
+      // while a mode rings only bends its pitch instead of rescaling it.
       float bIn[kMaxModes] = {};
-      float a1[kMaxModes] = {};
-      float a2[kMaxModes] = {};
+      float c[kMaxModes] = {};
+      float s[kMaxModes] = {};
       float gOut[kMaxModes] = {};
    };
 
@@ -89,6 +93,6 @@ private:
 
    // --- audio thread ---
    Coeffs mCur, mTarget;
-   float mY1[kMaxChannels][kMaxModes] = {};
-   float mY2[kMaxChannels][kMaxModes] = {};
+   float mRe[kMaxChannels][kMaxModes] = {};
+   float mIm[kMaxChannels][kMaxModes] = {};
 };

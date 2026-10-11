@@ -20,10 +20,13 @@
 // oscillator's phase error against the crossing is measured and half of it
 // is corrected over the next cycle, so the output stays in step with the
 // input instead of drifting or jumping. The amplitude ramps to each new
-// cycle's peak across that cycle. Both estimates use a quadratic through the
-// last three samples (the crossing's root, the crest's vertex) rather than
-// the nearest sample: at short periods the nearest sample wanders by several
-// percent from cycle to cycle, which would be heard as AM/FM sidebands.
+// cycle's peak across that cycle. Both estimates use a quintic through six
+// samples centred on the event (the crossing's root, the crest's extreme),
+// which needs two samples of look-ahead - reported as latency, and the dry
+// path is delayed to match. At short periods the nearest sample wanders by
+// several percent from cycle to cycle, and a three-sample quadratic still
+// left ~-50 dB of jitter sidebands on a 5 kHz sine; the quintic is ~25 dB
+// cleaner.
 //
 // The shapes come from band-limited tables (harmonic series, one mip level
 // per octave of harmonic ceiling, crossfaded continuously), read at the mip
@@ -43,7 +46,8 @@
 // early - a gap or a jump every cycle - and the waveforms were not
 // band-limited. ALIASTEST read -10 dB of non-harmonic energy on a plain
 // sine. It also played one cycle late while reporting zero latency; the
-// phase-locked oscillator really has none.
+// phase-locked oscillator itself has none (the 2 samples now reported are
+// the estimator's look-ahead).
 class AudioEffectNode;
 
 class CycleShaperKernel : public IEffectKernel
@@ -57,8 +61,7 @@ public:
 
    struct ChannelState
    {
-      float prevSample = 0.0f;
-      float prevSample2 = 0.0f;
+      float hist[6] = {}; // hist[3] is the sample being processed, hist[4..5] the look-ahead
       double period = 0.0; // smoothed across cycles
       double sinceCrossing = 0.0; // time of the current sample after the last upward crossing
       bool haveCrossing = false;
@@ -98,7 +101,8 @@ public:
 
    void ProcessBlock(const AudioBuffer& in, const AudioBuffer* sidechain, AudioBuffer& out) override;
 
-   int LatencySamples() const override { return 0; }
+   static constexpr int kLookAhead = 2;
+   int LatencySamples() const override { return kLookAhead; }
 
    float LastCycleLength(int ch) const { return mChannels[ch % kMaxChannels].lastCycleLen; }
    float LastCyclePeak(int ch) const { return mChannels[ch % kMaxChannels].lastCyclePeak; }

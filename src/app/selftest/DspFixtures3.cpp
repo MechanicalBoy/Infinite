@@ -1256,11 +1256,11 @@ static bool RunDrumSequencerFixture()
 // EQ's DSP fixture (new-audio-node/SKILL.md §5), following RunWavetableShaperFixture's
 // shape: render the real node -> AudioEngine chain and assert against an
 // analytic expectation. Does NOT touch AudioFilterKernel/AudioFilterDsp -
-// EQ's hp12/lp12 bands use DspMath::Biquad (RBJ), not AudioFilterDsp's
+// EQ's hp12/lp12 bands use DspMath::Biquad (matched design), not AudioFilterDsp's
 // TptSvf, so AudioFilterDsp::MagnitudeDb (which takes the SVF path for its
 // own HP12/LP12) would be measuring a different filter topology; this
 // fixture renders its own settled-sine reference directly from
-// EqDsp::ConfigureBiquad instead.
+// EqDsp::ConfigureStage instead.
 namespace EqTest
 {
    std::unique_ptr<AudioEffectNode> MakeNode(double sampleRate)
@@ -1293,7 +1293,7 @@ namespace EqTest
 
    // Settled-sine measurement of one scratch DspMath::Biquad, same shape as
    // AudioFilterDsp::MagnitudeDb's non-SVF branch, but built from
-   // EqDsp::ConfigureBiquad so it exercises exactly what EqKernel renders.
+   // EqDsp::ConfigureStage so it exercises exactly what EqKernel renders.
    float MeasureMagnitudeDb(int type, float freqHz, float q, float gainDb, float evalHz, double sampleRate)
    {
       if (evalHz <= 0.0f || sampleRate <= 0.0)
@@ -1310,7 +1310,7 @@ namespace EqTest
       const int stages = EqDsp::StageCount(type);
       DspMath::Biquad bq[3];
       for (int s = 0; s < stages; s++)
-         EqDsp::ConfigureBiquad(bq[s], type, freqHz, q, gainDb, sampleRate);
+         EqDsp::ConfigureStage(bq[s], type, s, freqHz, q, gainDb, sampleRate);
       double sumInSq = 0.0, sumOutSq = 0.0, phase = 0.0;
       for (int i = 0; i < totalSamples; i++)
       {
@@ -1406,7 +1406,9 @@ static bool RunEqFixture()
       {
          const float closedForm = EqDsp::BandMagnitudeDb(c.type, c.freq, c.q, c.gainDb, true, c.evalHz, sampleRate);
          const float measured = MeasureMagnitudeDb(c.type, c.freq, c.q, c.gainDb, c.evalHz, sampleRate);
-         maxErr = std::max(maxErr, std::fabs(closedForm - measured));
+         // A float settled-sine render bottoms out near -100 dB (lp 36 at
+         // 8x its corner is ~-108 dB), so compare above a -90 dB floor.
+         maxErr = std::max(maxErr, std::fabs(std::max(closedForm, -90.0f) - std::max(measured, -90.0f)));
       }
       const bool ok = maxErr < 0.5f;
       printf("DSPTEST eq closed-form vs measured magnitude: max error %.3f dB across %d cases  %s\n", maxErr,

@@ -50,7 +50,7 @@ void ShapeResonatorKernel::Reset()
 {
    for (int c = 0; c < kMaxChannels; c++)
       for (int m = 0; m < kMaxModes; m++)
-         mY1[c][m] = mY2[c][m] = 0.0f;
+         mRe[c][m] = mIm[c][m] = 0.0f;
 }
 
 void ShapeResonatorKernel::StartSolve(Kind kind, bool closed, std::vector<float> positions, std::vector<uint32_t> indices)
@@ -193,17 +193,18 @@ void ShapeResonatorKernel::PushParams(const AudioEffectNode& node, double sample
          const float t60 = decay * std::pow(tune / f, damping * 1.5f);
          const float r = std::exp(-6.9078f / (t60 * (float)sampleRate));
          const int k = c.n++;
-         c.a1[k] = 2.0f * r * std::cos(w);
-         c.a2[k] = r * r;
-         // 2 sin(w) sqrt(1-r): unity white-noise power gain per mode (the ring's
-         // sum of h^2 is about b^2 / (4 (1-r) sin^2 w)). So every mode answers a
+         c.c[k] = r * std::cos(w);
+         c.s[k] = r * std::sin(w);
+         // The impulse response is bIn r^(n+1) sin((n+1) w), whose sum of h^2
+         // is about bIn^2 / (4 (1-r)); 2 sqrt(1-r) makes it unity white-noise
+         // power gain per mode. So every mode answers a
          // broadband hit equally (no 1/f tilt), a hit carries the same energy
          // whatever the decay (longer decay = quieter but longer ring), and with
          // unit-RMS shapes and sum(gOut^2) = 1 broadband in ~= broadband out.
          // Referenced to 48 kHz: real input has a fixed spectral density, not a
          // fixed per-sample power, so without rateRef a mode would ring 3 dB
          // louder each time the rate doubles.
-         c.bIn[k] = 2.0f * std::sin(w) * std::sqrt(1.0f - r) * rateRef * mModes.shape[i][pickIn];
+         c.bIn[k] = 2.0f * std::sqrt(1.0f - r) * rateRef * mModes.shape[i][pickIn];
          c.gOut[k] = mModes.shape[i][pickOut];
          mFreqs[k] = f;
          norm += c.gOut[k] * c.gOut[k];
@@ -237,24 +238,38 @@ void ShapeResonatorKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer
          mCur = mTarget; // nothing ringing yet: start at the target, no glide
    }
 
-   // Glide the live coefficients toward the target once per block so a
-   // tune/pos sweep or a new mesh does not click.
+   // Glide the live coefficients toward the target with a ~20 ms one-pole,
+   // ramped per sample inside the block, so a tune/pos sweep or a new mesh
+   // never steps. With the coupled form a moving tune bends a ringing mode's
+   // pitch without rescaling it; a per-block step (the old 0.35 per block)
+   // still read as a +15..19 dB transient in FXAUDIT's click test.
+   const int frames = std::max(1, out.numFrames);
+   const float k = 1.0f - std::exp(-(float)frames / (0.02f * (float)mSampleRate));
+   const Coeffs from = mCur;
    const int n = std::max(mCur.n, mTarget.n);
-   for (int k = 0; k < n; k++)
+   for (int m = 0; m < n; m++)
    {
-      const bool tIn = k < mTarget.n;
-      const float tb = tIn ? mTarget.bIn[k] : 0.0f;
-      const float ta1 = tIn ? mTarget.a1[k] : mCur.a1[k];
-      const float ta2 = tIn ? mTarget.a2[k] : mCur.a2[k];
-      const float tg = tIn ? mTarget.gOut[k] : 0.0f;
-      mCur.bIn[k] += (tb - mCur.bIn[k]) * 0.35f;
-      mCur.a1[k] += (ta1 - mCur.a1[k]) * 0.35f;
-      mCur.a2[k] += (ta2 - mCur.a2[k]) * 0.35f;
-      mCur.gOut[k] += (tg - mCur.gOut[k]) * 0.35f;
+      const bool tIn = m < mTarget.n;
+      const float tb = tIn ? mTarget.bIn[m] : 0.0f;
+      const float tc = tIn ? mTarget.c[m] : mCur.c[m];
+      const float ts = tIn ? mTarget.s[m] : mCur.s[m];
+      const float tg = tIn ? mTarget.gOut[m] : 0.0f;
+      if (m >= from.n)
+      {
+         // A mode joining: at its pitch from the start, fading in.
+         mCur.c[m] = tc;
+         mCur.s[m] = ts;
+         mCur.bIn[m] = mCur.gOut[m] = 0.0f;
+      }
+      mCur.bIn[m] += (tb - mCur.bIn[m]) * k;
+      // A chord between two points of the circle is inside it, so the glide
+      // only ever damps slightly: always stable.
+      mCur.c[m] += (tc - mCur.c[m]) * k;
+      mCur.s[m] += (ts - mCur.s[m]) * k;
+      mCur.gOut[m] += (tg - mCur.gOut[m]) * k;
    }
    mCur.n = n;
-   if (mCur.n > 0 && mTarget.n < mCur.n && mCur.gOut[mCur.n - 1] * mCur.gOut[mCur.n - 1] < 1e-10f)
-      mCur.n = std::max(mTarget.n, mCur.n - 1);
+   const float invFrames = 1.0f / (float)frames;
 
    const int channels = std::min(in.numChannels, kMaxChannels);
    for (int ch = 0; ch < out.numChannels; ch++)
@@ -263,23 +278,49 @@ void ShapeResonatorKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer
       const float* x = in.channels[src];
       float* y = out.channels[ch];
       const int cs = std::min(ch, kMaxChannels - 1);
-      float* y1 = mY1[cs];
-      float* y2 = mY2[cs];
+      float* re = mRe[cs];
+      float* im = mIm[cs];
+      Coeffs cur = from, step;
+      for (int m = 0; m < n; m++)
+      {
+         if (m >= from.n)
+         {
+            cur.c[m] = mCur.c[m];
+            cur.s[m] = mCur.s[m];
+            cur.bIn[m] = cur.gOut[m] = 0.0f;
+         }
+         step.bIn[m] = (mCur.bIn[m] - cur.bIn[m]) * invFrames;
+         step.c[m] = (mCur.c[m] - cur.c[m]) * invFrames;
+         step.s[m] = (mCur.s[m] - cur.s[m]) * invFrames;
+         step.gOut[m] = (mCur.gOut[m] - cur.gOut[m]) * invFrames;
+      }
       for (int s = 0; s < out.numFrames; s++)
       {
          const float xs = x[s];
          float sum = 0.0f;
-         for (int k = 0; k < mCur.n; k++)
+         for (int m = 0; m < n; m++)
          {
-            const float v = mCur.bIn[k] * xs + mCur.a1[k] * y1[k] - mCur.a2[k] * y2[k];
-            y2[k] = y1[k];
-            y1[k] = v;
-            sum += mCur.gOut[k] * v;
+            cur.bIn[m] += step.bIn[m];
+            cur.c[m] += step.c[m];
+            cur.s[m] += step.s[m];
+            cur.gOut[m] += step.gOut[m];
+            const float t = re[m] + cur.bIn[m] * xs;
+            re[m] = cur.c[m] * t - cur.s[m] * im[m];
+            im[m] = cur.s[m] * t + cur.c[m] * im[m];
+            sum += cur.gOut[m] * im[m];
          }
          // Safety clip only: linear below the knee, so normal hits pass clean;
          // a sustained tone parked on a long-ringing mode still builds (a
          // resonator's steady-state gain is ~1/sqrt(1-r)) and is bounded here.
          y[s] = DspMath::SoftCeiling(sum);
       }
+   }
+
+   // Drop trailing modes that have faded out after the mode count fell.
+   while (mCur.n > mTarget.n && mCur.gOut[mCur.n - 1] * mCur.gOut[mCur.n - 1] < 1e-10f)
+   {
+      mCur.n--;
+      for (int c = 0; c < kMaxChannels; c++)
+         mRe[c][mCur.n] = mIm[c][mCur.n] = 0.0f;
    }
 }

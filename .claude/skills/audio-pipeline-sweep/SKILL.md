@@ -114,22 +114,13 @@ that line before trusting the result as an *audio*-clock check.
 
 This sweep's own `driver.sh`/`scripts/sweep_runner.sh` has no known-failure
 baseline mechanism (unlike `run-infinite-hygiene`'s `known-test-failures.txt`)
-- every `[FAIL]` here is reported fresh every run. The following is tracked
-here instead, so it isn't mistaken for a new regression:
+- every `[FAIL]` here is reported fresh every run.
 
-- **`MOLDERTEST` "reconstruction error" prints -6.7dB, needs < -20dB.** This is
-  a real, understood gap in `MolderDsp::Render`'s additive resynthesis, not a
-  stale threshold - see the long comment above the assertion at
-  `src/main.cpp` (search `MOLDERTEST reconstruction error`) for the full
-  history. Short version: a single sustained partial clears -20dB; a dense
-  48-harmonic sawtooth does not, because neighbouring harmonics' Hann
-  mainlobes overlap and corrupt each other's measured magnitude/phase. Closing
-  the remaining gap needs per-harmonic mainlobe-overlap compensation or a
-  proper spectral-envelope phase model - a real DSP undertaking, not a tuning
-  constant - so it's left open rather than papered over with a relaxed
-  threshold. The fixture's other five MOLDERTEST assertions (pitch, voicing,
-  silenced-partials residual match, pitch-shift anti-aliasing, determinism,
-  save/load) are expected to pass.
+`MOLDERTEST` "reconstruction error" used to sit at -6.7dB against its -20dB
+bar; it now reads about -26dB and passes. The cause was three analysis bugs,
+not the additive model (history in the comment above the assertion in
+`src/app/selftest/DspFixtures2.cpp`, search `MOLDERTEST reconstruction error`).
+A FAIL there is a real regression again.
 
 ## What this sweep does not cover
 

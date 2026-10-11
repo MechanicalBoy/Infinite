@@ -25,17 +25,18 @@ namespace
    }
 }
 
-void KeySnapKernel::ChannelState::Init()
+void KeySnapKernel::ChannelState::Init(int fftSize, int olaSize)
 {
-   inputFifo.assign(kFftSize, 0.0f);
-   outputOla.assign(kOlaSize, 0.0f);
-   phasePrev.assign(kNumBins + 1, 0.0f);
-   synthPhase.assign(kNumBins + 1, 0.0f);
-   synthPhaseNext.assign(kNumBins + 1, 0.0f);
-   glideSt.assign(kNumBins + 1, 0.0f);
-   glideStNext.assign(kNumBins + 1, 0.0f);
-   hasSynth.assign(kNumBins + 1, 0);
-   hasSynthNext.assign(kNumBins + 1, 0);
+   const int numBins = fftSize / 2;
+   inputFifo.assign(fftSize, 0.0f);
+   outputOla.assign(olaSize, 0.0f);
+   phasePrev.assign(numBins + 1, 0.0f);
+   synthPhase.assign(numBins + 1, 0.0f);
+   synthPhaseNext.assign(numBins + 1, 0.0f);
+   glideSt.assign(numBins + 1, 0.0f);
+   glideStNext.assign(numBins + 1, 0.0f);
+   hasSynth.assign(numBins + 1, 0);
+   hasSynthNext.assign(numBins + 1, 0);
    fifoSamples = 0;
    olaRead = 0;
 }
@@ -85,31 +86,40 @@ float KeySnapKernel::NearestScaleNote(float midi, uint32_t mask)
 void KeySnapKernel::PrepareToPlay(double sampleRate, int /*maxBlockSize*/)
 {
    mSampleRate = sampleRate;
-   mFft.Prepare(kLog2Fft);
+   // Same frame length and bin width in seconds/Hz at every rate: 2048 at
+   // 44.1/48 kHz, 4096 at 88.2/96, 8192 above. A fixed 2048 halved both at
+   // 96 kHz, so peaks split differently and 6 kHz read 3.3 dB apart.
+   const int rateFactor = sampleRate > 132000.0 ? 4 : sampleRate > 66000.0 ? 2 : 1;
+   mLog2Fft = kBaseLog2Fft + (rateFactor == 4 ? 2 : rateFactor == 2 ? 1 : 0);
+   mFftSize = 1 << mLog2Fft;
+   mHopSize = mFftSize / 4;
+   mNumBins = mFftSize / 2;
+   mOlaSize = mFftSize * 2;
+   mFft.Prepare(mLog2Fft);
 
-   mWindow.resize(kFftSize);
-   for (int n = 0; n < kFftSize; n++)
-      mWindow[n] = 0.5f * (1.0f - cosf((float)(2.0 * M_PI * (double)n / (double)kFftSize)));
+   mWindow.resize(mFftSize);
+   for (int n = 0; n < mFftSize; n++)
+      mWindow[n] = 0.5f * (1.0f - cosf((float)(2.0 * M_PI * (double)n / (double)mFftSize)));
 
-   mRe.assign(kNumBins, 0.0f);
-   mIm.assign(kNumBins, 0.0f);
-   mOutRe.assign(kNumBins, 0.0f);
-   mOutIm.assign(kNumBins, 0.0f);
-   mTime.assign(kFftSize, 0.0f);
-   mMag.assign(kNumBins + 1, 0.0f);
-   mPhaseA.assign(kNumBins + 1, 0.0f);
-   mInstBin.assign(kNumBins + 1, 0.0f);
+   mRe.assign(mNumBins, 0.0f);
+   mIm.assign(mNumBins, 0.0f);
+   mOutRe.assign(mNumBins, 0.0f);
+   mOutIm.assign(mNumBins, 0.0f);
+   mTime.assign(mFftSize, 0.0f);
+   mMag.assign(mNumBins + 1, 0.0f);
+   mPhaseA.assign(mNumBins + 1, 0.0f);
+   mInstBin.assign(mNumBins + 1, 0.0f);
 
    for (int ch = 0; ch < kMaxChannels; ch++)
    {
-      mChannels[ch].Init();
-      mChRe[ch].assign(kNumBins, 0.0f);
-      mChIm[ch].assign(kNumBins, 0.0f);
+      mChannels[ch].Init(mFftSize, mOlaSize);
+      mChRe[ch].assign(mNumBins, 0.0f);
+      mChIm[ch].assign(mNumBins, 0.0f);
    }
-   mMid.Init();
-   mMapTarget.assign(kNumBins, -1);
-   mMapRc.assign(kNumBins, 1.0f);
-   mMapRs.assign(kNumBins, 0.0f);
+   mMid.Init(mFftSize, mOlaSize);
+   mMapTarget.assign(mNumBins, -1);
+   mMapRc.assign(mNumBins, 1.0f);
+   mMapRs.assign(mNumBins, 0.0f);
 }
 
 void KeySnapKernel::Reset()
@@ -141,12 +151,12 @@ void KeySnapKernel::PushParams(const AudioEffectNode& node, double sampleRate)
 void KeySnapKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sidechain*/, AudioBuffer& out)
 {
    const int numChannels = std::min({ in.numChannels, out.numChannels, kMaxChannels });
-   const float normScale = 1.0f / ((float)kFftSize * 1.5f);
-   const int olaMask = kOlaSize - 1;
+   const float normScale = 1.0f / ((float)mFftSize * 1.5f);
+   const int olaMask = mOlaSize - 1;
 
    for (int i = 0; i < out.numFrames; i++)
    {
-      // Pop first so the latency is exactly kFftSize. Every channel's FIFO
+      // Pop first so the latency is exactly mFftSize. Every channel's FIFO
       // fills on the same sample, so their frames are processed together.
       for (int ch = 0; ch < numChannels; ch++)
       {
@@ -156,7 +166,7 @@ void KeySnapKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
          st.olaRead = (st.olaRead + 1) & olaMask;
          st.inputFifo[st.fifoSamples++] = in.channels[ch][i];
       }
-      if (numChannels == 0 || mChannels[0].fifoSamples < kFftSize)
+      if (numChannels == 0 || mChannels[0].fifoSamples < mFftSize)
          continue;
 
       // Every channel's spectrum, and their average (the mid).
@@ -166,10 +176,10 @@ void KeySnapKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
       for (int ch = 0; ch < numChannels; ch++)
       {
          ChannelState& st = mChannels[ch];
-         for (int n = 0; n < kFftSize; n++)
+         for (int n = 0; n < mFftSize; n++)
             mTime[n] = st.inputFifo[n] * mWindow[n];
-         mFft.Forward(mTime.data(), kLog2Fft, mChRe[ch].data(), mChIm[ch].data());
-         for (int k = 0; k < kNumBins; k++)
+         mFft.Forward(mTime.data(), mLog2Fft, mChRe[ch].data(), mChIm[ch].data());
+         for (int k = 0; k < mNumBins; k++)
          {
             mChRe[ch][k] *= 0.5f;
             mChIm[ch][k] *= 0.5f;
@@ -184,11 +194,11 @@ void KeySnapKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
       {
          ChannelState& st = mChannels[ch];
          ApplyMapping(mChRe[ch].data(), mChIm[ch].data());
-         mFft.Inverse(mOutRe.data(), mOutIm.data(), kLog2Fft, mTime.data());
-         for (int n = 0; n < kFftSize; n++)
+         mFft.Inverse(mOutRe.data(), mOutIm.data(), mLog2Fft, mTime.data());
+         for (int n = 0; n < mFftSize; n++)
             st.outputOla[(st.olaRead + n) & olaMask] += mTime[n] * mWindow[n] * normScale;
-         std::memmove(st.inputFifo.data(), st.inputFifo.data() + kHopSize, (kFftSize - kHopSize) * sizeof(float));
-         st.fifoSamples = kFftSize - kHopSize;
+         std::memmove(st.inputFifo.data(), st.inputFifo.data() + mHopSize, (mFftSize - mHopSize) * sizeof(float));
+         st.fifoSamples = mFftSize - mHopSize;
       }
    }
 
@@ -204,7 +214,7 @@ void KeySnapKernel::ApplyMapping(const float* re, const float* im)
    mOutIm[0] = im[0];
    if (mMapPassthrough)
    {
-      for (int k = 1; k < kNumBins; k++)
+      for (int k = 1; k < mNumBins; k++)
       {
          mOutRe[k] = re[k];
          mOutIm[k] = im[k];
@@ -213,7 +223,7 @@ void KeySnapKernel::ApplyMapping(const float* re, const float* im)
    }
    std::fill(mOutRe.begin() + 1, mOutRe.end(), 0.0f);
    std::fill(mOutIm.begin() + 1, mOutIm.end(), 0.0f);
-   for (int k = 1; k < kNumBins; k++)
+   for (int k = 1; k < mNumBins; k++)
    {
       const int kt = mMapTarget[k];
       if (kt < 1)
@@ -231,12 +241,12 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
    const float glideSec = mGlideSec.load(std::memory_order_relaxed);
    const uint32_t mask = mMask.load(std::memory_order_relaxed);
    const float sr = (float)mSampleRate;
-   const float hopPhaseAdv = kTwoPi * (float)kHopSize / (float)kFftSize;
-   const float glideA = glideSec <= 0.0f ? 1.0f : 1.0f - expf(-(float)kHopSize / (sr * glideSec));
+   const float hopPhaseAdv = kTwoPi * (float)mHopSize / (float)mFftSize;
+   const float glideA = glideSec <= 0.0f ? 1.0f : 1.0f - expf(-(float)mHopSize / (sr * glideSec));
 
    // 1. Magnitude, phase and instantaneous frequency (in bins) per bin.
    float maxMag = 0.0f;
-   for (int k = 1; k < kNumBins; k++)
+   for (int k = 1; k < mNumBins; k++)
    {
       const float re = mRe[k];
       const float im = mIm[k];
@@ -257,7 +267,7 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
    int peaks[kMaxPeaks];
    int numPeaks = 0;
    const float thresh = std::max(maxMag * kPeakRelFloor, kPeakAbsFloor);
-   for (int k = 2; k < kNumBins - 2 && numPeaks < kMaxPeaks; k++)
+   for (int k = 2; k < mNumBins - 2 && numPeaks < kMaxPeaks; k++)
    {
       const float m = mMag[k];
       if (m > thresh && m > mMag[k - 1] && m >= mMag[k + 1] && m > mMag[k - 2] && m >= mMag[k + 2])
@@ -287,7 +297,7 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
             if (mMag[k] < mMag[v]) v = k;
          lo = v;
       }
-      int hi = kNumBins - 1;
+      int hi = mNumBins - 1;
       if (pi + 1 < numPeaks)
       {
          int v = p;
@@ -300,7 +310,7 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
 
       // Target offset in semitones.
       const float inst = mInstBin[p];
-      const float hz = inst * sr / (float)kFftSize;
+      const float hz = inst * sr / (float)mFftSize;
       float targetSt = 0.0f;
       if (hz >= kMinHz && hz <= kMaxHz)
       {
@@ -316,7 +326,7 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
          for (int s = -d; s <= d; s += (d == 0 ? 1 : 2))
          {
             const int b = p + s;
-            if (b >= 1 && b < kNumBins && st.hasSynth[b])
+            if (b >= 1 && b < mNumBins && st.hasSynth[b])
             {
                prevSt = st.glideSt[b];
                hadPrev = true;
@@ -327,7 +337,7 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
       const float smoothSt = prevSt + glideA * (targetSt - prevSt);
       const float ratio = exp2f(smoothSt / 12.0f);
 
-      const int pTarget = std::clamp((int)std::lround(inst * ratio), 1, kNumBins - 1);
+      const int pTarget = std::clamp((int)std::lround(inst * ratio), 1, mNumBins - 1);
       const int shift = pTarget - p;
 
       // Synthesis phase of the shifted peak: advance last frame's phase there
@@ -339,7 +349,7 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
          for (int s = -d; s <= d; s += (d == 0 ? 1 : 2))
          {
             const int b = pTarget + s;
-            if (b >= 1 && b < kNumBins && st.hasSynth[b])
+            if (b >= 1 && b < mNumBins && st.hasSynth[b])
             {
                prevPhase = st.synthPhase[b];
                havePhase = true;
@@ -357,7 +367,7 @@ void KeySnapKernel::ProcessFrame(ChannelState& st)
       for (int k = lo; k <= hi; k++)
       {
          const int kt = k + shift;
-         if (kt < 1 || kt >= kNumBins)
+         if (kt < 1 || kt >= mNumBins)
             continue;
          // Last region to claim a shared valley bin wins - as before, where
          // the bin was summed into both; this keeps it counted once.
