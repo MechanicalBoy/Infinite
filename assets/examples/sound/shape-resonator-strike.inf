@@ -1,0 +1,66 @@
+infinite-patch 1
+# Shape Resonator: short plucks ring a torus knot; the strike point moves along it.
+# band Sound
+node 1 Notes Random Note Generator
+  id notes
+  pos 0 990
+  i scale minor pentatonic
+  i root D
+  i rangeLow 50
+  i rangeHigh 74
+  f rateBeats 0.5
+end
+node 2 Synths Analog
+  id pluck
+  pos 480 990
+  i wave1 square
+  f cutoff 3000
+  f attack 1
+  f decay 90
+  f sustain 0
+  f release 60
+  f volume 0.05
+end
+node 3 3D Sphere
+  id knot
+  pos 0 0
+  i shape Torus Knot
+end
+node 4 AudioEffects Shape Resonator
+  id body
+  pos 1340 1146
+  f decay 3
+  f damping 0.35
+  f modes 24
+  f mix 0.8
+end
+node 5 Modulators LFO
+  id strike
+  pos 0 2150
+  f rateBeats 8
+end
+node 6 Utility Audio Out
+  id speakers
+  pos 1960 990
+end
+node 7 Compositing Comment
+  pos 1340 990
+  s text Shape Resonator rings the modes of the shape cabled into its second slot: a torus knot has a dense, bell-like set. The LFO moves the strike position along the shape over two bars, so the same pluck changes which modes it excites. A mode rings far louder than what strikes it, so the pluck is kept quiet (volume 0.05).
+  f width 360
+  f height 140
+end
+node 8 Source Shape
+  id picture
+  pos 0 430
+  i shapeType Ring
+end
+node 9 Utility Output
+  id out
+  pos 460 0
+end
+note pluck 0 notes
+aud body 0 pluck
+geo body 1 knot
+aud speakers 0 body
+mod body pos strike 0 0 1 0.5
+cable out 0 picture

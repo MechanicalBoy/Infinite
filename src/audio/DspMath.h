@@ -38,6 +38,36 @@ namespace DspMath
       }
    };
 
+   // One-pole DC blocker (y[n] = x[n] - x[n-1] + R*y[n-1]). R =
+   // exp(-2 pi fc / fs) puts the cutoff at kCutoffHz at every sample rate, so
+   // it has no audible effect on the signal itself. (Drive's used to be a
+   // fixed R = 0.995, which is 35 Hz at 44.1 kHz and 76 Hz at 96 kHz -
+   // audibly thinning the bass of everything through it.) Used after Drive's
+   // and Wavetable Shaper's asymmetric shapers and as Analog's AC coupling.
+   struct DcBlocker
+   {
+      static constexpr double kCutoffHz = 8.0;
+
+      float prevIn = 0.0f, prevOut = 0.0f;
+      float r = (float)std::exp(-2.0 * M_PI * kCutoffHz / 44100.0);
+
+      void SetSampleRate(double sampleRate)
+      {
+         if (sampleRate > 0.0)
+            r = (float)std::exp(-2.0 * M_PI * kCutoffHz / sampleRate);
+      }
+
+      void Reset() { prevIn = prevOut = 0.0f; }
+
+      float Process(float x)
+      {
+         const float y = x - prevIn + r * prevOut;
+         prevIn = x;
+         prevOut = y;
+         return y;
+      }
+   };
+
    // ------------------------------------------------------------- dB <-> lin
    inline float LinearToDb(float lin)
    {

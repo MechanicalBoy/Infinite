@@ -142,35 +142,8 @@ namespace DriveDsp
    };
 }
 
-// Simple one-pole DC blocker (y[n] = x[n] - x[n-1] + R*y[n-1]), the standard
-// textbook removal for the constant offset an asymmetric waveshaper's bias
-// introduces. R = exp(-2 pi fc / fs) puts the cutoff at kCutoffHz at every
-// sample rate, so it has no audible effect on the shaped signal itself. (It
-// used to be a fixed R = 0.995, which is 35 Hz at 44.1 kHz and 76 Hz at
-// 96 kHz - audibly thinning the bass of everything through Drive.)
-struct DcBlocker
-{
-   static constexpr double kCutoffHz = 8.0;
-
-   float prevIn = 0.0f, prevOut = 0.0f;
-   float r = (float)std::exp(-2.0 * M_PI * kCutoffHz / 44100.0);
-
-   void SetSampleRate(double sampleRate)
-   {
-      if (sampleRate > 0.0)
-         r = (float)std::exp(-2.0 * M_PI * kCutoffHz / sampleRate);
-   }
-
-   void Reset() { prevIn = prevOut = 0.0f; }
-
-   float Process(float x)
-   {
-      const float y = x - prevIn + r * prevOut;
-      prevIn = x;
-      prevOut = y;
-      return y;
-   }
-};
+// The always-on DC blocker after the shaper (8 Hz) - DspMath::DcBlocker.
+using DcBlocker = DspMath::DcBlocker;
 
 // Bipolar tilt around a fixed 1 kHz pivot, the same construction
 // DelayKernel.h's DelayToneFilter uses for its feedback-path tone control -

@@ -200,6 +200,11 @@ public:
       // Anti-aliased pre-filter drive, one per signal path, and the 2x
       // oversampler both it and the filter run inside (see ProcessBlock).
       DspMath::FastTanhAdaa driveL, driveR;
+      // AC coupling on the oscillator mix, ahead of the drive: a hard-synced
+      // saw restarted early in its cycle has a non-zero mean (-0.035 of DC
+      // on a sync lead, measured), which would bias the drive's tanh and
+      // ride out of the synth.
+      DspMath::DcBlocker acL, acR;
       Oversampler os; // prepared in PrepareToPlay; Reset() only clears it
 
       // Two independent filter chains. The stack's unison voices are split
@@ -236,6 +241,10 @@ public:
          stereoPath = false;
          driveL.Reset();
          driveR.Reset();
+         acL.Reset();
+         acL.SetSampleRate(sampleRate);
+         acR.Reset();
+         acR.SetSampleRate(sampleRate);
          os.Reset();
          ampEnv.SetSampleRate(sampleRate);
          lastOut = 0.0f;
@@ -270,6 +279,10 @@ public:
       mFreeLadderR.Reset();
       mFreeDriveL.Reset();
       mFreeDriveR.Reset();
+      mFreeAcL.Reset();
+      mFreeAcL.SetSampleRate(mSampleRate);
+      mFreeAcR.Reset();
+      mFreeAcR.SetSampleRate(mSampleRate);
       mFreeOs.Reset();
       mFreeStereoPath = false;
       for (int s = 0; s < SynthModes::kMaxFilterStages; ++s)
@@ -368,14 +381,14 @@ public:
       return input;
    }
 
-   // Drive + filter for one signal path, at the oversampled rate: up,
-   // ADAA'd tanh (plus the analog hiss), filter, down.
-   static float DriveAndFilter(Oversampler& os, int ch, DspMath::FastTanhAdaa& drive, ZdfLadderFilter::State& ladder,
-                               DspMath::TptSvf* svfBank, float mixed, float driveGain, float hiss,
-                               const FilterCoeffs& c)
+   // Drive + filter for one signal path, at the oversampled rate: AC
+   // coupling, up, ADAA'd tanh (plus the analog hiss), filter, down.
+   static float DriveAndFilter(Oversampler& os, int ch, DspMath::DcBlocker& ac, DspMath::FastTanhAdaa& drive,
+                               ZdfLadderFilter::State& ladder, DspMath::TptSvf* svfBank, float mixed, float driveGain,
+                               float hiss, const FilterCoeffs& c)
    {
       float x[Oversampler::kMaxFactor];
-      os.Up(ch, mixed * driveGain, x);
+      os.Up(ch, ac.Process(mixed) * driveGain, x);
       for (int k = 0; k < os.Factor(); k++)
          x[k] = ApplyFilter(ladder, svfBank, drive.Process(x[k]) + hiss, c);
       return os.Down(ch, x);
@@ -607,6 +620,7 @@ public:
                for (int st = 0; st < SynthModes::kMaxFilterStages; ++st)
                   mFreeSvfR[st].Reset();
                mFreeDriveR.Reset();
+               mFreeAcR = mFreeAcL; // same coupling state, so R starts without a DC step
                mFreeOs.ResetChannel(1);
             }
             mFreeStereoPath = wantStereo;
@@ -614,9 +628,9 @@ public:
             const FilterCoeffs fc =
                MakeFilterCoeffs(filterType, cutoff, resonance, mSampleRate * AnalogSynthCore::kFilterOversample);
             const float filteredL =
-               DriveAndFilter(mFreeOs, 0, mFreeDriveL, mFreeLadder, mFreeSvf, mixedL, driveGain, hissL, fc);
+               DriveAndFilter(mFreeOs, 0, mFreeAcL, mFreeDriveL, mFreeLadder, mFreeSvf, mixedL, driveGain, hissL, fc);
             const float filteredR = wantStereo
-               ? DriveAndFilter(mFreeOs, 1, mFreeDriveR, mFreeLadderR, mFreeSvfR, mixedR, driveGain, hissR, fc)
+               ? DriveAndFilter(mFreeOs, 1, mFreeAcR, mFreeDriveR, mFreeLadderR, mFreeSvfR, mixedR, driveGain, hissR, fc)
                : filteredL;
 
             outL = filteredL;
@@ -719,6 +733,7 @@ public:
                   for (int st = 0; st < SynthModes::kMaxFilterStages; ++st)
                      v.svfR[st].Reset();
                   v.driveR.Reset();
+                  v.acR = v.acL; // same coupling state, so R starts without a DC step
                   v.os.ResetChannel(1);
                }
                v.stereoPath = wantStereo;
@@ -728,9 +743,9 @@ public:
                const float hissR = analog ? v.noise.Next() * 0.001f : 0.0f;
                const FilterCoeffs fc = MakeFilterCoeffs(filterType, effectiveCutoff, resonance,
                                                         mSampleRate * AnalogSynthCore::kFilterOversample);
-               const float filteredL = DriveAndFilter(v.os, 0, v.driveL, v.ladder, v.svf, mixedL, driveGain, hissL, fc);
+               const float filteredL = DriveAndFilter(v.os, 0, v.acL, v.driveL, v.ladder, v.svf, mixedL, driveGain, hissL, fc);
                const float filteredR = wantStereo
-                  ? DriveAndFilter(v.os, 1, v.driveR, v.ladderR, v.svfR, mixedR, driveGain, hissR, fc)
+                  ? DriveAndFilter(v.os, 1, v.acR, v.driveR, v.ladderR, v.svfR, mixedR, driveGain, hissR, fc)
                   : filteredL;
 
                // Voice-card position on top of the stack's own width: each
@@ -918,6 +933,7 @@ private:
    ZdfLadderFilter::State mFreeLadder;
    ZdfLadderFilter::State mFreeLadderR;
    DspMath::FastTanhAdaa mFreeDriveL, mFreeDriveR;
+   DspMath::DcBlocker mFreeAcL, mFreeAcR;
    Oversampler mFreeOs;
    bool mFreeStereoPath = false;
    // Cached normalised detune multipliers, rebuilt only when the stack size
