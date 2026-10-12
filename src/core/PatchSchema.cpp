@@ -753,6 +753,12 @@ namespace PatchSchema
          if (n.typeName == "Output" || n.typeName == "Audio Out")
             terminals.push_back(n.index);
       }
+      // A clip's source node plays from the timeline, which is its own routing: it needs no cable.
+      for (const Patch::NodeRecord& n : data.nodes)
+         for (const Patch::StreamRecord& st : data.streams)
+            for (const Patch::ClipRecord& c : st.clips)
+               if (n.uid != 0 && c.srcUid == n.uid && std::find(terminals.begin(), terminals.end(), n.index) == terminals.end())
+                  terminals.push_back(n.index);
       if (outputs == 0)
       {
          if (env.forRender)

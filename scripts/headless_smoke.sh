@@ -273,6 +273,34 @@ sys.exit(0 if max(abs(x) for x in a[0::n]) > 300 else 1)
 PY
 check "notes: the 12th synth on one Keyboard gets notes (fan-out past 8)" $?
 fo=$("$BIN" --validate "$OUT/fanout65.inf" 2>/dev/null); [ "$(echo "$fo" | json "'W_NOTE_FANOUT' in [i['code'] for i in d['errors'] + d['warnings']]")" = "True" ]; check "notes: 65 consumers on one note output raise W_NOTE_FANOUT" $?
+# Arrangement audio: --timeline plays a 120 BPM click clip (one click every 0.5 s from 0.25 s) placed at beat 2;
+# at 60 BPM it must start at 2.0 s and stretch to one click per second. Without --timeline headless played the canvas only.
+python3 - "$OUT" <<'PY'
+import wave, struct, sys
+out, r = sys.argv[1], 48000
+f = [0] * (2 * r)
+for k in range(4):
+    for i in range(48):
+        f[int((0.25 + 0.5 * k) * r) + i] = 20000 if i < 24 else -20000
+w = wave.open(out + "/clicks.wav", "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(r)
+w.writeframes(struct.pack("<%dh" % len(f), *f)); w.close()
+open(out + "/clip.inf", "w").write("\n".join(["infinite-patch 1", "node 1 Modulators Audio File", "  uid 9001",
+    "  s path " + out + "/clicks.wav", "  b loop 0", "end", "stream 1 0 1 0 0 1 0 A",
+    "cliptick 0 1 1920 3840 9001 0 0 0 0 1 0 0 0 0 clicks", "clipsample 0 1 1", "clipbpm 0 1 120 2"]) + "\n")
+PY
+"$BIN" --audio-summary "$OUT/clip.inf" "$OUT/clip.json" --duration 6.5 --bpm 60 --timeline --wav "$OUT/clip.wav" >/dev/null 2>&1
+python3 - "$OUT/clip.wav" <<'PY'
+import wave, array, sys
+w = wave.open(sys.argv[1]); r = w.getframerate()
+a = array.array('h'); a.frombytes(w.readframes(w.getnframes()))
+L = a[0::w.getnchannels()]; on, last = [], -r
+for i, x in enumerate(L):
+    if abs(x) > 6000 and i - last > r // 10:
+        on.append(i / r); last = i
+sys.exit(0 if len(on) == 4 and all(abs(o - t) <= 0.005 for o, t in zip(on, (2.5, 3.5, 4.5, 5.5))) else 1)
+PY
+check "arrangement: --timeline plays a sample clip at its beat, tempo-synced (120 BPM clip at 60 BPM)" $?
+"$BIN" --audio-summary "$OUT/clip.inf" "$OUT/clip.json" --timeline --output 1 >/dev/null 2>&1; [ $? = 2 ]; check "arrangement: --timeline with --output exits 2" $?
 [ -f "$OUT/stems/hit.wav" ]; check "stems: one WAV per node" $?
 python3 - "$OUT/stems/hit.wav" <<'PY'
 import wave, array, sys

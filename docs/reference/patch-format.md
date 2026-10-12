@@ -110,6 +110,7 @@ written. `--canonicalize` and `--validate` never lay out: a pos-less node still 
 | `--frame f.inf 0 out.png` | one picture, plus its numbers (`frame_stats`) in the status line |
 | `--frame f.inf 0,1,2 dir/ --contact-sheet sheet.png` | several times in one image, each cell stamped with its time |
 | `--audio-summary f.inf out.json [--duration S] [--wav out.wav]` | what it sounds like, as numbers: loudness, peaks, clipping, silence, spectrum, tempo guess |
+| `--audio-summary f.inf out.json --timeline` | the same for the arrangement's audio lanes (Timeline audio mode) instead of the canvas Audio Outs; a clip's source node needs no cable |
 | `--canonicalize in out` | the numeric form the GUI would write |
 
 Reading the result without opening a file: the status line (last line of stdout) carries the headline
@@ -131,7 +132,7 @@ own render length, else 10 s. The patch needs no Output: an Audio Out is enough.
 | `W_BLACK_FRAME` | 0 | a frame is 100 % black: nothing reached the Output at that time |
 | `W_CLIPPING` | 0 | samples at or over full scale; a file written from this distorts |
 | `W_SILENT` | 0 | nothing above -70 LUFS in the whole range |
-| `E_NO_AUDIO` | 3 | no Audio Out and no Output with audio wired in |
+| `E_NO_AUDIO` | 3 | no Audio Out and no Output with audio wired in (`--timeline`: no clip on an audio lane) |
 
 `--explain` prints the graph that was built, not the file, then the status JSON on the last line.
 For `tests/headless/format/modulation.inf`:
