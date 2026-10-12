@@ -9,6 +9,7 @@ bool RunAliasTest(); // selftest/AliasTests.cpp
 bool RunPitchTest(); // selftest/PitchTests.cpp
 bool RunFxAudit(); // selftest/FxAudit.cpp
 bool RunModAudit(); // selftest/ModAudit.cpp
+bool RunSynthAudit(); // selftest/SynthAudit.cpp
 // Resolves the main window's DPI + the manual slider into UiScale::Current(), hands the point
 // scale to the GLFW backend and (re)bakes the font atlas at the resulting physical size. Safe
 // to call again between frames: the atlas is rebuilt from scratch and, when the GL renderer
@@ -520,6 +521,9 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // render vs realtime, frame-rate dependence (selftest/ModAudit.cpp).
    if (getenv("INFINITE_MODAUDIT") != nullptr)
       return RunModAudit() ? 0 : 1;
+   // Synth audit: pitch, aliasing, level, rate, determinism, CPU (selftest/SynthAudit.cpp).
+   if (getenv("INFINITE_SYNTHAUDIT") != nullptr)
+      return RunSynthAudit() ? 0 : 1;
 
    // The --audio-summary maths on synthesized signals with known answers
    // (docs/fix-briefs/headless-engine.md 2.1).

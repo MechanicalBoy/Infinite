@@ -1,0 +1,42 @@
+SYNTHAUDIT LEVEL Analog          rms   -6.1 dBFS | peak   -1.9 dBFS
+SYNTHAUDIT PITCH Analog           44100 Hz |    110Hz  +0.01c    440Hz  -0.01c   1760Hz  +0.00c   7040Hz  -0.00c
+SYNTHAUDIT PITCH Analog           48000 Hz |    110Hz  +0.03c    440Hz  -0.01c   1760Hz  -0.00c   7040Hz  -0.00c
+SYNTHAUDIT PITCH Analog           96000 Hz |    110Hz  +0.03c    440Hz  +0.02c   1760Hz  +0.00c   7040Hz  -0.00c
+SYNTHAUDIT ALIAS Analog           1750 Hz    -66.0 dB
+SYNTHAUDIT ALIAS Analog           5000 Hz    -61.8 dB
+SYNTHAUDIT RATE  Analog          level spread 0.03 dB over 44.1/48/96 kHz
+SYNTHAUDIT DET   Analog          bit-identical
+SYNTHAUDIT CPU   Analog            206.0 ns/frame
+SYNTHAUDIT LEVEL Wavetable       rms  -10.1 dBFS | peak   -7.1 dBFS
+SYNTHAUDIT PITCH Wavetable        44100 Hz |    110Hz  +0.01c    440Hz  -0.01c   1760Hz  +0.00c   7040Hz  -0.00c
+SYNTHAUDIT PITCH Wavetable        48000 Hz |    110Hz  +0.03c    440Hz  -0.01c   1760Hz  -0.00c   7040Hz  -0.00c
+SYNTHAUDIT PITCH Wavetable        96000 Hz |    110Hz  +0.03c    440Hz  +0.02c   1760Hz  +0.00c   7040Hz  -0.00c
+SYNTHAUDIT ALIAS Wavetable        1750 Hz    -88.4 dB
+SYNTHAUDIT ALIAS Wavetable        5000 Hz    -88.4 dB
+SYNTHAUDIT RATE  Wavetable       level spread 0.00 dB over 44.1/48/96 kHz
+SYNTHAUDIT DET   Wavetable       bit-identical
+SYNTHAUDIT CPU   Wavetable          76.3 ns/frame
+SYNTHAUDIT LEVEL Oscillator      rms  -10.5 dBFS | peak   -5.7 dBFS
+SYNTHAUDIT PITCH Oscillator       44100 Hz |    110Hz  +0.01c    440Hz  -0.01c   1760Hz  +0.00c   7040Hz  -0.00c
+SYNTHAUDIT PITCH Oscillator       48000 Hz |    110Hz  +0.03c    440Hz  -0.01c   1760Hz  -0.00c   7040Hz  -0.00c
+SYNTHAUDIT PITCH Oscillator       96000 Hz |    110Hz  +0.03c    440Hz  +0.02c   1760Hz  +0.00c   7040Hz  -0.00c
+SYNTHAUDIT ALIAS Oscillator       1750 Hz    -82.6 dB
+SYNTHAUDIT ALIAS Oscillator       5000 Hz    -85.2 dB
+SYNTHAUDIT RATE  Oscillator      level spread 0.05 dB over 44.1/48/96 kHz
+SYNTHAUDIT DET   Oscillator      bit-identical
+SYNTHAUDIT CPU   Oscillator        115.2 ns/frame
+SYNTHAUDIT LEVEL Equation Synth  rms  -12.6 dBFS | peak   -7.9 dBFS
+SYNTHAUDIT PITCH Equation Synth   44100 Hz |    110Hz  +0.01c    440Hz  -0.01c   1760Hz  +0.00c   7040Hz  -0.00c
+SYNTHAUDIT PITCH Equation Synth   48000 Hz |    110Hz  +0.03c    440Hz  -0.01c   1760Hz  -0.00c   7040Hz  -0.00c
+SYNTHAUDIT PITCH Equation Synth   96000 Hz |    110Hz  +0.03c    440Hz  +0.02c   1760Hz  +0.00c   7040Hz  -0.00c
+SYNTHAUDIT ALIAS Equation Synth   1750 Hz    -87.0 dB
+SYNTHAUDIT ALIAS Equation Synth   5000 Hz    -85.8 dB
+SYNTHAUDIT RATE  Equation Synth  level spread 0.01 dB over 44.1/48/96 kHz
+SYNTHAUDIT DET   Equation Synth  bit-identical
+SYNTHAUDIT CPU   Equation Synth     57.1 ns/frame
+SYNTHAUDIT LEVEL Metallic        rms  -22.4 dBFS | peak   -5.6 dBFS
+SYNTHAUDIT RATE  Metallic        level spread 3.14 dB over 44.1/48/96 kHz
+SYNTHAUDIT FLAG RATE  Metallic        spread dB 3.14
+SYNTHAUDIT DET   Metallic        bit-identical
+SYNTHAUDIT CPU   Metallic           95.3 ns/frame
+SYNTHAUDIT done (1 flags)
