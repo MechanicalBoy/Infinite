@@ -245,6 +245,34 @@ def peak(i):  # window after note i's onset (0.3 + 0.3 i), 0.12 s
 sys.exit(0 if all(peak(i) > 300 for i in range(16)) else 1)
 PY
 check "field synth: all 16 short notes are audible (voice pool recycles)" $?
+# Note fan-out: one Keyboard into 12 synths, every Mixer input muted but the 12th. The 9th consumer
+# and later once got no notes (NoteEventQueue capped at 8 cursors).
+python3 - "$OUT" <<'PY'
+import json, sys
+out = sys.argv[1]
+L = ["infinite-patch 1", "node 1 Notes Keyboard", "  id keys", "end"]
+W = []
+for k in range(12):
+    L += ["node %d Synths Analog" % (10 + k), "  id a%d" % k, "end"]
+    W += ["note a%d 0 keys" % k, "aud mx in_%d a%d" % (k + 1, k)]
+L += ["node 30 Utility Mixer", "  id mx", "  i channels 12"] + ["  f gain%d -120" % i for i in range(11)] + ["end", "node 31 Utility Audio Out", "end"]
+open(out + "/fanout12.inf", "w").write("\n".join(L + W + ["aud 31 audio mx"]) + "\n")
+json.dump([{"t": 0.2, "type": "hit", "dur": 0.5, "v": 1.0}], open(out + "/fo_events.json", "w"))
+json.dump({"hit": {"node": "keys", "pitch": 60, "velocity_from": "v", "length_from": "dur"}}, open(out + "/fo_map.json", "w"))
+F = ["infinite-patch 1", "node 1 Notes Keyboard", "  id keys", "end", "node 2 Utility Audio Out", "end"]
+for k in range(65):
+    F += ["node %d Synths Analog" % (10 + k), "end"]
+open(out + "/fanout65.inf", "w").write("\n".join(F + ["note %d 0 keys" % (10 + k) for k in range(65)] + ["aud 2 audio 10"]) + "\n")
+PY
+"$BIN" --audio-summary "$OUT/fanout12.inf" "$OUT/fo.json" --duration 1 --wav "$OUT/fo.wav" --notes "$OUT/fo_events.json" --note-map "$OUT/fo_map.json" >/dev/null 2>&1
+python3 - "$OUT/fo.wav" <<'PY'
+import wave, array, sys
+w = wave.open(sys.argv[1]); n = w.getnchannels()
+a = array.array('h'); a.frombytes(w.readframes(w.getnframes()))
+sys.exit(0 if max(abs(x) for x in a[0::n]) > 300 else 1)
+PY
+check "notes: the 12th synth on one Keyboard gets notes (fan-out past 8)" $?
+fo=$("$BIN" --validate "$OUT/fanout65.inf" 2>/dev/null); [ "$(echo "$fo" | json "'W_NOTE_FANOUT' in [i['code'] for i in d['errors'] + d['warnings']]")" = "True" ]; check "notes: 65 consumers on one note output raise W_NOTE_FANOUT" $?
 [ -f "$OUT/stems/hit.wav" ]; check "stems: one WAV per node" $?
 python3 - "$OUT/stems/hit.wav" <<'PY'
 import wave, array, sys

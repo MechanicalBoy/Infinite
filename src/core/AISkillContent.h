@@ -696,7 +696,7 @@ Do not edit between the markers; run the script. Use the `node` line exactly as 
 first, then the type name), then `--describe "<type>"` for parameters.
 
 <!-- generated:begin -->
-308 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
+319 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
 
 
 ### 3D
@@ -713,7 +713,10 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Cone` | texture:image | out:geometry | 50 | bypass |
 | `Cube` | texture:image | out:geometry | 50 | bypass |
 | `Curve` | none | out:geometry | 32 | bypass |
+| `Curve Ops` | curve:geometry | out:geometry | 9 | bypass |
 | `Cylinder` | texture:image | out:geometry | 50 | bypass |
+| `Decimate` | geo:geometry | out:geometry | 67 | bypass |
+| `Delaunay Mesh` | points:geometry | out:geometry | 4 | bypass |
 | `Delete` | geo:geometry | out:geometry | 67 | bypass |
 | `Delete Selected` | geo:geometry | out:geometry | 67 | bypass |
 | `Depth Projection` | depth:image, color:image | out:geometry | 35 |  |
@@ -751,11 +754,11 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Mobius Strip` | texture:image | out:geometry | 50 | bypass |
 | `Model 3D` | texture:image | out:geometry | 27 | bypass |
 | `Normals` | geo:geometry | out:geometry | 67 | bypass |
-| `Null 3D` | geo:geometry | out:geometry | 0 | bypass |
+)AISKILL"
+R"AISKILL(| `Null 3D` | geo:geometry | out:geometry | 0 | bypass |
 | `Ocean` | texture:image | out:geometry | 29 | bypass |
 | `Octahedron` | texture:image | out:geometry | 50 | bypass |
-)AISKILL"
-R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
+| `Particle System` | none | out:geometry | 23 | bypass |
 | `Plane` | texture:image | out:geometry | 50 | bypass |
 | `Points to Vertices` | points:geometry | out:geometry | 18 | bypass |
 | `Prism` | texture:image | out:geometry | 50 | bypass |
@@ -784,6 +787,7 @@ R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
 | `Tube` | texture:image | out:geometry | 50 | bypass |
 | `Twist` | geo:geometry | out:geometry | 67 | bypass |
 | `Union` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry | out:geometry | 23 |  |
+| `Voronoi Cells` | points:geometry | out:geometry | 4 | bypass |
 | `Wireframe` | geo:geometry | out:geometry | 67 | bypass |
 | `Wrap` | source:geometry, target:geometry | out:geometry | 26 |  |
 
@@ -845,6 +849,7 @@ R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
 | `chroma key` | input:image | out:image | 5 | bypass |
 | `color adjustments` | input:image | out:image | 23 | bypass |
 | `coloroverlay` | input:image | out:image | 2 | bypass |
+| `dither` | input:image | out:image | 3 | bypass |
 | `dropshadow` | input:image | out:image | 4 | bypass |
 | `exposure` | input:image | out:image | 1 | bypass |
 | `gradientmap` | input:image | out:image | 3 | bypass |
@@ -920,7 +925,9 @@ R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
 | `Compare` | input:modulator, input_2:modulator | out:modulator | 4 |  |
 | `Constant` | none | out:modulator | 1 | bypass |
 | `Envelope` | in:modulator | out:modulator | 8 | bypass |
+| `Face Track` | input:image | present:modulator, head x:modulator, head y:modulator, yaw:modulator, pitch:modulator, roll:modulator, eye L:modulator, eye R:modulator, brows:modulator, mouth:modulator, smile:modulator, gaze x:modulator, gaze y:modulator | 3 | bypass |
 | `Geometry Table` | geo:geometry | cx:modulator, cy:modulator, cz:modulator, spread:modulator, x1:modulator, y1:modulator, z1:modulator, x2:modulator, y2:modulator, z2:modulator, x3:modulator, y3:modulator, z3:modulator, x4:modulator, y4:modulator, z4:modulator | 10 | bypass |
+| `Hand Track` | input:image | present:modulator, palm x:modulator, palm y:modulator, index x:modulator, index y:modulator, thumb x:modulator, thumb y:modulator, pinch:modulator, open:modulator, roll:modulator, size:modulator, fist:modulator, point:modulator, peace:modulator, thumbs up:modulator, ok:modulator, rock:modulator | 3 | bypass |
 | `Image Analyze` | input:image | result:modulator, bright:modulator, contrast:modulator, red:modulator, green:modulator, blue:modulator, sat:modulator, hue:modulator, motion:modulator, cx:modulator, cy:modulator | 14 | bypass |
 | `Invert` | in:modulator | out:modulator | 3 | bypass |
 | `LFO` | trig:modulator | out:modulator | 10 | bypass |
@@ -934,6 +941,7 @@ R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
 | `Palette` | ref:image | out:palette | 14 | bypass |
 | `Path` | curve:geometry, geo:geometry | x:modulator, y:modulator, z:modulator, t:modulator | 14 |  |
 | `Pattern` | none | out:modulator | 24 | bypass |
+| `Pose Track` | input:image | present:modulator, body x:modulator, body y:modulator, head x:modulator, head y:modulator, wrist L x:modulator, wrist L y:modulator, wrist R x:modulator, wrist R y:modulator, arm L:modulator, arm R:modulator, spread:modulator, lean:modulator, size:modulator | 3 | bypass |
 | `Random` | none | out:modulator | 8 | bypass |
 | `Range to Range` | in:modulator | out:modulator | 6 | bypass |
 | `Smoothing` | in:modulator | out:modulator | 7 | bypass |
@@ -947,7 +955,9 @@ R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
 | `Arpeggiator` | notes:note | out:note | 8 | bypass |
 | `Bouncing Balls` | none | out:note | 9 | bypass |
 | `Chorder` | none | out:note | 9 | bypass |
-| `Gate` | notes:note | out:note | 1 | bypass |
+| `Field Notes` | notes:note | notes:note | 6 | bypass |
+)AISKILL"
+R"AISKILL(| `Gate` | notes:note | out:note | 1 | bypass |
 | `Glide` | notes:note | out:note | 1 | bypass |
 | `Humanizer` | notes:note | out:note | 2 | bypass |
 | `Keyboard` | none | out:note | 5 | bypass |
@@ -965,7 +975,7 @@ R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
 | `Note Transpose` | notes:note | out:note | 2 | bypass |
 | `Pitch Bend` | notes:note | out:note | 1 | bypass |
 | `Quantizer` | notes:note | out:note | 1 | bypass |
-| `Random Note Generator` | none | out:note | 10 | bypass |
+| `Random Note Generator` | none | out:note | 11 | bypass |
 | `Velocity Curve` | notes:note | out:note | 1 | bypass |
 
 ### Prediction
@@ -973,8 +983,7 @@ R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Drift` | none | out:predictor | 20 | bypass |
-)AISKILL"
-R"AISKILL(| `Moves` | none | out:predictor | 6 | bypass |
+| `Moves` | none | out:predictor | 6 | bypass |
 | `Predictive Coloring` | input:image | out:image | 7 | bypass |
 | `Predictive Modulator` | in:modulator | out:modulator | 6 | bypass |
 | `Predictive Notes` | notes:note | out:note | 10 | bypass |
@@ -1053,6 +1062,7 @@ R"AISKILL(| `Moves` | none | out:predictor | 6 | bypass |
 | `Blend Audio` | a:audio, b:audio | out:audio | 1 |  |
 | `Field Graph` | none | out:image | 7 | bypass |
 | `Gain` | audio:audio | out:audio | 1 | bypass |
+| `MIDI Out` | notes:note | out:image | 16 | bypass |
 | `Mixer` | in_1:audio, in_2:audio, in_3:audio, in_4:audio, in_5:audio, in_6:audio, in_7:audio, in_8:audio | out:audio | 49 |  |
 | `NDI In` | none | out:image | 1 | hardware: refused headless, bypass |
 | `NDI Out` | in:image | out:image | 1 | bypass |
@@ -1060,6 +1070,7 @@ R"AISKILL(| `Moves` | none | out:predictor | 6 | bypass |
 | `OSC Send` | in:modulator | out:image | 5 | bypass |
 | `Output` | in:image, audio:audio | out:image | 9 |  |
 | `Projection` | in:image | out:image | 135 | bypass |
+| `Spatial Mixer` | input:audio, input_2:audio, input_3:audio, input_4:audio, input_5:audio, input_6:audio, input_7:audio, input_8:audio, input_9:audio, input_10:audio, input_11:audio, input_12:audio | out:image | 107 |  |
 | `Splitter` | audio:audio | out:audio | 0 | bypass |
 | `Syphon In` | none | out:image | 3 | hardware: refused headless, bypass |
 | `Syphon Out` | in:image | out:image | 1 | bypass |

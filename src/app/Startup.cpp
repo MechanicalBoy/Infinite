@@ -2,6 +2,7 @@
 #include "app/ui/design/UiType.h"
 #include "app/ui/design/Glyphs.gen.h"
 #include "app/frame/FrameCtx.h"
+#include "platform/HeadTracker.h"
 
 namespace app
 {
@@ -762,6 +763,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
                *path += '/';
          }
          gHeadlessAudioRate = gHeadlessJob.sampleRate;
+         HeadTracker::Disable();
          Platform::AttachConsoleForHeadless();
 #if !defined(__APPLE__) && !defined(_WIN32)
          // GLFW needs a display server. Say so with the fix, instead of the
@@ -1310,6 +1312,8 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // against their own redirected files instead.
    if (!IsHeadlessProcess())   // also screenshot runs (IMAGERESYNTH_SCREENSHOT), which have no EXITAFTER
       CheckAutosaveRecovery();
+   else
+      HeadTracker::Disable();
 
    // Embedded local control server (see docs/plans - RemoteControl) - lets an
    // external tool (the Infinite MCP server) drive this running instance.
