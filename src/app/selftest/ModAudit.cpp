@@ -14,16 +14,19 @@
 //             Vibrato against sin(2 pi f t), Random/Pattern smooth continuity.
 //   QUANT     each MusicTime division as an LFO rate: does the slider reach
 //             it, and how far does float storage drift the phase in 10 min.
-//   ZIPPER    the delivery path to an audio destination as it runs today -
-//             one Value01() per UI frame, read on the block-quantised audio
-//             clock, pushed to ParamMailbox's 5 ms DspMath::OnePole - vs the
-//             ideal per-sample curve. "excess" = worst per-sample step beyond
-//             the ideal curve's own step, as a fraction of range.
-//             (Real Transport, real nodes, real OnePole; only the frame and
-//             block scheduling is modelled.)
-//   VIDEO     value on each 60 fps frame live (clock read between audio
-//             blocks) vs offline (exact video time): render - realtime gap,
-//             and bit-exactness where both clocks sit on the same sample.
+//   ZIPPER    the delivery path to an audio destination - one Value01() per
+//             UI frame on the frame clock (Transport::BeginFrameClock),
+//             pushed to the real ParamMailbox and read per sample through its
+//             stamped ramps - vs the ideal per-sample curve delayed by the
+//             ramp delay. "excess" = worst per-sample step beyond the ideal
+//             curve's own step, as a fraction of range; lag reported apart.
+//             (Real Transport, nodes and mailbox; only the frame and block
+//             schedule and the wall clock are modelled.)
+//   VIDEO     value on each 60 fps frame live (frame clock latched between
+//             audio blocks) vs offline (exact video time): render - realtime
+//             gap, and bit-exactness where both clocks sit on the same sample.
+//   DSMOOTH   per-destination smoothing (Modulation::SmoothStep) at 24..144
+//             fps vs a 1440 fps reference: frame-rate independence.
 //   FRATE     stateful nodes run offline at 24..144 fps vs a 1440 fps
 //             reference, compared at shared instants: frame-rate dependence.
 //   ENV       Envelope ADSR stage times (ms) at 48 kHz-resolution and at
@@ -42,6 +45,7 @@
 #include "audio/AudioBuffer.h"
 #include "audio/DspMath.h"
 #include "audio/MusicTime.h"
+#include "audio/ParamMailbox.h"
 #include "nodes/MacroNodes.h"
 #include "nodes/MidiNodes.h"
 #include "nodes/ModulatorNodes.h"
@@ -476,12 +480,34 @@ namespace
    }
    IModulator* AsMod(INode* n) { return dynamic_cast<IModulator*>(n); }
 
+   // The modelled wall clock Transport reads in these sections
+   // (Transport::SetWallClockForTest), so the frame clock interpolates
+   // against the schedule below rather than the machine's own clock.
+   double gWall = 0.0;
+   double ModelWall() { return gWall; }
+
+   // One UI frame as ApplyModulationAndPalette runs it: latch the frame
+   // clock, read the modulator, publish the frame's stamp and delay, push.
+   float RunUiFrame(IModulator* m, ParamMailbox* box, double frameDt)
+   {
+      T().BeginFrameClock();
+      const float v = m->Value01();
+      if (box != nullptr)
+      {
+         ParamMailbox::PublishFrame(T().EngineFrameSeconds(),
+                                    std::clamp(frameDt + T().LastBlockSeconds(), 0.002, 0.25));
+         box->Push(0, v);
+      }
+      return v;
+   }
+
    void AuditZipper(Flags& flags)
    {
       const double dur = 8.0;
       const int total = (int)(dur * kSr);
       struct Sched { int block; double fps; };
-      const Sched scheds[] = { { 512, 60.0 }, { 128, 60.0 }, { 512, 144.0 } };
+      const Sched scheds[] = { { 512, 60.0 }, { 128, 60.0 }, { 512, 144.0 }, { 512, 24.0 } };
+      Transport::SetWallClockForTest(&ModelWall);
       for (const PureSource& src : PureSources())
       {
          // Ideal per-sample curve: the same pure node at each sample's exact time.
@@ -498,44 +524,68 @@ namespace
          }
          for (const Sched& sc : scheds)
          {
+            // The real path: frames on the modelled schedule, the real
+            // frame clock, the real ParamMailbox ramps read once per sample.
+            // Callback j starts at wall j*block/sr and covers samples
+            // [j*block, (j+1)*block); a frame at wall tw lands between them.
             StartLive(120.0f, kSr);
+            gWall = 0.0;
             auto node = src.make();
             IModulator* m = AsMod(node.get());
-            DspMath::OnePole smoother;
-            smoother.SetTimeConstant(0.005f, kSr); // ParamMailbox::PrepareToPlay
-            float target = m->Value01();
-            smoother.SetImmediate(target);
+            auto box = std::make_unique<ParamMailbox>();
+            box->PrepareToPlay(kSr);
+            box->SetImmediate(0, m->Value01());
+            ParamMailbox::PublishFrame(-1.0, 0.0);
+            const double lag = 1.0 / sc.fps + sc.block / kSr; // the published delay
             int nextFrame = 0;
-            double excess = 0.0, sq = 0.0;
-            float prevD = target;
+            double excess = 0.0, sq = 0.0, sqRaw = 0.0;
+            long long counted = 0;
+            float prevD = 0.0f;
             for (int j = 0; j * sc.block < total; j++)
             {
                const double callbackTime = (double)j * sc.block / kSr;
                while (nextFrame / sc.fps <= callbackTime)
                {
-                  target = m->Value01(); // UI frame: modulation applied, pushed to the mailbox
+                  gWall = nextFrame / sc.fps;
+                  RunUiFrame(m, box.get(), 1.0 / sc.fps);
                   nextFrame++;
                }
+               gWall = callbackTime;
                T().AdvanceAudioClock(sc.block);
                for (int i = 0; i < sc.block; i++)
                {
                   const int n = j * sc.block + i;
                   if (n >= total)
                      break;
-                  const float d = smoother.Process(target);
-                  if (n > 0)
-                     excess = std::max(excess, std::fabs((double)(d - prevD) - (double)(ideal[n] - ideal[n - 1])));
-                  sq += (double)(d - ideal[n]) * (d - ideal[n]);
+                  const float d = box->SmoothedValue(0);
+                  sqRaw += (double)(d - ideal[n]) * (d - ideal[n]);
+                  // Compare against the ideal curve delayed by the ramp delay:
+                  // the delivery is a fixed-latency interpolation, and the
+                  // latency is reported on its own.
+                  const double nd = n - lag * kSr;
+                  if (nd >= 1.0 && n > (int)(0.5 * kSr))
+                  {
+                     const int i0 = (int)nd;
+                     const double f = nd - i0;
+                     const double id = ideal[i0] + (ideal[i0 + 1] - ideal[i0]) * f;
+                     const double idPrev = ideal[i0 - 1] + (ideal[i0] - ideal[i0 - 1]) * f;
+                     excess = std::max(excess, std::fabs((double)(d - prevD) - (id - idPrev)));
+                     sq += (d - id) * (d - id);
+                     counted++;
+                  }
                   prevD = d;
                }
             }
             char who[64];
             std::snprintf(who, sizeof(who), "%s b%d %gfps", src.name.c_str(), sc.block, sc.fps);
-            printf("MODAUDIT ZIPPER %-34s excess step %.2e (limit %.2e)  tracking rms %.3g\n", who, excess, kStepLimit, std::sqrt(sq / total));
+            printf("MODAUDIT ZIPPER %-34s excess step %.2e (limit %.2e)  lag %.1f ms  tracking rms %.3g after lag, %.3g raw\n",
+                   who, excess, kStepLimit, lag * 1000.0, std::sqrt(sq / std::max(1LL, counted)), std::sqrt(sqRaw / total));
             if (excess > kStepLimit)
                flags.Add("ZIPPER", src.name, "excess step", excess);
          }
       }
+      Transport::SetWallClockForTest(nullptr);
+      ParamMailbox::PublishFrame(-1.0, 0.0);
    }
 
    // ======================================================================== VIDEO
@@ -545,6 +595,7 @@ namespace
       const int frames = (int)(dur * fps);
       std::vector<PureSource> sources = PureSources();
       sources.push_back({ "Macro Step Gate", []() { return std::unique_ptr<INode>(Make<MacroStepGateNode>().release()); } });
+      Transport::SetWallClockForTest(&ModelWall);
       for (const PureSource& src : sources)
       {
          std::vector<float> offline(frames);
@@ -557,23 +608,30 @@ namespace
                offline[k] = AsMod(node.get())->Value01();
             }
          }
+         // Live: callbacks due by each frame's wall time, then the frame
+         // latches its clock (BeginFrameClock), as ApplyModulationAndPalette does.
+         // Frames land at a different phase of the block each time.
          double worst = 0.0, minOff = 1e9, maxOff = -1e9;
          {
             StartLive(120.0f, kSr);
+            gWall = 0.0;
             auto node = src.make();
             long long n = 0;
             for (int k = 0; k < frames; k++)
             {
                const double tw = k / fps;
-               while ((double)n / kSr <= tw) // callbacks due by this frame's wall time
+               while ((double)n / kSr <= tw)
                {
+                  gWall = (double)n / kSr;
                   T().AdvanceAudioClock(512);
                   n += 512;
                }
+               gWall = tw;
+               const float v = RunUiFrame(AsMod(node.get()), nullptr, 1.0 / fps);
                const double off = (T().Seconds() - tw) * 1000.0;
                minOff = std::min(minOff, off);
                maxOff = std::max(maxOff, off);
-               worst = std::max(worst, (double)std::fabs(AsMod(node.get())->Value01() - offline[k]));
+               worst = std::max(worst, (double)std::fabs(v - offline[k]));
             }
          }
          // Same sample on both clocks: bit-exact?
@@ -595,13 +653,60 @@ namespace
                   mismatches++;
             }
          }
-         printf("MODAUDIT VIDEO %-22s render-realtime %.3g of range | live clock %+.1f..%+.1f ms off frame time | same-sample bit mismatches %d/200\n",
+         printf("MODAUDIT VIDEO %-22s render-realtime %.3g of range | live clock %+.3f..%+.3f ms off frame time | same-sample bit mismatches %d/200\n",
                 src.name.c_str(), worst, minOff, maxOff, mismatches);
          if (worst > kShapeLimit)
             flags.Add("VIDEO", src.name, "render!=live", worst);
          if (mismatches > 0)
             flags.Add("VIDEO", src.name, "bit mismatch", mismatches);
       }
+      Transport::SetWallClockForTest(nullptr);
+   }
+
+   // ======================================================================== DSMOOTH
+   // Per-destination smoothing (Modulation::SmoothStep, the apply loop's
+   // smoother) driven at 24..144 fps by a moving and a stepping input, vs a
+   // 1440 fps reference at shared instants: is it frame-rate independent?
+   void AuditDestSmooth(Flags& flags)
+   {
+      struct In { const char* name; std::function<double(double)> f; };
+      const In ins[] = {
+         { "sine 2 Hz", [](double t) { return 0.5 + 0.5 * std::sin(4.0 * 3.14159265358979323846 * t); } },
+         { "step at 0.5 s", [](double t) { return t < 0.5 ? 0.0 : 1.0; } },
+      };
+      const double taus[] = { 0.02, 0.1, 0.5 };
+      for (const In& in : ins)
+         for (double tau : taus)
+         {
+            auto run = [&](double fps, std::vector<double>& outAt) {
+               const int frames = (int)(4.0 * fps);
+               const int every = (int)std::lround(fps / 12.0); // shared 12 Hz instants
+               double x = in.f(0.0), y = x;
+               outAt.clear();
+               for (int k = 1; k <= frames; k++)
+               {
+                  const double x1 = in.f(k / fps);
+                  y = Modulation::SmoothStep(y, x, x1, 1.0 / fps, tau);
+                  x = x1;
+                  if (k % every == 0)
+                     outAt.push_back(y);
+               }
+            };
+            std::vector<double> ref, at;
+            run(1440.0, ref);
+            double row[3] = {};
+            const double fpsList[3] = { 24.0, 60.0, 144.0 };
+            for (int i = 0; i < 3; i++)
+            {
+               run(fpsList[i], at);
+               for (size_t k = 0; k < at.size() && k < ref.size(); k++)
+                  row[i] = std::max(row[i], std::fabs(at[k] - ref[k]));
+            }
+            printf("MODAUDIT DSMOOTH %-14s tau %3.0f ms  max diff vs 1440 fps: 24 %.2e  60 %.2e  144 %.2e\n",
+                   in.name, tau * 1000.0, row[0], row[1], row[2]);
+            if (std::max({ row[0], row[1], row[2] }) > kShapeLimit)
+               flags.Add("DSMOOTH", in.name, "fps dependence", std::max({ row[0], row[1], row[2] }));
+         }
    }
 
    // ======================================================================== FRATE
@@ -1026,6 +1131,21 @@ namespace
          const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count() / calls;
          printf("MODAUDIT CPU   %-16s %7.1f ns/call (clock set + Beats(), included in every row above)\n", "(harness)", ns);
       }
+      {
+         // Beats() while the main thread holds a frame latch (live, inside
+         // ApplyModulationAndPalette): the path every live modulator read takes.
+         StartLive(120.0f, kSr);
+         T().AdvanceAudioClock(512);
+         T().BeginFrameClock();
+         const int calls = 200000;
+         volatile double sink = 0.0;
+         const auto t0 = std::chrono::steady_clock::now();
+         for (int i = 0; i < calls; i++)
+            sink = sink + T().Beats();
+         const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count() / calls;
+         printf("MODAUDIT CPU   %-16s %7.1f ns/call (Beats() under a live frame latch)\n", "(latched)", ns);
+         ResetClock(120.0f);
+      }
       (void)flags;
       return ok;
    }
@@ -1042,6 +1162,7 @@ bool RunModAudit()
    if (want("QUANT")) AuditQuant(flags);
    if (want("ZIPPER")) AuditZipper(flags);
    if (want("VIDEO")) AuditVideo(flags);
+   if (want("DSMOOTH")) AuditDestSmooth(flags);
    if (want("FRATE")) AuditFrameRate(flags);
    if (want("ENV")) AuditEnvelope(flags);
    if (want("SEEK")) AuditSeek(flags);
