@@ -20,19 +20,36 @@
 //   TRAILS    Trails decay after the input goes black: level at 10 frames
 //             against decay^10, and whether the trail ever reaches black
 //             (flag > 2/255 off, or a residual that never clears)
+//   STACK     Layer Stack with two layers against Blend with the same mode and
+//             opacity, random alpha (flag > 1/255)
+//   CURVES    default curve is identity; an inverted RGB curve gives 1-x; a Red
+//             curve leaves green and blue alone; mix 0 returns the input
+//             (flag > 1/255)
+//   RAMP      Color Ramp red to blue over a 64-step grey ramp against the
+//             analytic gradient (Linear), and a Constant ramp against its step
+//             (flag > 1/255)
+//   FIT       output size follows width/height and matchInput; Fit leaves
+//             transparent bars, Fill covers the frame, Stretch and Fit keep the
+//             centre pixel
+//   SWITCH    Switcher in manual mode shows exactly the chosen slot
 //
-// Not covered yet: Layer Stack, Curves, Color Ramp, Fit, Switcher, Reaction
-// Diffusion, Remove Background and the image sources; blur accuracy; RES
-// and BYPASS sweeps (see the plan).
+// Not covered yet: Reaction Diffusion, Remove Background and the image
+// sources; blur accuracy (see the plan).
 //
 // Only hard invariants fail the run (a node that produces no output at all).
 // Everything else is reported, with FLAG lines.
 #include "app/AppShared.h"
 #include "nodes/BlendNode.h"
+#include "nodes/ColorRampNode.h"
+#include "nodes/CurvesNode.h"
 #include "nodes/FeedbackNodes.h"
+#include "nodes/FitNode.h"
+#include "nodes/LayerStackNode.h"
+#include "nodes/SwitcherNode.h"
 
 #include <array>
 #include <cstring>
+#include <functional>
 
 namespace app
 {
@@ -421,6 +438,268 @@ namespace
                    residual * 255.0);
       }
    }
+
+   // ---------------------------------------------------------------- STACK
+   void AuditStack(Flags& f, bool& ok)
+   {
+      const auto A = RandomImage(31, true), B = RandomImage(37, true);
+      TexSource a, b;
+      a.Set(A);
+      b.Set(B);
+      LayerStackNode stack;
+      stack.Input(0).Connect(&a);
+      stack.Input(1).Connect(&b);
+      stack.fit = LayerStackNode::kStretch;
+      BlendNode blend;
+      blend.InputA().Connect(&a);
+      blend.InputB().Connect(&b);
+      const auto& names = BlendNode::ModeNames();
+      for (int mode : { 0, 1, 2, 7, 9, 11, 12, 13, 18, 22, 25 })
+         for (float op : { 1.0f, 0.6f })
+         {
+            stack.modes[1] = mode;
+            stack.opacities[1] = op;
+            stack.CookIfNeeded(gFrame++);
+            blend.ModeIndex() = mode;
+            blend.Mix() = op;
+            blend.CookIfNeeded(gFrame++);
+            std::vector<float> ps, pb;
+            if (!Read(stack.GetOutputTexture(), ps) || !Read(blend.GetOutputTexture(), pb))
+            {
+               printf("COMPAUDIT FAIL STACK no output\n");
+               ok = false;
+               return;
+            }
+            double worst = 0.0;
+            for (size_t i = 0; i < ps.size(); i++)
+            {
+               // Colour is undefined where the result is fully transparent.
+               if (i % 4 != 3 && pb[i / 4 * 4 + 3] < 1e-4f)
+                  continue;
+               worst = std::max(worst, (double)std::fabs(ps[i] - pb[i]));
+            }
+            printf("COMPAUDIT STACK %-12s opacity %.1f vs Blend: worst %.2f / 255\n", names[(size_t)mode].c_str(), op,
+                   worst * 255.0);
+            if (worst > 1.0 / 255.0)
+               f.Flag("STACK", std::string(names[(size_t)mode]) + " opacity " + std::to_string(op) + " differs from Blend by (x/255)",
+                      worst * 255.0);
+         }
+   }
+
+   // --------------------------------------------------------------- CURVES
+   std::vector<unsigned char> GreyRamp()
+   {
+      std::vector<unsigned char> px((size_t)kW * kH * 4);
+      for (int y = 0; y < kH; y++)
+         for (int x = 0; x < kW; x++)
+         {
+            const unsigned char v = (unsigned char)std::lround(255.0 * x / (kW - 1));
+            unsigned char* p = &px[((size_t)y * kW + (size_t)x) * 4];
+            p[0] = p[1] = p[2] = v;
+            p[3] = 255;
+         }
+      return px;
+   }
+
+   double MaxDiffRow(const std::vector<float>& px, const std::function<void(int, double*)>& want)
+   {
+      double worst = 0.0;
+      if (getenv("INFINITE_COMPAUDIT_ROW"))
+         for (int x = 0; x < kW; x += 8)
+         {
+            double w[3];
+            want(x, w);
+            const float* p = &px[((size_t)(kH / 2) * kW + (size_t)x) * 4];
+            printf("   x=%d want %.3f %.3f %.3f got %.3f %.3f %.3f\n", x, w[0], w[1], w[2], p[0], p[1], p[2]);
+         }
+      const int y = kH / 2;
+      for (int x = 0; x < kW; x++)
+      {
+         double w[3];
+         want(x, w);
+         for (int c = 0; c < 3; c++)
+            worst = std::max(worst, std::fabs(w[c] - (double)px[((size_t)y * kW + (size_t)x) * 4 + (size_t)c]));
+      }
+      return worst;
+   }
+
+   void AuditCurves(Flags& f, bool& ok)
+   {
+      TexSource src;
+      src.Set(GreyRamp());
+      CurvesNode n;
+      n.Input().Connect(&src);
+      auto run = [&](std::vector<float>& px) {
+         n.MarkDirty();
+         n.CookIfNeeded(gFrame++);
+         return n.GetOutputTexture() != 0 && Read(n.GetOutputTexture(), px);
+      };
+      std::vector<float> px;
+      if (!run(px))
+      {
+         printf("COMPAUDIT FAIL CURVES no output\n");
+         ok = false;
+         return;
+      }
+      auto ramp = [](int x, double* w) { w[0] = w[1] = w[2] = std::lround(255.0 * x / (kW - 1)) / 255.0; };
+      double e = MaxDiffRow(px, ramp);
+      printf("COMPAUDIT CURVES identity: worst %.2f / 255\n", e * 255.0);
+      if (e > 1.5 / 255.0)
+         f.Flag("CURVES", "default curve is not identity, worst (x/255)", e * 255.0);
+
+      n.MovePoint(CurvesNode::kRGB, 0, 0.0f, 1.0f);
+      n.MovePoint(CurvesNode::kRGB, 1, 1.0f, 0.0f);
+      run(px);
+      e = MaxDiffRow(px, [&](int x, double* w) { ramp(x, w); for (int c = 0; c < 3; c++) w[c] = 1.0 - w[c]; });
+      printf("COMPAUDIT CURVES inverted RGB: worst %.2f / 255\n", e * 255.0);
+      if (e > 1.5 / 255.0)
+         f.Flag("CURVES", "inverted curve is not 1-x, worst (x/255)", e * 255.0);
+
+      n.ResetChannel(CurvesNode::kRGB);
+      n.MovePoint(CurvesNode::kRed, 0, 0.0f, 1.0f);
+      n.MovePoint(CurvesNode::kRed, 1, 1.0f, 0.0f);
+      run(px);
+      e = MaxDiffRow(px, [&](int x, double* w) { ramp(x, w); w[0] = 1.0 - w[0]; });
+      printf("COMPAUDIT CURVES Red only inverted: worst %.2f / 255\n", e * 255.0);
+      if (e > 1.5 / 255.0)
+         f.Flag("CURVES", "Red curve leaks into G/B or is wrong, worst (x/255)", e * 255.0);
+
+      n.mix = 0.0f;
+      run(px);
+      e = MaxDiffRow(px, ramp);
+      printf("COMPAUDIT CURVES mix 0: worst %.2f / 255\n", e * 255.0);
+      if (e > 1.0 / 255.0)
+         f.Flag("CURVES", "mix 0 does not return the input, worst (x/255)", e * 255.0);
+   }
+
+   // ------------------------------------------------------------------ RAMP
+   void AuditRamp(Flags& f, bool& ok)
+   {
+      TexSource src;
+      src.Set(GreyRamp());
+      ColorRampNode n;
+      n.Input().Connect(&src);
+      n.stopCount = 2;
+      n.stopPos[0] = 0.0f; n.stopPos[1] = 1.0f;
+      n.stopColor[0][0] = 1; n.stopColor[0][1] = 0; n.stopColor[0][2] = 0;
+      n.stopColor[1][0] = 0; n.stopColor[1][1] = 0; n.stopColor[1][2] = 1;
+      n.MarkDirty();
+      n.interpMode = ColorRampNode::kLinear;
+      n.CookIfNeeded(gFrame++);
+      std::vector<float> px;
+      if (n.GetOutputTexture() == 0 || !Read(n.GetOutputTexture(), px))
+      {
+         printf("COMPAUDIT FAIL RAMP no output\n");
+         ok = false;
+         return;
+      }
+      auto grey = [](int x) { return std::lround(255.0 * x / (kW - 1)) / 255.0; };
+      double e = MaxDiffRow(px, [&](int x, double* w) { const double t = grey(x); w[0] = 1.0 - t; w[1] = 0.0; w[2] = t; });
+      printf("COMPAUDIT RAMP linear red->blue: worst %.2f / 255\n", e * 255.0);
+      if (e > 1.5 / 255.0)
+         f.Flag("RAMP", "linear gradient differs from analytic, worst (x/255)", e * 255.0);
+
+      n.interpMode = ColorRampNode::kConstant;
+      n.MarkDirty();
+      n.CookIfNeeded(gFrame++);
+      Read(n.GetOutputTexture(), px);
+      // Constant holds the colour of the last stop at or below t: red until t reaches 1.
+      e = MaxDiffRow(px, [&](int x, double* w) {
+         const double t = grey(x);
+         const bool blue = t >= 1.0;
+         w[0] = blue ? 0.0 : 1.0; w[1] = 0.0; w[2] = blue ? 1.0 : 0.0;
+      });
+      printf("COMPAUDIT RAMP constant: worst %.2f / 255\n", e * 255.0);
+      if (e > 1.5 / 255.0)
+         f.Flag("RAMP", "constant ramp is not a step, worst (x/255)", e * 255.0);
+   }
+
+   // ------------------------------------------------------------------- FIT
+   void AuditFit(Flags& f, bool& ok)
+   {
+      TexSource src;
+      src.Set(RandomImage(53, false));
+      FitNode n;
+      n.Input().Connect(&src);
+      n.width = 128.0f;
+      n.height = 64.0f;
+      n.bgOpacity = 0.0f;
+      auto cook = [&]() { n.CookIfNeeded(gFrame++); return n.GetOutputTexture() != 0; };
+      auto readAt = [&](float out[4], int x, int y) {
+         std::vector<float> px;
+         unsigned int fbo = 0;
+         const bool r = GLUtil::ReadTexturePixels(fbo, n.GetOutputTexture(), n.GetOutputWidth(), n.GetOutputHeight(), px);
+         if (fbo != 0)
+            glDeleteFramebuffers(1, &fbo);
+         if (!r)
+            return false;
+         for (int c = 0; c < 4; c++)
+            out[c] = px[((size_t)y * (size_t)n.GetOutputWidth() + (size_t)x) * 4 + (size_t)c];
+         return true;
+      };
+      const std::vector<unsigned char> S = RandomImage(53, false);
+      for (int mode : { 0, 1, 2 })
+      {
+         n.mode = mode;
+         if (!cook())
+         {
+            printf("COMPAUDIT FAIL FIT no output\n");
+            ok = false;
+            return;
+         }
+         const char* nm = FitNode::ModeNames()[(size_t)mode].c_str();
+         const int w = n.GetOutputWidth(), h = n.GetOutputHeight();
+         float left[4] = {}, mid[4] = {};
+         readAt(left, 4, h / 2);
+         readAt(mid, w / 2, h / 2);
+         printf("COMPAUDIT FIT %-8s out %dx%d | left-edge alpha %.2f | centre alpha %.2f\n", nm, w, h, left[3], mid[3]);
+         if (w != 128 || h != 64)
+            f.Flag("FIT", std::string(nm) + " output size is not width x height, width", w);
+         if (mid[3] < 0.99f)
+            f.Flag("FIT", std::string(nm) + " centre is transparent, alpha", mid[3]);
+         if (mode == 0 && left[3] > 0.01f)
+            f.Flag("FIT", "Fit leaves no transparent bar at the side, alpha", left[3]);
+         if (mode != 0 && left[3] < 0.99f)
+            f.Flag("FIT", std::string(nm) + " does not cover the frame at the left edge, alpha", left[3]);
+      }
+      n.mode = 2;
+      n.matchInput = true;
+      if (cook() && (n.GetOutputWidth() != kW || n.GetOutputHeight() != kH))
+         f.Flag("FIT", "matchInput does not adopt the source size, width", n.GetOutputWidth());
+      printf("COMPAUDIT FIT matchInput -> %dx%d\n", n.GetOutputWidth(), n.GetOutputHeight());
+      (void)S;
+   }
+
+   // ---------------------------------------------------------------- SWITCH
+   void AuditSwitch(Flags& f, bool& ok)
+   {
+      TexSource s[4];
+      SwitcherNode n;
+      const unsigned char vals[4] = { 40, 100, 160, 220 };
+      for (int i = 0; i < 4; i++)
+      {
+         s[i].Set(Flat(vals[i]));
+         n.Input(i).Connect(&s[i]);
+      }
+      n.manual = true;
+      n.crossfade = 0.0f;
+      for (int slot = 0; slot < 4; slot++)
+      {
+         n.manualSlot = slot;
+         n.CookIfNeeded(gFrame++);
+         std::vector<float> px;
+         if (n.GetOutputTexture() == 0 || !Read(n.GetOutputTexture(), px))
+         {
+            printf("COMPAUDIT FAIL SWITCH no output\n");
+            ok = false;
+            return;
+         }
+         const double e = std::fabs((double)px[0] - vals[slot] / 255.0);
+         printf("COMPAUDIT SWITCH manual slot %d: %.4f (want %.4f)\n", slot, px[0], vals[slot] / 255.0);
+         if (e > 1.0 / 255.0)
+            f.Flag("SWITCH", "manual slot " + std::to_string(slot) + " shows the wrong input, off by (x/255)", e * 255.0);
+      }
+   }
 } // namespace
 
 bool RunCompAudit()
@@ -440,6 +719,16 @@ bool RunCompAudit()
       AuditFeedback(flags);
    if (want("TRAILS"))
       AuditTrails(flags);
+   if (want("STACK"))
+      AuditStack(flags, ok);
+   if (want("CURVES"))
+      AuditCurves(flags, ok);
+   if (want("RAMP"))
+      AuditRamp(flags, ok);
+   if (want("FIT"))
+      AuditFit(flags, ok);
+   if (want("SWITCH"))
+      AuditSwitch(flags, ok);
    printf("COMPAUDIT %s (%d flags)\n", ok ? "PASS" : "FAIL", flags.n);
    return ok;
 }
