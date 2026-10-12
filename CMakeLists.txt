@@ -494,6 +494,8 @@ set(COMMON_SOURCES
     src/app/selftest/SynthAudit.cpp
     src/app/selftest/NoteAudit.cpp
     src/app/selftest/IoAudit.cpp
+    src/app/selftest/GeoAudit.cpp
+    src/app/selftest/CompAudit.cpp
     src/app/selftest/PitchTests.cpp
     src/app/selftest/FieldTests1.cpp
     src/app/selftest/FieldTests2.cpp
