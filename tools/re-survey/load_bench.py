@@ -48,12 +48,21 @@ def events(seconds):
     return ev
 
 
-def write_notes(ev, d):
+TRACKS_PER_KEYBOARD = 8  # released builds feed at most 8 nodes from one note output (64 from 2026-10-12)
+
+
+def keyboard_id(k):
+    return "keys" if k == 0 else "keys%d" % k
+
+
+def write_notes(ev, d, keyboards=1):
+    """Every event goes to every Keyboard; event type p<pitch>k<keyboard>."""
     pitches = sorted({p for (_, p, _, _) in ev})
-    types = {"p%d" % p: {"node": "keys", "pitch": p, "velocity_from": "v", "length_from": "len"} for p in pitches}
+    types = {"p%dk%d" % (p, k): {"node": keyboard_id(k), "pitch": p, "velocity_from": "v", "length_from": "len"}
+             for p in pitches for k in range(keyboards)}
     ep, mp = os.path.join(d, "events.json"), os.path.join(d, "map.json")
     with open(ep, "w") as f:
-        json.dump([{"t": t, "type": "p%d" % p, "v": v, "len": ln} for (t, p, v, ln) in ev], f)
+        json.dump([{"t": t, "type": "p%dk%d" % (p, k), "v": v, "len": ln} for (t, p, v, ln) in ev for k in range(keyboards)], f)
     with open(mp, "w") as f:
         json.dump(types, f)
     return ep, mp
@@ -96,15 +105,23 @@ def node_lines(idx, nid, t, notes):
     return L + ["end"]
 
 
+def keyboards_for(n):
+    return max(1, (n + TRACKS_PER_KEYBOARD - 1) // TRACKS_PER_KEYBOARD)
+
+
 def patch_text(n, synth, fx):
-    """N tracks -> Mixer tree (8 inputs each) -> Audio Out."""
-    L = ["infinite-patch 1", "node 1 Notes Keyboard", "  id keys", "end"]
-    wires, idx = [], 2
+    """N tracks -> Mixer tree (8 inputs each) -> Audio Out. One Keyboard per 8 tracks."""
+    L = ["infinite-patch 1"]
+    idx = 1
+    for k in range(keyboards_for(n)):
+        L += ["node %d Notes Keyboard" % idx, "  id " + keyboard_id(k), "end"]
+        idx += 1
+    wires = []
     level = []
     for k in range(n):
         L += node_lines(idx, "s%d" % k, synth, True)
         L += node_lines(idx + 1, "f%d" % k, fx, False)
-        wires += ["note s%d %d keys" % (k, 1 if synth["kind"] != "node" else 0), "aud f%d %s s%d" % (k, "in" if fx["kind"] != "node" else "audio", k)]
+        wires += ["note s%d %d %s" % (k, 1 if synth["kind"] != "node" else 0, keyboard_id(k // TRACKS_PER_KEYBOARD)), "aud f%d %s s%d" % (k, "in" if fx["kind"] != "node" else "audio", k)]
         level.append("f%d" % k)
         idx += 2
     m = 0
@@ -126,13 +143,14 @@ def patch_text(n, synth, fx):
 
 def render_time(binp, patch, seconds, tmp):
     ev = events(seconds)
-    ep, mp = write_notes(ev, tmp)
+    nk = patch.count("Notes Keyboard")
+    ep, mp = write_notes(ev, tmp, nk)
     wav = os.path.join(tmp, "out.wav")
     t0 = time.time()
     st = pp.render(binp, patch, wav, SR, seconds, tmp, ["--notes", ep, "--note-map", mp, "--bpm", "%g" % BPM])
     wall = time.time() - t0
-    if st.get("notes", {}).get("injected") != len(ev):
-        raise RuntimeError("only %s of %d notes injected" % (st.get("notes", {}).get("injected"), len(ev)))
+    if st.get("notes", {}).get("injected") != len(ev) * nk:
+        raise RuntimeError("only %s of %d notes injected" % (st.get("notes", {}).get("injected"), len(ev) * nk))
     bad = [p.get("name") for p in st.get("plugins") or [] if not p.get("ready")]
     if bad:
         raise RuntimeError("plugins did not load: %s" % ", ".join(map(str, bad[:3])))
@@ -202,6 +220,9 @@ def self_test():
     p = patch_text(9, {"kind": "node", "type": "Analog"}, {"kind": "node", "type": "Reverb"})
     t.check(p.count("Utility Mixer") == 3 and "aud out audio m2" in p and "aud m1 in_1 f8" in p,
             "9 tracks sum through 2 Mixers into a third")
+    p = patch_text(128, {"kind": "node", "type": "Analog"}, {"kind": "node", "type": "Reverb"})
+    t.check(p.count("Notes Keyboard") == 16 and "note s127 0 keys15" in p and "note s7 0 keys\n" in p,
+            "128 tracks take 16 Keyboards, 8 synths each (a note output once fed at most 8)")
     mb = midi_bytes(8.0)
     t.check(mb[:4] == b"MThd" and mb.count(b"\x90") >= 16 and mb.endswith(b"\xff\x2f\x00"), "the MIDI file is well formed")
     binp = infinite_bin()
