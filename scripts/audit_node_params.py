@@ -64,6 +64,12 @@ PLAIN = OrderedDict([
     ("ImGui::InputText",    "text"),
     ("ImGui::InputTextWithHint", "text"),
 ])
+# Shared helpers that draw several modulatable controls at once; their
+# labels are fixed inside the helper, so they are listed here.
+HELPERS = OrderedDict([
+    ("DrawModRateControls", [("rate in", "dropdown"), ("rate / division", "slider / dropdown"),
+                             ("rate (Hz)", "slider")]),
+])
 # Plain widgets that are deliberately not params - actions, not values.
 ACTION_HINT = ("Button", "InputText")
 
@@ -152,6 +158,10 @@ def scan(body):
                 "Dropdown": "dropdown", "DropdownKnob": "dropdown + knob",
                 "Checkbox": "checkbox"}[m.group(2)]
         add(m.start(), label_of(body, m.end()), kind, True)
+    for call, parts in HELPERS.items():
+        for m in re.finditer(r"(?<![\w:.])" + re.escape(call) + r"\s*\(", body):
+            for i, (lbl, kind) in enumerate(parts):
+                add(m.start() + i, lbl, kind, True)
     for call, kind in PLAIN.items():
         for m in re.finditer(r"(?<![\w:.])" + re.escape(call) + r"\s*\(", body):
             add(m.start(), label_of(body, m.end()), kind, False)

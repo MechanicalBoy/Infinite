@@ -79,7 +79,7 @@ public:
       if (mActiveBuffer == nullptr || mActiveBuffer->numFrames <= 0 || mActiveBuffer->channels <= 0)
          return;
 
-      if (mMailbox.SmoothedValue(kAudioEnabledParam) <= 0.5f || !Transport::Instance().IsPlaying())
+      if (mMailbox.BlockValue(kAudioEnabledParam, buffer.numFrames) <= 0.5f || !Transport::Instance().IsPlaying())
          return;
 
       const double sr = mActiveBuffer->sampleRate > 0.0 ? mActiveBuffer->sampleRate : 48000.0;
@@ -106,8 +106,8 @@ public:
       // rather than relying solely on the discontinuity snap above - which
       // is too coarse (250ms) to keep short trim windows in sync.
       const double totalFrames = (double)mActiveBuffer->numFrames;
-      const float trimStart = mMailbox.SmoothedValue(kTrimStartParam);
-      const float trimEnd = mMailbox.SmoothedValue(kTrimEndParam);
+      const float trimStart = mMailbox.BlockValue(kTrimStartParam, buffer.numFrames);
+      const float trimEnd = mMailbox.BlockValue(kTrimEndParam, buffer.numFrames);
       double effStartFrame = std::clamp((double)trimStart * sr, 0.0, totalFrames > 0.0 ? totalFrames : (double)trimStart * sr);
       double effEndFrame = (trimEnd <= 0.0f || (double)trimEnd * sr > totalFrames) ? totalFrames : (double)trimEnd * sr;
       if (totalFrames > 0.0 && effEndFrame - effStartFrame < 0.001 * sr)

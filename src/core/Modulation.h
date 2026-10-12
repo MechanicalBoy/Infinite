@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -149,6 +150,13 @@ public:
       // Curvature warping parameter for transfer shaping, in [-1.0, 1.0].
       // 0.0 = linear identity (y = x). >0 = exponential/ease-in. <0 = logarithmic/ease-out.
       float curve = 0.0f;
+
+      // Per-destination smoothing time constant in ms, 0 = off. Applied in
+      // the apply loop to the binding's 0..1 value as an exact one-pole of
+      // the linearly interpolated input, stepped by the frame's real dt -
+      // so the same setting gives the same curve at 24, 60 or 144 fps and
+      // in export (docs/plans/modulation/README.md, Block 2).
+      float smoothMs = 0.0f;
    };
 
    // Creates a fresh binding, defaulting the range to the destination's full
@@ -170,6 +178,48 @@ public:
    // Sets the transfer curve parameter for an existing binding in place.
    void SetCurve(int nodeIndex, int paramIndex, float curve);
    float CurveFor(int nodeIndex, int paramIndex) const;
+   // Sets the per-destination smoothing (ms, 0 = off) for an existing binding.
+   void SetSmooth(int nodeIndex, int paramIndex, float smoothMs);
+   float SmoothFor(int nodeIndex, int paramIndex) const;
+   // One step of the per-destination smoother: an exact one-pole (time
+   // constant tau) of an input moving in a straight line from x0 to x1 over
+   // dt, from output y0. Exact for any dt, so the curve does not depend on
+   // frame rate.
+   static double SmoothStep(double y0, double x0, double x1, double dt, double tau)
+   {
+      const double a = std::exp(-dt / tau), m = (x1 - x0) / dt;
+      return x1 - m * tau + (y0 - x0 + m * tau) * a;
+   }
+   // One step of a damped spring (natural frequency w rad/s, damping ratio
+   // z) chasing an input that moves in a straight line from x0 to x1 over
+   // dt, from position y and velocity v. Closed form for every damping, so
+   // exact for any dt: the spring sits 2*z*m/w behind a ramp of slope m and
+   // the error from that moving rest point decays as the free spring would.
+   static void SpringStep(double& y, double& v, double x0, double x1, double dt, double w, double z)
+   {
+      const double m = (x1 - x0) / dt;
+      const double lag = 2.0 * z * m / w;
+      const double e0 = y - (x0 - lag), v0 = v - m;
+      const double a = z * w, k = w * w * (1.0 - z * z);
+      double c = 1.0, s = dt; // cos or cosh of wd*dt, and sin or sinh of it over wd
+      if (k > 0.0)
+      {
+         const double wd = std::sqrt(k);
+         c = std::cos(wd * dt);
+         s = std::sin(wd * dt) / wd;
+      }
+      else if (k < 0.0)
+      {
+         const double wd = std::sqrt(-k);
+         c = std::cosh(wd * dt);
+         s = std::sinh(wd * dt) / wd;
+      }
+      const double ex = std::exp(-a * dt);
+      const double e1 = ex * (e0 * c + (v0 + a * e0) * s);
+      const double v1 = ex * (v0 * c - (w * w * e0 + a * v0) * s);
+      y = x1 - lag + e1;
+      v = v1 + m;
+   }
    // Enables or disables an existing binding in place, leaving everything
    // else about it untouched. No-op if nothing is bound there, mirroring
    // SetRange().

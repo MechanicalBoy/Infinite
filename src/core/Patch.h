@@ -193,6 +193,7 @@ namespace Patch
       // written) alongside lo/hi - see the format comment above.
       bool enabled = true;
       float curve = 0.0f; // in [-1.0, 1.0], 0 = linear
+      float smoothMs = 0.0f; // see Modulation::Source::smoothMs; trails curve on the line
       int line = 0;
       std::string dstRef, srcRef, outRef; // authoring names, see CableRecord
       std::string dstKey;                 // a control key in place of dstParam (`mod 5 radius ...`)

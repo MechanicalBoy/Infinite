@@ -490,6 +490,7 @@ set(COMMON_SOURCES
     src/app/selftest/DspFixtures4.cpp
     src/app/selftest/AliasTests.cpp
     src/app/selftest/FxAudit.cpp
+    src/app/selftest/ModAudit.cpp
     src/app/selftest/PitchTests.cpp
     src/app/selftest/FieldTests1.cpp
     src/app/selftest/FieldTests2.cpp

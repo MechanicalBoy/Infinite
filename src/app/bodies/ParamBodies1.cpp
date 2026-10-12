@@ -803,19 +803,85 @@ namespace app
    }
 
 
+   // Registers a float param without drawing it, at a fixed ordinal, so a
+   // binding on a control the current mode hides stays alive (and comes back
+   // when the mode does) and the ParamRef.key join still finds the member.
+   // Same trick as DrawRateModeControls in NoteBodies.
+   void RegisterHiddenParam(float* value, float minV, float maxV, const char* name, int ordinal)
+   {
+      ParamRef slot;
+      slot.nodeIndex = gCurrentNodeIndex;
+      slot.paramIndex = ordinal;
+      slot.value = value;
+      slot.minValue = minV;
+      slot.maxValue = maxV;
+      slot.name = name;
+      Modulation::Instance().RegisterParam(slot);
+   }
+
+
+   // LFO / Random rate: "rate in" picks beats (free float, the legacy
+   // control), a MusicTime division (exact, same menu as the note nodes) or
+   // Hz. The beats slider keeps ordinal 0 in every mode (hidden when not
+   // drawn); Hz takes the fixed ordinal `hzOrdinal`, above the body's count.
+   void DrawModRateControls(int* rateMode, float* rateBeats, float* rateHz, int hzOrdinal)
+   {
+      DropdownButton("rate in", LFONode::RateModeNames(), *rateMode,
+                     [rateMode](int i) { PushUndoCheckpoint(); *rateMode = i; });
+      if (*rateMode == LFONode::kRateBeats)
+      {
+         ModSlider("rate", rateBeats, 0.05f, 32.0f, "%.2f beats");
+      }
+      else
+      {
+         RegisterHiddenParam(rateBeats, 0.05f, 32.0f, "rate", gParamCounter++);
+         if (*rateMode == LFONode::kRateSynced)
+         {
+            const int div = MusicTime::NearestRateDivision(*rateBeats);
+            DropdownButton("division", MusicTime::RateDivisionList(), div, [rateBeats](int i) {
+               PushUndoCheckpoint();
+               *rateBeats = (float)MusicTime::BeatsFor((MusicTime::RateDivision)std::clamp(i, 0, (int)MusicTime::kNumRateDivisions - 1));
+            });
+         }
+      }
+      if (*rateMode == LFONode::kRateHz)
+      {
+         FixedParamOrdinal at(hzOrdinal);
+         ModSlider("rate (Hz)", rateHz, 0.01f, 40.0f, "%.2f Hz", kParamWidth, false, 0.0f,
+                   LogTaper::PosToValue, LogTaper::ValueToPos);
+      }
+      else
+      {
+         RegisterHiddenParam(rateHz, 0.01f, 40.0f, "rate (Hz)", hzOrdinal);
+      }
+   }
+
+
    void DrawLFOParams(LFONode* n)
    {
       DropdownButton("shape", LFONode::ShapeNames(), n->shape, [n](int i) { n->shape = i; });
-      ModSlider("rate", &n->rateBeats, 0.05f, 32.0f, "%.2f beats");
+      DrawModRateControls(&n->rateMode, &n->rateBeats, &n->rateHz, 4);
       ModSlider("phase", &n->phase, 0.0f, 1.0f);
       ModSlider("low", &n->low, 0.0f, 1.0f);
       ModSlider("high", &n->high, 0.0f, 1.0f);
+      DropdownButton("phase from", LFONode::PhaseModeNames(), n->phaseMode,
+                     [n](int i) { PushUndoCheckpoint(); n->phaseMode = i; });
+      // Seed only means something for S&H (shape 5) on the new maths.
+      if (n->shape == 5 && n->maths >= 1)
+      {
+         FixedParamOrdinal at(5);
+         ModSlider("seed", &n->seed, 0.0f, 200.0f, "%.0f", kParamWidth, false, 1.0f);
+      }
+      else
+      {
+         RegisterHiddenParam(&n->seed, 0.0f, 200.0f, "seed", 5);
+      }
    }
 
 
    void DrawRandomParams(RandomNode* n)
    {
-      ModSlider("rate", &n->rateBeats, 0.05f, 32.0f, "%.2f beats");
+      DrawModRateControls(&n->rateMode, &n->rateBeats, &n->rateHz, 5);
       ModSlider("smooth", &n->smooth, 0.0f, 1.0f);
       ModSlider("low", &n->low, 0.0f, 1.0f);
       ModSlider("high", &n->high, 0.0f, 1.0f);
@@ -1104,8 +1170,11 @@ namespace app
          ModSlider("in (no cable)", &n->constantIn, 0.0f, 1.0f);
       else
          ImGui::TextDisabled("in: patched");
-      static const std::vector<std::string> kModes = { "per frame", "time", "spring" };
-      DropdownButton("mode", kModes, n->mode, [n](int i) { PushUndoCheckpoint(); n->mode = i; });
+      // Legacy (maths 0) amount is a per-frame factor; on the new maths it is
+      // the same feel at 60 fps turned into a time constant, so fps-free.
+      static const std::vector<std::string> kLegacyModes = { "per frame", "time", "spring" };
+      static const std::vector<std::string> kModes = { "amount", "time", "spring" };
+      DropdownButton("mode", n->maths >= 1 ? kModes : kLegacyModes, n->mode, [n](int i) { PushUndoCheckpoint(); n->mode = i; });
       if (n->mode == SmoothNode::kTime)
          ModSlider("time (s)", &n->timeConstant, 0.001f, 5.0f);
       else if (n->mode == SmoothNode::kSpring)

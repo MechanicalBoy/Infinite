@@ -2392,9 +2392,14 @@ namespace app
       // "threshold" is the gate line on the raw 0..1 input - rising through
       // it starts attack, falling back below it starts release (see the
       // class comment on EnvelopeNode, ModulatorNodes.h).
-      AudioKnobRow row2(2);
+      // "output": ADSR is the plain 0..1 envelope (rest 0, peak 1, sustain =
+      // level); centred is the pre-v0.5 bipolar offset around 0.5 that
+      // patches saved before it load with.
+      static const std::vector<std::string> kOutputs = { "centred", "ADSR" };
+      AudioKnobRow row2(3);
       row2.Knob("input", &n->constantIn, 0.0f, 1.0f, "%.2f", kKnobSmall);
       row2.Knob("threshold", &n->threshold, 0.0f, 1.0f, "%.2f", kKnobSmall);
+      row2.Dropdown("output", kOutputs, n->output, [n](int i) { PushUndoCheckpoint(); n->output = i; });
       row2.End();
 
       EndAudioBody();
