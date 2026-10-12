@@ -1774,6 +1774,9 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
          for (GraphNode& gn : gNodes)
             if (!gn.node->bypassed)
                gn.node->CookIfNeeded(frameId);
+         // Once a video frame, as the GUI's frame pump does: a plugin or node
+         // whose latency changed since the topology was built gets PDC again.
+         PollAudioLatencyChanges();
          sAudioStep++;
 
          const long long target = std::min(sAudioTotal, (long long)std::llround((double)sAudioStep * rate / (double)job.fps));

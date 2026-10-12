@@ -482,7 +482,10 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_MIDIBENDTEST") != nullptr)
       return RunMidiBendTest();
    if (getenv("INFINITE_PLUGINNODETEST") != nullptr)
+   {
+      RegisterNodes(); // its latency-change case spawns real nodes; no GL involved
       return RunPluginNodeHandleTest();
+   }
 
 #if INFINITE_ENABLE_VST3
    if (getenv("INFINITE_VST3SCANTEST") != nullptr)

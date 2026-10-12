@@ -21,6 +21,7 @@ namespace Platform
                          const PluginTransport* transport);
    void PluginVST3ScheduleMIDIEvent(PluginHandle* handle, int frameOffset, const unsigned char* bytes, int byteCount);
    bool PluginVST3HostClockSeen(PluginHandle* handle, PluginTransport& out);
+   int PluginVST3LatencySamples(PluginHandle* handle);
 
    int PluginVST3ParameterCount(PluginHandle* handle);
    bool PluginVST3ParameterInfo(PluginHandle* handle, int index, PluginParamInfo& out);

@@ -1737,7 +1737,8 @@ namespace
 
       Steinberg::tresult PLUGIN_API restartComponent(Steinberg::int32 flags) override
       {
-         (void)flags;
+         if ((flags & Steinberg::Vst::kLatencyChanged) != 0)
+            NoteLatencyChanged();
          return Steinberg::kResultOk;
       }
 
@@ -1772,6 +1773,7 @@ namespace
 
    private:
       void RecordTouch(Steinberg::Vst::ParamID id);
+      void NoteLatencyChanged();
 
       std::atomic<uint32_t> mRefCount { 1 };
       Platform::PluginHandle* mHandle = nullptr;
@@ -1943,6 +1945,10 @@ namespace Platform
       int pluginInChannels = 0;
       int pluginOutChannels = 0;
       bool active = false;
+      // Raised by restartComponent(kLatencyChanged), from whatever thread the
+      // plugin calls it on; PluginVST3LatencySamples re-reads the latency on
+      // the main thread so the next PollAudioLatencyChanges re-runs PDC.
+      std::atomic<bool> latencyChanged { false };
       bool processing = false;
 
       Steinberg::Vst::ProcessData processData;
@@ -2117,6 +2123,12 @@ namespace
          return;
       mHandle->vst3->learnedAddress.store((unsigned long long)id, std::memory_order_relaxed);
       mHandle->vst3->learnedValid.store(true, std::memory_order_release);
+   }
+
+   void HostComponentHandler::NoteLatencyChanged()
+   {
+      if (mHandle != nullptr && mHandle->vst3 != nullptr)
+         mHandle->vst3->latencyChanged.store(true, std::memory_order_release);
    }
 
    Steinberg::tresult PLUGIN_API HostPlugFrame::resizeView(Steinberg::IPlugView* view, Steinberg::ViewRect* newSize)
@@ -2750,6 +2762,7 @@ namespace Platform
          }
          v->active = true;
 
+         v->latencyChanged.store(false, std::memory_order_relaxed);
          h->latencySamples = (int)v->processor->getLatencySamples();
 
          const Steinberg::tresult procRes = v->processor->setProcessing(true);
@@ -3135,6 +3148,20 @@ namespace Platform
          e.noteOff.noteId = -1;
          v->inputEvents.addEvent(e);
       }
+   }
+
+   int PluginVST3LatencySamples(PluginHandle* h)
+   {
+      if (h == nullptr)
+         return 0;
+      // Main thread. A plugin that switches mode after prepare (Pro-Q's linear
+      // phase, a lookahead knob) reports it through restartComponent; re-read
+      // here so PDC follows. getLatencySamples is valid while active.
+      PluginVST3State* v = h->vst3;
+      if (v != nullptr && v->active && v->processor &&
+          v->latencyChanged.exchange(false, std::memory_order_acq_rel))
+         h->latencySamples = (int)v->processor->getLatencySamples();
+      return h->latencySamples;
    }
 
    int PluginVST3ParameterCount(PluginHandle* h)
