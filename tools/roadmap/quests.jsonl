@@ -2888,3 +2888,21 @@
 {"ts": "2026-10-12T17:31:07+05:30", "event": "add", "id": "R728", "after": [], "user": false, "src": "merge:8f2d407", "track": "timeline", "kind": "feature", "horizon": "later", "title": "Feature/re-survey-stretch (capability diff rows)", "why": "merged into main (8f2d407)", "origin": "merge"}
 {"ts": "2026-10-12T17:31:07+05:30", "event": "done", "id": "R728", "why": "merged into main (8f2d407)"}
 {"ts": "2026-10-12T17:31:07+05:30", "event": "edit", "id": "R728", "opened": "2026-10-12T17:31:07+05:30", "closed": "2026-10-12T17:31:07+05:30", "release": "", "commits": ["8f2d407"]}
+{"ts": "2026-10-10T21:06:29+05:30", "event": "add", "id": "R729", "after": [], "user": false, "src": "merge:1f51a48", "track": "engine", "kind": "feature", "horizon": "later", "title": "Site-publish (Library: five Sketch devices; content already on main, main's newer page kep", "why": "merged into main (1f51a48)", "origin": "merge"}
+{"ts": "2026-10-12T17:31:29+05:30", "event": "done", "id": "R729", "why": "merged into main (1f51a48)"}
+{"ts": "2026-10-12T17:31:29+05:30", "event": "edit", "id": "R729", "opened": "2026-10-10T21:06:29+05:30", "closed": "2026-10-12T17:31:29+05:30", "release": "", "commits": ["1f51a48"]}
+{"ts": "2026-10-12T17:49:21+05:30", "event": "add", "id": "R730", "after": [], "user": false, "src": "merge:bugfix/overlay-zoom-rect", "track": "nodes", "kind": "fix", "horizon": "later", "title": "Overlay zoom rect", "why": "merged into main (b89e84e)", "origin": "merge"}
+{"ts": "2026-10-12T17:49:21+05:30", "event": "done", "id": "R730", "why": "merged into main (b89e84e)"}
+{"ts": "2026-10-12T17:49:21+05:30", "event": "edit", "id": "R730", "opened": "2026-10-12T17:49:21+05:30", "closed": "2026-10-12T17:49:21+05:30", "release": "", "commits": ["b89e84e"]}
+{"ts": "2026-10-12T17:53:14+05:30", "event": "add", "id": "R731", "after": [], "user": false, "src": "merge:bugfix/cooktimes-number-only", "track": "nodes", "kind": "fix", "horizon": "later", "title": "Cooktimes number only", "why": "merged into main (70c5827)", "origin": "merge"}
+{"ts": "2026-10-12T17:53:14+05:30", "event": "done", "id": "R731", "why": "merged into main (70c5827)"}
+{"ts": "2026-10-12T17:53:14+05:30", "event": "edit", "id": "R731", "opened": "2026-10-12T17:53:14+05:30", "closed": "2026-10-12T17:53:14+05:30", "release": "", "commits": ["70c5827"]}
+{"ts": "2026-10-12T17:57:16+05:30", "event": "add", "id": "R732", "after": [], "user": false, "src": "merge:bugfix/history-forward-positions", "track": "nodes", "kind": "fix", "horizon": "later", "title": "History forward positions", "why": "merged into main (6b353d8)", "origin": "merge"}
+{"ts": "2026-10-12T17:57:16+05:30", "event": "done", "id": "R732", "why": "merged into main (6b353d8)"}
+{"ts": "2026-10-12T17:57:16+05:30", "event": "edit", "id": "R732", "opened": "2026-10-12T17:57:16+05:30", "closed": "2026-10-12T17:57:16+05:30", "release": "", "commits": ["6b353d8"]}
+{"ts": "2026-10-12T18:14:37+05:30", "event": "add", "id": "R733", "after": [], "user": false, "src": "merge:bugfix/cooktimes-fixed-text", "track": "engine", "kind": "fix", "horizon": "later", "title": "Cooktimes fixed text", "why": "merged into main (46395de)", "origin": "merge"}
+{"ts": "2026-10-12T18:14:37+05:30", "event": "done", "id": "R733", "why": "merged into main (46395de)"}
+{"ts": "2026-10-12T18:14:37+05:30", "event": "edit", "id": "R733", "opened": "2026-10-12T18:14:37+05:30", "closed": "2026-10-12T18:14:37+05:30", "release": "", "commits": ["46395de"]}
+{"ts": "2026-10-12T18:24:56+05:30", "event": "add", "id": "R734", "after": [], "user": false, "src": "merge:feature/single-opener", "track": "engine", "kind": "feature", "horizon": "later", "title": "Single opener", "why": "merged into main (6001730)", "origin": "merge"}
+{"ts": "2026-10-12T20:40:49+05:30", "event": "done", "id": "R734", "why": "merged into main (6001730)"}
+{"ts": "2026-10-12T20:40:49+05:30", "event": "edit", "id": "R734", "opened": "2026-10-12T18:24:56+05:30", "closed": "2026-10-12T20:40:49+05:30", "release": "", "commits": ["6001730"]}

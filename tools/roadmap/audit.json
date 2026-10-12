@@ -1,16 +1,16 @@
 {
  "merges": [
-  344,
-  379
+  352,
+  387
  ],
  "direct": [
   500,
-  575
+  579
  ],
  "notes_total": 389,
  "evidence": [
-  548,
-  640
+  560,
+  652
  ],
  "per_release": {
   "v0.1": {
@@ -138,15 +138,19 @@
    "notes": 0
   },
   "v0.4.7": {
-   "quests": 76,
+   "quests": 77,
    "notes": 18
   },
   "v0.5.0": {
-   "quests": 23,
+   "quests": 26,
    "notes": 42
   }
  },
  "loose": [
+  "2026-10-12 0ca861f Worktree cleanup: save old-release FPS probes; NOW.md queues imgfx and the Codex v0.5.0 le",
+  "2026-10-12 460337d Roadmap board data refresh",
+  "2026-10-12 db0ffc7 NOW.md: facts from main's ledger",
+  "2026-10-12 df9a90b Roadmap: ledger refresh; close merged R644/R680/R683/R684, drop duplicate R659, park six p",
   "2026-10-12 fe86c87 re-survey: transport fix result, next-session prompt for blocks A-F",
   "2026-10-12 279b7b0 Plugin host: plugins follow Infinite's tempo, play/stop, position and loop",
   "2026-10-12 18d7d4e re-survey coverage: drop web research (business, onboarding, distribution); host audit and",

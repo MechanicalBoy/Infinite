@@ -166,7 +166,11 @@ void Start()
       if (!Unzip(file, dir + "/unpacked", payload, err))
          return Set(Stage::Failed, err);
 #endif
-      if (!Platform::PrepareSelfUpdate(payload, version, err))
+      const bool staged = Platform::PrepareSelfUpdate(payload, version, err);
+      // The download is spent either way: macOS and Linux copied it beside this copy; Windows keeps only the
+      // unpacked folder, which the swap helper deletes.
+      fs::remove(AppPaths::FsPath(file), ec);
+      if (!staged)
          return Set(Stage::Failed, err);
       Set(Stage::Ready);
    });

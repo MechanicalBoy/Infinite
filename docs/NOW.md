@@ -44,7 +44,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-12 12:01 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-12 15:12 UTC. Do not edit inside this block; rerun the tool._
 
 ### Open quests (4)
 
@@ -57,7 +57,7 @@ _Generated 2026-10-12 12:01 UTC. Do not edit inside this block; rerun the tool._
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| v0.5.0 | 2026-10-10 | 112 |
+| v0.5.0 | 2026-10-10 | 137 |
 | v0.4.7 | 2026-10-07 | 74 |
 | v0.4.6 | 2026-10-01 | 163 |
 | v0.4.5 | 2026-09-26 | 203 |
@@ -66,9 +66,9 @@ _Generated 2026-10-12 12:01 UTC. Do not edit inside this block; rerun the tool._
 
 | Measure | Value | Want |
 |---|---|---|
-| Escaped fixes: fixes after v0.5.0 touching src it changed | 2 89555bc0 9f5fd27d | 0, falling release to release |
+| Escaped fixes: fixes after v0.5.0 touching src it changed | 3 d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
 | Reverts after v0.5.0 | 0 | 0 |
-| Fix-shaped commits after v0.5.0 (all) | 12 | context |
+| Fix-shaped commits after v0.5.0 (all) | 13 | context |
 | Known test failures (macOS / Linux) | 3 / 6 | never grows |
 | Open GitHub issues labelled bug | 0 | 0 |
 | Crash reports filed since v0.5.0 | 0 | 0 |
@@ -80,10 +80,10 @@ _Generated 2026-10-12 12:01 UTC. Do not edit inside this block; rerun the tool._
 
 ### Last merges to main
 
-- 2026-10-12 Merge site-publish (Library: five Sketch devices; content already on main, main's newer page kept)
-- 2026-10-12 Merge feature/re-survey-stretch (capability diff rows)
-- 2026-10-12 Merge feature/lifecycle-v1
-- 2026-10-12 Merge feature/re-survey-stretch
-- 2026-10-12 Merge feature/headless-timeline
+- 2026-10-12 Merge feature/single-opener
+- 2026-10-12 Merge bugfix/cooktimes-fixed-text
+- 2026-10-12 Merge bugfix/history-forward-positions
+- 2026-10-12 Merge bugfix/cooktimes-number-only
+- 2026-10-12 Merge bugfix/overlay-zoom-rect
 
 <!-- FACTS:END -->
