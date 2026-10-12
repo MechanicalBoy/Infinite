@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""re-survey render_bench: offline video render speed, codec quality and AV sync, Infinite against Blender.
+"""re-survey render_bench: offline video render speed, codec quality and AV sync, Infinite against Blender and
+TouchDesigner.
 
-Two matched scenes, each at 1080p and 4K, 60 fps:
+Two matched scenes, each at 720p, 1080p and 4K, 60 fps (TouchDesigner: 720p only, its non-commercial limit):
   instanced -> 10,000 cubes instanced on a 100x100 grid, the grid spinning (Infinite: Distribute Points in Grid
                -> Instance on Points -> Transform -> Render 3D; Blender: geometry nodes, EEVEE)
   blur      -> 900 cubes plus four Gaussian blurs of radius 20 after the render (Blender: compositor blurs)
@@ -20,6 +21,8 @@ Movies are read with tools/re-survey/video_read.swift (AVFoundation, macOS's own
 Usage:
   python3 tools/re-survey/render_bench.py infinite [--dir ~/re-output/render-bench/Infinite] [--sync-seconds 600]
   python3 tools/re-survey/render_bench.py blender  [--dir ~/re-output/render-bench/Blender] [--sync-seconds 600]
+  python3 tools/re-survey/render_bench.py td-prep  # writes click.wav, prints the line to paste in TD's Textport
+  python3 tools/re-survey/render_bench.py td       # after TD prints 'BENCH done' (render_bench_td.py)
   python3 tools/re-survey/render_bench.py sync <movie>                  # analyse any flash+click movie
   python3 tools/re-survey/render_bench.py analyse <dir> ... [--out results.md]
   python3 tools/re-survey/render_bench.py --self-test
@@ -46,7 +49,7 @@ VR_BIN = os.path.join(RE_OUTPUT, "bin", "video_read")
 BL_SCRIPT = os.path.join(HERE, "render_bench_blender.py")
 BLENDER = os.environ.get("BLENDER_BIN", "/Applications/Blender.app/Contents/MacOS/Blender")
 SCENES = ["instanced", "blur"]
-SIZES = [(1920, 1080), (3840, 2160)]
+SIZES = [(1280, 720), (1920, 1080), (3840, 2160)]  # 720p: the largest TouchDesigner non-commercial renders
 FPS = 60
 SHORT_S, LONG_S = 1.0, 3.0          # speed slope: two movie lengths, seconds
 QUALITY_FRAMES = 30
@@ -320,6 +323,36 @@ def run_blender(d, sync_s):
     return res
 
 
+# ---------------------------------------------------------------- TouchDesigner (owner-run, no headless mode)
+
+TD_SCRIPT = os.path.join(HERE, "render_bench_td.py")
+
+
+def td_prep(d, sync_s):
+    ensure_dir(d)
+    click_wav(os.path.join(d, "click.wav"), sync_s)
+    print("In a new TouchDesigner project open Dialogs > Textport and paste:\n")
+    print("import os; os.environ['RB_TD_SYNC_S'] = '%d'; exec(open(%r).read(), globals())\n" % (sync_s, TD_SCRIPT))
+    print("Wait for 'BENCH done' (~%d min), then: python3 %s td" % (sync_s // 60 + 1, os.path.relpath(__file__)))
+
+
+def run_td(d):
+    with open(os.path.join(d, "td_bench.json")) as f:
+        tb = json.load(f)
+    res = {"app": "TouchDesigner", "version": tb.get("version"), "speed": {}, "quality": {}, "sync": None}
+    for scene in SCENES:
+        j = tb["jobs"].get(scene)
+        if j:  # Movie File Out in non-realtime mode: frames over wall time, no slope (one length only)
+            res["speed"]["%s_720p/h264" % scene] = {"fps": j["fps"], "frames": [j["frames"]], "wall_s": [j["wall_s"]]}
+            res["quality"]["%s_720p" % scene] = {"error": "no lossless reference from TD"}
+    if tb["jobs"].get("sync"):
+        res["sync"] = analyse_sync(tb["jobs"]["sync"]["movie"])
+    wav = os.path.join(d, "click.wav")
+    if os.path.exists(wav):
+        os.remove(wav)
+    return res
+
+
 # ---------------------------------------------------------------- quality and report
 
 def quality(movie, pngs):
@@ -422,7 +455,7 @@ def self_test():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", nargs="?", choices=["infinite", "blender", "sync", "analyse"])
+    ap.add_argument("cmd", nargs="?", choices=["infinite", "blender", "td-prep", "td", "sync", "analyse"])
     ap.add_argument("paths", nargs="*")
     ap.add_argument("--dir")
     ap.add_argument("--sync-seconds", type=int, default=600)
@@ -441,6 +474,16 @@ def main():
         except RuntimeError as e:
             print("render_bench: %s" % e, file=sys.stderr)
             return 1
+        with open(os.path.join(d, "results.json"), "w") as f:
+            json.dump(res, f, indent=1)
+        write_out(report([res]), a.out)
+        return 0
+    if a.cmd in ("td-prep", "td"):
+        d = os.path.expanduser(a.dir or os.path.join(RE_OUTPUT, "render-bench", "TD"))
+        if a.cmd == "td-prep":
+            td_prep(d, a.sync_seconds)
+            return 0
+        res = run_td(d)
         with open(os.path.join(d, "results.json"), "w") as f:
             json.dump(res, f, indent=1)
         write_out(report([res]), a.out)
