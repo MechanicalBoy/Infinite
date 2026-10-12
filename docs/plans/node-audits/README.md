@@ -153,7 +153,12 @@ COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden w
 | Source-over alpha with random alpha and mix 0.7 matches W3C for Normal, Multiply, Screen | clean |
 | Feedback in a plain chain passes the current frame through; the one-frame delay only exists inside a cycle, although the node says the delay is always one frame | **settled**: wording fixed (header comment, delayFrames note); behaviour kept because saved loops depend on this timing; help text already says it only acts inside a loop. The audit line stays as a documented by-design FLAG |
 | Trails decay matches decay^n within 0.2/255 and always reaches black (no 8-bit ghost) | clean |
-| Not yet covered: Layer Stack, Curves, Color Ramp, Fit, Switcher, Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; the geometry nodes other than primitives and Ops | next |
+| Layer Stack with two layers equals Blend with the same mode and opacity (11 modes x 2 opacities, random alpha) | clean, within 1/255 |
+| Curves: a fresh node was not identity. The two-point default (0,0)-(1,1) went through Catmull-Rom with duplicated end neighbours, an S-curve with error up to 25/255 (inverted and per-channel curves were off by the same amount) | **fixed** in `CurveShape::Evaluate` (end neighbours reflected, overshoot clamped); identity, inverted, Red-only and mix 0 now within 1/255. Affects the Curves node and the curve modulator; any saved 2-point curve gets straighter |
+| Color Ramp linear and constant interpolation match the analytic gradient and step | clean |
+| Fit: output size follows width/height and matchInput; Fit leaves transparent bars, Fill and Stretch cover the frame | clean |
+| Switcher manual slot shows exactly the chosen input | clean |
+| Not yet covered: Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; the geometry nodes other than primitives and Ops | next |
 
 GEOAUDIT covers the 37 geometry nodes (Delaunay, Metaballs, Ocean, Cloth, Curve Ops, Instances,
 Join, Merge by Distance, Distribute, Displacement and the rest).
