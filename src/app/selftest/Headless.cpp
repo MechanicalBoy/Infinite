@@ -156,6 +156,49 @@ std::string ExplainLive(bool json, bool all)
    return json ? PatchExplain::ToJson(ex) : PatchExplain::ToText(ex, all);
 }
 
+// A plugin that never loaded passes its input through untouched, so the render
+// still "works" and nothing else would say the plugin was missing. The
+// "plugins" block names every plugin node and whether it loaded; with
+// --plugin-params it also carries the parameters with the plugin's own ranges
+// (what a patch's map<N>_min/max/value must use - not the display units).
+static void ReportPlugins(Headless::Status& st, bool withParams)
+{
+   std::string json;
+   for (int i = 0; i < (int)gNodes.size(); i++)
+   {
+      auto* plugin = dynamic_cast<AudioPluginNode*>(gNodes[i].node.get());
+      if (plugin == nullptr || !plugin->HasPlugin())
+         continue;
+      const std::string name = plugin->PluginDisplayName().empty() ? std::string("a plugin") : plugin->PluginDisplayName();
+      if (!plugin->IsReady())
+      {
+         const std::string why = plugin->IsLoading() ? std::string("still loading when the render ended") : plugin->Status();
+         st.warnings.push_back({ "W_PLUGIN_NOT_LOADED", name + " did not load (" + why + "); its input passed through unprocessed",
+                                 0, gNodes[i].index, "check the plugin is installed and listed in the plugin index" });
+      }
+      const auto& params = plugin->AvailableParams();
+      json += std::string(json.empty() ? "" : ",") + "{\"node\":" + std::to_string(gNodes[i].index) + ",\"name\":\"" +
+              Headless::JsonEscape(name) + "\",\"ready\":" + (plugin->IsReady() ? "true" : "false") +
+              ",\"param_count\":" + std::to_string(params.size());
+      if (withParams)
+      {
+         json += ",\"params\":[";
+         char num[160];
+         for (size_t k = 0; k < params.size(); k++)
+         {
+            const Platform::PluginParamInfo& p = params[k];
+            std::snprintf(num, sizeof(num), "\"min\":%.9g,\"max\":%.9g,\"default\":%.9g", p.minValue, p.maxValue, p.defaultValue);
+            json += std::string(k ? "," : "") + "{\"address\":\"" + std::to_string(p.address) + "\",\"name\":\"" +
+                    Headless::JsonEscape(p.displayName) + "\"," + num + ",\"unit\":\"" + Headless::JsonEscape(p.unit) + "\"}";
+         }
+         json += "]";
+      }
+      json += "}";
+   }
+   if (!json.empty())
+      st.extraJson.push_back("\"plugins\":[" + json + "]");
+}
+
 static void HeadlessFinish(GLFWwindow* window, Headless::Status& st, double startWall)
 {
    st.elapsedMs = (long long)((glfwGetTime() - startWall) * 1000.0);
@@ -1435,6 +1478,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       if (!Headless::MovieHasIndex(job.out))
          return fail("E_RENDER", "the file was written but has no index (moov), so it cannot be played");
       sStatus.files.push_back(job.out);
+      ReportPlugins(sStatus, job.pluginParams);
       sPhase = Phase::Done;
       HeadlessFinish(window, sStatus, sWall);
       return;
@@ -1518,6 +1562,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       sStatus.height = sNodeRecH;
       sStatus.frames = written;
       sStatus.files.push_back(job.out);
+      ReportPlugins(sStatus, job.pluginParams);
       sPhase = Phase::Done;
       HeadlessFinish(window, sStatus, sWall);
       return;
@@ -1701,6 +1746,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
                                      "],\"cells\":" + std::to_string(sSheet.Count()) +
                                      ",\"cell_width\":" + std::to_string(ContactSheet::kCellWidth) + "}");
       }
+      ReportPlugins(sStatus, job.pluginParams);
       sPhase = Phase::Done;
       HeadlessFinish(window, sStatus, sWall);
       return;
@@ -1836,6 +1882,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       if (!std::isfinite(res.integratedLufs))
          sStatus.warnings.push_back({ "W_SILENT", "the whole range is silent (nothing above -70 LUFS)", 0, -1,
                                       "check that a note or audio source is playing in this range" });
+      ReportPlugins(sStatus, job.pluginParams);
       sPhase = Phase::Done;
       HeadlessFinish(window, sStatus, sWall);
    }

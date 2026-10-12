@@ -453,6 +453,8 @@ namespace Headless
          }
          else if (a == "--no-audio")
             job.noAudio = true;
+         else if (a == "--plugin-params" && (job.mode == Mode::Render || job.mode == Mode::AudioSummary))
+            job.pluginParams = true;
          else if (a == "--lenient")
             job.lenient = true;
          else if (a.rfind("--", 0) == 0)
