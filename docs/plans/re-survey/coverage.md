@@ -33,15 +33,15 @@ analyser (numbers out) ──► comparison table ──► dossier outcome
 | 3 | Built-in effects | Gain, response, THD, tail, CPU | Live (Echo, Roar, Reverb), Logic (ChromaVerb, Compressor), Bitwig | 🟡 Infinite's own only | **cover others' built-ins** |
 | 4 | Third-party plugins | Sound + CPU per plugin | FabFilter, Valhalla, Diva, Serum, Vital | ✅ in Infinite's host | — |
 | 5 | Plugin hosting | Formats, scan time, load success rate, crash isolation, PDC, host CPU overhead | Live, Logic, Bitwig (sandboxing) | ✅ done 2026-10-12, dossier `dossiers/A.md` | **important: users report VST3 crashes / not loading** |
-| 6 | Performance under load | Track and voice ceiling, multicore scaling, dropouts | Live, Logic, Bitwig | ❌ | **needed** |
-| 7 | Real-time latency | Audio in→out round trip, buffer sizes, jitter | Live, Logic, Bitwig | ❌ | **important: makes it professional** |
+| 6 | Performance under load | Track and voice ceiling, multicore scaling, dropouts | Live, Logic, Bitwig | 🟡 Infinite side done 2026-10-12, DAW sitting pending (`PROTOCOL-load.md`), dossier `dossiers/B.md` | **needed** |
+| 7 | Real-time latency | Audio in→out round trip, buffer sizes, jitter | Live, Logic, Bitwig | 🟡 tool ready and PDC fixed 2026-10-12; loopback sitting pending (`PROTOCOL-latency.md`), dossier `dossiers/B.md` | **important: makes it professional** |
 | 8 | Startup and footprint | Launch time, idle CPU, memory, bundle size | all | ⏳ `app_bench` | — |
 | 9 | Video and visual engine | FPS, frame-time spread, GPU memory, resolution ceiling | **TouchDesigner, Blender** (behaviour only) | ❌ | **use TD + Blender as the bar** |
 | 10 | Export and render | Offline speed, formats/codecs, AV sync, quality | TouchDesigner, Blender, Final Cut, DAWs | ❌ (Infinite only) | **important: users need good export** |
 | 11 | Modulation | Sources, destinations, per-voice, rate | Bitwig | 🟡 API docs only | — |
 | 12 | Sequencing and arrangement | Clips, MIDI edit, automation, quantize | **Final Cut** (UI/UX map + match its timeline performance) | ❌ | light: Final Cut UX + perf |
 | 13 | Sampling and audio editing | Time-stretch / pitch-shift quality, slicing, pitch detection | Live warp, Logic Flex, Bitwig | ❌ | **important** |
-| 14 | Mixing and routing | Sends, sidechain, buses, channel limits | Live, Logic, Bitwig | ❌ | **important** |
+| 14 | Mixing and routing | Sends, sidechain, buses, channel limits | Live, Logic, Bitwig | ✅ done 2026-10-12, dossier `dossiers/B.md` | **important** |
 | 15 | MIDI, hardware, sync | MPE, MIDI out, controller scripts, OSC, Link | Bitwig, Live | 🟡 API docs only | — |
 | 16 | Scripting / extensibility | Public API size by domain | Bitwig, Live, TD, Logic | ✅ `capability_map` | — |
 | 17 | UI structure | Menus, shortcuts, AX tree | all | 🟡 `ui_map` (Bitwig exposes nothing) | — |
@@ -103,4 +103,9 @@ Out of scope (owner, 2026-10-12): web research on business, onboarding and distr
     2. Undo until it stops, and count the steps.
     3. Force-quit with `kill -9`.
     4. Reopen, and note whether it offers recovery and how much work came back.
+- Block B done 2026-10-12 for Infinite's side (`dossiers/B.md`):
+  - Fixed and merged, each with a regression check: PDC ignored plugin latency changes (`PLUGINNODETEST`); Mixer slot names past 8 rejected (fixture g14); one note output fed only 8 synths (cap 64, `W_NOTE_FANOUT`); headless runs aborted by head tracking on macOS.
+  - Load, one thread: Wavetable + Reverb 14.5 / 69.9 / 169.5 / 436.1 % of a core at 8 / 32 / 64 / 128 tracks; Analog + EQ 41.8 / 183.7 / 383.0 / 883.3 %. Live ceiling about 32 light or 13 heavy tracks. Perf target: multicore graph.
+  - Routing: Mixer sum and equal-power pan exact to 0.01 dB; fan-out sends leave the dry path untouched; Dynamics sidechain ducks 19 dB. Gap: the Plugin node has no sidechain input.
+  - Owner sittings: load template per DAW (`PROTOCOL-load.md`), latency loopback (`PROTOCOL-latency.md`).
 - Next-session prompt for blocks A to F: `NEXT-SESSION.md`.
