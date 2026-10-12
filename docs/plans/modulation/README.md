@@ -47,7 +47,7 @@ per-destination smoothing, and learned (green) modulators.
 | # | Branch | Work | State |
 |---|---|---|---|
 | 1 | `feature/mod-audit` | MODAUDIT and this baseline | done |
-| 2 | `feature/mod-clock` | Shared sample-accurate phase source; per-sample ramp delivery to audio params; per-destination fps-independent smoothing | not started |
+| 2 | `feature/mod-clock` | Shared sample-accurate phase source; per-sample ramp delivery to audio params; per-destination fps-independent smoothing | done (see After Block 2) |
 | 3 | `feature/mod-maths` | Per-node fixes, each with a legacy flag | not started |
 
 ## 6. Success metrics
@@ -63,6 +63,43 @@ per-destination smoothing, and learned (green) modulators.
 | 6 | Same seed, same output | identical | **pass** for Random and offline reruns; determinism-check.py pass. Flags: LFO S&H has no seed (two instances identical); Random seeds 1.0 and 1.0005 collide |
 | 7 | Envelope / follower stage times | ±1% or ±1 sample | Envelope at sample resolution **pass** (10.00 / 199.96 / 399.94 ms). At 60 fps the attack is **16.67 ms for 10 ms** (frame granular). Audio to CV **pass** (10.67 ms at 64-sample resolution, 100.00 ms) |
 | 8 | CPU per Value01() | ≤ +10% | baseline: 2–16 ns/call, harness 3.6 ns (table in baseline file) |
+
+### After Block 2 (2026-10-12)
+
+| # | Metric | Baseline | After Block 2 |
+|---|---|---|---|
+| 2 | Zipper excess step (limit 9.8e-4) | LFO 1/4 beat 1.7e-3, Vibrato 1.07e-3: **fail** | worst 5.2e-4 (LFO 1/4 beat at 24 fps), 2.3e-4 at 60 fps, Vibrato 8.8e-5: **pass** on every source and schedule |
+| 2 | Tracking rms after the fixed lag | LFO 1/4 beat 0.24 | 0.022 (60 fps), 0.014 (144 fps); slow sources ≤ 2e-3 |
+| 2 | Lag to audio params | up to 1 frame + 5 ms tail, varying | fixed: 1 frame + 1 block (27.3 ms at 60 fps / 512, 17.6 ms at 144 fps, 52 ms at 24 fps). Under the 125 ms audio-after-video detectability bound of ITU-R BT.1359 |
+| 3 | Live video/3D clock vs frame time | 0.7–10.7 ms off: **fail** | 0.000 ms (modelled schedule); render − realtime ≤ 6e-8: **pass** |
+| 5a | Same-sample bit-exact | pass | pass (0/200 everywhere) |
+| 5b | Per-destination smoothing, moving input (sine 2 Hz) vs 1440 fps | (old per-frame Smooth: 0.266 at 24 fps) | 1.0e-2 at 24 fps, 1.7e-3 at 60, 2.9e-4 at 144 (tau 20 ms). The residual is input sampling (chord of the sine between frames), not the filter |
+| 5b | Per-destination smoothing, step input | n/a | **miss**: 0.56 at 24 fps, 0.30 at 60, 0.14 at 144 (tau 20 ms); 0.04 / 0.016 / 0.006 at tau 500 ms. A step is only seen at frame times, so its timing moves by up to a frame |
+| 8 | CPU per Value01() | harness 3.6 ns, LFO 9.3, Pattern 5.3 | harness 3.9 ns, LFO 9.2, Pattern 5.2 (latch check only on the live branch); Beats() under a live frame latch 3.6 ns: **pass** |
+
+What Block 2 changed:
+
+- `Transport::BeginFrameClock()` latches, for the main thread's frame, the
+  transport position interpolated between audio callbacks by wall time
+  (monotonic per epoch, loop-wrap aware, dropped on seek/stop/engine change,
+  lapses after 8 blocks). Offline is unchanged (exact video time).
+- `ParamMailbox` ramps linearly to each new frame value, arriving at the
+  frame's engine-time stamp + one frame interval (`PublishFrame`), queueing
+  one ramp behind the active one. Before any frame is published it ramps
+  over 5 ms. `BlockValue()` for params read once per block (Video Source).
+- `Modulation::Source::smoothMs`: per-binding smoothing, an exact one-pole of
+  the linearly interpolated input stepped by real frame dt
+  (`Modulation::SmoothStep`), in the binding popup as "smooth" and saved as a
+  trailing token after curve (absent = 0, so old patches load unchanged).
+
+Known limits:
+
+- Offline backpressure lookahead and preroll render audio ahead of the frame
+  that set the values, so those spans see the ramps run late (staircase-like,
+  as before Block 2).
+- FM-rate modulation stays with the audio nodes (settled).
+- The schedule in ZIPPER/VIDEO is modelled; host jitter on the real callback
+  wall time is not.
 
 Frame-rate dependence (max diff vs a 1440 fps reference, row 5b):
 
