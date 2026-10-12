@@ -1,16 +1,16 @@
 {
  "merges": [
-  325,
-  360
+  344,
+  379
  ],
  "direct": [
-  487,
-  498
+  500,
+  575
  ],
- "notes_total": 347,
+ "notes_total": 389,
  "evidence": [
-  517,
-  604
+  548,
+  640
  ],
  "per_release": {
   "v0.1": {
@@ -113,23 +113,115 @@
    "quests": 72,
    "notes": 16
   },
+  "v0.46.0": {
+   "quests": 1,
+   "notes": 0
+  },
+  "v0.47.0": {
+   "quests": 0,
+   "notes": 0
+  },
+  "v0.47.0_fixed": {
+   "quests": 1,
+   "notes": 0
+  },
+  "v0.49.0": {
+   "quests": 1,
+   "notes": 0
+  },
+  "v0.48.0": {
+   "quests": 0,
+   "notes": 0
+  },
+  "v0.50.0": {
+   "quests": 1,
+   "notes": 0
+  },
   "v0.4.7": {
    "quests": 76,
    "notes": 18
+  },
+  "v0.5.0": {
+   "quests": 23,
+   "notes": 42
   }
  },
  "loose": [
-  "2026-10-10 9822aad Tracking: Face Track and Pose Track nodes, hand gestures, live preview with landmark overl",
-  "2026-10-10 dcfa065 Hand Track install hint uses a token colour",
-  "2026-10-10 9f6805e Sketch 3D: plan doc, param audit and patch-authoring facts regenerated",
-  "2026-10-10 bdd39e1 Sketch 3D node: JS-built mesh source (6 presets, editor window, params, help), registered ",
-  "2026-10-10 b56b26a Sketch 3D engine: JS draw(t) builds a triangle mesh (box, sphere, cylinder, cone, torus, p",
-  "2026-10-10 77ec937 Extensions tab: one line per pack, enable checkbox, install only; no refresh or catalog er",
-  "2026-10-10 bcd0402 Extensions tab in the design language: section, status dots, primary action, token error c",
-  "2026-10-10 b8e34dd Roadmap: regenerate release history, audit and quest ledger",
-  "2026-10-09 32b758a Fix ImGui SetCursorScreenPos boundary error on collapsed nodes with modulation links",
-  "2026-10-08 2bed065 Add Field Pixel image coordinate reads and camera FX presets",
-  "2026-10-08 cff222b Launcher card: play before the ImGui GLFW backend exists (Windows 0xc000041d at startup)"
+  "2026-10-12 fe86c87 re-survey: transport fix result, next-session prompt for blocks A-F",
+  "2026-10-12 279b7b0 Plugin host: plugins follow Infinite's tempo, play/stop, position and loop",
+  "2026-10-12 18d7d4e re-survey coverage: drop web research (business, onboarding, distribution); host audit and",
+  "2026-10-12 610a19c host_audit: warm dry-rig baseline, AU names without vendor prefix, note the headless VST3 ",
+  "2026-10-12 848ec85 re-survey host_audit: every installed AU/VST3 through Infinite's host (crash/hang/fail/sil",
+  "2026-10-12 905ebda re-survey: coverage map of every software area, owner priorities, one-harness method, bloc",
+  "2026-10-12 022dba9 app_bench: memory from footprint, launch time from the window server list (sees GLFW/Java ",
+  "2026-10-12 fb44ef0 ui_map: record what each app exposes; app_bench: measure an open app idle-only and leave i",
+  "2026-10-12 63b9b21 re-survey: bounce_kit - test material, protocol, and export-truth analysis",
+  "2026-10-12 c228f32 re-survey: app_bench - launch time, idle CPU, memory, threads over the process tree",
+  "2026-10-12 104a1ab re-survey: capability_map - official scripting APIs sorted into capability domains; README",
+  "2026-10-12 de357af re-survey: ui_map - read-only accessibility map of menus, shortcuts and windows",
+  "2026-10-12 b5c985e synth_probe: 'Maker Name' finds 'Maker: Name'; pitch up to 12 kHz",
+  "2026-10-12 7f0da2d Regression: voice-limit fixture and 16-note Field Synth headless case",
+  "2026-10-12 6859f93 Field Synth: allocate only within the rendered voice range",
+  "2026-10-12 2606021 re-survey: synth_probe - notes in through Infinite's host, pitch/alias/envelope/velocity/C",
+  "2026-10-12 361d3a8 Patch check: a node's saved state can add pins and keys",
+  "2026-10-12 dcc29af plugin_probe: host parameter ranges, range:N sweeps, sweep tables, params command",
+  "2026-10-12 1a6c6f3 re-survey README: VST3 works; auval range caveat",
+  "2026-10-12 f32639e plugin_probe: VST3 targets, @settings, --sweep",
+  "2026-10-12 17b34fb Headless: W_PLUGIN_NOT_LOADED, a plugins status block, --plugin-params",
+  "2026-10-12 9f18544 VST3: a rescan's results reach the parent's resolver cache",
+  "2026-10-12 1e28c53 tool-first: re-survey row",
+  "2026-10-12 c651bbe re-survey: dossier template, diff.py lint and capability diff, storage.py, selftest",
+  "2026-10-12 704bfc2 re-survey: format readers for cables ops, .als, .amxd, .fcpxml, .toe, Blender",
+  "2026-10-12 b8998d0 re-survey: plugin_probe.py, AU and Infinite nodes measured headless through Infinite",
+  "2026-10-12 7b6a2d5 re-survey: inventory.py, app bundle facts from macOS-shipped tools",
+  "2026-10-12 f593f36 re-survey plan: licence fixes (Hydra/Strudel AGPL, Faust GPL), cables step, known gaps",
+  "2026-10-11 a5c9ad0 Library: publish six AI skills (headless patch authoring and the Field set), synced from .",
+  "2026-10-11 1b341f9 Website: bird follows the colour mode; marquee drops backdrop blur and pauses off screen",
+  "2026-10-11 20844bc Library: AI Skills category (Patch Authoring skill) and a glass category dropdown instead ",
+  "2026-10-11 1301654 Website: dark mode by default, light mode via header toggle, brand role tokens throughout",
+  "2026-10-11 1e86aa1 Website: drop the nav pill from the art gallery page",
+  "2026-10-11 d70f621 Attribution: CITATION.cff, credit line in README, llms.txt and footer, creator in structur",
+  "2026-10-11 f163a16 Website: 3D stage fits the whole chain on phones, no download button on mobile",
+  "2026-10-11 834a892 Website: Audio Filter patched into a Field Pixel, model baked upright, no floor shadow lin",
+  "2026-10-11 18e874d Website: two patched 3D nodes, tilt-only drag that eases back",
+  "2026-10-11 a2ac5d9 Brand 3D: node_chain_wide, two Audio Filters patched in a row for the website",
+  "2026-10-11 3994775 Website: smaller non-draggable 3D node, no stuck nav highlight, flat library chips, tiny a",
+  "2026-10-11 b37852a Website: one crawlable page per library item (53), with JSON-LD, canonical, OG; sitemap an",
+  "2026-10-11 f50dec6 Self-test: NETWORKTEST treats a GitHub API rate limit (403/429) as a skip, not a failure",
+  "2026-10-11 e58ea87 App: website links (update download page, menu, floating panel) point at infinitedevices.o",
+  "2026-10-11 958de86 Website: move to infinitedevices.org (CNAME, canonical URLs, sitemap, robots, llms.txt, JS",
+  "2026-10-11 b5ad990 Website: fix mobile library overflow, YouTube icon opens the tutorial, 3D models Draco-com",
+  "2026-10-11 f88f649 Website: shared four-link header on every page, mobile YouTube and Discord top right, 3D A",
+  "2026-10-11 a5522d7 Brand renders: node, logo, ball and patch cutouts plus top views; Extensions page/release-",
+  "2026-10-11 ec96827 Brand book: category and cable colours are the theme's (per-preset table read from Categor",
+  "2026-10-11 c8942ba build_3d: baked loops from motion.py (one bar at 120 BPM, slab overshoot peaks on beats 2 ",
+  "2026-10-11 ff398ef Motion laws L1-L6 in the book (laws table, clock/mass/path figures, live lemniscate + beat",
+  "2026-10-11 b455d9f motion.py: Infinite motion laws (tempo clock at 120 BPM, one mass, tempo-scaled springs, m",
+  "2026-10-10 d1cdaf9 build_3d: LFO and Field Pixel nodes from their body code (slab, hslider), LFO -> Field Pix",
+  "2026-10-10 416e0f2 Register the brand tools in tool-first and AGENTS.md",
+  "2026-10-10 c213e40 category_audit.py: confusable category pairs per theme preset and vision type, ratchet + b",
+  "2026-10-10 a9354aa README hero: light/dark picture from channels.py (art/brand/readme)",
+  "2026-10-10 6c301b5 templates.py (deck, release email, press fact sheet from brand.json + live facts), frame_s",
+  "2026-10-10 706dd11 channels.py: one message to 14 channel sizes via headless Chrome; Cycles shadow-catcher cu",
+  "2026-10-10 d881edb Website on brand v2: links brand.css, palette and springs alias brand tokens, no retired c",
+  "2026-10-10 220a493 brand_lint.py (ratchet on off-brand and retired colours) and migrate_colours.py (applies t",
+  "2026-10-10 77e9c46 Brand book: full colour ramps in brand.css; CSS spring curves sampled to the 0.5% settle (",
+  "2026-10-10 17afb39 build_logo.py: every logo file from the lemniscate formula, plus --check against the shipp",
+  "2026-10-10 1c81662 Brand 3D kit: Audio Filter node, controls, logo and ball built headless in Blender, glTF +",
+  "2026-10-10 fc17581 Brand book v2: OKLCH Midnight/Signal/Ember, three modes, contrast gate, springs, channels,",
+  "2026-10-10 0f65cee Website: buttons and chips back to the dark glass; only the cards changed to light",
+  "2026-10-10 8bad818 Website cards are light mode: white glass on Paper, Terracotta download",
+  "2026-10-10 8e2cb93 Website follows the brand book: palette values from brand.json, Terracotta buttons, node c",
+  "2026-10-10 a410077 Brand book v1 (docs/brand), generator, AGENTS rule; website cards on Midnight surfaces",
+  "2026-10-10 a664377 Website: borderless cards, one radius scale (cards 24, media 16), Library Copy + Download ",
+  "2026-10-10 d6b0417 Library: five Sketch devices (Lorenz, Lotka-Volterra, scale-free network, Rule 110, Cliffo",
+  "2026-10-10 d84b7fb Website: shared glass layer (frosted panels, dark-glass node cards, lit buttons) on home a",
+  "2026-10-10 6ca0c94 Keyed mod/expr lines resolve per node instance; Shape's shape-dependent controls get fixed",
+  "2026-10-10 045fd35 Library: three-link top bar, no card dots, one control size for price and download",
+  "2026-10-10 766dc76 Library: category chips, uniform cards, 2-up on phones, 4/8 per row on desktop",
+  "2026-10-10 83aa1a3 Library: Free label, icon-only download on phones, three filters, no tag pills",
+  "2026-10-10 6c4f7ff Library page in the site's node-card design language; filter previews run on a real Hubble",
+  "2026-10-10 48d5589 Library: downloadable Field Pixel devices (dither, glass, lens, plate, orb, phyllotaxis) w"
  ],
  "no_evidence": [
   "R1 v0.1: 80+ realtime 2D/3D nodes, synthesis, DSP, AU/VST3 hosting, MIDI",
@@ -218,7 +310,12 @@
   "R649 Fix stuck notes when rewiring note cables during playback, and a Drum Sequencer ",
   "R650 Exported movies get exact frames from video clips (0 dropped frames, sub-millise",
   "R651 Add `--frames-dir`, `--node` and `--codec prores4444` (macOS) for frame sequence",
-  "R652 Add full keyboard-only navigation of the canvas and node parameters"
+  "R652 Add full keyboard-only navigation of the canvas and node parameters",
+  "R692 Add Dither (Compositing): Bayer 2/4/8 and noise patterns with levels and mix",
+  "R695 Fix Sketch scripts crashing the app when drawing at top level, and block SVGs fr",
+  "R696 Fix a Smooth spring turning permanently NaN after a frame hitch",
+  "R697 Fix quitting during an extension download hanging, and tracking nodes keeping a ",
+  "R699 Palette colours that fall outside the display range are now reduced in chroma in"
  ],
  "first_commit": "2026-08-10"
 }
