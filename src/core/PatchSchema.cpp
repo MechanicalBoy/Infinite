@@ -1,4 +1,5 @@
 #include "PatchSchema.h"
+#include "audio/NoteEventQueue.h"
 
 #include <algorithm>
 #include <cctype>
@@ -802,6 +803,21 @@ namespace PatchSchema
                                        n.typeName + " needs " + r.what + " connected; " + std::to_string(filled[n.index].size()) +
                                           " of its inputs " + (filled[n.index].size() == 1 ? "is" : "are") + " wired, so the empty side counts as transparent black or silence",
                                        n.line, n.index, "cable something into every input, or use a single-input node instead"));
+      }
+
+      // One note output feeds at most NoteEventQueue::kMaxConsumers notes-in
+      // pins; the rest get no notes and stay silent.
+      {
+         std::map<std::pair<int, int>, int> fanout;
+         std::map<std::pair<int, int>, int> overLine;
+         for (const Patch::CableRecord& c : data.notes)
+            if (known(c.srcIndex) && known(c.dstIndex) && ++fanout[{ c.srcIndex, c.srcOutput }] == NoteEventQueue::kMaxConsumers + 1)
+               overLine[{ c.srcIndex, c.srcOutput }] = c.line;
+         for (const auto& [key, line] : overLine)
+            warnings.push_back(Make("W_NOTE_FANOUT",
+                                    "one note output feeds " + std::to_string(fanout[key]) + " nodes; only the first " +
+                                       std::to_string(NoteEventQueue::kMaxConsumers) + " receive notes",
+                                    line, key.first, "split the fan-out across a second note source"));
       }
 
       // An Output whose image pin is empty renders a blank frame without complaint.

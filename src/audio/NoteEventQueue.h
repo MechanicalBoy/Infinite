@@ -47,7 +47,11 @@ class NoteEventQueue
 {
 public:
    static constexpr int kCapacity = 256;
-   static constexpr int kMaxConsumers = 8;
+   // One note source can feed this many consumers. It was 8, which left a
+   // 9th synth on one Keyboard silently note-less; Push/WorstBacklogHead
+   // loop over the registered cursors only, so the cap costs memory, not time.
+   // PatchSchema raises W_NOTE_FANOUT past it.
+   static constexpr int kMaxConsumers = 64;
 
    // No-device-running use only (a single-threaded test fixture, or the
    // owning thread when no audio callback can ever race it), never
