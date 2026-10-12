@@ -1,7 +1,8 @@
 # Modulators to industry grade
 
 Branch per block. Tracker: this file. Measured by `INFINITE_MODAUDIT`
-(`src/app/selftest/ModAudit.cpp`). Raw baseline: `baseline-2026-10-12.txt`.
+(`src/app/selftest/ModAudit.cpp`). Raw runs: `baseline-2026-10-12.txt`,
+`after-block2-2026-10-12.txt`, `after-block3-2026-10-12.txt`.
 
 ```bash
 INFINITE_MODAUDIT=1 build/Infinite.app/Contents/MacOS/Infinite
@@ -48,7 +49,7 @@ per-destination smoothing, and learned (green) modulators.
 |---|---|---|---|
 | 1 | `feature/mod-audit` | MODAUDIT and this baseline | done |
 | 2 | `feature/mod-clock` | Shared sample-accurate phase source; per-sample ramp delivery to audio params; per-destination fps-independent smoothing | done (see After Block 2) |
-| 3 | `feature/mod-maths` | Per-node fixes, each with a legacy flag | not started |
+| 3 | `feature/mod-maths` | Per-node fixes, each with a legacy flag | done (see After Block 3) |
 
 ## 6. Success metrics
 
@@ -111,6 +112,59 @@ Frame-rate dependence (max diff vs a 1440 fps reference, row 5b):
 | Smooth spring 3 Hz | 0.170 | 0.042 | 0.010 |
 | Envelope ADSR | 0.031 | 0.006 | 0.003 |
 | CV to Pitch glide 100 ms | 0.195 | 0.086 | 0.035 |
+
+### After Block 3 (2026-10-12)
+
+Every fix sits behind a per-node `maths` int (1 new, 0 legacy) or a mode
+default. `INode::BeforeLoadParams()` runs before `LoadParams` on load and
+paste and sets the legacy values, so saved patches, Field children and
+hand-written `.inf` files without the key behave exactly as before; picker
+spawns get the new maths.
+
+| # | Metric | After Block 2 | After Block 3 |
+|---|---|---|---|
+| 1 | Synced LFO/Random drift, 10 min (triplets) | 0.858 samples (float beats) | 0 samples in `synced` mode (period from the `MusicTime` division); legacy beats mode 0.858, kept |
+| 4 | Shape: LFO Hz 3.7 / synced 1/4T @beat 1e5 / free 2 Hz | n/a (no such modes) | 2.8e-7 / 3.0e-8 / 2.8e-8: **pass** |
+| 5b | Stateful node maths vs 1440 fps fed the same frame samples (24..144 fps) | Smooth 0.45, Envelope 0.49, spring 0.12, CV glide 0.09 | ≤ 3.8e-6 every node and rate (Envelope 0): **pass** |
+| 5b | Same, vs the true 1440 fps input | Smooth time step 0.090 @24 | 0.047 @24 (step) and 2.6e-3 (sine). The rest is input sampling (a step is seen at frame times), not node maths |
+| 7 | Envelope ADSR stage times vs analytic, 48k / 60 / 61 / 24 fps | attack 16.67 ms for 10 @60 | ≤ 5e-8 of range at every rate: **pass**. The gate edge is placed where the frame-sampled gate crosses 0.5, at most half a frame from the true edge (legacy: up to one frame late) |
+| 6 | Seeds | LFO S&H unseeded (spawns in lockstep); Random 1.0 / 1.0005 collide | per-spawn LFO seed; 64-bit salt from every seed bit; no collisions; same seed same output: **pass** (legacy behaviour kept on maths 0) |
+| F9 | Loop wrap, 3-beat LFO in a 4-beat loop | jump 0.427 | `phase from: free` 0.0223 (= normal step); `retrigger` phase error 2e-8 vs (t − edge) · rate. Default stays `transport` (Bitwig Sync) |
+| F4 | Envelope output | centred (rest 0.5, release dips to 0.2) | `output: ADSR` 0..1 on new nodes; `centred` on saved ones |
+| F11 | Predictor dt live | wall clock | engine frame seconds when the engine runs; wall clock only without one |
+| 8 | CPU per Value01() (min of 5 runs, harness 3.9 ns) | LFO 9.2, Random 8.0, Smooth 13.0, Envelope 13.5, CV to Pitch 16.4 | LFO 9.8 (legacy 10.0), Random 8.2 (7.9), Envelope 13.3 (13.4), CV to Pitch 15.7 (16.3): **pass**. Smooth 16.5 (13.0): **+27%, miss** (exact step: one `exp` and a `Seconds()` read instead of a per-frame multiply) |
+
+What Block 3 changed:
+
+- LFO and Random: `rate in` synced / beats / Hz. Synced uses the
+  `MusicTime` division list (the note nodes' menu); a rate off the menu (a
+  cable, a Field kernel) stays continuous. The division period is memoised
+  per node on (rate, time signature).
+- LFO `phase from`: transport (default), free (cycles over
+  `Transport::FreeSeconds()`, bends with tempo, render starts at phase 0),
+  retrigger (`trig` input, sub-frame edge). Seeded S&H with a `seed` control.
+- Smooth: `amount` is now a time constant (amount^60 per second), so the
+  default mode is fps-independent; time and spring are exact for a linearly
+  moving input (`Modulation::SmoothStep`, `Modulation::SpringStep`).
+- Envelope: closed-form stage levels at any time, gate edges between frames,
+  `output` dropdown.
+- CV to Pitch: piecewise glide across the frame, exact for a moving input.
+- `CookFrame`: predictor dt from engine frame seconds; per-destination
+  smoothing entries pruned when their binding goes away.
+- Patch authoring skill: new `.inf` files should write `i maths 1`.
+
+Honest misses:
+
+| Miss | Why | Next |
+|---|---|---|
+| Step input through any stateful node or per-destination smoothing at 24 fps: 0.56 (tau 20 ms), 0.94 on a 10 ms Envelope attack vs the true edge | A step is only seen at frame times; its edge timing moves by up to half a frame. Node maths is exact for the samples it gets | Needs sub-frame event timestamps from the source (gates, MIDI): its own block |
+| Live video with host callback jitter: 0.0248 of range for LFO 1/4 beat with 0..1 ms late callbacks | The frame clock interpolates between callbacks by wall time; a late callback bends it | Host-timing limit; offline export is exact |
+| Smooth CPU +27% | Exact maths costs an `exp` per call | Accepted: Value01 is memoised, so this is once per frame per node (~4 ns) |
+| F10 no-engine clock | Wall-clock driven when no audio device is open | Unchanged by design |
+| F12 Audio to CV reaches params once per frame | Block 2 ramps smooth it; not sample-locked | Unchanged |
+| Offline lookahead / preroll | Audio rendered ahead of the frame sees ramps late | As Block 2 |
+| Translations | 2 help strings (LFO, Envelope) changed English text | Translators |
+| In-process re-render of a hand-written patch with an unseeded Random differs | `RandomNode::Create` takes the next spawn seed; pre-existing (the LFO now has its own counter, so Random's sequence is unchanged) | Leave: two spawns differing is intended |
 
 ## 7. Findings
 
