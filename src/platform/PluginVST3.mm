@@ -400,6 +400,10 @@ namespace Platform
          d.identifier = fields[3];
          d.path = fields[4];
          d.acceptsNotes = fields[5] == "1";
+         // The child filled its own resolver cache, not ours. Without this a
+         // rescan finds the plugin and the lookup right after still misses it
+         // (a headless render never seeds the cache from the saved index).
+         Platform::CacheVST3BundlePath(d.identifier, d.path);
          out.push_back(std::move(d));
       }
       return out;
