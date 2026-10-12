@@ -2502,6 +2502,93 @@ namespace Platform
       // same mechanism a microphone-to-.m4a recorder relies on. This is what
       // makes muxing an arbitrary source file painless: no encoder to drive by
       // hand, just PCM in.
+      // AAC output settings the encoder will actually take for a source at
+      // inputRate. It encodes only some rates (none above 48 kHz: an 88.2/96/192 kHz
+      // file or device used to throw out of AVAssetWriterInput and kill the app) and
+      // caps the bit rate by rate and channel count (160 kbps made anything under
+      // 32 kHz, and 32 kHz mono, fail with "Cannot Encode Media"). The writer input
+      // resamples a source rate it cannot encode. Windows does the same at
+      // MediaWin.cpp's AddRecorderAudioStream.
+      NSDictionary* AacOutputSettings(double inputRate, int channels)
+      {
+         constexpr double kMaxRate = 48000.0;
+         constexpr double kWantedBitRate = 160000.0;
+         const UInt32 formatId = kAudioFormatMPEG4AAC;
+         double rate = std::min(inputRate, kMaxRate);
+         UInt32 size = 0;
+         if (AudioFormatGetPropertyInfo(kAudioFormatProperty_AvailableEncodeSampleRates, sizeof(formatId),
+                                        &formatId, &size) == noErr && size >= sizeof(AudioValueRange))
+         {
+            std::vector<AudioValueRange> rates(size / sizeof(AudioValueRange));
+            if (AudioFormatGetProperty(kAudioFormatProperty_AvailableEncodeSampleRates, sizeof(formatId),
+                                       &formatId, &size, rates.data()) == noErr)
+            {
+               // The nearest supported rate at or above the source's, else the highest.
+               double best = 0.0, highest = 0.0;
+               for (const AudioValueRange& r : rates)
+               {
+                  const double v = r.mMaximum;
+                  if (v > kMaxRate)
+                     continue;
+                  highest = std::max(highest, v);
+                  if (v >= rate && (best == 0.0 || v < best))
+                     best = v;
+               }
+               if (best > 0.0 || highest > 0.0)
+                  rate = best > 0.0 ? best : highest;
+            }
+         }
+
+         NSMutableDictionary* settings = [@{
+            AVFormatIDKey         : @(kAudioFormatMPEG4AAC),
+            AVSampleRateKey       : @(rate),
+            AVNumberOfChannelsKey : @(channels),
+         } mutableCopy];
+
+         // The bit rates an encoder for exactly this rate and channel count takes
+         // (kAudioFormatProperty_AvailableEncodeBitRates ignores both and lists all).
+         AudioStreamBasicDescription in = {};
+         in.mSampleRate = rate;
+         in.mFormatID = kAudioFormatLinearPCM;
+         in.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+         in.mChannelsPerFrame = (UInt32)channels;
+         in.mBitsPerChannel = 32;
+         in.mFramesPerPacket = 1;
+         in.mBytesPerFrame = in.mBytesPerPacket = 4 * (UInt32)channels;
+         AudioStreamBasicDescription out = {};
+         out.mSampleRate = rate;
+         out.mFormatID = kAudioFormatMPEG4AAC;
+         out.mChannelsPerFrame = (UInt32)channels;
+         AudioConverterRef converter = nullptr;
+         if (AudioConverterNew(&in, &out, &converter) == noErr)
+         {
+            if (AudioConverterGetPropertyInfo(converter, kAudioConverterApplicableEncodeBitRates, &size,
+                                              nullptr) == noErr && size >= sizeof(AudioValueRange))
+            {
+               std::vector<AudioValueRange> bitRates(size / sizeof(AudioValueRange));
+               if (AudioConverterGetProperty(converter, kAudioConverterApplicableEncodeBitRates, &size,
+                                             bitRates.data()) == noErr)
+               {
+                  // The highest bit rate it takes up to 160 kbps; failing that its
+                  // lowest; with no list the encoder picks its own.
+                  double best = 0.0, lowest = 0.0;
+                  for (const AudioValueRange& r : bitRates)
+                  {
+                     if (r.mMaximum <= 0.0)
+                        continue;
+                     lowest = lowest == 0.0 ? r.mMaximum : std::min(lowest, r.mMaximum);
+                     if (r.mMaximum <= kWantedBitRate)
+                        best = std::max(best, r.mMaximum);
+                  }
+                  if (best > 0.0 || lowest > 0.0)
+                     settings[AVEncoderBitRateKey] = @((NSInteger)(best > 0.0 ? best : lowest));
+               }
+            }
+            AudioConverterDispose(converter);
+         }
+         return settings;
+      }
+
       CMSampleBufferRef PCMBufferToSampleBuffer(AVAudioPCMBuffer* buffer, CMTime presentationTime)
       {
          if (buffer == nil || buffer.frameLength == 0)
@@ -2536,6 +2623,18 @@ namespace Platform
          return sampleBuffer;
       }
 
+      // How far a file's audio is appended for a given video frame count: one
+      // second ahead of the picture. AVAssetWriter interleaves, and holds the
+      // video input not-ready until the audio track has run ahead of it; with
+      // audio appended only up to the picture, each waited for the other and a
+      // long take stalled for good (a 600 s file stuck at frame ~1350 of 3600).
+      // The overshoot at the end is trimmed by endSessionAtSourceTime on stop.
+      int64_t FileAudioTargetFrames(RecorderHandle* h, long long videoFrames)
+      {
+         const int fps = std::max(1, h->fps);
+         return (int64_t)((double)(videoFrames + fps) / (double)fps * h->audioSampleRate);
+      }
+
       // Reads and appends whatever audio is needed to catch up to
       // targetSampleFrames, looping or stopping at the source's end per
       // audioLoop. Called with h->writerMutex held.
@@ -2556,7 +2655,13 @@ namespace Platform
             {
                if (!h->audioLoop)
                {
+                  // No more audio will ever come: close the track now. Left open,
+                  // the writer keeps holding the video input for audio past the
+                  // file's end, and a take whose file ends near or before the
+                  // picture's last frame could stall for good.
                   h->audioExhausted = true;
+                  [h->audioInput markAsFinished];
+                  h->audioFinished = true;
                   return;
                }
                h->audioFile.framePosition = 0;
@@ -2773,9 +2878,7 @@ namespace Platform
                {
                   if (h->audioFile != nil)
                   {
-                     const int64_t targetFrames = (int64_t)((double)(frame + 1) /
-                                                             (double)h->fps * h->audioSampleRate);
-                     AppendAudioUpToLocked(h, targetFrames);
+                     AppendAudioUpToLocked(h, FileAudioTargetFrames(h, frame + 1));
                   }
                   else
                   {
@@ -2916,12 +3019,9 @@ namespace Platform
             }
             else
             {
-               NSDictionary* audioSettings = @{
-                  AVFormatIDKey         : @(kAudioFormatMPEG4AAC),
-                  AVSampleRateKey       : @(audioFile.processingFormat.sampleRate),
-                  AVNumberOfChannelsKey : @(std::min((unsigned int)2, audioFile.processingFormat.channelCount)),
-                  AVEncoderBitRateKey   : @(160000)
-               };
+               NSDictionary* audioSettings = AacOutputSettings(
+                  audioFile.processingFormat.sampleRate,
+                  (int)std::min((unsigned int)2, audioFile.processingFormat.channelCount));
                audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                                                outputSettings:audioSettings];
                audioInput.expectsMediaDataInRealTime = NO;
@@ -2943,12 +3043,7 @@ namespace Platform
          else if (liveAudioSampleRate > 0.0)
          {
             const int ch = std::max(1, std::min(2, liveAudioChannels));
-            NSDictionary* audioSettings = @{
-               AVFormatIDKey         : @(kAudioFormatMPEG4AAC),
-               AVSampleRateKey       : @(liveAudioSampleRate),
-               AVNumberOfChannelsKey : @(ch),
-               AVEncoderBitRateKey   : @(160000)
-            };
+            NSDictionary* audioSettings = AacOutputSettings(liveAudioSampleRate, ch);
             audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                                             outputSettings:audioSettings];
             audioInput.expectsMediaDataInRealTime = NO;
@@ -3187,6 +3282,11 @@ namespace Platform
          // that exited next (headless --render, quit after export) left a file
          // with no index. The completion handler runs on an AVFoundation
          // queue, never this thread, so a semaphore cannot deadlock.
+         // File audio runs a second ahead of the picture (FileAudioTargetFrames);
+         // end the session at the last frame so the take is as long as its video.
+         if (handle->audioFile != nil && handle->writer.status == AVAssetWriterStatusWriting)
+            [handle->writer endSessionAtSourceTime:CMTimeMake(handle->frameIndex.load(std::memory_order_relaxed),
+                                                              std::max(1, handle->fps))];
          dispatch_semaphore_t finished = dispatch_semaphore_create(0);
          [handle->writer finishWritingWithCompletionHandler:^{ dispatch_semaphore_signal(finished); }];
          const bool timedOut = dispatch_semaphore_wait(finished,
@@ -3227,12 +3327,7 @@ namespace Platform
       std::lock_guard<std::mutex> lock(handle->writerMutex);
       FlushPendingAudioLocked(handle);
       if (handle->audioFile != nil)
-      {
-         const long long frame = handle->frameIndex.load(std::memory_order_relaxed);
-         const int64_t targetFrames = (int64_t)((double)(frame + 1) /
-                                                 (double)std::max(1, handle->fps) * handle->audioSampleRate);
-         AppendAudioUpToLocked(handle, targetFrames);
-      }
+         AppendAudioUpToLocked(handle, FileAudioTargetFrames(handle, handle->frameIndex.load(std::memory_order_relaxed) + 1));
    }
 
    void RecorderFinishAudioInput(RecorderHandle* handle)
