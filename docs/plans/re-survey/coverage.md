@@ -28,9 +28,9 @@ analyser (numbers out) ──► comparison table ──► dossier outcome
 
 | # | Area | What it covers | Reference apps | Status | Owner priority |
 |---|---|---|---|---|---|
-| 1 | Audio engine accuracy | Summing, pan law, timing, PDC, resampling, noise floor | Live, Logic, Bitwig | 🟡 bounce kit built, needs bounces | — |
-| 2 | Built-in instruments | Pitch, aliasing, velocity, envelope, voices, CPU | Live (Wavetable, Operator, Drift), Logic (Alchemy, ES2), Bitwig (Polymer, Phase-4) | 🟡 Infinite's own only | **cover others' built-ins** |
-| 3 | Built-in effects | Gain, response, THD, tail, CPU | Live (Echo, Roar, Reverb), Logic (ChromaVerb, Compressor), Bitwig | 🟡 Infinite's own only | **cover others' built-ins** |
+| 1 | Audio engine accuracy | Summing, pan law, timing, PDC, resampling, noise floor | Live, Logic, Bitwig | 🟡 Infinite side done 2026-10-12 (`--timeline` fixed); DAW bounce sitting pending, dossier `dossiers/C.md` | — |
+| 2 | Built-in instruments | Pitch, aliasing, velocity, envelope, voices, CPU | Live (Wavetable, Operator, Drift), Logic (Alchemy, ES2), Bitwig (Polymer, Phase-4) | 🟡 Infinite side done 2026-10-12 (Field Synth release fixed); DAW bounce sitting pending (`builtins_kit.py`), dossier `dossiers/C.md` | **cover others' built-ins** |
+| 3 | Built-in effects | Gain, response, THD, tail, CPU | Live (Echo, Roar, Reverb), Logic (ChromaVerb, Compressor), Bitwig | 🟡 Infinite side done 2026-10-12; DAW bounce sitting pending (`builtins_kit.py`), dossier `dossiers/C.md` | **cover others' built-ins** |
 | 4 | Third-party plugins | Sound + CPU per plugin | FabFilter, Valhalla, Diva, Serum, Vital | ✅ in Infinite's host | — |
 | 5 | Plugin hosting | Formats, scan time, load success rate, crash isolation, PDC, host CPU overhead | Live, Logic, Bitwig (sandboxing) | ✅ done 2026-10-12, dossier `dossiers/A.md` | **important: users report VST3 crashes / not loading** |
 | 6 | Performance under load | Track and voice ceiling, multicore scaling, dropouts | Live, Logic, Bitwig | 🟡 Infinite side done 2026-10-12, DAW sitting pending (`PROTOCOL-load.md`), dossier `dossiers/B.md` | **needed** |
@@ -40,7 +40,7 @@ analyser (numbers out) ──► comparison table ──► dossier outcome
 | 10 | Export and render | Offline speed, formats/codecs, AV sync, quality | TouchDesigner, Blender, Final Cut, DAWs | ❌ (Infinite only) | **important: users need good export** |
 | 11 | Modulation | Sources, destinations, per-voice, rate | Bitwig | 🟡 API docs only | — |
 | 12 | Sequencing and arrangement | Clips, MIDI edit, automation, quantize | **Final Cut** (UI/UX map + match its timeline performance) | ❌ | light: Final Cut UX + perf |
-| 13 | Sampling and audio editing | Time-stretch / pitch-shift quality, slicing, pitch detection | Live warp, Logic Flex, Bitwig | ❌ | **important** |
+| 13 | Sampling and audio editing | Time-stretch / pitch-shift quality, slicing, pitch detection | Live warp, Logic Flex, Bitwig | 🟡 Infinite side done 2026-10-12 (`stretch_kit.py`); DAW bounce sitting pending, dossier `dossiers/C.md` | **important** |
 | 14 | Mixing and routing | Sends, sidechain, buses, channel limits | Live, Logic, Bitwig | ✅ done 2026-10-12, dossier `dossiers/B.md` | **important** |
 | 15 | MIDI, hardware, sync | MPE, MIDI out, controller scripts, OSC, Link | Bitwig, Live | 🟡 API docs only | — |
 | 16 | Scripting / extensibility | Public API size by domain | Bitwig, Live, TD, Logic | ✅ `capability_map` | — |
@@ -109,3 +109,7 @@ Out of scope (owner, 2026-10-12): web research on business, onboarding and distr
   - Routing: Mixer sum and equal-power pan exact to 0.01 dB; fan-out sends leave the dry path untouched; Dynamics sidechain ducks 19 dB. Gap: the Plugin node has no sidechain input.
   - Owner sittings: load template per DAW (`PROTOCOL-load.md`), latency loopback (`PROTOCOL-latency.md`).
 - Next-session prompt for blocks A to F: `NEXT-SESSION.md`.
+- Block C 2026-10-12 (`dossiers/C.md`): Field Synth cut every preset 30 ms after note-off (shipped since v0.3.0); fixed,
+  with four dead preset dampers. Headless `--timeline` added for arrangement renders. Stretch keeps pitch exactly but
+  flams drums (10–14 extra onsets). Default oscillators are clean to C8. Export does not shift back an effect's
+  latency (Drive 1.5 ms). DAW bounce sittings pending.
