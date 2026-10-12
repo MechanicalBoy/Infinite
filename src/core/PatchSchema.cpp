@@ -456,6 +456,11 @@ namespace PatchSchema
             for (const ParamInfo& p : t->params)
                if (p.key == key)
                   found = &p;
+            if (found == nullptr && env.instanceSchema)
+               if (const TypeSchema* inst = env.instanceSchema(n))
+                  for (const ParamInfo& p : inst->params)
+                     if (p.key == key)
+                        found = &p;
             if (found == nullptr)
             {
                // `uid`-style keys owned by dynamic nodes are not in a fresh node's list; still worth a warning.
@@ -532,6 +537,17 @@ namespace PatchSchema
             for (const SlotInfo& in : dstSchema->inputs)
                if (in.slot == c.dstSlot)
                   slotInfo = &in;
+            // A pin only this node's saved state has (a Plugin holding an
+            // instrument): the type-level probe below would call it a bad slot.
+            bool instanceSlot = false;
+            if (slotInfo == nullptr && env.instanceSchema)
+               if (const TypeSchema* inst = env.instanceSchema(*byIndex.at(c.dstIndex)))
+                  for (const SlotInfo& in : inst->inputs)
+                     if (in.slot == c.dstSlot)
+                     {
+                        slotInfo = &in;
+                        instanceSlot = true;
+                     }
             if (slotInfo != nullptr)
             {
                const std::string t = tag;
@@ -553,6 +569,8 @@ namespace PatchSchema
                   continue;
                }
             }
+            if (instanceSlot)
+               continue;
             const Link r = env.link(typeOf(c.srcIndex), c.srcOutput, typeOf(c.dstIndex), c.dstSlot);
             if (r == Link::BadSlot)
                errors.push_back(Make("E_BAD_SLOT",
