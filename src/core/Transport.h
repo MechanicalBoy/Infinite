@@ -28,6 +28,8 @@ public:
 
    void SetPlaying(bool playing)
    {
+      if (!playing)
+         DropFrameClock();
       if (mPlaying && !playing)
          mResetEpoch.fetch_add(1, std::memory_order_relaxed);
       mPlaying = playing;
@@ -35,6 +37,7 @@ public:
    bool IsPlaying() const { return mPlaying; }
    void TogglePlay()
    {
+      DropFrameClock();
       if (mPlaying)
          mResetEpoch.fetch_add(1, std::memory_order_relaxed);
       mPlaying = !mPlaying;
@@ -77,6 +80,27 @@ public:
    // only way to tell "not looping right now" from "the user turned it off" -
    // INFINITE_ARRANGERENDERTEST asserts the pair (WP7 #3).
    bool LoopSuspended() const { return mLoopSuspended.load(std::memory_order_relaxed); }
+
+   // ---- frame clock (docs/plans/modulation/README.md, Block 2) ----------
+   // The live audio clock only moves at block boundaries, so a UI frame
+   // reading it lands anywhere up to one block (10.7 ms at 512/48k) away
+   // from the frame's real time, and a picture driven by it jitters.
+   // BeginFrameClock() latches, for the calling (main) thread only, the
+   // position interpolated between audio callbacks by wall time: until
+   // the next call, Beats()/Seconds() on this thread return that smooth,
+   // frame-consistent value. The audio thread never sees it. A no-op
+   // offline (video time is already exact), with no device, or while
+   // stopped. Any seek, stop or mode change drops the latch.
+   void BeginFrameClock();
+   // Engine time: seconds of audio the engine has processed since start,
+   // monotonic, advancing whether or not the transport plays. The stamp
+   // domain for ParamMailbox ramps. EngineFrameSeconds() is the value
+   // BeginFrameClock interpolated (or the current one offline); <0 = none.
+   double EngineBlockStartSeconds() const { return mEngineBlockStart.load(std::memory_order_relaxed); }
+   double EngineFrameSeconds() const { return mEngineFrameSeconds; }
+   double LastBlockSeconds() const { return mLastBlockSeconds.load(std::memory_order_relaxed); }
+   // Test hook: replaces the steady wall clock (seconds) both threads read.
+   static void SetWallClockForTest(double (*now)());
 
    // Musical position; modulator rates are expressed in beats.
    double Beats() const;
@@ -208,6 +232,27 @@ private:
    std::atomic<int> mTimeSigDen { 4 };
    std::atomic<int> mKey { 0 };   // 0 = C
    std::atomic<int> mScale { 0 }; // MusicTime::kMajor
+
+   // Frame clock. mEngine* are written by the clock owner (audio thread, or
+   // the offline pump); mBlockSeq brackets each update so the main thread
+   // can read a consistent set. The latched pair is main-thread only.
+   std::atomic<uint64_t> mEngineSamples { 0 };
+   std::atomic<double> mEngineBlockStart { 0.0 };
+   std::atomic<double> mLastCallbackWall { -1.0 };
+   std::atomic<double> mLastBlockSeconds { 0.0 };
+   std::atomic<uint64_t> mBlockSeq { 0 };
+   double mEngineFrameSeconds = -1.0;
+   double mLatchedSeconds = 0.0;
+   double mLatchedBeats = 0.0;
+   unsigned long long mLatchedEpoch = 0;
+   uint64_t mLatchedSeq = 0;
+   // True while some thread holds a frame latch. Checked first so the
+   // common unlatched read (audio thread, offline, tests) skips the
+   // thread_local lookup.
+   std::atomic<bool> mLatchArmed { false };
+   bool FrameLatchLive() const;
+   void AdvanceEngineClock(int numFrames, double sampleRate);
+   void DropFrameClock();
 
    std::atomic<bool> mOfflineActive { false };
    std::atomic<bool> mOfflineInAudioBlock { false };
