@@ -222,7 +222,7 @@ sat = (tone * drive) / (1.0 + abs(tone * drive * 0.5))
 f = clamp((cutoff / sr) * 3.14159, 0.001, 0.95)
 lp = lp + f * (sat - lp)
 filt = lp + (sat - lp) * (1.0 - res)
-out = filt * env
+out = filt * env * 0.33
 ```
 Note the pattern: `if(cond, a, b)` used freely for envelope-rate logic
 (both branches evaluated, no side effects, so this is cheap), `%` used as

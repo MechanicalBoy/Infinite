@@ -44,6 +44,11 @@ public:
    void CookIfNeeded(int frameId) override;
    void VisitParams(ParamVisitor& v) override;
 
+   // 1 = velocity squared like Analog, Wavetable and Oscillator; 0 = linear, set on patches saved
+   // before the velocity law was shared so their dynamics don't change. Not a control.
+   int velCurve = 1;
+   void BeforeLoadParams() override { velCurve = 0; }
+
    AudioNode* GetAudioNode() override;
 
    const char* InputLabel(int slot) const override
