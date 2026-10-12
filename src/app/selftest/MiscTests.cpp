@@ -1569,9 +1569,9 @@ void RunHistoryTest()
 
    NewPatch();
    // Five different edits.
-   Call("create_node", { {"typeName", "Shape"}, {"category", "Source"} }, r, e);                 // 1 add Shape
+   Call("create_node", { {"typeName", "Shape"}, {"category", "Source"}, {"x", 120.0f}, {"y", 80.0f} }, r, e);   // 1 add Shape
    const int shapeIdx = r.value("index", -1);
-   Call("create_node", { {"typeName", "Output"}, {"category", "Utility"} }, r, e);               // 2 add Output
+   Call("create_node", { {"typeName", "Output"}, {"category", "Utility"}, {"x", 420.0f}, {"y", 80.0f} }, r, e); // 2 add Output
    const int outIdx = r.value("index", -1);
    json prm;
    Call("get_params", { {"index", shapeIdx} }, prm, e);
@@ -1615,6 +1615,16 @@ void RunHistoryTest()
    // Jump forward one: the bypass is back.
    JumpInHistory(0, 1);
    Check("jump forward re-applies the redo", FindNodeByIndex(shapeIdx) != nullptr && FindNodeByIndex(shapeIdx)->node->bypassed && gRedoStack.size() == 1);
+   // The redo entry was saved mid-jump, the same frame the first undo rebuilt the nodes, before the editor drew them.
+   // Positions must still be the real ones (they were all 0,0, so jumping forward piled every node on the origin).
+   {
+      const GraphNode* s = FindNodeByIndex(shapeIdx);
+      const GraphNode* o = nullptr;
+      for (const GraphNode& gn : gNodes)
+         if (gn.typeName == "Output") o = &gn;
+      Check("a mid-jump snapshot keeps node positions", s != nullptr && o != nullptr && std::fabs(s->liveX - 120.0f) < 0.5f &&
+                                                            std::fabs(o->liveX - 420.0f) < 0.5f && std::fabs(o->liveY - 80.0f) < 0.5f);
+   }
 
    // A new edit drops the redo side.
    PushUndoCheckpoint("Edit");

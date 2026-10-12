@@ -1499,6 +1499,11 @@ namespace app
       gn.uid = gNextNodeUid++;
       gn.spawnX = x;
       gn.spawnY = y;
+      // The cached position is where the node is until the editor first draws it. Left at 0,0, anything that snapshots
+      // the graph in the same frame (History jumping several steps: each Undo/Redo saves the state the previous one
+      // just restored) saved every node at the origin, so a redo to that step piled them up.
+      gn.liveX = x;
+      gn.liveY = y;
       // The analysers and the external senders (MIDI Out, OSC Send) are their params and status line; collapsed
       // they show nothing. Load, paste and undo restore the saved flag over this, so only a fresh spawn opens.
       gn.showParams = dynamic_cast<ImageAnalyzeNode*>(gn.node.get()) != nullptr ||
