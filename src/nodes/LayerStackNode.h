@@ -43,6 +43,11 @@ public:
    static const std::vector<std::string>& FitNames();
    int fit = kFit;
 
+   // 0 on a patch saved before the Overlay / Soft Light / Hard Light fix (old maths,
+   // BlendModes::LegacyMode); 1 on a new node. Not a control.
+   int blendFix = 1;
+   void BeforeLoadParams() override { blendFix = 0; }
+
    int modes[kSlots] = { 0, 0, 0, 0 };
    float opacities[kSlots] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
@@ -51,6 +56,7 @@ public:
       static const char* kModeKeys[kSlots] = { "mode0", "mode1", "mode2", "mode3" };
       static const char* kOpKeys[kSlots] = { "opacity0", "opacity1", "opacity2", "opacity3" };
       v.Int("fit", fit);
+      v.Int("blendFix", blendFix);
       for (int i = 0; i < kSlots; i++)
       {
          v.Int(kModeKeys[i], modes[i]);

@@ -70,6 +70,9 @@ class INode;
 //            <fadeInTick> <fadeOutTick> <gainDb> <enabled> <groupId> <r> <g> <b> <name>
 //   streammix <streamIndex> <mute> <solo>
 //     Audio lane mute/solo. Only written when either is set.
+//   blendfix 1
+//     Written first; marks blend modes 11..13 as the corrected Overlay/Soft Light/Hard Light.
+//     Files without it get their clip/stream modes mapped to the old 32..34 on load.
 //   clipblend <streamIndex> <clipId> <blendMode>
 //     A video clip's compositing mode, only written when non-Normal. Files
 //     without it inherit the stream line's (legacy, lane-wide) blendMode.

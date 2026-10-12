@@ -29,9 +29,13 @@ public:
    int& ModeIndex() { return mModeIndex; }
    float& Mix() { return mMix; }
 
+   // Saved patches predate the Overlay / Soft Light / Hard Light fix: absence of
+   // blendFix means the old shader maths (BlendModes::LegacyMode). Not a control.
+   void BeforeLoadParams() override { mBlendFix = 0; }
+
    void VisitParams(ParamVisitor& v) override
    {
-      v.Int("mode", mModeIndex); v.Float("mix", mMix);
+      v.Int("mode", mModeIndex); v.Float("mix", mMix); v.Int("blendFix", mBlendFix);
    }
 
 private:
@@ -41,6 +45,7 @@ private:
    ImageCable mInputB;
    int mModeIndex = 0;
    float mMix = 1.0f;
+   int mBlendFix = 1;
 
    GLUtil::Fbo mOut;
    unsigned int mProgram = 0;
