@@ -169,4 +169,12 @@ Reaction Diffusion, Remove Background and the image Sources.
 
 ## 9. Findings
 
-None yet. Add rows as `| F1 | finding | evidence | block |`.
+Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; baseline-2026-10-12.txt):
+
+| # | Finding | Evidence | Block |
+|---|---|---|---|
+| F1 | Metallic level differs 3.14 dB between 44.1 / 48 / 96 kHz. Unclear if a bug: its partials above Nyquist are legitimately absent at low rates, and it is a decaying resonator. Needs a per-mode check before any fix. | RATE row | 1 |
+| F2 | Analog aliasing is -66 dB at 1.75 kHz and -62 dB at 5 kHz (default saw), just inside the -60 dB flag; Wavetable, Oscillator and Equation Synth are -82 to -88 dB. | ALIAS rows | 1 |
+| F3 | Pitch is within 0.03 cents everywhere measured, and every synth is bit-identical on re-render. No action. | PITCH, DET rows | 1 |
+
+Not yet covered: ENV, CLICK, UNISON, POLY, PARAM, TAIL (need a note cable), and the other 12 synths.
