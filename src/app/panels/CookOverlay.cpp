@@ -4,6 +4,7 @@
 #include "app/AppShared.h"
 #include "audio/AudioEngine.h"
 #include "audio/AudioNode.h"
+#include "imgui_internal.h"
 
 namespace app
 {
@@ -17,6 +18,27 @@ namespace
       if (auto* s = dynamic_cast<IAudioSource*>(n)) return s->GetAudioNode();
       if (auto* s = dynamic_cast<INoteSource*>(n)) return s->GetAudioNode();
       return nullptr;
+   }
+
+   // True when a floating window or popup (Settings, a dropdown...) sits above the canvas and contains `pt`. The overlay is
+   // drawn on the foreground list, so without this its pills and tints paint over those windows. Same test as the cable trash icon.
+   bool CoveredByWindow(const ImVec2& pt)
+   {
+      ImGuiContext& g = *ImGui::GetCurrentContext();
+      const ImGuiWindow* canvasRoot = ImGui::GetCurrentWindow()->RootWindow;
+      bool above = false;
+      for (ImGuiWindow* w : g.Windows)
+      {
+         if (w->RootWindow == canvasRoot)
+         {
+            above = true;
+            continue;
+         }
+         if (above && w->WasActive && !w->Hidden && (w->Flags & (ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_Tooltip)) == 0 &&
+             w->Rect().Contains(pt))
+            return true;
+      }
+      return false;
    }
 }
 
@@ -70,6 +92,7 @@ void DrawCookOverlay()
       const ImVec2 s = ed::GetNodeSize(r.gn->NodeId());
       const ImVec2 p2(p.x + s.x * z, p.y + s.y * z);
       if (p2.x < gGraphScreenTL.x || p.x > br.x || p2.y < gGraphScreenTL.y || p.y > br.y) continue;
+      if (CoveredByWindow(ImVec2((p.x + p2.x) * 0.5f, (p.y + p2.y) * 0.5f))) continue;   // a window is on top of this node
       const float rel = r.v / (r.audio ? maxAudio : maxVideo);
       if (rel > 0.35f && r.v > (r.audio ? 0.005f : kMinMs))   // heat: warm tint that grows with the share of the slowest
       {
@@ -83,6 +106,7 @@ void DrawCookOverlay()
       else std::snprintf(buf, sizeof buf, r.v < 10.0f ? "%.2f ms" : "%.0f ms", r.v);
       const ImVec2 ts = ImGui::CalcTextSize(buf);
       const ImVec2 q0(p2.x - ts.x - 10.0f, p.y - ts.y - 8.0f), q1(p2.x, p.y - 2.0f);
+      if (CoveredByWindow(ImVec2((q0.x + q1.x) * 0.5f, (q0.y + q1.y) * 0.5f))) continue;   // pill sits above the node, may be under a window the node is not
       dl->AddRectFilled(q0, q1, pillBg, 4.0f);
       dl->AddText(ImVec2(q0.x + 5.0f, q0.y + 3.0f), pillText, buf);
    }
