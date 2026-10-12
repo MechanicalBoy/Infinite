@@ -32,7 +32,7 @@ analyser (numbers out) ──► comparison table ──► dossier outcome
 | 2 | Built-in instruments | Pitch, aliasing, velocity, envelope, voices, CPU | Live (Wavetable, Operator, Drift), Logic (Alchemy, ES2), Bitwig (Polymer, Phase-4) | 🟡 Infinite's own only | **cover others' built-ins** |
 | 3 | Built-in effects | Gain, response, THD, tail, CPU | Live (Echo, Roar, Reverb), Logic (ChromaVerb, Compressor), Bitwig | 🟡 Infinite's own only | **cover others' built-ins** |
 | 4 | Third-party plugins | Sound + CPU per plugin | FabFilter, Valhalla, Diva, Serum, Vital | ✅ in Infinite's host | — |
-| 5 | Plugin hosting | Formats, scan time, load success rate, crash isolation, PDC, host CPU overhead | Live, Logic, Bitwig (sandboxing) | 🟡 `host_audit` done; isolation open | **important: users report VST3 crashes / not loading** |
+| 5 | Plugin hosting | Formats, scan time, load success rate, crash isolation, PDC, host CPU overhead | Live, Logic, Bitwig (sandboxing) | ✅ done 2026-10-12, dossier `dossiers/A.md` | **important: users report VST3 crashes / not loading** |
 | 6 | Performance under load | Track and voice ceiling, multicore scaling, dropouts | Live, Logic, Bitwig | ❌ | **needed** |
 | 7 | Real-time latency | Audio in→out round trip, buffer sizes, jitter | Live, Logic, Bitwig | ❌ | **important: makes it professional** |
 | 8 | Startup and footprint | Launch time, idle CPU, memory, bundle size | all | ⏳ `app_bench` | — |
@@ -48,7 +48,7 @@ analyser (numbers out) ──► comparison table ──► dossier outcome
 | 18 | Workflow cost | Steps and time for common tasks | all | ❌ | **important: common tasks must be fast** |
 | 19 | Visual design | Density, contrast, zoom/HiDPI, themes | all | ❌ | **important** |
 | 20 | Projects and files | Save/load time, size, open format, old-version compat, autosave/recovery | all | ❌ | **important** |
-| 21 | Stability | Crash recovery, plugin-crash handling, undo depth | all | ❌ | **important** |
+| 21 | Stability | Crash recovery, plugin-crash handling, undo depth | all | ✅ done 2026-10-12 (DAW side: owner sitting below), dossier `dossiers/A.md` | **important** |
 | 22 | Content and library | Presets, samples, templates, browser search speed | all | ❌ | **check against Infinite's existing library** |
 | 24 | Accessibility | Screen-reader exposure | all | 🟡 seen in `ui_map` | — |
 | 25 | Collaboration and cloud | Sharing, sync, co-editing | — | ⏸ | not important now |
@@ -86,4 +86,21 @@ Out of scope (owner, 2026-10-12): web research on business, onboarding and distr
   three platforms since a2a4703b, shipped; AU got none). Now fed per block from Transport; the AU path is verified
   by INFINITE_PLUGINSCANTEST (tempo, beat, bar, meter, play, cycle read back) and PLUGINNODETEST passes. Drumazon 2
   now behaves the same as AU and VST3. Windows/Linux: same shared mapping, checked by reading the code only. Needs a release-notes line.
+- Block A done 2026-10-12 (`dossiers/A.md`):
+  - Fixed and merged:
+    - The plugin clock, verified: Valhalla Delay 1/16 is 166.8 ms at 90 BPM and 125.1 ms at 120 BPM, with AU and VST3 within 0.1 ms.
+    - A per-folder plugin scan no longer erases the real index (`MergeScan`, `LIBREFRESHTEST`). VST3 load 0.23 s vs AU 0.19 s.
+  - `host_audit`: crash reports are matched by pid, and there is a new Signature column.
+    - ShaperBox 3 has a broken code signature.
+    - RC-20 is signed by someone other than the vendor.
+    - Neither is a host bug.
+  - Saturn 2: the VST3 metadata default is wrong (0); the real start value is 0.2 in both formats. Infinite is unaffected.
+  - AU out of process (`au_oop`): 2–4.5× CPU per plugin and +0.3 s load, latency unchanged. Decision: run a plugin out of process only after it has crashed once.
+  - VST2 and CLAP: ignored, since every one installed has an AU or VST3 twin.
+  - Self-tests pass: autosave every 60 s plus recovery marker, 200 undo steps, `BuildPatchData` 2.5 ms on 300 nodes.
+  - Owner sitting (one per DAW, about 5 min each):
+    1. Make 3 edits.
+    2. Undo until it stops, and count the steps.
+    3. Force-quit with `kill -9`.
+    4. Reopen, and note whether it offers recovery and how much work came back.
 - Next-session prompt for blocks A to F: `NEXT-SESSION.md`.
