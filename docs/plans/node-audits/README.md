@@ -64,8 +64,8 @@ Three blocks, one branch each, commit per step, merge straight back to main (git
 
 | # | Branch | Audits | State |
 |---|---|---|---|
-| 1 | `feature/synth-audit` | SYNTHAUDIT | done 2026-10-12 (merged); F4 and F8 fixed |
-| 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | done 2026-10-12 (merged); Echo voiceId fixed; step-generator block quantisation parked |
+| 1 | `feature/synth-audit` | SYNTHAUDIT | done 2026-10-12 (merged); F4 and F8 fixed; sample synths covered and F11 fixed 2026-10-13 (`feature/node-audio-complete`) |
+| 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | done 2026-10-12 (merged); Echo voiceId fixed; step-generator timing fixed 2026-10-13 (`feature/node-audio-complete`) |
 | 3 | `feature/geo-comp-audit` | GEOAUDIT, COMPAUDIT | done 2026-10-12 (merged); findings open, see below |
 
 Order reason: Synths are the largest audio gap (220 controls) and audio comes first in the perf
@@ -106,8 +106,8 @@ Result (baselines `baseline-2026-10-12-note.txt`, `baseline-2026-10-12-io.txt`):
 | Mixer mute / solo / pan stepped at block rate (36-44 dB clicks) | fixed, gains ramp across the block |
 | Loudness, Gain/Mixer/Blend laws, 12-slot sum, Splitter | exact, no change |
 | Note Echo shares one voiceId across dry and repeats | **fixed**: each repeat is its own voice (fresh id per repeat, freed on its note-off); PAIR orphan-off 11 and dup-on 12 to 0, see `baseline-2026-10-12-note-after-echo.txt` |
-| Arp / Sequencer / Random Note Gen place steps on block boundaries (up to one block early/late) | parked as its own quest: the boundary is found by polling `Transport::Beats()` at block start, so a step is emitted up to one block (about 10 ms at 512 frames) late with frameOffset 0. The fix is a look-ahead (does a step boundary fall inside this block, offset from beats per sample) in Arp, Sequencer and Random Note Gen, with loop/seek handling; it moves every generated note by up to a block, so it needs a legacy flag and its own timing audit |
-| Audio In/Out and PDC | not covered by IOAUDIT |
+| Arp / Sequencer / Random Note Gen / Chorder placed steps on block boundaries (up to one block early: `Beats()` already reads the block end, and the step went out at frame 0) | **fixed** 2026-10-13: one `StepClock` (NoteNodes.cpp) walks the block span from `BlockStartBeats()` and emits each step on its own sample, across loop laps and seeks; legacy `stepTiming` keeps saved patches on block-start timing. GRID worst error 2048 -> 0.8 samples on all four; 1/64 at 174 bpm 373/373 steps, loop lap 49/49 at 0.0 samples; legacy row still 512 (old timing kept). See `after-steptiming-2026-10-13-note.txt` |
+| Audio In/Out and PDC | Audio In/Out: accepted exception 2026-10-13, hardware-only (needs a live device, not testable headless); PDC is covered by `AUDIOPDCTEST` |
 
 IOAUDIT covers Mixer, Gain, Spatial Mixer, Audio Meter, Blend Audio, Splitter, Audio In/Out.
 
@@ -160,7 +160,7 @@ COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden w
 | Switcher manual slot shows exactly the chosen input | clean |
 | GEOAUDIT GRAPH section (`baseline-2026-10-12-geo-coverage.txt`): Distribute random matches density x area (125 of 125), Poisson spacing holds (0.2001 vs 0.2), Delaunay has zero empty-circumcircle violations, Voronoi / Join merge / Merge by Distance / Ocean are valid and deterministic, Join counts add up, Merge by Distance leaves no pair closer than the threshold | clean, 0 new flags |
 | PDC: `AUDIOPDCTEST` (existing, in the driver) already covers branch alignment, no-latency no-delay and terminal dedupe; re-run 2026-10-12, OK | covered elsewhere |
-| Not yet covered: Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; Metaballs, Cloth, Curve Ops, Instances, Displacement; IOAUDIT Audio In/Out (hardware, not testable headless) | next |
+| Not yet covered: Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; Metaballs, Cloth, Curve Ops, Instances, Displacement | next |
 
 GEOAUDIT covers the 37 geometry nodes (Delaunay, Metaballs, Ocean, Cloth, Curve Ops, Instances,
 Join, Merge by Distance, Distribute, Displacement and the rest).
@@ -192,14 +192,26 @@ Reaction Diffusion, Remove Background and the image Sources.
 
 ## 7. Success metrics
 
-| # | Metric | Target |
-|---|---|---|
-| 1 | Audits wired into the driver groups and `FULL_TESTS` | all five new audits |
-| 2 | Baseline run saved per audit before any fix | yes |
-| 3 | FLAG lines closed or recorded as an accepted exception with owner and date | all |
-| 4 | CPU per node | at most +10%, exceptions recorded |
-| 5 | Saved patches | unchanged output (ROUNDTRIPTEST and the legacy-flag test pass) |
-| 6 | Competitor numbers for Synths | at least pitch, alias and envelope for Diva, Serum 2 and Vital |
+| # | Metric | Target | State 2026-10-13 |
+|---|---|---|---|
+| 1 | Audits wired into the driver groups and `FULL_TESTS` | all five new audits | **met**: all five gate; the driver reads `PASS (n flags)` as a pass (before, every audit read as "no verdict") |
+| 2 | Baseline run saved per audit before any fix | yes | **met**: `baseline-*` and `after-*` files in this folder |
+| 3 | FLAG lines closed or recorded as an accepted exception with owner and date | all | **met for audio**: SYNTHAUDIT leaves only Metallic F1 (accepted) and F7 (metric unreliable on a resonator); NOTEAUDIT clean; Audio In/Out accepted as hardware-only. Geometry and compositing rows are tracked in their own table |
+| 4 | CPU per node | at most +10%, exceptions recorded | **met**: the fixes add one multiply per voice (F11) and a sample-position compare per step (stepTiming); SYNTHAUDIT POLY ns/frame is unchanged within noise |
+| 5 | Saved patches | unchanged output (ROUNDTRIPTEST and the legacy-flag test pass) | **met**: PATCHTEST and ROUNDTRIPTEST pass (308/308 types, 15/15 templates); every behaviour change sits behind a legacy param (`velCurve`, `stepTiming`, `rateFix`) and the legacy paths are re-measured each run |
+| 6 | Competitor numbers for Synths | at least pitch, alias and envelope for Diva, Serum 2 and Vital | **met**: see table below and `metric6-2026-10-13.md` |
+
+Metric 6, re-survey synth probe at 48 kHz, default patch of each, notes 24 to 108:
+
+| Target | Worst pitch error ¢ | Non-harmonic dB at C4 / C7 / C8 | Attack ms | Release to -60 dB s | Velocity span dB |
+|---|---|---|---|---|---|
+| Diva | 7.7 (analog drift, by design) | -40.8 / -27.0 / -10.4 | 44 | 1.61 | 12.9 |
+| Serum 2 | 0.2 | -83.0 / -82.6 / -81.9 | 2 | 0.02 | 0 |
+| Vital | 0.2 | -84.3 / -84.3 / -83.6 | 1 | 0.08 | 0 |
+| **Wavetable** | 0.2 | -84.2 / -84.9 / -83.9 | 4 | 0.26 | 24.1 |
+| **Analog** | 3.5 | -67.8 / -63.3 / -60.9 | 4 | 0.25 | 24.1 |
+
+Wavetable matches Serum 2 and Vital on pitch and aliasing. Analog sits between them and Diva: cleaner than Diva everywhere, about 20 dB more non-harmonic energy than the wavetable synths (F2). Its -3 to -4 ¢ offset is constant over the keyboard. Infinite's default patches respond to velocity (squared curve, 24 dB); Serum 2's and Vital's defaults do not.
 
 ## 8. Order inside a block
 
@@ -219,11 +231,12 @@ Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; ba
 | F2 | Analog aliasing is -66 dB at 1.75 kHz and -62 dB at 5 kHz (default saw), just inside the -60 dB flag; Wavetable, Oscillator and Equation Synth are -82 to -88 dB. | ALIAS rows | 1 |
 | F4 | **Fixed** (Equation Synth): velocity is now squared like Analog and Wavetable (vel 0.5 = -12.0 dB); old patches keep linear through the `velCurve` param. Metallic stays linear on purpose: velocity is the strike excitation of a resonator, not a gain. | VEL rows | 1 |
 | F5 | Equation Synth clips with several notes at defaults: peak +3.6 dBFS at 8 notes, +4.3 at 32, against -12 dBFS for one note. No polyphonic gain compensation. Decision: not a bug. Voices sum, as in any polysynth, and a 4-note chord fits (-0.8 dBFS); attenuating would change the loudness of every saved patch. The audit now flags only a 4-note chord over 0 dBFS. | POLY rows | 1 |
-| F6 | Polyphony cost stops growing past 8 notes on every synth (8 and 32 notes cost the same per frame), so all five cap at 8 voices. Not a bug if intended; the cap is not shown in the UI. | POLY rows | 1 |
+| F6 | Polyphony cost stops growing past 8 notes on every synth (8 and 32 notes cost the same per frame), so all five cap at 8 voices. **Accepted** 2026-10-13: the cap is a deliberate per-node constant (`kMaxVoices = 8` in AnalogNode.h, EquationNode.h, MetallicNode.h, WavetableNode, ImageSpectralSynthNode.h; Sampler, Grain Molder, Field Synth use 16) with oldest-voice stealing. No UI readout added (audio-node minimalism, `new-audio-node` #5). | POLY rows | 1 |
 | F7 | Wavetable note-on is +8.2 dB over steady state at defaults, the only pitched synth near the 12 dB flag. Metallic note-on reads +32 dB, but its steady state is a decaying resonator, so that metric is unreliable for it. | CLICK rows | 1 |
 | F8 | Field Synth peaks +12.0 dBFS with 8 or 32 notes at defaults (-2.4 dBFS for one), the worst polyphonic clip of the group. The only synth whose 4-note chord clips (+9.0 dBFS; single note -2.4 dBFS vs about -12 for the others): voices sum unscaled (`FieldSynthNode.cpp:292`) and the default preset (Dual Oscillator Pad) is hot. **Fixed** for new nodes: the default preset now ends `out = filt * env * 0.33` (single note -12.0 dBFS, 4-note chord -0.6); saved patches carry their own source text, so they are unchanged. See `baseline-2026-10-12-synth-after-f4f8.txt`. | POLY rows | 1 |
 | F9 | Wave Terrain also sums past 0 dBFS with many notes (+0.5 dBFS at 8, +3.2 at 32). Same as F5: not a bug; its 4-note chord is -3.0 dBFS. | POLY rows | 1 |
 | F10 | Spectral Synth's 1.99 dB rate spread was a harness artifact (a fixed 65536-frame window is a different number of seconds at each rate). RATE now renders 3 s at every rate and reads 0.05 dB. Closed. | RATE row | 1 |
+| F11 | **Fixed** 2026-10-13: Sampler, Grain Molder, Molder, PaulStretch and Drum Sequencer played a file at the device rate, not its own (decode keeps the file rate, and these five never corrected for it; Slicer, MPC, Granular and Looper did). A 48 kHz file at 44.1 kHz played 147 c flat and 9% long; at 96 kHz an octave high and half length (pitch spread 1346.7 c, length ratio 2.18). Now 0.0 c on all four, PaulStretch 6.8 c (random-phase jitter, under the 20 c gate). Old patches keep the old pitch through the `rateFix` param (0 when the key is missing); the legacy path is re-measured on every run. See `after-samplerate-2026-10-13-synth.txt`. | SAMPLE rows | 1 |
 | F3 | Pitch is within 0.03 cents everywhere measured, and every synth is bit-identical on re-render. No action. | PITCH, DET rows | 1 |
 
-Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). All 17 synths run. Full battery on Analog, Wavetable, Oscillator, Equation Synth; Metallic, Wave Terrain, Spectral Synth, Field Synth where applicable (UNISON: Analog and Wavetable, 4 peaks at 100.0 cents; PARAM: volume step is click-free). Grain Molder, Molder, Granular, Sampler, Drum Sequencer, Slicer, MPC, Looper, PaulStretch are silent at defaults and need loaded content: parked until a fixture sample exists (they are covered by their own tests).
+Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). All 17 synths run. Full battery on Analog, Wavetable, Oscillator, Equation Synth; Metallic, Wave Terrain, Spectral Synth, Field Synth where applicable (UNISON: Analog and Wavetable, 4 peaks at 100.0 cents; PARAM: volume step is click-free). The nine sample synths load a 2 s, 48 kHz fixture WAV (440 Hz, six harmonics) written by the audit: Sampler, Grain Molder, Molder, Granular, PaulStretch, Slicer and MPC take notes (Slicer and MPC on note 36, their first slice/pad); Drum Sequencer plays one step from the transport; Looper records live input, so only its own tests cover it. New SAMPLE row: the fixture's pitch and length at 44.1 / 48 / 96 kHz, for new nodes and as loaded from an old patch (F11). Granular, Molder and PaulStretch free-run, so their POLY tail is read against their idle level, not -100 dBFS. Verdict: PASS, 2 flags (Metallic, F1 and F7). The driver now reads `PASS (n flags)` as a pass, so all five audits gate releases instead of reading as no verdict.
