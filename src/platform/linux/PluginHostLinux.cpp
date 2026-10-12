@@ -172,7 +172,7 @@ namespace Platform
 
    int PluginLatencySamples(PluginHandle* handle)
    {
-      return handle != nullptr ? handle->latencySamples : 0;
+      return PluginVST3LatencySamples(handle);
    }
 
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,

@@ -6287,7 +6287,18 @@ namespace Platform
 
    int PluginLatencySamples(PluginHandle* h)
    {
-      return h != nullptr ? h->latencySamples : 0;
+      if (h == nullptr)
+         return 0;
+#if INFINITE_ENABLE_VST3
+      if (h->desc.format == "vst3")
+         return PluginVST3LatencySamples(h);
+#endif
+      // Main thread, once a frame via PollAudioLatencyChanges. An AU that
+      // changes mode after prepare (Pro-Q's linear phase) only updates
+      // au.latency, so re-read it rather than trusting the prepare-time value.
+      if (h->resourcesAllocated && h->unit != nil && h->sampleRate > 0.0)
+         h->latencySamples = (int)std::lround(h->unit.latency * h->sampleRate);
+      return h->latencySamples;
    }
 
    void PluginDestroy(PluginHandle* h)
