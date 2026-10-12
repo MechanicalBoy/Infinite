@@ -3,7 +3,6 @@ infinite-patch 1
 node 1 Notes Random Note Generator
   id notes
   pos 0 1062
-  i stepTiming 1
 end
 node 2 Synths Analog
   id synth

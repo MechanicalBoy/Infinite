@@ -97,6 +97,7 @@ void FrameTest_OFFLINERENDERREFUSETEST(int frameId, GLFWwindow* window);
 void FrameTest_PATCHTEST(int frameId, GLFWwindow* window);
 void FrameTest_AUTOSAVETEST(int frameId, GLFWwindow* window);
 void FrameTest_LIVEISSUETEST(int frameId, GLFWwindow* window);
+void FrameTest_LEGACYLOADTEST(int frameId, GLFWwindow* window);
 void FrameTest_LIVEISSUETEST_2(int frameId, GLFWwindow* window);
 void FrameTest_SHAPERESGRAPHTEST(int frameId, GLFWwindow* window);
 void FrameTest_SHAPERESGRAPHTEST_3(int frameId, GLFWwindow* window);

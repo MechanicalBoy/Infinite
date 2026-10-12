@@ -92,11 +92,12 @@ expr <dst> <param|key> <expression>        glob <name> <expression>
   reach. Check brightness with `frame_stats.mean_luma` (aim ~0.1-0.3 for dark-ground art); Trails in
   Screen/Add mode accumulates to white, use Max. `--frame` times are seconds. A generator script like
   `art/prism/gen_prism.py` is the easiest way to iterate.
-- **Write `i maths 1` on LFO, Random, Smoothing, Envelope and CV to Pitch.** A node without the
-  `maths` key loads as a pre-2026-10 patch did (legacy maths: Envelope centred on 0.5, Smoothing
-  per frame, unseeded LFO S&H, LFO/Random rate in raw beats). `i maths 1` gives fps-independent
-  stages and seeded S&H; also write `i output 1` (Envelope ADSR 0..1) and `i rateMode 1` (LFO/Random
-  synced to `f rateBeats`; 2 = `f rateHz`). LFO `i phaseMode`: 0 transport, 1 free, 2 retrigger (`trig` input).
+- **A missing key is today's default.** Leave out what you do not change: modulators get fps-independent
+  maths and seeded S&H, samplers play at the right pitch on every device rate, and so on. Only a node with
+  a `flags` line, in a file with no `rev 2` line, loads as a patch the GUI saved before those fixes; if
+  you write `flags` (to bypass a node), put `rev 2` on the line after the header. LFO/Random
+  `i rateMode`: 1 synced to `f rateBeats`, 2 `f rateHz`. LFO `i phaseMode`: 0 transport, 1 free,
+  2 retrigger (`trig` input).
   Always write `f seed <n>` on Random and on an S&H LFO: without it the seed is the session's next
   spawn number, so a render and the GUI can differ.
 - **Bypass.** A node with two or more inputs never bypasses; a bypassed node does not cook.

@@ -3,14 +3,12 @@ infinite-patch 1
 node 1 Notes Random Note Generator
   id a
   pos 0 878
-  i stepTiming 1
 end
 node 2 Notes Random Note Generator
   id b
   pos 0 1434
   i rangeLow 36
   i rangeHigh 48
-  i stepTiming 1
 end
 node 3 Synths Analog
   id s1

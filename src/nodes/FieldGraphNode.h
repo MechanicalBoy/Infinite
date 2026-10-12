@@ -194,6 +194,8 @@ public:
    // VisitParams below, the load-time default is the opposite of this
    // member's own compile-time default).
    bool encapsulated = true;
+   // A patch saved before `encapsulated` existed loads with its children on canvas, as it did then.
+   void BeforeLoadParams() override { encapsulated = false; }
 
    // The gNodes indices this FieldGraphNode currently owns, mirroring
    // mOwnership's values as a flat set for O(1) "is this index mine" checks.

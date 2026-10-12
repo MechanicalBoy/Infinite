@@ -28,8 +28,6 @@ class T:
         for nid, cat, typ, params in s.nodes:
             out.append(f"node {i} {cat} {typ}\n  id {nid}")
             for p in params: out.append("  " + p)
-            key = CURRENT.get(typ)
-            if key and not any(p.split()[:2] == key.split()[:2] for p in params): out.append("  " + key)
             out.append("end"); i += 1
         for band, text in s.bands.items():
             out.append(comment(text, band=band, w=340, h=120).replace("{n}", str(i)).rstrip()); i += 1
@@ -37,13 +35,6 @@ class T:
             out.append(comment(text, near=nid).replace("{n}", str(i)).rstrip()); i += 1
         out += s.wires + list(s.extra)
         return "\n".join(out) + "\n"
-
-# A key missing from a patch means "saved before this fix" for these nodes (BeforeLoadParams sets the
-# legacy value), so a template that leaves it out would load with the old behaviour. Write it explicitly.
-CURRENT = {"Sampler": "i rateFix 1", "Grain Molder": "i rateFix 1", "Molder": "i rateFix 1",
-           "PaulStretch": "i rateFix 1", "Drum Sequencer": "i rateFix 1",
-           "Arpeggiator": "i stepTiming 1", "Note Sequencer": "i stepTiming 1",
-           "Random Note Generator": "i stepTiming 1", "Chorder": "i stepTiming 1"}
 
 OUTN = ("out", "Utility", "Output", [])
 SPK = ("speakers", "Utility", "Audio Out", [])

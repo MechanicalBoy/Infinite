@@ -2,7 +2,6 @@ infinite-patch 1
 # Smallest audio patch: notes into a synth into Audio Out.
 node 1 Notes Random Note Generator
   id notes
-  i stepTiming 1
 end
 node 2 Synths Wavetable
   id synth

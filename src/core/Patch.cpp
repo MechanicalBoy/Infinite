@@ -230,6 +230,11 @@ void LoadParams(INode* node, const std::vector<std::pair<std::string, std::strin
 
 int FormatVersion() { return kVersion; }
 
+bool SavedBefore(const Data& data, const NodeRecord& rec, int rev)
+{
+   return rec.hasFlags && std::max(data.rev, 1) < rev;
+}
+
 static void WriteBody(std::ostream& file, const Data& data);
 
 bool WriteText(const Data& data, std::string& out)
@@ -263,6 +268,11 @@ static void WriteBody(std::ostream& file, const Data& data)
    // Blend modes 11..13 are the corrected Overlay/Soft Light/Hard Light; a file without this
    // line predates the fix and its clips are mapped to the (old) modes 32..34 on load.
    file << "blendfix 1\n";
+   // Records read from an older file and written straight back (--canonicalize) keep its revision, so their
+   // missing keys still mean what they meant; records built from live nodes carry every key.
+   const bool fromOlderFile = std::any_of(data.nodes.begin(), data.nodes.end(),
+                                          [&](const NodeRecord& n) { return SavedBefore(data, n); });
+   file << "rev " << (fromOlderFile ? std::max(data.rev, 1) : kRevision) << "\n";
    for (const NodeRecord& node : data.nodes)
    {
       const float px = (std::isfinite(node.x) && std::abs(node.x) <= 1e6f && node.x > -2e9f) ? node.x : 0.0f;
@@ -653,6 +663,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
          current.bypassed = bypass != 0;
          current.showMiniViewport = miniViewport != 0;
          current.showAdvancedParams = advanced != 0;
+         current.hasFlags = true;
       }
       else if (inNode && (tag == "f" || tag == "i" || tag == "b" || tag == "c" || tag == "s"))
       {
@@ -1016,6 +1027,8 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
       }
       else if (tag == "blendfix")
          sawBlendFix = true;
+      else if (tag == "rev")
+         in >> outData.rev;
       else if (tag == "clipblend")
       {
          int streamIdx = -1, mode = 0;
@@ -1366,7 +1379,10 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
    }
    std::stable_sort(outData.markers.begin(), outData.markers.end(),
                     [](const MarkerRecord& a, const MarkerRecord& b) { return a.posTick < b.posTick; });
-   if (!sawBlendFix)
+   // A hand-written file (no node with a `flags` line) or a rev 2 one never predates the fix.
+   const bool guiSaved = std::any_of(outData.nodes.begin(), outData.nodes.end(),
+                                     [](const NodeRecord& n) { return n.hasFlags; });
+   if (!sawBlendFix && guiSaved && outData.rev < 2)
       for (StreamRecord& st : outData.streams)
       {
          st.blendMode = BlendModes::LegacyMode(st.blendMode);

@@ -8,6 +8,7 @@ to writing files.
 ## Files and line rules
 
 - First line: `infinite-patch 1`.
+- `rev <n>` (the GUI writes `rev 2`): what a missing key means, see the defaults rule below.
 - One record per line. Free-form text (type names, strings, expressions, labels) is always **last**
   on its line and runs to the end of the line.
 - Blank lines and lines starting with `#` are ignored.
@@ -36,6 +37,11 @@ end
   and `--stems` use the file's numbers.
 - **Defaults rule:** any parameter you leave out keeps the node's default. A hand-written node needs
   only the keys it changes. The GUI writes every key; `--canonicalize` does too.
+  The one exception keeps old saves sounding as they did: a node with a `flags` line (the GUI has
+  always written one) in a file with no `rev` line, or `rev 1`, was saved before some nodes fixed a
+  behaviour, so a key it lacks means the old behaviour (`INode::BeforeLoadParams`; for example
+  Sampler `rateFix`, Arpeggiator `stepTiming`, LFO `maths`). If you write `flags` by hand, also write
+  `rev 2`. `--canonicalize` keeps a file's revision.
 - Find category, type name, keys, ranges and dropdown options with `Infinite --describe [type]`.
 - An `id` is a word: starts with a letter or `_`, then letters, digits and `_`. Ids are unique per file.
 
