@@ -245,6 +245,22 @@ def peak(i):  # window after note i's onset (0.3 + 0.3 i), 0.12 s
 sys.exit(0 if all(peak(i) > 300 for i in range(16)) else 1)
 PY
 check "field synth: all 16 short notes are audible (voice pool recycles)" $?
+# Field Synth release: the kernel owns the tail. A fixed 30 ms voice release once cut every preset dead
+# at note-off; the default pad must still sound 100 ms after its note ends, then free its voice (silent).
+python3 - "$OUT" <<'PY'
+import json, sys
+out = sys.argv[1]
+json.dump([{"t": 0.3, "type": "impact", "dur": 0.1, "intensity": 1.0}], open(out + "/fsr_events.json", "w"))
+PY
+"$BIN" --audio-summary "$OUT/fieldsynth16.inf" "$OUT/fsr.json" --duration 2.0 --wav "$OUT/fsr.wav" --notes "$OUT/fsr_events.json" --note-map "$OUT/fs_map.json" >/dev/null 2>&1
+python3 - "$OUT/fsr.wav" <<'PY'
+import wave, array, sys
+w = wave.open(sys.argv[1]); r = w.getframerate(); n = w.getnchannels()
+a = array.array('h'); a.frombytes(w.readframes(w.getnframes())); L = a[0::n]
+def peak(t0, t1): return max((abs(x) for x in L[int(t0 * r):int(t1 * r)]), default=0)
+sys.exit(0 if peak(0.5, 0.52) > 300 and peak(1.5, 2.0) == 0 else 1)
+PY
+check "field synth: a note's tail rings past note-off, then the voice frees" $?
 # Note fan-out: one Keyboard into 12 synths, every Mixer input muted but the 12th. The 9th consumer
 # and later once got no notes (NoteEventQueue capped at 8 cursors).
 python3 - "$OUT" <<'PY'
