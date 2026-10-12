@@ -132,7 +132,7 @@ spawns get the new maths.
 | F9 | Loop wrap, 3-beat LFO in a 4-beat loop | jump 0.427 | `phase from: free` 0.0223 (= normal step); `retrigger` phase error 2e-8 vs (t − edge) · rate. Default stays `transport` (Bitwig Sync) |
 | F4 | Envelope output | centred (rest 0.5, release dips to 0.2) | `output: ADSR` 0..1 on new nodes; `centred` on saved ones |
 | F11 | Predictor dt live | wall clock | engine frame seconds when the engine runs; wall clock only without one |
-| 8 | CPU per Value01() (min of 5 runs, harness 3.9 ns) | LFO 9.2, Random 8.0, Smooth 13.0, Envelope 13.5, CV to Pitch 16.4 | LFO 9.8 (legacy 10.0), Random 8.2 (7.9), Envelope 13.3 (13.4), CV to Pitch 15.7 (16.3): **pass**. Smooth 16.5 (13.0): **+27%, miss** (exact step: one `exp` and a `Seconds()` read instead of a per-frame multiply) |
+| 8 | CPU per Value01() (min of 5 runs, harness 3.9 ns) | LFO 9.2, Random 8.0, Smooth 13.0, Envelope 13.5, CV to Pitch 16.4 | LFO 9.8 (legacy 10.0), Random 8.2 (7.9), Envelope 13.3 (13.4), CV to Pitch 15.7 (16.3): **pass**. Smooth 16.5 (13.0): **+27%, accepted exception** (exact step: one `exp` and a `Seconds()` read instead of a per-frame multiply; memoised to once per frame per node, ~4 ns/frame, and it removes the default mode's fps dependence) |
 
 What Block 3 changed:
 
@@ -159,7 +159,7 @@ Honest misses:
 |---|---|---|
 | Step input through any stateful node or per-destination smoothing at 24 fps: 0.56 (tau 20 ms), 0.94 on a 10 ms Envelope attack vs the true edge | A step is only seen at frame times; its edge timing moves by up to half a frame. Node maths is exact for the samples it gets | Needs sub-frame event timestamps from the source (gates, MIDI): its own block |
 | Live video with host callback jitter: 0.0248 of range for LFO 1/4 beat with 0..1 ms late callbacks | The frame clock interpolates between callbacks by wall time; a late callback bends it | Host-timing limit; offline export is exact |
-| Smooth CPU +27% | Exact maths costs an `exp` per call | Accepted: Value01 is memoised, so this is once per frame per node (~4 ns) |
+| Smooth CPU +27% per call (accepted by the owner, 2026-10-12) | Exact maths costs an `exp` per call | Value01 is memoised, so this is once per frame per node (~4 ns); the cheap per-frame default would bring back fps dependence |
 | F10 no-engine clock | Wall-clock driven when no audio device is open | Unchanged by design |
 | F12 Audio to CV reaches params once per frame | Block 2 ramps smooth it; not sample-locked | Unchanged |
 | Offline lookahead / preroll | Audio rendered ahead of the frame sees ramps late | As Block 2 |
