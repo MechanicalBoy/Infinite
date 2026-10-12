@@ -53,6 +53,7 @@ Tools must stay **MIT-clean** (no GPL code pasted in), **three-platform aware** 
 | Knob range vs DSP truth | `scripts/audit_param_truth.py` (`param-truth-audit`) |
 | Every audio effect measured (gain, stereo, tail, stress/NaN, param clicks, 44.1/48/96 kHz consistency, RT60/delay/rate/cutoff truths) | `INFINITE_FXAUDIT=1 [INFINITE_FXAUDIT_ONLY=Name] Infinite` (`src/app/selftest/FxAudit.cpp`; in the hygiene `audio` group) |
 | Field preset compiles? | `tools/field_preset_check.cpp` |
+| Quality registry, release gate, scoreboard (QUALITY rows from audits/probes/benches) | `tools/quality/quality.py` (`check`, `ingest`, `board`, `--self-test`; skill `quality-system`) |
 | Benchmarks / A/B | `tools/bench.py`, `scripts/bench/ab.sh`, `base.sh`, `compare.py`, `rgbadiff.py` |
 | Design tokens, glyphs, contrast, goldens | `tools/design/` (`contrast.py`, `golden.py`, `inventory.py`, ...) |
 | i18n extract/lint | `tools/i18n/` |

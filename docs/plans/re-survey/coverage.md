@@ -24,6 +24,8 @@ analyser (numbers out) ──► comparison table ──► dossier outcome
 
 ## Area map
 
+Each block now ends in registered metrics as well as its dossier: competitor numbers become targets in `docs/quality/registry.tsv`, and the tool writes QUALITY rows (`synth_probe` is the model). See `docs/quality/README.md`.
+
 ✅ done · 🟡 partial · ⏳ running · ❌ not started · ⏸ parked by owner
 
 | # | Area | What it covers | Reference apps | Status | Owner priority |

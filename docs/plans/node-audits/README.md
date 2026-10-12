@@ -192,6 +192,8 @@ Reaction Diffusion, Remove Background and the image Sources.
 
 ## 7. Success metrics
 
+From 2026-10-13 every audit value also lands in the quality system (`docs/quality/`): the registry owns targets and the release gate, and `docs/quality/SCOREBOARD.md` shows status. SYNTHAUDIT is wired; the other audits follow (rollout in `docs/quality/README.md`).
+
 | # | Metric | Target | State 2026-10-13 |
 |---|---|---|---|
 | 1 | Audits wired into the driver groups and `FULL_TESTS` | all five new audits | **met**: all five gate; the driver reads `PASS (n flags)` as a pass (before, every audit read as "no verdict") |
