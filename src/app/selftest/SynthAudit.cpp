@@ -22,7 +22,7 @@
 //   CLICK   worst second difference within 5 ms of note-on and of note-off,
 //           dB re the steady-state worst (FXAUDIT threshold 12 dB)
 //   VEL     RMS at velocity 0.25 / 0.5 re velocity 1, dB
-//   POLY    1 / 8 / 32 simultaneous notes: peak, ns per frame, then all-off
+//   POLY    1 / 4 / 8 / 32 simultaneous notes (flag: 4-note chord over 0 dBFS): peak, ns per frame, then all-off
 //           and the level of the last 0.5 s of 10 s (stuck voices; -100 dBFS)
 //
 // Only hard invariants fail the run (non-finite output, silence at defaults).
@@ -423,7 +423,7 @@ namespace
       }
 
       // Polyphony and stuck voices.
-      for (int n : { 1, 8, 32 })
+      for (int n : { 1, 4, 8, 32 })
       {
          NoteRig rig;
          rig.Init(s, sr);
@@ -455,8 +455,10 @@ namespace
             return false;
          if (tl > kFlagTailDbfs)
             flags.Flag("POLY", s.name, "tail dBFS after all-off", tl);
-         if (pk > kFlagPeakDbfs)
-            flags.Flag("POLY", s.name, "peak dBFS", pk);
+         // A 4-note chord at velocity 0.8 must fit under 0 dBFS at defaults; 8 and
+         // 32 notes are reported only (a polysynth sums its voices, see F5).
+         if (n == 4 && pk > kFlagPeakDbfs)
+            flags.Flag("POLY", s.name, "4-note chord peak dBFS", pk);
       }
       return true;
    }
