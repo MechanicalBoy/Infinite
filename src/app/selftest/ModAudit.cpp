@@ -13,7 +13,8 @@
 //             0 and at beat 1e5), the phase origin of each shape, S&H hold,
 //             Vibrato against sin(2 pi f t), Random/Pattern smooth continuity.
 //   QUANT     each MusicTime division as an LFO rate: does the slider reach
-//             it, and how far does float storage drift the phase in 10 min.
+//             it, how far float storage drifts the phase in 10 min in beats
+//             mode (legacy), and in synced mode (exact period).
 //   ZIPPER    the delivery path to an audio destination - one Value01() per
 //             UI frame on the frame clock (Transport::BeginFrameClock),
 //             pushed to the real ParamMailbox and read per sample through its
@@ -26,15 +27,16 @@
 //             audio blocks) vs offline (exact video time): render - realtime
 //             gap, and bit-exactness where both clocks sit on the same sample.
 //   DSMOOTH   per-destination smoothing (Modulation::SmoothStep) at 24..144
-//             fps vs a 1440 fps reference: frame-rate independence.
-//   FRATE     stateful nodes run offline at 24..144 fps vs a 1440 fps
-//             reference, compared at shared instants: frame-rate dependence.
-//   ENV       Envelope ADSR stage times (ms) at 48 kHz-resolution and at
-//             60 fps, its output levels; Audio to CV follower time constants.
+//             fps vs 1440 fps on the true input (includes input sampling)
+//             and on the same frame samples (the filter alone).
+//   FRATE     stateful nodes, new maths and legacy, offline at 24..144 fps
+//             vs 1440 fps, both references as in DSMOOTH. Legacy rows report.
+//   ENV       Envelope ADSR output against the analytic ADSR at 48 kHz and
+//             24/60/61 fps; legacy centred stage times; Audio to CV.
 //   SEEK      seek / loop wrap / tempo change behaviour of pure and stateful
 //             nodes.
 //   IDEM      1 vs 8 Value01() calls per frame (new-modulator-node 2).
-//   SEED      same seed = same output; distinct spawns differ; LFO S&H.
+//   SEED      same seed = same output; distinct spawns differ; LFO S&H; legacy.
 //   CPU       ns per Value01() for every registered modulator, plus its
 //             output range over a 4 s run.
 //
@@ -128,6 +130,16 @@ namespace
    std::unique_ptr<N> Make()
    {
       return std::unique_ptr<N>(static_cast<N*>(N::Create()));
+   }
+
+   // A node as a patch saved before Block 3 loads it (BeforeLoadParams sets
+   // the legacy flags), for the "legacy" rows next to the new maths.
+   template <class N>
+   std::unique_ptr<N> MakeLegacy()
+   {
+      auto n = Make<N>();
+      n->BeforeLoadParams();
+      return n;
    }
 
    double LfoRef(int shape, double t)
@@ -376,6 +388,67 @@ namespace
          ResetClock(120.0f);
       }
 
+      // Rate in Hz (transport seconds, like Vibrato) and a synced triplet
+      // (the exact MusicTime period, not the float one), against the formula.
+      {
+         StartOffline(120.0f);
+         auto lfo = Make<LFONode>();
+         lfo->rateMode = LFONode::kRateHz;
+         lfo->rateHz = 3.7f;
+         double worst = 0.0;
+         for (int i = 0; i < 10000; i++)
+         {
+            const double s = i / 1000.0;
+            for (double base : { 0.0, 3600.0 })
+            {
+               At(base + s);
+               worst = std::max(worst, std::fabs(lfo->Value01() - LfoRef(0, (double)lfo->rateHz * (base + s))));
+            }
+         }
+         printf("MODAUDIT SHAPE LFO Hz 3.7    err %.2e (0..10 s and @1 h)\n", worst);
+         if (worst > kShapeLimit)
+            flags.Add("SHAPE", "LFO Hz", "max err", worst);
+         ResetClock(120.0f);
+      }
+      {
+         auto lfo = Make<LFONode>();
+         lfo->shape = 2;
+         const double exact = MusicTime::BeatsFor(MusicTime::kQuarterTrip);
+         lfo->rateBeats = (float)exact;
+         double worst = 0.0;
+         for (int i = 0; i < 4096; i++)
+         {
+            const double b = 1e5 + i * 0.0137;
+            const double want = LfoRef(2, b / exact);
+            double d = std::fabs(LfoAtBeats(*lfo, b) - want);
+            d = std::min(d, 1.0 - d); // saw wrap
+            worst = std::max(worst, d);
+         }
+         printf("MODAUDIT SHAPE LFO synced 1/4T  err %.2e @beat 1e5 (period %.9f, exact %.9f)\n", worst, lfo->PeriodBeats(), exact);
+         if (worst > kShapeLimit)
+            flags.Add("SHAPE", "LFO synced", "max err", worst);
+      }
+      // Free run: phase from the first call, at the rate, whatever the transport does.
+      {
+         StartOffline(120.0f);
+         auto lfo = Make<LFONode>();
+         lfo->phaseMode = LFONode::kPhaseFree;
+         lfo->rateMode = LFONode::kRateHz;
+         lfo->rateHz = 2.0f;
+         lfo->shape = 2;
+         double worst = 0.0;
+         for (int k = 0; k <= 600; k++)
+         {
+            At(k / 60.0);
+            double d = std::fabs(lfo->Value01() - LfoRef(2, 2.0 * k / 60.0));
+            worst = std::max(worst, std::min(d, 1.0 - d));
+         }
+         printf("MODAUDIT SHAPE LFO free 2 Hz err %.2e over 10 s at 60 fps\n", worst);
+         if (worst > kShapeLimit)
+            flags.Add("SHAPE", "LFO free", "max err", worst);
+         ResetClock(120.0f);
+      }
+
       // Random / Pattern smooth: value and slope continuity, per beat.
       auto continuity = [](const std::function<double(double)>& f, double& valueJump, double& slopeJump) {
          const int perBeat = 8192;
@@ -450,9 +523,23 @@ namespace
          printf("MODAUDIT QUANT %-6s %8.5f beats  slider %s  float drift %.3g samples / 10 min\n",
                 MusicTime::RateDivisionName(d), exact, inRange ? "ok " : "OUT", samples);
       }
-      printf("MODAUDIT QUANT summary: %d divisions outside the LFO slider, worst float drift %.3g samples; no division snap offered\n", outOfRange, worst);
-      if (worst >= kDriftLimitSamples)
-         flags.Add("QUANT", "float rateBeats", "drift", worst);
+      // Synced (the new default): the division dropdown stores the float, the
+      // node runs at the exact MusicTime period it names.
+      double worstSynced = 0.0;
+      {
+         auto lfo = Make<LFONode>();
+         for (int d = 0; d < MusicTime::kNumRateDivisions; d++)
+         {
+            const double exact = MusicTime::BeatsFor((MusicTime::RateDivision)d);
+            lfo->rateBeats = (float)exact;
+            const double cyclesErr = beats10 / lfo->PeriodBeats() - beats10 / exact;
+            worstSynced = std::max(worstSynced, std::fabs(cyclesErr) * exact * 0.5 * kSr);
+         }
+      }
+      printf("MODAUDIT QUANT summary: %d divisions outside the LFO slider; legacy beats mode float drift %.3g samples (saved patches, kept); synced mode drift %.3g samples\n",
+             outOfRange, worst, worstSynced);
+      if (worstSynced >= kDriftLimitSamples)
+         flags.Add("QUANT", "synced rate", "drift", worstSynced);
       if (outOfRange > 0)
          flags.Add("QUANT", "LFO rate slider", "out of range", outOfRange);
    }
@@ -476,6 +563,7 @@ namespace
       s.push_back({ "Random smooth 1 beat", []() { auto n = Make<RandomNode>(); n->seed = 7.3f; n->smooth = 1.0f; return std::unique_ptr<INode>(n.release()); } });
       s.push_back({ "Pattern smooth", []() { auto n = Make<PatternNode>(); n->smoothSteps = true; return std::unique_ptr<INode>(n.release()); } });
       s.push_back({ "Vibrato 5 Hz", []() { return std::unique_ptr<INode>(Make<VibratoNode>().release()); } });
+      s.push_back({ "LFO sine 2.5 Hz", []() { auto n = Make<LFONode>(); n->rateMode = LFONode::kRateHz; n->rateHz = 2.5f; return std::unique_ptr<INode>(n.release()); } });
       return s;
    }
    IModulator* AsMod(INode* n) { return dynamic_cast<IModulator*>(n); }
@@ -505,8 +593,10 @@ namespace
    {
       const double dur = 8.0;
       const int total = (int)(dur * kSr);
-      struct Sched { int block; double fps; };
-      const Sched scheds[] = { { 512, 60.0 }, { 128, 60.0 }, { 512, 144.0 }, { 512, 24.0 } };
+      // jitter: frames land 0..3 ms late and callbacks 0..1 ms late on the
+      // wall clock (deterministic), as a loaded host does.
+      struct Sched { int block; double fps; bool jitter; };
+      const Sched scheds[] = { { 512, 60.0, false }, { 128, 60.0, false }, { 512, 144.0, false }, { 512, 24.0, false }, { 512, 60.0, true } };
       Transport::SetWallClockForTest(&ModelWall);
       for (const PureSource& src : PureSources())
       {
@@ -541,14 +631,21 @@ namespace
             double excess = 0.0, sq = 0.0, sqRaw = 0.0;
             long long counted = 0;
             float prevD = 0.0f;
+            uint32_t rng = 12345u;
+            auto jit = [&](double maxSeconds) {
+               rng = rng * 1664525u + 1013904223u;
+               return sc.jitter ? maxSeconds * (double)(rng >> 8) / 16777216.0 : 0.0;
+            };
+            double frameWall = jit(0.003);
             for (int j = 0; j * sc.block < total; j++)
             {
-               const double callbackTime = (double)j * sc.block / kSr;
-               while (nextFrame / sc.fps <= callbackTime)
+               const double callbackTime = (double)j * sc.block / kSr + jit(0.001);
+               while (frameWall <= callbackTime)
                {
-                  gWall = nextFrame / sc.fps;
+                  gWall = frameWall;
                   RunUiFrame(m, box.get(), 1.0 / sc.fps);
                   nextFrame++;
+                  frameWall = nextFrame / sc.fps + jit(0.003);
                }
                gWall = callbackTime;
                T().AdvanceAudioClock(sc.block);
@@ -577,7 +674,7 @@ namespace
                }
             }
             char who[64];
-            std::snprintf(who, sizeof(who), "%s b%d %gfps", src.name.c_str(), sc.block, sc.fps);
+            std::snprintf(who, sizeof(who), "%s b%d %gfps%s", src.name.c_str(), sc.block, sc.fps, sc.jitter ? " jit" : "");
             printf("MODAUDIT ZIPPER %-34s excess step %.2e (limit %.2e)  lag %.1f ms  tracking rms %.3g after lag, %.3g raw\n",
                    who, excess, kStepLimit, lag * 1000.0, std::sqrt(sq / std::max(1LL, counted)), std::sqrt(sqRaw / total));
             if (excess > kStepLimit)
@@ -634,6 +731,30 @@ namespace
                worst = std::max(worst, (double)std::fabs(v - offline[k]));
             }
          }
+         // Same, with callbacks 0..1 ms late on the wall clock (the latch
+         // reads the late wall start as the block's time).
+         double worstJit = 0.0;
+         {
+            StartLive(120.0f, kSr);
+            gWall = 0.0;
+            auto node = src.make();
+            uint32_t rng = 777u;
+            long long n = 0;
+            for (int k = 0; k < frames; k++)
+            {
+               const double tw = k / fps;
+               while ((double)n / kSr <= tw)
+               {
+                  rng = rng * 1664525u + 1013904223u;
+                  gWall = std::min(tw, (double)n / kSr + 0.001 * (double)(rng >> 8) / 16777216.0);
+                  T().AdvanceAudioClock(512);
+                  n += 512;
+               }
+               gWall = tw;
+               const float v = RunUiFrame(AsMod(node.get()), nullptr, 1.0 / fps);
+               worstJit = std::max(worstJit, (double)std::fabs(v - offline[k]));
+            }
+         }
          // Same sample on both clocks: bit-exact?
          int mismatches = 0;
          {
@@ -653,8 +774,8 @@ namespace
                   mismatches++;
             }
          }
-         printf("MODAUDIT VIDEO %-22s render-realtime %.3g of range | live clock %+.3f..%+.3f ms off frame time | same-sample bit mismatches %d/200\n",
-                src.name.c_str(), worst, minOff, maxOff, mismatches);
+         printf("MODAUDIT VIDEO %-22s render-realtime %.3g of range (%.3g with 0..1 ms callback jitter) | live clock %+.3f..%+.3f ms off frame time | same-sample bit mismatches %d/200\n",
+                src.name.c_str(), worst, worstJit, minOff, maxOff, mismatches);
          if (worst > kShapeLimit)
             flags.Add("VIDEO", src.name, "render!=live", worst);
          if (mismatches > 0)
@@ -678,34 +799,51 @@ namespace
       for (const In& in : ins)
          for (double tau : taus)
          {
-            auto run = [&](double fps, std::vector<double>& outAt) {
+            // sampledFps > 0: the input as the frames at that rate see it
+            // (a straight line between frame samples), so the reference
+            // isolates the filter's own frame-rate dependence from sampling.
+            auto run = [&](double fps, std::vector<double>& outAt, double sampledFps = 0.0) {
+               const auto input = [&](double t) {
+                  if (sampledFps <= 0.0)
+                     return in.f(t);
+                  const double p = t * sampledFps;
+                  const double k0 = std::floor(p + 1e-9);
+                  const double a = in.f(k0 / sampledFps), b = in.f((k0 + 1.0) / sampledFps);
+                  return a + (b - a) * std::max(0.0, p - k0);
+               };
                const int frames = (int)(4.0 * fps);
                const int every = (int)std::lround(fps / 12.0); // shared 12 Hz instants
-               double x = in.f(0.0), y = x;
+               double x = input(0.0), y = x;
                outAt.clear();
                for (int k = 1; k <= frames; k++)
                {
-                  const double x1 = in.f(k / fps);
+                  const double x1 = input(k / fps);
                   y = Modulation::SmoothStep(y, x, x1, 1.0 / fps, tau);
                   x = x1;
                   if (k % every == 0)
                      outAt.push_back(y);
                }
             };
-            std::vector<double> ref, at;
+            std::vector<double> ref, at, refSampled;
             run(1440.0, ref);
-            double row[3] = {};
+            double row[3] = {}, filt[3] = {};
             const double fpsList[3] = { 24.0, 60.0, 144.0 };
             for (int i = 0; i < 3; i++)
             {
                run(fpsList[i], at);
+               run(1440.0, refSampled, fpsList[i]);
                for (size_t k = 0; k < at.size() && k < ref.size(); k++)
+               {
                   row[i] = std::max(row[i], std::fabs(at[k] - ref[k]));
+                  filt[i] = std::max(filt[i], std::fabs(at[k] - refSampled[k]));
+               }
             }
-            printf("MODAUDIT DSMOOTH %-14s tau %3.0f ms  max diff vs 1440 fps: 24 %.2e  60 %.2e  144 %.2e\n",
-                   in.name, tau * 1000.0, row[0], row[1], row[2]);
-            if (std::max({ row[0], row[1], row[2] }) > kShapeLimit)
-               flags.Add("DSMOOTH", in.name, "fps dependence", std::max({ row[0], row[1], row[2] }));
+            printf("MODAUDIT DSMOOTH %-14s tau %3.0f ms  vs 1440 fps true input: 24 %.2e  60 %.2e  144 %.2e | filter vs 1440 fps of the same frame samples: %.1e %.1e %.1e\n",
+                   in.name, tau * 1000.0, row[0], row[1], row[2], filt[0], filt[1], filt[2]);
+            // The first number includes input sampling (a step is only seen at
+            // frame times: physics, not the filter); only the second can flag.
+            if (std::max({ filt[0], filt[1], filt[2] }) > kShapeLimit)
+               flags.Add("DSMOOTH", in.name, "filter fps dep", std::max({ filt[0], filt[1], filt[2] }));
          }
    }
 
@@ -715,6 +853,7 @@ namespace
       std::string name;
       std::function<std::unique_ptr<INode>(FnMod*)> make;
       std::function<float(double)> input;
+      bool legacy = false; // maths 0 (a pre-Block 3 patch): reported, never flagged
    };
    float StepInput(double s) { return s < 1.0 ? 0.2f : (s < 2.5 ? 0.8f : 0.4f); }
    float GateInput(double s) { return (s >= 0.5 && s < 2.0) ? 1.0f : 0.0f; }
@@ -723,25 +862,43 @@ namespace
    std::vector<StatefulCase> StatefulCases()
    {
       std::vector<StatefulCase> c;
-      auto smooth = [](int mode) {
-         return [mode](FnMod* in) { auto n = Make<SmoothNode>(); n->mode = mode; n->input = in; return std::unique_ptr<INode>(n.release()); };
-      };
-      c.push_back({ "Smooth per-frame (default)", smooth(SmoothNode::kPerFrame), StepInput });
-      c.push_back({ "Smooth time 0.25 s", smooth(SmoothNode::kTime), StepInput });
-      c.push_back({ "Smooth time, sine in", smooth(SmoothNode::kTime), SineInput });
-      c.push_back({ "Smooth spring 3 Hz", smooth(SmoothNode::kSpring), StepInput });
-      c.push_back({ "Envelope ADSR", [](FnMod* in) { auto n = Make<EnvelopeNode>(); n->input = in; return std::unique_ptr<INode>(n.release()); }, GateInput });
-      c.push_back({ "CV to Pitch glide 100ms", [](FnMod* in) { auto n = Make<CVToPitchNode>(); n->glideMs = 100.0f; n->input = in; return std::unique_ptr<INode>(n.release()); }, StepInput });
+      for (int legacy = 1; legacy >= 0; legacy--)
+      {
+         const bool old = legacy != 0;
+         const std::string tag = old ? "legacy " : "";
+         auto smooth = [old](int mode) {
+            return [mode, old](FnMod* in) { auto n = old ? MakeLegacy<SmoothNode>() : Make<SmoothNode>(); n->mode = mode; n->input = in; return std::unique_ptr<INode>(n.release()); };
+         };
+         c.push_back({ tag + "Smooth amount (default)", smooth(SmoothNode::kPerFrame), StepInput, old });
+         c.push_back({ tag + "Smooth time 0.25 s", smooth(SmoothNode::kTime), StepInput, old });
+         c.push_back({ tag + "Smooth time, sine in", smooth(SmoothNode::kTime), SineInput, old });
+         c.push_back({ tag + "Smooth spring 3 Hz", smooth(SmoothNode::kSpring), StepInput, old });
+         c.push_back({ tag + "Smooth spring, sine in", smooth(SmoothNode::kSpring), SineInput, old });
+         c.push_back({ tag + "Envelope", [old](FnMod* in) { auto n = old ? MakeLegacy<EnvelopeNode>() : Make<EnvelopeNode>(); n->input = in; return std::unique_ptr<INode>(n.release()); }, GateInput, old });
+         c.push_back({ tag + "CV to Pitch glide 100ms", [old](FnMod* in) { auto n = old ? MakeLegacy<CVToPitchNode>() : Make<CVToPitchNode>(); n->glideMs = 100.0f; n->input = in; return std::unique_ptr<INode>(n.release()); }, StepInput, old });
+         c.push_back({ tag + "CV to Pitch, sine in", [old](FnMod* in) { auto n = old ? MakeLegacy<CVToPitchNode>() : Make<CVToPitchNode>(); n->glideMs = 100.0f; n->input = in; return std::unique_ptr<INode>(n.release()); }, SineInput, old });
+      }
       return c;
+   }
+
+   // The input as frames at `fps` see it: a straight line between samples.
+   std::function<float(double)> FrameSampled(std::function<float(double)> f, double fps)
+   {
+      return [f, fps](double t) {
+         const double p = t * fps;
+         const double k0 = std::floor(p + 1e-9);
+         const double a = f(k0 / fps), b = f((k0 + 1.0) / fps);
+         return (float)(a + (b - a) * std::max(0.0, p - k0));
+      };
    }
 
    // Runs a stateful case offline at fps for 4 s, calling Value01() `calls`
    // times per frame; returns the value at every 1/6 s checkpoint.
-   std::vector<float> RunAtFps(const StatefulCase& sc, double fps, int calls = 1)
+   std::vector<float> RunAtFps(const StatefulCase& sc, double fps, int calls = 1, double sampledFps = 0.0)
    {
       StartOffline(120.0f);
       FnMod in;
-      in.f = sc.input;
+      in.f = sampledFps > 0.0 ? FrameSampled(sc.input, sampledFps) : sc.input;
       auto node = sc.make(&in);
       IModulator* m = AsMod(node.get());
       std::vector<float> out;
@@ -762,33 +919,94 @@ namespace
    {
       for (const StatefulCase& sc : StatefulCases())
       {
+         // Two references: the true input at 1440 fps (includes input
+         // sampling, which no node can undo: a step between frames is seen
+         // at the next frame), and 1440 fps fed the same frame samples as a
+         // line (the node maths alone, which is what can be exact).
          const std::vector<float> ref = RunAtFps(sc, 1440.0);
-         printf("MODAUDIT FRATE %-27s", sc.name.c_str());
-         double worstAll = 0.0;
+         printf("MODAUDIT FRATE %-31s", sc.name.c_str());
+         double worstAll = 0.0, worstMaths = 0.0;
+         std::string mathsRow;
          for (double fps : { 24.0, 30.0, 60.0, 120.0, 144.0 })
          {
             const std::vector<float> got = RunAtFps(sc, fps);
-            double worst = 0.0;
+            const std::vector<float> refSampled = RunAtFps(sc, 1440.0, 1, fps);
+            double worst = 0.0, maths = 0.0;
             for (size_t i = 0; i < std::min(ref.size(), got.size()); i++)
+            {
                worst = std::max(worst, (double)std::fabs(got[i] - ref[i]));
+               if (i < refSampled.size())
+                  maths = std::max(maths, (double)std::fabs(got[i] - refSampled[i]));
+            }
             worstAll = std::max(worstAll, worst);
+            worstMaths = std::max(worstMaths, maths);
+            char cell[32];
+            std::snprintf(cell, sizeof(cell), " %.1e", maths);
+            mathsRow += cell;
             printf(" %g:%.3g", fps, worst);
          }
-         printf("  (max diff vs 1440 fps)\n");
-         if (worstAll > kStatefulLimit)
-            flags.Add("FRATE", sc.name, "fps dependence", worstAll);
+         printf("  vs 1440 true | maths vs 1440 same samples:%s\n", mathsRow.c_str());
+         if (!sc.legacy && worstMaths > kStatefulLimit)
+            flags.Add("FRATE", sc.name, "maths fps dep", worstMaths);
       }
    }
 
    // ======================================================================== ENV
+   // Analytic linear ADSR for a gate open on [on, off): attack from 0, decay
+   // to sustain, release from the level the gate closed at.
+   double AdsrRef(const EnvelopeNode& e, double on, double off, double t)
+   {
+      const double a = e.attackMs * 0.001, d = e.decayMs * 0.001, r = e.releaseMs * 0.001, sus = e.sustainLevel;
+      auto held = [&](double u) {
+         if (u < 0.0) return 0.0;
+         if (u < a) return u / a;
+         if (u < a + d) return 1.0 + (sus - 1.0) * (u - a) / d;
+         return sus;
+      };
+      if (t < off)
+         return held(t - on);
+      const double from = held(off - on), u = t - off;
+      return u < r ? from * (1.0 - u / r) : 0.0;
+   }
+
    void AuditEnvelope(Flags& flags)
    {
-      for (double rate : { kSr, 60.0 })
+      // New maths (ADSR output): every frame's value against the analytic
+      // ADSR. The gate is a step, so the node places its edge where the
+      // straight line between the two frames around it crosses the
+      // threshold (mid-frame for a 0 -> 1 jump); the reference uses those
+      // same edges, so the row is the node maths alone. The edge offset
+      // from the true step is reported apart (input sampling).
+      for (double rate : { kSr, 60.0, 61.0, 24.0 })
       {
          StartOffline(120.0f);
          FnMod in;
          in.f = GateInput;
          auto env = Make<EnvelopeNode>();
+         env->input = &in;
+         const double dt = 1.0 / rate;
+         const double kOn = std::ceil(0.5 * rate - 1e-9), kOff = std::ceil(2.0 * rate - 1e-9);
+         const double on = (kOn - 0.5) * dt, off = (kOff - 0.5) * dt; // mid-frame crossings
+         double worst = 0.0;
+         for (long long k = 0; k <= (long long)(3.0 * rate); k++)
+         {
+            const double s = k * dt;
+            At(s);
+            worst = std::max(worst, std::fabs(env->Value01() - AdsrRef(*env, on, off, s)));
+         }
+         printf("MODAUDIT ENV   Envelope ADSR @%-6g vs analytic ADSR %.2e | gate edges %.2f / %.2f ms from the true steps (half a frame: input sampling)\n",
+                rate, worst, (on - 0.5) * 1000.0, (off - 2.0) * 1000.0);
+         if (worst > kStatefulLimit)
+            flags.Add("ENV", rate == kSr ? "ADSR @48k" : "ADSR @fps", "vs analytic", worst);
+      }
+
+      // Legacy (centred output, per-call stage edges): what saved patches get.
+      for (double rate : { kSr, 60.0 })
+      {
+         StartOffline(120.0f);
+         FnMod in;
+         in.f = GateInput;
+         auto env = MakeLegacy<EnvelopeNode>();
          env->input = &in;
          double attackEnd = -1, decayEnd = -1, releaseEnd = -1;
          float rest = -1, peak = 0, sustainOut = 0, releaseMin = 1;
@@ -819,18 +1037,9 @@ namespace
             }
          }
          const double aMs = (attackEnd - 0.5) * 1000.0, dMs = (decayEnd - attackEnd) * 1000.0, rMs = (releaseEnd - 2.0) * 1000.0;
-         printf("MODAUDIT ENV   Envelope @%-6g attack %.2f ms (set %.0f) decay %.2f ms (set %.0f) release %.2f ms (set %.0f) | out: rest %.3f peak %.3f sustain %.3f release-min %.3f\n",
+         printf("MODAUDIT ENV   legacy Envelope @%-6g attack %.2f ms (set %.0f) decay %.2f ms (set %.0f) release %.2f ms (set %.0f) | out: rest %.3f peak %.3f sustain %.3f release-min %.3f\n",
                 rate, aMs, env->attackMs, dMs, env->decayMs, rMs, env->releaseMs, rest, peak, sustainOut, releaseMin);
-         auto check = [&](const char* what, double got, double want) {
-            const double tol = std::max(0.01 * want, 1000.0 / kSr);
-            if (std::fabs(got - want) > tol)
-               flags.Add("ENV", rate == kSr ? "Envelope @48k" : "Envelope @60fps", what, got - want);
-         };
-         check("attack ms", aMs, env->attackMs);
-         check("decay ms", dMs, env->decayMs);
-         check("release ms", rMs, env->releaseMs);
-         if (rate == kSr && (std::fabs(rest) > 1e-4f || releaseMin < rest - 1e-4f))
-            flags.Add("ENV", "Envelope output", "rest/dip", releaseMin);
+         (void)flags; // legacy behaviour is kept on purpose: reported, not flagged
       }
 
       // Audio to CV follower: DC step 0 -> 1 -> 0, time to 63.2% / 36.8%.
@@ -897,19 +1106,30 @@ namespace
          StartOffline(120.0f);
          FnMod in;
          in.f = GateInput;
-         auto env = Make<EnvelopeNode>();
-         env->input = &in;
-         for (int k = 0; k <= 727; k++) // 1440 fps to 0.505 s
+         for (int legacy = 1; legacy >= 0; legacy--)
          {
-            At(k / 1440.0);
-            env->Value01();
+            StartOffline(120.0f);
+            auto env = legacy ? MakeLegacy<EnvelopeNode>() : Make<EnvelopeNode>();
+            env->input = &in;
+            for (int k = 0; k <= 727; k++) // 1440 fps to 0.505 s
+            {
+               At(k / 1440.0);
+               env->Value01();
+            }
+            const float before = env->Value01();
+            At(0.501);
+            const float after = env->Value01();
+            printf("MODAUDIT SEEK  %sEnvelope back 4 ms in attack: out %.3f -> %.3f (follows the clock)\n", legacy ? "legacy " : "", before, after);
+            if (legacy && after < 0.5f)
+               flags.Add("SEEK", "legacy Envelope", "back-seek out", after);
+            if (!legacy)
+            {
+               // Gate edge at the mid-frame crossing 0.5 - 1/2880 s.
+               const double want = (0.501 - (0.5 - 0.5 / 1440.0)) * 1000.0 / env->attackMs;
+               if (std::fabs(after - std::min(1.0, want)) > 1e-3)
+                  flags.Add("SEEK", "Envelope", "back-seek level", after - want);
+            }
          }
-         const float before = env->Value01();
-         At(0.501);
-         const float after = env->Value01();
-         printf("MODAUDIT SEEK  Envelope back 4 ms in attack: out %.3f -> %.3f (stage time recomputed from gate-on: follows the clock)\n", before, after);
-         if (after < 0.5f)
-            flags.Add("SEEK", "Envelope", "back-seek out", after);
       }
       // Smooth time: seek back snaps to the input.
       {
@@ -955,6 +1175,70 @@ namespace
             prevBeats = T().Beats();
          }
          printf("MODAUDIT SEEK  LFO %g beat(s), loop 0..4: per-block step %.3g normally, %.3g at the wrap\n", rate, normal, atWrap);
+      }
+
+      // Free run: the same 3-beat LFO in the 4-beat loop, phase from its own
+      // clock, so the wrap is a normal step.
+      {
+         StartLive(120.0f, kSr);
+         T().SetLoop(true, 0.0, 4.0);
+         auto lfo = Make<LFONode>();
+         lfo->phaseMode = LFONode::kPhaseFree;
+         lfo->rateMode = LFONode::kRateBeats;
+         lfo->rateBeats = 3.0f;
+         Transport::SetWallClockForTest(&ModelWall);
+         gWall = 0.0;
+         T().BeginFrameClock();
+         float prev = lfo->Value01();
+         double normal = 0.0, atWrap = 0.0;
+         double prevBeats = T().Beats();
+         for (int j = 0; j < 2000; j++)
+         {
+            gWall = j * 512.0 / kSr;
+            T().AdvanceAudioClock(512);
+            T().BeginFrameClock();
+            const float v = lfo->Value01();
+            const bool wrapped = T().Beats() < prevBeats;
+            const double d = std::fabs(v - prev);
+            (wrapped ? atWrap : normal) = std::max(wrapped ? atWrap : normal, d);
+            prev = v;
+            prevBeats = T().Beats();
+         }
+         Transport::SetWallClockForTest(nullptr);
+         printf("MODAUDIT SEEK  LFO free 3 beats, loop 0..4: per-block step %.3g normally, %.3g at the wrap\n", normal, atWrap);
+         if (atWrap > normal * 1.01 + 1e-6)
+            flags.Add("SEEK", "LFO free", "wrap jump", atWrap);
+      }
+      // Retrigger: the trig input rising through 0.5 restarts the cycle at
+      // the crossing (between frames, on the straight line).
+      {
+         StartOffline(120.0f);
+         FnMod trig;
+         trig.f = [](double s) { return (s >= 1.0 && s < 1.5) || s >= 2.3 ? 1.0f : 0.0f; };
+         auto lfo = Make<LFONode>();
+         lfo->phaseMode = LFONode::kPhaseRetrigger;
+         lfo->rateMode = LFONode::kRateHz;
+         lfo->rateHz = 1.25f;
+         lfo->shape = 2;
+         lfo->trigger = &trig;
+         double worst = 0.0;
+         for (int k = 0; k <= 180; k++)
+         {
+            const double s = k / 60.0;
+            At(s);
+            const float v = lfo->Value01();
+            // Edges at the mid-frame crossings before 1.0 and 2.3 s.
+            const double e1 = 1.0 - 0.5 / 60.0, e2 = std::ceil(2.3 * 60.0 - 1e-9) / 60.0 - 0.5 / 60.0;
+            if (s >= e1)
+            {
+               const double since = s >= e2 ? s - e2 : s - e1;
+               double d = std::fabs(v - LfoRef(2, 1.25 * since));
+               worst = std::max(worst, std::min(d, 1.0 - d));
+            }
+         }
+         printf("MODAUDIT SEEK  LFO retrigger 1.25 Hz: phase vs (t - edge) * rate %.2e\n", worst);
+         if (worst > kShapeLimit)
+            flags.Add("SEEK", "LFO retrigger", "phase err", worst);
       }
 
       // Tempo change: LFO phase continuous across it.
@@ -1028,8 +1312,24 @@ namespace
       auto l1 = Make<LFONode>(), l2 = Make<LFONode>();
       l1->shape = l2->shape = 5;
       const bool shLockstep = seq(l1.get(), 1000) == seq(l2.get(), 1000);
-      printf("MODAUDIT SEED  Random same seed same output: %s | two spawns differ: %s | seeds 1.0 vs 1.0005 collide: %s | two LFO S&H identical (no seed): %s\n",
-             same ? "yes" : "NO", spawnsDiffer ? "yes" : "NO", nearSeedsCollide ? "YES" : "no", shLockstep ? "YES" : "no");
+      auto l3 = Make<LFONode>(), l4 = Make<LFONode>();
+      l3->shape = l4->shape = 5;
+      l3->seed = l4->seed = 42.0f;
+      const bool shSameSeed = seq(l3.get(), 1000) == seq(l4.get(), 1000);
+      // Legacy (saved patches): kept as they were.
+      auto le = MakeLegacy<RandomNode>(), lf = MakeLegacy<RandomNode>();
+      le->seed = 1.0f;
+      lf->seed = 1.0005f;
+      auto ll1 = MakeLegacy<LFONode>(), ll2 = MakeLegacy<LFONode>();
+      ll1->shape = ll2->shape = 5;
+      const bool legacyCollide = seq(le.get(), 1000) == seq(lf.get(), 1000);
+      const bool legacyLockstep = seq(ll1.get(), 1000) == seq(ll2.get(), 1000);
+      printf("MODAUDIT SEED  Random same seed same output: %s | two spawns differ: %s | seeds 1.0 vs 1.0005 collide: %s | two LFO S&H spawns identical: %s | LFO S&H same seed same output: %s\n",
+             same ? "yes" : "NO", spawnsDiffer ? "yes" : "NO", nearSeedsCollide ? "YES" : "no", shLockstep ? "YES" : "no", shSameSeed ? "yes" : "NO");
+      printf("MODAUDIT SEED  legacy (maths 0, kept): seeds 1.0 vs 1.0005 collide: %s | LFO S&H lockstep: %s\n",
+             legacyCollide ? "yes" : "no", legacyLockstep ? "yes" : "no");
+      if (!shSameSeed)
+         flags.Add("SEED", "LFO S&H", "same seed", 0);
       if (!same)
          flags.Add("SEED", "Random", "same seed", 0);
       if (!spawnsDiffer)
@@ -1061,6 +1361,13 @@ namespace
    {
       return { name, []() { return N::Create(); }, clamped };
    }
+   // The same node as a pre-Block-3 patch loads it, so the baseline compares
+   // like with like and the new maths' own cost shows as the difference.
+   template <class N>
+   Registered RegLegacy(const char* name)
+   {
+      return { name, []() { return (INode*)MakeLegacy<N>().release(); }, true };
+   }
 
    bool AuditCpu(Flags& flags)
    {
@@ -1077,6 +1384,8 @@ namespace
          Reg<MidiCCNode>("MIDI CC"), Reg<MidiTriggerNode>("MIDI Trigger"), Reg<OscReceiveNode>("OSC Receive"),
          Reg<PathNode>("Path"), Reg<GeometryTableNode>("Geometry Table"), Reg<DriftNode>("Drift"),
          Reg<MovesNode>("Moves"), Reg<PredictiveModulatorNode>("Predictive"),
+         RegLegacy<LFONode>("LFO legacy"), RegLegacy<RandomNode>("Random legacy"), RegLegacy<SmoothNode>("Smooth legacy"),
+         RegLegacy<EnvelopeNode>("Envelope legacy"), RegLegacy<CVToPitchNode>("CV Pitch legacy"),
       };
       bool ok = true;
       FnMod lfoIn;

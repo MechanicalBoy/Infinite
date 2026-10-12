@@ -906,6 +906,7 @@ bool RunEnvelopeFixture()
    auto EnvLevelFromOut = [](float out01, float in01) { return (out01 - 0.5f) / (in01 - 0.5f); };
 
    EnvelopeNode env;
+   env.BeforeLoadParams(); // legacy centred maths: this fixture pins the pre-v0.5 formula
    env.attackMs = 50.0f;
    env.decayMs = 100.0f;
    env.sustainLevel = 0.4f;
@@ -959,6 +960,7 @@ bool RunEnvelopeFixture()
    // sits exactly at centre, so 0.5 + (in01-0.5)*envLevel collapses to 0.5
    // whatever the envelope is doing.
    EnvelopeNode unpatched;
+   unpatched.BeforeLoadParams(); // legacy centred maths: this fixture pins the pre-v0.5 formula
    unpatched.attackMs = 5.0f;
    unpatched.decayMs = 5.0f;
    unpatched.releaseMs = 5.0f;
