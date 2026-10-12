@@ -77,13 +77,14 @@ private:
       GLint pass = -1;
       GLint texel = -1;
       GLint time = -1;
+      GLint converted = -1;
       std::vector<GLint> params;
    };
 
    bool EnsureShader();
    void LookupLocs(unsigned int program, PassLocs& locs) const;
    void BindUniforms(const PassLocs& locs, unsigned int srcTex, unsigned int srcTex2,
-                     unsigned int passTex, float time) const;
+                     unsigned int passTex, float time, int converted = 0) const;
 
    // Everything the shader pass's output depends on. Reusing mOut's contents
    // is only safe when all of this is identical to the last time it ran -
@@ -117,11 +118,15 @@ private:
    GLUtil::Fbo mOut;
    unsigned int mProgram = 0;
    unsigned int mPreProgram = 0;
+   unsigned int mConvProgram = 0;
+   int mLinearParam = -1;  // index of uLinear in mDef.params, or -1
+   int mQualityParam = -1; // index of uQuality, or -1
    bool mShaderTried = false;
    int mLastCookFrame = -1;
 
    PassLocs mMainLocs;
    PassLocs mPreLocs;
+   PassLocs mConvLocs;
 
    // Filters whose shader reads uTime are inherently animated, so the
    // uploaded time value is part of Signature.

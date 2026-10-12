@@ -66,6 +66,14 @@ struct FilterDef
    // that intermediate bound as uPass. A 2D Gaussian written as a horizontal
    // prePass plus a vertical main pass reads 2N texels instead of N².
    std::string prePassBody;
+
+   // Two-pass blurs only. When Linear light is on and the filter's Quality
+   // param is above 0 (Smooth), FilterNode first converts the input once to
+   // premultiplied linear light in a float scratch, then runs prePassBody on
+   // that with uConverted = 1, so the body can pair its taps through bilinear
+   // filtering (exact: the data is linear and premultiplied) instead of
+   // decoding and premultiplying every tap.
+   bool convertFirst = false;
 };
 
 const std::vector<FilterDef>& GetFilterDefs();

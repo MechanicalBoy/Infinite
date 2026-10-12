@@ -36,10 +36,12 @@ namespace GLUtil
    //
    // The contents are valid ONLY until the next AcquireScratchFbo call, from
    // any caller: write it and consume it straight away, with no Pull, cook or
-   // other acquire in between. Main GL context only - every image cook runs
+   // other acquire in between. `slot` gives one cook several distinct buffers
+   // of the same size and format (acquire them all first, then re-acquire
+   // the first: a later acquire can move the earlier pointers). Main GL context only - every image cook runs
    // there (projector contexts only blit), and FBO names are per context.
    // Returns nullptr if the allocation fails.
-   Fbo* AcquireScratchFbo(int w, int h, unsigned int internalFormat);
+   Fbo* AcquireScratchFbo(int w, int h, unsigned int internalFormat, int slot = 0);
 
    // Call once per main-loop frame: frees scratch targets that have gone
    // unused for 300 frames (a resized or deleted filter's old

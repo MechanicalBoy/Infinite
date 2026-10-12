@@ -155,8 +155,25 @@ const std::vector<FilterDef>& GetFilterDefs()
           LIN() }, 1,
         "uniform float uRadius;\n"
         "uniform int uQuality;\n"
+        "uniform int uConverted;\n"
         "void main() {\n"
         "   vec4 sum = vec4(0.0); float total = 0.0;\n"
+        "   if (uConverted == 1) {\n"
+        "      float r = max(uRadius, 0.001);\n"
+        "      int n = min(int(ceil(4.0 * r)), 40);\n"
+        "      sum = texture(uSrc, vUv); total = 1.0;\n"
+        "      for (int x = 1; x <= n; x += 2) {\n"
+        "         float d1 = float(x) / r, d2 = float(x + 1) / r;\n"
+        "         float w1 = exp(-d1 * d1 / 8.0);\n"
+        "         float w2 = x + 1 <= n ? exp(-d2 * d2 / 8.0) : 0.0;\n"
+        "         float w = w1 + w2;\n"
+        "         if (w < 1e-6) break;\n"
+        "         vec2 off = vec2((float(x) * w1 + float(x + 1) * w2) / w * uTexelSize.x, 0.0);\n"
+        "         sum += (texture(uSrc, vUv + off) + texture(uSrc, vUv - off)) * w; total += 2.0 * w;\n"
+        "      }\n"
+        "      fragColor = sum / total;\n"
+        "      return;\n"
+        "   }\n"
         "   if (uQuality == 0) {\n"
         "      for (int x = -4; x <= 4; x++) {\n"
         "         float w = exp(-float(x*x) / 8.0);\n"
@@ -172,7 +189,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      }\n"
         "   }\n"
         "   fragColor = sum / total;\n"
-        "}\n" },
+        "}\n", true },
 
       // quality: Classic is the original nine taps `radius` px apart (patches
       // saved before Quality existed load with it). Smooth averages every
@@ -201,8 +218,20 @@ const std::vector<FilterDef>& GetFilterDefs()
           OLD(0.0f, E("Quality", "uQuality", { "Classic", "Smooth" }, 1)) }, 1,
         "uniform float uRadius;\n"
         "uniform int uQuality;\n"
+        "uniform int uConverted;\n"
         "void main() {\n"
         "   vec4 sum = vec4(0.0);\n"
+        "   if (uConverted == 1) {\n"
+        "      int n = min(int(floor(4.0 * uRadius + 0.5)), 40);\n"
+        "      sum = texture(uSrc, vUv);\n"
+        "      for (int x = 1; x <= n; x += 2) {\n"
+        "         float w = x + 1 <= n ? 2.0 : 1.0;\n"
+        "         vec2 off = vec2((w > 1.5 ? float(x) + 0.5 : float(x)) * uTexelSize.x, 0.0);\n"
+        "         sum += (texture(uSrc, vUv + off) + texture(uSrc, vUv - off)) * w;\n"
+        "      }\n"
+        "      fragColor = sum / float(2 * n + 1);\n"
+        "      return;\n"
+        "   }\n"
         "   if (uQuality == 0) {\n"
         "      for (int x = -4; x <= 4; x++)\n"
         "         sum += ImgTap(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0));\n"
@@ -213,7 +242,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   for (int x = -n; x <= n; x++)\n"
         "      sum += ImgTap(vUv + vec2(float(x) * uTexelSize.x, 0.0));\n"
         "   fragColor = sum / float(2 * n + 1);\n"
-        "}\n" },
+        "}\n", true },
 
       { "motionblur", "Effects",
         "uniform float uAngle;\n"

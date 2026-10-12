@@ -230,9 +230,24 @@ GPU, 1080p, same binary, 3 interleaved pairs (legacy vs new, load < 6), ms:
 | LUT | 0.39 | 0.14 | -64% |
 | Lookup, Grade | 0.08, 0.07 | 0.08, 0.07 | 0 |
 
+Blur GPU follow-up (convert-first pass): Smooth blurs now convert the input
+once to premultiplied linear light in a float scratch, then pair the horizontal
+taps through bilinear filtering (pairing on the encoded source would bring the
+edge dip back). Same audit numbers (0 ripples, bleed 0, edge 0.999). Median of
+6 interleaved pairs against legacy, ms:
+
+| Filter | Legacy | New | Change | Was |
+|---|---|---|---|---|
+| Gaussian | 1.85 to 2.4 (noisy) | 2.3 | about +25% against the stable 1.85 baseline | +53% |
+| Box | 1.41 | 1.69 | **+20%** | +77% |
+| Bloom | 2.88 | 3.57 | +24% | +26% |
+| Diffuse Glow | 1.82 | 2.01 | +10% | +8% |
+
 Misses and open items:
-- Blur GPU is well over the +10% target. The cost comes from the premultiplied
-  taps and the extra vertical-pass work. Not tuned in this block.
+- Blur GPU is still over the +10% target (Box +20%, Gaussian about +25%). Smooth
+  reads every pixel out to 4 x radius where Classic reads 9 taps, so it does
+  more work by design. Proposed target: at most 1.5x Classic at the default
+  radius. Bloom was not touched.
 - Values above 1.0 are still clipped (exposure +1 EV on 80% gives 1.000).
 - Still flagged, not in scope: bleed on motion blur (0.08), radial blur (0.02),
   warps (0.13-0.25), emboss, normal map; Vivid Light 3 codes.

@@ -52,6 +52,8 @@ FilterNode::~FilterNode()
       glDeleteProgram(mProgram);
    if (mPreProgram != 0)
       glDeleteProgram(mPreProgram);
+   if (mConvProgram != 0)
+      glDeleteProgram(mConvProgram);
 }
 
 FilterNode::FilterNode(const FilterDef& def)
@@ -63,6 +65,13 @@ FilterNode::FilterNode(const FilterDef& def)
       mParamValues[i][0] = def.params[i].defaultVal[0];
       mParamValues[i][1] = def.params[i].defaultVal[1];
       mParamValues[i][2] = def.params[i].defaultVal[2];
+   }
+   for (size_t i = 0; i < def.params.size(); i++)
+   {
+      if (def.params[i].uniformName == "uLinear")
+         mLinearParam = (int)i;
+      else if (def.params[i].uniformName == "uQuality")
+         mQualityParam = (int)i;
    }
    mUsesTime = mDef.fragmentBody.find("uTime") != std::string::npos ||
                mDef.prePassBody.find("uTime") != std::string::npos;
@@ -83,6 +92,15 @@ bool FilterNode::EnsureShader()
       LookupLocs(mPreProgram, mPreLocs);
    }
 
+   if (mDef.convertFirst && !mDef.prePassBody.empty())
+   {
+      std::string convSrc = Preamble() + "void main() { fragColor = ImgTap(vUv); }\n";
+      mConvProgram = GLUtil::CompileProgram(convSrc.c_str());
+      if (mConvProgram == 0)
+         return false;
+      LookupLocs(mConvProgram, mConvLocs);
+   }
+
    std::string src = GLUtil::WithClampedOutput(Preamble() + mDef.fragmentBody, "fragColor.rgb = ImgEncode(fragColor.rgb);");
    mProgram = GLUtil::CompileProgram(src.c_str());
    if (mProgram == 0)
@@ -99,13 +117,14 @@ void FilterNode::LookupLocs(unsigned int program, PassLocs& locs) const
    locs.pass = glGetUniformLocation(program, "uPass");
    locs.texel = glGetUniformLocation(program, "uTexelSize");
    locs.time = glGetUniformLocation(program, "uTime");
+   locs.converted = glGetUniformLocation(program, "uConverted");
    locs.params.resize(mDef.params.size());
    for (size_t i = 0; i < mDef.params.size(); i++)
       locs.params[i] = glGetUniformLocation(program, mDef.params[i].uniformName.c_str());
 }
 
 void FilterNode::BindUniforms(const PassLocs& locs, unsigned int srcTex, unsigned int srcTex2,
-                              unsigned int passTex, float time) const
+                              unsigned int passTex, float time, int converted) const
 {
    glActiveTexture(GL_TEXTURE0);
    glBindTexture(GL_TEXTURE_2D, srcTex);
@@ -126,6 +145,8 @@ void FilterNode::BindUniforms(const PassLocs& locs, unsigned int srcTex, unsigne
    glUniform2f(locs.texel, 1.0f / mInput.Width(), 1.0f / mInput.Height());
 
    glUniform1f(locs.time, time);
+   if (locs.converted >= 0)
+      glUniform1i(locs.converted, converted);
 
    for (size_t i = 0; i < mDef.params.size(); i++)
    {
@@ -197,12 +218,36 @@ void FilterNode::CookIfNeeded(int frameId)
       // because both input Pulls already ran above, so no other cook (and no
       // other AcquireScratchFbo) can run between the two passes. Keep it that
       // way - a Pull or cook moved in between would overwrite it.
-      GLUtil::Fbo* mid = GLUtil::AcquireScratchFbo(mInput.Width(), mInput.Height(), GL_RGBA16F);
+      const int w = mInput.Width();
+      const int h = mInput.Height();
+      const bool convert = mConvProgram != 0 && mLinearParam >= 0 && mQualityParam >= 0 &&
+                           mParamValues[mLinearParam][0] >= 0.5f && mParamValues[mQualityParam][0] >= 0.5f;
+      unsigned int preSrc = srcTex;
+      GLUtil::Fbo* mid = nullptr;
+      if (convert)
+      {
+         // Acquire both buffers before using either: a later acquire can
+         // move the earlier pointer, so re-fetch slot 0 afterwards.
+         if (GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F, 0) == nullptr ||
+             GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F, 1) == nullptr)
+            return;
+         GLUtil::Fbo* conv = GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F, 0);
+         mid = GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F, 1);
+         GLUtil::RunShaderPass(*conv, mConvProgram, [this, srcTex, srcTex2, &sig]()
+         {
+            BindUniforms(mConvLocs, srcTex, srcTex2, 0, sig.time, 0);
+         });
+         preSrc = GLUtil::FboTexture(*conv);
+      }
+      else
+      {
+         mid = GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F);
+      }
       if (mid == nullptr)
          return;
-      GLUtil::RunShaderPass(*mid, mPreProgram, [this, srcTex, srcTex2, &sig]()
+      GLUtil::RunShaderPass(*mid, mPreProgram, [this, preSrc, srcTex2, &sig, convert]()
       {
-         BindUniforms(mPreLocs, srcTex, srcTex2, 0, sig.time);
+         BindUniforms(mPreLocs, preSrc, srcTex2, 0, sig.time, convert ? 1 : 0);
       });
       passTex = GLUtil::FboTexture(*mid);
    }

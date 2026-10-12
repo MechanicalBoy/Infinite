@@ -175,6 +175,7 @@ namespace GLUtil
       struct ScratchEntry
       {
          Fbo fbo;
+         int slot = 0;
          unsigned long long lastUsedFrame = 0;
       };
       constexpr unsigned long long kScratchIdleFrames = 300;
@@ -182,17 +183,18 @@ namespace GLUtil
       unsigned long long sScratchFrame = 0;
    }
 
-   Fbo* AcquireScratchFbo(int w, int h, unsigned int internalFormat)
+   Fbo* AcquireScratchFbo(int w, int h, unsigned int internalFormat, int slot)
    {
       for (ScratchEntry& e : sScratch)
       {
-         if (e.fbo.w == w && e.fbo.h == h && e.fbo.internalFormat == internalFormat)
+         if (e.fbo.w == w && e.fbo.h == h && e.fbo.internalFormat == internalFormat && e.slot == slot)
          {
             e.lastUsedFrame = sScratchFrame;
             return &e.fbo;
          }
       }
       ScratchEntry e;
+      e.slot = slot;
       if (!EnsureFbo(e.fbo, w, h, internalFormat, "ScratchFbo"))
          return nullptr;
       e.lastUsedFrame = sScratchFrame;
