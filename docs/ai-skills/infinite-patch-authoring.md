@@ -248,74 +248,74 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Audio Color Ramp` | img:image, audio:audio | out:image | 28 |  |
-| `Blend` | input:image, input_2:image | out:image | 4 |  |
+| `Blend` | input:image, input_2:image | out:image | 5 |  |
 | `Color Ramp` | input:image | out:image | 67 | bypass |
 | `Comment` | none | out:image | 5 |  |
-| `Curves` | input:image | out:image | 7 | bypass |
+| `Curves` | input:image | out:image | 8 | bypass |
 | `Feedback` | input:image | out:image | 1 | bypass |
 | `Fit` | input:image | out:image | 8 | bypass |
 | `Group` | none | out:image | 4 | bypass |
-| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 10 |  |
+| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 11 |  |
 | `Null` | in:image | out:image | 0 | bypass |
 | `Reaction Diffusion` | input:image | out:image | 11 | bypass |
 | `Remove Background` | input:image | out:image | 9 | bypass |
 | `Switcher` | input:image, input_2:image, input_3:image, input_4:image | out:image | 5 |  |
 | `Trails` | input:image | out:image | 7 | bypass |
 | `Viewport` | in:image | out:image | 0 | bypass |
-| `alpha from luma` | input:image | out:image | 1 | bypass |
-| `alpha invert` | input:image | out:image | 0 | bypass |
-| `alpha levels` | input:image | out:image | 3 | bypass |
-| `chroma key` | input:image | out:image | 5 | bypass |
-| `color adjustments` | input:image | out:image | 34 | bypass |
-| `coloroverlay` | input:image | out:image | 2 | bypass |
-| `dropshadow` | input:image | out:image | 4 | bypass |
-| `exposure` | input:image | out:image | 2 | bypass |
-| `gradientmap` | input:image | out:image | 3 | bypass |
-| `invert` | input:image | out:image | 0 | bypass |
-| `lookup` | input:image, input_2:image | out:image | 4 |  |
-| `luma key` | input:image | out:image | 5 | bypass |
-| `lut` | input:image, input_2:image | out:image | 3 |  |
-| `opacity` | input:image | out:image | 1 | bypass |
-| `outerglow` | input:image | out:image | 3 | bypass |
-| `posterize` | input:image | out:image | 1 | bypass |
-| `premultiply` | input:image | out:image | 1 | bypass |
-| `set alpha` | input:image, input_2:image | out:image | 0 |  |
-| `show alpha` | input:image | out:image | 0 | bypass |
-| `threshold` | input:image | out:image | 1 | bypass |
-| `transform` | input:image | out:image | 10 | bypass |
+| `alpha from luma` | input:image | out:image | 2 | bypass |
+| `alpha invert` | input:image | out:image | 1 | bypass |
+| `alpha levels` | input:image | out:image | 4 | bypass |
+| `chroma key` | input:image | out:image | 6 | bypass |
+| `color adjustments` | input:image | out:image | 35 | bypass |
+| `coloroverlay` | input:image | out:image | 3 | bypass |
+| `dropshadow` | input:image | out:image | 5 | bypass |
+| `exposure` | input:image | out:image | 3 | bypass |
+| `gradientmap` | input:image | out:image | 4 | bypass |
+| `invert` | input:image | out:image | 1 | bypass |
+| `lookup` | input:image, input_2:image | out:image | 5 |  |
+| `luma key` | input:image | out:image | 6 | bypass |
+| `lut` | input:image, input_2:image | out:image | 4 |  |
+| `opacity` | input:image | out:image | 2 | bypass |
+| `outerglow` | input:image | out:image | 4 | bypass |
+| `posterize` | input:image | out:image | 2 | bypass |
+| `premultiply` | input:image | out:image | 2 | bypass |
+| `set alpha` | input:image, input_2:image | out:image | 1 |  |
+| `show alpha` | input:image | out:image | 1 | bypass |
+| `threshold` | input:image | out:image | 2 | bypass |
+| `transform` | input:image | out:image | 11 | bypass |
 
 ### Effects
 
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Resynthesize` | input:image | out:image | 20 | bypass |
-| `addnoise` | input:image | out:image | 1 | bypass |
-| `bloom` | input:image | out:image | 4 | bypass |
-| `boxblur` | input:image | out:image | 3 | bypass |
-| `convolve` | input:image | out:image | 13 | bypass |
-| `crop` | input:image | out:image | 6 | bypass |
-| `diffuseglow` | input:image | out:image | 3 | bypass |
-| `displace` | input:image, input_2:image | out:image | 2 |  |
-| `edge outline` | input:image | out:image | 3 | bypass |
-| `edge sobel` | input:image | out:image | 2 | bypass |
-| `emboss` | input:image | out:image | 4 | bypass |
-| `gaussianblur` | input:image | out:image | 3 | bypass |
-| `glitch` | input:image | out:image | 5 | bypass |
-| `halftone` | input:image | out:image | 3 | bypass |
-| `kaleidoscope` | input:image | out:image | 5 | bypass |
-| `lensdistortion` | input:image | out:image | 3 | bypass |
-| `liquify` | input:image | out:image | 3 | bypass |
-| `mirror tile` | input:image | out:image | 1 | bypass |
-| `motionblur` | input:image | out:image | 3 | bypass |
-| `normal map` | input:image | out:image | 3 | bypass |
-| `pinchpunch` | input:image | out:image | 4 | bypass |
-| `pixelate` | input:image | out:image | 1 | bypass |
-| `radialblur` | input:image | out:image | 4 | bypass |
-| `ripple` | input:image | out:image | 5 | bypass |
-| `symmetry` | input:image | out:image | 4 | bypass |
-| `twirl` | input:image | out:image | 4 | bypass |
-| `unsharpmask` | input:image | out:image | 2 | bypass |
-| `vignette` | input:image | out:image | 5 | bypass |
+| `addnoise` | input:image | out:image | 2 | bypass |
+| `bloom` | input:image | out:image | 5 | bypass |
+| `boxblur` | input:image | out:image | 4 | bypass |
+| `convolve` | input:image | out:image | 14 | bypass |
+| `crop` | input:image | out:image | 7 | bypass |
+| `diffuseglow` | input:image | out:image | 4 | bypass |
+| `displace` | input:image, input_2:image | out:image | 4 |  |
+| `edge outline` | input:image | out:image | 4 | bypass |
+| `edge sobel` | input:image | out:image | 3 | bypass |
+| `emboss` | input:image | out:image | 6 | bypass |
+| `gaussianblur` | input:image | out:image | 4 | bypass |
+| `glitch` | input:image | out:image | 7 | bypass |
+| `halftone` | input:image | out:image | 4 | bypass |
+| `kaleidoscope` | input:image | out:image | 6 | bypass |
+| `lensdistortion` | input:image | out:image | 4 | bypass |
+| `liquify` | input:image | out:image | 5 | bypass |
+| `mirror tile` | input:image | out:image | 2 | bypass |
+| `motionblur` | input:image | out:image | 4 | bypass |
+| `normal map` | input:image | out:image | 5 | bypass |
+| `pinchpunch` | input:image | out:image | 6 | bypass |
+| `pixelate` | input:image | out:image | 2 | bypass |
+| `radialblur` | input:image | out:image | 5 | bypass |
+| `ripple` | input:image | out:image | 7 | bypass |
+| `symmetry` | input:image | out:image | 5 | bypass |
+| `twirl` | input:image | out:image | 6 | bypass |
+| `unsharpmask` | input:image | out:image | 3 | bypass |
+| `vignette` | input:image | out:image | 6 | bypass |
 
 ### Macros
 
