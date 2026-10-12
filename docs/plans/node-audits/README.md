@@ -151,7 +151,7 @@ COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden w
 | Overlay and Hard Light are swapped: Overlay tests the source (Hard Light's rule), Hard Light tests the backdrop. Error up to 251/255 | **fixed** (also Soft Light pivot): W3C maths now; old maths kept as modes 32-34 ("(old)"); Blend / Layer Stack carry a `blendFix` param (off on old patches), patch files carry `blendfix 1` (absent = clips mapped to 32-34). COMPAUDIT blend flags: 3 to 0, see `baseline-2026-10-12-comp-after-blendfix.txt` |
 | Soft Light picks the wrong branch of its D(x) curve (the 0.25 pivot is inverted). Error up to 83/255 | open, same fix site and same legacy-flag question |
 | Source-over alpha with random alpha and mix 0.7 matches W3C for Normal, Multiply, Screen | clean |
-| Feedback in a plain chain passes the current frame through; the one-frame delay only exists inside a cycle, although the node says the delay is always one frame | open: behaviour or wording |
+| Feedback in a plain chain passes the current frame through; the one-frame delay only exists inside a cycle, although the node says the delay is always one frame | **settled**: wording fixed (header comment, delayFrames note); behaviour kept because saved loops depend on this timing; help text already says it only acts inside a loop. The audit line stays as a documented by-design FLAG |
 | Trails decay matches decay^n within 0.2/255 and always reaches black (no 8-bit ghost) | clean |
 | Not yet covered: Layer Stack, Curves, Color Ramp, Fit, Switcher, Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; the geometry nodes other than primitives and Ops | next |
 
