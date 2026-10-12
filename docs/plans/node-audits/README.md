@@ -197,7 +197,7 @@ Reaction Diffusion, Remove Background and the image Sources.
 | 1 | Audits wired into the driver groups and `FULL_TESTS` | all five new audits | **met**: all five gate; the driver reads `PASS (n flags)` as a pass (before, every audit read as "no verdict") |
 | 2 | Baseline run saved per audit before any fix | yes | **met**: `baseline-*` and `after-*` files in this folder |
 | 3 | FLAG lines closed or recorded as an accepted exception with owner and date | all | **met for audio**: SYNTHAUDIT leaves only Metallic F1 (accepted) and F7 (metric unreliable on a resonator); NOTEAUDIT clean; Audio In/Out accepted as hardware-only. Geometry and compositing rows are tracked in their own table |
-| 4 | CPU per node | at most +10%, exceptions recorded | **met**: the fixes add one multiply per voice (F11) and a sample-position compare per step (stepTiming); SYNTHAUDIT POLY ns/frame is unchanged within noise |
+| 4 | CPU per node | at most +10%, exceptions recorded | **met by construction**: the fixes add one multiply per voice (F11) and a sample-position compare per step (stepTiming); not benched separately (no loop added, cost is per voice or per step, not per sample) |
 | 5 | Saved patches | unchanged output (ROUNDTRIPTEST and the legacy-flag test pass) | **met**: PATCHTEST and ROUNDTRIPTEST pass (308/308 types, 15/15 templates); every behaviour change sits behind a legacy param (`velCurve`, `stepTiming`, `rateFix`) and the legacy paths are re-measured each run |
 | 6 | Competitor numbers for Synths | at least pitch, alias and envelope for Diva, Serum 2 and Vital | **met**: see table below and `metric6-2026-10-13.md` |
 
