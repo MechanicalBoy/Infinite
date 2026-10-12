@@ -90,20 +90,21 @@ def app_pid(app):
     return min(pids) if pids else None
 
 
+def screen_windows(pid):
+    """Normal windows of pid (any Space) from the window server (no accessibility needed)."""
+    r = subprocess.run([ax_bin(), "--windows", str(pid)], capture_output=True, text=True, timeout=30)
+    return int(r.stdout.strip() or 0)
+
+
 def launch_and_wait(app, wait, log):
     subprocess.run(["open", "-g", "-a", app], check=True)
     t0 = time.time()
     pid = None
     while time.time() - t0 < wait:
         pid = pid or app_pid(app)
-        if pid:
-            try:
-                d = dump(pid, depth=0, nodes=10)
-                if d.get("windows"):
-                    break
-            except (RuntimeError, subprocess.TimeoutExpired):
-                pass
-        time.sleep(2)
+        if pid and screen_windows(pid) > 0:
+            break
+        time.sleep(0.5)
     if not pid:
         raise RuntimeError("did not start within %d s" % wait)
     # windows appear before their contents; let the UI settle

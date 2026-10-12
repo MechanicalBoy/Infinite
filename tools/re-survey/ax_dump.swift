@@ -1,10 +1,23 @@
 // re-survey ax_dump: read-only walk of one running app's macOS accessibility tree, printed as JSON.
 // Reads attributes only; never performs an action, sets a value or sends a key. Built and run by
-// ui_map.py (swiftc ships with the Command Line Tools). Usage: ax_dump <pid> [max_depth] [max_nodes]
+// ui_map.py (swiftc ships with the Command Line Tools). Usage: ax_dump <pid> [max_depth] [max_nodes] | ax_dump --windows <pid>
 import ApplicationServices
 import Foundation
 
 let args = CommandLine.arguments
+// `ax_dump --windows <pid>`: count the pid's normal windows (any Space; a full-screen app is off the current one) (>= 100x100) from the window server.
+// Needs no accessibility and sees windows an app does not expose to it (GLFW, Java, custom toolkits).
+if args.count == 3 && args[1] == "--windows", let wpid = Int(args[2]) {
+    let list = (CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+    let n = list.filter { w in
+        guard (w[kCGWindowOwnerPID as String] as? Int) == wpid, (w[kCGWindowLayer as String] as? Int) == 0,
+              let b = w[kCGWindowBounds as String] as? [String: Any],
+              let wd = b["Width"] as? Double, let ht = b["Height"] as? Double else { return false }
+        return wd >= 100 && ht >= 100
+    }.count
+    print(n)
+    exit(0)
+}
 guard args.count >= 2, let pid = pid_t(args[1]) else {
     FileHandle.standardError.write("usage: ax_dump <pid> [max_depth] [max_nodes]\n".data(using: .utf8)!)
     exit(2)
