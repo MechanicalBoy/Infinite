@@ -173,7 +173,7 @@ Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; ba
 
 | # | Finding | Evidence | Block |
 |---|---|---|---|
-| F1 | Metallic level differs 3.14 dB between 44.1 / 48 / 96 kHz. Unclear if a bug: its partials above Nyquist are legitimately absent at low rates, and it is a decaying resonator. Needs a per-mode check before any fix. | RATE row | 1 |
+| F1 | Metallic level moves with sample rate: 2.9 dB free-running RMS, but only 1.3 dB RMS and 0.5 dB peak for the same note-triggered strike (-12.5 / -13.1 / -13.8 dBFS at 44.1 / 48 / 96 kHz, monotonic). The burst gain is already calibrated per rate (`MetallicResonator.h` CalibrateBurstGain), so the remainder is minor mode-content change. Accepted exception, not fixed; the free-run flag stays visible. | RATE rows | 1 |
 | F2 | Analog aliasing is -66 dB at 1.75 kHz and -62 dB at 5 kHz (default saw), just inside the -60 dB flag; Wavetable, Oscillator and Equation Synth are -82 to -88 dB. | ALIAS rows | 1 |
 | F4 | Open decision (changes saved dynamics, so legacy flag): velocity law is not shared: Analog, Wavetable and Oscillator follow velocity squared (vel 0.5 = -12 dB, 0.25 = -24 dB); Equation Synth and Metallic are linear (-6 / -12 dB). | VEL rows | 1 |
 | F5 | Equation Synth clips with several notes at defaults: peak +3.6 dBFS at 8 notes, +4.3 at 32, against -12 dBFS for one note. No polyphonic gain compensation. Decision: not a bug. Voices sum, as in any polysynth, and a 4-note chord fits (-0.8 dBFS); attenuating would change the loudness of every saved patch. The audit now flags only a 4-note chord over 0 dBFS. | POLY rows | 1 |
@@ -181,7 +181,7 @@ Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; ba
 | F7 | Wavetable note-on is +8.2 dB over steady state at defaults, the only pitched synth near the 12 dB flag. Metallic note-on reads +32 dB, but its steady state is a decaying resonator, so that metric is unreliable for it. | CLICK rows | 1 |
 | F8 | Field Synth peaks +12.0 dBFS with 8 or 32 notes at defaults (-2.4 dBFS for one), the worst polyphonic clip of the group. The only synth whose 4-note chord clips (+9.0 dBFS; single note -2.4 dBFS vs about -12 for the others): voices sum unscaled (`FieldSynthNode.cpp:292`) and the default preset (Dual Oscillator Pad) is hot. Open, a design call on the default preset's level; saved patches carry their own source, so changing the default affects new nodes only. Overlaps `bugfix/field-synth-voice-pool`. | POLY rows | 1 |
 | F9 | Wave Terrain also sums past 0 dBFS with many notes (+0.5 dBFS at 8, +3.2 at 32). Same as F5: not a bug; its 4-note chord is -3.0 dBFS. | POLY rows | 1 |
-| F10 | Spectral Synth level differs 1.99 dB across 44.1 / 48 / 96 kHz (flag line 1 dB). Attack is 454 ms by design of the image scan; the rate spread needs a check. | RATE row | 1 |
+| F10 | Spectral Synth's 1.99 dB rate spread was a harness artifact (a fixed 65536-frame window is a different number of seconds at each rate). RATE now renders 3 s at every rate and reads 0.05 dB. Closed. | RATE row | 1 |
 | F3 | Pitch is within 0.03 cents everywhere measured, and every synth is bit-identical on re-render. No action. | PITCH, DET rows | 1 |
 
 Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). Also run: Field Synth, Wave Terrain, Spectral Synth. Silent at defaults and not audited here (need loaded content): Grain Molder, Molder, Granular, Sampler, Drum Sequencer; Slicer, MPC, Looper and PaulStretch not wired. Not yet covered: UNISON, PARAM.

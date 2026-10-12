@@ -544,10 +544,24 @@ bool RunSynthAudit()
          for (double sr : rates)
          {
             std::vector<float> y;
-            Render(s, sr, 440.0f, kN, y);
+            Render(s, sr, 440.0f, (int)(3.0 * sr), y); // same seconds at every rate
             const double d = Db(Rms(y));
             lo = std::min(lo, d);
             hi = std::max(hi, d);
+         }
+         if (want("RATE") && strcmp(s.name, "Metallic") == 0)
+         {
+            // The same note-triggered strike at each rate: free-run timing out of the picture.
+            for (double sr : rates)
+            {
+               NoteRig rig;
+               rig.Init(s, sr);
+               std::vector<float> y;
+               rig.On(69, 1.0f);
+               rig.Run((int)(0.5 * sr), y);
+               printf("SYNTHAUDIT RATE  %-15s note strike %6.0f Hz: rms(0.5 s) %6.1f dBFS peak %6.1f dBFS\n", s.name, sr,
+                      Db(Rms(y)), Db(Peak(y)));
+            }
          }
          printf("SYNTHAUDIT RATE  %-15s level spread %.2f dB over 44.1/48/96 kHz\n", s.name, hi - lo);
          if (hi - lo > kFlagRateDb)
