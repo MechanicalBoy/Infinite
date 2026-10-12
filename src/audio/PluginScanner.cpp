@@ -122,10 +122,30 @@ void PluginScanner::StartScan(const std::string& folder)
    else
       vst3Folders = DefaultVST3Folders(mFolders);
 
-   mScanThread = std::thread(&PluginScanner::ScanThreadMain, this, std::move(vst3Folders));
+   mScanThread = std::thread(&PluginScanner::ScanThreadMain, this, std::move(vst3Folders), folder);
 }
 
-void PluginScanner::ScanThreadMain(std::vector<std::string> vst3Folders)
+std::vector<PluginScanner::Entry> PluginScanner::MergeScan(const std::vector<Entry>& old, std::vector<Entry> found,
+                                                           const std::string& folder)
+{
+   if (folder.empty())
+      return found;
+   const fs::path root = fs::path(folder).lexically_normal();
+   const auto under = [&root](const std::string& path)
+   {
+      const fs::path rel = fs::path(path).lexically_normal().lexically_relative(root);
+      return !rel.empty() && *rel.begin() != "..";
+   };
+   std::vector<Entry> merged;
+   for (const Entry& e : old)
+      if (e.format == "vst3" && !under(e.path))
+         merged.push_back(e);
+   for (Entry& e : found)
+      merged.push_back(std::move(e));
+   return merged;
+}
+
+void PluginScanner::ScanThreadMain(std::vector<std::string> vst3Folders, std::string scope)
 {
    std::vector<Entry> found;
 
@@ -147,6 +167,7 @@ void PluginScanner::ScanThreadMain(std::vector<std::string> vst3Folders)
    {
       std::lock_guard<std::mutex> lock(mResultMutex);
       mPendingResult = std::move(found);
+      mPendingScope = std::move(scope);
       mPendingFailed = std::move(failed);
       mPendingUnsupported = std::move(unsupported);
    }
@@ -163,8 +184,9 @@ void PluginScanner::PollResults()
    if (!lock.owns_lock())
       return; // worker mid-write; try again next frame
 
-   mIndex = std::move(mPendingResult);
+   mIndex = MergeScan(mIndex, std::move(mPendingResult), mPendingScope);
    mPendingResult.clear();
+   mPendingScope.clear();
    mFailed = std::move(mPendingFailed);
    mPendingFailed.clear();
    mUnsupported = std::move(mPendingUnsupported);
