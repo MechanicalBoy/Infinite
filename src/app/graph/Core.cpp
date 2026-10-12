@@ -548,7 +548,7 @@ namespace app
    bool IsHeadlessProcess()
    {
       return HeadlessJobActive() || getenv("INFINITE_EXITAFTER") != nullptr ||
-             getenv("IMAGERESYNTH_SCREENSHOT") != nullptr;
+             getenv("INFINITE_COMPAUDIT") != nullptr || getenv("IMAGERESYNTH_SCREENSHOT") != nullptr;
    }
 
 

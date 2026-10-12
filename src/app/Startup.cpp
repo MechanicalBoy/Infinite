@@ -13,6 +13,7 @@ bool RunSynthAudit(); // selftest/SynthAudit.cpp
 bool RunNoteAudit(); // selftest/NoteAudit.cpp
 bool RunIoAudit(); // selftest/IoAudit.cpp
 bool RunGeoAudit(); // selftest/GeoAudit.cpp
+bool RunCompAudit(); // selftest/CompAudit.cpp
 // Resolves the main window's DPI + the manual slider into UiScale::Current(), hands the point
 // scale to the GLFW backend and (re)bakes the font atlas at the resulting physical size. Safe
 // to call again between frames: the atlas is rebuilt from scratch and, when the GL renderer
@@ -1009,6 +1010,16 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_SYSINFO") != nullptr)
    {
       SysInfo::PrintAndExit(window);
+   }
+
+   if (getenv("INFINITE_COMPAUDIT") != nullptr)
+   {
+      // Compositing audit: blend modes vs W3C, alpha, determinism, feedback, trails (selftest/CompAudit.cpp).
+      // Needs the live GL context, so it lives here with SPOUTLOOPTEST.
+      const bool ok = RunCompAudit();
+      glfwDestroyWindow(window);
+      glfwTerminate();
+      return ok ? 0 : 1;
    }
 
    if (getenv("INFINITE_SPOUTLOOPTEST") != nullptr)

@@ -66,7 +66,7 @@ Three blocks, one branch each, commit per step, merge straight back to main (git
 |---|---|---|---|
 | 1 | `feature/synth-audit` | SYNTHAUDIT | done 2026-10-12 (merged); F4 and Field Synth preset level open |
 | 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | done 2026-10-12 (merged); Echo voiceId and step-generator block quantisation open |
-| 3 | `feature/geo-comp-audit` | GEOAUDIT, COMPAUDIT | planned |
+| 3 | `feature/geo-comp-audit` | GEOAUDIT, COMPAUDIT | done 2026-10-12 (merged); findings open, see below |
 
 Order reason: Synths are the largest audio gap (220 controls) and audio comes first in the perf
 order. They pair with the re-survey synth probe, so each metric has a competitor number. FXAUDIT
@@ -142,6 +142,18 @@ GEOAUDIT result (`baseline-2026-10-12-geo.txt`; covers the 24 primitives and the
 | UV Sphere, Capsule, Cone, Disc, Supershape have degenerate pole triangles and doubled pole edges | accepted (standard UV-pole artefact) |
 | Solidify on a Cube leaves 48 boundary edges (faces separate along their normals) | open |
 | Arrow 3D has 48 vertices with non-unit normals | open |
+
+COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden window; covers Blend, Feedback and Trails only):
+
+| Finding | State |
+|---|---|
+| 22 blend modes match the W3C Compositing Level 1 formulas to 1/255 (Normal, Multiply, Screen, Darken, Lighten, Colour Dodge/Burn, Difference, Exclusion, Hue, Saturation, Color, Luminosity, Add, Linear Burn/Light, Subtract, Divide) | clean |
+| Overlay and Hard Light are swapped: Overlay tests the source (Hard Light's rule), Hard Light tests the backdrop. Error up to 251/255 | open: fix is two `step()` arguments in `BlendModes.cpp`; it changes saved looks and is shared by Blend, Layer Stack and Arrangement video clips, so it needs a legacy flag in each |
+| Soft Light picks the wrong branch of its D(x) curve (the 0.25 pivot is inverted). Error up to 83/255 | open, same fix site and same legacy-flag question |
+| Source-over alpha with random alpha and mix 0.7 matches W3C for Normal, Multiply, Screen | clean |
+| Feedback in a plain chain passes the current frame through; the one-frame delay only exists inside a cycle, although the node says the delay is always one frame | open: behaviour or wording |
+| Trails decay matches decay^n within 0.2/255 and always reaches black (no 8-bit ghost) | clean |
+| Not yet covered: Layer Stack, Curves, Color Ramp, Fit, Switcher, Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; the geometry nodes other than primitives and Ops | next |
 
 GEOAUDIT covers the 37 geometry nodes (Delaunay, Metaballs, Ocean, Cloth, Curve Ops, Instances,
 Join, Merge by Distance, Distribute, Displacement and the rest).
