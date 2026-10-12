@@ -40,21 +40,14 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-12 11:53 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-12 11:55 UTC. Do not edit inside this block; rerun the tool._
 
-### Open quests (11) **over the cap of 5: park or close before adding**
+### Open quests (4)
 
-- R644 [next] Fix brief: R540 - Drum Sequencer groove library + bundled kit (verified brief)
-- R645 [later] Plan: Language switch — execution brief
-- R659 [later] Plan: Language switch — execution brief
-- R660 [later] Plan: Iconography and chrome redesign
-- R661 [later] Plan: Spatial audio
-- R680 [later] Plan: Extensions: optional packs installed from Settings
-- R681 [later] Plan: Prompt: mine indexopensource.com projects for ideas that improve Infinite
-- R682 [later] Plan: indexopensource.com scan (2026-10-09)
-- R683 [later] Plan: MIDI Out: drive hardware synths from Infinite
-- R684 [later] Plan: Sketch: a JavaScript drawing source node
-- R685 [later] Plan: Infinite UI system: analysis and approach
+- R708 [now] Review PR #28: Audio effects: DSP correctness pass (aliasing, EQ, limiter, pitch, Molder) + measurement audits
+- R709 [later] Plan: re-survey: deconstruct competitors, one by one
+- R711 [later] Plan: Modulators to industry grade
+- R717 [later] Plan: Node audits: beyond effects and modulators
 
 ### Releases
 
@@ -71,22 +64,22 @@ _Generated 2026-10-12 11:53 UTC. Do not edit inside this block; rerun the tool._
 |---|---|---|
 | Escaped fixes: fixes after v0.5.0 touching src it changed | 2 89555bc0 9f5fd27d | 0, falling release to release |
 | Reverts after v0.5.0 | 0 | 0 |
-| Fix-shaped commits after v0.5.0 (all) | 9 | context |
+| Fix-shaped commits after v0.5.0 (all) | 12 | context |
 | Known test failures (macOS / Linux) | 3 / 6 | never grows |
 | Open GitHub issues labelled bug | 0 | 0 |
 | Crash reports filed since v0.5.0 | 0 | 0 |
 
 ### Reach (context only: moves with outreach, not with release quality)
 
-- GitHub (2026-10-10): 271 stars, 21 forks, 1702 downloads all-time
-- Website (2026-10-10, last 30 days): 903 sessions, 598 users
+- GitHub (2026-10-12): 275 stars, 21 forks, 1816 downloads all-time
+- Website (2026-10-12, last 30 days): 1008 sessions, 657 users
 
 ### Last merges to main
 
+- 2026-10-12 Merge feature/lifecycle-v1
 - 2026-10-12 Merge feature/re-survey-stretch
 - 2026-10-12 Merge feature/headless-timeline
 - 2026-10-12 Merge docs/re-survey-block-b
 - 2026-10-12 Merge bugfix/note-fanout-cap
-- 2026-10-12 Merge feature/geo-comp-audit
 
 <!-- FACTS:END -->
