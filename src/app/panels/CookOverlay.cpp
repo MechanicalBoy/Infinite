@@ -84,6 +84,9 @@ void DrawCookOverlay()
    const ImU32 pillBg = ImGui::GetColorU32(ImVec4(t.panelBg.r, t.panelBg.g, t.panelBg.b, 0.92f));
    const ImU32 pillText = ImGui::GetColorU32(ImVec4(t.text.r, t.text.g, t.text.b, 1.0f));
    const bool light = CategoryColors::IsThemeLight();
+   // A fixed size: the current font size here still carries the canvas zoom, so the number grew and shrank with it.
+   ImFont* font = ImGui::GetFont();
+   constexpr float kPillText = tok::type_body;
    const ImU32 amber = tok::U32(tok::action_learn, light), red = tok::U32(tok::action_record, light);   // same roles as the node issue badge
    static std::unordered_map<const INode*, int> sLevel;   // last level per node, for the hold; rebuilt each frame
    std::unordered_map<const INode*, int> nextLevel;
@@ -102,10 +105,10 @@ void DrawCookOverlay()
       char buf[24];
       if (r.audio) std::snprintf(buf, sizeof buf, "%.1f%% cb", r.v * 100.0f);
       else std::snprintf(buf, sizeof buf, r.v < 10.0f ? "%.2f ms" : "%.0f ms", r.v);
-      const ImVec2 ts = ImGui::CalcTextSize(buf);
+      const ImVec2 ts = font->CalcTextSizeA(kPillText, FLT_MAX, 0.0f, buf);
       const ImVec2 q0(p2.x - ts.x - 10.0f, p.y - ts.y - 8.0f), q1(p2.x, p.y - 2.0f);
       dl->AddRectFilled(q0, q1, pillBg, 4.0f);
-      dl->AddText(ImVec2(q0.x + 5.0f, q0.y + 3.0f), level == 0 ? pillText : (level == 2 ? red : amber), buf);
+      dl->AddText(font, kPillText, ImVec2(q0.x + 5.0f, q0.y + 3.0f), level == 0 ? pillText : (level == 2 ? red : amber), buf);
    }
    dl->PopClipRect();
    for (const Row& r : rows)   // off-screen nodes keep their level
