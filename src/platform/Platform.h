@@ -753,8 +753,37 @@ namespace Platform
    // Objective-C message send, no ARC retain/release, no allocation, no lock.
    // `in` may be null (treated as silence). Output is planar, one pointer per
    // channel, numFrames long.
+   //
+   // `transport` is the host's musical clock at the START of this block, what
+   // a plugin's tempo sync, arpeggiator or step sequencer follows (VST3
+   // ProcessContext, AU musicalContextBlock/transportStateBlock). Plain values,
+   // filled by the caller from Transport once per block, so the platform layer
+   // stays free of core/. nullptr means "no host clock": stopped, 120 BPM, 4/4,
+   // position 0 - never "playing", which once made sequencer plugins run
+   // forever with no notes in.
+   struct PluginTransport
+   {
+      double tempo = 120.0;         // BPM
+      double beats = 0.0;           // position in quarter notes at block start
+      double barStartBeats = 0.0;   // quarter-note position of the bar containing `beats`
+      int timeSigNumerator = 4;
+      int timeSigDenominator = 4;
+      bool playing = false;
+      bool loopActive = false;      // reported as the plugin's cycle
+      double loopStartBeats = 0.0;
+      double loopEndBeats = 0.0;
+   };
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
-                     float* const* out, int outChannels, int numFrames);
+                     float* const* out, int outChannels, int numFrames,
+                     const PluginTransport* transport = nullptr);
+
+   // What `handle`'s plugin was last told about the host clock, read back
+   // through the same channel the plugin reads: the AU's installed
+   // musicalContextBlock/transportStateBlock, or the VST3 ProcessContext.
+   // Read-only; the regression check that Transport reaches plugins
+   // (INFINITE_PLUGINSCANTEST). Main thread, between renders. False when no
+   // host clock is installed (plugin not prepared).
+   bool PluginHostClockSeen(PluginHandle* handle, PluginTransport& out);
 
    // ALSO real-time-safe, same discipline as PluginRender: schedules a MIDI
    // event through a block cached on the main thread at prepare time (into

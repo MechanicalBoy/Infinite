@@ -17,8 +17,10 @@ namespace Platform
    bool PluginVST3Prepare(PluginHandle* handle, double sampleRate, int maxBlockFrames, std::string& outError);
    void PluginVST3Destroy(PluginHandle* handle);
    void PluginVST3Render(PluginHandle* handle, const float* const* in, int inChannels,
-                         float* const* out, int outChannels, int numFrames);
+                         float* const* out, int outChannels, int numFrames,
+                         const PluginTransport* transport);
    void PluginVST3ScheduleMIDIEvent(PluginHandle* handle, int frameOffset, const unsigned char* bytes, int byteCount);
+   bool PluginVST3HostClockSeen(PluginHandle* handle, PluginTransport& out);
 
    int PluginVST3ParameterCount(PluginHandle* handle);
    bool PluginVST3ParameterInfo(PluginHandle* handle, int index, PluginParamInfo& out);

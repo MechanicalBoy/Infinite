@@ -6064,6 +6064,63 @@ namespace Platform
 
             au.maximumFramesToRender = (AUAudioFrameCount)frames;
 
+            // The host clock, read from h->transport (PluginRender copies it
+            // in before each render). Installed before allocateRenderResources,
+            // where an AU looks for them. No Objective-C, no allocation inside:
+            // the AU calls these on the render thread.
+            PluginHandle* hp = h;
+            au.musicalContextBlock = ^BOOL(double* currentTempo, double* timeSignatureNumerator,
+                                           NSInteger* timeSignatureDenominator, double* currentBeatPosition,
+                                           NSInteger* sampleOffsetToNextBeat, double* currentMeasureDownbeatPosition) {
+               const PluginTransport& t = hp->transport;
+               const double tempo = t.tempo > 0.0 ? t.tempo : 120.0;
+               if (currentTempo != nullptr)
+                  *currentTempo = tempo;
+               if (timeSignatureNumerator != nullptr)
+                  *timeSignatureNumerator = (double)t.timeSigNumerator;
+               if (timeSignatureDenominator != nullptr)
+                  *timeSignatureDenominator = (NSInteger)t.timeSigDenominator;
+               if (currentBeatPosition != nullptr)
+                  *currentBeatPosition = t.beats;
+               if (sampleOffsetToNextBeat != nullptr)
+               {
+                  const double toNext = std::ceil(t.beats) - t.beats;
+                  const double sr = hp->sampleRate > 0.0 ? hp->sampleRate : 48000.0;
+                  *sampleOffsetToNextBeat = (NSInteger)std::lround(toNext * 60.0 / tempo * sr);
+               }
+               if (currentMeasureDownbeatPosition != nullptr)
+                  *currentMeasureDownbeatPosition = t.barStartBeats;
+               return YES;
+            };
+            au.transportStateBlock = ^BOOL(AUHostTransportStateFlags* transportStateFlags,
+                                           double* currentSamplePosition, double* cycleStartBeatPosition,
+                                           double* cycleEndBeatPosition) {
+               const PluginTransport& t = hp->transport;
+               const bool cycling = t.loopActive && t.loopEndBeats > t.loopStartBeats;
+               if (transportStateFlags != nullptr)
+               {
+                  AUHostTransportStateFlags f = 0;
+                  if (hp->transportStateChanged)
+                     f |= AUHostTransportStateChanged;
+                  if (t.playing)
+                     f |= AUHostTransportStateMoving;
+                  if (cycling)
+                     f |= AUHostTransportStateCycling;
+                  *transportStateFlags = f;
+               }
+               if (currentSamplePosition != nullptr)
+               {
+                  const double tempo = t.tempo > 0.0 ? t.tempo : 120.0;
+                  const double sr = hp->sampleRate > 0.0 ? hp->sampleRate : 48000.0;
+                  *currentSamplePosition = t.beats * 60.0 / tempo * sr;
+               }
+               if (cycleStartBeatPosition != nullptr)
+                  *cycleStartBeatPosition = cycling ? t.loopStartBeats : 0.0;
+               if (cycleEndBeatPosition != nullptr)
+                  *cycleEndBeatPosition = cycling ? t.loopEndBeats : 0.0;
+               return YES;
+            };
+
             NSError* allocError = nil;
             if (![au allocateRenderResourcesAndReturnError:&allocError])
             {
@@ -6286,6 +6343,9 @@ namespace Platform
                [h->unit.parameterTree removeParameterObserver:h->learnToken];
             if (h->resourcesAllocated)
                [h->unit deallocateRenderResources];
+            // They capture this handle, which is deleted below.
+            h->unit.musicalContextBlock = nil;
+            h->unit.transportStateBlock = nil;
          }
       }
       h->learnToken = nullptr;
@@ -6305,7 +6365,8 @@ namespace Platform
    }
 
    void PluginRender(PluginHandle* h, const float* const* in, int inChannels,
-                     float* const* out, int outChannels, int numFrames)
+                     float* const* out, int outChannels, int numFrames,
+                     const PluginTransport* transport)
    {
       if (h == nullptr)
          return;
@@ -6313,10 +6374,19 @@ namespace Platform
       if (h->desc.format == "vst3")
       {
 #if INFINITE_ENABLE_VST3
-         PluginVST3Render(h, in, inChannels, out, outChannels, numFrames);
+         PluginVST3Render(h, in, inChannels, out, outChannels, numFrames, transport);
+#else
+         (void)transport;
 #endif
          return;
       }
+
+      // The AU's musicalContextBlock/transportStateBlock read this back
+      // during the render call below. "Changed" is play/stop, the edge
+      // AUHostTransportStateChanged exists for.
+      h->transport = transport != nullptr ? *transport : PluginTransport();
+      h->transportStateChanged = (h->transport.playing != h->transportWasPlaying);
+      h->transportWasPlaying = h->transport.playing;
 
       // Everything below is on the real-time thread: no Objective-C message
       // send, no ARC traffic, no allocation, no lock. The two blocks involved
@@ -6458,6 +6528,45 @@ namespace Platform
             std::memset(out[ch], 0, (size_t)frames * sizeof(float));
 
       h->inRender.store(false, std::memory_order_release);
+   }
+
+   bool PluginHostClockSeen(PluginHandle* h, PluginTransport& out)
+   {
+      if (h == nullptr)
+         return false;
+      if (h->desc.format == "vst3")
+      {
+#if INFINITE_ENABLE_VST3
+         return PluginVST3HostClockSeen(h, out);
+#else
+         return false;
+#endif
+      }
+      @autoreleasepool
+      {
+         AUAudioUnit* au = h->unit;
+         if (au == nil || au.musicalContextBlock == nil || au.transportStateBlock == nil)
+            return false;
+         double tempo = 0.0, num = 0.0, beat = 0.0, downbeat = 0.0;
+         NSInteger den = 0, toNextBeat = 0;
+         if (!au.musicalContextBlock(&tempo, &num, &den, &beat, &toNextBeat, &downbeat))
+            return false;
+         AUHostTransportStateFlags flags = 0;
+         double samplePos = 0.0, cycleStart = 0.0, cycleEnd = 0.0;
+         if (!au.transportStateBlock(&flags, &samplePos, &cycleStart, &cycleEnd))
+            return false;
+         out = PluginTransport();
+         out.tempo = tempo;
+         out.timeSigNumerator = (int)std::lround(num);
+         out.timeSigDenominator = (int)den;
+         out.beats = beat;
+         out.barStartBeats = downbeat;
+         out.playing = (flags & AUHostTransportStateMoving) != 0;
+         out.loopActive = (flags & AUHostTransportStateCycling) != 0;
+         out.loopStartBeats = cycleStart;
+         out.loopEndBeats = cycleEnd;
+         return true;
+      }
    }
 
    void PluginScheduleMIDIEvent(PluginHandle* h, int frameOffset, const unsigned char* bytes, int byteCount)

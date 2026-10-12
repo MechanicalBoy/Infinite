@@ -9,6 +9,7 @@
 
 #include "audio/AudioEngine.h"
 #include "audio/AudioNode.h"
+#include "core/Transport.h"
 
 namespace
 {
@@ -17,6 +18,27 @@ namespace
    // was not adopted). Fire-and-forget on the AU side, but a plugin's MIDI
    // input has one producer: call it from the audio half, or from the main
    // thread only once the handle is unpublished and WaitForAudioIdle returned.
+   // Infinite's clock at the start of this block, for the plugin's tempo
+   // sync / arp / sequencer. Atomics only, so audio-thread safe. Position is
+   // BlockStartBeats (the same axis RunTopology uses), not Beats(), which the
+   // clock owner has already advanced past this block.
+   Platform::PluginTransport HostTransport()
+   {
+      const Transport& tr = Transport::Instance();
+      Platform::PluginTransport t;
+      t.tempo = (double)tr.Tempo();
+      t.beats = tr.BlockStartBeats();
+      const double bpb = tr.BeatsPerBar();
+      t.barStartBeats = std::floor(t.beats / bpb + 1e-9) * bpb;
+      t.timeSigNumerator = tr.TimeSigNumerator();
+      t.timeSigDenominator = tr.TimeSigDenominator();
+      t.playing = tr.IsPlaying();
+      t.loopActive = tr.LoopEnabled() && !tr.LoopSuspended();
+      t.loopStartBeats = tr.LoopStartBeats();
+      t.loopEndBeats = tr.LoopEndBeats();
+      return t;
+   }
+
    void FlushPluginNotes(Platform::PluginHandle* handle)
    {
       if (handle == nullptr)
@@ -131,8 +153,9 @@ public:
             inChannels[ch] = in->channels[ch];
       }
 
+      const Platform::PluginTransport transport = HostTransport();
       Platform::PluginRender(handle, inCount > 0 ? inChannels : nullptr, inCount, output.channels,
-                             output.numChannels, output.numFrames);
+                             output.numChannels, output.numFrames, &transport);
    }
 
    // Deliberately no Reset() override: AudioNode::Reset means "clear DSP

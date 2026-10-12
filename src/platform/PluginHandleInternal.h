@@ -60,6 +60,16 @@ namespace Platform
       double renderSampleTime = 0.0;
       std::atomic<bool> inRender { false };
 
+      // Host clock for the block being rendered, copied in by PluginRender
+      // just before the render block runs; the AU reads it back through the
+      // musicalContextBlock/transportStateBlock installed in PluginConfigure,
+      // normally from inside that same render call. A plugin that polls the
+      // blocks from another thread (some draw tempo in their UI) reads plain
+      // aligned doubles, which tear at worst into a one-block-stale value.
+      PluginTransport transport;
+      bool transportWasPlaying = false;
+      bool transportStateChanged = false;
+
       // --- learn -----------------------------------------------------------
       AUParameterObserverToken learnToken = nullptr;
       std::atomic<bool> learning { false };

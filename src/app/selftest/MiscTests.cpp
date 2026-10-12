@@ -464,6 +464,54 @@ int RunPluginScanTest()
              (notSilent && notIdentity) ? "OK" : "FAIL");
       ok = ok && notSilent && notIdentity;
 
+      // --- the host clock reaches the plugin ---
+      // Until 2026-10 the VST3 host told every plugin "playing, 120 BPM, 4/4"
+      // whatever Infinite's transport said, and the AU host told it nothing,
+      // so tempo-synced delays/LFOs ignored the project tempo and plugin
+      // sequencers ran with the transport stopped (Drumazon 2, re-survey
+      // host_audit). Read back through the plugin's own channel, not ours.
+      {
+         Platform::PluginTransport sent;
+         sent.tempo = 93.0;
+         sent.beats = 8.5;
+         sent.barStartBeats = 6.0; // 3/4: bars every 3 quarter notes
+         sent.timeSigNumerator = 3;
+         sent.timeSigDenominator = 4;
+         sent.playing = false;
+         sent.loopActive = true;
+         sent.loopStartBeats = 4.0;
+         sent.loopEndBeats = 12.0;
+         Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames, &sent);
+         Platform::PluginTransport seen;
+         const bool gotStopped = Platform::PluginHostClockSeen(handle, seen);
+         const bool stoppedOk = gotStopped && std::fabs(seen.tempo - 93.0) < 1e-9 &&
+                                std::fabs(seen.beats - 8.5) < 1e-9 && std::fabs(seen.barStartBeats - 6.0) < 1e-9 &&
+                                seen.timeSigNumerator == 3 && seen.timeSigDenominator == 4 && !seen.playing &&
+                                seen.loopActive && std::fabs(seen.loopStartBeats - 4.0) < 1e-9 &&
+                                std::fabs(seen.loopEndBeats - 12.0) < 1e-9;
+         printf("PLUGINSCAN host clock (stopped): tempo=%.1f beat=%.2f bar=%.2f %d/%d playing=%d cycle=%d [%.1f,%.1f]  %s\n",
+                seen.tempo, seen.beats, seen.barStartBeats, seen.timeSigNumerator, seen.timeSigDenominator,
+                (int)seen.playing, (int)seen.loopActive, seen.loopStartBeats, seen.loopEndBeats,
+                stoppedOk ? "OK" : "FAIL");
+         ok = ok && stoppedOk;
+
+         sent.playing = true;
+         sent.loopActive = false;
+         Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames, &sent);
+         const bool gotPlaying = Platform::PluginHostClockSeen(handle, seen);
+         const bool playingOk = gotPlaying && seen.playing && !seen.loopActive;
+         printf("PLUGINSCAN host clock (playing): playing=%d cycle=%d  %s\n", (int)seen.playing,
+                (int)seen.loopActive, playingOk ? "OK" : "FAIL");
+         ok = ok && playingOk;
+
+         // No clock from the caller must read as stopped, never as playing.
+         Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames);
+         const bool gotNone = Platform::PluginHostClockSeen(handle, seen);
+         const bool noneOk = gotNone && !seen.playing;
+         printf("PLUGINSCAN host clock (none): playing=%d  %s\n", (int)seen.playing, noneOk ? "OK" : "FAIL");
+         ok = ok && noneOk;
+      }
+
       // --- parameters ---
       const int paramCount = Platform::PluginParameterCount(handle);
       printf("PLUGINSCAN parameters: %d  %s\n", paramCount, paramCount > 0 ? "OK" : "FAIL");
