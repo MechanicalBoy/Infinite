@@ -729,6 +729,18 @@ for spec in "${SELECTED_TESTS[@]}"; do
     fi
   else
     verdict=$(grep -E "$PASS_MARK" "$out" | tail -1)
+    # Quality gate (docs/quality/README.md): QUALITY rows a check prints are held
+    # to the targets in docs/quality/registry.tsv; a release-gated miss fails it.
+    if grep -q '^QUALITY ' "$out"; then
+      qout=$(python3 "$ROOT/tools/quality/quality.py" check --source "$base" "$out" 2>&1); qrc=$?
+      if [ $qrc -ne 0 ]; then
+        echo "  [FAIL]  $name — quality gate, see $out"
+        echo "$qout" | grep -E "CHECK FAIL|quality:" | sed 's/^/          /'
+        FAIL=$((FAIL+1)); FAILED_NAMES+=("$name (quality gate)")
+        continue
+      fi
+      verdict="$verdict; $(echo "$qout" | tail -1)"
+    fi
     if is_known_failure "$name"; then
       echo "  [stale-baseline] $name — now passes, delete its line from known-test-failures.txt"
       STALE_NAMES+=("$name")
