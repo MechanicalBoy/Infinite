@@ -61,6 +61,31 @@ namespace
       }
    }
 
+   // Signed volume of the closed surface (divergence theorem). Positive = triangles wind
+   // counter-clockwise seen from outside, which is what Render 3D's cull and shadow pass expect.
+   double SignedVolume(const Mesh& m)
+   {
+      double v = 0.0;
+      for (size_t t = 0; t + 2 < m.indices.size(); t += 3)
+      {
+         const Vertex& a = m.vertices[m.indices[t]];
+         const Vertex& b = m.vertices[m.indices[t + 1]];
+         const Vertex& c = m.vertices[m.indices[t + 2]];
+         v += (double)a.px * ((double)b.py * c.pz - (double)b.pz * c.py)
+            - (double)a.py * ((double)b.px * c.pz - (double)b.pz * c.px)
+            + (double)a.pz * ((double)b.px * c.py - (double)b.py * c.px);
+      }
+      return v / 6.0;
+   }
+
+   // Primitives built from a parametric grid come out inside-out; flip them once at the end.
+   Mesh& OrientOutward(Mesh& m)
+   {
+      if (SignedVolume(m) < 0.0)
+         Primitives::FlipWinding(m);
+      return m;
+   }
+
    void PushQuad(Mesh& mesh, unsigned int a, unsigned int b, unsigned int c, unsigned int d)
    {
       mesh.indices.push_back(a); mesh.indices.push_back(b); mesh.indices.push_back(c);
@@ -100,6 +125,12 @@ namespace
 
 namespace Primitives
 {
+   void FlipWinding(Mesh& mesh)
+   {
+      for (size_t t = 0; t + 2 < mesh.indices.size(); t += 3)
+         std::swap(mesh.indices[t + 1], mesh.indices[t + 2]);
+   }
+
    Mesh Plane(int segments)
    {
       Mesh mesh;
@@ -157,7 +188,7 @@ namespace Primitives
             PushQuad(mesh, a, b, b + 1, a + 1);
          }
       }
-      return mesh;
+      return OrientOutward(mesh);
    }
 
    Mesh Torus(int rings, int sides, float tubeRadius)
@@ -250,7 +281,7 @@ namespace Primitives
             }
          }
       }
-      return mesh;
+      return OrientOutward(mesh);
    }
 
    Mesh Cone(int sides, int rings)
@@ -387,7 +418,7 @@ namespace Primitives
             const unsigned int b = a + (unsigned int)sid + 1;
             PushQuad(mesh, a, b, b + 1, a + 1);
          }
-      return mesh;
+      return OrientOutward(mesh);
    }
 }
 
@@ -1755,6 +1786,15 @@ namespace MeshOps
             float nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
             const float len = std::sqrt(nx*nx + ny*ny + nz*nz);
             if (len > 1e-8f) { nx /= len; ny /= len; nz /= len; }
+            else
+            {
+               // Zero-area triangle (cone apex ring, pole fans): draws nothing, but a zero
+               // normal is not a valid one, so borrow the first corner's own.
+               nx = a.nx; ny = a.ny; nz = a.nz;
+               const float l0 = std::sqrt(nx*nx + ny*ny + nz*nz);
+               if (l0 > 1e-8f) { nx /= l0; ny /= l0; nz /= l0; }
+               else { nx = 0.0f; ny = 1.0f; nz = 0.0f; }
+            }
             if (flip) { nx = -nx; ny = -ny; nz = -nz; }
             // When flipping, also reverse the triangle's winding (swap the
             // 2nd/3rd vertex) so the geometry's orientation is genuinely
@@ -3389,7 +3429,7 @@ namespace Primitives
          mesh.indices.push_back(centre + 1 + (unsigned int)j + 1);
          mesh.indices.push_back(centre + 1 + (unsigned int)j);
       }
-      return mesh;
+      return OrientOutward(mesh);
    }
 
    Mesh Prism(int sides, int rings)
@@ -3455,7 +3495,7 @@ namespace Primitives
                      (unsigned int)((i + 1) * stride + j),
                      (unsigned int)((i + 1) * stride + j + 1),
                      (unsigned int)(i * stride + j + 1));
-      return mesh;
+      return OrientOutward(mesh);
    }
 
    namespace
@@ -3929,6 +3969,7 @@ namespace Primitives
                      (unsigned int)((i + 1) * stride + j));
       // Normals are derived rather than analytic: the superformula's gradient
       // is unpleasant and the mesh is dense enough that derived ones are fine.
+      OrientOutward(mesh);
       return MeshOps::RecalculateNormals(mesh, false, false);
    }
 }

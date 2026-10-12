@@ -860,6 +860,14 @@ void GeometryNode::RebuildIfNeeded()
       default: mMesh = Primitives::Arrow(sides, tubeRadius * 0.3f, superN2 * 0.35f); break;
    }
 
+   if (!windingFix && (shape == 2 || shape == 5 || shape == 6 || shape == 7 || shape == 10 ||
+                       shape == 11 || shape == 12 || shape == 13 || shape >= 23))
+   {
+      Primitives::FlipWinding(mMesh);
+      if (shape == 11 || shape >= 23) mMesh = MeshOps::RecalculateNormals(mMesh, true, false);
+      if (shape == 13) mMesh = MeshOps::RecalculateNormals(mMesh, false, false);
+   }
+
    mBuiltShape = shape;
    mBuiltDetail = detail;
    mBuiltSides = sides;

@@ -138,10 +138,10 @@ GEOAUDIT result (`baseline-2026-10-12-geo.txt`; covers the 24 primitives and the
 | Finding | State |
 |---|---|
 | Normals exact for Sphere, Icosphere, Torus; build time linear to 1e6 vertices (34 ns/vertex); builds deterministic; MeshRevision stable and follows the input | clean |
-| Winding is inconsistent between primitives: Cube, Icosphere, Torus, Capsule, Tetra/Octa/Dodeca, Rounded Cube are outward (CCW); Sphere, Cylinder, Cone, Pyramid, Prism, Torus Knot, Helix, Supershape wind inward | open: flipping changes what Render 3D culls and the shadow pass writes, so it needs a render check first |
+| Winding is inconsistent between primitives: Cube, Icosphere, Torus, Capsule, Tetra/Octa/Dodeca, Rounded Cube are outward (CCW); Sphere, Cylinder, Cone, Pyramid, Prism, Torus Knot, Helix, Supershape wind inward | **fixed**: all now wind outward (`OrientOutward` in Mesh.cpp); the Geometry node carries `windingFix` (off on old patches: flips the eight shapes back and re-derives Prism/Supershape/Arrow normals). GEOAUDIT: "faces inward" 3 to 0, Sphere winding mismatches 1472 to 32 (pole fans). See `baseline-2026-10-12-geo-after-winding.txt` |
 | UV Sphere, Capsule, Cone, Disc, Supershape have degenerate pole triangles and doubled pole edges | accepted (standard UV-pole artefact) |
-| Solidify on a Cube leaves 48 boundary edges (faces separate along their normals) | open |
-| Arrow 3D has 48 vertices with non-unit normals | open |
+| Solidify on a Cube leaves 48 boundary edges (faces separate along their normals) | parked: inner shell offsets each face by its own normal, so a closed cube gets gaps along its 12 edges and an open input gets no rim wall. Needs a welded-normal offset + rim quads, which changes the look of every Solidify; own quest when someone asks |
+| Arrow 3D has 48 vertices with non-unit normals | **fixed**: zero-area triangles (cone apex ring) kept a zero normal; flat RecalculateNormals now borrows the corner normal |
 
 COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden window; covers Blend, Feedback and Trails only):
 
@@ -151,7 +151,7 @@ COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden w
 | Overlay and Hard Light are swapped: Overlay tests the source (Hard Light's rule), Hard Light tests the backdrop. Error up to 251/255 | **fixed** (also Soft Light pivot): W3C maths now; old maths kept as modes 32-34 ("(old)"); Blend / Layer Stack carry a `blendFix` param (off on old patches), patch files carry `blendfix 1` (absent = clips mapped to 32-34). COMPAUDIT blend flags: 3 to 0, see `baseline-2026-10-12-comp-after-blendfix.txt` |
 | Soft Light picks the wrong branch of its D(x) curve (the 0.25 pivot is inverted). Error up to 83/255 | open, same fix site and same legacy-flag question |
 | Source-over alpha with random alpha and mix 0.7 matches W3C for Normal, Multiply, Screen | clean |
-| Feedback in a plain chain passes the current frame through; the one-frame delay only exists inside a cycle, although the node says the delay is always one frame | open: behaviour or wording |
+| Feedback in a plain chain passes the current frame through; the one-frame delay only exists inside a cycle, although the node says the delay is always one frame | **settled**: wording fixed (header comment, delayFrames note); behaviour kept because saved loops depend on this timing; help text already says it only acts inside a loop. The audit line stays as a documented by-design FLAG |
 | Trails decay matches decay^n within 0.2/255 and always reaches black (no 8-bit ghost) | clean |
 | Not yet covered: Layer Stack, Curves, Color Ramp, Fit, Switcher, Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; the geometry nodes other than primitives and Ops | next |
 
