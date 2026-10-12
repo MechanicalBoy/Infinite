@@ -19,3 +19,7 @@ Not v0.4.7. Revive by adding a quest only when it is picked for a release.
 - R562 NDI: execution plan at docs/plans/ndi/README.md, v0.4.8.
 - DECISION (owner, 2026-10-07): MPE (R597) and NDI (R562) go INTO v0.4.7. Supersedes the earlier v0.4.8 proposal for these two. Release stays unpushed until both land and owner calls ship. Open questions in both plan docs closed.
 - MPE (R597): owned by another session; do not start here. R633 dropped. NDI docs only in this session. NDI SDK download approved by owner (form, licence, download).
+
+## Parked 2026-10-12 (lifecycle G4: over the 5-quest cap, not in the v0.5.1 goal)
+
+- R645 i18n plan, R660, R661, R681, R682, R687 (see `python3 tools/roadmap/roadmap.py show <id>`). R659 dropped as a duplicate of R645.

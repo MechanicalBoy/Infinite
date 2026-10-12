@@ -1,5 +1,7 @@
 # Infinite AI Agent Instructions & Skills Index
 
+**Start every session by reading `docs/NOW.md`, then follow `infinite-lifecycle` (the process) in every decision, including when the owner is away.**
+
 This repository contains dedicated skills and runbooks in `.claude/skills/<name>/SKILL.md` (also symlinked to `.agents/skills/`).
 Whenever working on tasks in this repository, **you must consult and follow the relevant skill document before taking action**.
 
