@@ -994,6 +994,20 @@ bool RunVoiceStealFixture()
    printf("DSPTEST voice steal picks oldest: oldest=%d  stolen=%d  %s\n",
           firstVoice, stolen, stealOk ? "OK" : "FAIL");
    all &= stealOk;
+
+   // A node that renders only its first n voices (Field Synth: 8 of 16) must
+   // never be handed a voice past n, or that note is silent and never frees.
+   VoiceAllocator limited(16);
+   limited.SetSampleRate(48000.0);
+   limited.SetADSR(1000.0f, 1000.0f, 1.0f, 1000.0f);
+   limited.SetActiveLimit(8);
+   int maxIdx = -1;
+   for (int i = 0; i < 24; i++)
+      maxIdx = std::max(maxIdx, limited.NoteOn(60 + i, 1.0f, i + 1));
+   const bool limitOk = maxIdx == 7;
+   printf("DSPTEST voice limit keeps allocation in the rendered range: max index=%d  %s\n",
+          maxIdx, limitOk ? "OK" : "FAIL");
+   all &= limitOk;
    return all;
 }
 

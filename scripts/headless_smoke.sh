@@ -214,6 +214,37 @@ rn=$("$BIN" --audio-summary "$NF/notes.inf" "$OUT/n.json" --duration 2.2 --notes
 [ "$(echo "$rn" | json "d['notes']['injected']")" = "3" ]; check "notes: three mapped events injected" $?
 [ "$(echo "$rn" | json "d['notes']['unmapped_types']")" = "['whoosh']" ]; check "notes: an unmapped event type is listed, not played" $?
 [ "$(echo "$rn" | json "'W_UNMAPPED_EVENT' in [w['code'] for w in d['warnings']]")" = "True" ]; check "notes: W_UNMAPPED_EVENT is raised" $?
+# Field Synth voice pool: 16 short notes must all sound (voices past the rendered 8 once went silent).
+python3 - "$NF" "$OUT" <<'PY'
+import json, sys
+nf, out = sys.argv[1:3]
+json.dump([{"t": 0.3 + 0.3 * i, "type": "impact", "dur": 0.1, "intensity": 1.0} for i in range(16)], open(out + "/fs_events.json", "w"))
+json.dump({"impact": {"node": "fsyn", "pitch": 60, "velocity_from": "intensity", "length_from": "dur"}}, open(out + "/fs_map.json", "w"))
+PY
+cat > "$OUT/fieldsynth16.inf" <<'INF'
+infinite-patch 1
+node 1 Notes Keyboard
+  id keys
+end
+node 2 Synths Field Synth
+  id fsyn
+end
+node 3 Utility Audio Out
+  id speakers
+end
+note fsyn 0 keys
+aud speakers 0 fsyn
+INF
+"$BIN" --audio-summary "$OUT/fieldsynth16.inf" "$OUT/fs.json" --duration 5.6 --wav "$OUT/fs.wav" --notes "$OUT/fs_events.json" --note-map "$OUT/fs_map.json" >/dev/null 2>&1
+python3 - "$OUT/fs.wav" <<'PY'
+import wave, array, sys
+w = wave.open(sys.argv[1]); r = w.getframerate(); n = w.getnchannels()
+a = array.array('h'); a.frombytes(w.readframes(w.getnframes())); L = a[0::n]
+def peak(i):  # window after note i's onset (0.3 + 0.3 i), 0.12 s
+    s = int((0.3 + 0.3 * i) * r); return max((abs(x) for x in L[s:s + int(0.12 * r)]), default=0)
+sys.exit(0 if all(peak(i) > 300 for i in range(16)) else 1)
+PY
+check "field synth: all 16 short notes are audible (voice pool recycles)" $?
 [ -f "$OUT/stems/hit.wav" ]; check "stems: one WAV per node" $?
 python3 - "$OUT/stems/hit.wav" <<'PY'
 import wave, array, sys
