@@ -1,5 +1,5 @@
 #!/bin/bash
-# Keeps the roadmap board current with no manual step: closes quests for merged branches, then rebuilds the page
+# Keeps the roadmap board current with no manual step: closes quests for merged branches, then rebuilds the page and docs/NOW.md's facts
 # (live stars/downloads, daily metrics snapshot, GA when the key exists). Safe to run any time and from any cwd.
 # Triggers: git post-merge hook (immediate) and launchd com.infinite.roadmap (hourly). Log: tools/roadmap/auto.log
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -11,4 +11,5 @@ trap 'rmdir "$LOCK"' EXIT
   echo "== $(date '+%F %T')"
   python3 tools/roadmap/backfill.py 2>&1 | tail -3
   python3 tools/roadmap/roadmap.py build 2>&1 | tail -2
+  python3 tools/lifecycle/now.py 2>&1 | tail -1
 } >> tools/roadmap/auto.log 2>&1

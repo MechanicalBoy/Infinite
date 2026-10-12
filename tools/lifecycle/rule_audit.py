@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Rule audit: the input to the monthly rule loop (infinite-lifecycle section 9).
+"""Rule audit: the input to the monthly rule loop (infinite-lifecycle section 10).
 
 Inventories every standing instruction (AGENTS.md, CLAUDE.md, .claude/skills/*/SKILL.md, agents,
 and optionally the memory directory) and reports what to bring to the owner: size, staleness,
 catalogue drift, memories with no reason, broken links and supersede chains. It never edits or
-deletes anything; retiring a rule is an owner decision.
+deletes anything; the agent retires superseded or duplicated rules, the owner the rest.
 
     python3 tools/lifecycle/rule_audit.py --memory ~/.claude/projects/<project>/memory
     python3 tools/lifecycle/rule_audit.py --out docs/lifecycle/rule-audit.md
