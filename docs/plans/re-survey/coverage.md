@@ -82,3 +82,8 @@ Out of scope (owner, 2026-10-12): web research on business, onboarding and distr
   Installed here: 42 VST2, 23 CLAP Infinite cannot see.
 - Isolation: Bitwig runs plugins in a separate host process; Live in-process (like Infinite); Logic uses macOS's AU
   hosting service, which any host can request (`loadOutOfProcess` at AU instantiation).
+- Transport fix 2026-10-12 (Block A): plugins never saw Infinite's clock (VST3 hard-coded "playing, 120 BPM" on all
+  three platforms since a2a4703b, shipped; AU got none). Now fed per block from Transport; the AU path is verified
+  by INFINITE_PLUGINSCANTEST (tempo, beat, bar, meter, play, cycle read back) and PLUGINNODETEST passes. Drumazon 2
+  now behaves the same as AU and VST3. Windows/Linux: same shared mapping, checked by reading the code only. Needs a release-notes line.
+- Next-session prompt for blocks A to F: `NEXT-SESSION.md`.
