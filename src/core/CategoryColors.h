@@ -28,6 +28,12 @@ namespace CategoryColors
    // WCAG contrast ratio (1..21) between two colours.
    float ContrastRatio(const Color& a, const Color& b);
 
+   // The resting fill of a text field, which is where hint text and typed text actually sit: the
+   // panel tinted toward the text colour by the strongest resting tint any field uses (FieldWell
+   // 0.06, the library search 0.07). Both text tones keep 4.5:1 against it, not just the panel.
+   constexpr float kFieldWellTint = 0.07f;
+   Color FieldWellBg(const UiTheme& t);
+
    const UiTheme& CurrentUiTheme();
    bool IsThemeLight();
 

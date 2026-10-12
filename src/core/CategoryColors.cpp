@@ -253,6 +253,16 @@ float RelLuminance(const Color& c)
    return 0.2126f * lin(c.r) + 0.7152f * lin(c.g) + 0.0722f * lin(c.b);
 }
 
+} // anonymous namespace
+
+Color FieldWellBg(const UiTheme& t)
+{
+   return Color{ t.panelBg.r + (t.text.r - t.panelBg.r) * kFieldWellTint, t.panelBg.g + (t.text.g - t.panelBg.g) * kFieldWellTint,
+                 t.panelBg.b + (t.text.b - t.panelBg.b) * kFieldWellTint };
+}
+
+namespace
+{
 // Moves `fg` toward white (dark backgrounds) or black (light ones) by the least amount that
 // reaches `minRatio` against both backgrounds. Colours that already pass are returned untouched.
 Color WithContrast(const Color& fg, const Color& bgA, const Color& bgB, float minRatio)
@@ -276,15 +286,20 @@ Color WithContrast(const Color& fg, const Color& bgA, const Color& bgB, float mi
 
 // The curated palettes are ports of well-known themes, several of which keep their secondary text
 // under WCAG AA. Chrome text has to stay readable, so both text tones are lifted to 4.5:1 against
-// the window and panel backgrounds at load.
+// the window, the panel and a text field's well at load. The well is tinted toward the text, so it
+// moves when the text does: a few passes settle it.
 const std::vector<Preset>& Presets()
 {
    static const std::vector<Preset> presets = [] {
       std::vector<Preset> p = RawPresets();
       for (Preset& preset : p)
       {
-         preset.ui.text = WithContrast(preset.ui.text, preset.ui.windowBg, preset.ui.panelBg, kMinTextContrast);
-         preset.ui.textDim = WithContrast(preset.ui.textDim, preset.ui.windowBg, preset.ui.panelBg, kMinTextContrast);
+         UiTheme& ui = preset.ui;
+         ui.text = WithContrast(ui.text, ui.windowBg, ui.panelBg, kMinTextContrast);
+         for (int pass = 0; pass < 4 && ContrastRatio(ui.text, FieldWellBg(ui)) < kMinTextContrast; ++pass)
+            ui.text = WithContrast(ui.text, FieldWellBg(ui), ui.panelBg, kMinTextContrast + 0.02f);
+         ui.textDim = WithContrast(ui.textDim, ui.windowBg, ui.panelBg, kMinTextContrast);
+         ui.textDim = WithContrast(ui.textDim, FieldWellBg(ui), ui.panelBg, kMinTextContrast);
       }
       return p;
    }();
