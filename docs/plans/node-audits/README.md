@@ -65,7 +65,7 @@ Three blocks, one branch each, commit per step, merge straight back to main (git
 | # | Branch | Audits | State |
 |---|---|---|---|
 | 1 | `feature/synth-audit` | SYNTHAUDIT | done 2026-10-12 (merged); F4 and Field Synth preset level open |
-| 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | planned |
+| 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | done 2026-10-12 (merged); Echo voiceId and step-generator block quantisation open |
 | 3 | `feature/geo-comp-audit` | GEOAUDIT, COMPAUDIT | planned |
 
 Order reason: Synths are the largest audio gap (220 controls) and audio comes first in the perf
@@ -95,6 +95,19 @@ Competitor reference: re-survey synth probe renders the same notes in Diva, Seru
 aliasing, pitch error, filter sweep and envelope shapes are compared as numbers.
 
 ### Block 2: IOAUDIT and NOTEAUDIT
+
+Result (baselines `baseline-2026-10-12-note.txt`, `baseline-2026-10-12-io.txt`):
+
+| Finding | State |
+|---|---|
+| Audio Gate sent a double note-off | fixed |
+| Audio Quantizer left stuck notes (off not shifted with its on) | fixed |
+| Random Note Gen swing truncated to one block | fixed, legacy flag `swingMode` keeps saved patches |
+| Mixer mute / solo / pan stepped at block rate (36-44 dB clicks) | fixed, gains ramp across the block |
+| Loudness, Gain/Mixer/Blend laws, 12-slot sum, Splitter | exact, no change |
+| Note Echo shares one voiceId across dry and repeats | open, needs owner decision |
+| Arp / Sequencer / Random Note Gen place steps on block boundaries (up to one block early/late) | open, larger design change |
+| Audio In/Out and PDC | not covered by IOAUDIT |
 
 IOAUDIT covers Mixer, Gain, Spatial Mixer, Audio Meter, Blend Audio, Splitter, Audio In/Out.
 
