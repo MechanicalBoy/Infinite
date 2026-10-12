@@ -89,5 +89,19 @@ namespace BlendModes
       "   if (mode == 13) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, b));\n"
       "   if (mode == 17) return step(1.0, a + b);\n"
       "   return blendMode(mode, a, b);\n"
+      "}\n"
+      // What the image nodes call. With headroom the additive modes (Linear
+      // Burn, Add, Linear Light, Subtract) keep light above white and only
+      // floor at 0, as Nuke's plus and 32-bit Photoshop do; the dividing
+      // modes keep their cap of 1, since their epsilon would otherwise blow
+      // up near zero denominators.
+      "vec3 blendModeImage(int mode, vec3 a, vec3 b, int w3c, int headroom) {\n"
+      "   if (headroom == 1) {\n"
+      "      if (mode == 4) return max(a + b - 1.0, 0.0);\n"
+      "      if (mode == 9) return max(a + b, 0.0);\n"
+      "      if (mode == 15) return max(a + 2.0*b - 1.0, 0.0);\n"
+      "      if (mode == 20) return max(a - b, 0.0);\n"
+      "   }\n"
+      "   return w3c == 1 ? blendModeW3C(mode, a, b) : blendMode(mode, a, b);\n"
       "}\n";
 }

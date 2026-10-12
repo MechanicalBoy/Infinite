@@ -47,7 +47,13 @@ public:
       for (size_t i = 0; i < mDef.params.size(); i++)
          if (mDef.params[i].hasLegacy)
             mParamValues[i][0] = mDef.params[i].legacyVal;
+      mHeadroom = false;
    }
+
+   // Light above 1.0 survives this node (GLUtil::WithClampedOutput). On for
+   // new nodes; patches saved before it existed load it off and keep clipping.
+   bool Headroom() const { return mHeadroom; }
+   void SetHeadroom(bool on) { mHeadroom = on; }
 
    // Keyed by uniformName rather than by index: the FilterDef table is shared
    // across every FilterNode of this kind, so the name is the one thing stable
@@ -62,6 +68,7 @@ public:
          else
             v.Float(def.uniformName.c_str(), mParamValues[i][0]);
       }
+      v.Bool("headroom", mHeadroom);
    }
 
 private:
@@ -78,6 +85,7 @@ private:
       GLint texel = -1;
       GLint time = -1;
       GLint converted = -1;
+      GLint headroom = -1;
       std::vector<GLint> params;
    };
 
@@ -101,12 +109,13 @@ private:
       // on a stopped transport caches like any other instead of re-rendering
       // an identical image and forcing everything downstream to recook.
       float time = 0.0f;
+      bool headroom = true;
 
       bool operator==(const Signature& o) const
       {
          return upstreamRev == o.upstreamRev && upstreamRev2 == o.upstreamRev2 &&
                 width == o.width && height == o.height && params == o.params &&
-                time == o.time;
+                time == o.time && headroom == o.headroom;
       }
    };
 
@@ -131,6 +140,7 @@ private:
    // Filters whose shader reads uTime are inherently animated, so the
    // uploaded time value is part of Signature.
    bool mUsesTime = false;
+   bool mHeadroom = true;
    bool mHasBuilt = false;
    Signature mBuilt;
    unsigned long long mRevision = 0;

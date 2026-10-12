@@ -70,7 +70,14 @@ namespace GLUtil
    // by not using it. Renames the source's `void main()`.
    // `beforeClamp` is spliced in after the original main returns (FilterNode
    // encodes linear light back to sRGB there).
+   // With headroom (uniform `int uImgHeadroom` = 1, declared by the wrapper
+   // unless the source already declares it) the write keeps light above 1.0
+   // and only clamps alpha and negatives: the float chain then carries
+   // over-white values to the output node. Patches saved before headroom
+   // existed load with it off and clip as they always did.
    std::string WithClampedOutput(const std::string& fragSrc, const char* beforeClamp = "");
+   // Sets uImgHeadroom on the bound program (no-op when it has none).
+   void SetImageHeadroom(unsigned int program, bool on);
 
    // GLSL: `vec3 OutputDither(vec3 c)` adds a fixed per-pixel offset in
    // +-0.5/255, so a value already on an 8-bit code rounds back to the same

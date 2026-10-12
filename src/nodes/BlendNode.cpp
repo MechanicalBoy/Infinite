@@ -18,7 +18,8 @@ namespace
             "uniform int uMode;\n"
             "uniform float uMix;\n"
             "uniform int uLinear;\n"
-            "uniform int uW3C;\n")
+            "uniform int uW3C;\n"
+            "uniform int uImgHeadroom;\n")
          + GLUtil::kSrgbGlsl
          + BlendModes::kBlendGLSL
          + "void main() {\n"
@@ -29,7 +30,7 @@ namespace
            "   if (uLinear == 1) { a.rgb = SrgbDecode(a.rgb); b.rgb = SrgbDecode(b.rgb); }\n"
            "   if (uMode == " + std::to_string(BlendModes::kEraseMode) + ") { fragColor = vec4(a.rgb, a.a * (1.0 - b.a * uMix)); return; }\n"
            "   if (uMode == " + std::to_string(BlendModes::kAntiEraseMode) + ") { fragColor = vec4(a.rgb, a.a * (1.0 - (1.0 - b.a) * uMix)); return; }\n"
-           "   vec3 blended = uW3C == 1 ? blendModeW3C(uMode, a.rgb, b.rgb) : blendMode(uMode, a.rgb, b.rgb);\n"
+           "   vec3 blended = blendModeImage(uMode, a.rgb, b.rgb, uW3C, uImgHeadroom);\n"
            "   float as = b.a * uMix;\n"
            "   vec3 cs = mix(b.rgb, blended, a.a);\n"
            "   float ar = as + a.a * (1.0 - as);\n"
@@ -104,5 +105,6 @@ void BlendNode::CookIfNeeded(int frameId)
       glUniform1f(locMix, mMix);
       glUniform1i(locLinear, mLinear ? 1 : 0);
       glUniform1i(locW3C, mW3C ? 1 : 0);
+      GLUtil::SetImageHeadroom(mProgram, mHeadroom);
    });
 }

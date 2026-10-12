@@ -167,6 +167,14 @@ namespace
       }
    }
 
+   // INFINITE_IMGAUDIT_LEGACY=1: every node as an old patch loads it
+   // (BeforeLoadParams), for same-binary A/B of the legacy look and timing.
+   bool LegacyLook()
+   {
+      static const bool legacy = std::getenv("INFINITE_IMGAUDIT_LEGACY") != nullptr;
+      return legacy;
+   }
+
    // ---------------------------------------------------------------- filter rig
    struct FilterRig
    {
@@ -178,10 +186,7 @@ namespace
          node->Input().Connect(&src);
          if (def.inputs > 1)
             node->Input2().Connect(&src2);
-         // INFINITE_IMGAUDIT_LEGACY=1: nodes as an old patch loads them
-         // (linear light off), for same-binary A/B timing
-         static const bool legacy = std::getenv("INFINITE_IMGAUDIT_LEGACY") != nullptr;
-         if (legacy)
+         if (LegacyLook())
             node->BeforeLoadParams();
       }
       bool Set(const char* uniform, float v, int comp = 0)
@@ -576,6 +581,53 @@ namespace
          printf("IMGAUDIT SPEC exposure +1 EV on 80%% -> %.3f encoded (want > 1.0, headroom)\n", out.At(8, 8)[0]);
       }
 
+      // headroom: +1 EV on 80% is 1.6 linear. It must survive Curves, Blend
+      // Add (over black) and the grade at their defaults, so -1 EV gives the
+      // 80% back. The legacy look (patches saved before headroom) clips at
+      // white, so it reads 0.5 there by design.
+      const FilterDef* ex = FindDef("exposure");
+      const FilterDef* gr = FindDef("color adjustments");
+      const auto& modes = BlendModes::Names();
+      const int addMode = (int)(std::find(modes.begin(), modes.end(), "Add") - modes.begin());
+      if (ex != nullptr && gr != nullptr && addMode < (int)modes.size())
+      {
+         TexSource src, black;
+         FilterRig up(*ex), grade(*gr), down(*ex);
+         CurvesNode cv;
+         BlendNode bl;
+         if (LegacyLook())
+         {
+            cv.BeforeLoadParams();
+            bl.BeforeLoadParams();
+         }
+         up.Set("uExposure", 1.0f);
+         down.Set("uExposure", -1.0f);
+         up.node->Input().Connect(&src);
+         cv.Input().Connect(up.node.get());
+         bl.InputA().Connect(&cv);
+         bl.InputB().Connect(&black);
+         bl.ModeIndex() = addMode;
+         grade.node->Input().Connect(&bl);
+         down.node->Input().Connect(grade.node.get());
+         Image in(16, 16), blk(16, 16), mid, out;
+         in.Fill(LinearToSrgb(0.8f), LinearToSrgb(0.8f), LinearToSrgb(0.8f), 1.0f);
+         blk.Fill(0.0f, 0.0f, 0.0f, 1.0f);
+         src.Set(in);
+         black.Set(blk);
+         Read(*down.node, out);
+         const float lin = SrgbToLinear(out.At(8, 8)[0]);
+         float stage[4];
+         INode* stages[4] = { up.node.get(), &cv, &bl, grade.node.get() };
+         for (int i = 0; i < 4; i++)
+         {
+            Read(*stages[i], mid);
+            stage[i] = SrgbToLinear(mid.At(8, 8)[0]);
+         }
+         printf("IMGAUDIT SPEC headroom 80%% +1 EV %.3f -> Curves %.3f -> Blend Add %.3f -> grade %.3f -> -1 EV %.3f linear (want 1.6 ... 0.800)\n",
+                stage[0], stage[1], stage[2], stage[3], lin);
+         Spec(flag, "headroom", "over-white survives the chain", std::fabs(lin - 0.8f), 0.005f, "linear");
+      }
+
       // color adjustments: defaults are identity; saturation 0 gives Rec.709 luminance.
       if (const FilterDef* d = FindDef("color adjustments"))
       {
@@ -636,6 +688,7 @@ namespace
          for (int i = 0; i < 10; i++)
          {
             auto n = std::make_unique<FilterNode>(*d);
+            n->SetHeadroom(!LegacyLook());
             const auto& ps = d->params;
             for (size_t k = 0; k < ps.size(); k++)
                if (ps[k].uniformName == "uGamma")
@@ -829,6 +882,7 @@ namespace
       bl.InputB().Connect(&sb);
       bl.Mix() = 1.0f;
       bl.Linear() = false; // the W3C formulas are written for encoded values
+      bl.Headroom() = false; // and clip at white (display-referred)
       Image a = RandomColours(32, 32, 21), b = RandomColours(32, 32, 22), out;
       sa.Set(a);
       sb.Set(b);

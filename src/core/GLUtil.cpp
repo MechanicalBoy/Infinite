@@ -272,8 +272,31 @@ namespace GLUtil
       if (at == std::string::npos)
          return src;
       src.replace(at, 11, "void imageMain()");
-      src += std::string("\nvoid main() { imageMain(); ") + beforeClamp + " fragColor = clamp(fragColor, 0.0, 1.0); }\n";
+      // uImgHeadroom (SetImageHeadroom): 0, the default, is the old 0..1
+      // clip; 1 keeps light above 1.0 (half-float max), alpha stays 0..1.
+      if (src.find("uniform int uImgHeadroom;") == std::string::npos)
+      {
+         const size_t eol = src.rfind("#version", 0) == 0 ? src.find('\n') + 1 : 0;
+         src.insert(eol, "uniform int uImgHeadroom;\n");
+      }
+      // Half-float targets truncate toward zero on write, so a value a hair
+      // under a half step loses the whole step: 2^-10 above 1.0, 0.2% of
+      // the light per node. With headroom, adding half a step first makes
+      // the write round to nearest (legacy writes are left byte-identical).
+      src += std::string("\nvoid main() { imageMain(); ") + beforeClamp +
+             " if (uImgHeadroom == 1) {"
+             " vec3 c = clamp(fragColor.rgb, 0.0, 65504.0);"
+             " c += exp2(floor(log2(max(c, vec3(6.103515625e-05)))) - 11.0);"
+             " fragColor = vec4(min(c, vec3(65504.0)), clamp(fragColor.a, 0.0, 1.0)); }"
+             " else fragColor = clamp(fragColor, 0.0, 1.0); }\n";
       return src;
+   }
+
+   void SetImageHeadroom(unsigned int program, bool on)
+   {
+      const GLint loc = glGetUniformLocation(program, "uImgHeadroom");
+      if (loc >= 0)
+         glUniform1i(loc, on ? 1 : 0);
    }
 
    const char* const kOutputDitherGlsl =
@@ -292,7 +315,10 @@ namespace GLUtil
    const char* const kSrgbGlsl =
       "vec3 SrgbDecode(vec3 c) {\n"
       "   vec3 curve = 0.0008922681118 + c * (0.03350293781 + c * (0.5124953018 + c * (0.6903623787 + c * (-0.3381287731 + c * 0.1008758867))));\n"
-      "   return mix(c / 12.92, curve, step(0.04045, c));\n"
+      "   vec3 d = mix(c / 12.92, curve, step(0.04045, c));\n"
+      // the fit only holds on [0, 1]: headroom above white decodes exactly
+      "   if (any(greaterThan(c, vec3(1.0)))) d = mix(d, pow(max(c + 0.055, 0.0) / 1.055, vec3(2.4)), step(1.0, c));\n"
+      "   return d;\n"
       "}\n"
       "vec3 SrgbEncode(vec3 c) {\n"
       "   vec3 a = abs(c);\n"

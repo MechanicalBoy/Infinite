@@ -20,17 +20,24 @@ namespace
       "uniform sampler2D uSrc;\n"
       "uniform sampler2D uLut;\n"
       "uniform float uMix;\n"
+      "uniform int uImgHeadroom;\n"
+      "uniform vec4 uEndSlope;\n" // per row, at x = 1, from the CPU curve
       "const float N = 1024.0;\n"
-      "float L(float x, float row) { return texture(uLut, vec2((clamp(x, 0.0, 1.0) * (N - 1.0) + 0.5) / N, row)).r; }\n"
+      // Headroom: above white the curve carries on along its end slope
+      // (the identity curve stays exact); below 0 it holds, as before.
+      "float L(float x, float row, float slope) {\n"
+      "   float y = texture(uLut, vec2((clamp(x, 0.0, 1.0) * (N - 1.0) + 0.5) / N, row)).r;\n"
+      "   return uImgHeadroom == 1 && x > 1.0 ? y + (x - 1.0) * slope : y;\n"
+      "}\n"
       "void main() {\n"
       "   vec4 c = texture(uSrc, vUv);\n"
       "   // row 0 is the master curve, rows 1-3 are per-channel\n"
-      "   float r = L(c.r, 0.125);\n"
-      "   float g = L(c.g, 0.375);\n"
-      "   float b = L(c.b, 0.625);\n"
-      "   r = L(r, 0.875);\n"
-      "   g = L(g, 0.875);\n"
-      "   b = L(b, 0.875);\n"
+      "   float r = L(c.r, 0.125, uEndSlope.x);\n"
+      "   float g = L(c.g, 0.375, uEndSlope.y);\n"
+      "   float b = L(c.b, 0.625, uEndSlope.z);\n"
+      "   r = L(r, 0.875, uEndSlope.w);\n"
+      "   g = L(g, 0.875, uEndSlope.w);\n"
+      "   b = L(b, 0.875, uEndSlope.w);\n"
       "   fragColor = vec4(mix(c.rgb, vec3(r, g, b), uMix), c.a);\n"
       "}\n";
 }
@@ -104,6 +111,11 @@ void CurvesNode::RebuildLut()
          const float y = Evaluate(rowChannel[row], x);
          lut[row * kLutSize + i] = std::min(1.0f, std::max(0.0f, y));
       }
+      // slope of the last LUT step, in float (an R16F difference near 1.0
+      // would be off by up to a quarter)
+      const float h = 1.0f / (float)(kLutSize - 1);
+      mEndSlope[row] = (lut[row * kLutSize + kLutSize - 1] -
+                        std::min(1.0f, std::max(0.0f, Evaluate(rowChannel[row], 1.0f - h)))) / h;
    }
 
    if (mLutTex == 0)
@@ -162,5 +174,7 @@ void CurvesNode::CookIfNeeded(int frameId)
       glBindTexture(GL_TEXTURE_2D, mLutTex);
       glUniform1i(glGetUniformLocation(mProgram, "uLut"), 1);
       glUniform1f(glGetUniformLocation(mProgram, "uMix"), mix);
+      glUniform4fv(glGetUniformLocation(mProgram, "uEndSlope"), 1, mEndSlope);
+      GLUtil::SetImageHeadroom(mProgram, headroom);
    });
 }

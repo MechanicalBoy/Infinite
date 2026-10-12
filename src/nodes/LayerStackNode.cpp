@@ -23,7 +23,8 @@ namespace
             "uniform int uModes[4];\n"
             "uniform float uOpacity[4];\n"
             "uniform int uLinear;\n"
-            "uniform int uW3C;\n")
+            "uniform int uW3C;\n"
+            "uniform int uImgHeadroom;\n")
          + GLUtil::kSrgbGlsl
          + BlendModes::kBlendGLSL
          + "vec4 fetch(int i) {\n"
@@ -43,7 +44,7 @@ namespace
            "      if (!haveBase) { acc = vec4(layer.rgb, layer.a * uOpacity[i]); haveBase = true; continue; }\n"
            "      if (uModes[i] == " + std::to_string(BlendModes::kEraseMode) + ") { acc.a *= (1.0 - amt); continue; }\n"
            "      if (uModes[i] == " + std::to_string(BlendModes::kAntiEraseMode) + ") { acc.a *= (1.0 - (1.0 - layer.a) * uOpacity[i]); continue; }\n"
-           "      vec3 blended = uW3C == 1 ? blendModeW3C(uModes[i], acc.rgb, layer.rgb) : blendMode(uModes[i], acc.rgb, layer.rgb);\n"
+           "      vec3 blended = blendModeImage(uModes[i], acc.rgb, layer.rgb, uW3C, uImgHeadroom);\n"
            "      vec3 cs = mix(layer.rgb, blended, acc.a);\n"
            "      float ar = amt + acc.a * (1.0 - amt);\n"
            "      vec3 cr = (ar > 1e-5) ? (cs * amt + acc.rgb * acc.a * (1.0 - amt)) / ar : vec3(0.0);\n"
@@ -134,5 +135,6 @@ void LayerStackNode::CookIfNeeded(int frameId)
       glUniform1fv(glGetUniformLocation(mProgram, "uOpacity"), kSlots, opacities);
       glUniform1i(glGetUniformLocation(mProgram, "uLinear"), linear ? 1 : 0);
       glUniform1i(glGetUniformLocation(mProgram, "uW3C"), w3cModes ? 1 : 0);
+      GLUtil::SetImageHeadroom(mProgram, headroom);
    });
 }

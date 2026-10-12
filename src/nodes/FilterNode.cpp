@@ -25,7 +25,9 @@ namespace
       // when uLinear is on and passes it through untouched when off; the
       // main pass encodes on the way out. A pre-pass writes linear values
       // to its float scratch, so uPass samples need no decode.
-      "uniform int uLinear;\n";
+      "uniform int uLinear;\n"
+      // Headroom (GLUtil::WithClampedOutput): 1 keeps light above 1.0.
+      "uniform int uImgHeadroom;\n";
    const char* kPreambleTail =
       "vec3 ImgDecode(vec3 c) { return uLinear == 0 ? c : SrgbDecode(c); }\n"
       "vec3 ImgEncode(vec3 c) { return uLinear == 0 ? c : SrgbEncode(c); }\n"
@@ -34,7 +36,9 @@ namespace
       // divide alpha back out, so colour under alpha 0 weighs nothing. With
       // linear light off both are the old straight-alpha pass-through.
       "vec4 ImgTap(vec2 uv) { vec4 c = ImgSrc(uv); return uLinear == 0 ? c : vec4(c.rgb * c.a, c.a); }\n"
-      "vec4 ImgUnpremul(vec4 c) { return (uLinear == 0 || c.a <= 0.0) ? c : vec4(c.rgb / c.a, c.a); }\n";
+      "vec4 ImgUnpremul(vec4 c) { return (uLinear == 0 || c.a <= 0.0) ? c : vec4(c.rgb / c.a, c.a); }\n"
+      // A body's own range clamp: 0..1 as before, or floor-only with headroom.
+      "vec3 ImgClip(vec3 c) { return uImgHeadroom == 1 ? max(c, vec3(0.0)) : clamp(c, 0.0, 1.0); }\n";
 
    const std::string& Preamble()
    {
@@ -120,6 +124,7 @@ void FilterNode::LookupLocs(unsigned int program, PassLocs& locs) const
    locs.texel = glGetUniformLocation(program, "uTexelSize");
    locs.time = glGetUniformLocation(program, "uTime");
    locs.converted = glGetUniformLocation(program, "uConverted");
+   locs.headroom = glGetUniformLocation(program, "uImgHeadroom");
    locs.params.resize(mDef.params.size());
    for (size_t i = 0; i < mDef.params.size(); i++)
       locs.params[i] = glGetUniformLocation(program, mDef.params[i].uniformName.c_str());
@@ -149,6 +154,8 @@ void FilterNode::BindUniforms(const PassLocs& locs, unsigned int srcTex, unsigne
    glUniform1f(locs.time, time);
    if (locs.converted >= 0)
       glUniform1i(locs.converted, converted);
+   if (locs.headroom >= 0)
+      glUniform1i(locs.headroom, mHeadroom ? 1 : 0);
 
    for (size_t i = 0; i < mDef.params.size(); i++)
    {
@@ -205,6 +212,7 @@ void FilterNode::CookIfNeeded(int frameId)
    sig.width = mInput.Width();
    sig.height = mInput.Height();
    sig.params = mParamValues;
+   sig.headroom = mHeadroom;
    sig.time = mUsesTime ? (float)Transport::Instance().Seconds() : 0.0f;
 
    if (mHasBuilt && sig == mBuilt)

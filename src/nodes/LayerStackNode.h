@@ -31,14 +31,16 @@ public:
    float opacities[kSlots] = { 1.0f, 1.0f, 1.0f, 1.0f };
    bool linear = true; // composite in linear light
    bool w3cModes = true; // W3C Overlay / Soft Light / Hard Light / Hard Mix
+   bool headroom = true; // light above 1.0 survives (GLUtil::WithClampedOutput)
 
    // Patches saved before these existed keep the look they were made with.
-   void BeforeLoadParams() override { linear = false; w3cModes = false; }
+   void BeforeLoadParams() override { linear = false; w3cModes = false; headroom = false; }
 
    void VisitParams(ParamVisitor& v) override
    {
       v.Bool("linear", linear);
       v.Bool("w3cModes", w3cModes);
+      v.Bool("headroom", headroom);
       static const char* kModeKeys[kSlots] = { "mode0", "mode1", "mode2", "mode3" };
       static const char* kOpKeys[kSlots] = { "opacity0", "opacity1", "opacity2", "opacity3" };
       for (int i = 0; i < kSlots; i++)
