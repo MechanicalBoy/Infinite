@@ -666,6 +666,8 @@ expr <dst> <param|key> <expression>        glob <name> <expression>
   per frame, unseeded LFO S&H, LFO/Random rate in raw beats). `i maths 1` gives fps-independent
   stages and seeded S&H; also write `i output 1` (Envelope ADSR 0..1) and `i rateMode 1` (LFO/Random
   synced to `f rateBeats`; 2 = `f rateHz`). LFO `i phaseMode`: 0 transport, 1 free, 2 retrigger (`trig` input).
+  Always write `f seed <n>` on Random and on an S&H LFO: without it the seed is the session's next
+  spawn number, so a render and the GUI can differ.
 - **Bypass.** A node with two or more inputs never bypasses; a bypassed node does not cook.
   `flags 0 1 0 0` on such a node raises `W_BYPASS_IGNORED`.
 - **Something must be reachable.** An image needs an `Utility Output`; sound needs an
@@ -752,11 +754,11 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Null 3D` | geo:geometry | out:geometry | 0 | bypass |
 | `Ocean` | texture:image | out:geometry | 29 | bypass |
 | `Octahedron` | texture:image | out:geometry | 50 | bypass |
-| `Particle System` | none | out:geometry | 23 | bypass |
+)AISKILL"
+R"AISKILL(| `Particle System` | none | out:geometry | 23 | bypass |
 | `Plane` | texture:image | out:geometry | 50 | bypass |
 | `Points to Vertices` | points:geometry | out:geometry | 18 | bypass |
-)AISKILL"
-R"AISKILL(| `Prism` | texture:image | out:geometry | 50 | bypass |
+| `Prism` | texture:image | out:geometry | 50 | bypass |
 | `Pyramid` | texture:image | out:geometry | 50 | bypass |
 | `Render 3D` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry, camera:camera, light_1:light, light_2:light, light_3:light, env:environment | out:image | 39 |  |
 | `Resynthesize 3D` | geo:geometry | out:geometry | 13 | bypass |
@@ -971,11 +973,11 @@ R"AISKILL(| `Prism` | texture:image | out:geometry | 50 | bypass |
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Drift` | none | out:predictor | 20 | bypass |
-| `Moves` | none | out:predictor | 6 | bypass |
+)AISKILL"
+R"AISKILL(| `Moves` | none | out:predictor | 6 | bypass |
 | `Predictive Coloring` | input:image | out:image | 7 | bypass |
 | `Predictive Modulator` | in:modulator | out:modulator | 6 | bypass |
-)AISKILL"
-R"AISKILL(| `Predictive Notes` | notes:note | out:note | 10 | bypass |
+| `Predictive Notes` | notes:note | out:note | 10 | bypass |
 | `Predictive Quantize` | notes:note | out:note | 1 | bypass |
 | `Predictive Rhythm` | notes:note | out:note | 5 | bypass |
 | `Predictive Velocity` | notes:note | out:note | 1 | bypass |

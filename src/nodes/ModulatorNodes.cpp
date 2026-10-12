@@ -55,8 +55,8 @@ namespace
       return (float)(Mix64((uint64_t)step ^ salt) >> 40) / (float)0xFFFFFF;
    }
 
-   // Cycles (or steps) per beat-or-second for the shared rate modes. Hz is
-   // per second, the others per beat.
+   // Period in beats for the beats and synced rate modes (Hz is handled in
+   // RatePosition, per second).
    double PeriodBeatsFor(int rateMode, float rateBeats, SyncedPeriodCache& cache)
    {
       // Synced: a rate on a MusicTime division runs at the division's exact

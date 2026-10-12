@@ -97,6 +97,8 @@ expr <dst> <param|key> <expression>        glob <name> <expression>
   per frame, unseeded LFO S&H, LFO/Random rate in raw beats). `i maths 1` gives fps-independent
   stages and seeded S&H; also write `i output 1` (Envelope ADSR 0..1) and `i rateMode 1` (LFO/Random
   synced to `f rateBeats`; 2 = `f rateHz`). LFO `i phaseMode`: 0 transport, 1 free, 2 retrigger (`trig` input).
+  Always write `f seed <n>` on Random and on an S&H LFO: without it the seed is the session's next
+  spawn number, so a render and the GUI can differ.
 - **Bypass.** A node with two or more inputs never bypasses; a bypassed node does not cook.
   `flags 0 1 0 0` on such a node raises `W_BYPASS_IGNORED`.
 - **Something must be reachable.** An image needs an `Utility Output`; sound needs an
