@@ -453,6 +453,8 @@ namespace Headless
          }
          else if (a == "--no-audio")
             job.noAudio = true;
+         else if (a == "--timeline" && job.mode == Mode::AudioSummary)
+            job.timeline = true;
          else if (a == "--plugin-params" && (job.mode == Mode::Render || job.mode == Mode::AudioSummary))
             job.pluginParams = true;
          else if (a == "--lenient")
@@ -481,6 +483,11 @@ namespace Headless
       if (job.notes.empty() != job.noteMap.empty())
       {
          usageError = "--notes and --note-map go together: events file and the map from event type to note target";
+         return true;
+      }
+      if (job.timeline && !job.output.empty())
+      {
+         usageError = "--timeline measures the arrangement mix; --output picks a canvas sink, which Timeline mode does not feed";
          return true;
       }
       if (!job.stems.empty() && job.stemsDir.empty())

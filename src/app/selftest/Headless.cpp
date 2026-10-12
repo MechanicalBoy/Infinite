@@ -1108,7 +1108,12 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
             if (wired)
                sinks.push_back({ g.index, g.typeName, audioOut ? &audioOut->CaptureRing() : &outNode->CaptureRing() });
          }
-         if (sinks.empty())
+         bool timelineClips = false;
+         for (const Arrange::Lane& lane : gArrange.lanes)
+            timelineClips = timelineClips || (lane.type == Arrange::kLaneAudio && !lane.clips.empty());
+         if (job.timeline && !timelineClips)
+            return fail("E_NO_AUDIO", "--timeline: the arrangement has no clip on an audio lane");
+         if (sinks.empty() && !job.timeline)
             return fail("E_NO_AUDIO", "no audio reaches an Audio Out or an Output's audio input, so there is nothing to measure");
 
          sSinkRing = nullptr;
@@ -1252,6 +1257,10 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
             AudioEngine::Instance().SetOfflineTaps(&sTaps);
 
          sAnalyzer = std::make_unique<AudioSummary::Analyzer>(gHeadlessAudioRate);
+         // A loaded patch always opens in Canvas mode (the mode is not saved), so arrangement
+         // clips only sound when asked for; PrimeOfflineStart's rebuild picks the mode up.
+         if (job.timeline)
+            gAudioMode = AudioMode::Timeline;
          Transport::Instance().Seek(job.start);
          Transport::Instance().SetOfflineMode(true, gHeadlessAudioRate);
          Transport::Instance().SetPlaying(true);
