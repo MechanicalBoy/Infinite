@@ -1,0 +1,25 @@
+# Quality registry: one row per metric. Owner of every target and gate (docs/quality/README.md).
+# id	pillar	area	unit	better	target	gate	source	exceptions	what
+# better: lower | higher | none (reported, no direction). gate: release (driver fails on a miss) | report (scoreboard only).
+# exceptions: subject=finding,... (finding ids live in the source's README, e.g. docs/plans/node-audits F1).
+synth.pitch_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error per note at 44.1/48/96 kHz (spectrum peak, sustained render)
+synth.note_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error of note 69 played through the note cable
+synth.alias_db	P5	Built-in instruments	dB	lower	-60	release	SYNTHAUDIT		Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz
+synth.rate_spread_db	P5	Built-in instruments	dB	lower	1.0	release	SYNTHAUDIT	node:Metallic=F1	Level spread of the same 3 s render over 44.1/48/96 kHz
+synth.click_on_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT	node:Metallic=F7	Note-on second difference re steady state
+synth.click_off_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT		Note-off second difference re steady state
+synth.poly_tail_dbfs	P5	Built-in instruments	dBFS	lower	-100	release	SYNTHAUDIT		Level 9.5 s after all notes off (stuck voices); free-running nodes are not measured
+synth.chord4_peak_dbfs	P5	Built-in instruments	dBFS	lower	0	release	SYNTHAUDIT		Peak of a 4-note chord at velocity 0.8, defaults
+synth.peak_dbfs	P5	Built-in instruments	dBFS	lower	0	release	SYNTHAUDIT		Peak of a single sustained note, defaults
+synth.sample_pitch_spread_c	P5	Built-in instruments	cents	lower	20	release	SYNTHAUDIT		Fixture WAV (48 kHz) pitch spread over 44.1/48/96 kHz device rates (F11)
+synth.sample_length_ratio	P5	Built-in instruments	ratio	lower	1.02	release	SYNTHAUDIT		Fixture WAV playback length, longest over shortest across device rates (F11)
+synth.det_differs	P5	Built-in instruments	bool	lower	0	release	SYNTHAUDIT		1 when the same render twice is not bit-identical
+synth.cpu_ns_frame	P8	Built-in instruments	ns/frame	lower	4000	report	SYNTHAUDIT		Render cost per frame, one voice (noisy: report only)
+probe.pitch_worst_c	P5	Built-in instruments	cents	lower	1.0	report	synth_probe		Worst pitch error over MIDI 24-108, black box through the host
+probe.nonharm60_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 60 (clean reference); best competitor about -84
+probe.nonharm96_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 96 (aliasing)
+probe.nonharm108_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 108 (aliasing)
+probe.attack_ms	P5	Built-in instruments	ms	none		report	synth_probe		Default-patch attack 10-90 % (a design choice, compared not judged)
+probe.release_s	P5	Built-in instruments	s	none		report	synth_probe		Default-patch release to -60 dB
+probe.vel_span_db	P5	Built-in instruments	dB	none		report	synth_probe		Level change velocity 0.25 -> 1.0
+probe.cpu_voice_ms_s	P8	Built-in instruments	ms/s	lower		report	synth_probe		Render ms per second of audio per voice, offline
