@@ -228,12 +228,12 @@ Skills: `timeline-arrangement-architecture`, `infinite-design-system`, `node-ui-
 Done this session: blocks A–C; render_bench, project_bench (+history --all, library), workflow_cost (55f0bd13); F.md drafted (Final Cut section missing).
 
 Left, in order:
-1. Wait for the Blender bench to finish (`render_bench.py blender`, log `~/re-output/render-bench/blender_run.log`; was on instanced 4K ProRes, blur scenes + sync still to go). No builds or benches while it runs.
-2. `/Users/namansoni/infinte-fix` worktree (off main): configure + build.
+1. DONE 2026-10-13: Blender bench finished (results merged: `~/re-output/render-bench/results.md`, EEVEE). Was: wait for the Blender bench to finish (`render_bench.py blender`, log `~/re-output/render-bench/blender_run.log`; was on instanced 4K ProRes, blur scenes + sync still to go). No builds or benches while it runs.
+2. DONE 2026-10-13: both fixes built, tested, merged to main (6f27804e, 3bac05c2), main built + deployed. Solarized Light accent/panel 2.92 (<3:1, not asserted) noted for F.md. Smoke `patch_1 ... baseline` fails on main since f63a0cf1 (stale baseline, task chip filed). Was: `/Users/namansoni/infinte-fix` worktree (off main): configure + build.
    - `bugfix/field-text-contrast` (e90f84fe): run `INFINITE_THEMECONTRASTTEST`.
    - `bugfix/atomic-save` (fc683464): run the headless_smoke save block + autosave tests.
    - Merge both `--no-ff` from `/Users/namansoni/infinte-main` (leave its uncommitted NOW.md/roadmap files alone), build main, `scripts/deploy_desktop.sh`. Never push.
-3. `project_bench.py infinite --sizes 10,100,1000,4000`; `render_bench.py analyse ~/re-output/render-bench/Infinite ~/re-output/render-bench/Blender --out ...`.
+3. (render analyse DONE) `project_bench.py infinite --sizes 10,100,1000,4000`; `render_bench.py analyse ~/re-output/render-bench/Infinite ~/re-output/render-bench/Blender --out ...`.
 4. `ui_map.py run "Final Cut Pro Creator Studio"`; add the Final Cut timeline section to `dossiers/F.md`.
 5. Write `dossiers/D.md` (TD sitting pending, GPU memory not measured, resolution ceiling, `--validate` unknown-function, mp4 no alpha, Blender white luma 0.77, Audio File export stall fixed 01059f67, feedback scene not done) and `dossiers/E.md` (scaling, history 102/109 load with all 7 fails explained, formats, library gaps, autosave 60 s default + recovery + 200 undo, atomic-save fix, PROTOCOL for GUI save/load + browser search timing).
 6. Coverage rows 9, 10, 12, 18, 19, 20, 22; regenerate capability diff; lint all dossiers; merge `feature/re-survey-render-bench` `--no-ff`.
