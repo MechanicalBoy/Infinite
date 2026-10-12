@@ -10,10 +10,10 @@ SYNTHAUDIT NOTE  Analog          note 69 pitch -0.01 cents
 SYNTHAUDIT ENV   Analog          attack 4 ms | release to -60 dB 250 ms
 SYNTHAUDIT CLICK Analog          note-on -3.5 dB | note-off -0.1 dB re steady
 SYNTHAUDIT VEL   Analog          vel 0.5 -12.0 dB | vel 0.25 -24.1 dB re vel 1
-SYNTHAUDIT POLY  Analog           1 notes: peak   -7.1 dBFS |   191.5 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Analog           8 notes: peak   -1.1 dBFS |  1298.8 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Analog          32 notes: peak   -0.9 dBFS |  1341.3 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT CPU   Analog            208.9 ns/frame
+SYNTHAUDIT POLY  Analog           1 notes: peak   -7.1 dBFS |   191.4 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Analog           8 notes: peak   -1.1 dBFS |  1301.6 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Analog          32 notes: peak   -0.9 dBFS |  1359.0 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT CPU   Analog            208.8 ns/frame
 SYNTHAUDIT LEVEL Wavetable       rms  -10.1 dBFS | peak   -7.1 dBFS
 SYNTHAUDIT PITCH Wavetable        44100 Hz |    110Hz  +0.01c    440Hz  -0.01c   1760Hz  +0.00c   7040Hz  -0.00c
 SYNTHAUDIT PITCH Wavetable        48000 Hz |    110Hz  +0.03c    440Hz  -0.01c   1760Hz  -0.00c   7040Hz  -0.00c
@@ -26,10 +26,10 @@ SYNTHAUDIT NOTE  Wavetable       note 69 pitch -0.01 cents
 SYNTHAUDIT ENV   Wavetable       attack 3 ms | release to -60 dB 261 ms
 SYNTHAUDIT CLICK Wavetable       note-on +8.2 dB | note-off -0.1 dB re steady
 SYNTHAUDIT VEL   Wavetable       vel 0.5 -12.0 dB | vel 0.25 -24.1 dB re vel 1
-SYNTHAUDIT POLY  Wavetable        1 notes: peak  -13.4 dBFS |    96.7 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Wavetable        8 notes: peak   -6.2 dBFS |   594.8 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Wavetable       32 notes: peak   -5.5 dBFS |   419.3 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT CPU   Wavetable          76.4 ns/frame
+SYNTHAUDIT POLY  Wavetable        1 notes: peak  -13.4 dBFS |    92.2 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Wavetable        8 notes: peak   -6.2 dBFS |   418.5 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Wavetable       32 notes: peak   -5.5 dBFS |   430.5 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT CPU   Wavetable          79.9 ns/frame
 SYNTHAUDIT LEVEL Oscillator      rms  -10.5 dBFS | peak   -5.7 dBFS
 SYNTHAUDIT PITCH Oscillator       44100 Hz |    110Hz  +0.01c    440Hz  -0.01c   1760Hz  +0.00c   7040Hz  -0.00c
 SYNTHAUDIT PITCH Oscillator       48000 Hz |    110Hz  +0.03c    440Hz  -0.01c   1760Hz  -0.00c   7040Hz  -0.00c
@@ -42,10 +42,10 @@ SYNTHAUDIT NOTE  Oscillator      note 69 pitch -0.01 cents
 SYNTHAUDIT ENV   Oscillator      attack 4 ms | release to -60 dB 261 ms
 SYNTHAUDIT CLICK Oscillator      note-on +2.5 dB | note-off -0.1 dB re steady
 SYNTHAUDIT VEL   Oscillator      vel 0.5 -12.0 dB | vel 0.25 -24.1 dB re vel 1
-SYNTHAUDIT POLY  Oscillator       1 notes: peak  -12.4 dBFS |   125.8 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Oscillator       8 notes: peak   -5.3 dBFS |   763.1 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Oscillator      32 notes: peak   -5.1 dBFS |   657.5 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT CPU   Oscillator        115.5 ns/frame
+SYNTHAUDIT POLY  Oscillator       1 notes: peak  -12.4 dBFS |   130.8 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Oscillator       8 notes: peak   -5.3 dBFS |   642.1 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Oscillator      32 notes: peak   -5.1 dBFS |   666.7 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT CPU   Oscillator        127.8 ns/frame
 SYNTHAUDIT LEVEL Equation Synth  rms  -12.6 dBFS | peak   -7.9 dBFS
 SYNTHAUDIT PITCH Equation Synth   44100 Hz |    110Hz  +0.01c    440Hz  -0.01c   1760Hz  +0.00c   7040Hz  -0.00c
 SYNTHAUDIT PITCH Equation Synth   48000 Hz |    110Hz  +0.03c    440Hz  -0.01c   1760Hz  -0.00c   7040Hz  -0.00c
@@ -58,12 +58,12 @@ SYNTHAUDIT NOTE  Equation Synth  note 69 pitch -0.01 cents
 SYNTHAUDIT ENV   Equation Synth  attack 3 ms | release to -60 dB 201 ms
 SYNTHAUDIT CLICK Equation Synth  note-on +1.8 dB | note-off -0.0 dB re steady
 SYNTHAUDIT VEL   Equation Synth  vel 0.5 -6.0 dB | vel 0.25 -12.0 dB re vel 1
-SYNTHAUDIT POLY  Equation Synth   1 notes: peak  -12.4 dBFS |    62.2 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Equation Synth   8 notes: peak    3.6 dBFS |   313.0 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Equation Synth   1 notes: peak  -12.4 dBFS |    64.0 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Equation Synth   8 notes: peak    3.6 dBFS |   319.6 ns/frame | tail  -240.0 dBFS
 SYNTHAUDIT FLAG POLY  Equation Synth  peak dBFS 3.58
-SYNTHAUDIT POLY  Equation Synth  32 notes: peak    4.3 dBFS |   323.6 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Equation Synth  32 notes: peak    4.3 dBFS |   327.8 ns/frame | tail  -240.0 dBFS
 SYNTHAUDIT FLAG POLY  Equation Synth  peak dBFS 4.33
-SYNTHAUDIT CPU   Equation Synth     57.6 ns/frame
+SYNTHAUDIT CPU   Equation Synth     58.3 ns/frame
 SYNTHAUDIT LEVEL Metallic        rms  -22.4 dBFS | peak   -5.6 dBFS
 SYNTHAUDIT RATE  Metallic        level spread 3.14 dB over 44.1/48/96 kHz
 SYNTHAUDIT FLAG RATE  Metallic        spread dB 3.14
@@ -72,8 +72,50 @@ SYNTHAUDIT ENV   Metallic        attack 0 ms | release to -60 dB 902 ms
 SYNTHAUDIT CLICK Metallic        note-on +32.3 dB | note-off -32.9 dB re steady
 SYNTHAUDIT FLAG CLICK Metallic        note-on dB 32.28
 SYNTHAUDIT VEL   Metallic        vel 0.5 -6.0 dB | vel 0.25 -12.0 dB re vel 1
-SYNTHAUDIT POLY  Metallic         1 notes: peak  -13.4 dBFS |    92.7 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Metallic         8 notes: peak   -3.1 dBFS |   360.6 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT POLY  Metallic        32 notes: peak   -3.3 dBFS |   370.6 ns/frame | tail  -240.0 dBFS
-SYNTHAUDIT CPU   Metallic           93.1 ns/frame
-SYNTHAUDIT done (4 flags)
+SYNTHAUDIT POLY  Metallic         1 notes: peak  -13.4 dBFS |    93.8 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Metallic         8 notes: peak   -3.1 dBFS |   367.9 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Metallic        32 notes: peak   -3.3 dBFS |   380.7 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT CPU   Metallic           94.4 ns/frame
+SYNTHAUDIT SKIP Field Synth     silent at defaults (needs loaded content or a note)
+SYNTHAUDIT ENV   Field Synth     attack 212 ms | release to -60 dB 31 ms
+SYNTHAUDIT CLICK Field Synth     note-on -21.0 dB | note-off -11.0 dB re steady
+SYNTHAUDIT VEL   Field Synth     vel 0.5 -6.0 dB | vel 0.25 -12.0 dB re vel 1
+SYNTHAUDIT POLY  Field Synth      1 notes: peak   -2.4 dBFS |   186.5 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Field Synth      8 notes: peak   12.0 dBFS |  1457.7 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT FLAG POLY  Field Synth     peak dBFS 12.04
+SYNTHAUDIT POLY  Field Synth     32 notes: peak   12.0 dBFS |  1501.4 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT FLAG POLY  Field Synth     peak dBFS 12.04
+SYNTHAUDIT LEVEL Wave Terrain    rms  -15.4 dBFS | peak   -8.1 dBFS
+SYNTHAUDIT RATE  Wave Terrain    level spread 0.05 dB over 44.1/48/96 kHz
+SYNTHAUDIT DET   Wave Terrain    bit-identical
+SYNTHAUDIT ENV   Wave Terrain    attack 3 ms | release to -60 dB 200 ms
+SYNTHAUDIT CLICK Wave Terrain    note-on +0.0 dB | note-off -0.1 dB re steady
+SYNTHAUDIT VEL   Wave Terrain    vel 0.5 -6.0 dB | vel 0.25 -12.0 dB re vel 1
+SYNTHAUDIT POLY  Wave Terrain     1 notes: peak  -12.8 dBFS |    57.4 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Wave Terrain     8 notes: peak    0.5 dBFS |   289.6 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT FLAG POLY  Wave Terrain    peak dBFS 0.49
+SYNTHAUDIT POLY  Wave Terrain    32 notes: peak    3.2 dBFS |   303.5 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT FLAG POLY  Wave Terrain    peak dBFS 3.17
+SYNTHAUDIT CPU   Wave Terrain       55.2 ns/frame
+SYNTHAUDIT LEVEL Spectral Synth  rms  -39.0 dBFS | peak  -23.8 dBFS
+SYNTHAUDIT RATE  Spectral Synth  level spread 1.99 dB over 44.1/48/96 kHz
+SYNTHAUDIT FLAG RATE  Spectral Synth  spread dB 1.99
+SYNTHAUDIT DET   Spectral Synth  bit-identical
+SYNTHAUDIT ENV   Spectral Synth  attack 454 ms | release to -60 dB 238 ms
+SYNTHAUDIT CLICK Spectral Synth  note-on -43.2 dB | note-off -23.5 dB re steady
+SYNTHAUDIT VEL   Spectral Synth  vel 0.5 -6.0 dB | vel 0.25 -12.0 dB re vel 1
+SYNTHAUDIT POLY  Spectral Synth   1 notes: peak  -26.7 dBFS |   350.4 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Spectral Synth   8 notes: peak  -17.9 dBFS |  2550.6 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT POLY  Spectral Synth  32 notes: peak  -17.7 dBFS |  2459.3 ns/frame | tail  -240.0 dBFS
+SYNTHAUDIT CPU   Spectral Synth    347.9 ns/frame
+SYNTHAUDIT SKIP Grain Molder    silent at defaults (needs loaded content or a note)
+SYNTHAUDIT NOTE  Grain Molder    SILENT on note 69 (needs loaded content, not audited here)
+SYNTHAUDIT SKIP Molder          silent at defaults (needs loaded content or a note)
+SYNTHAUDIT NOTE  Molder          SILENT on note 69 (needs loaded content, not audited here)
+SYNTHAUDIT SKIP Granular        silent at defaults (needs loaded content or a note)
+SYNTHAUDIT NOTE  Granular        SILENT on note 69 (needs loaded content, not audited here)
+SYNTHAUDIT SKIP Sampler         silent at defaults (needs loaded content or a note)
+SYNTHAUDIT NOTE  Sampler         SILENT on note 69 (needs loaded content, not audited here)
+SYNTHAUDIT SKIP Drum Sequencer  silent at defaults (needs loaded content or a note)
+SYNTHAUDIT NOTE  Drum Sequencer  SILENT on note 69 (needs loaded content, not audited here)
+SYNTHAUDIT done (9 flags)

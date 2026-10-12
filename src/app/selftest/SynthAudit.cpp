@@ -32,7 +32,15 @@
 #include "audio/NoteEventQueue.h"
 #include "audio/dsp/PortableFft.h"
 #include "nodes/AnalogNode.h"
+#include "nodes/DrumSequencerNode.h"
 #include "nodes/EquationNode.h"
+#include "nodes/FieldSynthNode.h"
+#include "nodes/GrainMolderNode.h"
+#include "nodes/GranularNode.h"
+#include "nodes/ImageSpectralSynthNode.h"
+#include "nodes/MolderNode.h"
+#include "nodes/SamplerNode.h"
+#include "nodes/WaveTerrainNode.h"
 #include "nodes/MetallicNode.h"
 #include "nodes/OscillatorNode.h"
 #include "nodes/WavetableNode.h"
@@ -86,6 +94,15 @@ namespace
            [](INode* n, float f) { static_cast<EquationNode*>(n)->frequency = f; }, [](INode*) {} },
          { "Metallic", false, [] { return MetallicNode::Create(); },
            [](INode* n, float f) { static_cast<MetallicNode*>(n)->frequency = f; }, [](INode*) {} },
+         // Not pitch-driven (or need loaded content): level, rate, determinism, CPU, notes.
+         { "Field Synth", false, [] { return FieldSynthNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Wave Terrain", false, [] { return WaveTerrainNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Spectral Synth", false, [] { return ImageSpectralSynthNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Grain Molder", false, [] { return GrainMolderNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Molder", false, [] { return MolderNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Granular", false, [] { return GranularNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Sampler", false, [] { return SamplerNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Drum Sequencer", false, [] { return DrumSequencerNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
       };
       return s;
    }
@@ -343,8 +360,10 @@ namespace
             sustain = std::max(sustain, (double)std::fabs(x[i]));
          if (sustain < 1e-5)
          {
-            printf("SYNTHAUDIT NOTE  %-15s SILENT on note 69 (note cable has no effect)\n", s.name);
-            flags.Flag("NOTE", s.name, "silent on note-on", 1.0);
+            printf("SYNTHAUDIT NOTE  %-15s SILENT on note 69%s\n", s.name,
+                   s.pitched ? " (note cable has no effect)" : " (needs loaded content, not audited here)");
+            if (s.pitched)
+               flags.Flag("NOTE", s.name, "silent on note-on", 1.0);
             return true;
          }
          if (s.pitched && hold >= (size_t)kN)
@@ -459,6 +478,13 @@ bool RunSynthAudit()
       {
          printf("SYNTHAUDIT %-15s not an IAudioSource\n", s.name);
          ok = false;
+         continue;
+      }
+      if (AllFinite(x) && Peak(x) < 1e-5 && !s.pitched && strcmp(s.name, "Metallic") != 0)
+      {
+         printf("SYNTHAUDIT SKIP %-15s silent at defaults (needs loaded content or a note)\n", s.name);
+         if (want("NOTE") || want("POLY"))
+            ok = AuditNotes(s, flags) && ok;
          continue;
       }
       if (!AllFinite(x) || Peak(x) < 1e-5)

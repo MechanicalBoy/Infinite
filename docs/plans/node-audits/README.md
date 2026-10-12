@@ -179,6 +179,9 @@ Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; ba
 | F5 | Equation Synth clips with several notes at defaults: peak +3.6 dBFS at 8 notes, +4.3 at 32, against -12 dBFS for one note. No polyphonic gain compensation. Worth a fix behind a legacy flag. | POLY rows | 1 |
 | F6 | Polyphony cost stops growing past 8 notes on every synth (8 and 32 notes cost the same per frame), so all five cap at 8 voices. Not a bug if intended; the cap is not shown in the UI. | POLY rows | 1 |
 | F7 | Wavetable note-on is +8.2 dB over steady state at defaults, the only pitched synth near the 12 dB flag. Metallic note-on reads +32 dB, but its steady state is a decaying resonator, so that metric is unreliable for it. | CLICK rows | 1 |
+| F8 | Field Synth peaks +12.0 dBFS with 8 or 32 notes at defaults (-2.4 dBFS for one), the worst polyphonic clip of the group. Related to the open `bugfix/field-synth-voice-pool` work; check there first. | POLY rows | 1 |
+| F9 | Wave Terrain also sums past 0 dBFS with many notes (+0.5 dBFS at 8, +3.2 at 32). Same cause as F5: no polyphonic gain compensation. | POLY rows | 1 |
+| F10 | Spectral Synth level differs 1.99 dB across 44.1 / 48 / 96 kHz (flag line 1 dB). Attack is 454 ms by design of the image scan; the rate spread needs a check. | RATE row | 1 |
 | F3 | Pitch is within 0.03 cents everywhere measured, and every synth is bit-identical on re-render. No action. | PITCH, DET rows | 1 |
 
-Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). Not yet covered: UNISON, PARAM, and the other 12 synths.
+Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). Also run: Field Synth, Wave Terrain, Spectral Synth. Silent at defaults and not audited here (need loaded content): Grain Molder, Molder, Granular, Sampler, Drum Sequencer; Slicer, MPC, Looper and PaulStretch not wired. Not yet covered: UNISON, PARAM.
