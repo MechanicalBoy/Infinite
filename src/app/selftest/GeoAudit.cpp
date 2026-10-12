@@ -25,16 +25,32 @@
 //               input does
 //   CPU         milliseconds per build
 //
-// Not covered: the other geometry nodes (Delaunay, Voronoi, Metaballs, Ocean,
-// Cloth, Curve Ops, Instances, Join, Merge by Distance, Distribute, Displacement)
-// need their own inputs; they are listed in the plan as the next step.
+//   GRAPH       the nodes that take points or several meshes, driven through a
+//               real chain (Sphere -> Distribute Points):
+//                 Distribute  random count against density x surface area
+//                             (flag > 30 %), Poisson minimum spacing
+//                 Delaunay    triangle count in range and the empty-circumcircle
+//                             property in the projection plane (flag any point
+//                             inside a circumcircle)
+//                 Voronoi     valid mesh, one cell per interior site
+//                 Merge by Distance  no two vertices closer than the threshold
+//                             afterwards, fewer vertices than before
+//                 Join (merge)  vertex and triangle counts add up
+//                 Ocean       finite, valid, deterministic, vertex count
+//
+// Not covered: Metaballs, Cloth, Curve Ops, Instances, Displacement (they need
+// a texture, a simulation or a curve source of their own).
 //
 // Only hard invariants fail the run (non-finite data, out-of-range indices,
 // non-deterministic output). Everything else is reported, with FLAG lines.
 #include "app/AppShared.h"
 #include "core/Mesh.h"
 #include "nodes/Geometry3DNodes.h"
+#include "nodes/DelaunayNodes.h"
 #include "nodes/GeometryOpNodes.h"
+#include "nodes/OceanNode.h"
+#include "nodes/PointDistributionNodes.h"
+#include "nodes/UtilityNodes.h"
 
 #include <chrono>
 #include <cstring>
@@ -522,6 +538,173 @@ namespace
          }
       }
    }
+   // -------------------------------------------------------------------- graph
+
+   double SurfaceArea(const Mesh& m)
+   {
+      double a = 0.0;
+      for (size_t t = 0; t + 2 < m.indices.size(); t += 3)
+      {
+         const Vertex &A = m.vertices[m.indices[t]], &B = m.vertices[m.indices[t + 1]], &C = m.vertices[m.indices[t + 2]];
+         const double ux = B.px - A.px, uy = B.py - A.py, uz = B.pz - A.pz;
+         const double vx = C.px - A.px, vy = C.py - A.py, vz = C.pz - A.pz;
+         const double cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+         a += 0.5 * std::sqrt(cx * cx + cy * cy + cz * cz);
+      }
+      return a;
+   }
+
+   void AuditGraph(Flags& f, bool& ok)
+   {
+      GeometryNode sphere;
+      sphere.shape = 2;
+      sphere.detail = 24;
+      const double area = SurfaceArea(Build(sphere));
+
+      // ---- Distribute
+      DistributePointsOnFacesNode dist;
+      dist.input = &sphere;
+      dist.density = 40.0f;
+      dist.method = 0;
+      dist.CookIfNeeded(gFrame++);
+      const auto* cloud = dist.GetPointCloud();
+      const size_t n = cloud ? cloud->size() : 0;
+      const double want = 40.0 * area;
+      printf("GEOAUDIT GRAPH  Distribute random   %zu points | density x area = %.1f\n", n, want);
+      if (n == 0 || std::fabs((double)n / want - 1.0) > 0.30)
+         f.Flag("GRAPH", "Distribute random", "count differs from density x area (ratio)", n / want);
+
+      dist.method = 1;
+      dist.minDistance = 0.2f;
+      dist.density = 200.0f;
+      dist.CookIfNeeded(gFrame++);
+      cloud = dist.GetPointCloud();
+      double minD = 1e9;
+      if (cloud)
+         for (size_t i = 0; i < cloud->size(); i++)
+            for (size_t j = i + 1; j < cloud->size(); j++)
+            {
+               const Particle &a = (*cloud)[i], &b = (*cloud)[j];
+               minD = std::min(minD, std::sqrt((double)(a.px - b.px) * (a.px - b.px) + (double)(a.py - b.py) * (a.py - b.py) +
+                                               (double)(a.pz - b.pz) * (a.pz - b.pz)));
+            }
+      printf("GEOAUDIT GRAPH  Distribute Poisson  %zu points | min spacing %.4f (asked 0.2)\n", cloud ? cloud->size() : 0, minD);
+      if (minD < 0.2 * 0.99)
+         f.Flag("GRAPH", "Distribute Poisson", "points closer than minDistance, nearest", minD);
+
+      // ---- Delaunay / Voronoi on a random cloud (plane XY)
+      dist.method = 0;
+      dist.density = 12.0f;
+      dist.CookIfNeeded(gFrame++);
+      DelaunayMeshNode del;
+      del.input = &dist;
+      del.plane = 0;
+      del.CookIfNeeded(gFrame++);
+      const Mesh dm = del.GetMesh();
+      const Stats ds = Measure(dm);
+      const auto* pts = dist.GetPointCloud();
+      const size_t np = pts ? pts->size() : 0;
+      printf("GEOAUDIT GRAPH  Delaunay            %zu points -> %zu tris\n", np, ds.tris);
+      Report(f, "GRAPH", "Delaunay", ds, false, ok);
+      if (ds.tris < np / 2 || ds.tris > 2 * np)
+         f.Flag("GRAPH", "Delaunay", "triangle count out of [n/2, 2n], count", (double)ds.tris);
+      int violations = 0;
+      for (size_t t = 0; t + 2 < dm.indices.size(); t += 3)
+      {
+         const Vertex &A = dm.vertices[dm.indices[t]], &B = dm.vertices[dm.indices[t + 1]], &C = dm.vertices[dm.indices[t + 2]];
+         const double ax = A.px, ay = A.py, bx = B.px, by = B.py, cx = C.px, cy = C.py;
+         const double d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+         if (std::fabs(d) < 1e-12)
+            continue;
+         const double ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d;
+         const double uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
+         const double r2 = (ax - ux) * (ax - ux) + (ay - uy) * (ay - uy);
+         for (const Particle& p : *pts)
+         {
+            const double d2 = (p.px - ux) * (p.px - ux) + (p.py - uy) * (p.py - uy);
+            if (d2 < r2 * (1.0 - 1e-6))
+            {
+               violations++;
+               break;
+            }
+         }
+      }
+      printf("GEOAUDIT GRAPH  Delaunay            circumcircle violations %d of %zu\n", violations, ds.tris);
+      if (violations > 0)
+         f.Flag("GRAPH", "Delaunay", "triangles with a point inside the circumcircle", violations);
+
+      VoronoiCellsNode vor;
+      vor.input = &dist;
+      vor.plane = 0;
+      vor.CookIfNeeded(gFrame++);
+      const Stats vs = Measure(vor.GetMesh());
+      printf("GEOAUDIT GRAPH  Voronoi             %zu verts %zu tris\n", vs.verts, vs.tris);
+      Report(f, "GRAPH", "Voronoi", vs, false, ok);
+      if (vs.tris == 0 && np > 8)
+         f.Flag("GRAPH", "Voronoi", "no cells from a cloud of", (double)np);
+
+      // ---- Join (merge) and Merge by Distance
+      GeometryNode cube;
+      cube.shape = 1;
+      JoinGeometryNode join;
+      join.mode = JoinGeometryNode::kMerge;
+      join.inputs[0] = &cube;
+      GeometryNode prism;
+      prism.shape = 3; // Icosphere: closed, without the UV-pole slivers the Sphere carries
+      join.inputs[1] = &prism;
+      join.CookIfNeeded(gFrame++);
+      const Mesh jm = join.GetMesh();
+      const Mesh cm = Build(cube), sm = Build(prism);
+      printf("GEOAUDIT GRAPH  Join merge          %zu verts %zu tris (cube %zu/%zu + shape %zu/%zu)\n", jm.vertices.size(),
+             jm.indices.size() / 3, cm.vertices.size(), cm.indices.size() / 3, sm.vertices.size(), sm.indices.size() / 3);
+      Report(f, "GRAPH", "Join merge", Measure(jm), false, ok);
+      if (jm.vertices.size() != cm.vertices.size() + sm.vertices.size() || jm.indices.size() != cm.indices.size() + sm.indices.size())
+         f.Flag("GRAPH", "Join merge", "counts do not add up, verts", (double)jm.vertices.size());
+
+      JoinGeometryNode twin; // the same cube twice: every vertex has a twin
+      twin.mode = JoinGeometryNode::kMerge;
+      twin.inputs[0] = &cube;
+      twin.inputs[1] = &cube;
+      twin.CookIfNeeded(gFrame++);
+      MergeByDistanceNode merge;
+      merge.input = &twin;
+      merge.threshold = 0.01f;
+      merge.CookIfNeeded(gFrame++);
+      const Mesh mm = merge.GetMesh();
+      double closest = 1e9;
+      for (size_t i = 0; i < mm.vertices.size(); i++)
+         for (size_t j = i + 1; j < mm.vertices.size(); j++)
+         {
+            const Vertex &a = mm.vertices[i], &b = mm.vertices[j];
+            closest = std::min(closest, std::sqrt((double)(a.px - b.px) * (a.px - b.px) + (double)(a.py - b.py) * (a.py - b.py) +
+                                                  (double)(a.pz - b.pz) * (a.pz - b.pz)));
+         }
+      printf("GEOAUDIT GRAPH  Merge by Distance   %zu -> %zu verts | closest pair %.4f (threshold 0.01)\n",
+             twin.GetMesh().vertices.size(), mm.vertices.size(), closest);
+      Report(f, "GRAPH", "Merge by Distance", Measure(mm), false, ok);
+      if (mm.vertices.size() >= twin.GetMesh().vertices.size())
+         f.Flag("GRAPH", "Merge by Distance", "did not remove duplicate vertices", (double)mm.vertices.size());
+      if (closest < 0.01 * 0.999)
+         f.Flag("GRAPH", "Merge by Distance", "vertices still closer than the threshold", closest);
+
+      // ---- Ocean
+      OceanNode ocean;
+      ocean.resolution = 48;
+      ocean.CookIfNeeded(gFrame++);
+      const Mesh om = ocean.GetMesh();
+      const Stats os = Measure(om);
+      printf("GEOAUDIT GRAPH  Ocean               %zu verts %zu tris\n", os.verts, os.tris);
+      Report(f, "GRAPH", "Ocean", os, false, ok);
+      OceanNode ocean2;
+      ocean2.resolution = 48;
+      ocean2.CookIfNeeded(gFrame++);
+      if (!SameMesh(om, ocean2.GetMesh()))
+      {
+         f.Flag("DET", "Ocean", "two builds differ", 1);
+         ok = false;
+      }
+   }
+
 } // namespace
 
 bool RunGeoAudit()
@@ -541,6 +724,8 @@ bool RunGeoAudit()
       AuditScale(flags);
    if (want("OPS"))
       AuditOps(flags, ok);
+   if (want("GRAPH"))
+      AuditGraph(flags, ok);
    printf("GEOAUDIT %s (%d flags)\n", ok ? "PASS" : "FAIL", flags.n);
    return ok;
 }
