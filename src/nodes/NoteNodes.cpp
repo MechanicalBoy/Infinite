@@ -1302,7 +1302,9 @@ public:
          else
          {
             GateState* state = mGateState.Find(in.voiceId);
-            if (state != nullptr && state->suppressOff)
+            if (state == nullptr)
+               continue; // the hold already closed this voice - a second note-off would be an orphan downstream
+            if (state->suppressOff)
                continue; // the scheduled internal note-off will close this voice
             NoteEvent out = in;
             out.source = this;
@@ -1529,6 +1531,7 @@ public:
       mSampleRate = sampleRate;
       mSamplePos = 0;
       mOutNote.Clear();
+      mShift.Clear();
    }
 
    void ProcessBlock(const AudioBuffer* const* /*inputs*/, int /*numInputs*/, AudioBuffer& output) override
@@ -1556,6 +1559,7 @@ public:
                onsetAbs = (uint64_t)(std::ceil((double)onsetAbs / gridSamples) * gridSamples);
             }
             mOutNote.GetOrInsert(in.voiceId) = in.note;
+            mShift.GetOrInsert(in.voiceId) = onsetAbs - (mSamplePos + (uint64_t)in.frameOffset);
 
             if (onsetAbs < mSamplePos + (uint64_t)numFrames)
             {
@@ -1594,11 +1598,35 @@ public:
          {
             if (mOutNote.Find(in.voiceId) == nullptr)
                continue;
+            // The note-off moves by the same amount as its note-on, so a note
+            // held across a grid line keeps its length and never reaches the
+            // consumer before the on it closes.
+            uint64_t shift = 0;
+            if (const uint64_t* sh = mShift.Find(in.voiceId))
+               shift = *sh;
+            const uint64_t offAbs = mSamplePos + (uint64_t)in.frameOffset + shift;
             NoteEvent out = in;
             out.source = this;
             out.voiceId = in.voiceId;
-            mOutbox.Push(out);
+            if (offAbs < mSamplePos + (uint64_t)numFrames)
+            {
+               out.frameOffset = (int)(offAbs - mSamplePos);
+               mOutbox.Push(out);
+            }
+            else if (DeferredNote* slot = mPending.FreeSlot())
+            {
+               slot->active = true;
+               slot->note = in.note;
+               slot->velocity = 0.0f;
+               slot->isNoteOn = false;
+               slot->targetSample = offAbs;
+               slot->voiceId = in.voiceId;
+               slot->bendSemitones = 0.0f;
+            }
+            else
+               mOutbox.Push(out); // pending queue saturated: close now rather than leave the note stuck
             mOutNote.Erase(in.voiceId);
+            mShift.Erase(in.voiceId);
          }
       }
 
@@ -1618,6 +1646,7 @@ private:
    double mSampleRate = 48000.0;
    uint64_t mSamplePos = 0;
    VoiceIdMap<int, 128> mOutNote;
+   VoiceIdMap<uint64_t, 128> mShift; // samples each held voice's note-on was moved onto the grid
    DeferredNoteQueue<kMaxPending> mPending;
    std::atomic<int> mDiv { 0 };
 };
@@ -3183,6 +3212,7 @@ public:
       mCurrentOutNote = -1;
       mCurrentOutVoiceId = 0;
       mPendingOffActive = false;
+      mSwingOnActive = false;
       mPrevNote = -1;
       mMelody = NoteTheory::MelodyState();
       mRng = DspMath::WhiteNoise(); // same seed every (re)start: an offline pass must not inherit live blocks' draws
@@ -3203,6 +3233,20 @@ public:
       const float groove = std::clamp(mGroove.load(std::memory_order_relaxed), 0.0f, 1.0f);
       const double bpm = (double)Transport::Instance().Tempo();
       const double rateBeats = std::max(0.001, rateMode == 1 ? (double)rateSecondsP * bpm / 60.0 : (double)rateBeatsP);
+
+      // A swung note-on that lands in a later block than its step boundary.
+      if (mSwingOnActive && mSwingOnSample < mSamplePos + (uint64_t)numFrames)
+      {
+         NoteEvent on;
+         on.note = mSwingOnNote;
+         on.velocity = mSwingOnVelocity;
+         on.isNoteOn = true;
+         on.frameOffset = (mSwingOnSample > mSamplePos) ? (int)(mSwingOnSample - mSamplePos) : 0;
+         on.source = this;
+         on.voiceId = mCurrentOutVoiceId;
+         mOutbox.Push(on);
+         mSwingOnActive = false;
+      }
 
       if (mPendingOffActive && mPendingOffSample < mSamplePos + (uint64_t)numFrames)
       {
@@ -3266,6 +3310,9 @@ public:
          // frameOffset 0), so the swing delay is expressed as this note-on's
          // frameOffset within the current block rather than as new pending
          // state - sample-accurate up to one block, and adds no new state.
+         // swingMode 0 (patches saved before the swing fix) keeps the delay
+         // capped to the current block; 1 defers the note-on to its sample.
+         const bool deferSwing = mSwingMode.load(std::memory_order_relaxed) != 0 && swingSamplesD >= (double)numFrames;
          const int swingFrame = std::clamp((int)std::lround(swingSamplesD), 0, numFrames - 1);
 
          NoteEvent on;
@@ -3276,7 +3323,15 @@ public:
          on.frameOffset = swingFrame;
          on.source = this;
          on.voiceId = NextVoiceId();
-         mOutbox.Push(on);
+         if (deferSwing)
+         {
+            mSwingOnActive = true;
+            mSwingOnSample = mSamplePos + (uint64_t)std::llround(swingSamplesD);
+            mSwingOnNote = on.note;
+            mSwingOnVelocity = on.velocity;
+         }
+         else
+            mOutbox.Push(on);
          mCurrentOutNote = note;
          mCurrentOutVoiceId = on.voiceId;
 
@@ -3308,6 +3363,7 @@ public:
       mMaxStep.store(n.maxStep, std::memory_order_relaxed);
       mUseGlobalScale.store(n.useGlobalScale, std::memory_order_relaxed);
       mGroove.store(n.groove, std::memory_order_relaxed);
+      mSwingMode.store(n.swingMode, std::memory_order_relaxed);
    }
 
    int LastNote() const { return mLastNoteReadout.load(std::memory_order_relaxed); }
@@ -3325,7 +3381,12 @@ private:
    NoteTheory::MelodyState mMelody;
    bool mPendingOffActive = false;
    uint64_t mPendingOffSample = 0;
+   bool mSwingOnActive = false;
+   uint64_t mSwingOnSample = 0;
+   int mSwingOnNote = 0;
+   float mSwingOnVelocity = 0.0f;
 
+   std::atomic<int> mSwingMode { 1 };
    std::atomic<int> mRangeLow { 48 };
    std::atomic<int> mRangeHigh { 72 };
    std::atomic<int> mScale { 13 };
@@ -3364,6 +3425,7 @@ void RandomNoteGeneratorNode::VisitParams(ParamVisitor& v)
    v.Int("maxStep", maxStep);
    v.Bool("useGlobalScale", useGlobalScale);
    v.Float("groove", groove); // appended after existing params - save-compat
+   v.Int("swingMode", swingMode);
 }
 
 AudioNode* RandomNoteGeneratorNode::GetAudioNode()

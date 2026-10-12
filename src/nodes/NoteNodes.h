@@ -837,6 +837,10 @@ public:
    int maxStep = 4; // semitones, max wander per step
    bool useGlobalScale = true; // follow Transport key/scale by default
    float groove = 0.0f; // 0..1 swing amount: delays every odd step by groove * 0.5 * rateBeats (MPC-style swing)
+   // 1 = the swing delay is honoured past the block it starts in; 0 = capped at one block (patches saved before
+   // the fix, set by BeforeLoadParams). Not a control.
+   int swingMode = 1;
+   void BeforeLoadParams() override { swingMode = 0; }
 
    int LastNote() const; // main-thread readout for the visualizer
 
