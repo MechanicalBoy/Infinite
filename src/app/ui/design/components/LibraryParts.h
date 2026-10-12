@@ -34,7 +34,7 @@ namespace LibraryParts
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padL, (kFieldH - ImGui::GetFontSize()) * 0.5f));
       ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, tok::radius_tile);
       ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-      ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(text.x, text.y, text.z, 0.07f));
+      ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(text.x, text.y, text.z, CategoryColors::kFieldWellTint)); // the contrast guard measures text against this
       ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(text.x, text.y, text.z, 0.10f));
       ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(text.x, text.y, text.z, 0.10f));
       // ImGui's own nav ring is replaced by ours below, drawn only in keyboard mode.
