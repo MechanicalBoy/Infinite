@@ -25,4 +25,4 @@ PREDBINDTEST|prints nothing at all (empty log, rc=0) in this build tree because 
 
 
 
-RECEXPORTTEST|intermittent "encoder appears wedged: pending frame count never dropped below 3 for 45000ms" on macOS: same binary fails then passes on back-to-back runs (2026-10-10, A/V offset 33 ms and drift 0 ms when it passes). No recorder or AVFoundation code changed since v0.4.7 (git diff v0.4.7..HEAD over src/platform/macos is empty), so it is a pre-existing AVFoundation re-arm flake, not a regression. Report it and move on; a real regression would fail every run.
+RECEXPORTTEST|intermittent "encoder appears wedged: pending frame count never dropped below 3 for 45000ms" on macOS: same binary fails then passes on back-to-back runs (2026-10-10, A/V offset 33 ms and drift 0 ms when it passes). No recorder or AVFoundation code changed since v0.4.7 (git diff v0.4.7..HEAD over src/platform/macos is empty), so it is a pre-existing AVFoundation re-arm flake, not a regression. Report it and move on; a real regression would fail every run. 2026-10-12: passed, then failed with the same wedge on the next driver run (load 8); still intermittent, keep baselined.
