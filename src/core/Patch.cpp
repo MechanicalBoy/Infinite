@@ -247,19 +247,9 @@ bool WriteText(const Data& data, std::string& out)
 
 bool Write(const std::string& path, const Data& data, std::string& outError)
 {
-   std::ofstream file(path);
-   if (!file)
-   {
-      outError = "could not open " + path + " for writing";
-      return false;
-   }
-   WriteBody(file, data);
-   if (!file.good())
-   {
-      outError = "write failed partway through " + path;
-      return false;
-   }
-   return true;
+   std::string text;
+   WriteText(data, text);
+   return AppPaths::WriteFileAtomic(path, text, outError);
 }
 
 static void WriteBody(std::ostream& file, const Data& data)
@@ -521,7 +511,7 @@ static void WriteBody(std::ostream& file, const Data& data)
 
 bool Read(const std::string& path, Data& outData, std::string& outError)
 {
-   std::ifstream file(path);
+   std::ifstream file(AppPaths::FsPath(path));
    if (!file)
    {
       outError = "could not open " + path;
