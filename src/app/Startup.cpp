@@ -421,11 +421,48 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       all &= runMode("samples", gSampleScanner, "a.wav", "b.wav");
       all &= runMode("media", gMediaScanner, "a.png", "b.png");
       {
+         // A per-folder plugin scan replaces only that folder's VST3s; it used to replace the whole index (and save
+         // it), so this very test wiped every installed VST3 from the user's PluginIndex.json.
+         const auto vst3Outside = [&]
+         {
+            int n = 0;
+            for (const auto& e : gPluginScanner.Index())
+               if (e.format == "vst3" && e.path.rfind(dir.string(), 0) != 0)
+                  ++n;
+            return n;
+         };
+         const int before = vst3Outside();
          const uint64_t v = gPluginScanner.IndexVersion();
          gPluginScanner.StartScan(dir.string());
          const bool done = wait(gPluginScanner);
-         const bool ok = done && gPluginScanner.IndexVersion() != v;
-         printf("LIBREFRESH plugins %s\n", ok ? "OK" : "FAIL");
+         bool ok = done && gPluginScanner.IndexVersion() != v;
+         ok &= vst3Outside() == before;
+
+         using E = PluginScanner::Entry;
+         const auto mk = [](const char* fmt, const char* id, const char* path)
+         {
+            E e;
+            e.format = fmt;
+            e.identifier = id;
+            e.path = path;
+            return e;
+         };
+         const std::vector<E> old = { mk("au", "au:old", ""), mk("vst3", "a", "/x/A.vst3"), mk("vst3", "b", "/y/B.vst3"),
+                                      mk("vst3", "c", "/y/sub/C.vst3"), mk("vst3", "d", "/yy/D.vst3") };
+         const std::vector<E> found = { mk("au", "au:new", ""), mk("vst3", "b2", "/y/B2.vst3") };
+         const auto ids = [](const std::vector<E>& v)
+         {
+            std::string s;
+            for (const E& e : v)
+               s += e.identifier + " ";
+            return s;
+         };
+         const std::string merged = ids(PluginScanner::MergeScan(old, found, "/y/"));
+         const std::string full = ids(PluginScanner::MergeScan(old, found, ""));
+         ok &= merged == "a d au:new b2 ";
+         ok &= full == "au:new b2 ";
+         printf("LIBREFRESH plugins %s (vst3 outside the folder %d -> %d; merge '%s', full '%s')\n", ok ? "OK" : "FAIL",
+                before, vst3Outside(), merged.c_str(), full.c_str());
          all &= ok;
       }
       fs::remove_all(dir, ec);
