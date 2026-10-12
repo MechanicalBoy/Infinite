@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -149,6 +150,13 @@ public:
       // Curvature warping parameter for transfer shaping, in [-1.0, 1.0].
       // 0.0 = linear identity (y = x). >0 = exponential/ease-in. <0 = logarithmic/ease-out.
       float curve = 0.0f;
+
+      // Per-destination smoothing time constant in ms, 0 = off. Applied in
+      // the apply loop to the binding's 0..1 value as an exact one-pole of
+      // the linearly interpolated input, stepped by the frame's real dt -
+      // so the same setting gives the same curve at 24, 60 or 144 fps and
+      // in export (docs/plans/modulation/README.md, Block 2).
+      float smoothMs = 0.0f;
    };
 
    // Creates a fresh binding, defaulting the range to the destination's full
@@ -170,6 +178,18 @@ public:
    // Sets the transfer curve parameter for an existing binding in place.
    void SetCurve(int nodeIndex, int paramIndex, float curve);
    float CurveFor(int nodeIndex, int paramIndex) const;
+   // Sets the per-destination smoothing (ms, 0 = off) for an existing binding.
+   void SetSmooth(int nodeIndex, int paramIndex, float smoothMs);
+   float SmoothFor(int nodeIndex, int paramIndex) const;
+   // One step of the per-destination smoother: an exact one-pole (time
+   // constant tau) of an input moving in a straight line from x0 to x1 over
+   // dt, from output y0. Exact for any dt, so the curve does not depend on
+   // frame rate.
+   static double SmoothStep(double y0, double x0, double x1, double dt, double tau)
+   {
+      const double a = std::exp(-dt / tau), m = (x1 - x0) / dt;
+      return x1 - m * tau + (y0 - x0 + m * tau) * a;
+   }
    // Enables or disables an existing binding in place, leaving everything
    // else about it untouched. No-op if nothing is bound there, mirroring
    // SetRange().

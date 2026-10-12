@@ -66,6 +66,20 @@ float Modulation::CurveFor(int nodeIndex, int paramIndex) const
    return (it != mLinks.end()) ? it->second.curve : 0.0f;
 }
 
+void Modulation::SetSmooth(int nodeIndex, int paramIndex, float smoothMs)
+{
+   auto it = mLinks.find(Key(nodeIndex, paramIndex));
+   if (it == mLinks.end())
+      return;
+   it->second.smoothMs = std::clamp(smoothMs, 0.0f, 10000.0f);
+}
+
+float Modulation::SmoothFor(int nodeIndex, int paramIndex) const
+{
+   auto it = mLinks.find(Key(nodeIndex, paramIndex));
+   return (it != mLinks.end()) ? it->second.smoothMs : 0.0f;
+}
+
 Modulation::Source Modulation::ResolvedSourceFor(const ParamRef& ref)
 {
    auto it = mLinks.find(Key(ref.nodeIndex, ref.paramIndex));

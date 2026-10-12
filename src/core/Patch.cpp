@@ -302,15 +302,21 @@ static void WriteBody(std::ostream& file, const Data& data)
       // enabled is positional and trails lo/hi, so a disabled binding that
       // hasn't resolved a range yet still needs one written to carry
       // enabled at all - force hasRange so the tokens line up.
-      const bool hasRange = m.hasRange || !m.enabled || std::abs(m.curve) > 0.0001f;
+      // smoothMs trails curve, so a smoothed binding writes curve (even 0)
+      // and enabled ahead of it for the tokens to line up.
+      const bool hasSmooth = m.smoothMs > 0.0f;
+      const bool hasCurve = std::abs(m.curve) > 0.0001f || hasSmooth;
+      const bool hasRange = m.hasRange || !m.enabled || hasCurve;
       if (hasRange)
       {
          file << " " << FloatToString(m.lo) << " " << FloatToString(m.hi);
-         if (!m.enabled || std::abs(m.curve) > 0.0001f)
+         if (!m.enabled || hasCurve)
          {
             file << " " << (m.enabled ? "1" : "0");
-            if (std::abs(m.curve) > 0.0001f)
+            if (hasCurve)
                file << " " << FloatToString(m.curve);
+            if (hasSmooth)
+               file << " " << FloatToString(m.smoothMs);
          }
       }
       file << "\n";
@@ -731,6 +737,9 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
          float curve = 0.0f;
          if (in >> curve)
             m.curve = curve;
+         float smoothMs = 0.0f;
+         if (in >> smoothMs)
+            m.smoothMs = std::max(0.0f, smoothMs);
          outData.modulation.push_back(m);
       }
       else if (tag == "pal")

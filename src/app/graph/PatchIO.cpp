@@ -155,7 +155,8 @@ namespace app
                                      link.second.nodeIndex, link.second.outputIndex,
                                      link.second.polarity, link.second.depth, link.second.centre,
                                      link.second.lo, link.second.hi, link.second.hasRange,
-                                     link.second.enabled, link.second.curve });
+                                     link.second.enabled, link.second.curve,
+                                     link.second.smoothMs });
       // Shift-drag/armed recordings looping right now - previously session-
       // only (see GestureRecorder.h), now part of the saved patch itself,
       // same as modulation/palette bindings just above.

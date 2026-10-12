@@ -525,6 +525,21 @@ void DrawPopupsA(FrameCtx& fc)
                      hi = std::round(hi);
                   }
                   mod.SetRange(nodeIndex, paramIndex, lo, hi);
+                  rangeChanged = false;
+               }
+               // Per-destination smoothing (Modulation::Source::smoothMs):
+               // field 2, a full-width drag in the lo/hi fields' look. Not
+               // offered on a switch or a selector, which have no in-between.
+               if (!destRef->isBool && !destRef->isEnum)
+               {
+                  float smoothMs = src.smoothMs;
+                  drawRangeField(2, "##smooth", "##smoothtyped", smoothMs > 0.0f ? "smooth %.0f ms" : "smooth off",
+                                 0.0f, 2000.0f, smoothMs, 1.0f, -FLT_MIN);
+                  if (rangeChanged)
+                  {
+                     mod.SetSmooth(nodeIndex, paramIndex, std::clamp(smoothMs, 0.0f, 2000.0f));
+                     rangeChanged = false;
+                  }
                }
                MenuParts::Separator();
                if (MenuParts::Item(L("Full range")))

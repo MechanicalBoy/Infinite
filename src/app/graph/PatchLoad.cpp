@@ -218,6 +218,7 @@ namespace app
             source.hasRange = m.hasRange;
             source.enabled = m.enabled;
             source.curve = m.curve;
+            source.smoothMs = m.smoothMs;
             Modulation::Instance().RestoreLink(dst->index, m.dstParam, source);
          }
       }

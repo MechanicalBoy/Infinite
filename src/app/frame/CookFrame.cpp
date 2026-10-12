@@ -164,6 +164,10 @@ void RefreshParamDriverFlags()
 
 void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
 {
+   // Live: pin this frame's clock to where the audio is now, interpolated
+   // between audio callbacks, so every modulator read below sees the frame's
+   // own time rather than the last block boundary (Block 2, F2).
+   Transport::Instance().BeginFrameClock();
    UpdatePerformanceMatrixMIDI();
    // Before any binding is read: which clip is under the playhead decides
    // which modulations are bypassed this frame.
@@ -234,12 +238,12 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
    // wall-clock frame, so a wall dt would be a few random milliseconds per rendered frame. The video
    // step also makes a repeat call at the same T (the normal-frame call during a take, a re-exported
    // --frame) tick by 0 rather than a second time.
+   double tickDt = 0.0;
    {
       static double sLastTickTime = -1.0;
       static double sLastOfflineT = 0.0;
       static bool sWasOfflineTick = false;
       Transport& transport = Transport::Instance();
-      double tickDt = 0.0;
       if (transport.IsOfflineMode())
       {
          const double videoT = transport.Seconds();
@@ -259,7 +263,50 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
          if (gn.node != nullptr && !gn.node->bypassed)
             if (auto* pred = dynamic_cast<IPredictor*>(gn.node.get()))
                pred->Tick(frameId, tickDt);
+
+      // Tell every ParamMailbox when this frame's values were taken and when
+      // the next frame's will be, so audio params ramp straight between frame
+      // values instead of stepping (ParamMailbox.h). Offline the next frame is
+      // exactly one video step away. Live it is a frame plus up to one audio
+      // block, averaged over ~10 frames; a hitch longer than 50 ms is left
+      // out, so one stall does not leave every param lagging behind it (the
+      // ramps finish early and hold for that frame instead).
+      static double sDelay = 0.0;
+      if (transport.IsOfflineMode())
+         sDelay = tickDt > 0.0 ? tickDt : sDelay;
+      else if (tickDt > 0.0)
+      {
+         const double want = std::min(tickDt, 0.05) + transport.LastBlockSeconds();
+         sDelay = sDelay > 0.0 ? sDelay + (want - sDelay) * 0.1 : want;
+      }
+      const double delay = std::clamp(sDelay, 0.002, 0.25);
+      ParamMailbox::PublishFrame(sDelay > 0.0 ? transport.EngineFrameSeconds() : -1.0, delay);
    }
+
+   // Per-destination smoothing (Modulation::Source::smoothMs) on the
+   // binding's 0..1 value. An exact one-pole of the input taken as a straight
+   // line between frames, stepped by the real frame dt, so the result does
+   // not depend on frame rate. dt 0 (a repeat call at the same time) holds.
+   struct DestSmooth { float x = 0.0f, y = 0.0f; };
+   static std::map<std::pair<int, int>, DestSmooth> sDestSmooth;
+   const auto smoothDest = [&](const ParamRef& ref, float smoothMs, float x) -> float {
+      const std::pair<int, int> key(ref.nodeIndex, ref.paramIndex);
+      if (!(smoothMs > 0.0f))
+      {
+         sDestSmooth.erase(key);
+         return x;
+      }
+      auto [it, fresh] = sDestSmooth.try_emplace(key);
+      DestSmooth& st = it->second;
+      if (fresh)
+         st.x = st.y = x;
+      else if (tickDt > 0.0)
+      {
+         st.y = (float)Modulation::SmoothStep(st.y, st.x, x, tickDt, smoothMs * 0.001);
+         st.x = x;
+      }
+      return std::clamp(st.y, 0.0f, 1.0f);
+   };
 
    const double t = Transport::Instance().Seconds();
    // Patch-wide named values, evaluated once before any parameter reads
@@ -321,7 +368,8 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
                continue;
             }
             const float cur = ParamToPos(ref, *ref.value);
-            const float p = ApplyModulationCurve(std::clamp(pred->ValuePos01For(pk, cur), 0.0f, 1.0f), src.curve);
+            const float p = smoothDest(ref, src.smoothMs,
+               ApplyModulationCurve(std::clamp(pred->ValuePos01For(pk, cur), 0.0f, 1.0f), src.curve));
             const float posLo = ParamToPos(ref, src.lo), posHi = ParamToPos(ref, src.hi);
             *ref.value = ShapeToParam(ref, PosToParam(ref, posLo + (posHi - posLo) * p));
             gMachineDrivenModNodes.insert(ref.nodeIndex);
@@ -383,7 +431,7 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
             }
          }
          const float rawV01 = std::clamp(modulator->Value01(), 0.0f, 1.0f);
-         const float v01 = ApplyModulationCurve(rawV01, src.curve);
+         const float v01 = smoothDest(ref, src.smoothMs, ApplyModulationCurve(rawV01, src.curve));
          *ref.value = ShapeToParam(ref, src.lo + (src.hi - src.lo) * v01);
          const MovementLog::Source modSrc = ModulatorLogSource(modNode->node.get(), src.nodeIndex);
          if (modSrc == MovementLog::Source::Modulator)

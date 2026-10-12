@@ -48,7 +48,7 @@ namespace PatchJson
                                         {"polarity", m.polarity}, {"depth", m.depth},
                                         {"centre", m.centre}, {"lo", m.lo}, {"hi", m.hi},
                                         {"hasRange", m.hasRange}, {"enabled", m.enabled},
-                                        {"curve", m.curve} });
+                                        {"curve", m.curve}, {"smoothMs", m.smoothMs} });
 
       out["palette"] = json::array();
       for (const Patch::PaletteRecord& p : data.palette)
