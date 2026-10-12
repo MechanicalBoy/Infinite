@@ -78,6 +78,27 @@ for name in r8k r96k; do
 done
 rm -f "$OUT/long.wav"
 
+# Saving: a write that fails partway (here a 4 KB file-size limit standing in for a full disk) must
+# leave the previous file whole - Save used to truncate the user's only copy in place. And a folder
+# with a non-ASCII name saves and opens (Windows read std::string paths in the ANSI code page).
+python3 - "$OUT/big.inf" <<'EOF'
+import sys
+L = ["infinite-patch 1", "node 1 Source Shape", "end"]
+for i in range(2, 600):
+    L += ["node %d Compositing %s" % (i, ("invert", "opacity", "posterize")[i % 3]), "end", "cable %d 0 %d" % (i, i - 1)]
+L += ["node 600 Utility Output", "end", "cable 600 0 599"]
+open(sys.argv[1], "w").write("\n".join(L) + "\n")
+EOF
+"$BIN" --canonicalize "$OUT/big.inf" "$OUT/saved.inf" >/dev/null 2>&1 && cp "$OUT/saved.inf" "$OUT/saved.before"
+(trap '' XFSZ; ulimit -f 4; "$BIN" --canonicalize "$OUT/big.inf" "$OUT/saved.inf" >/dev/null 2>&1)
+check "save: a write that fails partway reports it" $([ $? -ne 0 ] && echo 0 || echo 1)
+cmp -s "$OUT/saved.inf" "$OUT/saved.before" && [ ! -e "$OUT/saved.inf.tmp" ]
+check "save: ...and leaves the previous file whole, no temp behind" $?
+mkdir -p "$OUT/Müller ñ"
+"$BIN" --canonicalize "$OUT/big.inf" "$OUT/Müller ñ/p.inf" >/dev/null 2>&1 && "$BIN" --validate "$OUT/Müller ñ/p.inf" >/dev/null 2>&1
+check "save: a patch in a non-ASCII folder saves and opens" $?
+rm -rf "${OUT:?}/big.inf" "${OUT:?}/saved.inf" "${OUT:?}/saved.before" "${OUT:?}/Müller ñ"
+
 # R275: overlapping translucent meshes composite back-to-front whatever their slot order
 R3="$ROOT/tests/headless/render3d"
 "$BIN" --frame "$R3/translucent_ab.inf" 0 "$OUT/tr_ab.png" >/dev/null

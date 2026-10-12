@@ -593,34 +593,15 @@ namespace app
    }
 
 
-   // Writes the live graph to the autosave file, atomically: write a .tmp
-   // then rename it over the real path, so a crash mid-write leaves the
-   // previous autosave intact instead of a truncated file that fails to
-   // parse. std::filesystem::rename is atomic within a filesystem on POSIX
-   // but fails on Windows if the destination exists, hence the remove+retry
-   // fallback - not fully atomic there (a window exists where neither file
-   // is present) but strictly better than writing in place.
+   // Writes the live graph to the autosave file. Patch::Write replaces the
+   // file atomically, so a crash mid-write leaves the previous autosave intact.
    bool WriteAutosaveNow()
    {
       const std::string path = AutosavePath();
       if (path.empty())
          return false;
-      const Patch::Data data = BuildPatchData();
-      const std::string temp = path + ".tmp";
       std::string error;
-      if (!Patch::Write(temp, data, error))
-         return false;
-
-      std::error_code ec;
-      std::filesystem::rename(temp, path, ec);
-      if (ec)
-      {
-         ec.clear();
-         std::filesystem::remove(path, ec);
-         ec.clear();
-         std::filesystem::rename(temp, path, ec);
-      }
-      return !ec;
+      return Patch::Write(path, BuildPatchData(), error);
    }
 
 
