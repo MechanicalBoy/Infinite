@@ -64,7 +64,7 @@ Three blocks, one branch each, commit per step, merge straight back to main (git
 
 | # | Branch | Audits | State |
 |---|---|---|---|
-| 1 | `feature/synth-audit` | SYNTHAUDIT | planned |
+| 1 | `feature/synth-audit` | SYNTHAUDIT | done 2026-10-12 (merged); F4 and Field Synth preset level open |
 | 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | planned |
 | 3 | `feature/geo-comp-audit` | GEOAUDIT, COMPAUDIT | planned |
 
@@ -184,4 +184,4 @@ Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; ba
 | F10 | Spectral Synth's 1.99 dB rate spread was a harness artifact (a fixed 65536-frame window is a different number of seconds at each rate). RATE now renders 3 s at every rate and reads 0.05 dB. Closed. | RATE row | 1 |
 | F3 | Pitch is within 0.03 cents everywhere measured, and every synth is bit-identical on re-render. No action. | PITCH, DET rows | 1 |
 
-Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). Also run: Field Synth, Wave Terrain, Spectral Synth. Silent at defaults and not audited here (need loaded content): Grain Molder, Molder, Granular, Sampler, Drum Sequencer; Slicer, MPC, Looper and PaulStretch not wired. Not yet covered: UNISON, PARAM.
+Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). All 17 synths run. Full battery on Analog, Wavetable, Oscillator, Equation Synth; Metallic, Wave Terrain, Spectral Synth, Field Synth where applicable (UNISON: Analog and Wavetable, 4 peaks at 100.0 cents; PARAM: volume step is click-free). Grain Molder, Molder, Granular, Sampler, Drum Sequencer, Slicer, MPC, Looper, PaulStretch are silent at defaults and need loaded content: parked until a fixture sample exists (they are covered by their own tests).

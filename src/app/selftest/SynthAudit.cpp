@@ -13,6 +13,10 @@
 //   RATE    RMS spread (dB) of the 440 Hz level across the three rates
 //   DET     two fresh nodes, same settings: bit-identical output
 //   CPU     ns per stereo frame at defaults
+//   UNISON  4 voices at 100 cents total detune: spectral peak count and outer
+//           spread in cents (Analog, Wavetable)
+//   PARAM   worst second difference within 50 ms of an instant volume step,
+//           dB re steady state (zipper; FXAUDIT threshold 12 dB)
 //
 // and, driven through a real NoteEventQueue (note cable) at defaults:
 //
@@ -38,8 +42,12 @@
 #include "nodes/GrainMolderNode.h"
 #include "nodes/GranularNode.h"
 #include "nodes/ImageSpectralSynthNode.h"
+#include "nodes/LooperNode.h"
 #include "nodes/MolderNode.h"
+#include "nodes/MpcNode.h"
+#include "nodes/PaulStretchNode.h"
 #include "nodes/SamplerNode.h"
+#include "nodes/SlicerNode.h"
 #include "nodes/WaveTerrainNode.h"
 #include "nodes/MetallicNode.h"
 #include "nodes/OscillatorNode.h"
@@ -71,6 +79,8 @@ namespace
       std::function<INode*()> create;
       std::function<void(INode*, float)> setFreq;
       std::function<void(INode*)> quiet;     // analog drift / noise off, deterministic
+      std::function<void(INode*, int, float)> setUnison; // voices, total detune cents (optional)
+      std::function<void(INode*, float)> setVolume;      // optional
    };
 
    const std::vector<Synth>& Synths()
@@ -83,15 +93,27 @@ namespace
               a->analog = false;
               a->filterType = kAFilterOff;
               a->voices = 1.0f;
+              a->oscMix = 0.0f; // osc 1 only, as ALIASTEST
               a->sub = 0.0f;
               a->noise = 0.0f;
-           } },
+           },
+           [](INode* n, int v, float c) { auto* a = static_cast<AnalogNode*>(n); a->voices = (float)v; a->detune = c; },
+           [](INode* n, float v) { static_cast<AnalogNode*>(n)->volume = v; } },
          { "Wavetable", true, [] { return WavetableNode::Create(); },
-           [](INode* n, float f) { static_cast<WavetableNode*>(n)->frequency = f; }, [](INode*) {} },
+           [](INode* n, float f) { static_cast<WavetableNode*>(n)->frequency = f; }, [](INode*) {},
+           [](INode* n, int v, float c) {
+              auto* w = static_cast<WavetableNode*>(n);
+              w->engines[1].on = false;
+              w->mix = 0.0f;
+              w->engines[0].unison = v;
+              w->engines[0].detune = c;
+           },
+           [](INode* n, float v) { static_cast<WavetableNode*>(n)->volume = v; } },
          { "Oscillator", true, [] { return OscillatorNode::Create(); },
            [](INode* n, float f) { static_cast<OscillatorNode*>(n)->frequency = f; }, [](INode*) {} },
          { "Equation Synth", true, [] { return EquationNode::Create(); },
-           [](INode* n, float f) { static_cast<EquationNode*>(n)->frequency = f; }, [](INode*) {} },
+           [](INode* n, float f) { static_cast<EquationNode*>(n)->frequency = f; }, [](INode*) {}, nullptr,
+           [](INode* n, float v) { static_cast<EquationNode*>(n)->volume = v; } },
          { "Metallic", false, [] { return MetallicNode::Create(); },
            [](INode* n, float f) { static_cast<MetallicNode*>(n)->frequency = f; }, [](INode*) {} },
          // Not pitch-driven (or need loaded content): level, rate, determinism, CPU, notes.
@@ -102,6 +124,10 @@ namespace
          { "Molder", false, [] { return MolderNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
          { "Granular", false, [] { return GranularNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
          { "Sampler", false, [] { return SamplerNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Slicer", false, [] { return SlicerNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "MPC", false, [] { return MpcNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Looper", false, [] { return LooperNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "PaulStretch", false, [] { return PaulStretchNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
          { "Drum Sequencer", false, [] { return DrumSequencerNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
       };
       return s;
@@ -577,6 +603,100 @@ bool RunSynthAudit()
          printf("SYNTHAUDIT DET   %-15s %s\n", s.name, same ? "bit-identical" : "DIFFERS");
          if (!same)
             flags.Flag("DET", s.name, "not bit-identical", 1.0);
+      }
+
+
+      if (want("UNISON") && s.setUnison)
+      {
+         std::unique_ptr<INode> node(s.create());
+         s.quiet(node.get());
+         s.setUnison(node.get(), 4, 100.0f);
+         s.setFreq(node.get(), 440.0f);
+         std::vector<float> y;
+         {
+            IAudioSource* src = AsSource(node.get());
+            AudioNode* an = src->GetAudioNode();
+            an->PrepareToPlay(48000.0, kBlock);
+            node->CookIfNeeded(1);
+            std::vector<float> l(kBlock), r(kBlock);
+            float* ch[2] = { l.data(), r.data() };
+            AudioBuffer buf;
+            buf.channels = ch;
+            buf.numChannels = 2;
+            buf.numFrames = kBlock;
+            const int total = (int)(0.3 * 48000.0) + kN;
+            for (int done = 0; done < total; done += kBlock)
+            {
+               node->CookIfNeeded(2 + done / kBlock);
+               an->ProcessBlock(nullptr, 0, buf);
+               if (done >= (int)(0.3 * 48000.0))
+                  y.insert(y.end(), l.begin(), l.end());
+            }
+            y.resize((size_t)kN);
+         }
+         const std::vector<double> p = Spectrum(y);
+         const double bin = 48000.0 / kN;
+         const int lo = (int)(440.0 * std::pow(2.0, -200.0 / 1200.0) / bin), hi = (int)(440.0 * std::pow(2.0, 200.0 / 1200.0) / bin);
+         double top = 0.0;
+         for (int k = lo; k <= hi; k++)
+            top = std::max(top, p[(size_t)k]);
+         int count = 0;
+         double fmin = 1e9, fmax = 0.0;
+         for (int k = lo + 1; k < hi; k++)
+            if (p[(size_t)k] > p[(size_t)k - 1] && p[(size_t)k] >= p[(size_t)k + 1] && p[(size_t)k] > top * 0.01)
+            {
+               const double f = PeakHz(p, k * bin, 48000.0);
+               if (count > 0 && f - 0.0 < fmax + 3.0 * bin && f < fmax + 3.0 * bin)
+                  continue;
+               count++;
+               fmin = std::min(fmin, f);
+               fmax = std::max(fmax, f);
+            }
+         const double extent = count > 1 ? 1200.0 * std::log2(fmax / fmin) : 0.0;
+         printf("SYNTHAUDIT UNISON %-14s 4 voices, 100 c: %d peaks, outer spread %.1f cents\n", s.name, count, extent);
+         if (count != 4)
+            flags.Flag("UNISON", s.name, "peak count (expect 4)", (double)count);
+         if (std::fabs(extent - 100.0) > 5.0)
+            flags.Flag("UNISON", s.name, "outer spread cents (expect 100)", extent);
+      }
+
+      if (want("PARAM") && s.setVolume)
+      {
+         std::unique_ptr<INode> node(s.create());
+         s.quiet(node.get());
+         s.setFreq(node.get(), 440.0f);
+         s.setVolume(node.get(), 0.2f);
+         IAudioSource* src = AsSource(node.get());
+         AudioNode* an = src->GetAudioNode();
+         an->PrepareToPlay(48000.0, kBlock);
+         std::vector<float> l(kBlock), r(kBlock), y;
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = kBlock;
+         const int pre = 48000 / 2;
+         size_t stepAt = 0;
+         for (int done = 0, fr = 1; done < pre * 2; done += kBlock, fr++)
+         {
+            if (done >= pre && stepAt == 0)
+            {
+               s.setVolume(node.get(), 0.8f);
+               stepAt = y.size();
+            }
+            node->CookIfNeeded(fr);
+            an->ProcessBlock(nullptr, 0, buf);
+            y.insert(y.end(), l.begin(), l.end());
+         }
+         const size_t w = (size_t)(0.05 * 48000.0);
+         const double steady = MaxD2(y, stepAt - w - 1000, stepAt - 1000);
+         const double after = MaxD2(y, stepAt, stepAt + w);
+         const double settled = MaxD2(y, stepAt + 4 * w, stepAt + 5 * w);
+         const double db = Db(after / std::max(settled, 1e-12));
+         printf("SYNTHAUDIT PARAM %-15s volume 0.2 -> 0.8 step: worst d2 %+.1f dB re settled (steady before %.1f dB)\n", s.name, db,
+                Db(steady / std::max(settled, 1e-12)));
+         if (db > kFlagClickDb)
+            flags.Flag("PARAM", s.name, "volume step dB", db);
       }
 
       if (want("NOTE") || want("ENV") || want("CLICK") || want("VEL") || want("POLY"))
