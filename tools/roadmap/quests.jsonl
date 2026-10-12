@@ -2878,3 +2878,10 @@
 {"ts": "2026-10-12T11:50:00+00:00", "event": "drop", "id": "R681", "why": "parked 2026-10-12 per lifecycle G4 (quest cap 5, release-bound only); plan doc kept, listed in docs/plans/parked-ideas.md"}
 {"ts": "2026-10-12T11:50:04+00:00", "event": "drop", "id": "R682", "why": "parked 2026-10-12 per lifecycle G4 (quest cap 5, release-bound only); plan doc kept, listed in docs/plans/parked-ideas.md"}
 {"ts": "2026-10-12T11:50:10+00:00", "event": "drop", "id": "R687", "why": "parked 2026-10-12 per lifecycle G4 (quest cap 5, release-bound only); plan doc kept, listed in docs/plans/parked-ideas.md"}
+{"ts": "2026-10-12T17:11:28+05:30", "event": "add", "id": "R727", "after": [], "user": false, "src": "merge:feature/lifecycle-v1", "track": "ship", "kind": "feature", "horizon": "later", "title": "Lifecycle v1", "why": "merged into main (79ced5a)", "origin": "merge"}
+{"ts": "2026-10-12T17:25:46+05:30", "event": "done", "id": "R727", "why": "merged into main (79ced5a)"}
+{"ts": "2026-10-12T17:25:46+05:30", "event": "edit", "id": "R727", "opened": "2026-10-12T17:11:28+05:30", "closed": "2026-10-12T17:25:46+05:30", "release": "", "commits": ["79ced5a"]}
+{"ts": "2026-10-12T11:56:08+00:00", "event": "edit", "id": "R644", "opened": "2026-10-06T09:57:03+05:30", "commits": ["9f780af"], "closed": "2026-10-06T09:57:03+05:30", "release": "v0.4.7"}
+{"ts": "2026-10-12T11:56:09+00:00", "event": "edit", "id": "R680", "opened": "2026-10-10T09:32:35+05:30", "commits": ["2df05a0"], "closed": "2026-10-10T09:32:35+05:30", "release": "v0.5.0"}
+{"ts": "2026-10-12T11:56:09+00:00", "event": "edit", "id": "R683", "opened": "2026-10-10T11:23:00+05:30", "commits": ["018e5be"], "closed": "2026-10-10T11:23:00+05:30", "release": "v0.5.0"}
+{"ts": "2026-10-12T11:56:09+00:00", "event": "edit", "id": "R684", "opened": "2026-10-09T20:27:28+05:30", "commits": ["29b3db0", "bdd39e1"], "closed": "2026-10-10T10:27:30+05:30", "release": "v0.5.0"}
