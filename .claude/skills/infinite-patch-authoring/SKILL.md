@@ -92,6 +92,11 @@ expr <dst> <param|key> <expression>        glob <name> <expression>
   reach. Check brightness with `frame_stats.mean_luma` (aim ~0.1-0.3 for dark-ground art); Trails in
   Screen/Add mode accumulates to white, use Max. `--frame` times are seconds. A generator script like
   `art/prism/gen_prism.py` is the easiest way to iterate.
+- **Write `i maths 1` on LFO, Random, Smoothing, Envelope and CV to Pitch.** A node without the
+  `maths` key loads as a pre-2026-10 patch did (legacy maths: Envelope centred on 0.5, Smoothing
+  per frame, unseeded LFO S&H, LFO/Random rate in raw beats). `i maths 1` gives fps-independent
+  stages and seeded S&H; also write `i output 1` (Envelope ADSR 0..1) and `i rateMode 1` (LFO/Random
+  synced to `f rateBeats`; 2 = `f rateHz`). LFO `i phaseMode`: 0 transport, 1 free, 2 retrigger (`trig` input).
 - **Bypass.** A node with two or more inputs never bypasses; a bypassed node does not cook.
   `flags 0 1 0 0` on such a node raises `W_BYPASS_IGNORED`.
 - **Something must be reachable.** An image needs an `Utility Output`; sound needs an
@@ -215,12 +220,12 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Audio Filter` | audio:audio | out:audio | 10 | bypass |
-| `Bitcrush` | audio:audio | out:audio | 4 | bypass |
+| `Bitcrush` | audio:audio | out:audio | 5 | bypass |
 | `Chorus` | audio:audio | out:audio | 10 | bypass |
 | `Cycle Shaper` | audio:audio | out:audio | 5 | bypass |
 | `Delay` | audio:audio | out:audio | 10 | bypass |
 | `Drive` | audio:audio | out:audio | 6 | bypass |
-| `Dynamics` | audio:audio, sidechain:audio | out:audio | 9 |  |
+| `Dynamics` | audio:audio, sidechain:audio | out:audio | 10 |  |
 | `EQ` | audio:audio | out:audio | 28 | bypass |
 | `Field Effect` | in:audio | out:audio | 10 | bypass |
 | `Flanger` | audio:audio | out:audio | 9 | bypass |
@@ -229,7 +234,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Key-Snap` | audio:audio | out:audio | 6 | bypass |
 | `Limiter` | audio:audio | out:audio | 5 | bypass |
 | `Phaser` | audio:audio | out:audio | 9 | bypass |
-| `Pitch Shifter` | audio:audio | out:audio | 4 | bypass |
+| `Pitch Shifter` | audio:audio | out:audio | 5 | bypass |
 | `Plugin` | in:audio | out:audio | 7 | bypass |
 | `Resonator Bank` | audio:audio | out:audio | 9 | bypass |
 | `Reverb` | audio:audio | out:audio | 7 | bypass |
@@ -255,7 +260,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Feedback` | input:image | out:image | 1 | bypass |
 | `Fit` | input:image | out:image | 8 | bypass |
 | `Group` | none | out:image | 4 | bypass |
-| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 8 |  |
+| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 9 |  |
 | `Null` | in:image | out:image | 0 | bypass |
 | `Reaction Diffusion` | input:image | out:image | 11 | bypass |
 | `Remove Background` | input:image | out:image | 9 | bypass |
@@ -339,14 +344,14 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Audio File` | none | out:audio | 9 | bypass |
 | `Audio to CV` | audio:audio | out:modulator | 6 | bypass |
 | `CV Recorder` | in:modulator | out:modulator | 6 | bypass |
-| `CV to Pitch` | in:modulator | out:modulator | 6 | bypass |
+| `CV to Pitch` | in:modulator | out:modulator | 7 | bypass |
 | `Compare` | input:modulator, input_2:modulator | out:modulator | 4 |  |
 | `Constant` | none | out:modulator | 1 | bypass |
-| `Envelope` | in:modulator | out:modulator | 6 | bypass |
+| `Envelope` | in:modulator | out:modulator | 8 | bypass |
 | `Geometry Table` | geo:geometry | cx:modulator, cy:modulator, cz:modulator, spread:modulator, x1:modulator, y1:modulator, z1:modulator, x2:modulator, y2:modulator, z2:modulator, x3:modulator, y3:modulator, z3:modulator, x4:modulator, y4:modulator, z4:modulator | 10 | bypass |
 | `Image Analyze` | input:image | result:modulator, bright:modulator, contrast:modulator, red:modulator, green:modulator, blue:modulator, sat:modulator, hue:modulator, motion:modulator, cx:modulator, cy:modulator | 14 | bypass |
 | `Invert` | in:modulator | out:modulator | 3 | bypass |
-| `LFO` | none | out:modulator | 5 | bypass |
+| `LFO` | trig:modulator | out:modulator | 10 | bypass |
 | `MIDI CC` | none | out:modulator | 7 | hardware: refused headless, bypass |
 | `MIDI Trigger` | none | out:modulator | 6 | hardware: refused headless, bypass |
 | `Math` | input:modulator, input_2:modulator | out:modulator | 6 |  |
@@ -357,9 +362,9 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Palette` | ref:image | out:palette | 14 | bypass |
 | `Path` | curve:geometry, geo:geometry | x:modulator, y:modulator, z:modulator, t:modulator | 14 |  |
 | `Pattern` | none | out:modulator | 24 | bypass |
-| `Random` | none | out:modulator | 5 | bypass |
+| `Random` | none | out:modulator | 8 | bypass |
 | `Range to Range` | in:modulator | out:modulator | 6 | bypass |
-| `Smoothing` | in:modulator | out:modulator | 6 | bypass |
+| `Smoothing` | in:modulator | out:modulator | 7 | bypass |
 | `Velocity to CV` | notes:note | out:modulator | 2 | bypass |
 | `Vibrato` | none | out:modulator | 1 | bypass |
 
