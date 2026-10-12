@@ -175,6 +175,10 @@ Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; ba
 |---|---|---|---|
 | F1 | Metallic level differs 3.14 dB between 44.1 / 48 / 96 kHz. Unclear if a bug: its partials above Nyquist are legitimately absent at low rates, and it is a decaying resonator. Needs a per-mode check before any fix. | RATE row | 1 |
 | F2 | Analog aliasing is -66 dB at 1.75 kHz and -62 dB at 5 kHz (default saw), just inside the -60 dB flag; Wavetable, Oscillator and Equation Synth are -82 to -88 dB. | ALIAS rows | 1 |
+| F4 | Velocity law is not shared: Analog, Wavetable and Oscillator follow velocity squared (vel 0.5 = -12 dB, 0.25 = -24 dB); Equation Synth and Metallic are linear (-6 / -12 dB). | VEL rows | 1 |
+| F5 | Equation Synth clips with several notes at defaults: peak +3.6 dBFS at 8 notes, +4.3 at 32, against -12 dBFS for one note. No polyphonic gain compensation. Worth a fix behind a legacy flag. | POLY rows | 1 |
+| F6 | Polyphony cost stops growing past 8 notes on every synth (8 and 32 notes cost the same per frame), so all five cap at 8 voices. Not a bug if intended; the cap is not shown in the UI. | POLY rows | 1 |
+| F7 | Wavetable note-on is +8.2 dB over steady state at defaults, the only pitched synth near the 12 dB flag. Metallic note-on reads +32 dB, but its steady state is a decaying resonator, so that metric is unreliable for it. | CLICK rows | 1 |
 | F3 | Pitch is within 0.03 cents everywhere measured, and every synth is bit-identical on re-render. No action. | PITCH, DET rows | 1 |
 
-Not yet covered: ENV, CLICK, UNISON, POLY, PARAM, TAIL (need a note cable), and the other 12 synths.
+Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). Not yet covered: UNISON, PARAM, and the other 12 synths.

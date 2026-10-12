@@ -14,10 +14,22 @@
 //   DET     two fresh nodes, same settings: bit-identical output
 //   CPU     ns per stereo frame at defaults
 //
+// and, driven through a real NoteEventQueue (note cable) at defaults:
+//
+//   NOTE    note 69 pitch error in cents
+//   ENV     attack (10..90% of the held peak) and release (note-off to -60 dB
+//           re the held peak), ms
+//   CLICK   worst second difference within 5 ms of note-on and of note-off,
+//           dB re the steady-state worst (FXAUDIT threshold 12 dB)
+//   VEL     RMS at velocity 0.25 / 0.5 re velocity 1, dB
+//   POLY    1 / 8 / 32 simultaneous notes: peak, ns per frame, then all-off
+//           and the level of the last 0.5 s of 10 s (stuck voices; -100 dBFS)
+//
 // Only hard invariants fail the run (non-finite output, silence at defaults).
 // Everything else is reported, with FLAG lines past the thresholds below.
 #include "app/AppShared.h"
 #include "audio/AudioBuffer.h"
+#include "audio/NoteEventQueue.h"
 #include "audio/dsp/PortableFft.h"
 #include "nodes/AnalogNode.h"
 #include "nodes/EquationNode.h"
@@ -41,6 +53,8 @@ namespace
    constexpr double kFlagPeakDbfs = 0.0;
    constexpr double kFlagRateDb = 1.0;
    constexpr double kFlagCpuNs = 4000.0;
+   constexpr double kFlagClickDb = 12.0;
+   constexpr double kFlagTailDbfs = -100.0;
 
    struct Synth
    {
@@ -206,6 +220,227 @@ namespace
          n++;
       }
    };
+
+   // A synth wired to a NoteEventQueue the way the topology builder does.
+   struct NoteRig
+   {
+      std::unique_ptr<INode> node;
+      AudioNode* audio = nullptr;
+      NoteEventQueue queue;
+      double sr = 48000.0;
+      int frame = 1;
+      std::vector<float> l, r;
+      std::vector<int> ids;
+
+      bool Init(const Synth& s, double rate)
+      {
+         sr = rate;
+         node.reset(s.create());
+         IAudioSource* src = AsSource(node.get());
+         if (src == nullptr)
+            return false;
+         s.quiet(node.get());
+         audio = src->GetAudioNode();
+         audio->PrepareToPlay(sr, kBlock);
+         node->CookIfNeeded(frame++);
+         const int cursor = queue.RegisterConsumer();
+         int slot = 0;
+         for (int i = 0; i < 8; i++)
+            if (node->NoteInputSlot(i) != nullptr)
+            {
+               slot = i;
+               break;
+            }
+         audio->SetNoteInbox(slot, &queue, cursor);
+         l.assign(kBlock, 0.0f);
+         r.assign(kBlock, 0.0f);
+         return true;
+      }
+      int On(int note, float vel)
+      {
+         NoteEvent e;
+         e.note = note;
+         e.velocity = vel;
+         e.isNoteOn = true;
+         e.voiceId = NextVoiceId();
+         queue.Push(e);
+         return e.voiceId;
+      }
+      void Off(int note, int id)
+      {
+         NoteEvent e;
+         e.note = note;
+         e.isNoteOn = false;
+         e.voiceId = id;
+         queue.Push(e);
+      }
+      // Appends `frames` of the left channel (rounded up to whole blocks).
+      void Run(int frames, std::vector<float>& out)
+      {
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = kBlock;
+         for (int done = 0; done < frames; done += kBlock)
+         {
+            node->CookIfNeeded(frame++);
+            audio->ProcessBlock(nullptr, 0, buf);
+            out.insert(out.end(), l.begin(), l.end());
+         }
+      }
+   };
+
+   // Peak of |x| over 1 ms windows.
+   std::vector<double> Envelope(const std::vector<float>& x, double sr)
+   {
+      const size_t w = std::max<size_t>(1, (size_t)(sr * 0.001));
+      std::vector<double> e;
+      for (size_t i = 0; i + w <= x.size(); i += w)
+      {
+         double p = 0.0;
+         for (size_t j = 0; j < w; j++)
+            p = std::max(p, (double)std::fabs(x[i + j]));
+         e.push_back(p);
+      }
+      return e;
+   }
+
+   double MaxD2(const std::vector<float>& x, size_t a, size_t b)
+   {
+      double m = 0.0;
+      b = std::min(b, x.size());
+      for (size_t i = std::max<size_t>(a, 2); i < b; i++)
+         m = std::max(m, (double)std::fabs((double)x[i] - 2.0 * x[i - 1] + x[i - 2]));
+      return m;
+   }
+
+   bool AuditNotes(const Synth& s, Flags& flags)
+   {
+      const double sr = 48000.0;
+      const size_t hold = (size_t)(1.6 * sr);
+
+      // Held note 69: pitch, envelope, click.
+      {
+         NoteRig rig;
+         if (!rig.Init(s, sr))
+            return false;
+         std::vector<float> x;
+         rig.Run(kBlock * 4, x); // silence before
+         const size_t onAt = x.size();
+         const int id = rig.On(69, 1.0f);
+         rig.Run((int)hold, x);
+         const size_t offAt = x.size();
+         rig.Off(69, id);
+         rig.Run((int)(10.0 * sr), x);
+         if (!AllFinite(x))
+         {
+            printf("SYNTHAUDIT FAIL %-15s non-finite on a note\n", s.name);
+            return false;
+         }
+         double sustain = 0.0;
+         for (size_t i = onAt + hold / 2; i < offAt; i++)
+            sustain = std::max(sustain, (double)std::fabs(x[i]));
+         if (sustain < 1e-5)
+         {
+            printf("SYNTHAUDIT NOTE  %-15s SILENT on note 69 (note cable has no effect)\n", s.name);
+            flags.Flag("NOTE", s.name, "silent on note-on", 1.0);
+            return true;
+         }
+         if (s.pitched && hold >= (size_t)kN)
+         {
+            std::vector<float> seg(x.begin() + (long)offAt - kN, x.begin() + (long)offAt);
+            const double got = PeakHz(Spectrum(seg), 440.0, sr);
+            const double cents = 1200.0 * std::log2(got / 440.0);
+            printf("SYNTHAUDIT NOTE  %-15s note 69 pitch %+.2f cents\n", s.name, cents);
+            if (std::fabs(cents) > kFlagPitchCents)
+               flags.Flag("NOTE", s.name, "cents", cents);
+         }
+         const std::vector<double> env = Envelope(x, sr);
+         const size_t eOn = onAt / (size_t)(sr * 0.001), eOff = offAt / (size_t)(sr * 0.001);
+         double a10 = -1, a90 = -1, rel60 = -1;
+         for (size_t i = eOn; i < eOff; i++)
+         {
+            if (a10 < 0 && env[i] >= 0.1 * sustain)
+               a10 = (double)(i - eOn);
+            if (a90 < 0 && env[i] >= 0.9 * sustain)
+               a90 = (double)(i - eOn);
+         }
+         for (size_t i = eOff; i < env.size(); i++)
+            if (env[i] < sustain * 0.001)
+            {
+               rel60 = (double)(i - eOff);
+               break;
+            }
+         printf("SYNTHAUDIT ENV   %-15s attack %.0f ms | release to -60 dB %s%.0f ms\n", s.name,
+                a10 >= 0 && a90 >= 0 ? a90 - a10 : -1.0, rel60 < 0 ? ">" : "", rel60 < 0 ? 10000.0 : rel60);
+         const double steady = MaxD2(x, onAt + hold / 2, onAt + hold / 2 + (size_t)(0.1 * sr));
+         const size_t w = (size_t)(0.005 * sr);
+         const double cOn = Db(MaxD2(x, onAt, onAt + w) / std::max(steady, 1e-12));
+         const double cOff = Db(MaxD2(x, offAt, offAt + w) / std::max(steady, 1e-12));
+         printf("SYNTHAUDIT CLICK %-15s note-on %+.1f dB | note-off %+.1f dB re steady\n", s.name, cOn, cOff);
+         if (cOn > kFlagClickDb)
+            flags.Flag("CLICK", s.name, "note-on dB", cOn);
+         if (cOff > kFlagClickDb)
+            flags.Flag("CLICK", s.name, "note-off dB", cOff);
+      }
+
+      // Velocity.
+      {
+         double rms[3] = {};
+         const float vel[3] = { 1.0f, 0.5f, 0.25f };
+         for (int k = 0; k < 3; k++)
+         {
+            NoteRig rig;
+            rig.Init(s, sr);
+            std::vector<float> x;
+            rig.On(69, vel[k]);
+            rig.Run((int)(0.5 * sr), x);
+            std::vector<float> seg(x.begin() + (long)(0.25 * sr), x.end());
+            rms[k] = Rms(seg);
+         }
+         printf("SYNTHAUDIT VEL   %-15s vel 0.5 %+.1f dB | vel 0.25 %+.1f dB re vel 1\n", s.name,
+                Db(rms[1] / std::max(rms[0], 1e-12)), Db(rms[2] / std::max(rms[0], 1e-12)));
+      }
+
+      // Polyphony and stuck voices.
+      for (int n : { 1, 8, 32 })
+      {
+         NoteRig rig;
+         rig.Init(s, sr);
+         std::vector<float> x;
+         std::vector<int> notes, ids;
+         for (int i = 0; i < n; i++)
+         {
+            notes.push_back(36 + i * 2);
+            ids.push_back(rig.On(notes.back(), 0.8f));
+         }
+         rig.Run((int)(0.3 * sr), x);
+         x.clear();
+         const int blocks = 400;
+         const auto t0 = std::chrono::steady_clock::now();
+         rig.Run(blocks * kBlock, x);
+         const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count() /
+                           ((double)blocks * kBlock);
+         const double pk = Db(Peak(x));
+         for (int i = 0; i < n; i++)
+            rig.Off(notes[(size_t)i], ids[(size_t)i]);
+         std::vector<float> tail;
+         rig.Run((int)(10.0 * sr), tail);
+         const bool fin = AllFinite(x) && AllFinite(tail);
+         std::vector<float> last(tail.end() - (long)(0.5 * sr), tail.end());
+         const double tl = Db(Peak(last));
+         printf("SYNTHAUDIT POLY  %-15s %2d notes: peak %6.1f dBFS | %7.1f ns/frame | tail %7.1f dBFS%s\n", s.name, n, pk,
+                ns, tl, fin ? "" : " NON-FINITE");
+         if (!fin)
+            return false;
+         if (tl > kFlagTailDbfs)
+            flags.Flag("POLY", s.name, "tail dBFS after all-off", tl);
+         if (pk > kFlagPeakDbfs)
+            flags.Flag("POLY", s.name, "peak dBFS", pk);
+      }
+      return true;
+   }
 }
 
 bool RunSynthAudit()
@@ -301,6 +536,9 @@ bool RunSynthAudit()
          if (!same)
             flags.Flag("DET", s.name, "not bit-identical", 1.0);
       }
+
+      if (want("NOTE") || want("ENV") || want("CLICK") || want("VEL") || want("POLY"))
+         ok = AuditNotes(s, flags) && ok;
 
       if (want("CPU"))
       {
