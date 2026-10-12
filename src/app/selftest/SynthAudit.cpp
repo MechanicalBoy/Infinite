@@ -26,6 +26,8 @@
 //   CLICK   worst second difference within 5 ms of note-on and of note-off,
 //           dB re the steady-state worst (FXAUDIT threshold 12 dB)
 //   VEL     RMS at velocity 0.25 / 0.5 re velocity 1, dB
+//   SAMPLE  sample synths (fixture WAV loaded): pitch and length of a held
+//           note at 44.1 / 48 / 96 kHz, spread across the rates
 //   POLY    1 / 4 / 8 / 32 simultaneous notes (flag: 4-note chord over 0 dBFS): peak, ns per frame, then all-off
 //           and the level of the last 0.5 s of 10 s (stuck voices; -100 dBFS)
 //
@@ -54,6 +56,8 @@
 #include "nodes/WavetableNode.h"
 
 #include <chrono>
+#include <fstream>
+#include <thread>
 
 namespace app
 {
@@ -65,6 +69,7 @@ namespace
    constexpr int kLobe = 4;
 
    constexpr double kFlagPitchCents = 1.0;
+   constexpr double kFlagSampleCents = 20.0; // the smallest real rate bug (44.1 vs 48 kHz) is 147 c; PaulStretch phase jitter reads ~7 c
    constexpr double kFlagAliasDb = -60.0;
    constexpr double kFlagPeakDbfs = 0.0;
    constexpr double kFlagRateDb = 1.0;
@@ -81,7 +86,53 @@ namespace
       std::function<void(INode*)> quiet;     // analog drift / noise off, deterministic
       std::function<void(INode*, int, float)> setUnison; // voices, total detune cents (optional)
       std::function<void(INode*, float)> setVolume;      // optional
+      int note = 69;                         // the note that sounds it (Slicer/MPC: slice/pad 0)
+      const char* noNotes = nullptr;         // why the note audit does not apply (no note path)
+      bool fixture = false;                  // plays FixtureWav: SAMPLE checks playback rate
    };
+
+   // The fixture sample the sample-based synths are loaded with: 2 s of a
+   // steady 440 Hz tone (harmonics 1..6 at 1/n) with 5 ms fades at each end,
+   // 16-bit mono 48 kHz, decoded through the real file path. Looper records
+   // its input and has no load path, so it stays silent here by design.
+   const std::string& FixtureWav()
+   {
+      static const std::string path = [] {
+         const std::string p = TmpPath("infinite_synthaudit_fixture.wav");
+         const int sr = 48000, n = 2 * sr;
+         std::vector<int16_t> pcm((size_t)n);
+         for (int i = 0; i < n; i++)
+         {
+            const double t = (double)i / sr;
+            double v = 0.0;
+            for (int h = 1; h <= 6; h++)
+               v += std::sin(2.0 * M_PI * 440.0 * h * t) / h;
+            const double env = std::min({ 1.0, t / 0.005, (2.0 - t) / 0.005 });
+            pcm[(size_t)i] = (int16_t)std::lround(0.5 * env * v / 2.45 * 32767.0);
+         }
+         std::ofstream f(p, std::ios::binary);
+         auto u32 = [&](uint32_t v) { f.write((const char*)&v, 4); };
+         auto u16 = [&](uint16_t v) { f.write((const char*)&v, 2); };
+         const uint32_t bytes = (uint32_t)(pcm.size() * sizeof(int16_t));
+         f.write("RIFF", 4); u32(36 + bytes); f.write("WAVE", 4);
+         f.write("fmt ", 4); u32(16); u16(1); u16(1); u32((uint32_t)sr); u32((uint32_t)sr * 2); u16(2); u16(16);
+         f.write("data", 4); u32(bytes);
+         f.write((const char*)pcm.data(), bytes);
+         return p;
+      }();
+      return path;
+   }
+
+   // Molder and Grain Molder render the loaded file on a worker; the result is
+   // adopted on the next cook. Bounded wait.
+   template <class T> INode* Settled(T* n)
+   {
+      for (int i = 0; i < 15000 && n->IsRendering(); i++)
+         std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      return n;
+   }
+
+   template <class T> T* Make(INode* (*create)()) { return static_cast<T*>(create()); }
 
    const std::vector<Synth>& Synths()
    {
@@ -116,19 +167,32 @@ namespace
            [](INode* n, float v) { static_cast<EquationNode*>(n)->volume = v; } },
          { "Metallic", false, [] { return MetallicNode::Create(); },
            [](INode* n, float f) { static_cast<MetallicNode*>(n)->frequency = f; }, [](INode*) {} },
-         // Not pitch-driven (or need loaded content): level, rate, determinism, CPU, notes.
+         // Not pitch-driven: level, rate, determinism, CPU, notes. The sample synths
+         // get the fixture sample (FixtureWav) loaded the way a file pick does.
          { "Field Synth", false, [] { return FieldSynthNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
          { "Wave Terrain", false, [] { return WaveTerrainNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
          { "Spectral Synth", false, [] { return ImageSpectralSynthNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "Grain Molder", false, [] { return GrainMolderNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "Molder", false, [] { return MolderNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "Granular", false, [] { return GranularNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "Sampler", false, [] { return SamplerNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "Slicer", false, [] { return SlicerNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "MPC", false, [] { return MpcNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "Looper", false, [] { return LooperNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "PaulStretch", false, [] { return PaulStretchNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
-         { "Drum Sequencer", false, [] { return DrumSequencerNode::Create(); }, [](INode*, float) {}, [](INode*) {} },
+         { "Grain Molder", false, [] { auto* n = Make<GrainMolderNode>(GrainMolderNode::Create); n->LoadFile(FixtureWav()); return Settled(n); }, [](INode*, float) {}, [](INode*) {}, nullptr, nullptr, 69, nullptr, true },
+         { "Molder", false, [] { auto* n = Make<MolderNode>(MolderNode::Create); n->LoadFile(FixtureWav()); return Settled(n); }, [](INode*, float) {}, [](INode*) {}, nullptr, nullptr, 69, nullptr, true },
+         { "Granular", false, [] { auto* n = Make<GranularNode>(GranularNode::Create); n->LoadFile(FixtureWav()); return (INode*)n; }, [](INode*, float) {},
+           [](INode* n) {
+              // A coherent cloud: grains follow a real-time scan, no spray, so the
+              // fixture's pitch is measurable (defaults are a random cloud).
+              auto* g = static_cast<GranularNode*>(n);
+              g->scan = 1.0f;
+              g->density = 100.0f;
+              g->randomPos = 0.0f;
+              g->randomLength = 0.0f;
+              g->randomPan = 0.0f;
+           }, nullptr, nullptr, 69, nullptr, true },
+         { "Sampler", false, [] { auto* n = Make<SamplerNode>(SamplerNode::Create); n->LoadFile(FixtureWav()); return (INode*)n; }, [](INode*, float) {}, [](INode*) {}, nullptr, nullptr, 69, nullptr, true },
+         { "Slicer", false, [] { auto* n = Make<SlicerNode>(SlicerNode::Create); n->LoadFile(FixtureWav()); return (INode*)n; }, [](INode*, float) {}, [](INode*) {}, nullptr, nullptr, 36, nullptr, true },
+         { "MPC", false, [] { auto* n = Make<MpcNode>(MpcNode::Create); n->LoadPad(0, FixtureWav()); return (INode*)n; }, [](INode*, float) {}, [](INode*) {}, nullptr, nullptr, 36, nullptr, true },
+         { "Looper", false, [] { return LooperNode::Create(); }, [](INode*, float) {}, [](INode*) {}, nullptr, nullptr, 69,
+           "records its live input, no fixture to load" },
+         { "PaulStretch", false, [] { auto* n = Make<PaulStretchNode>(PaulStretchNode::Create); n->LoadFile(FixtureWav()); return (INode*)n; }, [](INode*, float) {}, [](INode*) {}, nullptr, nullptr, 69, nullptr, true },
+         { "Drum Sequencer", false, [] { auto* n = Make<DrumSequencerNode>(DrumSequencerNode::Create); n->LoadFileToLane(0, FixtureWav()); return (INode*)n; }, [](INode*, float) {}, [](INode*) {}, nullptr, nullptr, 69,
+           "plays its step grid from the transport, no note input (DRUMSEQFIXTURE covers it)", true },
       };
       return s;
    }
@@ -360,6 +424,11 @@ namespace
 
    bool AuditNotes(const Synth& s, Flags& flags)
    {
+      if (s.noNotes != nullptr)
+      {
+         printf("SYNTHAUDIT NOTE  %-15s not note-driven: %s\n", s.name, s.noNotes);
+         return true;
+      }
       const double sr = 48000.0;
       const size_t hold = (size_t)(1.6 * sr);
 
@@ -371,10 +440,10 @@ namespace
          std::vector<float> x;
          rig.Run(kBlock * 4, x); // silence before
          const size_t onAt = x.size();
-         const int id = rig.On(69, 1.0f);
+         const int id = rig.On(s.note, 1.0f);
          rig.Run((int)hold, x);
          const size_t offAt = x.size();
-         rig.Off(69, id);
+         rig.Off(s.note, id);
          rig.Run((int)(10.0 * sr), x);
          if (!AllFinite(x))
          {
@@ -386,10 +455,8 @@ namespace
             sustain = std::max(sustain, (double)std::fabs(x[i]));
          if (sustain < 1e-5)
          {
-            printf("SYNTHAUDIT NOTE  %-15s SILENT on note 69%s\n", s.name,
-                   s.pitched ? " (note cable has no effect)" : " (needs loaded content, not audited here)");
-            if (s.pitched)
-               flags.Flag("NOTE", s.name, "silent on note-on", 1.0);
+            printf("SYNTHAUDIT NOTE  %-15s SILENT on note %d (note cable has no effect)\n", s.name, s.note);
+            flags.Flag("NOTE", s.name, "silent on note-on", 1.0);
             return true;
          }
          if (s.pitched && hold >= (size_t)kN)
@@ -439,7 +506,7 @@ namespace
             NoteRig rig;
             rig.Init(s, sr);
             std::vector<float> x;
-            rig.On(69, vel[k]);
+            rig.On(s.note, vel[k]);
             rig.Run((int)(0.5 * sr), x);
             std::vector<float> seg(x.begin() + (long)(0.25 * sr), x.end());
             rms[k] = Rms(seg);
@@ -454,6 +521,11 @@ namespace
          NoteRig rig;
          rig.Init(s, sr);
          std::vector<float> x;
+         // What the node plays with no note held: a free-running source (Granular,
+         // PaulStretch) keeps sounding after all-off, which is not a stuck voice.
+         std::vector<float> idle;
+         rig.Run((int)(0.5 * sr), idle);
+         const double idleDb = Db(Peak(idle));
          std::vector<int> notes, ids;
          for (int i = 0; i < n; i++)
          {
@@ -475,11 +547,11 @@ namespace
          const bool fin = AllFinite(x) && AllFinite(tail);
          std::vector<float> last(tail.end() - (long)(0.5 * sr), tail.end());
          const double tl = Db(Peak(last));
-         printf("SYNTHAUDIT POLY  %-15s %2d notes: peak %6.1f dBFS | %7.1f ns/frame | tail %7.1f dBFS%s\n", s.name, n, pk,
-                ns, tl, fin ? "" : " NON-FINITE");
+         printf("SYNTHAUDIT POLY  %-15s %2d notes: peak %6.1f dBFS | %7.1f ns/frame | tail %7.1f dBFS%s%s\n", s.name, n, pk,
+                ns, tl, idleDb > kFlagTailDbfs ? " (free-running, idle level)" : "", fin ? "" : " NON-FINITE");
          if (!fin)
             return false;
-         if (tl > kFlagTailDbfs)
+         if (tl > kFlagTailDbfs && tl > idleDb + 1.0)
             flags.Flag("POLY", s.name, "tail dBFS after all-off", tl);
          // A 4-note chord at velocity 0.8 must fit under 0 dBFS at defaults; 8 and
          // 32 notes are reported only (a polysynth sums its voices, see F5).
@@ -487,6 +559,111 @@ namespace
             flags.Flag("POLY", s.name, "4-note chord peak dBFS", pk);
       }
       return true;
+   }
+
+   // SAMPLE: the fixture through a held note at 44.1 / 48 / 96 kHz. A sample
+   // played at the device rate instead of its own shows as a pitch and length
+   // that move with the rate. Pitch is the strongest partial near 440 Hz (the
+   // fixture's fundamental, or wherever the node's root note maps it);
+   // length is note-on to -40 dB re the peak, with the note held 4 s.
+   // Drum Sequencer has no note input: one hit of lane 0 from its own step
+   // grid (quarter-note steps at 30 bpm, only step 0 on: one hit per 8 s),
+   // the transport clock advanced per block the way the engine does.
+   bool RenderSteps(const Synth& s, double sr, std::vector<float>& out)
+   {
+      std::unique_ptr<INode> node(s.create());
+      auto* d = dynamic_cast<DrumSequencerNode*>(node.get());
+      IAudioSource* src = AsSource(node.get());
+      if (d == nullptr || src == nullptr)
+         return false;
+      d->rate = MusicTime::kQuarter;
+      d->numSteps = 4;
+      d->stepVel[0][0] = 1.0f;
+      Transport& t = Transport::Instance();
+      const float bpm = t.Tempo();
+      const bool playing = t.IsPlaying();
+      t.SetTempo(30.0f);
+      t.SetPlaying(true);
+      t.Rewind();
+      t.NotifyAudioEngineStarted(sr);
+      AudioNode* an = src->GetAudioNode();
+      an->PrepareToPlay(sr, kBlock);
+      std::vector<float> l(kBlock), r(kBlock);
+      float* ch[2] = { l.data(), r.data() };
+      AudioBuffer buf;
+      buf.channels = ch;
+      buf.numChannels = 2;
+      buf.numFrames = kBlock;
+      out.clear();
+      for (int done = 0, fr = 1; done < (int)(4.0 * sr); done += kBlock, fr++)
+      {
+         node->CookIfNeeded(fr);
+         t.AdvanceAudioClock(kBlock);
+         an->ProcessBlock(nullptr, 0, buf);
+         out.insert(out.end(), l.begin(), l.end());
+      }
+      t.SetTempo(bpm);
+      t.SetPlaying(playing);
+      return true;
+   }
+
+   void AuditSample(const Synth& s, Flags& flags, bool legacy = false)
+   {
+      const double rates[3] = { 44100.0, 48000.0, 96000.0 };
+      double hz[3] = {}, len[3] = {};
+      std::string row;
+      for (int r = 0; r < 3; r++)
+      {
+         const double sr = rates[r];
+         std::vector<float> x;
+         if (s.noNotes != nullptr)
+         {
+            if (!RenderSteps(s, sr, x))
+               return;
+         }
+         else
+         {
+            NoteRig rig;
+            if (!rig.Init(s, sr))
+               return;
+            rig.On(s.note, 1.0f);
+            rig.Run((int)(4.0 * sr), x);
+         }
+         std::vector<float> seg((size_t)kN, 0.0f);
+         const size_t from = (size_t)(0.02 * sr);
+         for (size_t i = 0; i < (size_t)kN && from + i < x.size(); i++)
+            seg[i] = x[from + i];
+         const std::vector<double> p = Spectrum(seg);
+         size_t best = 1;
+         for (size_t k = 1; k + 1 < p.size() && (double)k * sr / kN < 4000.0; k++)
+            if (p[k] > p[best])
+               best = k;
+         hz[r] = PeakHz(p, (double)best * sr / kN, sr);
+         const std::vector<double> env = Envelope(x, sr);
+         double pk = 0.0;
+         for (double e : env)
+            pk = std::max(pk, e);
+         len[r] = 4.0;
+         for (size_t i = env.size(); i-- > 0;)
+            if (env[i] >= pk * 0.01)
+            {
+               len[r] = (double)(i + 1) * 0.001;
+               break;
+            }
+         char b[64];
+         snprintf(b, sizeof b, " %3.0fk %7.1f Hz %5.2f s", sr / 1000.0, hz[r], len[r]);
+         row += b;
+      }
+      const double c = 1200.0 * std::log2(std::max({ hz[0], hz[1], hz[2] }) / std::max(1e-9, std::min({ hz[0], hz[1], hz[2] })));
+      const double l = std::max({ len[0], len[1], len[2] }) / std::max(1e-9, std::min({ len[0], len[1], len[2] }));
+      printf("SYNTHAUDIT SAMPLE %-14s%s | pitch spread %.1f c, length ratio %.3f%s\n", s.name, row.c_str(), c, l,
+             legacy ? " (as loaded from a patch saved before rateFix)" : "");
+      if (legacy)
+         return;
+      if (c > kFlagSampleCents)
+         flags.Flag("SAMPLE", s.name, "pitch spread over rates, cents", c);
+      if (l > 1.02)
+         flags.Flag("SAMPLE", s.name, "length ratio over rates", l);
    }
 }
 
@@ -501,6 +678,17 @@ bool RunSynthAudit()
 
    for (const Synth& s : Synths())
    {
+      if (s.fixture && want("SAMPLE"))
+      {
+         AuditSample(s, flags);
+         Synth old = s; // the old-patch load path: BeforeLoadParams() runs, saved keys never arrive
+         old.create = [c = s.create] {
+            INode* n = c();
+            n->BeforeLoadParams();
+            return n;
+         };
+         AuditSample(old, flags, true);
+      }
       std::vector<float> x;
       if (!Render(s, 48000.0, 440.0f, kN, x))
       {
@@ -510,7 +698,7 @@ bool RunSynthAudit()
       }
       if (AllFinite(x) && Peak(x) < 1e-5 && !s.pitched && strcmp(s.name, "Metallic") != 0)
       {
-         printf("SYNTHAUDIT SKIP %-15s silent at defaults (needs loaded content or a note)\n", s.name);
+         printf("SYNTHAUDIT SKIP %-15s silent free-running (note-driven): notes only\n", s.name);
          if (want("NOTE") || want("POLY"))
             ok = AuditNotes(s, flags) && ok;
          continue;
@@ -730,7 +918,7 @@ bool RunSynthAudit()
       }
    }
 
-   printf("SYNTHAUDIT %s (%d flags)\n", ok ? "done" : "FAILED", flags.n);
+   printf("SYNTHAUDIT %s (%d flags)\n", ok ? "PASS" : "FAILED", flags.n);
    return ok;
 }
 }
