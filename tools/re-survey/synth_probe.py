@@ -114,8 +114,9 @@ def resolve(target, aus):
         hit = [a for a in aus if a["id"] == t]
         name = hit[0]["name"] if hit else t
         return {"kind": "au", "id": t, "label": name + suffix, "name": name, "settings": settings}
-    hits = [a for a in aus if t.lower() in a["name"].lower() and a["type"] == "aumu"]
-    exact = [a for a in hits if a["name"].lower().endswith(t.lower())]
+    key = lambda n: n.lower().replace(":", "")  # "FabFilter One" finds "FabFilter: One"
+    hits = [a for a in aus if key(t) in key(a["name"]) and a["type"] == "aumu"]
+    exact = [a for a in hits if key(a["name"]).endswith(key(t))]
     hits = exact if len(exact) == 1 else hits
     if len(hits) != 1:
         names = ", ".join("%s (%s)" % (a["name"], a["id"]) for a in hits[:8]) or "none"
@@ -161,7 +162,7 @@ def render(binp, target, cat, events, dur, wav, tmp):
 
 # ---------------------------------------------------------------- analysis (pure numpy)
 
-def yin(x, sr, fmin=10.0, fmax=5000.0, thresh=0.12):
+def yin(x, sr, fmin=10.0, fmax=12000.0, thresh=0.12):
     """YIN f0 of a steady segment (Hz), or None."""
     x = x - np.mean(x)
     n = len(x)
@@ -416,7 +417,7 @@ def to_markdown(results):
 def self_test():
     t = SelfTest("synth_probe")
     k = np.arange(int(0.4 * SR))
-    for hz, odd in ((16.35, False), (32.7, False), (261.63, False), (4186.0, False), (4186.0, True)):
+    for hz, odd in ((16.35, False), (32.7, False), (261.63, False), (4186.0, False), (4186.0, True), (8372.0, False)):
         hs = range(1, int(20000 / hz) + 1, 2 if odd else 1)
         wave = sum(np.sin(2 * np.pi * hz * h * k / SR) / h for h in hs)
         f = refine(wave, SR, yin(wave, SR))
