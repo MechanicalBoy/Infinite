@@ -32,7 +32,7 @@ analyser (numbers out) ──► comparison table ──► dossier outcome
 | 2 | Built-in instruments | Pitch, aliasing, velocity, envelope, voices, CPU | Live (Wavetable, Operator, Drift), Logic (Alchemy, ES2), Bitwig (Polymer, Phase-4) | 🟡 Infinite's own only | **cover others' built-ins** |
 | 3 | Built-in effects | Gain, response, THD, tail, CPU | Live (Echo, Roar, Reverb), Logic (ChromaVerb, Compressor), Bitwig | 🟡 Infinite's own only | **cover others' built-ins** |
 | 4 | Third-party plugins | Sound + CPU per plugin | FabFilter, Valhalla, Diva, Serum, Vital | ✅ in Infinite's host | — |
-| 5 | Plugin hosting | Formats, scan time, load success rate, crash isolation, PDC, host CPU overhead | Live, Logic, Bitwig (sandboxing) | ❌ | **important: users report VST3 crashes / not loading** |
+| 5 | Plugin hosting | Formats, scan time, load success rate, crash isolation, PDC, host CPU overhead | Live, Logic, Bitwig (sandboxing) | 🟡 `host_audit` done; isolation open | **important: users report VST3 crashes / not loading** |
 | 6 | Performance under load | Track and voice ceiling, multicore scaling, dropouts | Live, Logic, Bitwig | ❌ | **needed** |
 | 7 | Real-time latency | Audio in→out round trip, buffer sizes, jitter | Live, Logic, Bitwig | ❌ | **important: makes it professional** |
 | 8 | Startup and footprint | Launch time, idle CPU, memory, bundle size | all | ⏳ `app_bench` | — |
@@ -50,15 +50,13 @@ analyser (numbers out) ──► comparison table ──► dossier outcome
 | 20 | Projects and files | Save/load time, size, open format, old-version compat, autosave/recovery | all | ❌ | **important** |
 | 21 | Stability | Crash recovery, plugin-crash handling, undo depth | all | ❌ | **important** |
 | 22 | Content and library | Presets, samples, templates, browser search speed | all | ❌ | **check against Infinite's existing library** |
-| 23 | Learning and onboarding | First run, help, tutorials | all | ❌ | — |
 | 24 | Accessibility | Screen-reader exposure | all | 🟡 seen in `ui_map` | — |
 | 25 | Collaboration and cloud | Sharing, sync, co-editing | — | ⏸ | not important now |
-| 26 | Platforms and distribution | OS support, installer, updates, licensing | all | 🟡 bundle size only | — |
-| 27 | Business | Price, tiers, trial, upgrade path, community | all | ❌ | — |
 
 ## Order
 
 Owner priorities: income > reach. Blocks run one at a time; each ends in a dossier table.
+Out of scope (owner, 2026-10-12): web research on business, onboarding and distribution; measure, don't research.
 
 | Block | Areas | How | Owner time |
 |---|---|---|---|
@@ -68,10 +66,19 @@ Owner priorities: income > reach. Blocks run one at a time; each ends in a dossi
 | D | 9 video, 10 export | TouchDesigner + Blender scenes vs Infinite render; fps, frame times, export speed, codec quality, AV sync | none (TD Python, Blender CLI) |
 | E | 20 projects, 22 library | Save/load timing, file formats, autosave; Infinite library vs competitors' presets/templates | none |
 | F | 12 Final Cut, 18 workflow, 19 visual design | `ui_map` on Final Cut, task step counts, screenshot metrics (contrast, density) | short |
-| G | 23, 26, 27 | Public pages and docs | none |
 
 ## Results so far
 
 - Synth probe, effects sweeps, capability map, UI map: see section 8 of `README.md` and `~/re-output/`.
 - App bench 2026-10-12 (idle): Logic 2.8 % CPU / 224 MB; Live 41 % / 819 MB; Infinite 12.7 % / 220–227 MB,
   window in 4.4 s cold, 0.7 s warm; Bitwig 3.7 % / 1268 MB (window detection missed it: Java child process).
+- Startup/idle, final: TouchDesigner window 10.9 s cold / 3.0 s warm, 49.7 % idle CPU, 1400 MB. Bitwig rerun pending
+  (window detection fixed: its window belongs to the `--launch` child process).
+- Host audit 2026-10-12 (`host_audit.py`, 84 AU + 83 VST3): 163 clean. Crash in both formats: RC-20 Retro Color,
+  ShaperBox 3 (auval fails both too; Live's scan DB marks the same two failed). AU-only silence: Drumazon 2 (only
+  AU/VST3 asymmetry, host-bug candidate). Default-patch quirks: Phase Plant silent, Twin 2 DC, Vital clips.
+  AU load median 0.19 s; VST3 0.67 s, mostly a full rescan: headless never seeds the VST3 path cache from the index.
+- Formats: Infinite AU + VST3; Live AU + VST3 + VST2; Bitwig VST3 + VST2 + CLAP (+ Intel plugin host); Logic AU only.
+  Installed here: 42 VST2, 23 CLAP Infinite cannot see.
+- Isolation: Bitwig runs plugins in a separate host process; Live in-process (like Infinite); Logic uses macOS's AU
+  hosting service, which any host can request (`loadOutOfProcess` at AU instantiation).
