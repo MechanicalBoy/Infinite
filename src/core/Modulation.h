@@ -190,6 +190,36 @@ public:
       const double a = std::exp(-dt / tau), m = (x1 - x0) / dt;
       return x1 - m * tau + (y0 - x0 + m * tau) * a;
    }
+   // One step of a damped spring (natural frequency w rad/s, damping ratio
+   // z) chasing an input that moves in a straight line from x0 to x1 over
+   // dt, from position y and velocity v. Closed form for every damping, so
+   // exact for any dt: the spring sits 2*z*m/w behind a ramp of slope m and
+   // the error from that moving rest point decays as the free spring would.
+   static void SpringStep(double& y, double& v, double x0, double x1, double dt, double w, double z)
+   {
+      const double m = (x1 - x0) / dt;
+      const double lag = 2.0 * z * m / w;
+      const double e0 = y - (x0 - lag), v0 = v - m;
+      const double a = z * w, k = w * w * (1.0 - z * z);
+      double c = 1.0, s = dt; // cos or cosh of wd*dt, and sin or sinh of it over wd
+      if (k > 0.0)
+      {
+         const double wd = std::sqrt(k);
+         c = std::cos(wd * dt);
+         s = std::sin(wd * dt) / wd;
+      }
+      else if (k < 0.0)
+      {
+         const double wd = std::sqrt(-k);
+         c = std::cosh(wd * dt);
+         s = std::sinh(wd * dt) / wd;
+      }
+      const double ex = std::exp(-a * dt);
+      const double e1 = ex * (e0 * c + (v0 + a * e0) * s);
+      const double v1 = ex * (v0 * c - (w * w * e0 + a * v0) * s);
+      y = x1 - lag + e1;
+      v = v1 + m;
+   }
    // Enables or disables an existing binding in place, leaving everything
    // else about it untouched. No-op if nothing is bound there, mirroring
    // SetRange().

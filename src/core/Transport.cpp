@@ -50,6 +50,17 @@ void Transport::AdvanceEngineClock(int numFrames, double sampleRate)
    mBlockSeq.fetch_add(1, std::memory_order_acq_rel); // even: consistent
 }
 
+double Transport::FreeSeconds() const
+{
+   if (mOfflineActive.load(std::memory_order_relaxed))
+      return mOfflineVideoSeconds.load(std::memory_order_relaxed);
+   const double sr = mAudioSampleRate.load(std::memory_order_relaxed);
+   if (sr > 0.0)
+      return mEngineFrameSeconds >= 0.0 ? mEngineFrameSeconds
+                                        : (double)mEngineSamples.load(std::memory_order_relaxed) / sr;
+   return sWallClock.load(std::memory_order_relaxed)();
+}
+
 void Transport::BeginFrameClock()
 {
    tFrameLatched = false;

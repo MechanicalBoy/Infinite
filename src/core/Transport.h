@@ -99,6 +99,11 @@ public:
    double EngineBlockStartSeconds() const { return mEngineBlockStart.load(std::memory_order_relaxed); }
    double EngineFrameSeconds() const { return mEngineFrameSeconds; }
    double LastBlockSeconds() const { return mLastBlockSeconds.load(std::memory_order_relaxed); }
+   // Seconds that only move forward at playing speed, whatever the
+   // transport does (stop, seek, loop): free-running modulators step by
+   // this. The frame's engine time live, video time offline, the wall
+   // clock with no audio engine. Main thread.
+   double FreeSeconds() const;
    // Test hook: replaces the steady wall clock (seconds) both threads read.
    static void SetWallClockForTest(double (*now)());
 

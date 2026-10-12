@@ -198,6 +198,13 @@ public:
    // none of its settings.
    virtual void VisitParams(ParamVisitor& /*visitor*/) {}
 
+   // Called on a node spawned from a saved patch, just before its saved
+   // params are applied. A node sets here any param whose ABSENCE from a
+   // patch means "saved before this existed" (e.g. FilterNode's Linear
+   // light goes off), so old patches keep their look while a node made
+   // fresh from the picker gets the new default.
+   virtual void BeforeLoadParams() {}
+
    // Address of the pointer field backing geometry input `slot`, or nullptr if
    // this node has no geometry input there. Lets connect/disconnect/rebuild be
    // generic instead of a per-class dynamic_cast chain: a caller that wants to
