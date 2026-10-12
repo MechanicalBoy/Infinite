@@ -701,6 +701,10 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       return RunSyphonPatchTest();
    if (getenv("INFINITE_PATCHLAYOUTTEST") != nullptr)
       return RunPatchLayoutTest();
+   if (getenv("INFINITE_PATCHOPENERTEST") != nullptr)
+      return RunPatchOpenerTest();
+   if (getenv("INFINITE_SELFUPDATETEST") != nullptr)
+      return RunSelfUpdateTest();
 
 #if defined(__linux__)
    if (getenv("INFINITE_CAMERACONVTEST") != nullptr)
@@ -1311,7 +1315,10 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // for the two tests that deliberately exercise this function directly
    // against their own redirected files instead.
    if (!IsHeadlessProcess())   // also screenshot runs (IMAGERESYNTH_SCREENSHOT), which have no EXITAFTER
+   {
       CheckAutosaveRecovery();
+      CheckPatchOpener();
+   }
    else
       HeadTracker::Disable();
 

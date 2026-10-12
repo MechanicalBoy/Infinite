@@ -22,6 +22,10 @@
 #include <winhttp.h>
 #include <psapi.h>
 #pragma comment(lib, "psapi.lib")
+#include <shlwapi.h>
+#pragma comment(lib, "shlwapi.lib")
+#include <winver.h>   // WIN32_LEAN_AND_MEAN leaves out the file-version API
+#pragma comment(lib, "version.lib")
 #include <wrl/client.h>
 #include <dxgi.h>
 // WaitForDisplayRefresh's CreateDXGIFactory1. Pulled in here, not only in
@@ -980,6 +984,214 @@ namespace Platform
       // the file itself so a reveal can never execute the export.
       const std::wstring args = L"/select,\"" + widePath + L"\"";
       ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+   }
+
+   // ---- patch opener --------------------------------------------------------
+   // Only .infinite: .inf is Windows' own driver-setup type, and claiming it would break right-click > Install.
+
+   static std::wstring FileNameOf(const std::wstring& path)
+   {
+      const size_t slash = path.find_last_of(L"\\/");
+      return slash == std::wstring::npos ? path : path.substr(slash + 1);
+   }
+
+   static std::string ExeVersion(const std::wstring& exe)
+   {
+      DWORD handle = 0;
+      const DWORD size = GetFileVersionInfoSizeW(exe.c_str(), &handle);
+      if (size == 0)
+         return {};
+      std::vector<unsigned char> block(size);
+      if (!GetFileVersionInfoW(exe.c_str(), 0, size, block.data()))
+         return {};
+      VS_FIXEDFILEINFO* info = nullptr;
+      UINT len = 0;
+      if (!VerQueryValueW(block.data(), L"\\", (void**)&info, &len) || info == nullptr)
+         return {};
+      return std::to_string(HIWORD(info->dwFileVersionMS)) + "." + std::to_string(LOWORD(info->dwFileVersionMS)) + "." +
+             std::to_string(HIWORD(info->dwFileVersionLS));
+   }
+
+   bool QueryPatchOpener(PatchOpener& out)
+   {
+      out = PatchOpener();
+      const std::wstring self = WinCommon::Utf8ToWide(ExecutablePath());
+      if (self.empty())
+         return false;
+      out.self = WinCommon::WideToUtf8(self);
+      // Run straight out of a zip, Explorer extracts to %TEMP% and deletes it again - not a place to register.
+      out.selfTemporary = StrStrIW(self.c_str(), L"\\AppData\\Local\\Temp\\") != nullptr;
+      wchar_t exe[MAX_PATH * 2] = {};
+      DWORD len = (DWORD)(sizeof(exe) / sizeof(exe[0]));
+      if (FAILED(AssocQueryStringW(ASSOCF_INIT_IGNOREUNKNOWN, ASSOCSTR_EXECUTABLE, L".infinite", L"open", exe, &len)))
+         return true;   // nothing registered
+      const std::wstring opener(exe);
+      out.opener = WinCommon::WideToUtf8(opener);
+      out.isSelf = _wcsicmp(opener.c_str(), self.c_str()) == 0;
+      out.otherApp = _wcsicmp(FileNameOf(opener).c_str(), FileNameOf(self).c_str()) != 0;
+      out.version = ExeVersion(opener);
+      return true;
+   }
+
+   static bool SetUserKey(const std::wstring& subKey, const std::wstring& value)
+   {
+      HKEY key = nullptr;
+      if (RegCreateKeyExW(HKEY_CURRENT_USER, (L"Software\\Classes\\" + subKey).c_str(), 0, nullptr, 0, KEY_SET_VALUE,
+                          nullptr, &key, nullptr) != ERROR_SUCCESS)
+         return false;
+      const LONG r = RegSetValueExW(key, nullptr, 0, REG_SZ, (const BYTE*)value.c_str(),
+                                    (DWORD)((value.size() + 1) * sizeof(wchar_t)));
+      RegCloseKey(key);
+      return r == ERROR_SUCCESS;
+   }
+
+   bool MakeThisCopyPatchOpener(const PatchOpener& current, std::string& outError)
+   {
+      outError.clear();
+      if (current.self.empty() || current.selfTemporary)
+      {
+         outError = "This copy is running from inside a zip. Extract it to a folder first.";
+         return false;
+      }
+      // Per user, no admin prompt: HKCU\Software\Classes overrides HKLM for this account only.
+      const std::wstring exe = WinCommon::Utf8ToWide(current.self);
+      const bool ok = SetUserKey(L".infinite", L"Infinite.Patch") && SetUserKey(L"Infinite.Patch", L"Infinite patch") &&
+                      SetUserKey(L"Infinite.Patch\\DefaultIcon", L"\"" + exe + L"\",0") &&
+                      SetUserKey(L"Infinite.Patch\\shell\\open\\command", L"\"" + exe + L"\" \"%1\"");
+      SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+      if (!ok)
+      {
+         outError = "Windows refused to write the file type for this account.";
+         return false;
+      }
+      PatchOpener after;
+      if (!QueryPatchOpener(after) || !after.isSelf)
+      {
+         // UserChoice (an "Always use this app" pick) is hash-protected and outranks the ProgId on purpose.
+         outError = "Windows keeps your own choice for .infinite files. Right-click a patch > Open with > "
+                    "Choose another app > this Infinite.exe > Always.";
+         return false;
+      }
+      return true;
+   }
+
+   // ---- in-place update -----------------------------------------------------
+
+   static std::wstring sStagedUpdate;   // unpacked folder holding the new Infinite.exe, set by PrepareSelfUpdate
+
+   static std::wstring ExeDir()
+   {
+      const std::wstring self = WinCommon::Utf8ToWide(ExecutablePath());
+      const size_t slash = self.find_last_of(L"\\/");
+      return slash == std::wstring::npos ? std::wstring() : self.substr(0, slash);
+   }
+
+   bool CanSelfUpdate(std::string& whyNot)
+   {
+      whyNot.clear();
+      const std::wstring dir = ExeDir();
+      if (dir.empty())
+         whyNot = "Could not find where Infinite is installed.";
+      else if (StrStrIW(dir.c_str(), L"\\AppData\\Local\\Temp\\") != nullptr)
+         whyNot = "This copy is running from inside a zip. Extract it to a folder first.";
+      else
+      {
+         // Write access is the only reliable test (ACLs, Program Files, OneDrive): create and delete a probe file.
+         const std::wstring probe = dir + L"\\.infinite-write-probe";
+         HANDLE h = CreateFileW(probe.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                                FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+         if (h == INVALID_HANDLE_VALUE)
+            whyNot = "This account can't write to the folder Infinite is in.";
+         else
+            CloseHandle(h);
+      }
+      return whyNot.empty();
+   }
+
+   bool PrepareSelfUpdate(const std::string& payload, const std::string& version, std::string& outError)
+   {
+      outError.clear();
+      sStagedUpdate.clear();
+      if (!CanSelfUpdate(outError))
+         return false;
+      const std::wstring dir = WinCommon::Utf8ToWide(payload);
+      const std::string got = ExeVersion(dir + L"\\Infinite.exe");
+      if (got.empty())
+      {
+         outError = "The download has no Infinite.exe.";
+         return false;
+      }
+      if (got != version)
+      {
+         outError = "The download is not Infinite " + version + ".";
+         return false;
+      }
+      sStagedUpdate = dir;
+      return true;
+   }
+
+   static std::wstring Base64Utf16(const std::wstring& text)
+   {
+      static const char* abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+      const unsigned char* b = reinterpret_cast<const unsigned char*>(text.data());
+      const size_t n = text.size() * sizeof(wchar_t);
+      std::wstring out;
+      for (size_t i = 0; i < n; i += 3)
+      {
+         const unsigned v = (unsigned)b[i] << 16 | (i + 1 < n ? (unsigned)b[i + 1] << 8 : 0u) | (i + 2 < n ? b[i + 2] : 0u);
+         out += (wchar_t)abc[(v >> 18) & 63];
+         out += (wchar_t)abc[(v >> 12) & 63];
+         out += i + 1 < n ? (wchar_t)abc[(v >> 6) & 63] : L'=';
+         out += i + 2 < n ? (wchar_t)abc[v & 63] : L'=';
+      }
+      return out;
+   }
+
+   static std::wstring PsQuote(const std::wstring& s)
+   {
+      std::wstring out = L"'";
+      for (wchar_t c : s)
+         out += (c == L'\'') ? std::wstring(L"''") : std::wstring(1, c);
+      return out + L"'";
+   }
+
+   bool LaunchSelfUpdateHelper(bool relaunch, std::string& outError)
+   {
+      outError.clear();
+      if (sStagedUpdate.empty())
+      {
+         outError = "No update is ready.";
+         return false;
+      }
+      const std::wstring dst = ExeDir();
+      // Waits for this process, keeps a copy of the current folder, mirrors the new files over it with robocopy
+      // (retries while antivirus or Explorer still holds a DLL), puts the old files back if that fails, then
+      // relaunches. -EncodedCommand sidesteps every quoting rule between CreateProcess and PowerShell.
+      const std::wstring script =
+         L"$p=" + std::to_wstring(GetCurrentProcessId()) + L"; $src=" + PsQuote(sStagedUpdate) + L"; $dst=" +
+         PsQuote(dst) + L"; $old=" + PsQuote(dst + L".old") + L"; $exe=" + PsQuote(dst + L"\\Infinite.exe") + L"\n"
+         L"Wait-Process -Id $p -ErrorAction SilentlyContinue\n"
+         L"robocopy $dst $old /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null\n"
+         L"$backed = $LASTEXITCODE -lt 8\n"
+         L"robocopy $src $dst /E /R:20 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null\n"
+         L"if ($LASTEXITCODE -ge 8) { if ($backed) { robocopy $old $dst /E /R:20 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null } }\n"
+         L"else { Remove-Item -LiteralPath $src -Recurse -Force -ErrorAction SilentlyContinue }\n"
+         L"Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue\n" +
+         std::wstring(relaunch ? L"Start-Process -FilePath $exe\n" : L"");
+      std::wstring cmd = L"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden "
+                         L"-EncodedCommand " + Base64Utf16(script);
+      STARTUPINFOW si = {};
+      si.cb = sizeof(si);
+      PROCESS_INFORMATION pi = {};
+      if (!CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+                          nullptr, nullptr, &si, &pi))
+      {
+         outError = "Could not start the update helper.";
+         return false;
+      }
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+      return true;
    }
 
    bool HttpGet(const std::string& url, const std::string& userAgent,

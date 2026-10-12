@@ -1328,6 +1328,40 @@ namespace Platform
    // executes it, and a path that does not exist is dropped.
    void RevealInFileManager(const std::string& path);
 
+   // Which app double-clicking a patch launches, against this running copy. Several copies of Infinite on one
+   // machine (an old download, a build folder) share one identity, and the OS picks among them by version number
+   // or at random, so a patch can open in an old copy where fixed bugs look unfixed. Asked once at launch.
+   struct PatchOpener
+   {
+      std::string self;            // this copy: the .app bundle (macOS), Infinite.exe (Windows), the AppImage (Linux)
+      std::string opener;          // what double-click launches; empty when nothing is registered
+      std::string version;         // the opener's version when it can be read
+      bool isSelf = false;         // opener is this copy
+      bool otherApp = false;       // opener is not Infinite at all - the user chose it, never offered
+      bool selfTemporary = false;  // this copy runs from a disk image / translocation / AppImage mount - never offered
+   };
+   // False when the OS could not be asked; `out` is then not meaningful.
+   bool QueryPatchOpener(PatchOpener& out);
+   // Makes this copy the patch opener, only ever on the user's click. macOS: unregisters `current.opener` from
+   // Launch Services and registers this bundle (the default is kept per bundle id, so a path cannot be chosen).
+   // Windows: per-user HKCU ProgId for .infinite (never .inf - Windows' own driver-setup type). Linux: a ~/.local
+   // desktop entry + MIME type for this AppImage, set as the xdg-mime default. Re-queries afterwards and fails with a readable reason if the OS kept
+   // the other copy (Windows keeps a user's own "Open with" choice).
+   bool MakeThisCopyPatchOpener(const PatchOpener& current, std::string& outError);
+
+   // In-place update, the way Sparkle and Squirrel do it: the new version replaces this copy where it is, so old
+   // copies never pile up (each manual download used to leave one behind, and the OS opened patches with whichever).
+   // False + a readable reason when this copy cannot be replaced: a disk image, a translocated or temp location, a
+   // folder this account cannot write. The caller then falls back to opening the download page.
+   bool CanSelfUpdate(std::string& whyNot);
+   // Checks the verified download and stages it beside this copy without touching this copy. `payload` is the DMG
+   // (macOS), the folder unpacked from the zip that holds Infinite.exe (Windows), or the AppImage (Linux).
+   // `version` is the release's ("0.5.1", no "v"); a payload carrying any other version is refused.
+   bool PrepareSelfUpdate(const std::string& payload, const std::string& version, std::string& outError);
+   // Starts a helper that waits for this process to exit, swaps the staged copy in (restoring this one if the swap
+   // fails) and, when `relaunch`, starts the new copy. The caller then quits normally.
+   bool LaunchSelfUpdateHelper(bool relaunch, std::string& outError);
+
    // Blocking HTTPS GET. Call from a worker thread, never the render or audio
    // thread. Returns false on any transport, TLS, or non-2xx failure and fills
    // outError; outBody is only valid when it returns true. Bounded by

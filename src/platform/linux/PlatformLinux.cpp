@@ -7,9 +7,11 @@
 
 #include <chrono>
 #include <thread>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -564,6 +566,274 @@ namespace Platform
          int status = 0;
          waitpid(pid, &status, WNOHANG);
       }
+   }
+
+   // ---- patch opener --------------------------------------------------------
+   // The AppImage carries infinite.desktop + the MIME type inside itself, but nothing installs them, so out of the
+   // box double-click opens nothing (or a copy an AppImage integrator registered earlier).
+
+   static const char* kPatchMime = "application/x-infinite-patch";
+   static const char* kOpenerDesktop = "infinite-patch.desktop";
+
+   static std::string DataHome()
+   {
+      const char* x = std::getenv("XDG_DATA_HOME");
+      return (x != nullptr && x[0] == '/') ? std::string(x) : AppPaths::HomeDir() + "/.local/share";
+   }
+
+   static bool RunHostTool(std::vector<std::string> args, std::string* out = nullptr)
+   {
+      ScopedHostEnvironment hostEnv;
+      int pipeFd[2] = { -1, -1 };
+      if (out != nullptr && pipe(pipeFd) != 0)
+         return false;
+      posix_spawn_file_actions_t actions;
+      posix_spawn_file_actions_init(&actions);
+      if (out != nullptr)
+      {
+         posix_spawn_file_actions_adddup2(&actions, pipeFd[1], STDOUT_FILENO);
+         posix_spawn_file_actions_addclose(&actions, pipeFd[0]);
+      }
+      std::vector<char*> argv;
+      for (std::string& a : args)
+         argv.push_back(const_cast<char*>(a.c_str()));
+      argv.push_back(nullptr);
+      pid_t pid;
+      const bool spawned = posix_spawnp(&pid, argv[0], &actions, nullptr, argv.data(), environ) == 0;
+      posix_spawn_file_actions_destroy(&actions);
+      if (out != nullptr)
+      {
+         close(pipeFd[1]);
+         char buf[512];
+         ssize_t n;
+         while (spawned && (n = read(pipeFd[0], buf, sizeof(buf))) > 0)
+            out->append(buf, (size_t)n);
+         close(pipeFd[0]);
+      }
+      int status = 0;
+      return spawned && waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+   }
+
+   // First Exec= token of a desktop entry, quotes and the %-codes dropped.
+   static std::string DesktopExec(const std::string& desktopId)
+   {
+      std::vector<std::string> dirs { DataHome() };
+      const char* sys = std::getenv("XDG_DATA_DIRS");
+      std::string rest = (sys != nullptr && sys[0] != '\0') ? sys : "/usr/local/share:/usr/share";
+      for (size_t start = 0; start <= rest.size();)
+      {
+         const size_t colon = rest.find(':', start);
+         dirs.push_back(rest.substr(start, colon == std::string::npos ? std::string::npos : colon - start));
+         if (colon == std::string::npos)
+            break;
+         start = colon + 1;
+      }
+      for (const std::string& dir : dirs)
+      {
+         std::ifstream f(dir + "/applications/" + desktopId);
+         std::string line;
+         while (f.good() && std::getline(f, line))
+         {
+            if (line.rfind("Exec=", 0) != 0)
+               continue;
+            // Two escape levels, undone in order: the file format's (\\ is one backslash), then Exec's quoting.
+            std::string v, token;
+            for (size_t i = 5; i < line.size(); ++i)
+               v += (line[i] == '\\' && i + 1 < line.size() && line[i + 1] == '\\') ? line[i++] : line[i];
+            bool quoted = false;
+            for (size_t i = 0; i < v.size(); ++i)
+            {
+               const char c = v[i];
+               if (c == '"') { quoted = !quoted; continue; }
+               if (c == '\\' && i + 1 < v.size()) { token += v[++i]; continue; }
+               if (c == ' ' && !quoted) { if (!token.empty()) break; continue; }
+               token += c;
+            }
+            return token;
+         }
+      }
+      return {};
+   }
+
+   bool QueryPatchOpener(PatchOpener& out)
+   {
+      out = PatchOpener();
+      const char* appImage = std::getenv("APPIMAGE");
+      out.self = (appImage != nullptr && appImage[0] == '/') ? std::string(appImage) : ExecutablePath();
+      if (out.self.empty())
+         return false;
+      // The AppImage's own mount point vanishes when it exits; only $APPIMAGE (the file itself) is a stable path.
+      out.selfTemporary = out.self.rfind("/tmp/.mount_", 0) == 0;
+      std::string id;
+      if (!RunHostTool({ "xdg-mime", "query", "default", kPatchMime }, &id))
+         return false;
+      while (!id.empty() && (id.back() == '\n' || id.back() == ' '))
+         id.pop_back();
+      if (id.empty())
+         return true;   // nothing registered
+      out.opener = DesktopExec(id);
+      if (out.opener.empty())
+         out.opener = id;
+      const std::string name = out.opener.substr(out.opener.find_last_of('/') + 1);
+      std::string lower = name + " " + id;
+      std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+      out.isSelf = out.opener == out.self;
+      out.otherApp = lower.find("infinite") == std::string::npos;
+      // AppImages are named Infinite-0.5.0-x86_64.AppImage; nothing else carries a version to read.
+      for (size_t i = name.find('-'); i != std::string::npos; i = name.find('-', i + 1))
+         if (i + 1 < name.size() && std::isdigit((unsigned char)name[i + 1]))
+         {
+            const size_t end = name.find_first_not_of("0123456789.", i + 1);
+            out.version = name.substr(i + 1, end == std::string::npos ? std::string::npos : end - (i + 1));
+            break;
+         }
+      return true;
+   }
+
+   bool MakeThisCopyPatchOpener(const PatchOpener& current, std::string& outError)
+   {
+      outError.clear();
+      if (current.self.empty() || current.selfTemporary)
+      {
+         outError = "This copy has no stable path. Run the .AppImage file itself.";
+         return false;
+      }
+      const std::string data = DataHome();
+      std::error_code ec;
+      std::filesystem::create_directories(data + "/mime/packages", ec);
+      std::filesystem::create_directories(data + "/applications", ec);
+      std::ofstream(data + "/mime/packages/infinite.xml")
+         << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">\n"
+            "  <mime-type type=\"" << kPatchMime << "\">\n"
+            "    <comment>Infinite patch</comment>\n"
+            "    <glob pattern=\"*.infinite\"/>\n"
+            "    <glob pattern=\"*.inf\"/>\n"
+            "  </mime-type>\n"
+            "</mime-info>\n";
+      // Exec quoting: inside "...", escape " ` $ \ with a backslash, and the file format doubles every backslash.
+      std::string exec;
+      for (char c : current.self)
+      {
+         if (c == '"' || c == '`' || c == '$' || c == '\\')
+            exec += "\\\\";
+         exec += c;
+      }
+      {
+         std::ofstream f(data + "/applications/" + kOpenerDesktop);
+         f << "[Desktop Entry]\nType=Application\nName=Infinite\nComment=Opens Infinite patches\n"
+           << "Exec=\"" << exec << "\" %f\nIcon=infinite\nTerminal=false\nNoDisplay=true\n"
+           << "MimeType=" << kPatchMime << ";\n";
+         if (!f.good())
+         {
+            outError = "Could not write " + data + "/applications/" + kOpenerDesktop;
+            return false;
+         }
+      }
+      RunHostTool({ "update-mime-database", data + "/mime" });          // optional: absent on minimal systems
+      RunHostTool({ "update-desktop-database", data + "/applications" });
+      if (!RunHostTool({ "xdg-mime", "default", kOpenerDesktop, kPatchMime }))
+      {
+         outError = "xdg-mime is missing or refused (install xdg-utils).";
+         return false;
+      }
+      PatchOpener after;
+      if (!QueryPatchOpener(after) || !after.isSelf)
+      {
+         outError = "The desktop still opens patches with " + (after.opener.empty() ? std::string("nothing") : after.opener) + ".";
+         return false;
+      }
+      return true;
+   }
+
+   // ---- in-place update -----------------------------------------------------
+
+   static std::string sStagedUpdate;   // <dir>/.Infinite-update.AppImage, set by PrepareSelfUpdate
+
+   static std::string SelfAppImage()
+   {
+      const char* a = std::getenv("APPIMAGE");
+      return (a != nullptr && a[0] == '/') ? std::string(a) : std::string();
+   }
+
+   bool CanSelfUpdate(std::string& whyNot)
+   {
+      whyNot.clear();
+      const std::string self = SelfAppImage();
+      if (self.empty())
+         whyNot = "Only the AppImage updates itself.";
+      else if (access(self.substr(0, self.find_last_of('/')).c_str(), W_OK) != 0 || access(self.c_str(), W_OK) != 0)
+         whyNot = "This account can't write to the folder Infinite is in.";
+      return whyNot.empty();
+   }
+
+   bool PrepareSelfUpdate(const std::string& payload, const std::string& version, std::string& outError)
+   {
+      (void)version;   // an AppImage carries no readable version; the caller has already matched the release's SHA-256
+      outError.clear();
+      sStagedUpdate.clear();
+      if (!CanSelfUpdate(outError))
+         return false;
+      // ELF with the AppImage type-2 magic ("AI\2" at offset 8): refuses an HTML error page or a truncated file.
+      unsigned char head[11] = {};
+      {
+         std::ifstream f(payload, std::ios::binary);
+         f.read(reinterpret_cast<char*>(head), sizeof(head));
+         if (!f || std::memcmp(head, "\x7f" "ELF", 4) != 0 || std::memcmp(head + 8, "AI\x02", 3) != 0)
+         {
+            outError = "The download is not an AppImage.";
+            return false;
+         }
+      }
+      const std::string self = SelfAppImage();
+      const std::string staged = self.substr(0, self.find_last_of('/')) + "/.Infinite-update.AppImage";
+      std::error_code ec;
+      std::filesystem::remove(staged, ec);
+      // Copied (not moved) so it lands on this copy's own filesystem and the final swap is one rename.
+      if (!std::filesystem::copy_file(payload, staged, ec) || chmod(staged.c_str(), 0755) != 0)
+      {
+         std::filesystem::remove(staged, ec);
+         outError = "Could not copy the new version next to this one.";
+         return false;
+      }
+      sStagedUpdate = staged;
+      return true;
+   }
+
+   bool LaunchSelfUpdateHelper(bool relaunch, std::string& outError)
+   {
+      outError.clear();
+      if (sStagedUpdate.empty())
+      {
+         outError = "No update is ready.";
+         return false;
+      }
+      // Waits for this process, then one rename: the running AppImage's inode stays alive until it exits, and a
+      // failed rename leaves this copy untouched. Detached (own session) so it outlives us.
+      std::vector<std::string> args { "/bin/sh", "-c",
+         "pid=$1; self=$2; staged=$3; relaunch=$4\n"
+         "while kill -0 \"$pid\" 2>/dev/null; do sleep 0.2; done\n"
+         "mv -f \"$staged\" \"$self\" || exit 1\n"
+         "[ \"$relaunch\" = 1 ] && \"$self\" >/dev/null 2>&1 &\n"
+         "exit 0\n",
+         "infinite-update", std::to_string((int)getpid()), SelfAppImage(), sStagedUpdate, relaunch ? "1" : "0" };
+      std::vector<char*> argv;
+      for (std::string& a : args)
+         argv.push_back(const_cast<char*>(a.c_str()));
+      argv.push_back(nullptr);
+      ScopedHostEnvironment hostEnv;   // the new copy must not inherit this AppImage's mount paths
+      posix_spawnattr_t attr;
+      posix_spawnattr_init(&attr);
+      posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSID);
+      pid_t pid;
+      const bool spawned = posix_spawn(&pid, argv[0], nullptr, &attr, argv.data(), environ) == 0;
+      posix_spawnattr_destroy(&attr);
+      if (!spawned)
+      {
+         outError = "Could not start the update helper.";
+         return false;
+      }
+      return true;
    }
 
    // libcurl C API subset needed for HttpGet
