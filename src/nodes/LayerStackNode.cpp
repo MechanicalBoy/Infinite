@@ -166,7 +166,10 @@ void LayerStackNode::CookIfNeeded(int frameId)
          glUniform1i(glGetUniformLocation(mProgram, kTexNames[i]), i);
       }
       glUniform1iv(glGetUniformLocation(mProgram, "uActive"), kSlots, active);
-      glUniform1iv(glGetUniformLocation(mProgram, "uModes"), kSlots, modes);
+      int eff[kSlots];
+      for (int i = 0; i < kSlots; i++)
+         eff[i] = blendFix ? modes[i] : BlendModes::LegacyMode(modes[i]);
+      glUniform1iv(glGetUniformLocation(mProgram, "uModes"), kSlots, eff);
       glUniform1fv(glGetUniformLocation(mProgram, "uOpacity"), kSlots, opacities);
       glUniform2fv(glGetUniformLocation(mProgram, "uUvScale"), kSlots, uvScale);
    });

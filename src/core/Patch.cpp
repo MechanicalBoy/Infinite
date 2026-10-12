@@ -1,4 +1,5 @@
 #include "Patch.h"
+#include "BlendModes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -259,6 +260,9 @@ bool Write(const std::string& path, const Data& data, std::string& outError)
 static void WriteBody(std::ostream& file, const Data& data)
 {
    file << kMagic << " " << kVersion << "\n";
+   // Blend modes 11..13 are the corrected Overlay/Soft Light/Hard Light; a file without this
+   // line predates the fix and its clips are mapped to the (old) modes 32..34 on load.
+   file << "blendfix 1\n";
    for (const NodeRecord& node : data.nodes)
    {
       const float px = (std::isfinite(node.x) && std::abs(node.x) <= 1e6f && node.x > -2e9f) ? node.x : 0.0f;
@@ -571,6 +575,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
    };
    std::vector<LegacyClip> legacyClips;
    bool sawArrangeLine = false;
+   bool sawBlendFix = false;
 
    int lineNo = 1; // the header was line 1
    while (std::getline(file, line))
@@ -977,7 +982,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
             raw.erase(0, 1);
          s.name = UnescapeLine(raw);
          if (s.type != kStreamVideo && s.type != kStreamAudio) s.type = kStreamVideo;
-         if (s.blendMode < 0 || s.blendMode > 31) s.blendMode = 0;
+         if (s.blendMode < 0 || s.blendMode > 34) s.blendMode = 0;
          if (!std::isfinite(s.opacity)) s.opacity = 1.0f;
          s.opacity = std::clamp(s.opacity, 0.0f, 1.0f);
          if (!std::isfinite(s.gainDb)) s.gainDb = 0.0f;
@@ -1009,6 +1014,8 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
              std::isfinite(rowHeight))
             outData.streams[streamIdx].rowHeight = rowHeight;
       }
+      else if (tag == "blendfix")
+         sawBlendFix = true;
       else if (tag == "clipblend")
       {
          int streamIdx = -1, mode = 0;
@@ -1017,7 +1024,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
              clipId != 0)
             for (ClipRecord& c : outData.streams[streamIdx].clips)
                if (c.id == clipId)
-                  c.blendMode = (mode >= 0 && mode <= 31) ? mode : 0;
+                  c.blendMode = (mode >= 0 && mode <= 34) ? mode : 0;
       }
       else if (tag == "clipaudio")
       {
@@ -1359,6 +1366,13 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
    }
    std::stable_sort(outData.markers.begin(), outData.markers.end(),
                     [](const MarkerRecord& a, const MarkerRecord& b) { return a.posTick < b.posTick; });
+   if (!sawBlendFix)
+      for (StreamRecord& st : outData.streams)
+      {
+         st.blendMode = BlendModes::LegacyMode(st.blendMode);
+         for (ClipRecord& c : st.clips)
+            c.blendMode = BlendModes::LegacyMode(c.blendMode);
+      }
    if (sawArrangeLine)
    {
       ArrangeSettingsRecord& a = outData.arrangeSettings;
