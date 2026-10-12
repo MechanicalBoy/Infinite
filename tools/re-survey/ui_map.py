@@ -7,9 +7,9 @@ only copies attributes. The one thing it does to the app is launch it in the bac
 running and quit it again afterwards (it leaves an app it found running alone).
 
 Per app, the report gives: menu outline with shortcuts, shortcut collisions, the window tree's size and
-role mix, how much of the window is opaque to accessibility (custom-drawn UIs like Live or Bitwig expose a
-few big groups; native ones like Logic expose every control), and a depth-limited outline of named
-elements. Across apps: one table of the actions two or more apps name, with each app's shortcut.
+role mix, how much of the window is opaque to accessibility, and a depth-limited outline of named elements.
+Seen 2026-10: Logic and Live 12 expose their windows (Live 12 names most controls); TouchDesigner exposes
+its menus but no window; Bitwig exposes nothing (no menu bar, no window), so its row stays empty. Across apps: one table of the actions two or more apps name, with each app's shortcut.
 
 Usage:
   python3 tools/re-survey/ui_map.py run "Ableton Live 12 Suite" Logic Bitwig TouchDesigner [--out t.md] [--wait 90]

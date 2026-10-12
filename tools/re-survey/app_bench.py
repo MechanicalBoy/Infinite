@@ -10,7 +10,7 @@ Nothing is clicked or typed: an app showing a dialog at launch still idles behin
 Usage:
   python3 tools/re-survey/app_bench.py run Logic Bitwig "Ableton Live 12 Suite" TouchDesigner ~/Desktop/Infinite.app [--runs 3] [--idle 20] [--out t.md]
   python3 tools/re-survey/app_bench.py --self-test
-An app that is already running is refused (its numbers would not be a launch). Results JSON in
+An app that is already running is measured as it is (idle only, no launch time) and left open. Results JSON in
 ~/re-output/app-bench/<stamp>/. Quiet machine first: other renders or benches skew CPU.
 Exit: 0 ok, 1 an app failed / self-test failed, 2 usage error.
 """
@@ -80,24 +80,30 @@ def bundle_mb(app):
 def bench_app(name, runs, idle, log):
     app = ui_map.find_app(os.path.expanduser(name))
     label = os.path.basename(app)[:-4]
-    if ui_map.app_pid(app):
-        raise RuntimeError("already running; quit it first so the launch is measured")
     res = {"app": label, "bundle_mb": bundle_mb(app), "runs": []}
-    for i in range(runs):
-        pid, up = ui_map.launch_and_wait(app, 180, log)
-        up -= 8  # launch_and_wait settles 8 s after the window appears
+    running = ui_map.app_pid(app)
+    if running:
+        log("  %s already running: idle numbers only, no launch time, left open" % label)
+    for i in range(1 if running else runs):
+        if running:
+            pid, up = running, None
+        else:
+            pid, up = ui_map.launch_and_wait(app, 180, log)
+            up -= 8  # launch_and_wait settles 8 s after the window appears
         ss = []
         for _ in range(idle):
             ss.append(sample(app, pid))
             time.sleep(1)
-        ui_map.quit_app(app, pid, log)
-        if ui_map.app_pid(app):
-            raise RuntimeError("did not quit (a dialog?); stopped after run %d" % (i + 1))
+        if not running:
+            ui_map.quit_app(app, pid, log)
+            if ui_map.app_pid(app):
+                raise RuntimeError("did not quit (a dialog?); stopped after run %d" % (i + 1))
         cpu = [s["cpu"] for s in ss]
         res["runs"].append({"window_s": up, "cpu_mean": statistics.mean(cpu), "cpu_max": max(cpu),
                             "rss_mb": statistics.median(s["rss_mb"] for s in ss), "threads": max(s["threads"] for s in ss),
                             "procs": max(s["procs"] for s in ss), "names": ss[-1]["names"]})
-        log("  %s run %d: window %.1f s, idle %.1f %% CPU, %.0f MB" % (label, i + 1, up, res["runs"][-1]["cpu_mean"], res["runs"][-1]["rss_mb"]))
+        log("  %s run %d: window %s s, idle %.1f %% CPU, %.0f MB" % (label, i + 1, "-" if up is None else "%.1f" % up,
+                                                                   res["runs"][-1]["cpu_mean"], res["runs"][-1]["rss_mb"]))
         time.sleep(3)
     return res
 
@@ -110,7 +116,7 @@ def report(res):
             continue
         R = r["runs"]
         first, warm = R[0]["window_s"], [x["window_s"] for x in R[1:]]
-        rows.append((r["app"], "%.1f" % first, "%.1f" % statistics.median(warm) if warm else "-",
+        rows.append((r["app"], "-" if first is None else "%.1f" % first, "%.1f" % statistics.median(warm) if warm else "-",
                      "%.1f / %.0f" % (statistics.median(x["cpu_mean"] for x in R), max(x["cpu_max"] for x in R)),
                      "%.0f" % statistics.median(x["rss_mb"] for x in R), "%d" % max(x["threads"] for x in R),
                      "%d" % max(x["procs"] for x in R), "%.0f" % r["bundle_mb"]))

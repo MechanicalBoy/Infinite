@@ -29,8 +29,8 @@ Exit codes: 0 ok, 1 found a problem / self-test failed, 2 usage or tool error.
   The CPU column is the render-time slope, net of the dry rig; treat differences under ~1 ms/s as noise.
 - `synth_probe`: the default patch decides most columns (Diva's sits an octave down, Serum's and Vital's ignore
   velocity), so compare like with like or set the patch with `@settings`. Times have one-cycle resolution.
-- `ui_map`: needs the host trusted for Accessibility; custom-drawn UIs (Live, Bitwig, TouchDesigner) expose little
-  below the window, so their rows are mostly menus. It launches an app that is not running and quits it after.
+- `ui_map`: needs the host trusted for Accessibility. Logic and Live 12 expose their windows; TouchDesigner only its
+  menus; Bitwig nothing at all (use its Controller API docs via `capability_map` instead). It launches an app that is not running and quits it after.
 - `capability_map`: domains are keyword-sorted; counts are a shape, not a score. Pages are cached in ~/re-output.
 - `readers.py toe` needs TouchDesigner installed (it uses the bundled `toeexpand`); `blender` needs Blender.
 - Clean room: nothing here reads GPL/AGPL source. Blender is driven through its public `bpy` API only, never
