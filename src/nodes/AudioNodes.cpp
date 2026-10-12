@@ -97,6 +97,7 @@ public:
       mMailbox.PrepareToPlay(sampleRate);
       for (int s = 0; s < MixerNode::kMaxSlots; s++)
          mMailbox.SetImmediate(s, mGainDb[s].load(std::memory_order_relaxed));
+      mPanPrimed = false;
    }
 
    void ProcessBlock(const AudioBuffer* const* inputs, int numInputs, AudioBuffer& output) override
@@ -133,13 +134,33 @@ public:
          panR[s] *= (float)M_SQRT2;
       }
 
+      // Pan, mute and solo change the gain pair at block rate; ramping from
+      // last block's pair across this one turns a mute, solo or pan jump
+      // from a step into a 10 ms fade. Steady state is untouched.
+      if (!mPanPrimed)
+      {
+         for (int s = 0; s < MixerNode::kMaxSlots; s++)
+         {
+            mPrevPanL[s] = panL[s];
+            mPrevPanR[s] = panR[s];
+         }
+         mPanPrimed = true;
+      }
+      const float invFrames = 1.0f / (float)std::max(1, output.numFrames);
+
       float channelPeak[MixerNode::kMaxSlots] = {};
       float peak = 0.0f;
       for (int i = 0; i < output.numFrames; i++)
       {
          float linear[MixerNode::kMaxSlots];
+         float gL[MixerNode::kMaxSlots], gR[MixerNode::kMaxSlots];
+         const float t = (float)(i + 1) * invFrames;
          for (int s = 0; s < activeChannels; s++)
+         {
             linear[s] = DspMath::DbToLinear(mMailbox.SmoothedValue(s));
+            gL[s] = mPrevPanL[s] + (panL[s] - mPrevPanL[s]) * t;
+            gR[s] = mPrevPanR[s] + (panR[s] - mPrevPanR[s]) * t;
+         }
 
          for (int ch = 0; ch < output.numChannels; ch++)
          {
@@ -152,7 +173,7 @@ public:
                if (inputs[s] == nullptr)
                   continue;
                const float v = inputs[s]->channels[ch][i] * linear[s] *
-                               (law > 0.5f ? panR[s] : panL[s]);
+                               (law > 0.5f ? gR[s] : gL[s]);
                sum += v;
                channelPeak[s] = std::max(channelPeak[s], std::fabs(v));
             }
@@ -161,6 +182,11 @@ public:
          }
       }
 
+      for (int s = 0; s < MixerNode::kMaxSlots; s++)
+      {
+         mPrevPanL[s] = panL[s];
+         mPrevPanR[s] = panR[s];
+      }
       mMeter.Write(&peak, 1);
       for (int s = 0; s < MixerNode::kMaxSlots; s++)
          mChannelPeak[s].store(s < activeChannels ? channelPeak[s] : 0.0f, std::memory_order_relaxed);
@@ -186,6 +212,8 @@ public:
 private:
    ParamMailbox mMailbox;
    MeterRing mMeter;
+   float mPrevPanL[MixerNode::kMaxSlots] = {}, mPrevPanR[MixerNode::kMaxSlots] = {}; // audio thread only
+   bool mPanPrimed = false;
    std::atomic<int> mNumChannels { 8 };
    std::atomic<float> mGainDb[MixerNode::kMaxSlots] {};
    std::atomic<float> mPan[MixerNode::kMaxSlots] {};
