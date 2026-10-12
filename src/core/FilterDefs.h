@@ -74,6 +74,12 @@ struct FilterDef
    // filtering (exact: the data is linear and premultiplied) instead of
    // decoding and premultiplying every tap.
    bool convertFirst = false;
+
+   // Optional body for that convert pass (same preamble and uniforms), for a
+   // filter that does per-pixel work before it blurs: Bloom's bright-pass
+   // runs here once per pixel instead of once per tap. Empty = plain ImgTap.
+   // A filter without a Quality param converts whenever Linear light is on.
+   std::string convertBody;
 };
 
 const std::vector<FilterDef>& GetFilterDefs();

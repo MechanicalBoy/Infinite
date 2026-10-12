@@ -94,7 +94,9 @@ bool FilterNode::EnsureShader()
 
    if (mDef.convertFirst && !mDef.prePassBody.empty())
    {
-      std::string convSrc = Preamble() + "void main() { fragColor = ImgTap(vUv); }\n";
+      std::string convSrc = Preamble() + (mDef.convertBody.empty()
+                                             ? std::string("void main() { fragColor = ImgTap(vUv); }\n")
+                                             : mDef.convertBody);
       mConvProgram = GLUtil::CompileProgram(convSrc.c_str());
       if (mConvProgram == 0)
          return false;
@@ -220,8 +222,8 @@ void FilterNode::CookIfNeeded(int frameId)
       // way - a Pull or cook moved in between would overwrite it.
       const int w = mInput.Width();
       const int h = mInput.Height();
-      const bool convert = mConvProgram != 0 && mLinearParam >= 0 && mQualityParam >= 0 &&
-                           mParamValues[mLinearParam][0] >= 0.5f && mParamValues[mQualityParam][0] >= 0.5f;
+      const bool convert = mConvProgram != 0 && mLinearParam >= 0 && mParamValues[mLinearParam][0] >= 0.5f &&
+                           (mQualityParam < 0 || mParamValues[mQualityParam][0] >= 0.5f);
       unsigned int preSrc = srcTex;
       GLUtil::Fbo* mid = nullptr;
       if (convert)

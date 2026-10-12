@@ -599,6 +599,7 @@ const std::vector<FilterDef>& GetFilterDefs()
           F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)), LIN() }, 1,
         "uniform float uThreshold;\n"
         "uniform float uRadius;\n"
+        "uniform int uConverted;\n"
         "void main() {\n"
         // linear light: the threshold knob keeps its perceptual meaning and
         // luminance uses the Rec.709 weights that apply to linear RGB
@@ -606,13 +607,29 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   vec3 lw = uLinear == 1 ? vec3(0.2126, 0.7152, 0.0722) : vec3(0.299, 0.587, 0.114);\n"
         "   vec3 bloom = vec3(0.0); float total = 0.0;\n"
         "   for (int x = -5; x <= 5; x++) {\n"
-        "      vec3 s = ImgTap(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)).rgb;\n"
-        "      float lum = dot(s, lw);\n"
-        "      vec3 bright = max(s - vec3(thr), vec3(0.0)) * step(thr, lum);\n"
+        "      vec2 uv = vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0);\n"
+        "      vec3 bright;\n"
+        "      if (uConverted == 1) bright = texture(uSrc, uv).rgb;\n"
+        "      else {\n"
+        "         vec3 s = ImgTap(uv).rgb;\n"
+        "         bright = max(s - vec3(thr), vec3(0.0)) * step(thr, dot(s, lw));\n"
+        "      }\n"
         "      float w = exp(-float(x*x) / 12.0);\n"
         "      bloom += bright * w; total += w;\n"
         "   }\n"
         "   fragColor = vec4(bloom / max(total, 1e-4), 1.0);\n"
+        "}\n", true,
+        // Linear light: the bright-pass runs once per pixel into the float
+        // scratch, so the 11 strided taps above are plain fetches. Decoding
+        // per tap was the whole of linear light's +26% on Bloom. Identical at
+        // integer Radius (taps on texel centres); at fractional Radius the
+        // taps now interpolate bright light rather than encoded colour.
+        "uniform float uThreshold;\n"
+        "void main() {\n"
+        "   float thr = ImgDecode(vec3(uThreshold)).x;\n"
+        "   vec3 s = ImgTap(vUv).rgb;\n"
+        "   float lum = dot(s, vec3(0.2126, 0.7152, 0.0722));\n"
+        "   fragColor = vec4(max(s - vec3(thr), vec3(0.0)) * step(thr, lum), 1.0);\n"
         "}\n" },
 
       { "diffuseglow", "Effects",
