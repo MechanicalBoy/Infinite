@@ -1,5 +1,5 @@
 // Cook times overlay (View > Cook times). Each node gets its CPU cook time in ms; audio nodes show their share of the
-// audio callback instead. The slowest nodes get a heat tint. Off by default and saved in settings, not in patches.
+// audio callback instead. Nodes that cost a real share of their budget (the frame, or the audio block) get a heat tint. Off by default and saved in settings, not in patches.
 // While off nothing here runs and CookProbe / the audio thread do no timing.
 #include "app/AppShared.h"
 #include "audio/AudioEngine.h"
@@ -9,7 +9,10 @@ namespace app
 {
 namespace
 {
-   constexpr float kMinMs = 0.05f;   // below this a video node shows no tint
+   // Heat is absolute, never relative to the slowest node: relative heat painted the cheapest patch's slowest node red
+   // at 0.09 ms. Tint starts at 5% of the budget and is full at 50%.
+   constexpr float kFrameMs = 1000.0f / 60.0f;
+   constexpr float kHeatLo = 0.05f, kHeatHi = 0.5f;
    bool sApplied = false;
 
    AudioNode* AudioOf(INode* n)
@@ -38,7 +41,6 @@ void DrawCookOverlay()
    static std::vector<Row> rows;
    rows.clear();
    const float budget = std::max(0.001f, AudioEngine::Instance().BlockBudgetMs());
-   float maxVideo = kMinMs, maxAudio = 0.01f;
    for (const GraphNode& gn : gNodes)
    {
       if (gn.node == nullptr || gn.node->bypassed || dynamic_cast<GroupNode*>(gn.node.get()) != nullptr) continue;   // a group cooks nothing; its box is the size of its members
@@ -46,38 +48,39 @@ void DrawCookOverlay()
       {
          const float share = an->costMs.load(std::memory_order_relaxed) / budget;
          rows.push_back({ &gn, share, true });
-         maxAudio = std::max(maxAudio, share);
       }
       else
       {
          const float ms = CookProbe::Ms(gn.node.get());
          if (ms < 0.0f) continue;
          rows.push_back({ &gn, ms, false });
-         maxVideo = std::max(maxVideo, ms);
       }
    }
 
    ImDrawList* dl = ImGui::GetForegroundDrawList();
    const ImVec2 br(gGraphScreenTL.x + gGraphScreenSize.x, gGraphScreenTL.y + gGraphScreenSize.y);
    dl->PushClipRect(gGraphScreenTL, br, true);
-   const float z = ed::GetCurrentZoom();
+   // ed::GetCurrentZoom() is the node editor's InvScale (1 / zoom), so it must never scale a size: corners go through
+   // CanvasToScreen, and the on-screen scale is its inverse.
+   const float scale = 1.0f / std::max(0.001f, ed::GetCurrentZoom());
    const CategoryColors::UiTheme& t = CategoryColors::CurrentUiTheme();
    const ImU32 pillBg = ImGui::GetColorU32(ImVec4(t.panelBg.r, t.panelBg.g, t.panelBg.b, 0.92f));
    const ImU32 pillText = ImGui::GetColorU32(ImVec4(t.text.r, t.text.g, t.text.b, 1.0f));
    for (const Row& r : rows)
    {
-      const ImVec2 p = ed::CanvasToScreen(ed::GetNodePosition(r.gn->NodeId()));
-      const ImVec2 s = ed::GetNodeSize(r.gn->NodeId());
-      const ImVec2 p2(p.x + s.x * z, p.y + s.y * z);
+      const ImVec2 cp = ed::GetNodePosition(r.gn->NodeId());
+      const ImVec2 cs = ed::GetNodeSize(r.gn->NodeId());
+      const ImVec2 p = ed::CanvasToScreen(cp);
+      const ImVec2 p2 = ed::CanvasToScreen(ImVec2(cp.x + cs.x, cp.y + cs.y));
       if (p2.x < gGraphScreenTL.x || p.x > br.x || p2.y < gGraphScreenTL.y || p.y > br.y) continue;
-      const float rel = r.v / (r.audio ? maxAudio : maxVideo);
-      if (rel > 0.35f && r.v > (r.audio ? 0.005f : kMinMs))   // heat: warm tint that grows with the share of the slowest
+      const float share = r.audio ? r.v : r.v / kFrameMs;
+      if (share > kHeatLo)   // heat: warm tint that grows with the share of the budget
       {
-         const float a = std::clamp((rel - 0.35f) / 0.65f, 0.0f, 1.0f);
-         dl->AddRectFilled(p, p2, ImGui::GetColorU32(ImVec4(0.95f, 0.45f - 0.25f * a, 0.1f, 0.10f + 0.22f * a)), 8.0f * z);
-         dl->AddRect(p, p2, ImGui::GetColorU32(ImVec4(0.95f, 0.45f - 0.25f * a, 0.1f, 0.35f + 0.5f * a)), 8.0f * z, 0, 1.5f);
+         const float a = std::clamp((share - kHeatLo) / (kHeatHi - kHeatLo), 0.0f, 1.0f);
+         dl->AddRectFilled(p, p2, ImGui::GetColorU32(ImVec4(0.95f, 0.45f - 0.25f * a, 0.1f, 0.10f + 0.22f * a)), 8.0f * scale);
+         dl->AddRect(p, p2, ImGui::GetColorU32(ImVec4(0.95f, 0.45f - 0.25f * a, 0.1f, 0.35f + 0.5f * a)), 8.0f * scale, 0, 1.5f);
       }
-      if (z < 0.35f) continue;   // too small to read: tint only
+      if (scale < 0.35f) continue;   // too small to read: tint only
       char buf[24];
       if (r.audio) std::snprintf(buf, sizeof buf, "%.1f%% cb", r.v * 100.0f);
       else std::snprintf(buf, sizeof buf, r.v < 10.0f ? "%.2f ms" : "%.0f ms", r.v);
