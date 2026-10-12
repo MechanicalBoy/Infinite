@@ -492,6 +492,7 @@ set(COMMON_SOURCES
     src/app/selftest/FxAudit.cpp
     src/app/selftest/ModAudit.cpp
     src/app/selftest/SynthAudit.cpp
+    src/app/selftest/NoteAudit.cpp
     src/app/selftest/PitchTests.cpp
     src/app/selftest/FieldTests1.cpp
     src/app/selftest/FieldTests2.cpp
