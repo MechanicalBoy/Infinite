@@ -233,7 +233,7 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
    // Advance every predictor exactly once, before any binding reads it (idempotency: a predictor
    // driving N params must not run N times as fast). A bypassed predictor is not ticked, so it
    // freezes rather than advancing unseen and jumping on un-bypass.
-   // Live, dt is wall-clock time between calls. Offline (Render Now, headless --render/--frame),
+   // Live, dt is engine time between calls (wall time with no engine). Offline (Render Now, headless --render/--frame),
    // it is the step in Transport's video seconds instead: the offline pump calls this many times per
    // wall-clock frame, so a wall dt would be a few random milliseconds per rendered frame. The video
    // step also makes a repeat call at the same T (the normal-frame call during a take, a re-exported
@@ -241,6 +241,7 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
    double tickDt = 0.0;
    {
       static double sLastTickTime = -1.0;
+      static double sLastTickEngine = -1.0;
       static double sLastOfflineT = 0.0;
       static bool sWasOfflineTick = false;
       Transport& transport = Transport::Instance();
@@ -251,13 +252,24 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
          sLastOfflineT = videoT;
          sWasOfflineTick = true;
          sLastTickTime = -1.0; // first live tick after the take gets dt 0, not a stale gap
+         sLastTickEngine = -1.0;
       }
       else
       {
+         // With an audio engine running, dt is the step in engine time at
+         // this frame (BeginFrameClock), so live predictors advance at the
+         // rate the audio does, like export, instead of by wall-clock jitter.
+         // With no engine (or the first frame after one appears) it is wall
+         // time, the only clock there is.
          sWasOfflineTick = false;
          const double nowWall = glfwGetTime();
-         tickDt = sLastTickTime < 0.0 ? 0.0 : std::clamp(nowWall - sLastTickTime, 0.0, 0.25);
+         const double nowEngine = transport.EngineFrameSeconds();
+         if (nowEngine >= 0.0 && sLastTickEngine >= 0.0)
+            tickDt = std::clamp(nowEngine - sLastTickEngine, 0.0, 0.25);
+         else
+            tickDt = sLastTickTime < 0.0 ? 0.0 : std::clamp(nowWall - sLastTickTime, 0.0, 0.25);
          sLastTickTime = nowWall;
+         sLastTickEngine = nowEngine;
       }
       for (GraphNode& gn : gNodes)
          if (gn.node != nullptr && !gn.node->bypassed)
@@ -287,8 +299,13 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
    // binding's 0..1 value. An exact one-pole of the input taken as a straight
    // line between frames, stepped by the real frame dt, so the result does
    // not depend on frame rate. dt 0 (a repeat call at the same time) holds.
-   struct DestSmooth { float x = 0.0f, y = 0.0f; };
+   // Entries not touched this frame (binding removed, node deleted) are
+   // dropped after the apply loop, so a later binding on the same slot
+   // starts from its own value rather than a stale state.
+   struct DestSmooth { float x = 0.0f, y = 0.0f; uint64_t frame = 0; };
    static std::map<std::pair<int, int>, DestSmooth> sDestSmooth;
+   static uint64_t sDestSmoothFrame = 0;
+   sDestSmoothFrame++;
    const auto smoothDest = [&](const ParamRef& ref, float smoothMs, float x) -> float {
       const std::pair<int, int> key(ref.nodeIndex, ref.paramIndex);
       if (!(smoothMs > 0.0f))
@@ -298,6 +315,7 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
       }
       auto [it, fresh] = sDestSmooth.try_emplace(key);
       DestSmooth& st = it->second;
+      st.frame = sDestSmoothFrame;
       if (fresh)
          st.x = st.y = x;
       else if (tickDt > 0.0)
@@ -523,6 +541,9 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
          modulation.SetExpressionError(ref.nodeIndex, ref.paramIndex, error);
       }
    }
+
+   for (auto it = sDestSmooth.begin(); it != sDestSmooth.end();)
+      it = it->second.frame == sDestSmoothFrame ? std::next(it) : sDestSmooth.erase(it);
 
    // Shift-drag recordings (see GestureRecorder) loop back into their param
    // once their session ends - same precedence as above: a wired modulator
