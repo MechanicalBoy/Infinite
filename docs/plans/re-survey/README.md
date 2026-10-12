@@ -1,6 +1,6 @@
 # re-survey: deconstruct competitors, one by one
 
-Prompt for a new session. Status: draft, not yet started. Written 2026-10-12.
+Prompt for a new session. Written 2026-10-12. Area-by-area coverage, owner priorities and order: `coverage.md`.
 
 ## 1. Goal
 
