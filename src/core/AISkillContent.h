@@ -704,44 +704,44 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Array` | geo:geometry | out:geometry | 67 | bypass |
-| `Arrow 3D` | texture:image | out:geometry | 50 | bypass |
+| `Arrow 3D` | texture:image | out:geometry | 51 | bypass |
 | `Audio Displacement` | geo:geometry, audio:audio | out:geometry | 32 |  |
 | `Audio Ribbon` | input:audio | out:geometry | 23 | bypass |
 | `Camera` | none | out:camera | 13 | bypass |
-| `Capsule` | texture:image | out:geometry | 50 | bypass |
+| `Capsule` | texture:image | out:geometry | 51 | bypass |
 | `Cloth` | geo:geometry | out:geometry | 38 | bypass |
-| `Cone` | texture:image | out:geometry | 50 | bypass |
-| `Cube` | texture:image | out:geometry | 50 | bypass |
+| `Cone` | texture:image | out:geometry | 51 | bypass |
+| `Cube` | texture:image | out:geometry | 51 | bypass |
 | `Curve` | none | out:geometry | 32 | bypass |
 | `Curve Ops` | curve:geometry | out:geometry | 9 | bypass |
-| `Cylinder` | texture:image | out:geometry | 50 | bypass |
+| `Cylinder` | texture:image | out:geometry | 51 | bypass |
 | `Decimate` | geo:geometry | out:geometry | 67 | bypass |
 | `Delaunay Mesh` | points:geometry | out:geometry | 4 | bypass |
 | `Delete` | geo:geometry | out:geometry | 67 | bypass |
 | `Delete Selected` | geo:geometry | out:geometry | 67 | bypass |
 | `Depth Projection` | depth:image, color:image | out:geometry | 35 |  |
 | `Difference` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry | out:geometry | 23 |  |
-| `Disc` | texture:image | out:geometry | 50 | bypass |
+| `Disc` | texture:image | out:geometry | 51 | bypass |
 | `Displacement` | geo:geometry, texture:image | out:geometry | 23 |  |
 | `Distribute Points in Grid` | none | out:geometry | 8 | bypass |
 | `Distribute Points on Faces` | geo:geometry | out:geometry | 22 | bypass |
-| `Dodecahedron` | texture:image | out:geometry | 50 | bypass |
+| `Dodecahedron` | texture:image | out:geometry | 51 | bypass |
 | `Explode` | geo:geometry | out:geometry | 67 | bypass |
 | `Extrude` | geo:geometry | out:geometry | 67 | bypass |
 | `Extrude Selected` | geo:geometry | out:geometry | 67 | bypass |
 | `Field Modifier` | geo:geometry | out:geometry | 11 | bypass |
 | `Field Primitive` | none | out:geometry | 13 | bypass |
-| `Gear 3D` | texture:image | out:geometry | 50 | bypass |
-| `Geometry` | texture:image | out:geometry | 50 | bypass |
+| `Gear 3D` | texture:image | out:geometry | 51 | bypass |
+| `Geometry` | texture:image | out:geometry | 51 | bypass |
 | `Group 3D` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry, geo_e:geometry, geo_f:geometry, geo_g:geometry, geo_h:geometry | out:geometry | 0 |  |
 | `HDRI` | none | out:environment | 3 | bypass |
-| `Helix` | texture:image | out:geometry | 50 | bypass |
-| `Icosphere` | texture:image | out:geometry | 50 | bypass |
+| `Helix` | texture:image | out:geometry | 51 | bypass |
+| `Icosphere` | texture:image | out:geometry | 51 | bypass |
 | `Image to Points` | input:image | out:geometry | 10 | bypass |
 | `Instance on Points` | points:geometry, shape:geometry, cloud:geometry | out:geometry | 25 |  |
 | `Intersect` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry | out:geometry | 23 |  |
 | `Join Geometry` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry | out:geometry | 23 |  |
-| `Klein Bottle` | texture:image | out:geometry | 50 | bypass |
+| `Klein Bottle` | texture:image | out:geometry | 51 | bypass |
 | `Light` | none | out:light | 10 | bypass |
 | `Mapping` | geo:geometry | out:geometry | 11 | bypass |
 | `Material` | geo:geometry, albedo:image, roughness:image, metallic:image, normal:image, ao:image, emission:image, clearcoat:image, sheen:image | out:geometry | 30 |  |
@@ -751,40 +751,40 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Mesh to Points` | geo:geometry | out:geometry | 22 | bypass |
 | `Metaballs` | cloud:geometry | out:geometry | 28 | bypass |
 | `Mirror` | geo:geometry | out:geometry | 67 | bypass |
-| `Mobius Strip` | texture:image | out:geometry | 50 | bypass |
+| `Mobius Strip` | texture:image | out:geometry | 51 | bypass |
 | `Model 3D` | texture:image | out:geometry | 27 | bypass |
 | `Normals` | geo:geometry | out:geometry | 67 | bypass |
 )AISKILL"
 R"AISKILL(| `Null 3D` | geo:geometry | out:geometry | 0 | bypass |
 | `Ocean` | texture:image | out:geometry | 29 | bypass |
-| `Octahedron` | texture:image | out:geometry | 50 | bypass |
+| `Octahedron` | texture:image | out:geometry | 51 | bypass |
 | `Particle System` | none | out:geometry | 23 | bypass |
-| `Plane` | texture:image | out:geometry | 50 | bypass |
+| `Plane` | texture:image | out:geometry | 51 | bypass |
 | `Points to Vertices` | points:geometry | out:geometry | 18 | bypass |
-| `Prism` | texture:image | out:geometry | 50 | bypass |
-| `Pyramid` | texture:image | out:geometry | 50 | bypass |
+| `Prism` | texture:image | out:geometry | 51 | bypass |
+| `Pyramid` | texture:image | out:geometry | 51 | bypass |
 | `Render 3D` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry, camera:camera, light_1:light, light_2:light, light_3:light, env:environment | out:image | 39 |  |
 | `Resynthesize 3D` | geo:geometry | out:geometry | 13 | bypass |
-| `Rounded Cube` | texture:image | out:geometry | 50 | bypass |
+| `Rounded Cube` | texture:image | out:geometry | 51 | bypass |
 | `Screw` | geo:geometry | out:geometry | 67 | bypass |
 | `Select` | geo:geometry | out:geometry | 67 | bypass |
 | `Set Vertex Color` | geo:geometry, texture:image, palette:palette | out:geometry | 6 |  |
 | `Sketch 3D` | none | out:geometry | 4 | bypass |
 | `Smooth` | geo:geometry | out:geometry | 67 | bypass |
 | `Solidify` | geo:geometry | out:geometry | 67 | bypass |
-| `Sphere` | texture:image | out:geometry | 50 | bypass |
-| `Star 3D` | texture:image | out:geometry | 50 | bypass |
+| `Sphere` | texture:image | out:geometry | 51 | bypass |
+| `Star 3D` | texture:image | out:geometry | 51 | bypass |
 | `Subdivide` | geo:geometry | out:geometry | 67 | bypass |
-| `Supershape` | texture:image | out:geometry | 50 | bypass |
+| `Supershape` | texture:image | out:geometry | 51 | bypass |
 | `Switcher 3D` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry | out:geometry | 5 |  |
-| `Tetrahedron` | texture:image | out:geometry | 50 | bypass |
+| `Tetrahedron` | texture:image | out:geometry | 51 | bypass |
 | `Text 3D` | texture:image | out:geometry | 29 | bypass |
-| `Torus` | texture:image | out:geometry | 50 | bypass |
-| `Torus Knot` | texture:image | out:geometry | 50 | bypass |
+| `Torus` | texture:image | out:geometry | 51 | bypass |
+| `Torus Knot` | texture:image | out:geometry | 51 | bypass |
 | `Transform` | geo:geometry | out:geometry | 67 | bypass |
 | `Transform Selected` | geo:geometry | out:geometry | 67 | bypass |
 | `Triangulate` | geo:geometry | out:geometry | 67 | bypass |
-| `Tube` | texture:image | out:geometry | 50 | bypass |
+| `Tube` | texture:image | out:geometry | 51 | bypass |
 | `Twist` | geo:geometry | out:geometry | 67 | bypass |
 | `Union` | geo_a:geometry, geo_b:geometry, geo_c:geometry, geo_d:geometry | out:geometry | 23 |  |
 | `Voronoi Cells` | points:geometry | out:geometry | 4 | bypass |
@@ -829,14 +829,14 @@ R"AISKILL(| `Null 3D` | geo:geometry | out:geometry | 0 | bypass |
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Audio Color Ramp` | img:image, audio:audio | out:image | 28 |  |
-| `Blend` | input:image, input_2:image | out:image | 2 |  |
+| `Blend` | input:image, input_2:image | out:image | 3 |  |
 | `Color Ramp` | input:image | out:image | 67 | bypass |
 | `Comment` | none | out:image | 5 |  |
 | `Curves` | input:image | out:image | 6 | bypass |
 | `Feedback` | input:image | out:image | 1 | bypass |
 | `Fit` | input:image | out:image | 8 | bypass |
 | `Group` | none | out:image | 4 | bypass |
-| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 9 |  |
+| `Layer Stack` | input:image, input_2:image, input_3:image, input_4:image | out:image | 10 |  |
 | `Null` | in:image | out:image | 0 | bypass |
 | `Reaction Diffusion` | input:image | out:image | 11 | bypass |
 | `Remove Background` | input:image | out:image | 9 | bypass |
@@ -952,9 +952,9 @@ R"AISKILL(| `Null 3D` | geo:geometry | out:geometry | 0 | bypass |
 
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
-| `Arpeggiator` | notes:note | out:note | 8 | bypass |
+| `Arpeggiator` | notes:note | out:note | 9 | bypass |
 | `Bouncing Balls` | none | out:note | 9 | bypass |
-| `Chorder` | none | out:note | 9 | bypass |
+| `Chorder` | none | out:note | 10 | bypass |
 | `Field Notes` | notes:note | notes:note | 6 | bypass |
 )AISKILL"
 R"AISKILL(| `Gate` | notes:note | out:note | 1 | bypass |
@@ -968,14 +968,14 @@ R"AISKILL(| `Gate` | notes:note | out:note | 1 | bypass |
 | `Note Filter` | notes:note | out:note | 6 | bypass |
 | `Note Merge` | in_1:note, in_2:note, in_3:note, in_4:note | out:note | 0 |  |
 | `Note Router` | notes:note | 1:note, 2:note, 3:note, 4:note | 2 | bypass |
-| `Note Sequencer` | none | out:note | 54 | bypass |
+| `Note Sequencer` | none | out:note | 55 | bypass |
 | `Note Stack` | notes:note | out:note | 17 | bypass |
 | `Note Strum` | notes:note | out:note | 1 | bypass |
 | `Note Switcher` | in_1:note, in_2:note, in_3:note, in_4:note | out:note | 5 |  |
 | `Note Transpose` | notes:note | out:note | 2 | bypass |
 | `Pitch Bend` | notes:note | out:note | 1 | bypass |
 | `Quantizer` | notes:note | out:note | 1 | bypass |
-| `Random Note Generator` | none | out:note | 11 | bypass |
+| `Random Note Generator` | none | out:note | 12 | bypass |
 | `Velocity Curve` | notes:note | out:note | 1 | bypass |
 
 ### Prediction
@@ -1035,18 +1035,18 @@ R"AISKILL(| `Gate` | notes:note | out:note | 1 | bypass |
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Analog` | notes:note | out:audio | 33 | bypass |
-| `Drum Sequencer` | none | out:audio, 1:audio, 2:audio, 3:audio, 4:audio, 5:audio, 6:audio, 7:audio, 8:audio | 371 | bypass |
-| `Equation Synth` | notes:note | out:audio | 30 | bypass |
+| `Drum Sequencer` | none | out:audio, 1:audio, 2:audio, 3:audio, 4:audio, 5:audio, 6:audio, 7:audio, 8:audio | 372 | bypass |
+| `Equation Synth` | notes:note | out:audio | 31 | bypass |
 | `Field Synth` | notes:note, in:audio | out:audio | 13 | bypass |
-| `Grain Molder` | notes:note, record_in:audio | out:audio | 14 | bypass |
+| `Grain Molder` | notes:note, record_in:audio | out:audio | 15 | bypass |
 | `Granular` | record_in:audio | out:audio | 21 | bypass |
 | `Looper` | audio:audio | out:audio | 10 | bypass |
 | `MPC` | notes:note | out:audio | 177 | bypass |
 | `Metallic` | notes:note | out:audio | 15 | bypass |
-| `Molder` | record_in:audio | out:audio | 16 | bypass |
+| `Molder` | record_in:audio | out:audio | 17 | bypass |
 | `Oscillator` | notes:note, fm_in:audio | out:audio | 22 | bypass |
-| `PaulStretch` | record_in:audio | out:audio | 14 | bypass |
-| `Sampler` | notes:note, record_in:audio | out:audio | 14 | bypass |
+| `PaulStretch` | record_in:audio | out:audio | 15 | bypass |
+| `Sampler` | notes:note, record_in:audio | out:audio | 15 | bypass |
 | `Slicer` | notes:note, record_in:audio | out:audio | 13 | bypass |
 | `Spectral Synth` | image:image, note:note | out:audio | 33 | bypass |
 | `Wave Terrain` | texture:image, note:note | out:audio | 35 | bypass |
