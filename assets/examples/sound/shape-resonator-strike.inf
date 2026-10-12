@@ -9,6 +9,7 @@ node 1 Notes Random Note Generator
   i rangeLow 50
   i rangeHigh 74
   f rateBeats 0.5
+  i stepTiming 1
 end
 node 2 Synths Analog
   id pluck

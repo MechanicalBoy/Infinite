@@ -3,10 +3,12 @@ infinite-patch 1
 node 1 Notes Note Sequencer
   id seq
   pos 0 1040
+  i stepTiming 1
 end
 node 2 Notes Arpeggiator
   id arp
   pos 1060 1040
+  i stepTiming 1
 end
 node 3 Synths Analog
   id synth
