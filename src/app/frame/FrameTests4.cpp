@@ -3008,6 +3008,89 @@ void FrameTest_LIVEISSUETEST_2(int frameId, GLFWwindow* window)
       }
 }
 
+// A key missing from a node means the node's default, unless the GUI saved that node before rev 2
+// (Patch::SavedBefore). Finds every legacy key generically (a fresh node vs one after BeforeLoadParams),
+// then loads one node of each such type three ways: hand-written, old GUI file, rev 2 GUI file.
+void FrameTest_LEGACYLOADTEST(int frameId, GLFWwindow* window)
+{
+   if (getenv("INFINITE_LEGACYLOADTEST") == nullptr || frameId != 4)
+      return;
+   using Params = std::vector<std::pair<std::string, std::string>>;
+   auto valueOf = [](const Params& ps, const std::string& key) {
+      for (const auto& p : ps)
+         if (p.first == key)
+            return p.second;
+      return std::string("<missing>");
+   };
+   struct Legacy { std::string category, type, key, fresh, old; };
+   std::vector<Legacy> keys;
+   std::vector<std::pair<std::string, std::string>> types; // category, type with at least one legacy key
+   NodeFactory& f = NodeFactory::Instance();
+   for (const std::string& cat : f.GetCategories())
+      for (const std::string& type : f.GetNodesInCategory(cat))
+      {
+         std::unique_ptr<INode> fresh(f.MakeNode(type)), fresh2(f.MakeNode(type)), old(f.MakeNode(type));
+         if (!fresh || !fresh2 || !old)
+            continue;
+         old->BeforeLoadParams();
+         Params pf, pf2, po;
+         Patch::SaveParams(fresh.get(), pf);
+         Patch::SaveParams(fresh2.get(), pf2);
+         Patch::SaveParams(old.get(), po);
+         bool any = false;
+         for (const auto& p : pf) // a key two fresh nodes disagree on (a per-spawn seed) is not a default
+            if (valueOf(pf2, p.first) == p.second && valueOf(po, p.first) != p.second)
+            {
+               keys.push_back({ cat, type, p.first, p.second, valueOf(po, p.first) });
+               any = true;
+            }
+         if (any)
+            types.push_back({ cat, type });
+      }
+
+   // flags: "" = hand-written, else the GUI's flags line; rev: "" = no rev line.
+   auto loadAndCheck = [&](const char* label, bool wantOld, const char* flags, const char* rev) {
+      const std::string path = TmpPath("infinite_legacyload.inf");
+      {
+         std::ofstream out(path);
+         out << "infinite-patch 1\n" << rev;
+         int i = 1;
+         for (const auto& t : types)
+            out << "node " << i++ << " " << t.first << " " << t.second << "\n  pos " << i * 300 << " 0\n" << flags << "end\n";
+      }
+      LoadPatchFrom(path);
+      int bad = 0;
+      for (const Legacy& k : keys)
+      {
+         GraphNode* gn = nullptr;
+         for (auto& n : gNodes)
+            if (n.typeName == k.type)
+               gn = &n;
+         Params got;
+         if (gn != nullptr)
+            Patch::SaveParams(gn->node.get(), got);
+         const std::string want = wantOld ? k.old : k.fresh;
+         if (gn == nullptr || valueOf(got, k.key) != want)
+         {
+            printf("LEGACYLOAD %s: %s %s = %s, want %s\n", label, k.type.c_str(), k.key.c_str(),
+                   gn ? valueOf(got, k.key).c_str() : "<not loaded>", want.c_str());
+            bad++;
+         }
+      }
+      return bad;
+   };
+   const int hand = loadAndCheck("hand-written", false, "", "");
+   const int oldGui = loadAndCheck("old GUI", true, "  flags 0 0 0 0\n", "");
+   const int rev2 = loadAndCheck("rev 2 GUI", false, "  flags 0 0 0 0\n", "rev 2\n");
+   std::string names;
+   for (const auto& t : types)
+      names += (names.empty() ? "" : ", ") + t.second;
+   printf("LEGACYLOAD types=%zu keys=%zu: %s\n", types.size(), keys.size(), names.c_str());
+   // 43 types carried a legacy key when the rule landed; fewer means the scan stopped seeing them.
+   const bool ok = types.size() >= 43 && hand == 0 && oldGui == 0 && rev2 == 0;
+   printf("LEGACYLOADTEST hand=%d old=%d rev2=%d -> %s\n", hand, oldGui, rev2, ok ? "OK" : "FAIL");
+}
+
 void FrameTest_SHAPERESGRAPHTEST(int frameId, GLFWwindow* window)
 {
    if (getenv("INFINITE_SHAPERESGRAPHTEST") != nullptr && frameId == 4)

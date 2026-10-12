@@ -46,7 +46,8 @@ public:
    // 0 on a patch saved before the Overlay / Soft Light / Hard Light fix (old maths,
    // BlendModes::LegacyMode); 1 on a new node. Not a control.
    int blendFix = 1;
-   void BeforeLoadParams() override { blendFix = 0; }
+   // Patches from before "fit" existed composited stretched.
+   void BeforeLoadParams() override { blendFix = 0; fit = kStretch; }
 
    int modes[kSlots] = { 0, 0, 0, 0 };
    float opacities[kSlots] = { 1.0f, 1.0f, 1.0f, 1.0f };
