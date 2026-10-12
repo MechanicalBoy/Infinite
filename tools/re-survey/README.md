@@ -19,9 +19,8 @@ Exit codes: 0 ok, 1 found a problem / self-test failed, 2 usage or tool error.
 ## Known gaps
 
 - `plugin_probe`: AU and VST3 effects (VST3 needs a build with 9f185449); instruments need notes.
-  `@settings`/`--sweep` work for AU only and use auval's ranges, which can be display units (Saturn's
-  Drive shows 0-100% but is 0-1); read real ranges with `--plugin-params`. The 16-bit headless WAV puts
-  the floor near -87 dB THD+N.
+  Settings and sweeps use the host's ranges (`plugin_probe.py params X`): AU in the plugin's own units,
+  VST3 always normalised 0-1. The 16-bit headless WAV puts the floor near -87 dB THD+N.
   The CPU column is the render-time slope, net of the dry rig; treat differences under ~1 ms/s as noise.
 - `readers.py toe` needs TouchDesigner installed (it uses the bundled `toeexpand`); `blender` needs Blender.
 - Clean room: nothing here reads GPL/AGPL source. Blender is driven through its public `bpy` API only, never
