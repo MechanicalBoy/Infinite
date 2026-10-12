@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every re-survey tool's --self-test. Exit 0 only if all pass.
 
-Usage: python3 tools/re-survey/selftest.py [--quick]   (--quick skips plugin_probe's Infinite render)
+Usage: python3 tools/re-survey/selftest.py [--quick]   (--quick skips the probes' Infinite renders)
 """
 
 import os
@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOOLS = ["inventory.py", "plugin_probe.py", "readers.py", "diff.py", "storage.py"]
+TOOLS = ["inventory.py", "plugin_probe.py", "synth_probe.py", "readers.py", "diff.py", "storage.py"]
 
 
 def main():
