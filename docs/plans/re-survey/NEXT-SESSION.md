@@ -238,3 +238,14 @@ Left, in order:
 5. Write `dossiers/D.md` (TD sitting pending, GPU memory not measured, resolution ceiling, `--validate` unknown-function, mp4 no alpha, Blender white luma 0.77, Audio File export stall fixed 01059f67, feedback scene not done) and `dossiers/E.md` (scaling, history 102/109 load with all 7 fails explained, formats, library gaps, autosave 60 s default + recovery + 200 undo, atomic-save fix, PROTOCOL for GUI save/load + browser search timing).
 6. Coverage rows 9, 10, 12, 18, 19, 20, 22; regenerate capability diff; lint all dossiers; merge `feature/re-survey-render-bench` `--no-ff`.
 7. `storage.py status` + `clean-tmp`; delete scratchpad leftovers; remove the `infinte-fix` worktree and merged bugfix branches.
+
+## After the resume list: coverage becomes an app × dimension grid (owner, 2026-10-13)
+
+Owner: every app is judged on every dimension it has, not one app per block. Rebuild `coverage.md` as a grid:
+rows = audio engine, visual/3D engine, AV integration, built-in modules, UX (workflow + design), efficiency,
+robustness, export, projects/library, extensibility; columns = Live, Logic, Bitwig, TouchDesigner, Blender, Final Cut
+(+ Infinite as the measured subject). Cell = measured / protocol pending / not measured / n/a. Slot existing results in.
+Biggest holes: robustness for every app (stress kit: 4000-module project, device unplug, kill mid-save + reopen,
+crashing plugin, long run), Blender beyond render (geometry nodes, sim, viewport fps), TouchDesigner as the bar for
+audio-reactive visuals and live frame timing, and an AV-integration bench (audio→picture latency, beat-to-frame lock).
+Tools reused across apps wherever possible.
