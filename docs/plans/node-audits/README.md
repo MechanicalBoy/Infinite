@@ -65,7 +65,7 @@ Three blocks, one branch each, commit per step, merge straight back to main (git
 | # | Branch | Audits | State |
 |---|---|---|---|
 | 1 | `feature/synth-audit` | SYNTHAUDIT | done 2026-10-12 (merged); F4 and Field Synth preset level open |
-| 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | done 2026-10-12 (merged); Echo voiceId and step-generator block quantisation open |
+| 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | done 2026-10-12 (merged); Echo voiceId fixed; step-generator block quantisation parked |
 | 3 | `feature/geo-comp-audit` | GEOAUDIT, COMPAUDIT | done 2026-10-12 (merged); findings open, see below |
 
 Order reason: Synths are the largest audio gap (220 controls) and audio comes first in the perf
@@ -105,8 +105,8 @@ Result (baselines `baseline-2026-10-12-note.txt`, `baseline-2026-10-12-io.txt`):
 | Random Note Gen swing truncated to one block | fixed, legacy flag `swingMode` keeps saved patches |
 | Mixer mute / solo / pan stepped at block rate (36-44 dB clicks) | fixed, gains ramp across the block |
 | Loudness, Gain/Mixer/Blend laws, 12-slot sum, Splitter | exact, no change |
-| Note Echo shares one voiceId across dry and repeats | open, needs owner decision |
-| Arp / Sequencer / Random Note Gen place steps on block boundaries (up to one block early/late) | open, larger design change |
+| Note Echo shares one voiceId across dry and repeats | **fixed**: each repeat is its own voice (fresh id per repeat, freed on its note-off); PAIR orphan-off 11 and dup-on 12 to 0, see `baseline-2026-10-12-note-after-echo.txt` |
+| Arp / Sequencer / Random Note Gen place steps on block boundaries (up to one block early/late) | parked as its own quest: the boundary is found by polling `Transport::Beats()` at block start, so a step is emitted up to one block (about 10 ms at 512 frames) late with frameOffset 0. The fix is a look-ahead (does a step boundary fall inside this block, offset from beats per sample) in Arp, Sequencer and Random Note Gen, with loop/seek handling; it moves every generated note by up to a block, so it needs a legacy flag and its own timing audit |
 | Audio In/Out and PDC | not covered by IOAUDIT |
 
 IOAUDIT covers Mixer, Gain, Spatial Mixer, Audio Meter, Blend Audio, Splitter, Audio In/Out.

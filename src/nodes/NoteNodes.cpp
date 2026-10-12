@@ -1864,6 +1864,7 @@ public:
       mSamplePos = 0;
       for (int i = 0; i < kMaxPending; i++)
          mPending[i].active = false;
+      mRepeatIds.Clear();
    }
 
    void ProcessBlock(const AudioBuffer* const* /*inputs*/, int /*numInputs*/, AudioBuffer& output) override
@@ -1899,15 +1900,33 @@ public:
 
          for (int k = 1; k <= repeats; k++)
          {
+            // Each repeat is its own voice: sharing the source's id would let the dry
+            // note-off (or another repeat's) release the wrong voice downstream.
+            const int key = in.voiceId * 16 + k;
+            int repeatId = 0;
+            if (in.isNoteOn)
+            {
+               repeatId = NextVoiceId();
+            }
+            else
+            {
+               int* found = mRepeatIds.Find(key);
+               if (found == nullptr)
+                  continue; // its note-on was dropped (saturated): nothing to release
+               repeatId = *found;
+            }
             Pending* slot = FreeSlot();
             if (slot == nullptr)
                break; // saturated - drop remaining repeats, nothing is left stuck
+            if (in.isNoteOn)
+               mRepeatIds.GetOrInsert(key) = repeatId;
             slot->active = true;
             slot->note = std::clamp(in.note + transposeStep * k, 0, 127);
             slot->velocity = in.isNoteOn ? std::clamp(in.velocity * std::pow(decay, (float)k), 0.0f, 1.0f)
                                           : in.velocity;
             slot->isNoteOn = in.isNoteOn;
-            slot->voiceId = in.voiceId; // independent delayed copies - just forward the source voice's id
+            slot->voiceId = repeatId;
+            slot->idKey = in.isNoteOn ? 0 : key; // a note-off frees its id once emitted
             slot->targetSample = mSamplePos + (uint64_t)in.frameOffset + (uint64_t)(delaySamples * k);
          }
       }
@@ -1928,6 +1947,8 @@ public:
             out.source = this;
             out.voiceId = p.voiceId;
             mOutbox.Push(out);
+            if (p.idKey != 0)
+               mRepeatIds.Erase(p.idKey);
             p.active = false;
          }
          else
@@ -1965,6 +1986,7 @@ private:
       float velocity = 0.0f;
       bool isNoteOn = false;
       int voiceId = 0;
+      int idKey = 0; // mRepeatIds key to erase when this note-off is emitted (0 = none)
       uint64_t targetSample = 0;
    };
 
@@ -1982,6 +2004,7 @@ private:
    double mSampleRate = 48000.0;
    uint64_t mSamplePos = 0;
    Pending mPending[kMaxPending];
+   VoiceIdMap<int, 128> mRepeatIds; // source voiceId * 16 + repeat -> the repeat's own voiceId
 
    std::atomic<int> mRateMode { 1 };
    std::atomic<float> mRateBeats { 0.25f };
