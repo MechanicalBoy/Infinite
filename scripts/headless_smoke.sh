@@ -39,6 +39,45 @@ if command -v ffmpeg >/dev/null; then
   python3 -c "import sys; sys.exit(0 if float('${mv2:--999}') > -20 else 1)"; check "render --start 2: audio starts at 2 s, not 0" $?
 fi
 
+# Audio File export: a file far longer than the take used to stall the macOS writer for good
+# (audio was appended only up to the picture, the writer waited for audio ahead of it), and the
+# AAC settings took only 32-48 kHz (an 8 kHz file failed, 96 kHz threw and killed the app).
+python3 - "$OUT" <<'PY'
+import wave, sys
+for name, rate, ch, secs in (("long", 48000, 1, 600), ("r8k", 8000, 1, 3), ("r96k", 96000, 2, 3)):
+    w = wave.open(sys.argv[1] + "/%s.wav" % name, "wb"); w.setnchannels(ch); w.setsampwidth(2); w.setframerate(rate)
+    w.writeframes(b"\0\0" * ch * rate * secs); w.close()
+PY
+for name in long r8k r96k; do
+  cat > "$OUT/af_$name.inf" <<INF
+infinite-patch 1
+node 1 Source Shape
+  f width 320
+  f height 180
+end
+node 2 Modulators Audio File
+  s path $OUT/$name.wav
+  b loop 0
+end
+node 3 Utility Output
+  b includeAudio 1
+end
+cable 3 0 1
+aud 3 1 2
+INF
+done
+r=$("$BIN" --render "$OUT/af_long.inf" "$OUT/af_long.mp4" --duration 120 --fps 30 --timeout 90); rc=$?
+[ "$rc" = 0 ] && [ "$(echo "$r" | json "d['frames']")" = "3600" ]; check "render: a 600 s audio file under a 120 s take finishes" $?
+if command -v afinfo >/dev/null; then
+  ad=$(afinfo "$OUT/af_long.mp4" 2>/dev/null | sed -n 's/estimated duration: \([0-9.]*\).*/\1/p')
+  python3 -c "import sys; sys.exit(0 if abs(float('${ad:-0}') - 120) < 0.05 else 1)"; check "render: that take's audio track is as long as its picture" $?
+fi
+for name in r8k r96k; do
+  "$BIN" --render "$OUT/af_$name.inf" "$OUT/af_$name.mp4" --duration 2 --fps 30 --timeout 30 >/dev/null 2>&1
+  check "render: a $name audio file exports" $?
+done
+rm -f "$OUT/long.wav"
+
 # R275: overlapping translucent meshes composite back-to-front whatever their slot order
 R3="$ROOT/tests/headless/render3d"
 "$BIN" --frame "$R3/translucent_ab.inf" 0 "$OUT/tr_ab.png" >/dev/null
