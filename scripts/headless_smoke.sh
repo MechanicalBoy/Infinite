@@ -405,6 +405,9 @@ r=$("$BIN" --explain "$S/misspelled.inf" 2>/dev/null); rc=$?
 "$BIN" --explain "$OUT/missing.inf" >/dev/null 2>&1; [ $? = 3 ]; check "explain: missing patch exit 3" $?
 "$BIN" --explain >/dev/null 2>&1; [ $? = 2 ]; check "explain: no patch exit 2" $?
 
+# --- release: a new version must be above every published one (else old copies keep opening patches) ---
+python3 "$ROOT/scripts/release_version_gate.py" --self-test | grep -q '^RELEASEGATE OK'; check "release gate: version ordering cases" $?
+
 # --- summaries (block 2): audio numbers and per-frame image stats ---
 M="$ROOT/tests/headless/summary"
 INFINITE_AUDIOSUMMARYTEST=1 "$BIN" 2>/dev/null | tail -1 | grep -q '^AUDIOSUMMARYTEST: PASS$'; check "summary: analyzer self-test (1 kHz sine at -20 dBFS reads -20 LUFS)" $?
