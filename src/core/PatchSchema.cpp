@@ -159,6 +159,21 @@ namespace PatchSchema
                   break;
                }
          }
+         // A pin only this node's saved state has (a Mixer set to 12
+         // channels, a Plugin holding an instrument): ask the instance.
+         if (!found && t != nullptr && env.instanceSchema)
+            if (const TypeSchema* inst = env.instanceSchema(*nd->second))
+            {
+               const std::vector<std::string> instNames = SlotNames(*inst);
+               for (size_t i = 0; i < instNames.size() && !found; i++)
+                  if (instNames[i] == word)
+                  {
+                     out = inst->inputs[i].slot;
+                     found = true;
+                  }
+               if (!found)
+                  names = instNames;
+            }
          if (!found && t != nullptr)
             errors.push_back(Make("E_BAD_REF", "'" + word + "' is not an input of " + t->name, line, dstIndex,
                                   "inputs: " + Join(names)));

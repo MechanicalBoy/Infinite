@@ -1,0 +1,59 @@
+infinite-patch 1
+node 1 Synths Oscillator
+  id o1
+end
+node 2 Synths Oscillator
+  id o2
+end
+node 3 Synths Oscillator
+  id o3
+end
+node 4 Synths Oscillator
+  id o4
+end
+node 5 Synths Oscillator
+  id o5
+end
+node 6 Synths Oscillator
+  id o6
+end
+node 7 Synths Oscillator
+  id o7
+end
+node 8 Synths Oscillator
+  id o8
+end
+node 9 Synths Oscillator
+  id o9
+end
+node 10 Synths Oscillator
+  id o10
+end
+node 11 Synths Oscillator
+  id o11
+end
+node 12 Synths Oscillator
+  id o12
+end
+node 13 Utility Mixer
+  id m
+  i channels 12
+end
+node 14 Utility Output
+end
+node 15 Source Shape
+end
+aud m in_1 o1
+aud m in_2 o2
+aud m in_3 o3
+aud m in_4 o4
+aud m in_5 o5
+aud m in_6 o6
+aud m in_7 o7
+aud m in_8 o8
+aud m in_9 o9
+aud m in_10 o10
+aud m in_11 o11
+aud m in_12 o12
+aud 14 audio m
+cable 14 in 15
