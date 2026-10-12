@@ -26,6 +26,9 @@ namespace
       // main pass encodes on the way out. A pre-pass writes linear values
       // to its float scratch, so uPass samples need no decode.
       "uniform int uLinear;\n"
+      // 1 when uSrc holds the convert pass's premultiplied linear copy
+      // (FilterDef::convertFirst, two-pass filters).
+      "uniform int uConverted;\n"
       // Headroom (GLUtil::WithClampedOutput): 1 keeps light above 1.0.
       "uniform int uImgHeadroom;\n";
    const char* kPreambleTail =
@@ -37,6 +40,26 @@ namespace
       // linear light off both are the old straight-alpha pass-through.
       "vec4 ImgTap(vec2 uv) { vec4 c = ImgSrc(uv); return uLinear == 0 ? c : vec4(c.rgb * c.a, c.a); }\n"
       "vec4 ImgUnpremul(vec4 c) { return (uLinear == 0 || c.a <= 0.0) ? c : vec4(c.rgb / c.a, c.a); }\n"
+      // Bilinear tap that decodes (lin = 1) and premultiplies each texel
+      // before mixing, so an off-centre tap at an alpha edge mixes light,
+      // not the colour hidden under alpha 0. Four fetches, no extra pass.
+      "vec4 ImgBilinearPremul(vec2 uv, int lin) {\n"
+      "   vec2 p = uv / uTexelSize - 0.5; vec2 f = fract(p); ivec2 i = ivec2(floor(p));\n"
+      "   ivec2 m = textureSize(uSrc, 0) - 1;\n"
+      "   vec4 t[4]; ivec2 o[4] = ivec2[4](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1));\n"
+      "   for (int k = 0; k < 4; k++) {\n"
+      "      vec4 c = texelFetch(uSrc, clamp(i + o[k], ivec2(0), m), 0);\n"
+      "      if (lin == 1) c.rgb = SrgbDecode(c.rgb);\n"
+      "      t[k] = vec4(c.rgb * c.a, c.a);\n"
+      "   }\n"
+      "   return mix(mix(t[0], t[1], f.x), mix(t[2], t[3], f.x), f.y);\n"
+      "}\n"
+      // Relief filters (stored encoding): ImgBilinearPremul without decode.
+      "vec4 ImgTapPremul(vec2 uv) { return ImgBilinearPremul(uv, 0); }\n"
+      // Warps and line blurs: exact premultiplied linear tap with Linear
+      // light on, the old straight bilinear texture() with it off.
+      "vec4 ImgPre(vec2 uv) { return uLinear == 0 ? texture(uSrc, uv) : ImgBilinearPremul(uv, 1); }\n"
+      "vec4 ImgSample(vec2 uv) { return ImgUnpremul(ImgPre(uv)); }\n"
       // A body's own range clamp: 0..1 as before, or floor-only with headroom.
       "vec3 ImgClip(vec3 c) { return uImgHeadroom == 1 ? max(c, vec3(0.0)) : clamp(c, 0.0, 1.0); }\n";
 

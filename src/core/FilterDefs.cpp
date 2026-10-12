@@ -58,6 +58,13 @@ namespace
       return p;
    }
 
+   // Relief filters: read colour premultiplied, so transparent pixels are
+   // height 0 instead of whatever colour is hidden under alpha 0.
+   FilterParamDef PREMUL()
+   {
+      return OLD(0.0f, P("Premultiplied", "uPremul", FilterParamDef::Type::Bool, 0.0f, 1.0f, 1.0f));
+   }
+
    // Linear light also makes multi-tap filters average premultiplied colour
    // (ImgTap / ImgUnpremul), so colour hidden under alpha 0 cannot bleed in.
    FilterParamDef LIN()
@@ -155,7 +162,6 @@ const std::vector<FilterDef>& GetFilterDefs()
           LIN() }, 1,
         "uniform float uRadius;\n"
         "uniform int uQuality;\n"
-        "uniform int uConverted;\n"
         "void main() {\n"
         "   vec4 sum = vec4(0.0); float total = 0.0;\n"
         "   if (uConverted == 1) {\n"
@@ -218,7 +224,6 @@ const std::vector<FilterDef>& GetFilterDefs()
           OLD(0.0f, E("Quality", "uQuality", { "Classic", "Smooth" }, 1)) }, 1,
         "uniform float uRadius;\n"
         "uniform int uQuality;\n"
-        "uniform int uConverted;\n"
         "void main() {\n"
         "   vec4 sum = vec4(0.0);\n"
         "   if (uConverted == 1) {\n"
@@ -252,7 +257,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   vec4 sum = vec4(0.0); const int N = 16;\n"
         "   for (int i = 0; i < N; i++) {\n"
         "      float t = float(i) / float(N - 1) - 0.5;\n"
-        "      sum += ImgTap(vUv + dir * t);\n"
+        "      sum += ImgPre(vUv + dir * t);\n"
         "   }\n"
         "   fragColor = ImgUnpremul(sum / float(N));\n"
         "}\n",
@@ -270,7 +275,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   vec4 sum = vec4(0.0); const int N = 16;\n"
         "   for (int i = 0; i < N; i++) {\n"
         "      float t = float(i) / float(N - 1);\n"
-        "      sum += ImgTap(vUv - dir * uAmount * t * 0.1);\n"
+        "      sum += ImgPre(vUv - dir * uAmount * t * 0.1);\n"
         "   }\n"
         "   fragColor = ImgUnpremul(sum / float(N));\n"
         "}\n",
@@ -310,12 +315,13 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   float amt = smoothstep(uRadius, 0.0, dist) * uAngle;\n"
         "   float s = sin(amt), c = cos(amt);\n"
         "   vec2 rd = vec2(c*d.x - s*d.y, s*d.x + c*d.y);\n"
-        "   fragColor = texture(uSrc, center + rd);\n"
+        "   fragColor = ImgSample(center + rd);\n"
         "}\n",
         { F("%.2f rad", P("Angle", "uAngle", T::Float, -6.2832f, 6.2832f, 2.0f)),
           P("Radius", "uRadius", T::Float, 0.05f, 1.0f, 0.5f),
           P("Center X", "uCenterX", T::Float, 0.0f, 1.0f, 0.5f),
-          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f) } },
+          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f),
+          LIN() } },
 
       { "pinchpunch", "Effects",
         "uniform float uAmount;\n"
@@ -332,12 +338,13 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      float factor = pow(n, uAmount);\n"
         "      uv = center + normalize(d) * factor * uRadius;\n"
         "   }\n"
-        "   fragColor = texture(uSrc, uv);\n"
+        "   fragColor = ImgSample(uv);\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.1f, 4.0f, 1.5f),
           P("Radius", "uRadius", T::Float, 0.05f, 1.0f, 0.5f),
           P("Center X", "uCenterX", T::Float, 0.0f, 1.0f, 0.5f),
-          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f) } },
+          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f),
+          LIN() } },
 
       { "ripple", "Effects",
         "uniform float uAmplitude;\n"
@@ -350,13 +357,14 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   float dist = length(d);\n"
         "   float wave = sin(dist * uWavelength * 6.2832 - uPhase) * uAmplitude;\n"
         "   vec2 uv = vUv + normalize(d + vec2(0.0001)) * wave * uTexelSize * 10.0;\n"
-        "   fragColor = texture(uSrc, uv);\n"
+        "   fragColor = ImgSample(uv);\n"
         "}\n",
         { P("Amplitude", "uAmplitude", T::Float, 0.0f, 2.0f, 0.5f),
           P("Wavelength", "uWavelength", T::Float, 1.0f, 40.0f, 10.0f),
           P("Phase", "uPhase", T::Float, 0.0f, 20.0f, 0.0f),
           P("Center X", "uCenterX", T::Float, 0.0f, 1.0f, 0.5f),
-          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f) } },
+          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f),
+          LIN() } },
 
       { "pixelate", "Effects",
         "uniform float uBlockSize;\n"
@@ -599,7 +607,6 @@ const std::vector<FilterDef>& GetFilterDefs()
           F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)), LIN() }, 1,
         "uniform float uThreshold;\n"
         "uniform float uRadius;\n"
-        "uniform int uConverted;\n"
         "void main() {\n"
         // linear light: the threshold knob keeps its perceptual meaning and
         // luminance uses the Rec.709 weights that apply to linear RGB
@@ -675,20 +682,20 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   if (uKind == 0) {\n"           // Slice shift (the original)
         "      float blockY = floor(uv.y * max(1.0, uDetail * 40.0));\n"
         "      uv.x += (rand(vec2(blockY, floor(t * 10.0))) - 0.5) * uAmount * 0.2;\n"
-        "      vec4 c = texture(uSrc, uv);\n"
-        "      vec4 cr = texture(uSrc, uv + vec2(uAmount * 0.01, 0.0));\n"
-        "      vec4 cb = texture(uSrc, uv - vec2(uAmount * 0.01, 0.0));\n"
+        "      vec4 c = ImgSample(uv);\n"
+        "      vec4 cr = ImgSample(uv + vec2(uAmount * 0.01, 0.0));\n"
+        "      vec4 cb = ImgSample(uv - vec2(uAmount * 0.01, 0.0));\n"
         "      fragColor = vec4(cr.r, c.g, cb.b, c.a);\n"
         "      return;\n"
         "   }\n"
         "   if (uKind == 1) {\n"           // RGB shift
         "      vec2 dir = vec2(cos(uDetail * 6.2832), sin(uDetail * 6.2832)) * uAmount * 0.02;\n"
-        "      fragColor = vec4(texture(uSrc, uv + dir).r, texture(uSrc, uv).g,\n"
-        "                       texture(uSrc, uv - dir).b, texture(uSrc, uv).a);\n"
+        "      fragColor = vec4(ImgSample(uv + dir).r, ImgSample(uv).g,\n"
+        "                       ImgSample(uv - dir).b, ImgSample(uv).a);\n"
         "      return;\n"
         "   }\n"
         "   if (uKind == 2) {\n"           // Scanlines
-        "      vec4 c = texture(uSrc, uv);\n"
+        "      vec4 c = ImgSample(uv);\n"
         "      float line = sin((uv.y + t * 0.1) * max(10.0, uDetail * 800.0) * 3.14159);\n"
         "      fragColor = vec4(c.rgb * (1.0 - uAmount * step(0.0, -line)), c.a);\n"
         "      return;\n"
@@ -698,19 +705,19 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      vec2 cell = floor(uv * grid);\n"
         "      if (rand(cell + floor(t * 8.0)) > 1.0 - uAmount)\n"
         "         uv += (vec2(rand(cell + 1.0), rand(cell + 2.0)) - 0.5) * 0.15;\n"
-        "      fragColor = texture(uSrc, clamp(uv, 0.0, 1.0));\n"
+        "      fragColor = ImgSample(clamp(uv, 0.0, 1.0));\n"
         "      return;\n"
         "   }\n"
         "   if (uKind == 4) {\n"           // Wave
         "      uv.x += sin(uv.y * max(1.0, uDetail * 200.0) + t * 2.0) * uAmount * 0.05;\n"
-        "      fragColor = texture(uSrc, clamp(uv, 0.0, 1.0));\n"
+        "      fragColor = ImgSample(clamp(uv, 0.0, 1.0));\n"
         "      return;\n"
         "   }\n"
         "   // Datamosh\n"
         "   float slice = floor(uv.y * max(2.0, uDetail * 120.0));\n"
         "   float r = rand(vec2(slice, floor(t * 4.0)));\n"
         "   uv.x = fract(uv.x + (r - 0.5) * uAmount * 0.5);\n"
-        "   vec4 c = texture(uSrc, uv);\n"
+        "   vec4 c = ImgSample(uv);\n"
         "   if (r > 0.85) c.rgb = c.gbr;\n"
         "   fragColor = c;\n"
         "}\n",
@@ -718,7 +725,8 @@ const std::vector<FilterDef>& GetFilterDefs()
           P("Amount", "uAmount", T::Float, 0.0f, 2.0f, 0.6f),
           P("Detail", "uDetail", T::Float, 0.02f, 1.0f, 0.4f),
           P("Speed", "uSpeed", T::Float, 0.0f, 4.0f, 1.0f),
-          N("%.0f", P("Seed", "uSeed", T::Float, 0.0f, 100.0f, 0.0f)) } },
+          N("%.0f", P("Seed", "uSeed", T::Float, 0.0f, 100.0f, 0.0f)),
+          LIN() } },
 
       // ---------------- Effects: lens / warp ----------------
       { "lensdistortion", "Effects",
@@ -754,10 +762,11 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      float n = sin(vUv.x * 20.0 * uScale + uTime) * cos(vUv.y * 20.0 * uScale - uTime);\n"
         "      offset = vec2(n, -n);\n"
         "   }\n"
-        "   fragColor = texture(uSrc, clamp(vUv + offset * uAmount * 0.1, 0.0, 1.0));\n"
+        "   fragColor = ImgSample(clamp(vUv + offset * uAmount * 0.1, 0.0, 1.0));\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 2.0f, 0.3f),
-          P("Map Scale", "uScale", T::Float, 0.1f, 8.0f, 1.0f) },
+          P("Map Scale", "uScale", T::Float, 0.1f, 8.0f, 1.0f),
+          LIN() },
         2 },
 
       { "liquify", "Effects",
@@ -777,11 +786,12 @@ const std::vector<FilterDef>& GetFilterDefs()
         "void main() {\n"
         "   float t = uTime * uSpeed;\n"
         "   vec2 flow = vec2(noise(vUv * uScale + t), noise(vUv * uScale + 5.2 - t)) - 0.5;\n"
-        "   fragColor = texture(uSrc, clamp(vUv + flow * uAmount * 0.2, 0.0, 1.0));\n"
+        "   fragColor = ImgSample(clamp(vUv + flow * uAmount * 0.2, 0.0, 1.0));\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 2.0f, 0.4f),
           P("Scale", "uScale", T::Float, 0.5f, 20.0f, 4.0f),
-          P("Speed", "uSpeed", T::Float, 0.0f, 3.0f, 0.4f) } },
+          P("Speed", "uSpeed", T::Float, 0.0f, 3.0f, 0.4f),
+          LIN() } },
 
       // ---------------- Effects: symmetry ----------------
       { "symmetry", "Effects",
@@ -930,10 +940,11 @@ const std::vector<FilterDef>& GetFilterDefs()
         "uniform float uAngle;\n"
         "uniform float uDistance;\n"
         "uniform int uKeepColor;\n"
+        "uniform int uPremul;\n"
         "void main() {\n"
         "   vec2 off = vec2(cos(uAngle), sin(uAngle)) * uTexelSize * uDistance;\n"
-        "   vec3 a = texture(uSrc, vUv + off).rgb;\n"
-        "   vec3 b = texture(uSrc, vUv - off).rgb;\n"
+        "   vec3 a = uPremul == 1 ? ImgTapPremul(vUv + off).rgb : texture(uSrc, vUv + off).rgb;\n"
+        "   vec3 b = uPremul == 1 ? ImgTapPremul(vUv - off).rgb : texture(uSrc, vUv - off).rgb;\n"
         "   vec3 diff = (a - b) * uAmount;\n"
         "   float e = dot(diff, vec3(0.299, 0.587, 0.114));\n"
         "   vec4 src = texture(uSrc, vUv);\n"
@@ -943,13 +954,16 @@ const std::vector<FilterDef>& GetFilterDefs()
         { P("Amount", "uAmount", T::Float, 0.0f, 8.0f, 2.0f),
           F("%.2f rad", P("Angle", "uAngle", T::Float, 0.0f, 6.2832f, 0.785f)),
           F("%.1f px", P("Distance", "uDistance", T::Float, 0.5f, 12.0f, 1.5f)),
-          E("style", "uKeepColor", { "Grey", "Over colour" }, 0) } },
+          E("style", "uKeepColor", { "Grey", "Over colour" }, 0),
+          PREMUL() } },
 
       { "normal map", "Effects",
         "uniform float uStrength;\n"
         "uniform int uInvertY;\n"
         "uniform int uOutput;\n"
-        "float lum(vec2 uv) { return dot(texture(uSrc, uv).rgb, vec3(0.299, 0.587, 0.114)); }\n"
+        "uniform int uPremul;\n"
+        // taps sit on texel centres, so multiplying by alpha after the fetch is exact
+        "float lum(vec2 uv) { vec4 c = texture(uSrc, uv); return dot(c.rgb, vec3(0.299, 0.587, 0.114)) * (uPremul == 1 ? c.a : 1.0); }\n"
         "void main() {\n"
         "   vec2 t = uTexelSize;\n"
         "   // Sobel gradient of luminance treated as a height field\n"
@@ -966,7 +980,8 @@ const std::vector<FilterDef>& GetFilterDefs()
         "}\n",
         { P("Strength", "uStrength", T::Float, 0.1f, 12.0f, 3.0f),
           E("flip Y", "uInvertY", { "OpenGL", "DirectX" }, 0),
-          E("output", "uOutput", { "Normals", "Height", "Slope" }, 0) } },
+          E("output", "uOutput", { "Normals", "Height", "Slope" }, 0),
+          PREMUL() } },
 
       { "convolve", "Effects",
         // A user-editable 3x3 kernel. Blur, sharpen, edge and emboss are all just

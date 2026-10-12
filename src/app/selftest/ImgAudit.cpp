@@ -536,7 +536,12 @@ namespace
          }
          if (darkLv < kFlagDarkLevels && idErr < 0.5f)
             flag.Add(def.name, "dark", "%.0f levels in 0..0.1 (banding)", darkLv);
-         if (bleed > kFlagBleed)
+         // Expected bleed: the alpha filters make hidden colour visible by definition.
+         static const char* kBleedByDesign[] = { "set alpha", "alpha invert", "alpha from luma" };
+         bool bleedByDesign = false;
+         for (const char* n : kBleedByDesign)
+            bleedByDesign = bleedByDesign || def.name == n;
+         if (bleed > kFlagBleed && !bleedByDesign)
             flag.Add(def.name, "bleed", "%.2f colour leaks from alpha-0 pixels", bleed);
          if (gpuMs > kFlagGpuMs)
             flag.Add(def.name, "gpu", "%.2f ms at 1080p", gpuMs);
