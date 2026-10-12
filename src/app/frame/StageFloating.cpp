@@ -358,9 +358,11 @@ int DrawFloating(FrameCtx& fc)
          static std::string sLastTitle;
          std::string base = gPatchPath.empty()
             ? std::string("Untitled")
-            : gPatchPath.substr(gPatchPath.find_last_of('/') + 1);
+            : gPatchPath.substr(gPatchPath.find_last_of("/\\") + 1);
+         // The version is in the title so anyone can see which copy is running: with an old copy still on disk,
+         // double-clicking a patch can open that one, and its bugs look like the new version's.
          std::string title = (gPatchDirty ? std::string("\xE2\x80\xA2 ") : std::string()) +
-            base + " \xE2\x80\x94 Infinite";
+            base + " \xE2\x80\x94 Infinite " INFINITE_VERSION_STRING;
          if (title != sLastTitle)
          {
             glfwSetWindowTitle(window, title.c_str());
