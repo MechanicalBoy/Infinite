@@ -5540,6 +5540,8 @@ void DrawCookOverlay();   // View > Cook times; see CookOverlay.cpp
 std::string BuildSystemInfo();   // Help > Copy system info; see Diagnostics.cpp
 void CopySystemInfo();
 void DrawNotices();       // Notices::Active() as cards, bottom-right; see NoticeStack.cpp
+void CheckPatchOpener();  // once at launch: notice when double-click opens a different copy; see PatchOpenerCheck.cpp
+bool PatchOpenerNotice(const Platform::PatchOpener& o, std::string& title, std::string& detail);
 bool FindIsOpen();
 int FindMatchCount();
 int FindMatchNodeIndex(int i);   // GraphNode::index of the i-th match, -1 out of range
@@ -6010,6 +6012,8 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame = false);
 #if defined(__linux__)
 int RunCameraConvTest();
 #endif
+int RunPatchOpenerTest();   // INFINITE_PATCHOPENERTEST, PlatformTests.cpp
+int RunSelfUpdateTest();    // INFINITE_SELFUPDATETEST, PlatformTests.cpp (throwaway copies only)
 
 #if defined(__linux__)
 int RunHostEnvTest();

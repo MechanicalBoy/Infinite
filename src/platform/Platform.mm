@@ -7900,6 +7900,202 @@ namespace Platform
       }
    }
 
+   static NSURL* PatchOpenerUrl()
+   {
+      if (@available(macOS 12.0, *))
+      {
+         UTType* type = [UTType typeWithIdentifier:@"com.namansoni.infinite.patch"];
+         return type != nil ? [[NSWorkspace sharedWorkspace] URLForApplicationToOpenContentType:type] : nil;
+      }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+      CFURLRef url = LSCopyDefaultApplicationURLForContentType(CFSTR("com.namansoni.infinite.patch"), kLSRolesAll, nullptr);
+#pragma clang diagnostic pop
+      return url != nullptr ? (NSURL*)CFBridgingRelease(url) : nil;
+   }
+
+   bool QueryPatchOpener(PatchOpener& out)
+   {
+      out = PatchOpener();
+      @autoreleasepool
+      {
+         NSBundle* me = [NSBundle mainBundle];
+         if (![[me bundlePath] hasSuffix:@".app"])
+            return false;   // a bare binary has no Launch Services identity to compare
+         NSString* selfPath = [[[me bundleURL] URLByResolvingSymlinksInPath] path];
+         out.self = [selfPath UTF8String];
+         out.selfTemporary = [selfPath hasPrefix:@"/Volumes/"] || [selfPath containsString:@"/AppTranslocation/"];
+         NSURL* url = PatchOpenerUrl();
+         if (url == nil)
+            return true;
+         NSString* openerPath = [[url URLByResolvingSymlinksInPath] path];
+         out.opener = [openerPath UTF8String];
+         out.isSelf = [openerPath isEqualToString:selfPath];
+         NSBundle* opener = [NSBundle bundleWithURL:url];
+         out.otherApp = opener == nil || ![[opener bundleIdentifier] isEqualToString:[me bundleIdentifier]];
+         NSString* version = [opener objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+         if ([version isKindOfClass:[NSString class]])
+            out.version = [version UTF8String];
+      }
+      return true;
+   }
+
+   static bool RunLsregister(NSArray<NSString*>* args)
+   {
+      NSURL* tool = [NSURL fileURLWithPath:@"/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+                                           @"LaunchServices.framework/Support/lsregister"];
+      NSError* err = nil;
+      NSTask* task = [NSTask launchedTaskWithExecutableURL:tool arguments:args error:&err terminationHandler:nil];
+      if (task == nil)
+         return false;
+      [task waitUntilExit];
+      return [task terminationStatus] == 0;
+   }
+
+   bool MakeThisCopyPatchOpener(const PatchOpener& current, std::string& outError)
+   {
+      outError.clear();
+      if (current.self.empty() || current.selfTemporary)
+      {
+         outError = "This copy is running from a disk image. Move it to Applications first.";
+         return false;
+      }
+      @autoreleasepool
+      {
+         // Unregister, not delete: the other copy stays on disk and still runs when opened directly. Its
+         // registration comes back if it is launched again - then this notice comes back too.
+         if (!current.opener.empty() && !current.isSelf && !current.otherApp)
+            RunLsregister(@[ @"-u", [NSString stringWithUTF8String:current.opener.c_str()] ]);
+         if (!RunLsregister(@[ @"-f", [NSString stringWithUTF8String:current.self.c_str()] ]))
+         {
+            outError = "Launch Services refused to register this copy.";
+            return false;
+         }
+      }
+      PatchOpener after;
+      if (!QueryPatchOpener(after) || !after.isSelf)
+      {
+         outError = "macOS still opens patches with " + (after.opener.empty() ? std::string("nothing") : after.opener) +
+                    ". Right-click a patch > Get Info > Open with > this copy > Change All.";
+         return false;
+      }
+      return true;
+   }
+
+   // ---- in-place update -----------------------------------------------------
+
+   static std::string sStagedUpdate;   // <parent>/.Infinite-update.app, set by PrepareSelfUpdate
+
+   static bool RunTool(NSString* path, NSArray<NSString*>* args)
+   {
+      NSError* err = nil;
+      NSTask* task = [NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:path] arguments:args error:&err
+                                        terminationHandler:nil];
+      if (task == nil)
+         return false;
+      [task waitUntilExit];
+      return [task terminationStatus] == 0;
+   }
+
+   bool CanSelfUpdate(std::string& whyNot)
+   {
+      whyNot.clear();
+      @autoreleasepool
+      {
+         NSString* self = [[[[NSBundle mainBundle] bundleURL] URLByResolvingSymlinksInPath] path];
+         if (![self hasSuffix:@".app"])
+            whyNot = "This build is not an app bundle.";
+         else if ([self hasPrefix:@"/Volumes/"] || [self containsString:@"/AppTranslocation/"])
+            whyNot = "Infinite is running from the disk image. Drag it to Applications first.";
+         else if (access([[self stringByDeletingLastPathComponent] fileSystemRepresentation], W_OK) != 0 ||
+                  access([self fileSystemRepresentation], W_OK) != 0)
+            whyNot = "This account can't write to the folder Infinite is in.";
+      }
+      return whyNot.empty();
+   }
+
+   bool PrepareSelfUpdate(const std::string& payload, const std::string& version, std::string& outError)
+   {
+      outError.clear();
+      sStagedUpdate.clear();
+      if (!CanSelfUpdate(outError))
+         return false;
+      @autoreleasepool
+      {
+         NSString* self = [[[[NSBundle mainBundle] bundleURL] URLByResolvingSymlinksInPath] path];
+         NSString* staged = [[self stringByDeletingLastPathComponent] stringByAppendingPathComponent:@".Infinite-update.app"];
+         NSString* mount = [[[NSString stringWithUTF8String:payload.c_str()] stringByDeletingLastPathComponent]
+                              stringByAppendingPathComponent:@"mnt"];
+         NSFileManager* fm = [NSFileManager defaultManager];
+         [fm removeItemAtPath:staged error:nil];
+         [fm createDirectoryAtPath:mount withIntermediateDirectories:YES attributes:nil error:nil];
+         if (!RunTool(@"/usr/bin/hdiutil", @[ @"attach", @"-nobrowse", @"-readonly", @"-noautoopen", @"-mountpoint", mount,
+                                               [NSString stringWithUTF8String:payload.c_str()] ]))
+         {
+            outError = "The downloaded disk image would not open.";
+            return false;
+         }
+         NSString* inside = [mount stringByAppendingPathComponent:@"Infinite.app"];
+         NSString* got = [[NSBundle bundleWithPath:inside] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+         const bool versionOk = [got isKindOfClass:[NSString class]] && version == [got UTF8String];
+         // ditto keeps the bundle's symlinks, permissions and signature intact; the copy lands on this copy's own
+         // volume so the final swap is a rename.
+         const bool copied = versionOk && RunTool(@"/usr/bin/ditto", @[ inside, staged ]);
+         RunTool(@"/usr/bin/hdiutil", @[ @"detach", mount, @"-force" ]);
+         if (!versionOk)
+         {
+            outError = "The download is not Infinite " + version + ".";
+            return false;
+         }
+         if (!copied || !RunTool(@"/usr/bin/codesign", @[ @"--verify", @"--deep", @"--strict", staged ]))
+         {
+            [fm removeItemAtPath:staged error:nil];
+            outError = copied ? "The new copy's signature does not verify." : "Could not copy the new version next to this one.";
+            return false;
+         }
+         sStagedUpdate = [staged UTF8String];
+      }
+      return true;
+   }
+
+   bool LaunchSelfUpdateHelper(bool relaunch, std::string& outError)
+   {
+      outError.clear();
+      if (sStagedUpdate.empty())
+      {
+         outError = "No update is ready.";
+         return false;
+      }
+      @autoreleasepool
+      {
+         NSString* self = [[[[NSBundle mainBundle] bundleURL] URLByResolvingSymlinksInPath] path];
+         NSString* old = [[self stringByDeletingLastPathComponent] stringByAppendingPathComponent:@".Infinite-old.app"];
+         // Waits for this process, swaps by rename (same folder, so atomic per step), puts this copy back if the
+         // second rename fails, re-registers so double-click opens the new copy, then relaunches it.
+         NSString* script =
+            @"pid=$1; self=$2; staged=$3; old=$4; relaunch=$5\n"
+            @"while kill -0 \"$pid\" 2>/dev/null; do sleep 0.2; done\n"
+            @"rm -rf \"$old\"\n"
+            @"mv \"$self\" \"$old\" || exit 1\n"
+            @"if mv \"$staged\" \"$self\"; then rm -rf \"$old\"; else mv \"$old\" \"$self\"; exit 1; fi\n"
+            @"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f \"$self\"\n"
+            @"[ \"$relaunch\" = 1 ] && /usr/bin/open \"$self\"\n"
+            @"exit 0\n";
+         NSError* err = nil;
+         NSArray* args = @[ @"-c", script, @"infinite-update", [NSString stringWithFormat:@"%d", (int)getpid()], self,
+                            [NSString stringWithUTF8String:sStagedUpdate.c_str()], old, relaunch ? @"1" : @"0" ];
+         // Not waited on: it outlives this process (reparented to launchd) and does its work after we exit.
+         NSTask* task = [NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:@"/bin/sh"] arguments:args error:&err
+                                           terminationHandler:nil];
+         if (task == nil)
+         {
+            outError = "Could not start the update helper.";
+            return false;
+         }
+      }
+      return true;
+   }
+
    bool HttpGet(const std::string& url, const std::string& userAgent,
                 std::string& outBody, std::string& outError,
                 int timeoutSeconds)

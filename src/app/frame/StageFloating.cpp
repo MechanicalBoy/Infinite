@@ -3,6 +3,8 @@
 #include "app/ui/design/components/FieldWell.h"
 #include "app/frame/FrameCtx.h"
 #include "app/ui/design/components/DialogParts.h"
+#include "core/SelfUpdate.h"
+#include "core/Notices.h"
 
 namespace app
 {
@@ -105,6 +107,7 @@ int DrawFloating(FrameCtx& fc)
             if (!strcmp(sDlg, "unsaved")) gShowUnsavedChangesModal = true;
             else if (!strcmp(sDlg, "about")) gShowAboutModal = true;
             else if (!strcmp(sDlg, "recover")) { gShowAutosaveRecoveryModal = true; gAutosaveRecoveryTimestamp = "14:32"; }
+            else if (!strcmp(sDlg, "opener")) CheckPatchOpener();   // the live answer; silent when this copy opens patches
             sDlg = nullptr;
          }
       }
@@ -284,11 +287,53 @@ int DrawFloating(FrameCtx& fc)
 
          if (status == UpdateCheck::Status::UpdateAvailable)
          {
-            const int pick = DialogParts::Buttons({ L("Later"), L("Download") });
-            if (pick == 1)
-               Platform::OpenExternalUrl(UpdateCheck::DownloadUrl());
-            if (pick >= 0)
-               ImGui::CloseCurrentPopup();
+            // Update in place when this copy can be replaced (one copy, so the OS never opens patches in an old one);
+            // otherwise, or after a failed attempt, the download page as before.
+            std::string whyNot;
+            const SelfUpdate::Stage stage = SelfUpdate::GetStage();
+            const bool inPlace = SelfUpdate::Available(whyNot) && stage != SelfUpdate::Stage::Failed;
+            if (stage == SelfUpdate::Stage::Downloading)
+            {
+               const float p = SelfUpdate::Progress();
+               ImGui::ProgressBar(p < 0.0f ? -1.0f * (float)ImGui::GetTime() : p, ImVec2(400.0f, 0.0f), T("Downloading"));
+               if (DialogParts::Buttons({ L("Hide") }) == 0)
+                  ImGui::CloseCurrentPopup();
+            }
+            else if (stage == SelfUpdate::Stage::Ready)
+            {
+               DialogParts::Message(T("Ready. Infinite restarts on the new version."));
+               const int pick = DialogParts::Buttons({ L("Later"), L("Restart to update") });
+               if (pick == 1)
+               {
+                  GLFWwindow* window = fc.window;
+                  GuardUnsavedChanges([window]()
+                  {
+                     std::string error;
+                     if (SelfUpdate::LaunchHelper(true, error))
+                        glfwSetWindowShouldClose(window, GLFW_TRUE);
+                     else
+                        Notices::Post(Notices::Level::Warning, "update", "Could not update", error);
+                  });
+               }
+               if (pick >= 0)
+                  ImGui::CloseCurrentPopup();
+            }
+            else
+            {
+               ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 400.0f);
+               if (stage == SelfUpdate::Stage::Failed)
+                  DialogParts::Message(SelfUpdate::LastError().c_str());
+               else if (!inPlace)
+                  DialogParts::Message(whyNot.c_str());
+               ImGui::PopTextWrapPos();
+               const int pick = DialogParts::Buttons({ L("Later"), inPlace ? L("Update now") : L("Download") });
+               if (pick == 1 && inPlace)
+                  SelfUpdate::Start();
+               else if (pick == 1)
+                  Platform::OpenExternalUrl(UpdateCheck::DownloadUrl());
+               if (pick == 0 || (pick == 1 && !inPlace))
+                  ImGui::CloseCurrentPopup();
+            }
          }
          else if (status == UpdateCheck::Status::Failed)
          {

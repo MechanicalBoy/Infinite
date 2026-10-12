@@ -37,6 +37,7 @@ namespace
       std::string latestTag;        // raw tag_name from GitHub; set when ok
       bool isNewer = false;         // latestTag is newer than the running version
       std::string downloadUrl;      // resolved platform asset URL; set when isNewer
+      std::string assetSha256;      // GitHub's digest of that asset (lowercase hex); empty when the URL is a page
       std::string badgeLatest;      // latestTag if isNewer and not dismissed, else empty
    };
 
@@ -51,6 +52,7 @@ namespace
    std::string gModalVersion;
    std::string gModalError;
    std::string gModalDownloadUrl;
+   std::string gModalAssetSha256;
 
    // Mirrors CategoryColors::ThemePath()'s comment: one flat preference file
    // next to the app's other Application Support state, not a bundled
@@ -154,8 +156,7 @@ namespace
       // Phase 5 (AppImage). x86_64 only - see tools/linux/Dockerfile.release's
       // glibc-2.35 floor and package-appimage.sh. Like the other platforms,
       // this only resolves a download URL for the "Download" button in the
-      // update-available modal (main.cpp calls Platform::OpenExternalUrl on
-      // it) - there is no self-replace on any platform.
+      // update-available modal, or for SelfUpdate's in-place replace.
       return "Infinite-x86_64.AppImage";
 #else
       return {};
@@ -165,7 +166,7 @@ namespace
    // assets[].browser_download_url for the platform asset, else the
    // release's html_url, else the website's download section - in that
    // order, per docs/plans/update-checker-prompt.md.
-   std::string ResolveDownloadUrl(const json& release)
+   std::string ResolveDownloadUrl(const json& release, std::string* sha256 = nullptr)
    {
       std::string expected = ExpectedAssetName();
       if (!expected.empty() && release.contains("assets") && release["assets"].is_array())
@@ -177,7 +178,16 @@ namespace
             if (asset["name"].get<std::string>() != expected)
                continue;
             if (asset.contains("browser_download_url") && asset["browser_download_url"].is_string())
+            {
+               // "digest": "sha256:<hex>" - what an in-place update checks the download against.
+               if (sha256 != nullptr && asset.contains("digest") && asset["digest"].is_string())
+               {
+                  const std::string d = asset["digest"].get<std::string>();
+                  if (d.rfind("sha256:", 0) == 0)
+                     *sha256 = d.substr(7);
+               }
                return asset["browser_download_url"].get<std::string>();
+            }
          }
       }
       if (release.contains("html_url") && release["html_url"].is_string())
@@ -235,7 +245,7 @@ namespace
 
          if (result.isNewer)
          {
-            result.downloadUrl = ResolveDownloadUrl(release);
+            result.downloadUrl = ResolveDownloadUrl(release, &result.assetSha256);
 
             std::string dismissed = LoadDismissedVersion();
             if (dismissed.empty() || IsNewer(ParseVersion(dismissed), remote))
@@ -301,6 +311,7 @@ void Poll()
       gModalStatus = Status::UpdateAvailable;
       gModalVersion = result.latestTag;
       gModalDownloadUrl = result.downloadUrl;
+      gModalAssetSha256 = result.assetSha256;
    }
    else
    {
@@ -329,6 +340,11 @@ const std::string& LastError()
 const std::string& DownloadUrl()
 {
    return gModalDownloadUrl;
+}
+
+const std::string& AssetSha256()
+{
+   return gModalAssetSha256;
 }
 
 bool UpdateAvailable()

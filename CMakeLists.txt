@@ -473,6 +473,7 @@ set(COMMON_SOURCES
     src/app/panels/FindOverlay.cpp
     src/app/panels/CookOverlay.cpp
     src/app/panels/NoticeStack.cpp
+    src/app/panels/PatchOpenerCheck.cpp
     src/app/panels/HistoryPanel.cpp
     src/app/panels/TemplatesWindow.cpp
     src/app/panels/Diagnostics.cpp
@@ -575,6 +576,7 @@ set(COMMON_SOURCES
     src/core/PatchJson.cpp
     src/core/OscMessage.cpp
     src/core/UpdateCheck.cpp
+    src/core/SelfUpdate.cpp
     src/core/Extensions.cpp
     src/core/tracking/OrtRuntime.cpp
     src/core/tracking/HandTracker.cpp

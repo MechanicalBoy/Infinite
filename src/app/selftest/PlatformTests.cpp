@@ -1,5 +1,6 @@
 // Platform / patch-layout self-tests (moved verbatim from main.cpp).
 #include "app/AppShared.h"
+#include "core/SelfUpdate.h"
 #if defined(__linux__)
 #include "platform/linux/HostEnvironmentLinux.h"
 #endif
@@ -422,5 +423,106 @@ int RunPatchLayoutTest()
    if (fails == 0)
       printf("PATCHLAYOUTTEST OK\n");
    return fails == 0 ? 0 : 1;
+}
+
+// ===================================================== INFINITE_PATCHOPENERTEST
+// When the launch notice offers "Use this copy" (PatchOpenerCheck.cpp), then the live OS query on this machine.
+// The click itself is not run here: it changes which app opens patches for the whole account.
+int RunPatchOpenerTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+   int fails = 0;
+   auto check = [&](bool ok, const char* what)
+   {
+      if (!ok)
+      {
+         printf("PATCHOPENERTEST FAIL: %s\n", what);
+         fails++;
+      }
+   };
+   auto offer = [](Platform::PatchOpener o, std::string* detail = nullptr)
+   {
+      std::string t, d;
+      const bool r = PatchOpenerNotice(o, t, d);
+      if (detail != nullptr)
+         *detail = d;
+      return r;
+   };
+   Platform::PatchOpener base;
+   base.self = "/Applications/Infinite.app";
+   base.opener = "/Users/x/Desktop/old/Infinite.app";
+   base.version = "0.4.25";
+   std::string detail;
+   check(offer(base, &detail), "another copy opens patches: offered");
+   check(detail.find("0.4.25") != std::string::npos && detail.find("/Desktop/old/") != std::string::npos,
+         "the notice names the other copy's version and path");
+   { Platform::PatchOpener o = base; o.isSelf = true; check(!offer(o), "this copy already opens patches: silent"); }
+   { Platform::PatchOpener o = base; o.otherApp = true; check(!offer(o), "the user picked another app: silent"); }
+   { Platform::PatchOpener o = base; o.selfTemporary = true; check(!offer(o), "running from a disk image: silent"); }
+   { Platform::PatchOpener o = base; o.self.clear(); check(!offer(o), "own path unknown: silent"); }
+   { Platform::PatchOpener o = base; o.opener.clear(); check(offer(o), "nothing registered: offered"); }
+   { Platform::PatchOpener o = base; o.version.clear(); check(offer(o, &detail) && detail.find("another copy") != std::string::npos,
+                                                        "unknown version still reads as a sentence"); }
+
+   Platform::PatchOpener live;
+   if (Platform::QueryPatchOpener(live))
+   {
+      printf("live: self=%s opener=%s version=%s isSelf=%d otherApp=%d temporary=%d\n", live.self.c_str(),
+             live.opener.c_str(), live.version.c_str(), (int)live.isSelf, (int)live.otherApp, (int)live.selfTemporary);
+      check(!live.self.empty(), "live query knows this copy's path");
+      check(!live.isSelf || live.opener == live.self || !live.opener.empty(), "isSelf only with an opener");
+   }
+   else
+      printf("live: not answerable here (bare binary or no xdg-mime)\n");
+   // =apply performs the click and re-queries. Only for a throwaway container/VM: it changes this account's opener.
+   const char* mode = getenv("INFINITE_PATCHOPENERTEST");
+   if (mode != nullptr && !strcmp(mode, "apply"))
+   {
+      std::string error;
+      const bool made = Platform::MakeThisCopyPatchOpener(live, error);
+      Platform::PatchOpener after;
+      const bool asked = Platform::QueryPatchOpener(after);
+      printf("apply: made=%d error=%s opener=%s isSelf=%d\n", (int)made, error.c_str(), after.opener.c_str(), (int)after.isSelf);
+      check(made && asked && after.isSelf, "after Use this copy, this copy opens patches");
+      std::string t, d;
+      check(!PatchOpenerNotice(after, t, d), "and the notice no longer shows");
+   }
+   if (fails == 0)
+      printf("PATCHOPENERTEST OK\n");
+   return fails == 0 ? 0 : 1;
+}
+
+// ===================================================== INFINITE_SELFUPDATETEST
+// INFINITE_SELFUPDATETEST=<payload>|<version>: stages the payload (DMG / unpacked folder / AppImage) and starts the
+// swap helper without relaunch, then exits. Replaces THIS copy once it exits - run only from a throwaway copy
+// (scripts/selfupdate_swap_test.sh makes one and checks the result).
+int RunSelfUpdateTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+   const std::string arg = getenv("INFINITE_SELFUPDATETEST");
+   const size_t bar = arg.rfind('|');
+   if (bar == std::string::npos)
+   {
+      printf("SELFUPDATETEST FAIL: expected <payload>|<version>\n");
+      return 1;
+   }
+   std::string why, error;
+   if (!Platform::CanSelfUpdate(why))
+   {
+      printf("SELFUPDATETEST FAIL: cannot self-update here: %s\n", why.c_str());
+      return 1;
+   }
+   if (!SelfUpdate::StageLocal(arg.substr(0, bar), arg.substr(bar + 1), error))
+   {
+      printf("SELFUPDATETEST FAIL: stage: %s\n", error.c_str());
+      return 1;
+   }
+   if (!SelfUpdate::LaunchHelper(false, error))
+   {
+      printf("SELFUPDATETEST FAIL: helper: %s\n", error.c_str());
+      return 1;
+   }
+   printf("SELFUPDATETEST STAGED\n");
+   return 0;
 }
 }
