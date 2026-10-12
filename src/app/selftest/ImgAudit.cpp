@@ -860,6 +860,7 @@ namespace
       {
          TexSource src;
          CurvesNode c;
+         c.SetExactLine(!LegacyLook()); // legacy: the old spline that bends a straight line
          c.Input().Connect(&src);
          Image ramp = FullRamp(), out;
          src.Set(ramp);
@@ -889,6 +890,7 @@ namespace
       bl.Mix() = 1.0f;
       bl.Linear() = false; // the W3C formulas are written for encoded values
       bl.Headroom() = false; // and clip at white (display-referred)
+      bl.W3CModes() = !LegacyLook(); // legacy: the pre-W3C Overlay/Soft/Hard Light/Hard Mix
       Image a = RandomColours(32, 32, 21), b = RandomColours(32, 32, 22), out;
       sa.Set(a);
       sb.Set(b);
