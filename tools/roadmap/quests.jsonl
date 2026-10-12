@@ -2906,3 +2906,6 @@
 {"ts": "2026-10-12T18:24:56+05:30", "event": "add", "id": "R734", "after": [], "user": false, "src": "merge:feature/single-opener", "track": "engine", "kind": "feature", "horizon": "later", "title": "Single opener", "why": "merged into main (6001730)", "origin": "merge"}
 {"ts": "2026-10-12T20:40:49+05:30", "event": "done", "id": "R734", "why": "merged into main (6001730)"}
 {"ts": "2026-10-12T20:40:49+05:30", "event": "edit", "id": "R734", "opened": "2026-10-12T18:24:56+05:30", "closed": "2026-10-12T20:40:49+05:30", "release": "", "commits": ["6001730"]}
+{"ts": "2026-10-12T20:56:12+05:30", "event": "add", "id": "R735", "after": [], "user": false, "src": "merge:bugfix/selfupdate-cleanup", "track": "engine", "kind": "fix", "horizon": "later", "title": "Selfupdate cleanup", "why": "merged into main (c1d453b)", "origin": "merge"}
+{"ts": "2026-10-12T20:56:12+05:30", "event": "done", "id": "R735", "why": "merged into main (c1d453b)"}
+{"ts": "2026-10-12T20:56:12+05:30", "event": "edit", "id": "R735", "opened": "2026-10-12T20:56:12+05:30", "closed": "2026-10-12T20:56:12+05:30", "release": "", "commits": ["c1d453b"]}
