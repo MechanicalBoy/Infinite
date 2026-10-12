@@ -318,6 +318,14 @@ namespace
       return 10.0 * std::log10(std::max(alias, 1e-30) / std::max(fund, 1e-30));
    }
 
+   // One measured value for the quality system (docs/quality/README.md): tools/quality/quality.py
+   // reads these rows, keeps the worst per metric and node, and owns the targets and the release
+   // gate. The FLAG lines stay as this audit's own pointers to what to look at.
+   void Quality(const char* id, const char* node, double v)
+   {
+      printf("QUALITY id=%s subject=\"node:%s\" value=%.4f\n", id, node, v);
+   }
+
    struct Flags
    {
       int n = 0;
@@ -465,6 +473,7 @@ namespace
             const double got = PeakHz(Spectrum(seg), 440.0, sr);
             const double cents = 1200.0 * std::log2(got / 440.0);
             printf("SYNTHAUDIT NOTE  %-15s note 69 pitch %+.2f cents\n", s.name, cents);
+            Quality("synth.note_cents", s.name, std::fabs(cents));
             if (std::fabs(cents) > kFlagPitchCents)
                flags.Flag("NOTE", s.name, "cents", cents);
          }
@@ -491,6 +500,8 @@ namespace
          const double cOn = Db(MaxD2(x, onAt, onAt + w) / std::max(steady, 1e-12));
          const double cOff = Db(MaxD2(x, offAt, offAt + w) / std::max(steady, 1e-12));
          printf("SYNTHAUDIT CLICK %-15s note-on %+.1f dB | note-off %+.1f dB re steady\n", s.name, cOn, cOff);
+         Quality("synth.click_on_db", s.name, cOn);
+         Quality("synth.click_off_db", s.name, cOff);
          if (cOn > kFlagClickDb)
             flags.Flag("CLICK", s.name, "note-on dB", cOn);
          if (cOff > kFlagClickDb)
@@ -551,6 +562,10 @@ namespace
                 ns, tl, idleDb > kFlagTailDbfs ? " (free-running, idle level)" : "", fin ? "" : " NON-FINITE");
          if (!fin)
             return false;
+         if (idleDb <= kFlagTailDbfs) // a free-running node's tail is its idle level, not a stuck voice
+            Quality("synth.poly_tail_dbfs", s.name, tl);
+         if (n == 4)
+            Quality("synth.chord4_peak_dbfs", s.name, pk);
          if (tl > kFlagTailDbfs && tl > idleDb + 1.0)
             flags.Flag("POLY", s.name, "tail dBFS after all-off", tl);
          // A 4-note chord at velocity 0.8 must fit under 0 dBFS at defaults; 8 and
@@ -660,6 +675,8 @@ namespace
              legacy ? " (as loaded from a patch saved before rateFix)" : "");
       if (legacy)
          return;
+      Quality("synth.sample_pitch_spread_c", s.name, c);
+      Quality("synth.sample_length_ratio", s.name, l);
       if (c > kFlagSampleCents)
          flags.Flag("SAMPLE", s.name, "pitch spread over rates, cents", c);
       if (l > 1.02)
@@ -714,6 +731,7 @@ bool RunSynthAudit()
       {
          const double pk = Db(Peak(x));
          printf("SYNTHAUDIT LEVEL %-15s rms %6.1f dBFS | peak %6.1f dBFS\n", s.name, Db(Rms(x)), pk);
+         Quality("synth.peak_dbfs", s.name, pk);
          if (pk > kFlagPeakDbfs)
             flags.Flag("LEVEL", s.name, "peak dBFS", pk);
       }
@@ -732,6 +750,7 @@ bool RunSynthAudit()
                char b[48];
                snprintf(b, sizeof b, " %6.0fHz %+6.2fc", hz, cents);
                row += b;
+               Quality("synth.pitch_cents", s.name, std::fabs(cents));
                if (std::fabs(cents) > kFlagPitchCents)
                   flags.Flag("PITCH", s.name, "cents", cents);
             }
@@ -747,6 +766,7 @@ bool RunSynthAudit()
             Render(s, 48000.0, hz, kN, y);
             const double a = AliasDb(Spectrum(y), hz, 48000.0);
             printf("SYNTHAUDIT ALIAS %-15s %5.0f Hz  %7.1f dB\n", s.name, hz, a);
+            Quality("synth.alias_db", s.name, a);
             if (a > kFlagAliasDb)
                flags.Flag("ALIAS", s.name, "dB", a);
          }
@@ -778,6 +798,7 @@ bool RunSynthAudit()
             }
          }
          printf("SYNTHAUDIT RATE  %-15s level spread %.2f dB over 44.1/48/96 kHz\n", s.name, hi - lo);
+         Quality("synth.rate_spread_db", s.name, hi - lo);
          if (hi - lo > kFlagRateDb)
             flags.Flag("RATE", s.name, "spread dB", hi - lo);
       }
@@ -789,6 +810,7 @@ bool RunSynthAudit()
          Render(s, 48000.0, 440.0f, 1 << 14, b);
          const bool same = a == b;
          printf("SYNTHAUDIT DET   %-15s %s\n", s.name, same ? "bit-identical" : "DIFFERS");
+         Quality("synth.det_differs", s.name, same ? 0.0 : 1.0);
          if (!same)
             flags.Flag("DET", s.name, "not bit-identical", 1.0);
       }
@@ -913,6 +935,7 @@ bool RunSynthAudit()
          const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count() /
                            ((double)blocks * kBlock);
          printf("SYNTHAUDIT CPU   %-15s %7.1f ns/frame\n", s.name, ns);
+         Quality("synth.cpu_ns_frame", s.name, ns);
          if (ns > kFlagCpuNs)
             flags.Flag("CPU", s.name, "ns/frame", ns);
       }

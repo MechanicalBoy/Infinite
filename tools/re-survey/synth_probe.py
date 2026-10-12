@@ -42,7 +42,7 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import RE_OUTPUT, RE_TMP, SelfTest, ensure_dir, infinite_bin, md_table, write_out  # noqa: E402
+from common import RE_OUTPUT, RE_TMP, SelfTest, ensure_dir, infinite_bin, md_table, quality_line, write_out  # noqa: E402
 import plugin_probe as pp  # noqa: E402
 
 SR = 48000
@@ -377,6 +377,24 @@ def fmt(v, spec="%.1f"):
     return "-" if v is None else spec % v
 
 
+# results.json key -> quality metric id (docs/quality/registry.tsv owns targets and gates)
+QUALITY_KEYS = [("cents_worst", "probe.pitch_worst_c"), ("nonharm_60", "probe.nonharm60_db"),
+                ("nonharm_96", "probe.nonharm96_db"), ("nonharm_108", "probe.nonharm108_db"),
+                ("attack_ms", "probe.attack_ms"), ("release_s", "probe.release_s"),
+                ("vel_span_db", "probe.vel_span_db"), ("cpu_per_voice_ms_per_s", "probe.cpu_voice_ms_s")]
+
+
+def to_quality(results):
+    L = []
+    for r in results:
+        if not r.get("ok"):
+            continue
+        for key, metric in QUALITY_KEYS:
+            if isinstance(r.get(key), (int, float)):
+                L.append(quality_line(metric, r["target"]["label"], r[key]))
+    return "\n".join(L) + "\n"
+
+
 def to_markdown(results):
     rows = []
     for r in results:
@@ -484,7 +502,10 @@ def main():
         return 2
     res, out_dir = probe(a.targets, cpu=not a.no_cpu, keep=a.keep, log=lambda m: print(m, file=sys.stderr))
     write_out(to_markdown(res), a.out)
+    with open(os.path.join(out_dir, "quality.txt"), "w") as f:
+        f.write(to_quality(res))
     print("results: %s" % os.path.join(out_dir, "results.json"), file=sys.stderr)
+    print("quality rows: %s (python3 tools/quality/quality.py ingest <it>)" % os.path.join(out_dir, "quality.txt"), file=sys.stderr)
     return 0 if all(r.get("ok") for r in res) else 1
 
 

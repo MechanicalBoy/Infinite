@@ -64,6 +64,11 @@ def copyleft_hits(text):
     return hits
 
 
+def quality_line(metric, subject, value):
+    """One measured value for the quality system (docs/quality/README.md, read by tools/quality/quality.py)."""
+    return 'QUALITY id=%s subject="%s" value=%.4f' % (metric, subject.replace('"', "'"), value)
+
+
 def run(cmd, timeout=120, cwd=None, input_bytes=None):
     """Run a command, never raise. Returns (rc, stdout str, stderr str)."""
     try:
