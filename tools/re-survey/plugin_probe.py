@@ -20,11 +20,14 @@ Targets:
   au:aufx:dLay:oDin       an Audio Unit by id (ids: `plugin_probe.py list`)
   "Pro-L 2"               an AU by name substring (must match one effect)
   node:Reverb             an Infinite audio node by type name (Q3: ours vs a benchmark)
-  vst3:...                refused: headless VST3 does not load today (see README, known gaps)
+  vst3:<id> | "vst3 Pro-Q 4" | X.vst3   a VST3 effect by id or bundle name (needs the VST3 resolver fix)
+  "Saturn 2@Drive=60,Mix=100"           settings after @: AU parameter names (auval) or node keys
+  --sweep Drive=0,25,50,100             every non-dry target once per value
 
 Usage:
   python3 tools/re-survey/plugin_probe.py list [--filter fabfilter]
   python3 tools/re-survey/plugin_probe.py run "Pro-Q 4" "Pro-L 2" node:EQ [--sr 48000] [--no-cpu] [--out t.md]
+  python3 tools/re-survey/plugin_probe.py run "Saturn 2" --sweep Drive=0,50,100 --no-cpu
   python3 tools/re-survey/plugin_probe.py --self-test
 Results JSON: ~/re-output/plugin-probe/<stamp>/results.json. Render WAVs are deleted unless --keep.
 Limits: Infinite's headless --wav is 16-bit, so THD/aliasing floors sit near -90 dB (the dry row
@@ -265,18 +268,60 @@ def list_aus():
     return out
 
 
+def split_settings(target):
+    """'Saturn 2@Drive=60,Mix=100' -> ('Saturn 2', {'Drive': '60', 'Mix': '100'})."""
+    name, _, rest = target.partition("@")
+    settings = {}
+    for kv in filter(None, (x.strip() for x in rest.split(","))):
+        k, eq, v = kv.partition("=")
+        if not eq or not k.strip():
+            raise ValueError("bad setting '%s' in '%s' (want Name=value)" % (kv, target))
+        settings[k.strip()] = v.strip()
+    return name.strip(), settings
+
+
+def list_vst3(folders=("/Library/Audio/Plug-Ins/VST3", os.path.expanduser("~/Library/Audio/Plug-Ins/VST3"))):
+    out = []
+    for f in folders:
+        if os.path.isdir(f):
+            out += [os.path.join(f, b) for b in sorted(os.listdir(f)) if b.endswith(".vst3")]
+    return out
+
+
+def vst3_classes(binp, bundle):
+    """Effect classes in one bundle via Infinite's own out-of-process scanner (format, name, vendor, id, path, notes)."""
+    rc, out, _ = run([binp, "--vst3-scan-bundle", bundle], timeout=60)
+    rows = [l.split("\t") for l in out.splitlines() if l.startswith("vst3\t")]
+    return [{"id": r[3], "name": r[1], "path": r[4], "notes": r[5] == "1"} for r in rows if len(r) == 6]
+
+
 def resolve(target, aus):
-    t = target.strip()
+    t, settings = split_settings(target)
+    suffix = (" @ " + ", ".join("%s=%s" % kv for kv in settings.items())) if settings else ""
     if t == "dry":
-        return {"kind": "dry", "label": "dry (rig floor)"}
+        return {"kind": "dry", "label": "dry (rig floor)", "settings": {}}
     if t.startswith("node:"):
-        return {"kind": "node", "type": t[5:], "label": t}
-    if t.startswith("vst3:") or t.lower().endswith(".vst3"):
-        raise ValueError("%s: headless VST3 loads silently fail today (Plugin node has no path); use the AU build" % t)
+        return {"kind": "node", "type": t[5:], "label": t + suffix, "settings": settings}
+    if t.startswith("vst3:") or t.lower().startswith("vst3 ") or t.lower().endswith(".vst3"):
+        if settings:
+            raise ValueError("%s: settings need a parameter list, which only AU targets have today" % t)
+        if t.startswith("vst3:"):
+            return {"kind": "vst3", "id": t, "label": t, "name": t, "settings": {}}
+        want = t[5:].strip() if t.lower().startswith("vst3 ") else os.path.basename(t)[:-5]
+        binp = infinite_bin()
+        hits = [b for b in list_vst3() if want.lower() in os.path.basename(b)[:-5].lower()]
+        exact = [b for b in hits if os.path.basename(b)[:-5].lower() == want.lower()]
+        hits = exact or hits
+        if len(hits) != 1 or not binp:
+            raise ValueError("'%s' matches %d VST3 bundles: %s" % (t, len(hits), ", ".join(map(os.path.basename, hits[:8])) or "none"))
+        cls = [c for c in vst3_classes(binp, hits[0]) if not c["notes"]]
+        if len(cls) != 1:
+            raise ValueError("%s: %d effect classes in the bundle" % (hits[0], len(cls)))
+        return {"kind": "vst3", "id": cls[0]["id"], "label": cls[0]["name"] + " (VST3)", "name": cls[0]["name"], "settings": {}}
     if t.startswith("au:"):
         hit = [a for a in aus if a["id"] == t]
         name = hit[0]["name"] if hit else t
-        return {"kind": "au", "id": t, "label": name, "type": t.split(":")[1]}
+        return {"kind": "au", "id": t, "label": name + suffix, "name": name, "type": t.split(":")[1], "settings": settings}
     hits = [a for a in aus if t.lower() in a["name"].lower() and a["type"] in ("aufx", "aumf")]
     exact = [a for a in hits if a["name"].lower().endswith(t.lower())]
     if len(exact) == 1:
@@ -285,7 +330,46 @@ def resolve(target, aus):
         names = ", ".join("%s (%s)" % (a["name"], a["id"]) for a in hits[:8]) or "none"
         raise ValueError("'%s' matches %d effects: %s" % (t, len(hits), names))
     a = hits[0]
-    return {"kind": "au", "id": a["id"], "label": a["name"], "type": a["type"]}
+    return {"kind": "au", "id": a["id"], "label": a["name"] + suffix, "name": a["name"], "type": a["type"], "settings": settings}
+
+
+def expand_sweep(targets, sweep):
+    """--sweep Name=v1,v2,... -> each non-dry target once per value."""
+    if not sweep:
+        return list(targets)
+    name, eq, vals = sweep.partition("=")
+    if not eq or not vals:
+        raise ValueError("--sweep wants Name=v1,v2,...")
+    out = []
+    for t in targets:
+        if t.strip() == "dry":
+            out.append(t)
+            continue
+        for v in vals.split(","):
+            out.append("%s%s%s=%s" % (t, "," if "@" in t else "@", name.strip(), v.strip()))
+    return out
+
+
+def au_mapping(au_id, settings, cache={}):
+    """Settings by AU parameter name (case-insensitive, or numeric id) -> Plugin node map slots."""
+    if au_id not in cache:
+        cache[au_id] = auval_params(au_id)["params"]
+    params = cache[au_id]
+    slots = []
+    for key, val in settings.items():
+        hit = [p for p in params if p.get("name", "").lower() == key.lower() or p["id"] == key]
+        if len(hit) != 1:
+            near = ", ".join(p.get("name", "?") for p in params if key.lower() in p.get("name", "").lower())[:200]
+            raise ValueError("%s: no single parameter '%s' (close: %s)" % (au_id, key, near or "none"))
+        p = hit[0]
+        lo, hi = p.get("minimum"), p.get("maximum")
+        if not isinstance(lo, float) or not isinstance(hi, float):
+            raise ValueError("%s: parameter '%s' has no numeric range" % (au_id, key))
+        v = float(val)
+        if not lo <= v <= hi:
+            raise ValueError("%s: %s=%g is outside %g..%g" % (au_id, key, v, lo, hi))
+        slots.append((p["id"], p.get("name", key), lo, hi, v))
+    return slots
 
 
 def node_category(binp, typ, tmp):
@@ -305,22 +389,37 @@ def patch_text(target, wav, loop, category=None):
     if target["kind"] == "dry":
         L += ["node 2 Utility Audio Out", "  id out", "end", "aud out audio src"]
         return "\n".join(L) + "\n"
-    if target["kind"] == "au":
-        L += ["node 2 AudioEffects Plugin", "  id fx", "  s plugin_format au", "  s plugin_id " + target["id"],
-              "  s plugin_name " + target["label"], "end"]
+    if target["kind"] in ("au", "vst3"):
+        L += ["node 2 AudioEffects Plugin", "  id fx", "  s plugin_format " + target["kind"], "  s plugin_id " + target["id"],
+              "  s plugin_name " + target.get("name", target["label"])]
+        slots = au_mapping(target["id"], target["settings"]) if target.get("settings") else []
+        if slots:
+            L.append("  i map_slots %d" % len(slots))
+        for i, (addr, name, lo, hi, v) in enumerate(slots):
+            L += ["  b map%d_assigned 1" % i, "  s map%d_addr %s" % (i, addr), "  s map%d_name %s" % (i, name),
+                  "  f map%d_min %r" % (i, lo), "  f map%d_max %r" % (i, hi), "  f map%d_value %r" % (i, v)]
+        L.append("end")
     else:
-        L += ["node 2 %s %s" % (category, target["type"]), "  id fx", "end"]
+        L += ["node 2 %s %s" % (category, target["type"]), "  id fx"]
+        for k, v in target.get("settings", {}).items():
+            try:
+                L.append("  f %s %r" % (k, float(v)))
+            except ValueError:
+                L.append("  s %s %s" % (k, v))
+        L.append("end")
     L += ["node 3 Utility Audio Out", "  id out", "end", "aud fx 0 src", "aud out audio fx"]
     return "\n".join(L) + "\n"
 
 
 def render(binp, patch, wav_out, sr, dur, tmp):
+    # --lenient: the schema comes from a fresh Plugin node, which has no map slots,
+    # so strict mode would reject the map<N>_* keys a parameter setting writes.
     p = os.path.join(tmp, "probe.inf")
     with open(p, "w") as f:
         f.write(patch)
     j = os.path.join(tmp, "summary.json")
     rc, out, err = run([binp, "--audio-summary", p, j, "--duration", "%g" % dur, "--sample-rate", "%d" % sr,
-                        "--wav", wav_out, "--timeout", "300"], timeout=400)
+                        "--wav", wav_out, "--timeout", "300", "--lenient"], timeout=400)
     status = {}
     for line in reversed(out.strip().splitlines()):
         try:
@@ -349,10 +448,9 @@ def auval_params(au_id):
             cur["unit"] = line.split(":", 1)[1].strip()
         elif cur is not None and line.startswith("Values:"):
             for k, v in re.findall(r"(Minimum|Default|Maximum) = (\S+?),?(?:\s|$)", line):
-                try:
-                    cur[k.lower()] = float(v)
-                except ValueError:
-                    cur[k.lower()] = v
+                # auval prints units on some ranges ("0.00%", "-12 dB"): keep the number.
+                m = re.match(r"^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?", v)
+                cur[k.lower()] = float(m.group(0)) if m else v
         elif cur is not None and line.startswith("Flags:"):
             cur["flags"] = line.split(":", 1)[1].strip()
     return {"ok": rc == 0, "params": params}
@@ -446,7 +544,7 @@ def to_markdown(results):
         ))
     L = ["# Plugin probe (%d Hz, %d-bit render)" % (sr, results[0].get("wav_bits", 0) if results else 0), "",
          "Generated by `tools/re-survey/plugin_probe.py`. Black-box: test signal in, Infinite's own host, "
-         "measurement out. Default plugin state for every target.", "",
+         "measurement out. Plugins run at their default state except the settings shown after @.", "",
          md_table(["Target", "Latency smp (ms)", "Gain 1k dB", "THD -12", "THD+N -12", "THD -1", "Alias HF dB",
                    "Flatness ±dB 63-16k", "Tail -60 s", "RT60 s", "CPU ms/s (net)", "Params"], rows), "",
          "- THD/aliasing in dB relative to the fundamental. The dry row is the rig floor: nothing below it is real.",
@@ -496,11 +594,12 @@ def self_test():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     t.check(resolve("au:aufx:dely:appl", list_aus())["kind"] == "au", "AU id resolves")
+    t.check(resolve("vst3:ABC", [])["kind"] == "vst3", "VST3 id resolves")
     try:
-        resolve("vst3:ABC", [])
-        t.check(False, "vst3 targets refused with a reason")
+        resolve("vst3:ABC@Mix=1", [])
+        t.check(False, "VST3 settings refused with a reason")
     except ValueError:
-        t.check(True, "vst3 targets refused with a reason")
+        t.check(True, "VST3 settings refused with a reason")
     if not infinite_bin():
         t.skip("no Infinite binary: integration part (set INFINITE_BIN or build)")
         return t.done()
@@ -528,6 +627,7 @@ def main():
     rp.add_argument("--no-params", action="store_true")
     rp.add_argument("--keep", action="store_true", help="keep render WAVs in ~/re-output/tmp")
     rp.add_argument("--out", help="markdown table path (default stdout)")
+    rp.add_argument("--sweep", help="Name=v1,v2,... : run every non-dry target once per value (AU parameter name, or node key)")
     a = ap.parse_args()
     if a.self_test:
         return self_test()
@@ -543,12 +643,15 @@ def main():
         return 2
     try:
         aus = list_aus()
-        for t in a.targets:
-            resolve(t, aus)
+        targets = expand_sweep(a.targets, a.sweep)
+        for t in targets:
+            r = resolve(t, aus)
+            if r["kind"] == "au" and r["settings"]:
+                au_mapping(r["id"], r["settings"])
     except ValueError as e:
         print("usage: %s" % e, file=sys.stderr)
         return 2
-    res, out_dir = probe(a.targets, sr=a.sr, cpu=not a.no_cpu, keep=a.keep, params=not a.no_params,
+    res, out_dir = probe(targets, sr=a.sr, cpu=not a.no_cpu, keep=a.keep, params=not a.no_params,
                          log=lambda m: print(m, file=sys.stderr))
     write_out(to_markdown(res), a.out)
     print("results: %s" % os.path.join(out_dir, "results.json"), file=sys.stderr)
