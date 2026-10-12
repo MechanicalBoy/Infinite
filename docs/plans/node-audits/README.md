@@ -133,6 +133,16 @@ NOTEAUDIT covers the 24 note nodes.
 
 ### Block 3: GEOAUDIT and COMPAUDIT
 
+GEOAUDIT result (`baseline-2026-10-12-geo.txt`; covers the 24 primitives and the Geometry Ops, not yet the other geometry nodes):
+
+| Finding | State |
+|---|---|
+| Normals exact for Sphere, Icosphere, Torus; build time linear to 1e6 vertices (34 ns/vertex); builds deterministic; MeshRevision stable and follows the input | clean |
+| Winding is inconsistent between primitives: Cube, Icosphere, Torus, Capsule, Tetra/Octa/Dodeca, Rounded Cube are outward (CCW); Sphere, Cylinder, Cone, Pyramid, Prism, Torus Knot, Helix, Supershape wind inward | open: flipping changes what Render 3D culls and the shadow pass writes, so it needs a render check first |
+| UV Sphere, Capsule, Cone, Disc, Supershape have degenerate pole triangles and doubled pole edges | accepted (standard UV-pole artefact) |
+| Solidify on a Cube leaves 48 boundary edges (faces separate along their normals) | open |
+| Arrow 3D has 48 vertices with non-unit normals | open |
+
 GEOAUDIT covers the 37 geometry nodes (Delaunay, Metaballs, Ocean, Cloth, Curve Ops, Instances,
 Join, Merge by Distance, Distribute, Displacement and the rest).
 

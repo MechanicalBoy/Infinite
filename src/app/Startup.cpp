@@ -12,6 +12,7 @@ bool RunModAudit(); // selftest/ModAudit.cpp
 bool RunSynthAudit(); // selftest/SynthAudit.cpp
 bool RunNoteAudit(); // selftest/NoteAudit.cpp
 bool RunIoAudit(); // selftest/IoAudit.cpp
+bool RunGeoAudit(); // selftest/GeoAudit.cpp
 // Resolves the main window's DPI + the manual slider into UiScale::Current(), hands the point
 // scale to the GLFW backend and (re)bakes the font atlas at the resulting physical size. Safe
 // to call again between frames: the atlas is rebuilt from scratch and, when the GL renderer
@@ -572,6 +573,9 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // I/O audit: gain/pan/blend laws, sum, loudness meter, parameter clicks, CPU (selftest/IoAudit.cpp).
    if (getenv("INFINITE_IOAUDIT") != nullptr)
       return RunIoAudit() ? 0 : 1;
+   // Geometry audit: validity, watertightness, normals, degenerate input, scale, determinism, cache (selftest/GeoAudit.cpp).
+   if (getenv("INFINITE_GEOAUDIT") != nullptr)
+      return RunGeoAudit() ? 0 : 1;
 
    // The --audio-summary maths on synthesized signals with known answers
    // (docs/fix-briefs/headless-engine.md 2.1).
