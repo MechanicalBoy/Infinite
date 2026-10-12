@@ -95,24 +95,53 @@ def product_key(name):
 
 # ---------------------------------------------------------------- one load
 
-def crash_culprit(since):
-    """Newest Infinite .ips written after `since`: (file, image of the crashing frame)."""
-    hits = [p for p in glob.glob(os.path.join(REPORTS, "Infinite*.ips")) if os.path.getmtime(p) >= since - 1]
-    if not hits:
-        return None, None
-    p = max(hits, key=os.path.getmtime)
+def read_ips(p):
+    """(pid, faulting-thread frames as (image, symbol), exception) from one .ips, or None."""
     try:
-        body = open(p).read().split("\n", 1)[1]
-        d = json.loads(body)
-        th = d["threads"][d.get("faultingThread", 0)]
-        imgs = d.get("usedImages", [])
-        for fr in th.get("frames", []):
-            name = imgs[fr["imageIndex"]].get("name") if fr.get("imageIndex", -1) < len(imgs) else None
-            if name:
-                return os.path.basename(p), name
-    except Exception:
-        pass
-    return os.path.basename(p), None
+        d = json.loads(open(p).read().split("\n", 1)[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    th = d.get("threads", [{}])[d.get("faultingThread", 0)]
+    imgs = d.get("usedImages", [])
+    frames = [(imgs[f["imageIndex"]].get("name") if 0 <= f.get("imageIndex", -1) < len(imgs) else None, f.get("symbol"))
+              for f in th.get("frames", [])]
+    exc = d.get("exception", {})
+    return d.get("pid"), frames, "%s %s" % (exc.get("type", ""), exc.get("signal", ""))
+
+
+_SEEN_IPS = set()
+
+
+def crash_culprit(since, pid, wait=8.0):
+    """The .ips of this crash: written after `since`, never handed out before, and naming `pid`.
+    ReportCrash writes it a moment after the process dies, so poll a few seconds. Matching on time alone gave the
+    previous plugin's late report to the next crash (RC-20's report was blamed on ShaperBox).
+    Returns (file, image of the top named frame, exception) or (None, None, None)."""
+    t_end = time.time() + wait
+    while True:
+        for p in glob.glob(os.path.join(REPORTS, "Infinite*.ips")):
+            if p in _SEEN_IPS or os.path.getmtime(p) < since - 1:
+                continue
+            r = read_ips(p)
+            if r and r[0] == pid:
+                _SEEN_IPS.add(p)
+                img = next((n for n, _s in r[1] if n), None)
+                return os.path.basename(p), img, r[2]
+        if time.time() >= t_end:
+            return None, None, None
+        time.sleep(0.5)
+
+
+def code_signature(bundle):
+    """macOS's own verdict on the bundle's signature: valid, invalid (code modified after signing), unsigned."""
+    if not bundle or bundle == "(system)" or not os.path.exists(bundle):
+        return None
+    r = subprocess.run(["codesign", "--verify", "--deep", "--strict", bundle], capture_output=True, text=True)
+    if r.returncode != 0:
+        return "unsigned" if "not signed" in r.stderr.lower() else "invalid"
+    d = subprocess.run(["codesign", "-dv", "--verbose=2", bundle], capture_output=True, text=True).stderr
+    who = re.search(r"^Authority=Developer ID Application: (.+)$", d, re.M)
+    return "valid: " + who.group(1) if who else "valid"
 
 
 def load_patch(target, wav):
@@ -132,16 +161,19 @@ def load_one(binp, target, wav, tmp, timeout):
         ep, mp = sp.write_notes([(t, m, 0.8, 1.2, "chord") for t, m in CHORD], tmp)
         cmd += ["--notes", ep, "--note-map", mp]
     t0 = time.time()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 30)
+        out, err = proc.communicate(timeout=timeout + 30)
     except subprocess.TimeoutExpired:
-        subprocess.run(["pkill", "-f", p])
+        proc.kill()
+        proc.communicate()
         return {"state": "hang", "wall_s": timeout + 30}
+    r = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
     wall = time.time() - t0
     res = {"wall_s": wall, "rc": r.returncode}
     if r.returncode < 0 or r.returncode > 128:
-        ips, img = crash_culprit(t0)
-        res.update(state="crash", signal=-r.returncode if r.returncode < 0 else r.returncode - 128, ips=ips, culprit=img)
+        ips, img, exc = crash_culprit(t0, proc.pid)
+        res.update(state="crash", signal=-r.returncode if r.returncode < 0 else r.returncode - 128, ips=ips, culprit=img, exception=exc)
         return res
     st = {}
     for line in reversed(r.stdout.strip().splitlines()):
@@ -233,6 +265,7 @@ def audit(formats=("au", "vst3"), flt=None, do_auval=True, timeout=90, log=print
         r["load_s"] = max(0.0, r.get("wall_s", 0) - base)
         if do_auval and t["kind"] == "au":
             r.update(auval(t["id"], timeout))
+        r["signature"] = code_signature(t.get("bundle"))
         row = dict(t, **r)
         rows.append(row)
         log("  [%d/%d] %-34s %-9s %5.1f s %s%s" % (i + 1, len(tg), t["label"][:34], r["state"], r["load_s"],
@@ -272,9 +305,14 @@ def to_markdown(res):
                   os.path.basename(max(sc, key=lambda s: s["scan_s"])["bundle"]), max(s["scan_s"] for s in sc)), ""]
     probs = [r for r in rows if r["state"] != "ok" or r.get("flags")]
     if probs:
-        L += ["## Problems", "", md_table(["Plugin", "Format", "State", "Flags", "Why / culprit", "Load s"],
+        L += ["## Problems", "", md_table(["Plugin", "Format", "State", "Flags", "Why / culprit", "Signature", "Load s"],
                                           [(r["name"], r["kind"].upper(), r["state"], ",".join(r.get("flags", [])) or "-",
-                                            (r.get("why") or r.get("culprit") or "")[:90], "%.1f" % r["load_s"]) for r in probs]), ""]
+                                            (r.get("why") or " ".join(x for x in (r.get("culprit"), r.get("exception")) if x))[:90],
+                                            r.get("signature") or "-", "%.1f" % r["load_s"]) for r in probs]), ""]
+    badsig = [r for r in rows if r.get("signature") in ("invalid", "unsigned")]
+    L += ["Code signature (`codesign --verify --deep --strict`): %d of %d bundles invalid or unsigned%s. macOS kills a "
+          "process that pages in modified signed code, so no host can load an invalid one." % (
+              len(badsig), len(rows), (": " + ", ".join(sorted({r["name"] for r in badsig}))) if badsig else ""), ""]
     by = {}
     for r in rows:
         by.setdefault(product_key(r["name"]), {})[r["kind"]] = r
@@ -316,6 +354,23 @@ def self_test():
     t.check(found == ["A.vst3", "Vendor/B.vst3"], "bundles in vendor folders, never inside a bundle (%s)" % found)
     flags = grade_audio("/nonexistent.wav", {"sample_peak": 0.0, "clipped_frames": 3, "dc_offset": [0.2, 0]}, {"midi_fx": False})
     t.check(flags["flags"] == ["silent", "clipped", "dc"], "silent, clipped and DC flagged (%s)" % flags["flags"])
+    rep = os.path.join(root, "Infinite-x.ips")
+    with open(rep, "w") as f:
+        f.write('{"app_name":"Infinite"}\n' + json.dumps({"pid": 4242, "faultingThread": 0, "usedImages": [{"name": "Plug"}],
+                "exception": {"type": "EXC_BAD_ACCESS", "signal": "SIGSEGV"},
+                "threads": [{"frames": [{"imageIndex": 9}, {"imageIndex": 0, "symbol": "f"}]}]}))
+    global REPORTS
+    keep, REPORTS = REPORTS, root
+    try:
+        a = crash_culprit(0, 4141, wait=0)
+        b = crash_culprit(0, 4242, wait=0)
+        c = crash_culprit(0, 4242, wait=0)
+    finally:
+        REPORTS = keep
+    t.check(a == (None, None, None), "a report for another pid is never blamed (%s)" % (a,))
+    t.check(b == ("Infinite-x.ips", "Plug", "EXC_BAD_ACCESS SIGSEGV"), "report matched by pid, top named frame (%s)" % (b,))
+    t.check(c == (None, None, None), "a report is handed out once (%s)" % (c,))
+    t.check(code_signature("/System/Library/CoreServices/Finder.app") .startswith("valid"), "codesign verdict on a signed bundle")
     binp = infinite_bin()
     if not binp:
         t.skip("no Infinite binary: the AUDelay load is not run")
