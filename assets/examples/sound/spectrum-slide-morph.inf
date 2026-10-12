@@ -9,6 +9,7 @@ node 1 Notes Random Note Generator
   i rangeLow 45
   i rangeHigh 64
   f rateBeats 1
+  i stepTiming 1
 end
 node 2 Synths Wavetable
   id voice

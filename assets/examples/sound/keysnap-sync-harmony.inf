@@ -9,6 +9,7 @@ node 1 Notes Random Note Generator
   i rangeLow 55
   i rangeHigh 72
   f rateBeats 1
+  i stepTiming 1
 end
 node 2 Synths Analog
   id lead
