@@ -127,6 +127,7 @@ namespace app
          // Same trap for Layer Stack's "fit": patches from before it existed composited stretched.
          if (auto* stack = dynamic_cast<LayerStackNode*>(spawned->node.get()))
             stack->fit = LayerStackNode::kStretch;
+         spawned->node->BeforeLoadParams();
          Patch::LoadParams(spawned->node.get(), rec.params);
          ReloadDerivedState(spawned->node.get());
          // Phase 4 (selection as an input): rewrites a saved kDeleteSelected/
@@ -1347,6 +1348,8 @@ namespace app
             ReloadDerivedState(copy->node.get());
             if (auto* rn = dynamic_cast<RandomNode*>(copy->node.get()))
                rn->seed = RandomNode::NextSeed();
+            if (auto* lfo = dynamic_cast<LFONode*>(copy->node.get()))
+               lfo->seed = LFONode::NextSeed();
             if (auto* fgn = dynamic_cast<FieldGraphNode*>(copy->node.get()))
             {
                fgn->SetUid(FieldGraphNode::NewUid());
