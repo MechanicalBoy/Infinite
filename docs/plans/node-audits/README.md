@@ -138,10 +138,10 @@ GEOAUDIT result (`baseline-2026-10-12-geo.txt`; covers the 24 primitives and the
 | Finding | State |
 |---|---|
 | Normals exact for Sphere, Icosphere, Torus; build time linear to 1e6 vertices (34 ns/vertex); builds deterministic; MeshRevision stable and follows the input | clean |
-| Winding is inconsistent between primitives: Cube, Icosphere, Torus, Capsule, Tetra/Octa/Dodeca, Rounded Cube are outward (CCW); Sphere, Cylinder, Cone, Pyramid, Prism, Torus Knot, Helix, Supershape wind inward | open: flipping changes what Render 3D culls and the shadow pass writes, so it needs a render check first |
+| Winding is inconsistent between primitives: Cube, Icosphere, Torus, Capsule, Tetra/Octa/Dodeca, Rounded Cube are outward (CCW); Sphere, Cylinder, Cone, Pyramid, Prism, Torus Knot, Helix, Supershape wind inward | **fixed**: all now wind outward (`OrientOutward` in Mesh.cpp); the Geometry node carries `windingFix` (off on old patches: flips the eight shapes back and re-derives Prism/Supershape/Arrow normals). GEOAUDIT: "faces inward" 3 to 0, Sphere winding mismatches 1472 to 32 (pole fans). See `baseline-2026-10-12-geo-after-winding.txt` |
 | UV Sphere, Capsule, Cone, Disc, Supershape have degenerate pole triangles and doubled pole edges | accepted (standard UV-pole artefact) |
-| Solidify on a Cube leaves 48 boundary edges (faces separate along their normals) | open |
-| Arrow 3D has 48 vertices with non-unit normals | open |
+| Solidify on a Cube leaves 48 boundary edges (faces separate along their normals) | parked: inner shell offsets each face by its own normal, so a closed cube gets gaps along its 12 edges and an open input gets no rim wall. Needs a welded-normal offset + rim quads, which changes the look of every Solidify; own quest when someone asks |
+| Arrow 3D has 48 vertices with non-unit normals | **fixed**: zero-area triangles (cone apex ring) kept a zero normal; flat RecalculateNormals now borrows the corner normal |
 
 COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden window; covers Blend, Feedback and Trails only):
 

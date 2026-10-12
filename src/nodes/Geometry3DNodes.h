@@ -462,8 +462,14 @@ public:
    float dispersion = 0.0f;
    float alphaCutoff = 0.0f;
 
+   // 0 on a patch saved before the primitives were made outward-wound: the shapes that used to
+   // come out inside-out are flipped back so the saved look is unchanged. Not a control.
+   int windingFix = 1;
+   void BeforeLoadParams() override { windingFix = 0; }
+
    void VisitParams(ParamVisitor& v) override
    {
+      v.Int("windingFix", windingFix);
       v.Int("shape", shape); v.Int("detail", detail); v.Int("sides", sides);
       v.Float("tube", tubeRadius); v.Int("knotP", knotP); v.Int("knotQ", knotQ);
       v.Float("bevel", bevel); v.Int("bevelSegments", bevelSegments);
