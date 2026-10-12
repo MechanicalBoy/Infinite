@@ -1,5 +1,7 @@
 # Architecture Map
 
+Diagrams of the layers, threads and per-frame data flow: [`docs/ARCHITECTURE_FLOWS.md`](docs/ARCHITECTURE_FLOWS.md).
+
 Documentation-only index of where things live in this codebase. No code was
 moved to produce this — `main.cpp` is a single file that has grown to roughly
 105,000 lines (almost entirely one `int main()` plus the free functions it
