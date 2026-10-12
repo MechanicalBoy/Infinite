@@ -12,6 +12,11 @@ namespace HeadTracker
    // built yet, so these report false there.
    bool Supported(Source source);
 
+   // Headless and self-test runs: Start becomes a no-op. A process started
+   // from a terminal has the terminal as its privacy-responsible parent, and
+   // macOS kills it on the first CoreMotion call (no motion usage string).
+   void Disable();
+
    void Start(Source source);
    void Stop(Source source);
 
