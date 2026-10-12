@@ -70,7 +70,7 @@ Tools must stay **MIT-clean** (no GPL code pasted in), **three-platform aware** 
 | Off-brand / retired colours (ratchet); apply swaps | `tools/brand/brand_lint.py [PATH]`, `tools/brand/migrate_colours.py [--apply]` |
 | Confusable category colours per theme + brand.json drift | `tools/brand/category_audit.py` |
 | Motion laws (tempo clock, one mass, beat-locked springs, mark arcs, golden phase, log zoom); token grid check | `tools/brand/motion.py [--check]`; import it in films/3D/site |
-| Competitor survey: app inventory, plugin probe (latency/THD/alias/CPU vs Infinite nodes), synth probe (pitch/alias/envelope/velocity/CPU vs Infinite synths), UI map (menus/shortcuts via accessibility), capability map (official scripting APIs), app bench (launch/idle CPU/memory/threads), bounce kit (DAW export truth), cables/.als/.amxd/.fcpxml/.toe/Blender readers, dossier lint + capability diff, ~/re-output storage | `tools/re-survey/` (`selftest.py`; plan in `docs/plans/re-survey/`) |
+| Competitor survey: app inventory, plugin probe (latency/THD/alias/CPU vs Infinite nodes), synth probe (pitch/alias/envelope/velocity/CPU vs Infinite synths), UI map (menus/shortcuts via accessibility), capability map (official scripting APIs), app bench (launch/idle CPU/memory/threads), bounce kit (DAW export truth), host audit (every installed AU/VST3 loaded: crash/hang/silent, load time, auval, AU vs VST3), cables/.als/.amxd/.fcpxml/.toe/Blender readers, dossier lint + capability diff, ~/re-output storage | `tools/re-survey/` (`selftest.py`; plan in `docs/plans/re-survey/`) |
 
 ## Exit check
 

@@ -90,9 +90,18 @@ def app_pid(app):
     return min(pids) if pids else None
 
 
-def screen_windows(pid):
-    """Normal windows of pid (any Space) from the window server (no accessibility needed)."""
-    r = subprocess.run([ax_bin(), "--windows", str(pid)], capture_output=True, text=True, timeout=30)
+def bundle_pids(app):
+    """Every process started from inside the bundle (helpers, engines, a second UI process)."""
+    r = subprocess.run(["pgrep", "-f", os.path.join(app, "Contents/")], capture_output=True, text=True)
+    return [int(p) for p in r.stdout.split()]
+
+
+def screen_windows(pids):
+    """Normal windows owned by pid(s) (any Space) from the window server (no accessibility needed)."""
+    pids = [pids] if isinstance(pids, int) else pids
+    if not pids:
+        return 0
+    r = subprocess.run([ax_bin(), "--windows", ",".join(map(str, pids))], capture_output=True, text=True, timeout=30)
     return int(r.stdout.strip() or 0)
 
 
@@ -102,7 +111,7 @@ def launch_and_wait(app, wait, log):
     pid = None
     while time.time() - t0 < wait:
         pid = pid or app_pid(app)
-        if pid and screen_windows(pid) > 0:
+        if pid and screen_windows(bundle_pids(app)) > 0:  # Bitwig's window is a child's
             break
         time.sleep(0.5)
     if not pid:
