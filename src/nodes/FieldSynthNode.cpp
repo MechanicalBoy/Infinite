@@ -495,7 +495,7 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "f = clamp((cutoff / sr) * 3.14159, 0.001, 0.95)\n"
         "lp = lp + f * (sat - lp)\n"
         "filt = lp + (sat - lp) * (1.0 - res)\n"
-        "out = filt * env\n" },
+        "out = filt * env * 0.33\n" },
       { "Resonant String Pluck",
         "param float damp = 0.35 [0.05, 0.95]\n"
         "param float brightness = 2.5 [1.0, 8.0]\n"

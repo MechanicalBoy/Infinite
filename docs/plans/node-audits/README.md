@@ -64,7 +64,7 @@ Three blocks, one branch each, commit per step, merge straight back to main (git
 
 | # | Branch | Audits | State |
 |---|---|---|---|
-| 1 | `feature/synth-audit` | SYNTHAUDIT | done 2026-10-12 (merged); F4 and Field Synth preset level open |
+| 1 | `feature/synth-audit` | SYNTHAUDIT | done 2026-10-12 (merged); F4 and F8 fixed |
 | 2 | `feature/io-note-audit` | IOAUDIT, NOTEAUDIT | done 2026-10-12 (merged); Echo voiceId fixed; step-generator block quantisation parked |
 | 3 | `feature/geo-comp-audit` | GEOAUDIT, COMPAUDIT | done 2026-10-12 (merged); findings open, see below |
 
@@ -149,7 +149,7 @@ COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden w
 |---|---|
 | 22 blend modes match the W3C Compositing Level 1 formulas to 1/255 (Normal, Multiply, Screen, Darken, Lighten, Colour Dodge/Burn, Difference, Exclusion, Hue, Saturation, Color, Luminosity, Add, Linear Burn/Light, Subtract, Divide) | clean |
 | Overlay and Hard Light are swapped: Overlay tests the source (Hard Light's rule), Hard Light tests the backdrop. Error up to 251/255 | **fixed** (also Soft Light pivot): W3C maths now; old maths kept as modes 32-34 ("(old)"); Blend / Layer Stack carry a `blendFix` param (off on old patches), patch files carry `blendfix 1` (absent = clips mapped to 32-34). COMPAUDIT blend flags: 3 to 0, see `baseline-2026-10-12-comp-after-blendfix.txt` |
-| Soft Light picks the wrong branch of its D(x) curve (the 0.25 pivot is inverted). Error up to 83/255 | open, same fix site and same legacy-flag question |
+| Soft Light picks the wrong branch of its D(x) curve (the 0.25 pivot is inverted). Error up to 83/255 | **fixed** with the Overlay / Hard Light fix |
 | Source-over alpha with random alpha and mix 0.7 matches W3C for Normal, Multiply, Screen | clean |
 | Feedback in a plain chain passes the current frame through; the one-frame delay only exists inside a cycle, although the node says the delay is always one frame | **settled**: wording fixed (header comment, delayFrames note); behaviour kept because saved loops depend on this timing; help text already says it only acts inside a loop. The audit line stays as a documented by-design FLAG |
 | Trails decay matches decay^n within 0.2/255 and always reaches black (no 8-bit ghost) | clean |
@@ -210,11 +210,11 @@ Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; ba
 |---|---|---|---|
 | F1 | Metallic level moves with sample rate: 2.9 dB free-running RMS, but only 1.3 dB RMS and 0.5 dB peak for the same note-triggered strike (-12.5 / -13.1 / -13.8 dBFS at 44.1 / 48 / 96 kHz, monotonic). The burst gain is already calibrated per rate (`MetallicResonator.h` CalibrateBurstGain), so the remainder is minor mode-content change. Accepted exception, not fixed; the free-run flag stays visible. | RATE rows | 1 |
 | F2 | Analog aliasing is -66 dB at 1.75 kHz and -62 dB at 5 kHz (default saw), just inside the -60 dB flag; Wavetable, Oscillator and Equation Synth are -82 to -88 dB. | ALIAS rows | 1 |
-| F4 | Open decision (changes saved dynamics, so legacy flag): velocity law is not shared: Analog, Wavetable and Oscillator follow velocity squared (vel 0.5 = -12 dB, 0.25 = -24 dB); Equation Synth and Metallic are linear (-6 / -12 dB). | VEL rows | 1 |
+| F4 | **Fixed** (Equation Synth): velocity is now squared like Analog and Wavetable (vel 0.5 = -12.0 dB); old patches keep linear through the `velCurve` param. Metallic stays linear on purpose: velocity is the strike excitation of a resonator, not a gain. | VEL rows | 1 |
 | F5 | Equation Synth clips with several notes at defaults: peak +3.6 dBFS at 8 notes, +4.3 at 32, against -12 dBFS for one note. No polyphonic gain compensation. Decision: not a bug. Voices sum, as in any polysynth, and a 4-note chord fits (-0.8 dBFS); attenuating would change the loudness of every saved patch. The audit now flags only a 4-note chord over 0 dBFS. | POLY rows | 1 |
 | F6 | Polyphony cost stops growing past 8 notes on every synth (8 and 32 notes cost the same per frame), so all five cap at 8 voices. Not a bug if intended; the cap is not shown in the UI. | POLY rows | 1 |
 | F7 | Wavetable note-on is +8.2 dB over steady state at defaults, the only pitched synth near the 12 dB flag. Metallic note-on reads +32 dB, but its steady state is a decaying resonator, so that metric is unreliable for it. | CLICK rows | 1 |
-| F8 | Field Synth peaks +12.0 dBFS with 8 or 32 notes at defaults (-2.4 dBFS for one), the worst polyphonic clip of the group. The only synth whose 4-note chord clips (+9.0 dBFS; single note -2.4 dBFS vs about -12 for the others): voices sum unscaled (`FieldSynthNode.cpp:292`) and the default preset (Dual Oscillator Pad) is hot. Open, a design call on the default preset's level; saved patches carry their own source, so changing the default affects new nodes only. Overlaps `bugfix/field-synth-voice-pool`. | POLY rows | 1 |
+| F8 | Field Synth peaks +12.0 dBFS with 8 or 32 notes at defaults (-2.4 dBFS for one), the worst polyphonic clip of the group. The only synth whose 4-note chord clips (+9.0 dBFS; single note -2.4 dBFS vs about -12 for the others): voices sum unscaled (`FieldSynthNode.cpp:292`) and the default preset (Dual Oscillator Pad) is hot. **Fixed** for new nodes: the default preset now ends `out = filt * env * 0.33` (single note -12.0 dBFS, 4-note chord -0.6); saved patches carry their own source text, so they are unchanged. See `baseline-2026-10-12-synth-after-f4f8.txt`. | POLY rows | 1 |
 | F9 | Wave Terrain also sums past 0 dBFS with many notes (+0.5 dBFS at 8, +3.2 at 32). Same as F5: not a bug; its 4-note chord is -3.0 dBFS. | POLY rows | 1 |
 | F10 | Spectral Synth's 1.99 dB rate spread was a harness artifact (a fixed 65536-frame window is a different number of seconds at each rate). RATE now renders 3 s at every rate and reads 0.05 dB. Closed. | RATE row | 1 |
 | F3 | Pitch is within 0.03 cents everywhere measured, and every synth is bit-identical on re-render. No action. | PITCH, DET rows | 1 |
