@@ -10,9 +10,11 @@
 //           transport plays 4 s (source nodes); every output note-on must have
 //           exactly one note-off by voiceId, never before its on, none stuck
 //           after the input has released everything / the transport stops
-//   GRID    (arp, sequencer, random generator) note-on position in samples
-//           against the ideal beat grid at 60/90/120/128/174 bpm and block
-//           sizes 64/512/800/333/2048 (24/60/144 fps at 48 kHz); flag > 1 sample
+//   GRID    (arp, sequencer, random generator, chorder) note-on position in
+//           samples against the ideal beat grid at 60/90/120/128/174 bpm and
+//           block sizes 64/512/800/333/2048 (24/60/144 fps at 48 kHz); flag > 1
+//           sample. Also: 1/64 steps at 174 bpm (two per 2048 block), a loop
+//           lap mid-block, and stepTiming 0 (saved patches) still block-quantised
 //   SWING   random generator groove 0.5 / 1.0: delay of odd steps against
 //           groove * 0.5 * rateBeats, flag > 1 %
 //   HUMAN   humanizer timing: spread within the knob, and the same stream
@@ -295,52 +297,80 @@ namespace
    struct GridSrc
    {
       const char* name;
-      std::function<INode*(double rateBeats, float groove)> create;
+      std::function<INode*(double rateBeats, float groove, int stepTiming)> create;
       bool needsInput; // arp: hold note 60
    };
 
    const std::vector<GridSrc>& GridSrcs()
    {
       static const std::vector<GridSrc> g = {
-         { "Arpeggiator", [](double rb, float) {
+         { "Arpeggiator", [](double rb, float, int timing) {
               auto* a = static_cast<ArpeggiatorNode*>(ArpeggiatorNode::Create());
               a->rateBeats = (float)rb;
               a->octaves = 1;
+              a->stepTiming = timing;
               return (INode*)a;
            }, true },
-         { "Note Sequencer", [](double rb, float) {
+         { "Note Sequencer", [](double rb, float, int timing) {
               auto* s = static_cast<NoteSequencerNode*>(NoteSequencerNode::Create());
               s->rateBeats = (float)rb;
+              s->stepTiming = timing;
               return (INode*)s;
            }, false },
-         { "Random Note Gen", [](double rb, float groove) {
+         { "Random Note Gen", [](double rb, float groove, int timing) {
               auto* g2 = static_cast<RandomNoteGeneratorNode*>(RandomNoteGeneratorNode::Create());
               g2->rateBeats = (float)rb;
               g2->groove = groove;
               g2->useGlobalScale = false;
+              g2->stepTiming = timing;
               return (INode*)g2;
+           }, false },
+         { "Chorder", [](double rb, float, int timing) {
+              auto* c = static_cast<ChorderNode*>(ChorderNode::Create());
+              c->rateBeats = (float)rb;
+              c->strumMs = 0.0f; // the chord's first note lands on the step itself
+              c->humanizeTimingMs = 0.0f;
+              c->stepTiming = timing;
+              return (INode*)c;
            }, false },
       };
       return g;
    }
 
-   // Runs a source and returns its note-on sample positions.
-   std::vector<long long> OnPositions(const GridSrc& g, double bpm, int block, double rateBeats, float groove, double seconds)
+   // Runs a source and returns its note-on sample positions (one per sample:
+   // a chord's notes share their onset). loopEndBeats > 0 loops 0..loopEnd.
+   std::vector<long long> OnPositions(const GridSrc& g, double bpm, int block, double rateBeats, float groove, double seconds,
+                                      int stepTiming = 1, double loopEndBeats = 0.0)
    {
       Rig rig;
       std::vector<long long> pos;
-      if (!rig.Init(g.create(rateBeats, groove), block))
+      if (!rig.Init(g.create(rateBeats, groove, stepTiming), block))
          return pos;
       rig.node->CookIfNeeded(rig.frame++);
       StartTransport(bpm);
+      if (loopEndBeats > 0.0)
+         Transport::Instance().SetLoop(true, 0.0, loopEndBeats);
       if (g.needsInput)
          Push(rig.in[0], 60, 0.8f, true, 777);
       rig.Run(seconds);
       StopTransport();
+      Transport::Instance().SetLoop(false, 0.0, 4.0);
       for (const Evt& e : rig.got)
-         if (e.e.isNoteOn && !e.e.bendUpdate)
+         if (e.e.isNoteOn && !e.e.bendUpdate && (pos.empty() || pos.back() != e.sample))
             pos.push_back(e.sample);
       return pos;
+   }
+
+   // Worst distance of an onset from the step lattice (-1: no notes).
+   double LatticeError(const std::vector<long long>& p, double stepSamples)
+   {
+      double maxErr = p.empty() ? -1.0 : 0.0;
+      for (long long s : p)
+      {
+         const double k = std::round((double)s / stepSamples);
+         maxErr = std::max(maxErr, std::fabs((double)s - k * stepSamples));
+      }
+      return maxErr;
    }
 
    void AuditGrid(Flags& flags)
@@ -356,17 +386,9 @@ namespace
          for (double bpm : tempos)
             for (int bi = 0; bi < 5; bi++)
             {
-               const std::vector<long long> p = OnPositions(g, bpm, blocks[bi], rateBeats, 0.0f, 6.0);
-               const double stepSamples = rateBeats * 60.0 / bpm * kRate;
-               double maxErr = 0.0;
-               for (size_t i = 0; i < p.size(); i++)
-               {
-                  const double k = std::round((double)p[i] / stepSamples);
-                  maxErr = std::max(maxErr, std::fabs((double)p[i] - k * stepSamples));
-               }
-               if (p.empty())
-                  maxErr = -1.0;
-               perBlock[bi] = (int)std::lround(std::max(maxErr, 0.0));
+               const double maxErr =
+                  LatticeError(OnPositions(g, bpm, blocks[bi], rateBeats, 0.0f, 6.0), rateBeats * 60.0 / bpm * kRate);
+               perBlock[bi] = std::max(perBlock[bi], (int)std::lround(std::max(maxErr, 0.0)));
                if (maxErr > worst)
                {
                   worst = maxErr;
@@ -378,6 +400,46 @@ namespace
                 g.name, worst, worstBpm, worstBlock, perBlock[0], perBlock[1], perBlock[2], perBlock[3], perBlock[4]);
          if (worst > kFlagGridSamples)
             flags.Flag("GRID", g.name, "worst note-on error samples", worst);
+      }
+
+      // Several steps inside one block: 1/64 at 174 bpm is 1034 samples a step, block 2048.
+      for (const GridSrc& g : GridSrcs())
+      {
+         const double fastRate = 1.0 / 64.0, bpm = 174.0, seconds = 2.0;
+         const double stepSamples = fastRate * 60.0 / bpm * kRate;
+         const std::vector<long long> p = OnPositions(g, bpm, 2048, fastRate, 0.0f, seconds);
+         const int expected = (int)std::ceil(std::ceil(seconds * kRate / 2048.0) * 2048.0 / stepSamples); // whole blocks run
+         const double err = LatticeError(p, stepSamples);
+         printf("NOTEAUDIT GRID  %-18s fast 1/64 at 174 bpm, block 2048: %d of %d steps, worst %.1f samples\n", g.name,
+                (int)p.size(), expected, err);
+         if (err > kFlagGridSamples || std::abs((int)p.size() - expected) > 1)
+            flags.Flag("GRID", g.name, "fast-rate missing steps or error samples", std::max(err, (double)std::abs((int)p.size() - expected)));
+      }
+
+      // Loop 0..3 beats at 120 bpm with block 333: the wrap falls mid-block, the step at the loop start
+      // must land on the wrap sample. 3 beats is a whole number of steps, so the lattice runs on.
+      for (const GridSrc& g : GridSrcs())
+      {
+         const double bpm = 120.0, seconds = 6.0;
+         const double stepSamples = rateBeats * 60.0 / bpm * kRate;
+         const std::vector<long long> p = OnPositions(g, bpm, 333, rateBeats, 0.0f, seconds, 1, 3.0);
+         const int expected = (int)std::ceil(std::ceil(seconds * kRate / 333.0) * 333.0 / stepSamples); // whole blocks run
+         const double err = LatticeError(p, stepSamples);
+         printf("NOTEAUDIT GRID  %-18s loop lap (0..3 beats, block 333): %d of %d steps, worst %.1f samples\n", g.name,
+                (int)p.size(), expected, err);
+         if (err > kFlagGridSamples || std::abs((int)p.size() - expected) > 1)
+            flags.Flag("GRID", g.name, "loop-lap missing steps or error samples", std::max(err, (double)std::abs((int)p.size() - expected)));
+      }
+
+      // Saved patches: stepTiming 0 must keep the old block-start timing (about one block off).
+      for (const GridSrc& g : GridSrcs())
+      {
+         const double bpm = 90.0;
+         const double err = LatticeError(OnPositions(g, bpm, 512, rateBeats, 0.0f, 6.0, 0), rateBeats * 60.0 / bpm * kRate);
+         printf("NOTEAUDIT GRID  %-18s legacy (stepTiming 0, 90 bpm, block 512): worst %.1f samples, %s\n", g.name, err,
+                err > 256.0 ? "old timing kept" : "OLD TIMING LOST");
+         if (err <= 256.0)
+            flags.Flag("GRID", g.name, "legacy stepTiming 0 no longer block-quantised", err);
       }
    }
 
@@ -393,7 +455,9 @@ namespace
          int oddN = 0, evenN = 0;
          for (long long s : p)
          {
-            const long long k = (long long)std::round((double)s / stepSamples);
+            // Swing only delays (by less than a step), so the step is the one at or before the onset;
+            // round() would hand a groove-1.0 note, exactly half a step late, to the next step.
+            const long long k = (long long)std::floor(((double)s + 1.0) / stepSamples);
             const double d = (double)s - (double)k * stepSamples;
             if (k & 1) { oddSum += d; oddN++; }
             else { evenSum += d; evenN++; }
@@ -481,7 +545,7 @@ namespace
       for (const GridSrc& g : GridSrcs())
       {
          Rig rig;
-         if (!rig.Init(g.create(0.25, 0.0f), 512))
+         if (!rig.Init(g.create(0.25, 0.0f, 1), 512))
             continue;
          rig.node->CookIfNeeded(rig.frame++);
          StartTransport(120.0);
