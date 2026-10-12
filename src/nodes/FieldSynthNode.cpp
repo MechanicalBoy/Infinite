@@ -35,6 +35,7 @@ class AudioFieldSynthNode : public AudioNode
 public:
    AudioFieldSynthNode() : mVoices(kMaxVoices)
    {
+      mVoices.SetActiveLimit(mNumVoicesInUse);
       std::memset(mStateCur, 0, sizeof(mStateCur));
       std::memset(mStateNext, 0, sizeof(mStateNext));
       std::memset(mGateHeld, 0, sizeof(mGateHeld));
@@ -66,7 +67,11 @@ public:
    void PushProgram(Field::SampleProgram* prog) { mProgramSlot.Push(prog); }
    void DrainRetired() { mProgramSlot.DrainRetired(); }
    void PushParam(int mailboxId, float value) { mMailbox.Push(mailboxId, value); }
-   void SetMaxVoices(int n) { mNumVoicesInUse = std::clamp(n, 1, kMaxVoices); }
+   void SetMaxVoices(int n)
+   {
+      mNumVoicesInUse = std::clamp(n, 1, kMaxVoices);
+      mVoices.SetActiveLimit(mNumVoicesInUse);
+   }
 
    uint64_t FaultCount() const { return mFaultCount.load(std::memory_order_relaxed); }
    bool ReadRmsLatest(float& out) { return mMeter.ReadLatest(out); }
