@@ -1,7 +1,11 @@
 // Cook times overlay (View > Cook times). Each node gets its CPU cook time in ms; audio nodes show their share of the
-// audio callback instead. Nodes that cost a real share of their budget (the frame, or the audio block) get a heat tint. Off by default and saved in settings, not in patches.
+// audio callback instead. Only the number is coloured, never the node: amber or red when the node costs a real share
+// of its budget (see Level). Off by default and saved in settings, not in patches.
 // While off nothing here runs and CookProbe / the audio thread do no timing.
 #include "app/AppShared.h"
+#include "app/ui/design/TokenColors.h"
+#include "app/ui/design/Tokens.gen.h"
+#include <unordered_map>
 #include "audio/AudioEngine.h"
 #include "audio/AudioNode.h"
 
@@ -9,10 +13,23 @@ namespace app
 {
 namespace
 {
-   // Heat is absolute, never relative to the slowest node: relative heat painted the cheapest patch's slowest node red
-   // at 0.09 ms. Tint starts at 5% of the budget and is full at 50%.
+   // A node's colour is its share of its own budget, never a comparison with other nodes (that painted the slowest node
+   // of a cheap patch red at 0.09 ms). Video: CPU cook ms against a 60 fps frame. Audio: share of the audio callback,
+   // stricter because an overrun is an audible click while a slow frame is only a dropped frame.
+   //   video  amber >= 2 ms (12%)   red >= 5 ms (30%): three such nodes and the canvas drops frames
+   //   audio  amber >= 10%          red >= 25%: four such nodes and the callback overruns
+   // Both inputs are already smoothed; a level drops only below 80% of its threshold, so a value sitting on a line does
+   // not flicker.
    constexpr float kFrameMs = 1000.0f / 60.0f;
-   constexpr float kHeatLo = 0.05f, kHeatHi = 0.5f;
+   constexpr float kVideoAmber = 0.12f, kVideoRed = 0.30f, kAudioAmber = 0.10f, kAudioRed = 0.25f, kHold = 0.8f;
+
+   int Level(float share, bool audio, int prev)
+   {
+      const float amber = audio ? kAudioAmber : kVideoAmber, red = audio ? kAudioRed : kVideoRed;
+      if (share >= red || (prev == 2 && share >= red * kHold)) return 2;
+      if (share >= amber || (prev >= 1 && share >= amber * kHold)) return 1;
+      return 0;
+   }
    bool sApplied = false;
 
    AudioNode* AudioOf(INode* n)
@@ -66,6 +83,10 @@ void DrawCookOverlay()
    const CategoryColors::UiTheme& t = CategoryColors::CurrentUiTheme();
    const ImU32 pillBg = ImGui::GetColorU32(ImVec4(t.panelBg.r, t.panelBg.g, t.panelBg.b, 0.92f));
    const ImU32 pillText = ImGui::GetColorU32(ImVec4(t.text.r, t.text.g, t.text.b, 1.0f));
+   const bool light = CategoryColors::IsThemeLight();
+   const ImU32 amber = tok::U32(tok::action_learn, light), red = tok::U32(tok::action_record, light);   // same roles as the node issue badge
+   static std::unordered_map<const INode*, int> sLevel;   // last level per node, for the hold; rebuilt each frame
+   std::unordered_map<const INode*, int> nextLevel;
    for (const Row& r : rows)
    {
       const ImVec2 cp = ed::GetNodePosition(r.gn->NodeId());
@@ -73,22 +94,22 @@ void DrawCookOverlay()
       const ImVec2 p = ed::CanvasToScreen(cp);
       const ImVec2 p2 = ed::CanvasToScreen(ImVec2(cp.x + cs.x, cp.y + cs.y));
       if (p2.x < gGraphScreenTL.x || p.x > br.x || p2.y < gGraphScreenTL.y || p.y > br.y) continue;
-      const float share = r.audio ? r.v : r.v / kFrameMs;
-      if (share > kHeatLo)   // heat: warm tint that grows with the share of the budget
-      {
-         const float a = std::clamp((share - kHeatLo) / (kHeatHi - kHeatLo), 0.0f, 1.0f);
-         dl->AddRectFilled(p, p2, ImGui::GetColorU32(ImVec4(0.95f, 0.45f - 0.25f * a, 0.1f, 0.10f + 0.22f * a)), 8.0f * scale);
-         dl->AddRect(p, p2, ImGui::GetColorU32(ImVec4(0.95f, 0.45f - 0.25f * a, 0.1f, 0.35f + 0.5f * a)), 8.0f * scale, 0, 1.5f);
-      }
-      if (scale < 0.35f) continue;   // too small to read: tint only
+      const INode* key = r.gn->node.get();
+      const auto it = sLevel.find(key);
+      const int level = Level(r.audio ? r.v : r.v / kFrameMs, r.audio, it == sLevel.end() ? 0 : it->second);
+      nextLevel[key] = level;
+      if (scale < 0.35f && level == 0) continue;   // zoomed far out only the amber and red numbers stay, so a slow node still shows
       char buf[24];
       if (r.audio) std::snprintf(buf, sizeof buf, "%.1f%% cb", r.v * 100.0f);
       else std::snprintf(buf, sizeof buf, r.v < 10.0f ? "%.2f ms" : "%.0f ms", r.v);
       const ImVec2 ts = ImGui::CalcTextSize(buf);
       const ImVec2 q0(p2.x - ts.x - 10.0f, p.y - ts.y - 8.0f), q1(p2.x, p.y - 2.0f);
       dl->AddRectFilled(q0, q1, pillBg, 4.0f);
-      dl->AddText(ImVec2(q0.x + 5.0f, q0.y + 3.0f), pillText, buf);
+      dl->AddText(ImVec2(q0.x + 5.0f, q0.y + 3.0f), level == 0 ? pillText : (level == 2 ? red : amber), buf);
    }
    dl->PopClipRect();
+   for (const Row& r : rows)   // off-screen nodes keep their level
+      nextLevel.emplace(r.gn->node.get(), sLevel.count(r.gn->node.get()) ? sLevel[r.gn->node.get()] : 0);
+   sLevel.swap(nextLevel);
 }
 }
