@@ -44,7 +44,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-12 15:12 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-12 15:27 UTC. Do not edit inside this block; rerun the tool._
 
 ### Open quests (4)
 
@@ -80,10 +80,10 @@ _Generated 2026-10-12 15:12 UTC. Do not edit inside this block; rerun the tool._
 
 ### Last merges to main
 
+- 2026-10-12 Merge bugfix/selfupdate-cleanup
 - 2026-10-12 Merge feature/single-opener
 - 2026-10-12 Merge bugfix/cooktimes-fixed-text
 - 2026-10-12 Merge bugfix/history-forward-positions
 - 2026-10-12 Merge bugfix/cooktimes-number-only
-- 2026-10-12 Merge bugfix/overlay-zoom-rect
 
 <!-- FACTS:END -->
