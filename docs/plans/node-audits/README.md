@@ -158,7 +158,8 @@ COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden w
 | Color Ramp linear and constant interpolation match the analytic gradient and step | clean |
 | Fit: output size follows width/height and matchInput; Fit leaves transparent bars, Fill and Stretch cover the frame | clean |
 | Switcher manual slot shows exactly the chosen input | clean |
-| Not yet covered: Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; the geometry nodes other than primitives and Ops | next |
+| GEOAUDIT GRAPH section (`baseline-2026-10-12-geo-coverage.txt`): Distribute random matches density x area (125 of 125), Poisson spacing holds (0.2001 vs 0.2), Delaunay has zero empty-circumcircle violations, Voronoi / Join merge / Merge by Distance / Ocean are valid and deterministic, Join counts add up, Merge by Distance leaves no pair closer than the threshold | clean, 0 new flags |
+| Not yet covered: Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; Metaballs, Cloth, Curve Ops, Instances, Displacement; IOAUDIT Audio In/Out and PDC | next |
 
 GEOAUDIT covers the 37 geometry nodes (Delaunay, Metaballs, Ocean, Cloth, Curve Ops, Instances,
 Join, Merge by Distance, Distribute, Displacement and the rest).
