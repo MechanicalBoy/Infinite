@@ -1596,8 +1596,9 @@ void FrameTest_BYPASSSWEEPTEST(int frameId, GLFWwindow* window)
             INode* through = node->BypassSource();
             // Same kind, but the input is control for a generator rather than
             // the signal being processed - bypass removes these. Instruments
-            // (category Synths) are the big family; the rest are named.
-            const bool generator = category == "Synths" || name == "Metaballs";
+            // (category Synths) are the big family; the rest are named (the
+            // LFO's input is its retrigger, not a signal).
+            const bool generator = category == "Synths" || name == "Metaballs" || name == "LFO";
             const bool sameKind = wired != nullptr && !generator && (outKinds & wired->kind) != 0;
 
             if (through != nullptr && (kindsOf(through) & outKinds) == 0)
