@@ -51,6 +51,7 @@ namespace
    constexpr float kOneCode = 1.0f / 255.0f;
    constexpr int kFlagDarkLevels = 100;   // a float chain keeps >> 100 here
    constexpr float kFlagBleed = 0.02f;
+   constexpr float kInputTol = 1.0f / 4096.0f; // relative input error a GPU decode may carry
    constexpr float kFlagGpuMs = 2.0f;
    constexpr float kFlagSpecErr = 2.0f * kOneCode;
 
@@ -942,11 +943,27 @@ namespace
                // near-tie either pick is right, so don't score it
                if ((m == 5 || m == 10) && std::fabs(Lum(la) - Lum(lb)) < 2e-3f)
                   continue;
-               V3 ref = RefBlend(m, la, lb);
-               ref = { LinearToSrgb(std::clamp(ref.r, 0.0f, 1.0f)), LinearToSrgb(std::clamp(ref.g, 0.0f, 1.0f)),
-                       LinearToSrgb(std::clamp(ref.b, 0.0f, 1.0f)) };
+               // Score against the reference over inputs within 2^-12 of the
+               // nominal: the GPU decodes with a fast pow, and steep modes
+               // (Vivid Light's burn divides by 2b) magnify that input error
+               // without the formula being wrong. Distance to the range.
                const float* po = out.At(x, y);
-               worst = std::max({ worst, std::fabs(po[0] - ref.r), std::fabs(po[1] - ref.g), std::fabs(po[2] - ref.b) });
+               float lo[3] = { 1e9f, 1e9f, 1e9f }, hi[3] = { -1e9f, -1e9f, -1e9f };
+               for (int k = 0; k < 5; k++)
+               {
+                  const float sa = k == 1 ? 1.0f + kInputTol : k == 2 ? 1.0f - kInputTol : 1.0f;
+                  const float sb = k == 3 ? 1.0f + kInputTol : k == 4 ? 1.0f - kInputTol : 1.0f;
+                  const V3 r = RefBlend(m, { la.r * sa, la.g * sa, la.b * sa }, { lb.r * sb, lb.g * sb, lb.b * sb });
+                  const float e[3] = { LinearToSrgb(std::clamp(r.r, 0.0f, 1.0f)), LinearToSrgb(std::clamp(r.g, 0.0f, 1.0f)),
+                                       LinearToSrgb(std::clamp(r.b, 0.0f, 1.0f)) };
+                  for (int c = 0; c < 3; c++)
+                  {
+                     lo[c] = std::min(lo[c], e[c]);
+                     hi[c] = std::max(hi[c], e[c]);
+                  }
+               }
+               for (int c = 0; c < 3; c++)
+                  worst = std::max(worst, std::max({ 0.0f, po[c] - hi[c], lo[c] - po[c] }));
             }
          if (worst > kFlagSpecErr)
          {
