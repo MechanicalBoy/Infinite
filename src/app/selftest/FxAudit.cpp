@@ -557,6 +557,41 @@ namespace
       }
       printf("FXAUDIT %-18s insert gain %+.2f dB (mix %.2f, pink noise)\n", fx.c_str(), gInsert, def.defaultMix);
       Quality("fx.insert_gain_db", fx, std::fabs(gInsert));
+      // Level null for the modulated delays (v0.6 1.10): a linear effect
+      // gives the same output at -1 dBFS as at -12 dBFS scaled up, so the
+      // residual is the distortion a hot input adds. THD is the wrong tool
+      // here (the modulation's own sidebands are not harmonics), and so is a
+      // file bounce: dry + wet passes 0 dBFS on an in-phase sine and an
+      // integer WAV clamps it (builtins-kit read that clamp as -24.5 dB THD).
+      if (fx == "Chorus" || fx == "Flanger")
+      {
+         const float hot = 0.891f * 0.7071f, ref = 0.251f * 0.7071f; // -1, -12 dBFS peak
+         std::vector<float> oH, oHr, oR1, oR1r;
+         {
+            auto rig = MakeRig(def, sr, {});
+            rig->node->mix = def.defaultMix;
+            std::vector<float> in = Tone(n3, 1000.0, sr, hot);
+            Process(*rig, in, in, oH, oHr);
+         }
+         {
+            auto rig = MakeRig(def, sr, {});
+            rig->node->mix = def.defaultMix;
+            std::vector<float> in = Tone(n3, 1000.0, sr, ref);
+            Process(*rig, in, in, oR1, oR1r);
+         }
+         const float k = hot / ref;
+         float peak = 0.0f;
+         std::vector<float> diff(oH.size());
+         for (size_t i = 0; i < oH.size(); i++)
+         {
+            diff[i] = oH[i] - k * oR1[i];
+            peak = std::max(peak, std::fabs(oH[i]));
+         }
+         const size_t a = (size_t)sr;
+         const double nullDb = Db(Rms(diff, a, diff.size()) / std::max(1e-12, Rms(oH, a, oH.size())));
+         printf("FXAUDIT %-18s hot null %.1f dB (-1 vs -12 dBFS, 1 kHz), output peak %.3f\n", fx.c_str(), nullDb, peak);
+         Quality("fx.hot_null_db", fx, nullDb);
+      }
       Quality("fx.dc_dbfs", fx, dcDb);
       Quality("fx.tail_dbfs", fx, tailDb);
       Quality("fx.click_db", fx, worstClick);

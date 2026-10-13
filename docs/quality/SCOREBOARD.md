@@ -7,7 +7,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | Pillar | Metrics | Met | Behind / miss | Info | Unmeasured |
 |---|---|---|---|---|---|
 | P1 Live AV workstation | 8 | 7 | 0 | 1 | 0 |
-| P5 Audio quality and hosting | 29 | 26 | 0 | 3 | 0 |
+| P5 Audio quality and hosting | 30 | 27 | 0 | 3 | 0 |
 | P7 3D, compositing, output | 10 | 8 | 2 | 0 | 0 |
 | P8 Performance | 30 | 18 | 2 | 1 | 9 |
 
@@ -69,6 +69,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `fx.click_db` | Worst step transient when a parameter jumps | <= 12.00 dB | release | met | 9.00 (node:Dynamics) | - |
 | `fx.rate_spread_db` | Tone level difference across 44.1/48/96 kHz | <= 1.00 dB | release | met | 0.996 (node:Key-Snap) | - |
 | `fx.insert_gain_db` | Level change when the node opens: default mix, pink noise at -20 dBFS (v0.6 1.9) | <= 1.00 dB | release | exc | 10.82 (node:Shape Resonator) | - |
+| `fx.hot_null_db` | Chorus and Flanger: residual between a -1 dBFS and a scaled -12 dBFS 1 kHz tone (level-dependent distortion; v0.6 1.10) | <= -60.00 dB | release | met | -143 (node:Flanger) | - |
 
 ## P5 Audio quality and hosting: Timeline audio
 
@@ -205,4 +206,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 55f36a04; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 aa7da27f; 2026-10-13 ab741380; 2026-10-13 c2f7d0d1; 2026-10-13 d6020b77; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 0531853e; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 aa7da27f; 2026-10-13 ab741380; 2026-10-13 c2f7d0d1; 2026-10-13 d6020b77; 2026-10-13 e182230c.

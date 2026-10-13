@@ -154,6 +154,12 @@ def analyse_dir(d):
         out, sr, bits = pp.read_wav(p)
         row = {"app": app, "name": name_of(p, "fx"), "bits": bits, "sr": sr}
         row.update(pp.analyse(out if out.shape[1] > 1 else np.repeat(out, 2, 1), sr, stim) if sr == SR else {"error": "%d Hz" % sr})
+        if sr == SR:
+            # The -1 dBFS tone's own window: an effect whose dry + wet adds above
+            # 0 dBFS there is clipped by the file's integer write, not by its DSP.
+            t0 = [s0 for nm, s0, _, _ in pp.SINES if nm == "hi"][0]
+            seg = out[int((t0 + 0.2) * sr):int((t0 + pp.SINE_LEN_S - 0.2) * sr)]
+            row["hi_clipped"] = bool(seg.size and np.abs(seg).max() >= 0.9999)
         fx.append(row)
     return {"app": app, "synths": synths, "fx": fx}
 
@@ -196,12 +202,13 @@ def report(rows):
             star = "*" if (r["tail_s"] or 0) > 0.5 else ""
             lat = r["latency_onset"]
             T.append([row["app"], r["name"], fv(None if lat is None else lat * 1000.0 / SR, "%.2f"),
-                      fv(r["lo"]["gain_db"], "%+.2f"), fv(r["lo"]["thd_db"]) + star, fv(r["hi"]["thd_db"]) + star,
+                      fv(r["lo"]["gain_db"], "%+.2f"), fv(r["lo"]["thd_db"]) + star, fv(r["hi"]["thd_db"]) + star + ("†" if r.get("hi_clipped") else ""),
                       fv(r["hf"]["nonharm_db"]) + star, fv(flat, "%.2f"), fv(r["tail_s"], "%.2f"), fv(r["rt60_s"], "%.2f")])
     L += ["## Effects", "", md_table(["App", "Effect", "Latency ms", "Gain 1k dB", "THD -12", "THD -1", "Alias HF dB",
                                       "Flatness ±dB", "Tail -60 s", "RT60 s"], T), "",
           "- Latency after the DAW's own compensation: a DAW bounce should read 0 ms whatever the effect reports.",
-          "- `*` = tail longer than 0.5 s: THD/alias then measure the tail, compare tails instead. Dry = the rig floor.", ""]
+          "- `*` = tail longer than 0.5 s: THD/alias then measure the tail, compare tails instead. Dry = the rig floor.",
+          "- `†` = the output reached full scale during the -1 dBFS tone: the bounce's integer write clipped it, so THD -1 measures that clip, not the effect.", ""]
     for row in rows:
         if not row["synths"] and not row["fx"]:
             L.append("- %s: no synth_*.wav or fx_*.wav bounces" % row["app"])
