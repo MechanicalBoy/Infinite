@@ -68,6 +68,7 @@ Tools must stay **MIT-clean** (no GPL code pasted in), **three-platform aware** 
 | Slide deck, release email, press fact sheet | `tools/brand/templates.py` |
 | Screenshots on the brand frame | `tools/brand/frame_shot.py shot.png [--mode paper] [--ratio 4:5]` |
 | Press kit zip | `tools/brand/press_kit.py` |
+| Website Extensions page from the release catalog (one card per pack, Install = live install steps) | `tools/website/gen_extensions.py [--catalog FILE]`, then `tools/website/gen_seo.py` |
 | Off-brand / retired colours (ratchet); apply swaps | `tools/brand/brand_lint.py [PATH]`, `tools/brand/migrate_colours.py [--apply]` |
 | Confusable category colours per theme + brand.json drift | `tools/brand/category_audit.py` |
 | Motion laws (tempo clock, one mass, beat-locked springs, mark arcs, golden phase, log zoom); token grid check | `tools/brand/motion.py [--check]`; import it in films/3D/site |
