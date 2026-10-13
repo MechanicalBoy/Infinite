@@ -38,3 +38,9 @@ Claude puts it next to the estimate:
 | Rank | does Infinite's place per task hold with real times |
 
 The estimate stays "manual-derived" in the dossier until this sitting confirms it.
+
+## Cheaper route: one screen recording
+
+Instead of timing by stopwatch, record the screen at 60 fps through the whole protocol in one take, then read the
+timings offline with `tools/re-survey/video_read.swift` (frame times, 16.7 ms steps). Step counts come from
+`workflow_cost.py` and the manual sections it cites.

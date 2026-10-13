@@ -42,3 +42,9 @@ One sitting per DAW, about 15 min. The same chords Infinite renders in `load_ben
 
 - Infinite renders the same graph headless: `python3 tools/re-survey/load_bench.py run --tracks 8,32,64,128`.
 - Infinite runs its audio graph on one thread, so the DAWs' multicore scaling shows up as CPU % above 100.
+
+## Cheaper route: one screen recording
+
+Instead of timing by stopwatch, record the screen at 60 fps through the whole protocol in one take, then read the
+timings offline with `tools/re-survey/video_read.swift` (frame times, 16.7 ms steps). Step counts come from
+`workflow_cost.py` and the manual sections it cites.
