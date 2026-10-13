@@ -155,3 +155,139 @@ class SelfTest:
     def done(self):
         print("%s: %s (%d skipped)" % (self.name, "FAILED %d" % self.fails if self.fails else "ok", self.skips))
         return 1 if self.fails else 0
+
+
+CENSUS = os.path.join(REPO, "build", "census", "census.json")
+
+
+PATCH_SKILL = os.path.join(REPO, ".claude/skills/infinite-patch-authoring/SKILL.md")
+
+
+def load_census(path=None):
+    """Every registered Infinite node type as [{"type", "cat"}], or None.
+
+    Source: the node table in the infinite-patch-authoring skill, which tools/gen-patch-skill.py
+    regenerates from `Infinite --describe --json` whenever a node changes, so it tracks the code.
+    build/census/census.json (scripts/node_census.py) is only a fallback: it is rebuilt by hand
+    and goes stale. The Infinite side of every re-survey map comes from here, never from
+    hand-typed counts.
+    """
+    import json
+    if path is None:
+        try:
+            with open(PATCH_SKILL, encoding="utf-8") as f:
+                text = f.read()
+            rows, cat = [], None
+            for line in text.split("\n"):
+                m = re.match(r"^### (.+)", line)
+                if m:
+                    cat = m.group(1).strip()
+                    continue
+                m = re.match(r"^\| `([^`]+)` \|", line)
+                if m and cat:
+                    rows.append({"type": m.group(1), "cat": cat})
+            if rows:
+                return rows
+        except OSError:
+            pass
+        path = CENSUS
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def census_types(census=None):
+    """Lower-cased node type names (spaces and underscores folded) for existence checks."""
+    census = census if census is not None else load_census()
+    return {norm_node(n["type"]) for n in (census or [])}
+
+
+def census_by_cat(census=None):
+    """{category: [type names]} from the census."""
+    census = census if census is not None else load_census()
+    out = {}
+    for n in census or []:
+        out.setdefault(n["cat"], []).append(n["type"])
+    return out
+
+
+def norm_node(name):
+    return re.sub(r"[\s_\-]+", "", name.strip().lower())
+
+
+def census_role(cats, census=None):
+    """'AudioEffects 25, Synths 17' for the given census categories: the Infinite side's counts, never typed by hand."""
+    by = census_by_cat(census)
+    return ", ".join("%s %d" % (c, len(by.get(c, []))) for c in cats)
+
+
+def parity_cell(their, nodes, types=None):
+    """'Their thing <-> Infinite A, B' with every node checked against the census; missing ones marked."""
+    types = types if types is not None else census_types()
+    marked = [n if (not types or norm_node(n) in types) else "%s [NOT IN CENSUS]" % n for n in nodes]
+    return "%s <-> %s" % (their, ", ".join(marked) if marked else "nothing")
+
+
+_NODE_FILES = None
+
+
+_REGISTRY = None
+
+# Tables that register nodes by display name with no class of their own. Order matters: the
+# first table quoting the name wins.
+_NODE_TABLES = ("src/audio/EffectDefs.cpp", "src/core/FilterDefs.cpp",
+                "src/nodes/Geometry3DNodes.cpp", "src/nodes/GeometryOpNodes.cpp",
+                "src/nodes/CurveNode.cpp", "src/nodes/ShapeNode.cpp")
+
+
+# Names registered in loops over one class (NodeRegistry.cpp), not by REGISTER_NODE.
+_LOOP_CLASSES = {"union": "JoinGeometryNode", "intersect": "JoinGeometryNode",
+                 "difference": "JoinGeometryNode", "meshtoedges": "MeshToPointsNode",
+                 "meshtofaces": "MeshToPointsNode"}
+
+
+def _registry():
+    """norm(display name) -> class name, from REGISTER_NODE(Class, Display Name, "Cat")."""
+    global _REGISTRY
+    if _REGISTRY is None:
+        _REGISTRY = {}
+        p = os.path.join(REPO, "src/app/graph/NodeRegistry.cpp")
+        if os.path.exists(p):
+            with open(p, encoding="utf-8", errors="replace") as f:
+                for m in re.finditer(r"REGISTER_NODE\(\s*(\w+)\s*,\s*([^,]+?)\s*,", f.read()):
+                    _REGISTRY.setdefault(norm_node(m.group(2)), m.group(1))
+    return _REGISTRY
+
+
+def node_file(type_name):
+    """Repo-relative file that declares a node, or None. Parity/lead evidence cites this.
+    1. NodeRegistry.cpp display name -> registered class -> header declaring it
+    2. a class named <Type>Node
+    3. the def table that quotes the display name (effects, filters, primitives, geometry ops)"""
+    global _NODE_FILES
+    if _NODE_FILES is None:
+        _NODE_FILES = {}
+        for root, _, files in os.walk(os.path.join(REPO, "src")):
+            if "selftest" in root:
+                continue
+            for fn in sorted(files, key=lambda f: (not f.endswith(".h"), f)):
+                if fn.endswith((".h", ".cpp")):
+                    p = os.path.join(root, fn)
+                    with open(p, encoding="utf-8", errors="replace") as f:
+                        for m in re.finditer(r"\bclass\s+([A-Za-z_]\w*)\s*(?:final\s*)?:", f.read()):
+                            _NODE_FILES.setdefault(norm_node(m.group(1)), os.path.relpath(p, REPO))
+    k = norm_node(type_name)
+    cls = _registry().get(k) or _LOOP_CLASSES.get(k)
+    hit = (cls and _NODE_FILES.get(norm_node(cls))) or _NODE_FILES.get(k + "node")
+    if hit:
+        return hit
+    needle = '"%s"' % type_name
+    for rel in _NODE_TABLES:
+        p = os.path.join(REPO, rel)
+        if os.path.exists(p):
+            with open(p, encoding="utf-8", errors="replace") as f:
+                if needle in f.read():
+                    return rel
+    return None
