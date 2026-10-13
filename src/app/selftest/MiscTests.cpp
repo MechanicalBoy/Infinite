@@ -464,6 +464,54 @@ int RunPluginScanTest()
              (notSilent && notIdentity) ? "OK" : "FAIL");
       ok = ok && notSilent && notIdentity;
 
+      // --- the host clock reaches the plugin ---
+      // Until 2026-10 the VST3 host told every plugin "playing, 120 BPM, 4/4"
+      // whatever Infinite's transport said, and the AU host told it nothing,
+      // so tempo-synced delays/LFOs ignored the project tempo and plugin
+      // sequencers ran with the transport stopped (Drumazon 2, re-survey
+      // host_audit). Read back through the plugin's own channel, not ours.
+      {
+         Platform::PluginTransport sent;
+         sent.tempo = 93.0;
+         sent.beats = 8.5;
+         sent.barStartBeats = 6.0; // 3/4: bars every 3 quarter notes
+         sent.timeSigNumerator = 3;
+         sent.timeSigDenominator = 4;
+         sent.playing = false;
+         sent.loopActive = true;
+         sent.loopStartBeats = 4.0;
+         sent.loopEndBeats = 12.0;
+         Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames, &sent);
+         Platform::PluginTransport seen;
+         const bool gotStopped = Platform::PluginHostClockSeen(handle, seen);
+         const bool stoppedOk = gotStopped && std::fabs(seen.tempo - 93.0) < 1e-9 &&
+                                std::fabs(seen.beats - 8.5) < 1e-9 && std::fabs(seen.barStartBeats - 6.0) < 1e-9 &&
+                                seen.timeSigNumerator == 3 && seen.timeSigDenominator == 4 && !seen.playing &&
+                                seen.loopActive && std::fabs(seen.loopStartBeats - 4.0) < 1e-9 &&
+                                std::fabs(seen.loopEndBeats - 12.0) < 1e-9;
+         printf("PLUGINSCAN host clock (stopped): tempo=%.1f beat=%.2f bar=%.2f %d/%d playing=%d cycle=%d [%.1f,%.1f]  %s\n",
+                seen.tempo, seen.beats, seen.barStartBeats, seen.timeSigNumerator, seen.timeSigDenominator,
+                (int)seen.playing, (int)seen.loopActive, seen.loopStartBeats, seen.loopEndBeats,
+                stoppedOk ? "OK" : "FAIL");
+         ok = ok && stoppedOk;
+
+         sent.playing = true;
+         sent.loopActive = false;
+         Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames, &sent);
+         const bool gotPlaying = Platform::PluginHostClockSeen(handle, seen);
+         const bool playingOk = gotPlaying && seen.playing && !seen.loopActive;
+         printf("PLUGINSCAN host clock (playing): playing=%d cycle=%d  %s\n", (int)seen.playing,
+                (int)seen.loopActive, playingOk ? "OK" : "FAIL");
+         ok = ok && playingOk;
+
+         // No clock from the caller must read as stopped, never as playing.
+         Platform::PluginRender(handle, inPtrs, 2, outPtrs, 2, kFrames);
+         const bool gotNone = Platform::PluginHostClockSeen(handle, seen);
+         const bool noneOk = gotNone && !seen.playing;
+         printf("PLUGINSCAN host clock (none): playing=%d  %s\n", (int)seen.playing, noneOk ? "OK" : "FAIL");
+         ok = ok && noneOk;
+      }
+
       // --- parameters ---
       const int paramCount = Platform::PluginParameterCount(handle);
       printf("PLUGINSCAN parameters: %d  %s\n", paramCount, paramCount > 0 ? "OK" : "FAIL");
@@ -880,6 +928,71 @@ int RunMidiBendTest()
    return ok ? 0 : 1;
 }
 
+// A plugin whose latency changes after prepare (Pro-Q's linear phase, a
+// lookahead knob) must get PDC again: the platform layer re-reads the latency
+// and PollAudioLatencyChanges (once a frame) rebuilds the topology. Apple's
+// AUPeakLimiter reports its Attack Time as latency, so it is the fixture.
+// Before this, the latency was read once at prepare and the parallel dry
+// branch arrived early by the difference - a comb or an echo.
+static void RunPluginLatencyChangeCase(const std::vector<Platform::PluginDesc>& plugins)
+{
+   const Platform::PluginDesc* limiter = nullptr;
+   for (const Platform::PluginDesc& d : plugins)
+      if (d.identifier == "au:aufx:lmtr:appl")
+         limiter = &d;
+   if (limiter == nullptr)
+   {
+      printf("PLUGINNODETEST latency change (AUPeakLimiter not installed) SKIP\n");
+      return;
+   }
+   // Indices, not pointers: SpawnNode returns &gNodes.back(), which the next
+   // spawn's push_back can move.
+   GraphNode* g1 = SpawnNode("Plugin", "AudioEffects", 0.0f, 0.0f);
+   const int plugIdx = g1 ? g1->index : -1;
+   GraphNode* g2 = SpawnNode("Audio Out", "Utility", 400.0f, 0.0f);
+   const int outIdx = g2 ? g2->index : -1;
+   GraphNode* plugGn = plugIdx >= 0 ? FindNodeByIndex(plugIdx) : nullptr;
+   GraphNode* outGn = outIdx >= 0 ? FindNodeByIndex(outIdx) : nullptr;
+   auto* node = plugGn ? dynamic_cast<AudioPluginNode*>(plugGn->node.get()) : nullptr;
+   if (node == nullptr || outGn == nullptr)
+   {
+      printf("PLUGINNODETEST latency change: could not spawn nodes  FAIL\n");
+      return;
+   }
+   const double rate = 48000.0;
+   node->GetAudioNode()->PrepareToPlay(rate, 512);
+   node->LoadPlugin(*limiter);
+   int frame = 1000;
+   for (int i = 0; i < 600 && !node->IsReady(); i++)
+   {
+      node->CookIfNeeded(++frame);
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+   }
+   int slot = -1;
+   for (const Platform::PluginParamInfo& p : node->AvailableParams())
+      if (p.displayName == "Attack Time")
+         slot = node->MapParameter(p.address);
+   if (!node->IsReady() || slot < 0)
+   {
+      printf("PLUGINNODETEST latency change: limiter not ready or no Attack Time  FAIL\n");
+      return;
+   }
+   node->mappings[slot].value = 0.002f;
+   node->CookIfNeeded(++frame);
+   static_cast<AudioOutputNode*>(outGn->node.get())->input.Connect(node);
+   RebuildAudioTopology();
+   AudioNode* an = node->GetAudioNode();
+   const int before = AudioTopologyLatencyOf(an);
+   node->mappings[slot].value = 0.03f;
+   node->CookIfNeeded(++frame);
+   PollAudioLatencyChanges();
+   const int after = AudioTopologyLatencyOf(an);
+   const int wantBefore = (int)std::lround(0.002 * rate), wantAfter = (int)std::lround(0.03 * rate);
+   const bool ok = std::abs(before - wantBefore) <= 1 && std::abs(after - wantAfter) <= 1;
+   printf("PLUGINNODETEST latency change: PDC built with %d, after Attack Time 30 ms %d (want %d -> %d)  %s\n", before,
+          after, wantBefore, wantAfter, ok ? "OK" : "FAIL");
+}
+
 int RunPluginNodeHandleTest()
 {
    setvbuf(stdout, nullptr, _IONBF, 0);
@@ -963,6 +1076,7 @@ int RunPluginNodeHandleTest()
    const bool audioRan = blocks.load() > 100;
    printf("PLUGINNODETEST %d re-prepares, %ld blocks rendered, ready at end=%d  %s\n", reprepares, blocks.load(),
           readyAtEnd ? 1 : 0, (ok && readyAtEnd && audioRan) ? "OK" : "FAIL");
+   RunPluginLatencyChangeCase(plugins);
    return 0;
 }
 
@@ -1455,9 +1569,9 @@ void RunHistoryTest()
 
    NewPatch();
    // Five different edits.
-   Call("create_node", { {"typeName", "Shape"}, {"category", "Source"} }, r, e);                 // 1 add Shape
+   Call("create_node", { {"typeName", "Shape"}, {"category", "Source"}, {"x", 120.0f}, {"y", 80.0f} }, r, e);   // 1 add Shape
    const int shapeIdx = r.value("index", -1);
-   Call("create_node", { {"typeName", "Output"}, {"category", "Utility"} }, r, e);               // 2 add Output
+   Call("create_node", { {"typeName", "Output"}, {"category", "Utility"}, {"x", 420.0f}, {"y", 80.0f} }, r, e); // 2 add Output
    const int outIdx = r.value("index", -1);
    json prm;
    Call("get_params", { {"index", shapeIdx} }, prm, e);
@@ -1501,6 +1615,16 @@ void RunHistoryTest()
    // Jump forward one: the bypass is back.
    JumpInHistory(0, 1);
    Check("jump forward re-applies the redo", FindNodeByIndex(shapeIdx) != nullptr && FindNodeByIndex(shapeIdx)->node->bypassed && gRedoStack.size() == 1);
+   // The redo entry was saved mid-jump, the same frame the first undo rebuilt the nodes, before the editor drew them.
+   // Positions must still be the real ones (they were all 0,0, so jumping forward piled every node on the origin).
+   {
+      const GraphNode* s = FindNodeByIndex(shapeIdx);
+      const GraphNode* o = nullptr;
+      for (const GraphNode& gn : gNodes)
+         if (gn.typeName == "Output") o = &gn;
+      Check("a mid-jump snapshot keeps node positions", s != nullptr && o != nullptr && std::fabs(s->liveX - 120.0f) < 0.5f &&
+                                                            std::fabs(o->liveX - 420.0f) < 0.5f && std::fabs(o->liveY - 80.0f) < 0.5f);
+   }
 
    // A new edit drops the redo side.
    PushUndoCheckpoint("Edit");

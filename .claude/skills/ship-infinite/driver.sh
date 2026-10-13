@@ -109,6 +109,13 @@ step_release() {
         echo "    INFINITE_VERSION ($cmake_version) matches target tag ($target_tag) - ok"
     fi
 
+    echo "==> release: version must be above every published release (scripts/release_version_gate.py)"
+    if ! python3 scripts/release_version_gate.py; then
+        echo "    !! A lower version than one already out means users with the old copy keep opening patches in it"
+        echo "    !! (v0.4.25 did this to v0.4.3..v0.4.7). Bump INFINITE_VERSION above it. No override."
+        return 1
+    fi
+
     echo "==> release: package.sh (build + DMG + copy into website/assets)"
     ./package.sh
 

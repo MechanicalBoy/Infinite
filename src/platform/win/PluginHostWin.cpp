@@ -172,15 +172,16 @@ namespace Platform
 
    int PluginLatencySamples(PluginHandle* handle)
    {
-      return handle != nullptr ? handle->latencySamples : 0;
+      return PluginVST3LatencySamples(handle);
    }
 
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
-                     float* const* out, int outChannels, int numFrames)
+                     float* const* out, int outChannels, int numFrames,
+                     const PluginTransport* transport)
    {
       if (handle != nullptr && handle->vst3 != nullptr)
       {
-         PluginVST3Render(handle, in, inChannels, out, outChannels, numFrames);
+         PluginVST3Render(handle, in, inChannels, out, outChannels, numFrames, transport);
          return;
       }
       (void)in;
@@ -193,6 +194,13 @@ namespace Platform
                out[ch][i] = 0.0f;
          }
       }
+   }
+
+   bool PluginHostClockSeen(PluginHandle* handle, PluginTransport& out)
+   {
+      if (handle != nullptr && handle->vst3 != nullptr)
+         return PluginVST3HostClockSeen(handle, out);
+      return false;
    }
 
    void PluginScheduleMIDIEvent(PluginHandle* handle, int frameOffset,
@@ -351,11 +359,13 @@ namespace Platform
    }
 
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
-                     float* const* out, int outChannels, int numFrames)
+                     float* const* out, int outChannels, int numFrames,
+                     const PluginTransport* transport)
    {
       (void)handle;
       (void)in;
       (void)inChannels;
+      (void)transport;
       // Silence out: a Failed-state plugin never reaches ProcessBlock in the
       // node, but stay safe if topology timing ever changes under us.
       for (int ch = 0; ch < outChannels; ch++)
@@ -366,6 +376,13 @@ namespace Platform
                out[ch][i] = 0.0f;
          }
       }
+   }
+
+   bool PluginHostClockSeen(PluginHandle* handle, PluginTransport& out)
+   {
+      (void)handle;
+      (void)out;
+      return false;
    }
 
    void PluginScheduleMIDIEvent(PluginHandle* handle, int frameOffset,

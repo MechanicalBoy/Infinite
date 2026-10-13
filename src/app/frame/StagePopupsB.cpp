@@ -237,7 +237,12 @@ void DrawPopupsB(FrameCtx& fc)
                   ++shown;
                   const std::string title = DisplayName(t.first);
                   const std::string category = DisplayName(t.second);
-                  if (MenuParts::Item(title.c_str(), category.c_str()))
+                  ImGui::PushID(t.first.c_str());
+                  ImGui::PushID(t.second.c_str());
+                  const bool picked = MenuParts::Item(title.c_str(), category.c_str());
+                  ImGui::PopID();
+                  ImGui::PopID();
+                  if (picked)
                   {
                      spawnName = t.first;
                      spawnCategory = t.second;
@@ -284,7 +289,13 @@ void DrawPopupsB(FrameCtx& fc)
                ++shown;
                const std::string title = DisplayName(t.first);
                const std::string category = DisplayName(t.second);
+               // Two node types can share a display name ("Invert" is both a Modulator and a Compositing effect); the
+               // row id comes from the label, so the type name keeps each row's id unique.
+               ImGui::PushID(t.first.c_str());
+               ImGui::PushID(t.second.c_str());
                bool activate = MenuParts::Item(title.c_str(), category.c_str());
+               ImGui::PopID();
+               ImGui::PopID();
                if (shown == 1 && pickFirst)
                   activate = true;
                if (activate)

@@ -743,6 +743,11 @@ public:
    float gatePercent = 80.0f; // 0..100, percent of the step the note stays on
    int stepGates = 0xFF;      // bit i = step i enabled; all on by default
    bool useGlobalScale = false;
+   // Steps land on their own sample (1) or at the start of the block that
+   // crossed them (0: patches saved before the step-timing fix, set by
+   // BeforeLoadParams). Not a control.
+   int stepTiming = 1;
+   void BeforeLoadParams() override { stepTiming = 0; }
 
    // UI-only: which preset the dropdown last showed as selected. Not visited
    // by VisitParams - the preset is an action that writes the real params
@@ -791,6 +796,11 @@ public:
    float rateSeconds = 0.2f;  // seconds per step, free mode
    float gatePercent = 70.0f; // 0..100, percent of the step the note stays on
    bool useGlobalScale = false;
+   // Steps land on their own sample (1) or at the start of the block that
+   // crossed them (0: patches saved before the step-timing fix, set by
+   // BeforeLoadParams). Not a control.
+   int stepTiming = 1;
+   void BeforeLoadParams() override { stepTiming = 0; }
 
    int stepNote[kMaxSteps];
    float stepVelocity[kMaxSteps];
@@ -837,6 +847,18 @@ public:
    int maxStep = 4; // semitones, max wander per step
    bool useGlobalScale = true; // follow Transport key/scale by default
    float groove = 0.0f; // 0..1 swing amount: delays every odd step by groove * 0.5 * rateBeats (MPC-style swing)
+   // 1 = the swing delay is honoured past the block it starts in; 0 = capped at one block (patches saved before
+   // the fix, set by BeforeLoadParams). Not a control.
+   int swingMode = 1;
+   // Steps land on their own sample (1) or at the start of the block that
+   // crossed them (0: patches saved before the step-timing fix, set by
+   // BeforeLoadParams). Not a control.
+   int stepTiming = 1;
+   void BeforeLoadParams() override
+   {
+      swingMode = 0;
+      stepTiming = 0;
+   }
 
    int LastNote() const; // main-thread readout for the visualizer
 
@@ -875,6 +897,11 @@ public:
    float humanizeVelocity = 15.0f;
    float upperHarmonics = 20.0f; // 0..100 percent chance of an extra note an octave above
    bool useGlobalScale = true; // follow Transport key/scale by default
+   // Steps land on their own sample (1) or at the start of the block that
+   // crossed them (0: patches saved before the step-timing fix, set by
+   // BeforeLoadParams). Not a control.
+   int stepTiming = 1;
+   void BeforeLoadParams() override { stepTiming = 0; }
 
    int LastChordSize() const; // main-thread readout for the visualizer
 

@@ -1,5 +1,7 @@
 # Infinite AI Agent Instructions & Skills Index
 
+**Start every session by reading `docs/NOW.md`, then follow `infinite-lifecycle` (the process) in every decision, including when the owner is away.**
+
 This repository contains dedicated skills and runbooks in `.claude/skills/<name>/SKILL.md` (also symlinked to `.agents/skills/`).
 Whenever working on tasks in this repository, **you must consult and follow the relevant skill document before taking action**.
 
@@ -52,12 +54,14 @@ One owner per topic: if two files seem to disagree, the skill named in this tabl
 | `codebase-navigation` | Process | How to search this codebase completely; living map of wiring hotspots |
 | `bug-blast-radius` | Process | The 9-question impact analysis before fixing any bug (sole owner of the 9 questions) |
 | `infinite-patch-authoring` | Process | Write, validate, explain and render `.inf` patches headless; node facts are generated (`tools/gen-patch-skill.py`) |
+| `quality-system` | Process | One registry, row format, gate and scoreboard for audits, re-survey, benches and checks (`docs/quality/`) |
 | `tool-first` | Process | Write a script/tool instead of by-hand work; inventory of existing tools in `tools/` and `scripts/` |
 | `write-fix-brief` | Process | Turn a bug report / findings / idea into a verified implementation prompt |
 | `invariant-interaction-audit` | Process | Before shipping any guarantee: can a sibling control or call site undo it |
 | `infinite-code-review` | Process | Review code against Infinite's four standards |
 | `semi-brain` | Process | Query the distilled brain before non-trivial architecture calls |
 | `prior-art-scout` | Process | Search peer repos and public fixes for platform/audio/packaging problems |
+| `infinite-lifecycle` | Process | The map: product/build/rule loops, 12 stages + gates, lanes with done checks, who decides, rule precedence; read `docs/NOW.md` first |
 | `git-branch-workflow` | Process | Branch-per-feature workflow for this repo |
 | `windows-parity` | Platform | Writing Windows-safe code from macOS |
 | `linux-parity` | Platform | Writing Linux-safe code; the container+Xvfb rig |

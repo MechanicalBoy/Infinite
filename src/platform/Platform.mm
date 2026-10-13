@@ -2502,6 +2502,93 @@ namespace Platform
       // same mechanism a microphone-to-.m4a recorder relies on. This is what
       // makes muxing an arbitrary source file painless: no encoder to drive by
       // hand, just PCM in.
+      // AAC output settings the encoder will actually take for a source at
+      // inputRate. It encodes only some rates (none above 48 kHz: an 88.2/96/192 kHz
+      // file or device used to throw out of AVAssetWriterInput and kill the app) and
+      // caps the bit rate by rate and channel count (160 kbps made anything under
+      // 32 kHz, and 32 kHz mono, fail with "Cannot Encode Media"). The writer input
+      // resamples a source rate it cannot encode. Windows does the same at
+      // MediaWin.cpp's AddRecorderAudioStream.
+      NSDictionary* AacOutputSettings(double inputRate, int channels)
+      {
+         constexpr double kMaxRate = 48000.0;
+         constexpr double kWantedBitRate = 160000.0;
+         const UInt32 formatId = kAudioFormatMPEG4AAC;
+         double rate = std::min(inputRate, kMaxRate);
+         UInt32 size = 0;
+         if (AudioFormatGetPropertyInfo(kAudioFormatProperty_AvailableEncodeSampleRates, sizeof(formatId),
+                                        &formatId, &size) == noErr && size >= sizeof(AudioValueRange))
+         {
+            std::vector<AudioValueRange> rates(size / sizeof(AudioValueRange));
+            if (AudioFormatGetProperty(kAudioFormatProperty_AvailableEncodeSampleRates, sizeof(formatId),
+                                       &formatId, &size, rates.data()) == noErr)
+            {
+               // The nearest supported rate at or above the source's, else the highest.
+               double best = 0.0, highest = 0.0;
+               for (const AudioValueRange& r : rates)
+               {
+                  const double v = r.mMaximum;
+                  if (v > kMaxRate)
+                     continue;
+                  highest = std::max(highest, v);
+                  if (v >= rate && (best == 0.0 || v < best))
+                     best = v;
+               }
+               if (best > 0.0 || highest > 0.0)
+                  rate = best > 0.0 ? best : highest;
+            }
+         }
+
+         NSMutableDictionary* settings = [@{
+            AVFormatIDKey         : @(kAudioFormatMPEG4AAC),
+            AVSampleRateKey       : @(rate),
+            AVNumberOfChannelsKey : @(channels),
+         } mutableCopy];
+
+         // The bit rates an encoder for exactly this rate and channel count takes
+         // (kAudioFormatProperty_AvailableEncodeBitRates ignores both and lists all).
+         AudioStreamBasicDescription in = {};
+         in.mSampleRate = rate;
+         in.mFormatID = kAudioFormatLinearPCM;
+         in.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+         in.mChannelsPerFrame = (UInt32)channels;
+         in.mBitsPerChannel = 32;
+         in.mFramesPerPacket = 1;
+         in.mBytesPerFrame = in.mBytesPerPacket = 4 * (UInt32)channels;
+         AudioStreamBasicDescription out = {};
+         out.mSampleRate = rate;
+         out.mFormatID = kAudioFormatMPEG4AAC;
+         out.mChannelsPerFrame = (UInt32)channels;
+         AudioConverterRef converter = nullptr;
+         if (AudioConverterNew(&in, &out, &converter) == noErr)
+         {
+            if (AudioConverterGetPropertyInfo(converter, kAudioConverterApplicableEncodeBitRates, &size,
+                                              nullptr) == noErr && size >= sizeof(AudioValueRange))
+            {
+               std::vector<AudioValueRange> bitRates(size / sizeof(AudioValueRange));
+               if (AudioConverterGetProperty(converter, kAudioConverterApplicableEncodeBitRates, &size,
+                                             bitRates.data()) == noErr)
+               {
+                  // The highest bit rate it takes up to 160 kbps; failing that its
+                  // lowest; with no list the encoder picks its own.
+                  double best = 0.0, lowest = 0.0;
+                  for (const AudioValueRange& r : bitRates)
+                  {
+                     if (r.mMaximum <= 0.0)
+                        continue;
+                     lowest = lowest == 0.0 ? r.mMaximum : std::min(lowest, r.mMaximum);
+                     if (r.mMaximum <= kWantedBitRate)
+                        best = std::max(best, r.mMaximum);
+                  }
+                  if (best > 0.0 || lowest > 0.0)
+                     settings[AVEncoderBitRateKey] = @((NSInteger)(best > 0.0 ? best : lowest));
+               }
+            }
+            AudioConverterDispose(converter);
+         }
+         return settings;
+      }
+
       CMSampleBufferRef PCMBufferToSampleBuffer(AVAudioPCMBuffer* buffer, CMTime presentationTime)
       {
          if (buffer == nil || buffer.frameLength == 0)
@@ -2536,6 +2623,18 @@ namespace Platform
          return sampleBuffer;
       }
 
+      // How far a file's audio is appended for a given video frame count: one
+      // second ahead of the picture. AVAssetWriter interleaves, and holds the
+      // video input not-ready until the audio track has run ahead of it; with
+      // audio appended only up to the picture, each waited for the other and a
+      // long take stalled for good (a 600 s file stuck at frame ~1350 of 3600).
+      // The overshoot at the end is trimmed by endSessionAtSourceTime on stop.
+      int64_t FileAudioTargetFrames(RecorderHandle* h, long long videoFrames)
+      {
+         const int fps = std::max(1, h->fps);
+         return (int64_t)((double)(videoFrames + fps) / (double)fps * h->audioSampleRate);
+      }
+
       // Reads and appends whatever audio is needed to catch up to
       // targetSampleFrames, looping or stopping at the source's end per
       // audioLoop. Called with h->writerMutex held.
@@ -2556,7 +2655,13 @@ namespace Platform
             {
                if (!h->audioLoop)
                {
+                  // No more audio will ever come: close the track now. Left open,
+                  // the writer keeps holding the video input for audio past the
+                  // file's end, and a take whose file ends near or before the
+                  // picture's last frame could stall for good.
                   h->audioExhausted = true;
+                  [h->audioInput markAsFinished];
+                  h->audioFinished = true;
                   return;
                }
                h->audioFile.framePosition = 0;
@@ -2773,9 +2878,7 @@ namespace Platform
                {
                   if (h->audioFile != nil)
                   {
-                     const int64_t targetFrames = (int64_t)((double)(frame + 1) /
-                                                             (double)h->fps * h->audioSampleRate);
-                     AppendAudioUpToLocked(h, targetFrames);
+                     AppendAudioUpToLocked(h, FileAudioTargetFrames(h, frame + 1));
                   }
                   else
                   {
@@ -2916,12 +3019,9 @@ namespace Platform
             }
             else
             {
-               NSDictionary* audioSettings = @{
-                  AVFormatIDKey         : @(kAudioFormatMPEG4AAC),
-                  AVSampleRateKey       : @(audioFile.processingFormat.sampleRate),
-                  AVNumberOfChannelsKey : @(std::min((unsigned int)2, audioFile.processingFormat.channelCount)),
-                  AVEncoderBitRateKey   : @(160000)
-               };
+               NSDictionary* audioSettings = AacOutputSettings(
+                  audioFile.processingFormat.sampleRate,
+                  (int)std::min((unsigned int)2, audioFile.processingFormat.channelCount));
                audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                                                outputSettings:audioSettings];
                audioInput.expectsMediaDataInRealTime = NO;
@@ -2943,12 +3043,7 @@ namespace Platform
          else if (liveAudioSampleRate > 0.0)
          {
             const int ch = std::max(1, std::min(2, liveAudioChannels));
-            NSDictionary* audioSettings = @{
-               AVFormatIDKey         : @(kAudioFormatMPEG4AAC),
-               AVSampleRateKey       : @(liveAudioSampleRate),
-               AVNumberOfChannelsKey : @(ch),
-               AVEncoderBitRateKey   : @(160000)
-            };
+            NSDictionary* audioSettings = AacOutputSettings(liveAudioSampleRate, ch);
             audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                                             outputSettings:audioSettings];
             audioInput.expectsMediaDataInRealTime = NO;
@@ -3187,6 +3282,11 @@ namespace Platform
          // that exited next (headless --render, quit after export) left a file
          // with no index. The completion handler runs on an AVFoundation
          // queue, never this thread, so a semaphore cannot deadlock.
+         // File audio runs a second ahead of the picture (FileAudioTargetFrames);
+         // end the session at the last frame so the take is as long as its video.
+         if (handle->audioFile != nil && handle->writer.status == AVAssetWriterStatusWriting)
+            [handle->writer endSessionAtSourceTime:CMTimeMake(handle->frameIndex.load(std::memory_order_relaxed),
+                                                              std::max(1, handle->fps))];
          dispatch_semaphore_t finished = dispatch_semaphore_create(0);
          [handle->writer finishWritingWithCompletionHandler:^{ dispatch_semaphore_signal(finished); }];
          const bool timedOut = dispatch_semaphore_wait(finished,
@@ -3227,12 +3327,7 @@ namespace Platform
       std::lock_guard<std::mutex> lock(handle->writerMutex);
       FlushPendingAudioLocked(handle);
       if (handle->audioFile != nil)
-      {
-         const long long frame = handle->frameIndex.load(std::memory_order_relaxed);
-         const int64_t targetFrames = (int64_t)((double)(frame + 1) /
-                                                 (double)std::max(1, handle->fps) * handle->audioSampleRate);
-         AppendAudioUpToLocked(handle, targetFrames);
-      }
+         AppendAudioUpToLocked(handle, FileAudioTargetFrames(handle, handle->frameIndex.load(std::memory_order_relaxed) + 1));
    }
 
    void RecorderFinishAudioInput(RecorderHandle* handle)
@@ -6064,6 +6159,63 @@ namespace Platform
 
             au.maximumFramesToRender = (AUAudioFrameCount)frames;
 
+            // The host clock, read from h->transport (PluginRender copies it
+            // in before each render). Installed before allocateRenderResources,
+            // where an AU looks for them. No Objective-C, no allocation inside:
+            // the AU calls these on the render thread.
+            PluginHandle* hp = h;
+            au.musicalContextBlock = ^BOOL(double* currentTempo, double* timeSignatureNumerator,
+                                           NSInteger* timeSignatureDenominator, double* currentBeatPosition,
+                                           NSInteger* sampleOffsetToNextBeat, double* currentMeasureDownbeatPosition) {
+               const PluginTransport& t = hp->transport;
+               const double tempo = t.tempo > 0.0 ? t.tempo : 120.0;
+               if (currentTempo != nullptr)
+                  *currentTempo = tempo;
+               if (timeSignatureNumerator != nullptr)
+                  *timeSignatureNumerator = (double)t.timeSigNumerator;
+               if (timeSignatureDenominator != nullptr)
+                  *timeSignatureDenominator = (NSInteger)t.timeSigDenominator;
+               if (currentBeatPosition != nullptr)
+                  *currentBeatPosition = t.beats;
+               if (sampleOffsetToNextBeat != nullptr)
+               {
+                  const double toNext = std::ceil(t.beats) - t.beats;
+                  const double sr = hp->sampleRate > 0.0 ? hp->sampleRate : 48000.0;
+                  *sampleOffsetToNextBeat = (NSInteger)std::lround(toNext * 60.0 / tempo * sr);
+               }
+               if (currentMeasureDownbeatPosition != nullptr)
+                  *currentMeasureDownbeatPosition = t.barStartBeats;
+               return YES;
+            };
+            au.transportStateBlock = ^BOOL(AUHostTransportStateFlags* transportStateFlags,
+                                           double* currentSamplePosition, double* cycleStartBeatPosition,
+                                           double* cycleEndBeatPosition) {
+               const PluginTransport& t = hp->transport;
+               const bool cycling = t.loopActive && t.loopEndBeats > t.loopStartBeats;
+               if (transportStateFlags != nullptr)
+               {
+                  AUHostTransportStateFlags f = 0;
+                  if (hp->transportStateChanged)
+                     f |= AUHostTransportStateChanged;
+                  if (t.playing)
+                     f |= AUHostTransportStateMoving;
+                  if (cycling)
+                     f |= AUHostTransportStateCycling;
+                  *transportStateFlags = f;
+               }
+               if (currentSamplePosition != nullptr)
+               {
+                  const double tempo = t.tempo > 0.0 ? t.tempo : 120.0;
+                  const double sr = hp->sampleRate > 0.0 ? hp->sampleRate : 48000.0;
+                  *currentSamplePosition = t.beats * 60.0 / tempo * sr;
+               }
+               if (cycleStartBeatPosition != nullptr)
+                  *cycleStartBeatPosition = cycling ? t.loopStartBeats : 0.0;
+               if (cycleEndBeatPosition != nullptr)
+                  *cycleEndBeatPosition = cycling ? t.loopEndBeats : 0.0;
+               return YES;
+            };
+
             NSError* allocError = nil;
             if (![au allocateRenderResourcesAndReturnError:&allocError])
             {
@@ -6230,7 +6382,18 @@ namespace Platform
 
    int PluginLatencySamples(PluginHandle* h)
    {
-      return h != nullptr ? h->latencySamples : 0;
+      if (h == nullptr)
+         return 0;
+#if INFINITE_ENABLE_VST3
+      if (h->desc.format == "vst3")
+         return PluginVST3LatencySamples(h);
+#endif
+      // Main thread, once a frame via PollAudioLatencyChanges. An AU that
+      // changes mode after prepare (Pro-Q's linear phase) only updates
+      // au.latency, so re-read it rather than trusting the prepare-time value.
+      if (h->resourcesAllocated && h->unit != nil && h->sampleRate > 0.0)
+         h->latencySamples = (int)std::lround(h->unit.latency * h->sampleRate);
+      return h->latencySamples;
    }
 
    void PluginDestroy(PluginHandle* h)
@@ -6286,6 +6449,9 @@ namespace Platform
                [h->unit.parameterTree removeParameterObserver:h->learnToken];
             if (h->resourcesAllocated)
                [h->unit deallocateRenderResources];
+            // They capture this handle, which is deleted below.
+            h->unit.musicalContextBlock = nil;
+            h->unit.transportStateBlock = nil;
          }
       }
       h->learnToken = nullptr;
@@ -6305,7 +6471,8 @@ namespace Platform
    }
 
    void PluginRender(PluginHandle* h, const float* const* in, int inChannels,
-                     float* const* out, int outChannels, int numFrames)
+                     float* const* out, int outChannels, int numFrames,
+                     const PluginTransport* transport)
    {
       if (h == nullptr)
          return;
@@ -6313,10 +6480,19 @@ namespace Platform
       if (h->desc.format == "vst3")
       {
 #if INFINITE_ENABLE_VST3
-         PluginVST3Render(h, in, inChannels, out, outChannels, numFrames);
+         PluginVST3Render(h, in, inChannels, out, outChannels, numFrames, transport);
+#else
+         (void)transport;
 #endif
          return;
       }
+
+      // The AU's musicalContextBlock/transportStateBlock read this back
+      // during the render call below. "Changed" is play/stop, the edge
+      // AUHostTransportStateChanged exists for.
+      h->transport = transport != nullptr ? *transport : PluginTransport();
+      h->transportStateChanged = (h->transport.playing != h->transportWasPlaying);
+      h->transportWasPlaying = h->transport.playing;
 
       // Everything below is on the real-time thread: no Objective-C message
       // send, no ARC traffic, no allocation, no lock. The two blocks involved
@@ -6458,6 +6634,45 @@ namespace Platform
             std::memset(out[ch], 0, (size_t)frames * sizeof(float));
 
       h->inRender.store(false, std::memory_order_release);
+   }
+
+   bool PluginHostClockSeen(PluginHandle* h, PluginTransport& out)
+   {
+      if (h == nullptr)
+         return false;
+      if (h->desc.format == "vst3")
+      {
+#if INFINITE_ENABLE_VST3
+         return PluginVST3HostClockSeen(h, out);
+#else
+         return false;
+#endif
+      }
+      @autoreleasepool
+      {
+         AUAudioUnit* au = h->unit;
+         if (au == nil || au.musicalContextBlock == nil || au.transportStateBlock == nil)
+            return false;
+         double tempo = 0.0, num = 0.0, beat = 0.0, downbeat = 0.0;
+         NSInteger den = 0, toNextBeat = 0;
+         if (!au.musicalContextBlock(&tempo, &num, &den, &beat, &toNextBeat, &downbeat))
+            return false;
+         AUHostTransportStateFlags flags = 0;
+         double samplePos = 0.0, cycleStart = 0.0, cycleEnd = 0.0;
+         if (!au.transportStateBlock(&flags, &samplePos, &cycleStart, &cycleEnd))
+            return false;
+         out = PluginTransport();
+         out.tempo = tempo;
+         out.timeSigNumerator = (int)std::lround(num);
+         out.timeSigDenominator = (int)den;
+         out.beats = beat;
+         out.barStartBeats = downbeat;
+         out.playing = (flags & AUHostTransportStateMoving) != 0;
+         out.loopActive = (flags & AUHostTransportStateCycling) != 0;
+         out.loopStartBeats = cycleStart;
+         out.loopEndBeats = cycleEnd;
+         return true;
+      }
    }
 
    void PluginScheduleMIDIEvent(PluginHandle* h, int frameOffset, const unsigned char* bytes, int byteCount)
@@ -7778,6 +7993,202 @@ namespace Platform
          // extension - revealing an export must never play or import it.
          [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ fileUrl ]];
       }
+   }
+
+   static NSURL* PatchOpenerUrl()
+   {
+      if (@available(macOS 12.0, *))
+      {
+         UTType* type = [UTType typeWithIdentifier:@"com.namansoni.infinite.patch"];
+         return type != nil ? [[NSWorkspace sharedWorkspace] URLForApplicationToOpenContentType:type] : nil;
+      }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+      CFURLRef url = LSCopyDefaultApplicationURLForContentType(CFSTR("com.namansoni.infinite.patch"), kLSRolesAll, nullptr);
+#pragma clang diagnostic pop
+      return url != nullptr ? (NSURL*)CFBridgingRelease(url) : nil;
+   }
+
+   bool QueryPatchOpener(PatchOpener& out)
+   {
+      out = PatchOpener();
+      @autoreleasepool
+      {
+         NSBundle* me = [NSBundle mainBundle];
+         if (![[me bundlePath] hasSuffix:@".app"])
+            return false;   // a bare binary has no Launch Services identity to compare
+         NSString* selfPath = [[[me bundleURL] URLByResolvingSymlinksInPath] path];
+         out.self = [selfPath UTF8String];
+         out.selfTemporary = [selfPath hasPrefix:@"/Volumes/"] || [selfPath containsString:@"/AppTranslocation/"];
+         NSURL* url = PatchOpenerUrl();
+         if (url == nil)
+            return true;
+         NSString* openerPath = [[url URLByResolvingSymlinksInPath] path];
+         out.opener = [openerPath UTF8String];
+         out.isSelf = [openerPath isEqualToString:selfPath];
+         NSBundle* opener = [NSBundle bundleWithURL:url];
+         out.otherApp = opener == nil || ![[opener bundleIdentifier] isEqualToString:[me bundleIdentifier]];
+         NSString* version = [opener objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+         if ([version isKindOfClass:[NSString class]])
+            out.version = [version UTF8String];
+      }
+      return true;
+   }
+
+   static bool RunLsregister(NSArray<NSString*>* args)
+   {
+      NSURL* tool = [NSURL fileURLWithPath:@"/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+                                           @"LaunchServices.framework/Support/lsregister"];
+      NSError* err = nil;
+      NSTask* task = [NSTask launchedTaskWithExecutableURL:tool arguments:args error:&err terminationHandler:nil];
+      if (task == nil)
+         return false;
+      [task waitUntilExit];
+      return [task terminationStatus] == 0;
+   }
+
+   bool MakeThisCopyPatchOpener(const PatchOpener& current, std::string& outError)
+   {
+      outError.clear();
+      if (current.self.empty() || current.selfTemporary)
+      {
+         outError = "This copy is running from a disk image. Move it to Applications first.";
+         return false;
+      }
+      @autoreleasepool
+      {
+         // Unregister, not delete: the other copy stays on disk and still runs when opened directly. Its
+         // registration comes back if it is launched again - then this notice comes back too.
+         if (!current.opener.empty() && !current.isSelf && !current.otherApp)
+            RunLsregister(@[ @"-u", [NSString stringWithUTF8String:current.opener.c_str()] ]);
+         if (!RunLsregister(@[ @"-f", [NSString stringWithUTF8String:current.self.c_str()] ]))
+         {
+            outError = "Launch Services refused to register this copy.";
+            return false;
+         }
+      }
+      PatchOpener after;
+      if (!QueryPatchOpener(after) || !after.isSelf)
+      {
+         outError = "macOS still opens patches with " + (after.opener.empty() ? std::string("nothing") : after.opener) +
+                    ". Right-click a patch > Get Info > Open with > this copy > Change All.";
+         return false;
+      }
+      return true;
+   }
+
+   // ---- in-place update -----------------------------------------------------
+
+   static std::string sStagedUpdate;   // <parent>/.Infinite-update.app, set by PrepareSelfUpdate
+
+   static bool RunTool(NSString* path, NSArray<NSString*>* args)
+   {
+      NSError* err = nil;
+      NSTask* task = [NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:path] arguments:args error:&err
+                                        terminationHandler:nil];
+      if (task == nil)
+         return false;
+      [task waitUntilExit];
+      return [task terminationStatus] == 0;
+   }
+
+   bool CanSelfUpdate(std::string& whyNot)
+   {
+      whyNot.clear();
+      @autoreleasepool
+      {
+         NSString* self = [[[[NSBundle mainBundle] bundleURL] URLByResolvingSymlinksInPath] path];
+         if (![self hasSuffix:@".app"])
+            whyNot = "This build is not an app bundle.";
+         else if ([self hasPrefix:@"/Volumes/"] || [self containsString:@"/AppTranslocation/"])
+            whyNot = "Infinite is running from the disk image. Drag it to Applications first.";
+         else if (access([[self stringByDeletingLastPathComponent] fileSystemRepresentation], W_OK) != 0 ||
+                  access([self fileSystemRepresentation], W_OK) != 0)
+            whyNot = "This account can't write to the folder Infinite is in.";
+      }
+      return whyNot.empty();
+   }
+
+   bool PrepareSelfUpdate(const std::string& payload, const std::string& version, std::string& outError)
+   {
+      outError.clear();
+      sStagedUpdate.clear();
+      if (!CanSelfUpdate(outError))
+         return false;
+      @autoreleasepool
+      {
+         NSString* self = [[[[NSBundle mainBundle] bundleURL] URLByResolvingSymlinksInPath] path];
+         NSString* staged = [[self stringByDeletingLastPathComponent] stringByAppendingPathComponent:@".Infinite-update.app"];
+         NSString* mount = [[[NSString stringWithUTF8String:payload.c_str()] stringByDeletingLastPathComponent]
+                              stringByAppendingPathComponent:@"mnt"];
+         NSFileManager* fm = [NSFileManager defaultManager];
+         [fm removeItemAtPath:staged error:nil];
+         [fm createDirectoryAtPath:mount withIntermediateDirectories:YES attributes:nil error:nil];
+         if (!RunTool(@"/usr/bin/hdiutil", @[ @"attach", @"-nobrowse", @"-readonly", @"-noautoopen", @"-mountpoint", mount,
+                                               [NSString stringWithUTF8String:payload.c_str()] ]))
+         {
+            outError = "The downloaded disk image would not open.";
+            return false;
+         }
+         NSString* inside = [mount stringByAppendingPathComponent:@"Infinite.app"];
+         NSString* got = [[NSBundle bundleWithPath:inside] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+         const bool versionOk = [got isKindOfClass:[NSString class]] && version == [got UTF8String];
+         // ditto keeps the bundle's symlinks, permissions and signature intact; the copy lands on this copy's own
+         // volume so the final swap is a rename.
+         const bool copied = versionOk && RunTool(@"/usr/bin/ditto", @[ inside, staged ]);
+         RunTool(@"/usr/bin/hdiutil", @[ @"detach", mount, @"-force" ]);
+         if (!versionOk)
+         {
+            outError = "The download is not Infinite " + version + ".";
+            return false;
+         }
+         if (!copied || !RunTool(@"/usr/bin/codesign", @[ @"--verify", @"--deep", @"--strict", staged ]))
+         {
+            [fm removeItemAtPath:staged error:nil];
+            outError = copied ? "The new copy's signature does not verify." : "Could not copy the new version next to this one.";
+            return false;
+         }
+         sStagedUpdate = [staged UTF8String];
+      }
+      return true;
+   }
+
+   bool LaunchSelfUpdateHelper(bool relaunch, std::string& outError)
+   {
+      outError.clear();
+      if (sStagedUpdate.empty())
+      {
+         outError = "No update is ready.";
+         return false;
+      }
+      @autoreleasepool
+      {
+         NSString* self = [[[[NSBundle mainBundle] bundleURL] URLByResolvingSymlinksInPath] path];
+         NSString* old = [[self stringByDeletingLastPathComponent] stringByAppendingPathComponent:@".Infinite-old.app"];
+         // Waits for this process, swaps by rename (same folder, so atomic per step), puts this copy back if the
+         // second rename fails, re-registers so double-click opens the new copy, then relaunches it.
+         NSString* script =
+            @"pid=$1; self=$2; staged=$3; old=$4; relaunch=$5\n"
+            @"while kill -0 \"$pid\" 2>/dev/null; do sleep 0.2; done\n"
+            @"rm -rf \"$old\"\n"
+            @"mv \"$self\" \"$old\" || exit 1\n"
+            @"if mv \"$staged\" \"$self\"; then rm -rf \"$old\"; else mv \"$old\" \"$self\"; exit 1; fi\n"
+            @"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f \"$self\"\n"
+            @"[ \"$relaunch\" = 1 ] && /usr/bin/open \"$self\"\n"
+            @"exit 0\n";
+         NSError* err = nil;
+         NSArray* args = @[ @"-c", script, @"infinite-update", [NSString stringWithFormat:@"%d", (int)getpid()], self,
+                            [NSString stringWithUTF8String:sStagedUpdate.c_str()], old, relaunch ? @"1" : @"0" ];
+         // Not waited on: it outlives this process (reparented to launchd) and does its work after we exit.
+         NSTask* task = [NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:@"/bin/sh"] arguments:args error:&err
+                                           terminationHandler:nil];
+         if (task == nil)
+         {
+            outError = "Could not start the update helper.";
+            return false;
+         }
+      }
+      return true;
    }
 
    bool HttpGet(const std::string& url, const std::string& userAgent,

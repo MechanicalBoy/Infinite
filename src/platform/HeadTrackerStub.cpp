@@ -6,6 +6,7 @@
 namespace HeadTracker
 {
    bool Supported(Source source) { return source == kOff; }
+   void Disable() {}
    void Start(Source) {}
    void Stop(Source) {}
    bool ReadYaw(float&) { return false; }

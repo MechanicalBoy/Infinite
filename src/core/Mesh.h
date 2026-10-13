@@ -582,6 +582,8 @@ namespace MeshOps
 
 namespace Primitives
 {
+   // Reverses every triangle (inside-out <-> outside-in); normals are left alone.
+   void FlipWinding(Mesh& mesh);
    Mesh Plane(int segments);
    Mesh Cube(int segments);
    Mesh Sphere(int rings, int sectors);

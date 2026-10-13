@@ -1252,6 +1252,8 @@ namespace app
       // would be the original running twice.
       if (auto* rn = dynamic_cast<RandomNode*>(copy->node.get()))
          rn->seed = RandomNode::NextSeed();
+      if (auto* lfo = dynamic_cast<LFONode*>(copy->node.get()))
+         lfo->seed = LFONode::NextSeed();
       if (auto* fgn = dynamic_cast<FieldGraphNode*>(copy->node.get()))
       {
          fgn->SetUid(FieldGraphNode::NewUid());

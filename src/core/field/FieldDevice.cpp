@@ -1,6 +1,7 @@
 #include "FieldDevice.h"
 
 #include "json.hpp"
+#include "platform/AppPaths.h"
 
 #include <fstream>
 #include <sstream>
@@ -97,16 +98,13 @@ namespace Field
 
    bool SaveToFieldFile(const std::string& path, const DeviceFile& device)
    {
-      std::ofstream file(path, std::ios::binary);
-      if (!file)
-         return false;
-      file << ToJsonString(device);
-      return (bool)file;
+      std::string error;
+      return AppPaths::WriteFileAtomic(path, ToJsonString(device), error);
    }
 
    bool LoadFromFieldFile(const std::string& path, DeviceFile& outDevice, std::string& outError)
    {
-      std::ifstream file(path, std::ios::binary);
+      std::ifstream file(AppPaths::FsPath(path), std::ios::binary);
       if (!file)
       {
          outError = "could not open file: " + path;

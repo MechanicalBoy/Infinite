@@ -20,12 +20,11 @@ void AudioFilterKernel::PushParams(const AudioEffectNode& node, double sampleRat
    if (AudioFilterDsp::IsSvf(type))
    {
       const float g = tanf((float)M_PI * freq / (float)sampleRate);
-      const float k = 1.0f / std::max(0.01f, q);
       const int stages = AudioFilterDsp::SvfStageCount(type);
       for (int s = 0; s < stages; s++)
       {
          coeffs[s][0] = g;
-         coeffs[s][1] = k;
+         coeffs[s][1] = AudioFilterDsp::SvfStageK(stages, s, q);
       }
    }
    else

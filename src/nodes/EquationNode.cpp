@@ -139,6 +139,7 @@ public:
 
    void PushParams(const EquationNode& n)
    {
+      mVelSquared.store(n.velCurve != 0, std::memory_order_relaxed);
       mUnison.store(std::clamp(n.unison, 1, kMaxUnison), std::memory_order_relaxed);
       mOctave.store(n.octave, std::memory_order_relaxed);
       mSemi.store(n.semi, std::memory_order_relaxed);
@@ -238,7 +239,8 @@ public:
                v.held = true;
                v.note = event.note;
                v.voiceId = event.voiceId;
-               v.velocity = event.velocity;
+               v.velocity = mVelSquared.load(std::memory_order_relaxed) ? event.velocity * event.velocity
+                                                                         : event.velocity;
                v.age = ++mAgeCounter;
                v.amp.SetADSR(ampA, ampD, ampS, ampR);
                v.amp.NoteOn();
@@ -529,6 +531,7 @@ private:
    MeterRing mScopeRing;
    std::vector<float> mMonoScope;
 
+   std::atomic<bool> mVelSquared{true};
    std::atomic<int> mUnison{1};
    std::atomic<int> mOctave{0};
    std::atomic<int> mSemi{0};
@@ -671,6 +674,7 @@ void EquationNode::CookIfNeeded(int frameId)
 
 void EquationNode::VisitParams(ParamVisitor& v)
 {
+   v.Int("velCurve", velCurve);
    v.Text("formula", formula);
    v.Int("preset", presetIndex);
    v.Int("domainMode", domainMode);

@@ -130,6 +130,7 @@ public:
    std::atomic<float> mPitch { 0.0f };
    std::atomic<float> mDecay { 2.0f };
    std::atomic<bool> mLoop { false };
+   std::atomic<bool> mRateFix { true };
    std::atomic<bool> mReverse { false };
    std::atomic<bool> mPingpong { false };
 
@@ -174,6 +175,13 @@ public:
          mPlayheadRing.Write(&startFrac, 1);
          return;
       }
+
+      // Source frames per output frame at speed 1: the buffer's own rate over
+      // the device rate, so a 44.1 kHz file plays at its pitch on a 48 kHz
+      // device. 1 for patches saved before the fix (rateFix 0).
+      const float srRatio = (mRateFix.load(std::memory_order_relaxed) && mActiveBuffer->sampleRate > 0.0 && mSampleRate > 0.0)
+                                ? (float)(mActiveBuffer->sampleRate / mSampleRate)
+                                : 1.0f;
 
       const float decaySec = mDecay.load(std::memory_order_relaxed);
       if (decaySec != mLastDecaySec)
@@ -269,7 +277,7 @@ public:
             if (!pingpong)
                mVoiceDir[v] = reverseOn ? -1 : 1;
 
-            const float rate = NoteToRate(mVoices.NoteAt(v), pitchOffset + mVoiceBend[v]);
+            const float rate = NoteToRate(mVoices.NoteAt(v), pitchOffset + mVoiceBend[v]) * srRatio;
             const float env = mVoices.EnvelopeAt(v).Process();
             const float vel = mVoices.VelocityAt(v);
 
@@ -288,7 +296,7 @@ public:
             if (!pingpong)
                mSelfDir = reverseOn ? -1 : 1;
 
-            const float rate = NoteToRate(kReferenceNote, pitchOffset);
+            const float rate = NoteToRate(kReferenceNote, pitchOffset) * srRatio;
             const float env = mSelfEnv.Process();
             const float sL = ReadSample(*mActiveBuffer, mSelfPos, 0) * env;
             const float sR = sourceStereo ? ReadSample(*mActiveBuffer, mSelfPos, 1) * env : sL;
@@ -508,6 +516,7 @@ void GrainMolderNode::VisitParams(ParamVisitor& v)
    v.Float("end", end);
    v.Float("position", position);
    v.Bool("loop", loop);
+   v.Int("rateFix", rateFix); // not a control: 0 = plays the file at the device rate (saved before the fix)
    v.Bool("reverse", reverse);
    v.Bool("pingpong", pingpong);
 }
@@ -729,6 +738,7 @@ void GrainMolderNode::CookIfNeeded(int frameId)
       mAudioNode->mPitch.store(pitch, std::memory_order_relaxed);
       mAudioNode->mDecay.store(decay, std::memory_order_relaxed);
       mAudioNode->mLoop.store(loop, std::memory_order_relaxed);
+      mAudioNode->mRateFix.store(rateFix != 0, std::memory_order_relaxed);
       mAudioNode->mReverse.store(reverse, std::memory_order_relaxed);
       mAudioNode->mPingpong.store(pingpong, std::memory_order_relaxed);
 

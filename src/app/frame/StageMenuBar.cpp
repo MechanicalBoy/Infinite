@@ -948,7 +948,8 @@ void DrawMenuBar(FrameCtx& fc)
          float cursorX = windowRight;
 
          // Update: a quiet icon tile (down arrow in an accent wash, with a dot) that only exists while a newer
-         // version is available. Click downloads; right-click dismisses until the next version.
+         // version is available. Click opens the update dialog (Update now, in place); right-click dismisses until the
+         // next version.
          bool showUpdate = UpdateCheck::UpdateAvailable();
 #ifndef NDEBUG
          if (getenv("INFINITE_SHOW_UPDATE_ICON") != nullptr)
@@ -977,11 +978,11 @@ void DrawMenuBar(FrameCtx& fc)
                dl->AddLine(ImVec2(c.x - 5.5f, c.y + 7.0f), ImVec2(c.x + 5.5f, c.y + 7.0f), fg, 1.8f);
                StatusDot::OnLastItem(StatusDot::State::Error);
                if (clicked)
-                  Platform::OpenExternalUrl("https://infinitedevices.org/#download");
+                  gShowUpdateCheckModal = true;   // the result is already in; the dialog offers Update now
                if (hov)
                {
                   const std::string& lv = UpdateCheck::LatestVersion();
-                  ImGui::SetTooltip(T("version %s is available (you have %s) - click to download, right-click to dismiss"),
+                  ImGui::SetTooltip(T("version %s is available (you have %s) - click to update, right-click to dismiss"),
                                      lv.empty() ? "?" : lv.c_str(), INFINITE_VERSION_STRING);
                }
                if (ImGui::IsItemClicked(ImGuiMouseButton_Right))

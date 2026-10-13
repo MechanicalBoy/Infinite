@@ -63,6 +63,46 @@ namespace AppPaths
       return std::filesystem::u8path(utf8);
    }
 
+   // Saves a user's document: writes beside the target and renames over it, so a full disk or a
+   // crash mid-write leaves the previous file whole instead of truncating what may be their only
+   // copy. rename() replaces atomically on macOS, Linux and MSVC; the remove-and-retry branch is for
+   // a runtime that will not replace, and keeps the complete new text in <path>.tmp until the end.
+   inline bool WriteFileAtomic(const std::string& path, const std::string& bytes, std::string& outError)
+   {
+      const std::string temp = path + ".tmp";
+      std::error_code ec;
+      {
+         std::ofstream file(FsPath(temp), std::ios::binary | std::ios::trunc);
+         if (!file)
+         {
+            outError = "could not open " + path + " for writing";
+            return false;
+         }
+         file.write(bytes.data(), (std::streamsize)bytes.size());
+         file.close(); // flushes: a full disk shows up here
+         if (file.fail())
+         {
+            std::filesystem::remove(FsPath(temp), ec);
+            outError = "write failed partway through " + path;
+            return false;
+         }
+      }
+      std::filesystem::rename(FsPath(temp), FsPath(path), ec);
+      if (ec)
+      {
+         ec.clear();
+         std::filesystem::remove(FsPath(path), ec);
+         ec.clear();
+         std::filesystem::rename(FsPath(temp), FsPath(path), ec);
+         if (ec)
+         {
+            outError = "could not replace " + path + " (the new version is in " + temp + ")";
+            return false;
+         }
+      }
+      return true;
+   }
+
    // The user's Desktop. Windows asks the shell, because the folder is often
    // redirected (OneDrive "Backup Desktop") and then is NOT under
    // USERPROFILE; macOS/Linux use ~/Desktop. Falls back to the home folder

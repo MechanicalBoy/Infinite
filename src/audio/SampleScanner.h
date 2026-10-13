@@ -43,6 +43,11 @@ public:
    ~SampleScanner();
 
    // Main thread only.
+   // One spelling per place on disk: separators as '/', no trailing slash, and case-folded on Windows, where
+   // "C:\\Samples\\" and "c:/samples" are the same folder. Folders, index entries and the browser's duplicate
+   // filter all compare through this.
+   static std::string PathKey(const std::string& path);
+
    void AddFolder(const std::string& path);
    void RemoveFolder(const std::string& path);
    const std::vector<std::string>& Folders() const { return mFolders; }

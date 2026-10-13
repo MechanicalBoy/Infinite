@@ -101,10 +101,10 @@ void BlendNode::CookIfNeeded(int frameId)
       glBindTexture(GL_TEXTURE_2D, texB);
       glUniform1i(locB, 1);
 
-      glUniform1i(locMode, mModeIndex);
+      glUniform1i(locMode, mBlendFix ? mModeIndex : BlendModes::LegacyMode(mModeIndex));
       glUniform1f(locMix, mMix);
       glUniform1i(locLinear, mLinear ? 1 : 0);
-      glUniform1i(locW3C, mW3C ? 1 : 0);
+      glUniform1i(locW3C, mBlendFix);
       GLUtil::SetImageHeadroom(mProgram, mHeadroom);
    });
 }

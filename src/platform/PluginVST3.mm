@@ -2,6 +2,8 @@
 
 #if INFINITE_ENABLE_VST3
 
+#include "PluginTransportVST3.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
@@ -400,6 +402,10 @@ namespace Platform
          d.identifier = fields[3];
          d.path = fields[4];
          d.acceptsNotes = fields[5] == "1";
+         // The child filled its own resolver cache, not ours. Without this a
+         // rescan finds the plugin and the lookup right after still misses it
+         // (a headless render never seeds the cache from the saved index).
+         Platform::CacheVST3BundlePath(d.identifier, d.path);
          out.push_back(std::move(d));
       }
       return out;
@@ -1477,7 +1483,8 @@ namespace
 
       Steinberg::tresult PLUGIN_API restartComponent(Steinberg::int32 flags) override
       {
-         (void)flags;
+         if ((flags & Steinberg::Vst::kLatencyChanged) != 0)
+            NoteLatencyChanged();
          return Steinberg::kResultOk;
       }
 
@@ -1521,6 +1528,7 @@ namespace
 
    private:
       void RecordTouch(Steinberg::Vst::ParamID id);
+      void NoteLatencyChanged();
 
       std::atomic<uint32_t> mRefCount { 1 };
       Platform::PluginHandle* mHandle = nullptr;
@@ -1715,6 +1723,10 @@ namespace Platform
       int pluginInChannels = 0;
       int pluginOutChannels = 0;
       bool active = false;
+      // Raised by restartComponent(kLatencyChanged), from whatever thread the
+      // plugin calls it on; PluginVST3LatencySamples re-reads the latency on
+      // the main thread so the next PollAudioLatencyChanges re-runs PDC.
+      std::atomic<bool> latencyChanged { false };
       bool processing = false;
 
       // Preallocated realtime process data
@@ -1790,6 +1802,12 @@ namespace
          return;
       mHandle->vst3->learnedAddress.store((unsigned long long)id, std::memory_order_relaxed);
       mHandle->vst3->learnedValid.store(true, std::memory_order_release);
+   }
+
+   void HostComponentHandler::NoteLatencyChanged()
+   {
+      if (mHandle != nullptr && mHandle->vst3 != nullptr)
+         mHandle->vst3->latencyChanged.store(true, std::memory_order_release);
    }
 
    Steinberg::tresult PLUGIN_API HostPlugFrame::resizeView(Steinberg::IPlugView* view, Steinberg::ViewRect* newSize)
@@ -2407,6 +2425,7 @@ namespace Platform
          // lookahead/oversample latency from those. Read here, on the main
          // thread, into the handle's cached value; Platform::
          // PluginLatencySamples() just returns it.
+         v->latencyChanged.store(false, std::memory_order_relaxed);
          h->latencySamples = (int)v->processor->getLatencySamples();
 
          // setProcessing is explicitly optional in the VST3 spec - a plugin that
@@ -2470,16 +2489,8 @@ namespace Platform
          v->processData.outputParameterChanges = &v->outputParamChanges;
 
          std::memset(&v->processContext, 0, sizeof(v->processContext));
-         v->processContext.sampleRate = rate;
-         v->processContext.projectTimeSamples = 0;
-         v->processContext.projectTimeMusic = 0.0;
-         v->processContext.tempo = 120.0;
-         v->processContext.timeSigNumerator = 4;
-         v->processContext.timeSigDenominator = 4;
-         v->processContext.state = Steinberg::Vst::ProcessContext::kPlaying |
-                                   Steinberg::Vst::ProcessContext::kProjectTimeMusicValid |
-                                   Steinberg::Vst::ProcessContext::kTempoValid |
-                                   Steinberg::Vst::ProcessContext::kTimeSigValid;
+         // Stopped until the first block brings the host clock (PluginVST3Render).
+         FillVST3ProcessContext(v->processContext, nullptr, rate, 0);
          v->processData.processContext = &v->processContext;
 
          return true;
@@ -2693,7 +2704,8 @@ namespace Platform
    }
 
    void PluginVST3Render(PluginHandle* h, const float* const* in, int inChannels,
-                         float* const* out, int outChannels, int numFrames)
+                         float* const* out, int outChannels, int numFrames,
+                         const PluginTransport* transport)
    {
       if (h == nullptr || h->vst3 == nullptr || out == nullptr || numFrames <= 0)
          return;
@@ -2709,9 +2721,8 @@ namespace Platform
       const int frames = numFrames > v->maxBlockFrames ? v->maxBlockFrames : numFrames;
 
       v->processData.numSamples = frames;
-      v->processContext.projectTimeSamples = v->sampleTime;
       const double sr = h->sampleRate > 0.0 ? h->sampleRate : 48000.0;
-      v->processContext.projectTimeMusic = (double)v->sampleTime / sr * (120.0 / 60.0);
+      FillVST3ProcessContext(v->processContext, transport, sr, v->sampleTime);
       v->sampleTime += frames;
 
       // Inputs
@@ -2778,6 +2789,14 @@ namespace Platform
       v->inRender.store(false, std::memory_order_release);
    }
 
+   bool PluginVST3HostClockSeen(PluginHandle* h, PluginTransport& out)
+   {
+      if (h == nullptr || h->vst3 == nullptr)
+         return false;
+      out = ReadVST3ProcessContext(h->vst3->processContext);
+      return true;
+   }
+
    void PluginVST3ScheduleMIDIEvent(PluginHandle* h, int frameOffset, const unsigned char* bytes, int byteCount)
    {
       if (h == nullptr || h->vst3 == nullptr || bytes == nullptr || byteCount <= 0)
@@ -2823,6 +2842,20 @@ namespace Platform
    // PluginParamInfo's minValue is set to 0.0f and maxValue to 1.0f, with
    // defaultValue from defaultNormalizedValue. This provides exact round-trip
    // normalization across all VST3 parameters without non-linear skew.
+
+   int PluginVST3LatencySamples(PluginHandle* h)
+   {
+      if (h == nullptr)
+         return 0;
+      // Main thread. A plugin that switches mode after prepare (Pro-Q's linear
+      // phase, a lookahead knob) reports it through restartComponent; re-read
+      // here so PDC follows. getLatencySamples is valid while active.
+      PluginVST3State* v = h->vst3;
+      if (v != nullptr && v->active && v->processor &&
+          v->latencyChanged.exchange(false, std::memory_order_acq_rel))
+         h->latencySamples = (int)v->processor->getLatencySamples();
+      return h->latencySamples;
+   }
 
    int PluginVST3ParameterCount(PluginHandle* h)
    {

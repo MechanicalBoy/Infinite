@@ -17,4 +17,9 @@ namespace BlendModes
 
    const int kEraseMode = 30;
    const int kAntiEraseMode = 31;
+
+   // Modes 32..34 are the pre-fix Overlay / Soft Light / Hard Light (the old
+   // shader had Overlay and Hard Light swapped and Soft Light's pivot inverted).
+   // Patches saved before the fix are mapped onto them so they keep their look.
+   inline int LegacyMode(int mode) { return (mode >= 11 && mode <= 13) ? mode + 21 : mode; }
 }

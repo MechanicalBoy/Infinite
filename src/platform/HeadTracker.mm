@@ -11,6 +11,7 @@ namespace HeadTracker
    {
       CMHeadphoneMotionManager* gManager = nil;
       int gRefs = 0;
+      bool gDisabled = false;
       std::atomic<float> gRawYaw { 0.0f };   // degrees, CoreMotion sign (+ = left)
       std::atomic<double> gLastSample { 0.0 };
       std::atomic<bool> gRecenter { true };
@@ -38,9 +39,15 @@ namespace HeadTracker
       return false;
    }
 
+   void Disable()
+   {
+      gDisabled = true;
+      gStatus = "Head tracking off in headless runs";
+   }
+
    void Start(Source source)
    {
-      if (source != kHeadphones || !Supported(source))
+      if (gDisabled || source != kHeadphones || !Supported(source))
          return;
       if (gRefs++ > 0)
          return;

@@ -473,6 +473,7 @@ set(COMMON_SOURCES
     src/app/panels/FindOverlay.cpp
     src/app/panels/CookOverlay.cpp
     src/app/panels/NoticeStack.cpp
+    src/app/panels/PatchOpenerCheck.cpp
     src/app/panels/HistoryPanel.cpp
     src/app/panels/TemplatesWindow.cpp
     src/app/panels/Diagnostics.cpp
@@ -488,6 +489,16 @@ set(COMMON_SOURCES
     src/app/selftest/DspFixtures1.cpp
     src/app/selftest/DspFixtures2.cpp
     src/app/selftest/DspFixtures3.cpp
+    src/app/selftest/DspFixtures4.cpp
+    src/app/selftest/AliasTests.cpp
+    src/app/selftest/FxAudit.cpp
+    src/app/selftest/ModAudit.cpp
+    src/app/selftest/SynthAudit.cpp
+    src/app/selftest/NoteAudit.cpp
+    src/app/selftest/IoAudit.cpp
+    src/app/selftest/GeoAudit.cpp
+    src/app/selftest/CompAudit.cpp
+    src/app/selftest/PitchTests.cpp
     src/app/selftest/FieldTests1.cpp
     src/app/selftest/FieldTests2.cpp
     src/app/selftest/Headless.cpp
@@ -566,6 +577,7 @@ set(COMMON_SOURCES
     src/core/PatchJson.cpp
     src/core/OscMessage.cpp
     src/core/UpdateCheck.cpp
+    src/core/SelfUpdate.cpp
     src/core/Extensions.cpp
     src/core/tracking/OrtRuntime.cpp
     src/core/tracking/HandTracker.cpp
@@ -598,6 +610,7 @@ set(COMMON_SOURCES
     src/audio/dsp/DriveKernel.cpp
     src/audio/dsp/StereoKernel.cpp
     src/audio/dsp/PitchShiftKernel.cpp
+    src/audio/dsp/SpectralPitchShifter.cpp
     src/audio/dsp/ChorusKernel.cpp
     src/audio/dsp/FlangerKernel.cpp
     src/audio/dsp/PhaserKernel.cpp

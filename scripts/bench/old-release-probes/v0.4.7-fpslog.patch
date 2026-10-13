@@ -1,0 +1,36 @@
+diff --git a/src/app/Startup.cpp b/src/app/Startup.cpp
+index 833f7239..1a24b498 100644
+--- a/src/app/Startup.cpp
++++ b/src/app/Startup.cpp
+@@ -3440,6 +3440,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
+       }
+       else if (getenv("INFINITE_BENCH_B5EMPTY") != nullptr)
+       {
++         if (const char* lp = getenv("INFINITE_LOADPATCH")) LoadPatchFrom(lp);
+          // B5(a) empty-patch fixture (benchmark-suite.md §4): the floor -
+          // frame cost with zero nodes, nothing to cook, nothing to draw.
+          // Intentionally spawns nothing; the measurement half below is what
+diff --git a/src/app/frame/StagePresent.cpp b/src/app/frame/StagePresent.cpp
+index 66c2d9f9..fc9375ee 100644
+--- a/src/app/frame/StagePresent.cpp
++++ b/src/app/frame/StagePresent.cpp
+@@ -92,6 +92,19 @@ void DrawPresent(FrameCtx& fc)
+          if (sPrevTime > 0.0)
+             gLastFrameMs = (now - sPrevTime) * 1000.0;
+          sPrevTime = now;
++         if (getenv("INFINITE_FPSLOG") != nullptr && gLastFrameMs > 0.0)
++         {
++            static int sFlN = 0;
++            static double sFlSum = 0.0, sFlMax = 0.0;
++            sFlSum += gLastFrameMs;
++            if (gLastFrameMs > sFlMax) sFlMax = gLastFrameMs;
++            if (++sFlN == 60)
++            {
++               fprintf(stderr, "FPSLOG t=%.1f avg=%.2f max=%.2f\n", now, sFlSum / sFlN, sFlMax);
++               fflush(stderr);
++               sFlN = 0; sFlSum = 0.0; sFlMax = 0.0;
++            }
++         }
+       }
+ 
+       // Dev harness: quit after N frames. The self-tests above printf their

@@ -2,9 +2,20 @@
 #include "app/ui/design/UiType.h"
 #include "app/ui/design/Glyphs.gen.h"
 #include "app/frame/FrameCtx.h"
+#include "platform/HeadTracker.h"
 
 namespace app
 {
+bool RunAliasTest(); // selftest/AliasTests.cpp
+bool RunPitchTest(); // selftest/PitchTests.cpp
+bool RunFxAudit(); // selftest/FxAudit.cpp
+bool RunModAudit(); // selftest/ModAudit.cpp
+bool RunSynthAudit(); // selftest/SynthAudit.cpp
+bool RunNoteAudit(); // selftest/NoteAudit.cpp
+bool RunIoAudit(); // selftest/IoAudit.cpp
+bool RunGeoAudit(); // selftest/GeoAudit.cpp
+bool GeoAuditWantsGl(); // selftest/GeoAudit.cpp: the section list names DISP
+bool RunCompAudit(); // selftest/CompAudit.cpp
 // Resolves the main window's DPI + the manual slider into UiScale::Current(), hands the point
 // scale to the GLFW backend and (re)bakes the font atlas at the resulting physical size. Safe
 // to call again between frames: the atlas is rebuilt from scratch and, when the GL renderer
@@ -417,11 +428,48 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       all &= runMode("samples", gSampleScanner, "a.wav", "b.wav");
       all &= runMode("media", gMediaScanner, "a.png", "b.png");
       {
+         // A per-folder plugin scan replaces only that folder's VST3s; it used to replace the whole index (and save
+         // it), so this very test wiped every installed VST3 from the user's PluginIndex.json.
+         const auto vst3Outside = [&]
+         {
+            int n = 0;
+            for (const auto& e : gPluginScanner.Index())
+               if (e.format == "vst3" && e.path.rfind(dir.string(), 0) != 0)
+                  ++n;
+            return n;
+         };
+         const int before = vst3Outside();
          const uint64_t v = gPluginScanner.IndexVersion();
          gPluginScanner.StartScan(dir.string());
          const bool done = wait(gPluginScanner);
-         const bool ok = done && gPluginScanner.IndexVersion() != v;
-         printf("LIBREFRESH plugins %s\n", ok ? "OK" : "FAIL");
+         bool ok = done && gPluginScanner.IndexVersion() != v;
+         ok &= vst3Outside() == before;
+
+         using E = PluginScanner::Entry;
+         const auto mk = [](const char* fmt, const char* id, const char* path)
+         {
+            E e;
+            e.format = fmt;
+            e.identifier = id;
+            e.path = path;
+            return e;
+         };
+         const std::vector<E> old = { mk("au", "au:old", ""), mk("vst3", "a", "/x/A.vst3"), mk("vst3", "b", "/y/B.vst3"),
+                                      mk("vst3", "c", "/y/sub/C.vst3"), mk("vst3", "d", "/yy/D.vst3") };
+         const std::vector<E> found = { mk("au", "au:new", ""), mk("vst3", "b2", "/y/B2.vst3") };
+         const auto ids = [](const std::vector<E>& v)
+         {
+            std::string s;
+            for (const E& e : v)
+               s += e.identifier + " ";
+            return s;
+         };
+         const std::string merged = ids(PluginScanner::MergeScan(old, found, "/y/"));
+         const std::string full = ids(PluginScanner::MergeScan(old, found, ""));
+         ok &= merged == "a d au:new b2 ";
+         ok &= full == "au:new b2 ";
+         printf("LIBREFRESH plugins %s (vst3 outside the folder %d -> %d; merge '%s', full '%s')\n", ok ? "OK" : "FAIL",
+                before, vst3Outside(), merged.c_str(), full.c_str());
          all &= ok;
       }
       fs::remove_all(dir, ec);
@@ -440,7 +488,10 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_MIDIBENDTEST") != nullptr)
       return RunMidiBendTest();
    if (getenv("INFINITE_PLUGINNODETEST") != nullptr)
+   {
+      RegisterNodes(); // its latency-change case spawns real nodes; no GL involved
       return RunPluginNodeHandleTest();
+   }
 
 #if INFINITE_ENABLE_VST3
    if (getenv("INFINITE_VST3SCANTEST") != nullptr)
@@ -494,6 +545,41 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
 
    if (getenv("INFINITE_DSPTEST") != nullptr)
       return RunDspTest();
+
+   // Aliasing of each static nonlinearity, with a ratchet for nodes that
+   // have anti-aliasing (src/app/selftest/AliasTests.cpp).
+   if (getenv("INFINITE_ALIASTEST") != nullptr)
+      return RunAliasTest() ? 0 : 1;
+
+   // Pitch Shifter quality: purity, chord, unity null, transients (selftest/PitchTests.cpp).
+   if (getenv("INFINITE_PITCHTEST") != nullptr)
+   {
+      RegisterNodes(); // its PDC check spawns real nodes; no GL involved
+      return RunPitchTest() ? 0 : 1;
+   }
+
+   // Measurement audit of every audio effect: gain, stereo, tail, stress,
+   // param clicks, sample-rate consistency (selftest/FxAudit.cpp).
+   if (getenv("INFINITE_FXAUDIT") != nullptr)
+      return RunFxAudit() ? 0 : 1;
+
+   // Measurement audit of every modulator: clock drift, shape, zipper,
+   // render vs realtime, frame-rate dependence (selftest/ModAudit.cpp).
+   if (getenv("INFINITE_MODAUDIT") != nullptr)
+      return RunModAudit() ? 0 : 1;
+   // Synth audit: pitch, aliasing, level, rate, determinism, CPU (selftest/SynthAudit.cpp).
+   if (getenv("INFINITE_SYNTHAUDIT") != nullptr)
+      return RunSynthAudit() ? 0 : 1;
+   // Note audit: pair integrity, grid timing, swing, humanize, loop, CPU (selftest/NoteAudit.cpp).
+   if (getenv("INFINITE_NOTEAUDIT") != nullptr)
+      return RunNoteAudit() ? 0 : 1;
+   // I/O audit: gain/pan/blend laws, sum, loudness meter, parameter clicks, CPU (selftest/IoAudit.cpp).
+   if (getenv("INFINITE_IOAUDIT") != nullptr)
+      return RunIoAudit() ? 0 : 1;
+   // Geometry audit: validity, watertightness, normals, degenerate input, scale, determinism, cache (selftest/GeoAudit.cpp).
+   // DISP (Displacement) needs a GL texture, so INFINITE_GEOAUDIT_ONLY=DISP is run from the GL-ready dispatch below.
+   if (getenv("INFINITE_GEOAUDIT") != nullptr && !GeoAuditWantsGl())
+      return RunGeoAudit() ? 0 : 1;
 
    // The --audio-summary maths on synthesized signals with known answers
    // (docs/fix-briefs/headless-engine.md 2.1).
@@ -617,6 +703,10 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       return RunSyphonPatchTest();
    if (getenv("INFINITE_PATCHLAYOUTTEST") != nullptr)
       return RunPatchLayoutTest();
+   if (getenv("INFINITE_PATCHOPENERTEST") != nullptr)
+      return RunPatchOpenerTest();
+   if (getenv("INFINITE_SELFUPDATETEST") != nullptr)
+      return RunSelfUpdateTest();
 
 #if defined(__linux__)
    if (getenv("INFINITE_CAMERACONVTEST") != nullptr)
@@ -679,6 +769,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
                *path += '/';
          }
          gHeadlessAudioRate = gHeadlessJob.sampleRate;
+         HeadTracker::Disable();
          Platform::AttachConsoleForHeadless();
 #if !defined(__APPLE__) && !defined(_WIN32)
          // GLFW needs a display server. Say so with the fix, instead of the
@@ -929,6 +1020,24 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       SysInfo::PrintAndExit(window);
    }
 
+   if (getenv("INFINITE_GEOAUDIT") != nullptr && GeoAuditWantsGl())
+   {
+      const bool ok = RunGeoAudit();
+      glfwDestroyWindow(window);
+      glfwTerminate();
+      return ok ? 0 : 1;
+   }
+
+   if (getenv("INFINITE_COMPAUDIT") != nullptr)
+   {
+      // Compositing audit: blend modes vs W3C, alpha, determinism, feedback, trails (selftest/CompAudit.cpp).
+      // Needs the live GL context, so it lives here with SPOUTLOOPTEST.
+      const bool ok = RunCompAudit();
+      glfwDestroyWindow(window);
+      glfwTerminate();
+      return ok ? 0 : 1;
+   }
+
    if (getenv("INFINITE_SPOUTLOOPTEST") != nullptr)
    {
       // Needs a live GL context (textures, FBOs), unlike the pre-GLFW
@@ -1157,6 +1266,13 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       }
    }
    ImGui::GetIO().IniFilename = iniPath.c_str();
+#ifdef NDEBUG
+   // Dear ImGui's duplicate-ID highlighter is a developer aid (red boxes + "Message from Dear ImGui" popup). It defaults to on
+   // even in Release, so a shipped build must switch it off; debug builds keep it to catch the conflicts.
+   ImGui::GetIO().ConfigDebugHighlightIdConflicts = false;
+   // Same for the error-recovery tooltip shown on an unbalanced Push/Pop: recovery itself stays on, only the red tooltip goes.
+   ImGui::GetIO().ConfigErrorRecoveryEnableTooltip = false;
+#endif
 
    ed::Config config;
    config.SettingsFile = graphPath.c_str();
@@ -1218,7 +1334,12 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // for the two tests that deliberately exercise this function directly
    // against their own redirected files instead.
    if (!IsHeadlessProcess())   // also screenshot runs (IMAGERESYNTH_SCREENSHOT), which have no EXITAFTER
+   {
       CheckAutosaveRecovery();
+      CheckPatchOpener();
+   }
+   else
+      HeadTracker::Disable();
 
    // Embedded local control server (see docs/plans - RemoteControl) - lets an
    // external tool (the Infinite MCP server) drive this running instance.
@@ -3669,6 +3790,12 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
             sBenchB6Variant += std::string(",zoom=") + z;
          if (!sBenchB6Vsync)
             sBenchB6Variant += ",vsync=0";
+         // R5 (docs/plans/re-survey/ROBUSTNESS.md): after the sampled window,
+         // select every node and delete through the Delete-key path once.
+         sBenchB6Delete = (getenv("INFINITE_BENCH_B6DELETE") != nullptr &&
+                           strcmp(getenv("INFINITE_BENCH_B6DELETE"), "0") != 0);
+         if (sBenchB6Delete)
+            sBenchB6Variant += ",delete=1";
          if (const char* t = getenv("INFINITE_BENCH_GPUTIMERS"); t && strcmp(t, "0") == 0)
             sBenchB6Variant += ",gputimers=0";
 

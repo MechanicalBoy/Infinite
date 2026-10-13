@@ -1,0 +1,77 @@
+# Quality registry: one row per metric. Owner of every target and gate (docs/quality/README.md).
+# id	pillar	area	unit	better	target	gate	source	exceptions	what
+# better: lower | higher | none (reported, no direction). gate: release (driver fails on a miss) | report (scoreboard only).
+# exceptions: subject=finding,... (finding ids live in the source's README, e.g. docs/plans/node-audits F1).
+synth.pitch_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error per note at 44.1/48/96 kHz (spectrum peak, sustained render)
+synth.note_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error of note 69 played through the note cable
+synth.alias_db	P5	Built-in instruments	dB	lower	-60	release	SYNTHAUDIT		Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz
+synth.rate_spread_db	P5	Built-in instruments	dB	lower	1.0	release	SYNTHAUDIT	node:Metallic=F1	Level spread of the same 3 s render over 44.1/48/96 kHz
+synth.click_on_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT	node:Metallic=F7	Note-on second difference re steady state
+synth.click_off_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT		Note-off second difference re steady state
+synth.poly_tail_dbfs	P5	Built-in instruments	dBFS	lower	-100	release	SYNTHAUDIT		Level 9.5 s after all notes off (stuck voices); free-running nodes are not measured
+synth.chord4_peak_dbfs	P5	Built-in instruments	dBFS	lower	0	release	SYNTHAUDIT		Peak of a 4-note chord at velocity 0.8, defaults
+synth.peak_dbfs	P5	Built-in instruments	dBFS	lower	0	release	SYNTHAUDIT		Peak of a single sustained note, defaults
+synth.sample_pitch_spread_c	P5	Built-in instruments	cents	lower	20	release	SYNTHAUDIT		Fixture WAV (48 kHz) pitch spread over 44.1/48/96 kHz device rates (F11)
+synth.sample_length_ratio	P5	Built-in instruments	ratio	lower	1.02	release	SYNTHAUDIT		Fixture WAV playback length, longest over shortest across device rates (F11)
+synth.det_differs	P5	Built-in instruments	bool	lower	0	release	SYNTHAUDIT		1 when the same render twice is not bit-identical
+synth.cpu_ns_frame	P8	Built-in instruments	ns/frame	lower	4000	report	SYNTHAUDIT		Render cost per frame, one voice (noisy: report only)
+probe.pitch_worst_c	P5	Built-in instruments	cents	lower	1.0	report	synth_probe		Worst pitch error over MIDI 24-108, black box through the host
+probe.nonharm60_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 60 (clean reference); best competitor about -84
+probe.nonharm96_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 96 (aliasing)
+probe.nonharm108_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 108 (aliasing)
+probe.attack_ms	P5	Built-in instruments	ms	none		report	synth_probe		Default-patch attack 10-90 % (a design choice, compared not judged)
+probe.release_s	P5	Built-in instruments	s	none		report	synth_probe		Default-patch release to -60 dB
+probe.vel_span_db	P5	Built-in instruments	dB	none		report	synth_probe		Level change velocity 0.25 -> 1.0
+probe.cpu_voice_ms_s	P8	Built-in instruments	ms/s	lower		report	synth_probe		Render ms per second of audio per voice, offline
+fx.dc_dbfs	P5	Effects	dBFS	lower	-50	release	FXAUDIT		Mean DC left by an effect under noise, at defaults
+fx.tail_dbfs	P5	Effects	dBFS	lower	-100	release	FXAUDIT		Level 10 s after the input goes silent
+fx.click_db	P5	Effects	dB	lower	12	release	FXAUDIT	node:Audio Filter=F13	Worst step transient when a parameter jumps
+fx.rate_spread_db	P5	Effects	dB	lower	1.0	release	FXAUDIT	node:Bitcrush=F14,node:Resonator Bank=F15	Tone level difference across 44.1/48/96 kHz
+note.pair_unpaired	P1	Note nodes	count	lower	0	release	NOTEAUDIT		Stuck, orphan-off, duplicate-on and off-before-on events
+note.grid_samples	P1	Note nodes	samples	lower	1.0	release	NOTEAUDIT		Worst note-on error against the grid across block sizes and tempi
+note.jitter_samples	P1	Note nodes	samples	lower	0	release	NOTEAUDIT		Note-on error through the node, plus missing notes
+io.gain_knob_db	P5	Audio I/O	dB	lower	0.01	release	IOAUDIT		Gain knob error over -48..+24 dB
+io.sum_error	P5	Audio I/O	abs	lower	1e-6	release	IOAUDIT		Mixer sum error against a double-precision reference
+comp.blend_x255	P7	Compositing	x/255	lower	1.0	release	COMPAUDIT		Blend modes against the W3C formulas, worst over modes
+geo.winding_mismatch	P7	Geometry	triangles	lower	0	release	GEOAUDIT	node:Mobius Strip=F16,node:Klein Bottle=F16,node:Subdivide on sphere=F17,node:Smooth on sphere=F17,node:Screw on cube=F18,node:Screw on sphere=F18	Triangles whose winding disagrees with their vertex normals
+geo.nonmanifold	P7	Geometry	edges	lower	0	release	GEOAUDIT	node:Subdivide on sphere=F17,node:Smooth on sphere=F17	Non-manifold or one-direction edges on shapes that promise a closed mesh
+geo.cloth_stretch_pct	P7	Geometry	%	lower	50	release	GEOAUDIT		Worst edge stretch of a pinned cloth after 12 s
+geo.inst_mirrored	P7	Geometry	count	lower	0	release	GEOAUDIT		Instance transforms with a negative determinant
+geo.decimate_bbox_pct	P7	Geometry	% bbox	lower	5	release	GEOAUDIT		Decimate: worst vertex distance to the original surface
+geo.disp_offset	P7	Geometry	units	lower	0.02	report	GEOAUDIT		Displacement: worst vertex off the formula (run with INFINITE_GEOAUDIT_ONLY=DISP)
+bench.b1_cb_load_p99	P8	Bench: audio	%	lower	50	release	bench		B1 audio callback load p99, 24 voices, per buffer size (suite §6)
+bench.b1_xruns	P8	Bench: audio	count	lower	0	release	bench		B1 xruns at 256 frames, the §6 buffer (64 is not a target: Found in Block 1)
+bench.b3_projector_p99_ms	P8	Bench: projector	ms	lower	18.3	release	bench		B3 projector present interval p99 under live load; locked 60 fps = 1.1 x 16.7 ms
+bench.b3_missed_vsync_pct	P8	Bench: projector	%	lower	0.5	release	bench		B3 projector intervals over 1.5 refresh periods (§6: under 0.5 %)
+bench.b3_input_to_photon_frames	P8	Bench: projector	frames	lower	2	release	bench		B3 injected param change to Output revision, worst sample
+bench.b6_pan_p50_ms	P8	Bench: canvas	ms	lower	17.2	release	bench		B6 canvas frame p50 while panning a 200-400 node patch (>= 60 fps)
+bench.b6_pan_p95_ms	P8	Bench: canvas	ms	lower	22.8	release	bench		B6 canvas frame p95 while panning a 200-400 node patch (>= 45 fps)
+bench.r5_pan_p95_ms	P8	Bench: canvas	ms	lower	33.3	report	bench		R5 canvas frame p95 while panning a 4000-node patch (>= 30 fps; proposed, ROBUSTNESS.md R5)
+bench.r5_select_p95_ms	P8	Bench: canvas	ms	lower	33.3	report	bench		R5 canvas frame p95 while select-all and clear alternate on 4000 nodes (proposed)
+bench.r5_delete_all_ms	P8	Bench: canvas	ms	lower	500	report	bench		R5 worst frame around deleting all 4000 nodes through the Delete-key path (proposed)
+bench.r5_nodes_after_delete	P8	Bench: canvas	count	lower	0	report	bench		R5 nodes left after the delete-all (0 = every node went)
+bench.b7_rss_growth_pct	P8	Bench: soak	%	lower	2	report	bench		B7 soak RSS growth, last 5 min vs first 5 min after warm-up
+bench.b7_xruns	P8	Bench: soak	count	lower	0	report	bench		B7 soak xruns over the whole run
+bench.b7_thermal_fps_drop_pct	P8	Bench: soak	%	lower		report	bench		B7 soak fps drop first to last sample (reported, not hidden: no target)
+bench.b8_decode_rate_ratio	P8	Bench: media I/O	x clip fps	higher	1.0	release	bench		B8 decoded fps over the clip's own fps, per clip
+bench.b8_dropped_frames	P8	Bench: media I/O	frames	lower	0	release	bench		B8 decoded frames dropped, per clip
+bench.b8_window_p99_ms	P8	Bench: media I/O	ms	lower	18.3	report	bench		B8 projector window interval p99 (locked 60 fps), per window
+bench.b8_window_missed_vsync_pct	P8	Bench: media I/O	%	lower	0.5	report	bench		B8 projector window intervals over 1.5 refresh periods, per window
+bench.fbo_allocs_steady	P8	Bench: memory	count	lower	0	release	bench		Render targets reallocated in steady state (B2/B4 scenes, also the B9 scenes)
+bench.b9_footprint_peak_mb	P8	Bench: memory	MB	lower	912	release	bench		B9 peak OS footprint, B2/B4 at scale l; budget = b2 baseline 760 MB + 20 % (compare.py change gate)
+bench.b10_realtime_factor	P8	Bench: offline render	x realtime	higher	1.0	release	bench		B10 arrangement render of the B3 scene: seconds of take per wall second
+bench.b10_av_drift_worst_frames	P8	Bench: offline render	frames	lower	2	release	bench		B10 worst A/V marker drift in the rendered movie (av-sync-sweep: 2 frames anywhere)
+bench.b10_av_drift_end_frames	P8	Bench: offline render	frames	lower	1	release	bench		B10 A/V drift at the end of the take (av-sync-sweep: 1 frame at the end)
+bench.b5_startup_ms	P8	Bench: fundamentals	ms	lower	1000	release	bench		B5 launch to first frame swapped (proposed: under one second)
+bench.b5_load_ms	P8	Bench: fundamentals	ms	lower	16.7	release	bench		B5 patch load (real LoadPatchFrom), 50-400 nodes; proposed: inside one 60 Hz frame
+bench.b5_save_ms	P8	Bench: fundamentals	ms	lower	16.7	release	bench		B5 patch save (real SavePatchTo), 50-400 nodes; proposed: inside one 60 Hz frame
+geo.instance_ms	P7	3D engine	ms	lower	1.3	report	blender_bench		Per-frame cost of 10,000 instances on a 100x100 grid, scale animated (Infinite: render slope net of baseline; Blender: depsgraph eval, 2026-10-13)
+geo.subdiv_ms	P7	3D engine	ms	lower	8.1	report	blender_bench		32x32 grid, subdivide x2 smooth, animated noise displacement, per frame (Blender 2026-10-13 sets the target)
+sim.cloth_ms	P7	3D engine	ms	lower	18.4	report	blender_bench		32x32 cloth sheet pinned on one edge, one simulation step per frame (solvers differ: Blender 5 quality steps, Infinite 6 iterations)
+av.react_latency_ms	P1	AV integration	ms	lower	45	report	av_bench		Click in the movie audio to the audio-reactive flash in its picture, 30 fps offline render; 45 ms = picture-late sync bound
+av.react_jitter_ms	P1	AV integration	ms	lower		report	av_bench		Std dev of that latency over 31 beats at 128 BPM (frame quantisation alone gives ~9.6 ms at 30 fps)
+av.beat_lock_pct	P1	AV integration	%	higher	100	report	av_bench		Beats whose reactive flash lands 0-1 frames after the first possible frame, never early
+av.drift_ms_min	P1	AV integration	ms/min	lower	1	report	av_bench		Absolute trend of reactive frame error over the take
+av.clock_lock_pct	P1	AV integration	%	higher	100	report	av_bench		Beat-clock flash (no analysis) within 0-1 frames of the click in the same movie
+live.frame_p95_ms	P8	Live scene	ms	lower	16.7	report	av_bench		p95 frame time of a real-time audio-reactive 10,000-instance scene at 1280x720 (TD logs its own; Infinite needs the GUI)
+live.drop_pct	P8	Live scene	%	lower	1	report	av_bench		Frames over 1.5x the 60 fps budget in that scene

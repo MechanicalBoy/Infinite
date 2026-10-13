@@ -2,10 +2,10 @@
 
 #include "nodes/AudioEffectNode.h"
 
-void DriveKernel::PushParams(const AudioEffectNode& node, double sampleRate)
+// The sample rate comes from PrepareToPlay, never from here: writing it
+// from the main thread raced the audio thread's read.
+void DriveKernel::PushParams(const AudioEffectNode& node, double /*sampleRate*/)
 {
-   mSampleRate = sampleRate;
-
    mMailbox.Push(kDriveDb, node.Param("drive"));
    mMailbox.Push(kBias, node.Param("bias"));
    mMailbox.Push(kTone, node.Param("tone"));
@@ -25,10 +25,14 @@ void DriveKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sidec
       const float color = std::clamp(mMailbox.SmoothedValue(kColor), 0.0f, 1.0f);
       const float outputGain = DspMath::DbToLinear(mMailbox.SmoothedValue(kOutputDb));
 
+      const DriveDsp::ShapeParams shape(driveDb, bias, color);
       for (int ch = 0; ch < numChannels; ch++)
       {
-         float x = in.channels[ch][i];
-         x = DriveDsp::Shape(x, driveDb, bias, color);
+         float os[Oversampler::kMaxFactor];
+         mOversampler.Up(ch, in.channels[ch][i], os);
+         for (int k = 0; k < mOversampler.Factor(); k++)
+            os[k] = mAdaa[ch].Process(os[k], shape);
+         float x = mOversampler.Down(ch, os);
          x = mDcBlockers[ch].Process(x);
          x = mToneFilters[ch].Process(x, tone, (float)mSampleRate);
          out.channels[ch][i] = x * outputGain;

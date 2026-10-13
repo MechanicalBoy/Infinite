@@ -41,7 +41,21 @@ A fresh session cannot infer them, and each has already cost real time here.
    no allocation, no locks, no `dynamic_cast`, no `std::function` / `map` /
    `string`, no GL, no ImGui, no file I/O, no `printf`.
 
-5. **Minimalism is a requirement, not a nice-to-have.** This has already gone
+5. **Minimal controls, professional DSP (owner, 2026-10-11).** Minimalism
+   governs the *control surface* — what the user sees and turns. It never
+   governs the *processing underneath*. The DSP behind those few knobs must be
+   professional grade: anything that makes the node sound right without a new
+   control is a requirement, not "Tier 2". That means, without asking:
+   anti-aliasing for every nonlinearity (oversampling and/or ADAA, fixed
+   internally, no quality knob), true-peak detection where a ceiling is
+   promised, dither where bit depth is reduced, a mix that is latency-aligned
+   with the wet path, parameter smoothing, denormal safety, and
+   sample-rate-independent behaviour. A comment that says "oversampling/ADAA/
+   true-peak cut per the minimalism rule" is a defect under this rule — fix it
+   rather than preserve it. Internal DSP quality is judged by measurement
+   (aliasing, overshoot, null tests), never by how few lines it took.
+
+   The control-surface rule below is unchanged. This has already gone
    wrong twice (Dynamics, Delay — both shipped with 4 selectable modes and
    30+ params, then had to be cut back down after the fact). The bar is a
    real hardware-plugin-grade unit, not an exhaustive one: **KHS Audio's
@@ -254,9 +268,11 @@ Five rules that override anything you infer:
 3. CookIfNeeded does no DSP — drain meters, push dirty params, < 5 µs.
 4. On the audio thread: no allocation, locks, dynamic_cast, std::function/
    map/string, GL, ImGui, file I/O, or printf.
-5. Minimalism: ship Tier 1 only, ~8 controls max, one processing mode unless
-   a second is unavoidable. KHS Audio's Delay/Compressor are the reference
-   bar, not the design doc's full Tier 1+2 table — cut before you build.
+5. Minimalism applies to controls only: ship Tier 1 controls, ~8 max, one
+   processing mode unless a second is unavoidable. KHS Audio's Delay/
+   Compressor are the reference bar for the card. The DSP underneath is never
+   cut: anti-aliasing, true-peak, dither, latency-aligned mix, smoothing are
+   built in, fixed, with no extra knob.
 
 Reference nodes: GainNode (smallest complete), WavetableNode (largest),
 EnvelopeNode (note-in / modulator-out).

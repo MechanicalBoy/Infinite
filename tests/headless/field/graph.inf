@@ -1,0 +1,10 @@
+infinite-patch 1
+# E_FIELD_COMPILE: a Field Graph kernel that calls a function that does not exist.
+node 1 Utility Field Graph
+  id fg
+  s code x = bogusfn(1.0)
+end
+node 2 Utility Output
+  id out
+end
+cable out 0 fg

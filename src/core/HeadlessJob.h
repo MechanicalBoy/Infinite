@@ -17,6 +17,8 @@
 //            [--node <index[:output]>] [--output <index>] [--set <node>.<param>=<value>]... [--json <file>] [--lenient]
 //            [--size WxH] [--depth 8|16] [--png-level 0..9]
 //   --bpm <N> overrides the patch tempo in --render, --frame, --frames-dir and --audio-summary.
+//   --timeline (--audio-summary): play the arrangement's audio lanes (Timeline audio mode) instead of the canvas Audio Outs.
+//   --plugin-params (--render, --audio-summary): the status's "plugins" block also lists every loaded plugin's parameters with their real ranges.
 //   --size WxH rescales --frame / --frames-dir / --render --node output; --codec h264|prores4444 is for --render; --render --node tapped-node video needs --duration.
 //   --set also applies to --render, --frame and --audio-summary.
 //   Infinite --audio-summary <patch.inf> <out.json> [--start S] [--duration S]
@@ -76,6 +78,8 @@ namespace Headless
       int fps = 30;
       double sampleRate = 48000.0;
       bool noAudio = false;
+      bool timeline = false;     // --audio-summary --timeline: the arrangement's audio lanes, not the canvas
+      bool pluginParams = false; // --plugin-params: list each loaded plugin's parameters (address, name, real min/max/default, unit)
       std::string describeType; // --describe <type>, empty = every type
       bool forRender = false;    // --validate --for-render: a missing Output is an error
       bool json = false; // --version --json

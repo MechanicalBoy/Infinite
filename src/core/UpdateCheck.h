@@ -44,6 +44,10 @@ namespace UpdateCheck
    // else the website's download section.
    const std::string& DownloadUrl();
 
+   // GitHub's SHA-256 of that asset, lowercase hex. Empty when DownloadUrl() is a page rather than an asset - an
+   // in-place update (SelfUpdate) is then not offered.
+   const std::string& AssetSha256();
+
    // True once Poll() has seen a result reporting a newer version that the
    // user hasn't dismissed. Drives the passive menu-bar badge only.
    bool UpdateAvailable();

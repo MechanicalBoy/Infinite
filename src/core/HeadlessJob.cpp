@@ -453,6 +453,10 @@ namespace Headless
          }
          else if (a == "--no-audio")
             job.noAudio = true;
+         else if (a == "--timeline" && job.mode == Mode::AudioSummary)
+            job.timeline = true;
+         else if (a == "--plugin-params" && (job.mode == Mode::Render || job.mode == Mode::AudioSummary))
+            job.pluginParams = true;
          else if (a == "--lenient")
             job.lenient = true;
          else if (a.rfind("--", 0) == 0)
@@ -479,6 +483,11 @@ namespace Headless
       if (job.notes.empty() != job.noteMap.empty())
       {
          usageError = "--notes and --note-map go together: events file and the map from event type to note target";
+         return true;
+      }
+      if (job.timeline && !job.output.empty())
+      {
+         usageError = "--timeline measures the arrangement mix; --output picks a canvas sink, which Timeline mode does not feed";
          return true;
       }
       if (!job.stems.empty() && job.stemsDir.empty())
@@ -552,7 +561,8 @@ namespace Headless
          return 2;
       if (c == "E_LOAD" || c == "E_NO_OUTPUT" || c == "E_NO_AUDIO" || c == "E_AMBIGUOUS_OUTPUT" || c == "E_UNKNOWN_TYPE" ||
           c == "E_BAD_SLOT" || c == "E_KIND_MISMATCH" || c == "E_DANGLING" || c == "E_CYCLE" ||
-          c == "E_DUPLICATE_INDEX" || c == "E_DUPLICATE_ID" || c == "E_BAD_ID" || c == "E_BAD_REF" || c == "E_BAD_KEY" || c == "E_BAD_VALUE" || c == "E_SLOT_TAKEN" || c == "E_NOT_A_MODULATOR" || c == "E_BAD_PARAM")
+          c == "E_DUPLICATE_INDEX" || c == "E_DUPLICATE_ID" || c == "E_BAD_ID" || c == "E_BAD_REF" || c == "E_BAD_KEY" || c == "E_BAD_VALUE" || c == "E_SLOT_TAKEN" || c == "E_NOT_A_MODULATOR" || c == "E_BAD_PARAM" ||
+          c == "E_FIELD_COMPILE")
          return 3;
       if (c == "E_HARDWARE_SOURCE")
          return 4;

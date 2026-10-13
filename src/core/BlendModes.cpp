@@ -11,7 +11,8 @@ namespace BlendModes
          "Overlay", "Soft Light", "Hard Light", "Vivid Light", "Linear Light", "Pin Light", "Hard Mix",
          "Difference", "Exclusion", "Subtract", "Divide",
          "Hue", "Saturation", "Color", "Luminosity",
-         "Average", "Negation", "Reflect", "Glow", "Erase", "Anti-Erase"
+         "Average", "Negation", "Reflect", "Glow", "Erase", "Anti-Erase",
+         "Overlay (old)", "Soft Light (old)", "Hard Light (old)"
       };
    }
 
@@ -51,12 +52,18 @@ namespace BlendModes
       "   if (mode == 8) return min(a / max(1.0 - b, 1e-4), vec3(1.0));\n"
       "   if (mode == 9) return clamp(a + b, 0.0, 1.0);\n"
       "   if (mode == 10) return Lum(a) >= Lum(b) ? a : b;\n"
-      "   if (mode == 11) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, b));\n"
+      "   if (mode == 11) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, a));\n"
       "   if (mode == 12) {\n"
+      "      vec3 d = mix(((16.0*a-12.0)*a+4.0)*a, sqrt(a), step(0.25, a));\n"
+      "      return mix(a - (1.0-2.0*b)*a*(1.0-a), a + (2.0*b-1.0)*(d-a), step(0.5, b));\n"
+      "   }\n"
+      "   if (mode == 13) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, b));\n"
+      "   if (mode == 32) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, b));\n"
+      "   if (mode == 33) {\n"
       "      vec3 d = mix(sqrt(a), ((16.0*a-12.0)*a+4.0)*a, step(0.25, a));\n"
       "      return mix(a - (1.0-2.0*b)*a*(1.0-a), a + (2.0*b-1.0)*(d-a), step(0.5, b));\n"
       "   }\n"
-      "   if (mode == 13) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, a));\n"
+      "   if (mode == 34) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, a));\n"
       "   if (mode == 14) return mix(1.0-min((1.0-a)/max(2.0*b,1e-4),vec3(1.0)), min(a/max(2.0*(1.0-b),1e-4),vec3(1.0)), step(0.5, b));\n"
       "   if (mode == 15) return clamp(a + 2.0*b - 1.0, 0.0, 1.0);\n"
       "   if (mode == 16) return mix(min(a, 2.0*b), max(a, 2.0*b-1.0), step(0.5, b));\n"
@@ -75,18 +82,11 @@ namespace BlendModes
       "   if (mode == 29) return min(b*b / max(1.0-a, 1e-4), vec3(1.0));\n"
       "   return a;\n"
       "}\n"
-      // The W3C Compositing and Blending Level 1 forms of the four modes
-      // blendMode() gets wrong (a = backdrop, b = source). blendMode() keeps
-      // the old maths for patches saved before the fix and for the timeline.
-      // Overlay keys on the backdrop, Hard Light on the source, Soft Light
-      // uses the polynomial below 0.25, Hard Mix is a + b >= 1.
+      // The W3C Compositing and Blending Level 1 Hard Mix (a + b >= 1). Overlay,
+      // Soft Light and Hard Light are already W3C in blendMode(); their old maths
+      // live at 32-34 (LegacyMode). blendMode() keeps the old Hard Mix for
+      // patches saved before the fix and for the timeline.
       "vec3 blendModeW3C(int mode, vec3 a, vec3 b) {\n"
-      "   if (mode == 11) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, a));\n"
-      "   if (mode == 12) {\n"
-      "      vec3 d = mix(((16.0*a-12.0)*a+4.0)*a, sqrt(a), step(0.25, a));\n"
-      "      return mix(a - (1.0-2.0*b)*a*(1.0-a), a + (2.0*b-1.0)*(d-a), step(0.5, b));\n"
-      "   }\n"
-      "   if (mode == 13) return mix(2.0*a*b, 1.0-2.0*(1.0-a)*(1.0-b), step(0.5, b));\n"
       "   if (mode == 17) return step(1.0, a + b);\n"
       "   return blendMode(mode, a, b);\n"
       "}\n"

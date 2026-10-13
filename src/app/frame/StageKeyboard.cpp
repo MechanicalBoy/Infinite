@@ -459,6 +459,8 @@ void DrawKeyboard(FrameCtx& fc)
                   CopyParams(copy->node.get(), item.src);
                   if (auto* rn = dynamic_cast<RandomNode*>(copy->node.get()))
                      rn->seed = RandomNode::NextSeed();
+                  if (auto* lfo = dynamic_cast<LFONode*>(copy->node.get()))
+                     lfo->seed = LFONode::NextSeed();
                   // A duplicate's ownership map, just copied verbatim by
                   // CopyParams, still points at the ORIGINAL's live nodes -
                   // the copy's identity must diverge (doc §5.7.3) so its
@@ -830,6 +832,8 @@ void DrawKeyboard(FrameCtx& fc)
                CopyParams(copy->node.get(), item.src);
                if (auto* rn = dynamic_cast<RandomNode*>(copy->node.get()))
                   rn->seed = RandomNode::NextSeed();
+               if (auto* lfo = dynamic_cast<LFONode*>(copy->node.get()))
+                  lfo->seed = LFONode::NextSeed();
                // See the duplicate path's identical comment above (doc
                // §5.7.3) - a paste needs the same fresh-identity treatment.
                if (auto* fgn = dynamic_cast<FieldGraphNode*>(copy->node.get()))

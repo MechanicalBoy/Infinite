@@ -1,4 +1,5 @@
 #include "PatchSchema.h"
+#include "audio/NoteEventQueue.h"
 
 #include <algorithm>
 #include <cctype>
@@ -159,6 +160,21 @@ namespace PatchSchema
                   break;
                }
          }
+         // A pin only this node's saved state has (a Mixer set to 12
+         // channels, a Plugin holding an instrument): ask the instance.
+         if (!found && t != nullptr && env.instanceSchema)
+            if (const TypeSchema* inst = env.instanceSchema(*nd->second))
+            {
+               const std::vector<std::string> instNames = SlotNames(*inst);
+               for (size_t i = 0; i < instNames.size() && !found; i++)
+                  if (instNames[i] == word)
+                  {
+                     out = inst->inputs[i].slot;
+                     found = true;
+                  }
+               if (!found)
+                  names = instNames;
+            }
          if (!found && t != nullptr)
             errors.push_back(Make("E_BAD_REF", "'" + word + "' is not an input of " + t->name, line, dstIndex,
                                   "inputs: " + Join(names)));
@@ -456,6 +472,11 @@ namespace PatchSchema
             for (const ParamInfo& p : t->params)
                if (p.key == key)
                   found = &p;
+            if (found == nullptr && env.instanceSchema)
+               if (const TypeSchema* inst = env.instanceSchema(n))
+                  for (const ParamInfo& p : inst->params)
+                     if (p.key == key)
+                        found = &p;
             if (found == nullptr)
             {
                // `uid`-style keys owned by dynamic nodes are not in a fresh node's list; still worth a warning.
@@ -532,6 +553,17 @@ namespace PatchSchema
             for (const SlotInfo& in : dstSchema->inputs)
                if (in.slot == c.dstSlot)
                   slotInfo = &in;
+            // A pin only this node's saved state has (a Plugin holding an
+            // instrument): the type-level probe below would call it a bad slot.
+            bool instanceSlot = false;
+            if (slotInfo == nullptr && env.instanceSchema)
+               if (const TypeSchema* inst = env.instanceSchema(*byIndex.at(c.dstIndex)))
+                  for (const SlotInfo& in : inst->inputs)
+                     if (in.slot == c.dstSlot)
+                     {
+                        slotInfo = &in;
+                        instanceSlot = true;
+                     }
             if (slotInfo != nullptr)
             {
                const std::string t = tag;
@@ -553,6 +585,8 @@ namespace PatchSchema
                   continue;
                }
             }
+            if (instanceSlot)
+               continue;
             const Link r = env.link(typeOf(c.srcIndex), c.srcOutput, typeOf(c.dstIndex), c.dstSlot);
             if (r == Link::BadSlot)
                errors.push_back(Make("E_BAD_SLOT",
@@ -719,6 +753,12 @@ namespace PatchSchema
          if (n.typeName == "Output" || n.typeName == "Audio Out")
             terminals.push_back(n.index);
       }
+      // A clip's source node plays from the timeline, which is its own routing: it needs no cable.
+      for (const Patch::NodeRecord& n : data.nodes)
+         for (const Patch::StreamRecord& st : data.streams)
+            for (const Patch::ClipRecord& c : st.clips)
+               if (n.uid != 0 && c.srcUid == n.uid && std::find(terminals.begin(), terminals.end(), n.index) == terminals.end())
+                  terminals.push_back(n.index);
       if (outputs == 0)
       {
          if (env.forRender)
@@ -769,6 +809,21 @@ namespace PatchSchema
                                        n.typeName + " needs " + r.what + " connected; " + std::to_string(filled[n.index].size()) +
                                           " of its inputs " + (filled[n.index].size() == 1 ? "is" : "are") + " wired, so the empty side counts as transparent black or silence",
                                        n.line, n.index, "cable something into every input, or use a single-input node instead"));
+      }
+
+      // One note output feeds at most NoteEventQueue::kMaxConsumers notes-in
+      // pins; the rest get no notes and stay silent.
+      {
+         std::map<std::pair<int, int>, int> fanout;
+         std::map<std::pair<int, int>, int> overLine;
+         for (const Patch::CableRecord& c : data.notes)
+            if (known(c.srcIndex) && known(c.dstIndex) && ++fanout[{ c.srcIndex, c.srcOutput }] == NoteEventQueue::kMaxConsumers + 1)
+               overLine[{ c.srcIndex, c.srcOutput }] = c.line;
+         for (const auto& [key, line] : overLine)
+            warnings.push_back(Make("W_NOTE_FANOUT",
+                                    "one note output feeds " + std::to_string(fanout[key]) + " nodes; only the first " +
+                                       std::to_string(NoteEventQueue::kMaxConsumers) + " receive notes",
+                                    line, key.first, "split the fan-out across a second note source"));
       }
 
       // An Output whose image pin is empty renders a blank frame without complaint.

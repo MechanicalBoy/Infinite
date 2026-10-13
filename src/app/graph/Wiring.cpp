@@ -1071,13 +1071,8 @@ namespace app
    }
 
 
-   const PatchSchema::TypeSchema* SchemaFor(const std::string& typeName)
+   static std::unique_ptr<PatchSchema::TypeSchema> BuildSchema(GraphNode* gn, const std::string& typeName)
    {
-      static std::map<std::string, std::unique_ptr<PatchSchema::TypeSchema>> sSchemas;
-      auto it = sSchemas.find(typeName);
-      if (it != sSchemas.end())
-         return it->second.get();
-      GraphNode* gn = SchemaProbe(typeName);
       std::unique_ptr<PatchSchema::TypeSchema> t;
       if (gn != nullptr)
       {
@@ -1104,8 +1099,55 @@ namespace app
          t->hardwareDriven = gn->node->IsHardwareDriven();
          t->canBypass = CanBypass(*gn);
       }
+      return t;
+   }
+
+
+   const PatchSchema::TypeSchema* SchemaFor(const std::string& typeName)
+   {
+      static std::map<std::string, std::unique_ptr<PatchSchema::TypeSchema>> sSchemas;
+      auto it = sSchemas.find(typeName);
+      if (it != sSchemas.end())
+         return it->second.get();
+      std::unique_ptr<PatchSchema::TypeSchema> t = BuildSchema(SchemaProbe(typeName), typeName);
       const PatchSchema::TypeSchema* raw = t.get();
       sSchemas[typeName] = std::move(t);
+      return raw;
+   }
+
+
+   // The schema of a node built from one patch record: a fresh node with the
+   // record's params loaded (Patch::LoadParams, the same path a real load
+   // takes), so state-dependent pins and keys show. Built only on a schema
+   // miss, cached on the record's content; nothing is loaded or cooked.
+   static const PatchSchema::TypeSchema* InstanceSchemaFor(const Patch::NodeRecord& rec)
+   {
+      // Kept for the process like SchemaProbe's instances: a node is never
+      // destroyed off the canvas here.
+      struct Instance
+      {
+         std::unique_ptr<GraphNode> node;
+         std::unique_ptr<PatchSchema::TypeSchema> schema;
+      };
+      static std::map<std::string, Instance> sInstances;
+      std::string key = rec.typeName;
+      for (const auto& kv : rec.params)
+         key += '\n' + kv.first + ' ' + kv.second;
+      auto it = sInstances.find(key);
+      if (it != sInstances.end())
+         return it->second.schema.get();
+      Instance inst;
+      if (INode* made = NodeFactory::Instance().MakeNode(rec.typeName))
+      {
+         inst.node = std::make_unique<GraphNode>();
+         inst.node->node.reset(made);
+         inst.node->typeName = rec.typeName;
+         inst.node->category = NodeFactory::Instance().CategoryOf(rec.typeName);
+         Patch::LoadParams(made, rec.params);
+         inst.schema = BuildSchema(inst.node.get(), rec.typeName);
+      }
+      const PatchSchema::TypeSchema* raw = inst.schema.get();
+      sInstances[key] = std::move(inst);
       return raw;
    }
 
@@ -1128,6 +1170,7 @@ namespace app
             return PatchSchema::Link::BadSlot;
          return CapsAcceptedBy(CapsOf(src, srcOut), dst, dstSlot) ? PatchSchema::Link::Ok : PatchSchema::Link::KindMismatch;
       };
+      env.instanceSchema = [](const Patch::NodeRecord& rec) { return InstanceSchemaFor(rec); };
       env.maxParamIndex = [](const std::string& type)
       {
          auto it = gModulatableMax.find(type);
@@ -1456,6 +1499,11 @@ namespace app
       gn.uid = gNextNodeUid++;
       gn.spawnX = x;
       gn.spawnY = y;
+      // The cached position is where the node is until the editor first draws it. Left at 0,0, anything that snapshots
+      // the graph in the same frame (History jumping several steps: each Undo/Redo saves the state the previous one
+      // just restored) saved every node at the origin, so a redo to that step piled them up.
+      gn.liveX = x;
+      gn.liveY = y;
       // The analysers and the external senders (MIDI Out, OSC Send) are their params and status line; collapsed
       // they show nothing. Load, paste and undo restore the saved flag over this, so only a fresh spawn opens.
       gn.showParams = dynamic_cast<ImageAnalyzeNode*>(gn.node.get()) != nullptr ||

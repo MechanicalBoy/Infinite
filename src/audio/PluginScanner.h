@@ -80,8 +80,14 @@ public:
    // folder list production code does, rather than hardcoding a path.
    static std::vector<std::string> DefaultVST3Folders(const std::vector<std::string>& userFolders = {});
 
+   // The index after a scan. A full scan (folder empty) is the whole truth and replaces it. A per-folder scan
+   // only walked that folder's VST3s, so it replaces the VST3 entries under that folder and keeps every other
+   // VST3; Audio Units are always re-enumerated in full, so the scan's AU list replaces the old one. Replacing
+   // the whole index on a per-folder scan dropped every VST3 outside the folder and saved that to disk.
+   static std::vector<Entry> MergeScan(const std::vector<Entry>& old, std::vector<Entry> found, const std::string& folder);
+
 private:
-   void ScanThreadMain(std::vector<std::string> vst3Folders);
+   void ScanThreadMain(std::vector<std::string> vst3Folders, std::string scope);
 
    std::vector<std::string> mFolders;
    std::vector<Entry> mIndex;
@@ -92,6 +98,7 @@ private:
    std::thread mScanThread;
    std::mutex mResultMutex;
    std::vector<Entry> mPendingResult;               // guarded by mResultMutex
+   std::string mPendingScope;                       // guarded by mResultMutex; folder of a per-folder scan
    std::vector<std::string> mPendingFailed;         // guarded by mResultMutex
    std::vector<std::string> mPendingUnsupported;    // guarded by mResultMutex
    std::atomic<bool> mResultReady { false };

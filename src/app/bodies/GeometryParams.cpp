@@ -14,11 +14,11 @@ namespace app
       if (ActionButton::Draw("Choose audio...", ImVec2(kPreviewSize, 0)))
          n->OpenViaDialog();
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (!n->FileName().empty())
          ImGui::TextDisabled("%s", n->FileName().c_str());
       ImGui::TextDisabled("%s", n->Status().c_str());
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       if (n->IsLoaded())
       {
@@ -73,9 +73,9 @@ namespace app
                break;
             }
          }
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + bodyW);
+         PushTextWrapWidth(bodyW);
          ImGui::TextColored(tok::V4(tok::palf::v_500_900_1000_1000), "source: %s", srcName);
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else
       {
@@ -88,9 +88,9 @@ namespace app
          {
             n->Start();
          }
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + bodyW);
+         PushTextWrapWidth(bodyW);
          ImGui::TextDisabled("%s", n->Status().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
 
       // spectrum, so it is obvious whether audio is actually arriving
@@ -816,9 +816,9 @@ namespace app
                         });
       }
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextUnformatted(n->Status().c_str());
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       NodeSeparator("form");
       ModSlider("depth", &n->depth, 0.0f, 1.5f);
@@ -838,9 +838,9 @@ namespace app
       // Bare TextWrapped has no usable content width inside the node editor and
       // wraps to one character per line; every other panel here sets the wrap
       // position explicitly.
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextUnformatted(n->Status().c_str());
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       NodeSeparator("import");
       // Evaluated into separate variables rather than OR'd inline: `||` would
@@ -1800,6 +1800,9 @@ namespace app
       static int sDragSlot = -1;
       static float sDragAccum = 0.0f;
       const float rowHeight = ImGui::GetTextLineHeightWithSpacing();
+
+      // Layers whose aspect differs from the canvas (the first connected layer's size): stretch, fit inside, or fill and crop.
+      DropdownButton("fit", LayerStackNode::FitNames(), n->fit, [n](int i) { PushUndoCheckpoint(); n->fit = i; });
 
       for (int slot = 0; slot < LayerStackNode::kSlots; slot++)
       {

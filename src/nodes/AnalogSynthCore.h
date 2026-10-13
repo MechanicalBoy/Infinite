@@ -14,6 +14,8 @@
 #include "audio/NoteEventQueue.h"
 #include "audio/ParamMailbox.h"
 #include "audio/SynthModes.h"
+#include "audio/dsp/BlepOscillator.h"
+#include "audio/dsp/Oversampler.h"
 #include "audio/dsp/ZdfLadderFilter.h"
 
 namespace AnalogSynthCore
@@ -142,6 +144,20 @@ namespace AnalogSynthCore
       return 440.0f * powf(2.0f, (midiNote - 69.0f) / 12.0f);
    }
 
+   // The voice's drive and filter run at this multiple of the sample rate:
+   // the drive's tanh and the ladder's per-stage tanh both generate
+   // harmonics, and at the base rate they folded back (-48 dB on a 1.75 kHz
+   // saw at 0% drive even with ADAA - the drive stage is always in the
+   // path). A lighter first half-band than an effect's (see Oversampler.h):
+   // up to 16 of these run at once.
+   constexpr int kFilterOversample = 2;
+   constexpr int kFilterOversampleGroupDelay = 32;
+
+   // AnalogWaveToDsp's DspMath ids are also BlepOsc's waveform ids.
+   static_assert(DspMath::kWaveSine == BlepOsc::kSine && DspMath::kWaveTriangle == BlepOsc::kTriangle &&
+                    DspMath::kWaveSaw == BlepOsc::kSaw && DspMath::kWaveSquare == BlepOsc::kSquare,
+                 "BlepOsc waveform ids must match DspMath's");
+
    inline int AnalogWaveToDsp(int wave)
    {
       switch (wave)
@@ -170,15 +186,26 @@ public:
 
       Envelope ampEnv;
 
-      DspMath::PolyBlepOsc osc1[AnalogSynthCore::kMaxUnison];
-      DspMath::PolyBlepOsc osc2;
+      // Band-limited (BLEP/BLAMP) oscillators - see BlepOscillator.h. Every
+      // oscillator output is BlepOsc::kLatency samples late, all equally.
+      BlepOsc::Oscillator osc1[AnalogSynthCore::kMaxUnison];
+      BlepOsc::Oscillator osc2;
       // Sub osc: its own accumulator, run at half osc1's frequency. It cannot
       // read osc1's phase scaled by 0.5 - scaling a phase compresses its
       // range, it does not halve its rate, so such a "sub" never crosses its
       // own comparison threshold and emits constant DC instead of a tone.
-      DspMath::PolyBlepOsc sub;
+      BlepOsc::Oscillator sub;
       DspMath::WhiteNoise noise;
       DspMath::OnePole glide;
+      // Anti-aliased pre-filter drive, one per signal path, and the 2x
+      // oversampler both it and the filter run inside (see ProcessBlock).
+      DspMath::FastTanhAdaa driveL, driveR;
+      // AC coupling on the oscillator mix, ahead of the drive: a hard-synced
+      // saw restarted early in its cycle has a non-zero mean (-0.035 of DC
+      // on a sync lead, measured), which would bias the drive's tanh and
+      // ride out of the synth.
+      DspMath::DcBlocker acL, acR;
+      Oversampler os; // prepared in PrepareToPlay; Reset() only clears it
 
       // Two independent filter chains. The stack's unison voices are split
       // between them, so left and right carry different oscillators through
@@ -198,13 +225,10 @@ public:
       {
          for (int u = 0; u < AnalogSynthCore::kMaxUnison; ++u)
          {
-            osc1[u].phase = (double)AnalogSynthCore::kVoicePhaseSeed[u];
-            osc1[u].phaseInc = 0.0;
+            osc1[u].Reset((double)AnalogSynthCore::kVoicePhaseSeed[u]);
          }
-         osc2.phase = 0.0;
-         osc2.phaseInc = 0.0;
-         sub.phase = 0.0;
-         sub.phaseInc = 0.0;
+         osc2.Reset(0.0);
+         sub.Reset(0.0);
          ladder.Reset();
          ladderR.Reset();
          for (int s = 0; s < SynthModes::kMaxFilterStages; ++s)
@@ -215,6 +239,13 @@ public:
             svfR[s].SetSampleRate(sampleRate);
          }
          stereoPath = false;
+         driveL.Reset();
+         driveR.Reset();
+         acL.Reset();
+         acL.SetSampleRate(sampleRate);
+         acR.Reset();
+         acR.SetSampleRate(sampleRate);
+         os.Reset();
          ampEnv.SetSampleRate(sampleRate);
          lastOut = 0.0f;
       }
@@ -222,6 +253,7 @@ public:
 
    AudioAnalogNode()
    {
+      BlepOsc::EnsureTables(); // main thread, before the audio thread can touch them
       for (int i = 0; i < AnalogSynthCore::kMaxVoices; ++i)
       {
          mVoices[i].driftPitchOffset = AnalogSynthCore::kVoiceDriftPitch[i];
@@ -237,10 +269,21 @@ public:
       mFreeGlide.SetTimeConstant(0.0f, mSampleRate);
 
       for (auto& v : mVoices)
+      {
+         v.os.Prepare(AnalogSynthCore::kFilterOversample, AnalogSynthCore::kFilterOversampleGroupDelay);
          v.Reset(mSampleRate);
+      }
+      mFreeOs.Prepare(AnalogSynthCore::kFilterOversample, AnalogSynthCore::kFilterOversampleGroupDelay);
 
       mFreeLadder.Reset();
       mFreeLadderR.Reset();
+      mFreeDriveL.Reset();
+      mFreeDriveR.Reset();
+      mFreeAcL.Reset();
+      mFreeAcL.SetSampleRate(mSampleRate);
+      mFreeAcR.Reset();
+      mFreeAcR.SetSampleRate(mSampleRate);
+      mFreeOs.Reset();
       mFreeStereoPath = false;
       for (int s = 0; s < SynthModes::kMaxFilterStages; ++s)
       {
@@ -251,13 +294,10 @@ public:
       }
       for (int u = 0; u < AnalogSynthCore::kMaxUnison; ++u)
       {
-         mFreeOsc1[u].phase = (double)AnalogSynthCore::kVoicePhaseSeed[u];
-         mFreeOsc1[u].phaseInc = 0.0;
+         mFreeOsc1[u].Reset((double)AnalogSynthCore::kVoicePhaseSeed[u]);
       }
-      mFreeOsc2.phase = 0.0;
-      mFreeOsc2.phaseInc = 0.0;
-      mFreeSub.phase = 0.0;
-      mFreeSub.phaseInc = 0.0;
+      mFreeOsc2.Reset(0.0);
+      mFreeSub.Reset(0.0);
    }
 
    void SetNoteInbox(NoteEventQueue* inbox, int cursor) override
@@ -266,41 +306,69 @@ public:
       mNoteCursor = cursor;
    }
 
+   // The band-limited oscillators' correction kernel plus the drive/filter
+   // oversampler, both linear-phase.
+   int LatencySamples() const override { return BlepOsc::kLatency + mFreeOs.Latency(); }
+
    void SetClipPitchOverride(float semitones) override
    {
       mMailbox.SetImmediate(AnalogSynthCore::kClipPitchParam, semitones);
+   }
+
+   // Filter coefficients, resolved once per base-rate sample (the cutoff is
+   // smoothed at that rate) and reused for both oversampled samples, so the
+   // oversampled filter does not pay for tan() twice.
+   struct FilterCoeffs
+   {
+      int type = kAFilterOff;
+      float g = 0.0f, k = 0.0f;
+      int stages = 0, shape = 0;
+   };
+
+   // `rate` is the rate the filter runs at (the oversampled rate). The
+   // cutoff stays clamped below the *base* Nyquist, as it always was.
+   FilterCoeffs MakeFilterCoeffs(int filterType, float cutoff, float resonance, double rate) const
+   {
+      FilterCoeffs c;
+      c.type = filterType;
+      const float effectiveCutoff = std::clamp(cutoff, 20.0f, (float)mSampleRate * 0.45f);
+      if (filterType == kAFilterLadder)
+      {
+         c.g = ZdfLadderFilter::CutoffToG(effectiveCutoff, rate);
+         // Full resonance sits just past the ladder's k = 4 self-oscillation
+         // threshold, so the top of the knob sings at the cutoff (ZdfLadderFilter.h).
+         c.k = resonance * 4.2f;
+      }
+      else if (filterType >= kAFilterSvfLP12 && filterType < kNumAFilterTypes)
+      {
+         const int svfType = filterType - 1; // maps to SynthModes::kFilterLP12 ...
+         c.stages = SynthModes::FilterStages(svfType);
+         c.shape = SynthModes::FilterShapeOf(svfType);
+         const float q = 0.707f + resonance * resonance * 9.3f;
+         c.g = tanf((float)M_PI * effectiveCutoff / (float)rate);
+         c.k = 1.0f / (q < 0.01f ? 0.01f : q);
+      }
+      return c;
    }
 
    // One filter chain, run over whichever state pair it is handed. Both the
    // left and right signal paths call this with their own state, so the two
    // sides can never drift apart in anything but their input and their own
    // accumulated history.
-   float ApplyFilter(ZdfLadderFilter::State& ladder, DspMath::TptSvf* svfBank, float input,
-                     int filterType, float cutoff, float resonance) const
+   static float ApplyFilter(ZdfLadderFilter::State& ladder, DspMath::TptSvf* svfBank, float input,
+                            const FilterCoeffs& c)
    {
-      const float effectiveCutoff = std::clamp(cutoff, 20.0f, (float)mSampleRate * 0.45f);
-
-      if (filterType == kAFilterLadder)
+      if (c.type == kAFilterLadder)
+         return ZdfLadderFilter::Process(ladder, input, c.g, c.k);
+      if (c.type >= kAFilterSvfLP12 && c.type < kNumAFilterTypes)
       {
-         const float g = ZdfLadderFilter::CutoffToG(effectiveCutoff, mSampleRate);
-         const float k = resonance * 3.98f;
-         return ZdfLadderFilter::Process(ladder, input, g, k);
-      }
-      if (filterType >= kAFilterSvfLP12 && filterType < kNumAFilterTypes)
-      {
-         const int svfType = filterType - 1; // maps to SynthModes::kFilterLP12 ...
-         const int stages = SynthModes::FilterStages(svfType);
-         const int shape = SynthModes::FilterShapeOf(svfType);
-         const float q = 0.707f + resonance * resonance * 9.3f;
-         const float g = tanf((float)M_PI * effectiveCutoff / (float)mSampleRate);
-         const float k = 1.0f / (q < 0.01f ? 0.01f : q);
          float filtered = input;
-         for (int s = 0; s < stages; ++s)
+         for (int s = 0; s < c.stages; ++s)
          {
-            svfBank[s].g = g;
-            svfBank[s].k = k;
+            svfBank[s].g = c.g;
+            svfBank[s].k = c.k;
             const DspMath::TptSvf::Outputs o = svfBank[s].Process(filtered);
-            switch (shape)
+            switch (c.shape)
             {
                case SynthModes::kShapeHigh:  filtered = o.high; break;
                case SynthModes::kShapeBand:  filtered = o.band; break;
@@ -311,6 +379,19 @@ public:
          return filtered;
       }
       return input;
+   }
+
+   // Drive + filter for one signal path, at the oversampled rate: AC
+   // coupling, up, ADAA'd tanh (plus the analog hiss), filter, down.
+   static float DriveAndFilter(Oversampler& os, int ch, DspMath::DcBlocker& ac, DspMath::FastTanhAdaa& drive,
+                               ZdfLadderFilter::State& ladder, DspMath::TptSvf* svfBank, float mixed, float driveGain,
+                               float hiss, const FilterCoeffs& c)
+   {
+      float x[Oversampler::kMaxFactor];
+      os.Up(ch, ac.Process(mixed) * driveGain, x);
+      for (int k = 0; k < os.Factor(); k++)
+         x[k] = ApplyFilter(ladder, svfBank, drive.Process(x[k]) + hiss, c);
+      return os.Down(ch, x);
    }
 
    void PushParams(const AnalogSynthParams& p)
@@ -459,14 +540,16 @@ public:
             const float osc2Hz = std::clamp(baseHz * powf(2.0f, osc2Cents / 1200.0f),
                                             10.0f, (float)mSampleRate * 0.45f);
             mFreeOsc2.SetFrequency(osc2Hz, mSampleRate);
-            const float osc2Sample = mFreeOsc2.Generate(wave2Dsp, pw1);
-            mFreeOsc2.Advance();
+            // FM reads osc 2's value at this instant, with no delay; the
+            // audio path hears its band-limited output (stepped below, after
+            // osc 1, so a hard sync knows exactly when osc 1 wrapped).
+            const float osc2Fm = mFreeOsc2.Peek(wave2Dsp, pw1);
 
             // Osc 1 with FM from Osc 2
             const float osc1Cents = oct1 * 1200.0f + semi1 * 100.0f + fine1;
             const float osc1BaseHz = std::clamp(baseHz * powf(2.0f, osc1Cents / 1200.0f),
                                                 10.0f, (float)mSampleRate * 0.45f);
-            const float fmRatio = std::max(0.0f, 1.0f + osc2Sample * fm * 2.5f);
+            const float fmRatio = std::max(0.0f, 1.0f + osc2Fm * fm * 2.5f);
             const float osc1ModHz = std::clamp(osc1BaseHz * fmRatio, 10.0f, (float)mSampleRate * 0.45f);
 
             // Osc 1 Unison, summed into two signal paths at once. Each
@@ -477,27 +560,28 @@ public:
             float osc1SumL = 0.0f;
             float osc1SumR = 0.0f;
             bool osc1Wrapped = false;
+            double syncAt = -1.0;
             for (int u = 0; u < unisonCount; ++u)
             {
                const float uDetuneCents = mUnisonDetuneMul[u] * detuneHalf;
                const float uHz = std::clamp(osc1ModHz * powf(2.0f, uDetuneCents / 1200.0f),
                                             10.0f, (float)mSampleRate * 0.45f);
                mFreeOsc1[u].SetFrequency(uHz, mSampleRate);
-               const float uSample = mFreeOsc1[u].Generate(wave1Dsp, pw1);
+               if (u == 0)
+                  osc1Wrapped = mFreeOsc1[0].WillWrap(syncAt);
+               const float uSample = mFreeOsc1[u].Step(wave1Dsp, pw1);
                float ugL = 1.0f, ugR = 1.0f;
                if (wantStereo)
                   TolerancePan(mUnisonDetuneMul[u] * stereoAmt, ugL, ugR);
                osc1SumL += uSample * ugL;
                osc1SumR += uSample * ugR;
-               if (u == 0 && (mFreeOsc1[0].phase + mFreeOsc1[0].phaseInc >= 1.0))
-                  osc1Wrapped = true;
-               mFreeOsc1[u].Advance();
             }
             osc1SumL *= osc1Norm;
             osc1SumR *= osc1Norm;
 
-            if (sync && osc1Wrapped)
-               mFreeOsc2.phase = 0.0;
+            // Hard sync: osc 2 is reset at the fraction of the sample where
+            // osc 1 wrapped, and the jump is band-limited (BlepOscillator.h).
+            const float osc2Sample = mFreeOsc2.Step(wave2Dsp, pw1, (sync && osc1Wrapped) ? syncAt : -1.0);
 
             // Sub osc: one octave below osc1, tracking osc1's post-FM pitch
             // but not its unison detune - a detuned sub beats against itself
@@ -505,8 +589,7 @@ public:
             // (pw fixed at 0.5), BLEP'd like every other osc here.
             const float subHz = std::clamp(osc1ModHz * 0.5f, 5.0f, (float)mSampleRate * 0.45f);
             mFreeSub.SetFrequency(subHz, mSampleRate);
-            const float subSample = mFreeSub.Generate(DspMath::kWaveSquare, 0.5f);
-            mFreeSub.Advance();
+            const float subSample = mFreeSub.Step(BlepOsc::kSquare, 0.5f);
 
             // Noise
             const float noiseSample = mFreeNoise.Next();
@@ -521,30 +604,33 @@ public:
             // Pre-filter drive. The analog hiss is drawn separately per side
             // - two circuits, two noise floors - which decorrelates the pair
             // a little further at no extra cost.
-            float drivenL = DspMath::FastTanh(mixedL * driveGain);
-            float drivenR = DspMath::FastTanh(mixedR * driveGain);
-            if (analog)
-            {
-               drivenL += mFreeNoise.Next() * 0.001f;
-               drivenR += mFreeNoise.Next() * 0.001f;
-            }
+            // Drive and filter at the oversampled rate (DriveAndFilter). The
+            // analog hiss is drawn separately per side - two circuits, two
+            // noise floors - which decorrelates the pair a little further.
+            const float hissL = analog ? mFreeNoise.Next() * 0.001f : 0.0f;
+            const float hissR = analog ? mFreeNoise.Next() * 0.001f : 0.0f;
 
-            // Filter. The right-hand chain starts from silence rather than
-            // from whatever it held the last time the stack was wide, so
-            // turning spread up mid-note fades a clean path in instead of
-            // resuming a stale one.
+            // The right-hand chain starts from silence rather than from
+            // whatever it held the last time the stack was wide, so turning
+            // spread up mid-note fades a clean path in instead of resuming a
+            // stale one.
             if (wantStereo && !mFreeStereoPath)
             {
                mFreeLadderR.Reset();
                for (int st = 0; st < SynthModes::kMaxFilterStages; ++st)
                   mFreeSvfR[st].Reset();
+               mFreeDriveR.Reset();
+               mFreeAcR = mFreeAcL; // same coupling state, so R starts without a DC step
+               mFreeOs.ResetChannel(1);
             }
             mFreeStereoPath = wantStereo;
 
-            const float filteredL = ApplyFilter(mFreeLadder, mFreeSvf, drivenL, filterType,
-                                                cutoff, resonance);
+            const FilterCoeffs fc =
+               MakeFilterCoeffs(filterType, cutoff, resonance, mSampleRate * AnalogSynthCore::kFilterOversample);
+            const float filteredL =
+               DriveAndFilter(mFreeOs, 0, mFreeAcL, mFreeDriveL, mFreeLadder, mFreeSvf, mixedL, driveGain, hissL, fc);
             const float filteredR = wantStereo
-               ? ApplyFilter(mFreeLadderR, mFreeSvfR, drivenR, filterType, cutoff, resonance)
+               ? DriveAndFilter(mFreeOs, 1, mFreeAcR, mFreeDriveR, mFreeLadderR, mFreeSvfR, mixedR, driveGain, hissR, fc)
                : filteredL;
 
             outL = filteredL;
@@ -587,14 +673,13 @@ public:
                const float osc2Hz = std::clamp(voiceBaseHz * powf(2.0f, osc2Cents / 1200.0f),
                                                10.0f, (float)mSampleRate * 0.45f);
                v.osc2.SetFrequency(osc2Hz, mSampleRate);
-               const float osc2Sample = v.osc2.Generate(wave2Dsp, pw1);
-               v.osc2.Advance();
+               const float osc2Fm = v.osc2.Peek(wave2Dsp, pw1); // see the free-running path
 
                // Osc 1 with FM from Osc 2
                const float osc1Cents = oct1 * 1200.0f + semi1 * 100.0f + fine1;
                const float osc1BaseHz = std::clamp(voiceBaseHz * powf(2.0f, osc1Cents / 1200.0f),
                                                    10.0f, (float)mSampleRate * 0.45f);
-               const float fmRatio = std::max(0.0f, 1.0f + osc2Sample * fm * 2.5f);
+               const float fmRatio = std::max(0.0f, 1.0f + osc2Fm * fm * 2.5f);
                const float osc1ModHz = std::clamp(osc1BaseHz * fmRatio, 10.0f, (float)mSampleRate * 0.45f);
 
                // Osc 1 Unison - see the free-running path for why the same
@@ -602,34 +687,32 @@ public:
                float osc1SumL = 0.0f;
                float osc1SumR = 0.0f;
                bool osc1Wrapped = false;
+               double syncAt = -1.0;
                for (int u = 0; u < unisonCount; ++u)
                {
                   const float uDetuneCents = mUnisonDetuneMul[u] * detuneHalf;
                   const float uHz = std::clamp(osc1ModHz * powf(2.0f, uDetuneCents / 1200.0f),
                                                10.0f, (float)mSampleRate * 0.45f);
                   v.osc1[u].SetFrequency(uHz, mSampleRate);
-                  const float uSample = v.osc1[u].Generate(wave1Dsp, pw1);
+                  if (u == 0)
+                     osc1Wrapped = v.osc1[0].WillWrap(syncAt);
+                  const float uSample = v.osc1[u].Step(wave1Dsp, pw1);
                   float ugL = 1.0f, ugR = 1.0f;
                   if (wantStereo)
                      TolerancePan(mUnisonDetuneMul[u] * stereoAmt, ugL, ugR);
                   osc1SumL += uSample * ugL;
                   osc1SumR += uSample * ugR;
-                  if (u == 0 && (v.osc1[0].phase + v.osc1[0].phaseInc >= 1.0))
-                     osc1Wrapped = true;
-                  v.osc1[u].Advance();
                }
                osc1SumL *= osc1Norm;
                osc1SumR *= osc1Norm;
 
-               if (sync && osc1Wrapped)
-                  v.osc2.phase = 0.0;
+               const float osc2Sample = v.osc2.Step(wave2Dsp, pw1, (sync && osc1Wrapped) ? syncAt : -1.0);
 
                // Sub osc: see the free-running path - own accumulator at half
                // osc1's post-FM pitch, unaffected by unison detune.
                const float subHz = std::clamp(osc1ModHz * 0.5f, 5.0f, (float)mSampleRate * 0.45f);
                v.sub.SetFrequency(subHz, mSampleRate);
-               const float subSample = v.sub.Generate(DspMath::kWaveSquare, 0.5f);
-               v.sub.Advance();
+               const float subSample = v.sub.Step(BlepOsc::kSquare, 0.5f);
 
                // Noise
                const float noiseSample = v.noise.Next();
@@ -638,15 +721,6 @@ public:
                const float centreMix = osc2Sample * osc2Gain * osc2Vol + subSample * subVol + noiseSample * noiseVol;
                const float mixedL = osc1SumL * osc1Gain * osc1Vol + centreMix;
                const float mixedR = osc1SumR * osc1Gain * osc1Vol + centreMix;
-
-               // Pre-filter drive, one noise draw per side
-               float drivenL = DspMath::FastTanh(mixedL * driveGain);
-               float drivenR = DspMath::FastTanh(mixedR * driveGain);
-               if (analog)
-               {
-                  drivenL += v.noise.Next() * 0.001f;
-                  drivenR += v.noise.Next() * 0.001f;
-               }
 
                // Filter with KeyTracking
                const float keyTrackOctaves = ((currentPitch - 60.0f) / 12.0f) * keyTrack;
@@ -658,13 +732,20 @@ public:
                   v.ladderR.Reset();
                   for (int st = 0; st < SynthModes::kMaxFilterStages; ++st)
                      v.svfR[st].Reset();
+                  v.driveR.Reset();
+                  v.acR = v.acL; // same coupling state, so R starts without a DC step
+                  v.os.ResetChannel(1);
                }
                v.stereoPath = wantStereo;
 
-               const float filteredL = ApplyFilter(v.ladder, v.svf, drivenL, filterType,
-                                                   effectiveCutoff, resonance);
+               // Drive (one noise draw per side) and filter, oversampled.
+               const float hissL = analog ? v.noise.Next() * 0.001f : 0.0f;
+               const float hissR = analog ? v.noise.Next() * 0.001f : 0.0f;
+               const FilterCoeffs fc = MakeFilterCoeffs(filterType, effectiveCutoff, resonance,
+                                                        mSampleRate * AnalogSynthCore::kFilterOversample);
+               const float filteredL = DriveAndFilter(v.os, 0, v.acL, v.driveL, v.ladder, v.svf, mixedL, driveGain, hissL, fc);
                const float filteredR = wantStereo
-                  ? ApplyFilter(v.ladderR, v.svfR, drivenR, filterType, effectiveCutoff, resonance)
+                  ? DriveAndFilter(v.os, 1, v.acR, v.driveR, v.ladderR, v.svfR, mixedR, driveGain, hissR, fc)
                   : filteredL;
 
                // Voice-card position on top of the stack's own width: each
@@ -845,12 +926,15 @@ private:
 
    // Free-running fallback state
    DspMath::OnePole mFreeGlide;
-   DspMath::PolyBlepOsc mFreeOsc1[AnalogSynthCore::kMaxUnison];
-   DspMath::PolyBlepOsc mFreeOsc2;
-   DspMath::PolyBlepOsc mFreeSub;
+   BlepOsc::Oscillator mFreeOsc1[AnalogSynthCore::kMaxUnison];
+   BlepOsc::Oscillator mFreeOsc2;
+   BlepOsc::Oscillator mFreeSub;
    DspMath::WhiteNoise mFreeNoise;
    ZdfLadderFilter::State mFreeLadder;
    ZdfLadderFilter::State mFreeLadderR;
+   DspMath::FastTanhAdaa mFreeDriveL, mFreeDriveR;
+   DspMath::DcBlocker mFreeAcL, mFreeAcR;
+   Oversampler mFreeOs;
    bool mFreeStereoPath = false;
    // Cached normalised detune multipliers, rebuilt only when the stack size
    // changes - NormalizeUnisonDetune is a per-stack constant, not per-sample

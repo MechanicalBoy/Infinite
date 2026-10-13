@@ -33,6 +33,14 @@ namespace
    {
       return DspMath::FastTanh(x * 0.5f) * 2.0f;
    }
+
+   // What is written back into a clean line. Feedback above 100% grows the
+   // line by that factor every pass, so with nothing in the loop it ran away
+   // without bound (to inf, then NaN, after a few minutes of self-
+   // oscillation) while SoftClipOutput hid it at +6 dBFS. A soft ceiling,
+   // bit-identical below the knee, makes it settle near 0 dBFS instead -
+   // the analog path's AsymTanh already does this job there.
+   inline float LineCeiling(float x) { return DspMath::SoftCeiling(x, 0.9f); }
 }
 
 void DelayKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sidechain*/, AudioBuffer& out)
@@ -140,8 +148,8 @@ void DelayKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sidec
             const float outB = mLineB.Read(delaySamples);
             const float fbA = mFilterA.Process(outA * feedbackFrac, tone, (float)mSampleRate);
             const float fbB = mFilterB.Process(outB * feedbackFrac, tone, (float)mSampleRate);
-            mLineA.Write(inMono + fbB);
-            mLineB.Write(fbA);
+            mLineA.Write(LineCeiling(inMono + fbB));
+            mLineB.Write(LineCeiling(fbA));
             wetL = SoftClipOutput(outA);
             wetR = SoftClipOutput(outB);
          }
@@ -149,7 +157,7 @@ void DelayKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sidec
          {
             const float delayed = mLine.Read(delaySamples);
             const float fb = mLineFilter.Process(delayed * feedbackFrac, tone, (float)mSampleRate);
-            mLine.Write(inMono + fb);
+            mLine.Write(LineCeiling(inMono + fb));
             wetL = wetR = SoftClipOutput(delayed);
          }
       }

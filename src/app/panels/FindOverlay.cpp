@@ -185,11 +185,13 @@ void DrawFind()
       {
          const GraphNode* gn = FindNodeByIndex(sMatches[i]);
          if (gn == nullptr) continue;
-         const ImVec2 p = ed::CanvasToScreen(ed::GetNodePosition(gn->NodeId()));
-         const ImVec2 s = ed::GetNodeSize(gn->NodeId());
-         const float z = ed::GetCurrentZoom();
+         // Both corners through CanvasToScreen: ed::GetCurrentZoom() is InvScale and must not scale the size.
+         const ImVec2 cp = ed::GetNodePosition(gn->NodeId());
+         const ImVec2 cs = ed::GetNodeSize(gn->NodeId());
+         const ImVec2 p = ed::CanvasToScreen(cp);
+         const ImVec2 p2 = ed::CanvasToScreen(ImVec2(cp.x + cs.x, cp.y + cs.y));
          const bool cur = i == sCurrent;
-         dl->AddRect(ImVec2(p.x - 3, p.y - 3), ImVec2(p.x + s.x * z + 3, p.y + s.y * z + 3),
+         dl->AddRect(ImVec2(p.x - 3, p.y - 3), ImVec2(p2.x + 3, p2.y + 3),
                      ImGui::GetColorU32(ImVec4(a.x, a.y, a.z, cur ? 1.0f : 0.6f)), 6.0f, 0, cur ? 3.0f : 1.5f);
       }
       dl->PopClipRect();

@@ -8,6 +8,7 @@
 #include "Modulation.h"
 #include "core/AudioCable.h"
 #include "core/CurveShape.h"
+#include "core/Transport.h"
 
 class AudioAudioToCVNode;
 
@@ -15,30 +16,88 @@ class AudioAudioToCVNode;
 // texture; the editor draws a value meter for them instead of a preview. All three
 // are tempo-synced: rates are in beats, so changing the global BPM retimes them.
 
+// Synced-rate period memo for LFO/Random: the MusicTime division search
+// runs when the rate or the bar length changes, not on every Value01().
+struct SyncedPeriodCache
+{
+   float rate = -1.0f;
+   int sigNum = -1; // time signature a bar division was made with; < 0 = not a bar division
+   int sigDen = -1;
+   double period = 1.0;
+
+   bool Hit(float rateBeats, const Transport& tr) const
+   {
+      return rate == rateBeats && (sigNum < 0 || (sigNum == tr.TimeSigNumerator() && sigDen == tr.TimeSigDenominator()));
+   }
+};
+
 class LFONode : public INode, public IModulator
 {
 public:
-   static INode* Create() { return new LFONode(); }
+   static INode* Create();
+   // S&H seeds come from their own counter, so spawning an LFO never moves
+   // the seed the next Random gets (patches without a saved seed rely on it).
+   static float NextSeed() { static int sSpawnCounter = 0; return (float)(++sSpawnCounter) * 5.1f + 0.37f; }
    static const std::vector<std::string>& ShapeNames();
+   static const std::vector<std::string>& RateModeNames();
+   static const std::vector<std::string>& PhaseModeNames();
 
    unsigned int GetOutputTexture() override { return 0; }
    int GetOutputWidth() const override { return 0; }
    int GetOutputHeight() const override { return 0; }
    void CookIfNeeded(int) override {}
+   const char* InputLabel(int) const override { return "trig"; }
 
    float Value01() override;
 
+   // Restarts the cycle on a rising edge through 0.5 (Retrigger phase mode).
+   IModulator* trigger = nullptr;
+   IModulator** ModulatorInputSlot(int slot) override { return slot == 0 ? &trigger : nullptr; }
+   int ModulatorInputCount() const override { return 1; }
+
+   // Beats is the free float of every patch saved before rate modes existed;
+   // Synced snaps rateBeats to the nearest MusicTime division and times it
+   // exactly (triplets included), the note nodes' menu; Hz ignores tempo.
+   enum RateMode { kRateBeats = 0, kRateSynced = 1, kRateHz = 2 };
+   // Transport: the phase is a function of song position (Bitwig "Sync"),
+   // so seeks and loops land where they would on a fresh play. Free: runs
+   // on regardless of stop, seek and loop. Retrigger: free, restarted by
+   // the trig input.
+   enum PhaseMode { kPhaseTransport = 0, kPhaseFree = 1, kPhaseRetrigger = 2 };
+
    int shape = 0;          // index into ShapeNames()
-   float rateBeats = 4.0f; // one full cycle every N beats
+   float rateBeats = 4.0f; // one full cycle every N beats (Beats, Synced)
    float phase = 0.0f;     // 0..1
    float low = 0.0f;
    float high = 1.0f;
+   int rateMode = kRateSynced;
+   float rateHz = 1.0f;
+   int phaseMode = kPhaseTransport;
+   float seed = 0.0f; // Sample & Hold sequence; each spawn gets its own
+   // 0 = maths of patches saved before the modulation pass (S&H ignores
+   // the seed, so every S&H LFO plays the same sequence).
+   int maths = 1;
+
+   void BeforeLoadParams() override { rateMode = kRateBeats; maths = 0; }
 
    void VisitParams(ParamVisitor& v) override
    {
       v.Int("shape", shape); v.Float("rateBeats", rateBeats);
       v.Float("phase", phase); v.Float("low", low); v.Float("high", high);
+      v.Int("rateMode", rateMode); v.Float("rateHz", rateHz);
+      v.Int("phaseMode", phaseMode); v.Float("seed", seed); v.Int("maths", maths);
    }
+
+   // Length of one cycle in beats for Beats and Synced.
+   double PeriodBeats() const;
+
+private:
+   double FreeCycles();
+   double mFreeCycles = 0.0;
+   double mFreeLast = -1.0;
+   float mTrigLast = 0.0f;
+   bool mFreeOffline = false;
+   mutable SyncedPeriodCache mPeriodCache;
 };
 
 // A fixed value, as a modulator.
@@ -90,7 +149,7 @@ public:
 
    float Value01() override;
 
-   float rateBeats = 1.0f; // new target value every N beats
+   float rateBeats = 1.0f; // new target value every N beats (Beats, Synced)
    float smooth = 0.5f;    // 0 = stepped, 1 = fully interpolated
    float low = 0.0f;
    float high = 1.0f;
@@ -101,14 +160,24 @@ public:
    // uncorrelated, while the same seed still reproduces the same run exactly.
    float seed = 0.0f;
 
+   int rateMode = LFONode::kRateSynced; // LFONode::RateMode
+   float rateHz = 1.0f;
+   // 0 = maths of patches saved before the modulation pass: the seed is
+   // salted at 1/1013 resolution, so seeds closer than that collide.
+   int maths = 1;
+
+   void BeforeLoadParams() override { rateMode = LFONode::kRateBeats; maths = 0; }
+
    void VisitParams(ParamVisitor& v) override
    {
       v.Float("rate", rateBeats); v.Float("smooth", smooth);
       v.Float("low", low); v.Float("high", high); v.Float("seed", seed);
+      v.Int("rateMode", rateMode); v.Float("rateHz", rateHz); v.Int("maths", maths);
    }
 
 private:
-   float ValueForStep(long long step) const;
+   float ValueForStep(long long step, uint64_t salt) const; // salt: SeedSalt(seed, 2), maths 1 only
+   SyncedPeriodCache mPeriodCache;
 };
 
 // A step sequencer: the value walks through up to sixteen steps and repeats.
@@ -288,6 +357,10 @@ public:
    // mode defaults to Per frame (0), the behaviour of every patch saved before
    // the field existed; Time and Spring are opt-in. Time and Spring read the
    // transport's seconds, so the response is the same at 30 and 144 fps.
+   // With maths 1, Per frame reads `amount` as the time constant it gives at
+   // 60 fps, so it too is the same at every frame rate, and all three modes
+   // treat the input as a straight line between calls (exact one-pole and
+   // closed-form spring) instead of a value held for the whole step.
    enum Mode { kPerFrame = 0, kTime = 1, kSpring = 2 };
    int mode = kPerFrame;
    float timeConstant = 0.25f; // seconds to cover ~63% of a step (Time mode)
@@ -299,12 +372,24 @@ public:
       v.Float("constantIn", constantIn); v.Float("amount", amount);
       v.Int("mode", mode); v.Float("timeConstant", timeConstant);
       v.Float("frequency", frequency); v.Float("damping", damping);
+      v.Int("maths", maths);
    }
 
+   int maths = 1; // 0 = per-frame step and held input, as saved before the modulation pass
+   void BeforeLoadParams() override { maths = 0; }
+
+   // Per frame `amount` as a time constant: the tau whose one-pole step at
+   // 60 fps is the old per-frame coefficient.
+   static double AmountTau(float amount);
+
 private:
+   float ValueExact(float target);
+   float mTauAmount = -1.0f; // AmountTau memo
+   double mTau = 0.0;
    bool mInit = false;
    float mLast = 0.0f;
    float mVel = 0.0f;
+   float mPrevIn = 0.0f;
    double mLastBeats = -1.0;   // beat at which mLast was last updated (Per frame)
    double mLastSeconds = -1.0; // transport second at which mLast was last updated
 };
@@ -419,7 +504,9 @@ public:
 // falling back below it starts release. Patch an LFO in and the LFO
 // retriggers the envelope once per cycle, each swing shaped by the ADSR.
 //
-// Output collapses toward 0.5 as the envelope level falls, the same
+// output kOutAdsr (new nodes): the level itself, 0..1. output kOutCentred
+// (patches saved before it existed, via BeforeLoadParams): the output
+// collapses toward 0.5 as the envelope level falls, the same
 // convention ModDepthNode uses above (its comment explains why): at
 // envLevel 0 the input has no say (holds at 0.5), at envLevel 1 the input
 // passes through unchanged. This also means "nothing patched" holds steady
@@ -451,14 +538,31 @@ public:
    float constantIn = 0.5f; // used when nothing is patched into "in"
    float threshold = 0.5f;  // rising edge above this (on the raw 0..1 input) = gate on
 
+   // ADSR: the output is the envelope level, 0 at rest, the standard ADSR.
+   // Centred: 0.5 + (in - 0.5) * level, the output of every patch saved
+   // before this existed (rest 0.5, a closed gate dips below it).
+   enum Output { kOutCentred = 0, kOutAdsr = 1 };
+   int output = kOutAdsr;
+   // 1 = stage edges at their exact times and the gate edge placed where
+   // the input crosses the threshold between calls; 0 = edges found once
+   // per call, as saved before the modulation pass.
+   int maths = 1;
+
+   void BeforeLoadParams() override { output = kOutCentred; maths = 0; }
+
    void VisitParams(ParamVisitor& v) override
    {
       v.Float("attackMs", attackMs); v.Float("decayMs", decayMs);
       v.Float("sustainLevel", sustainLevel); v.Float("releaseMs", releaseMs);
       v.Float("constantIn", constantIn); v.Float("threshold", threshold);
+      v.Int("output", output); v.Int("maths", maths);
    }
 
 private:
+   float LevelExact(double seconds, float in01);
+   float LevelAt(double seconds);
+   float mPrevIn = 0.0f;
+   double mPrevSeconds = -1.0;
    enum class Stage { Idle, Attack, Decay, Sustain, Release };
    Stage mStage = Stage::Idle;
    float mLevel = 0.0f;
@@ -511,9 +615,19 @@ public:
    {
       v.Float("constantIn", constantIn); v.Int("rangeLow", rangeLow); v.Int("rangeHigh", rangeHigh);
       v.Int("scale", scale); v.Int("root", root); v.Float("glideMs", glideMs);
+      v.Int("maths", maths);
    }
 
+   // 1 = glide follows the input as a straight line between calls, gliding
+   // to each semitone from the moment the line crosses into it; 0 = the
+   // quantized value is held for the whole step, as saved before the
+   // modulation pass.
+   int maths = 1;
+   void BeforeLoadParams() override { maths = 0; }
+
 private:
+   float TargetFor(float v01, int* semitoneOut) const;
+   float mPrevIn = -1.0f;
    int mLastSemitone = 0;
    float mGlided = -1.0f;      // sentinel: not yet initialized
    double mLastSeconds = -1.0; // transport seconds at which mGlided was last updated

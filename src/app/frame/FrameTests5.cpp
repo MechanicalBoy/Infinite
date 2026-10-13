@@ -2093,7 +2093,11 @@ void FrameTest_NODEDRAGWIDTHTEST(int frameId, GLFWwindow* window)
    {
       // Rest: the width must settle and then hold with no input at all.
       if (r == 4)
+      {
          sRestW = size.x;
+         if (size.x > 700.0f || size.y > 1500.0f)
+            printf("NODEDRAGWIDTHTEST note: %s rests at %.0f x %.0f\n", typeName, size.x, size.y);
+      }
       else if (r == 5 && std::fabs(size.x - sRestW) > 0.5f)
          fail("after settling without any drag");
       return;
@@ -2136,17 +2140,36 @@ void FrameTest_NODEDRAGWIDTHTEST(int frameId, GLFWwindow* window)
       }
       return;
    }
-   if (r >= 16)
+   if (r == 16 && sGrabbed)
    {
-      if (sGrabbed)
+      const bool moved = std::fabs(pos.x - sRestPos.x) > 10.0f || std::fabs(pos.y - sRestPos.y) > 10.0f;
+      if (!moved)
+         printf("NODEDRAGWIDTHTEST note: %s did not move; the grab point hit a control, not the node\n", typeName);
+      if (std::fabs(size.x - sRestW) > 0.5f)
+         fail("after the drag");
+   }
+   if (r >= 16 && r < 40)
+   {
+      // Moved by the editor itself, left then right, a step per frame, through the canvas origin and well past it:
+      // whatever the mouse gesture hit, the node changes position, and a width that reads a canvas x as a size (a 0
+      // start for a max over screen x, a window-local wrap position) grows here. 1 px is ImGui truncating toward
+      // zero, which rounds a fractional edge the other way once it is left of the origin.
+      if (r > 16 && std::fabs(size.x - sRestW) > 1.5f)
       {
-         sChecked++;
-         const bool moved = std::fabs(pos.x - sRestPos.x) > 10.0f || std::fabs(pos.y - sRestPos.y) > 10.0f;
-         if (!moved)
-            printf("NODEDRAGWIDTHTEST note: %s did not move; the grab point hit a control, not the node\n", typeName);
-         if (std::fabs(size.x - sRestW) > 0.5f)
-            fail("after the drag");
+         fail(r < 28 ? "while moved left" : "while moved right");
+         sIndex = -1;
+         if (!patchMode)
+            RemoveNodeByIndex(gn->index);
+         else
+            ed::SetNodeZPosition(gn->NodeId(), 0.0f);
+         return;
       }
+      ed::SetNodePosition(gn->NodeId(), ImVec2(pos.x + (r < 28 ? -37.0f : 61.0f), pos.y + (r < 28 ? 9.0f : -5.0f)));
+      return;
+   }
+   if (r >= 40)
+   {
+      sChecked++;
       sIndex = -1;
       if (!patchMode)
          RemoveNodeByIndex(gn->index);
@@ -3282,6 +3305,61 @@ void FrameTest_UIGALLERY(int frameId, GLFWwindow*)
       return;
    }
    UiGallery::Draw();
+}
+
+
+// v0.5.0 bug report: Layer Stack stretched any layer whose aspect differed
+// from the canvas. A 2:1 layer over a 1:1 base: Fit must leave the base
+// showing above and below it, Stretch and Fill must cover the base.
+void FrameTest_LAYERSTACKFITTEST(int frameId, GLFWwindow*)
+{
+   if (getenv("INFINITE_LAYERSTACKFITTEST") == nullptr || frameId != 4)
+      return;
+   ShapeNode base, wide;
+   base.width = 64.0f; base.height = 64.0f;
+   base.bgColor[0] = 1.0f; base.bgColor[1] = 0.0f; base.bgColor[2] = 0.0f; base.bgOpacity = 1.0f;
+   base.fillOpacity = 0.0f;
+   wide.width = 128.0f; wide.height = 64.0f;
+   wide.bgColor[0] = 0.0f; wide.bgColor[1] = 1.0f; wide.bgColor[2] = 0.0f; wide.bgOpacity = 1.0f;
+   wide.fillOpacity = 0.0f;
+
+   LayerStackNode stack;
+   stack.Input(0).Connect(&base);
+   stack.Input(1).Connect(&wide);
+
+   unsigned int scratchFbo = 0;
+   auto greenAt = [&](int x, int y)
+   {
+      std::vector<float> px;
+      GLUtil::ReadTexturePixels(scratchFbo, stack.GetOutputTexture(), 64, 64, px);
+      const size_t i = ((size_t)y * 64 + (size_t)x) * 4;
+      return px.size() > i + 1 && px[i + 1] > 0.5f && px[i] < 0.5f;
+   };
+
+   bool ok = true;
+   const char* names[] = { "stretch", "fit", "fill" };
+   const bool expectEdgeGreen[] = { true, false, true };
+   for (int mode = 0; mode < 3; mode++)
+   {
+      stack.fit = mode;
+      stack.CookIfNeeded(1000 + mode);
+      const bool sizeOk = stack.GetOutputWidth() == 64 && stack.GetOutputHeight() == 64;
+      const bool centre = greenAt(32, 32);
+      const bool edgeTop = greenAt(32, 2), edgeBottom = greenAt(32, 61);
+      const bool modeOk = sizeOk && centre && edgeTop == expectEdgeGreen[mode] && edgeBottom == expectEdgeGreen[mode];
+      printf("  %-7s centre %s, top/bottom edge %s/%s (expect %s)  %s\n", names[mode], centre ? "layer" : "base",
+             edgeTop ? "layer" : "base", edgeBottom ? "layer" : "base", expectEdgeGreen[mode] ? "layer" : "base",
+             modeOk ? "OK" : "FAIL");
+      ok = ok && modeOk;
+   }
+   if (scratchFbo != 0)
+      glDeleteFramebuffers(1, &scratchFbo);
+
+   // Patches saved before "fit" existed reopen stretched; a new node starts at Fit.
+   LayerStackNode fresh;
+   const bool defaultOk = fresh.fit == LayerStackNode::kFit;
+   printf("  new node defaults to Fit  %s\n", defaultOk ? "OK" : "FAIL");
+   printf("%s\n", (ok && defaultOk) ? "LAYERSTACKFITTEST OK" : "LAYERSTACKFITTEST FAIL - BUG");
 }
 
 }

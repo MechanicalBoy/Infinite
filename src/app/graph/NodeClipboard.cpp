@@ -136,15 +136,16 @@ NodePasteResult NodeClipboardPaste(const std::string& text, const ImVec2& at)
       spawned->node->bypassed = rec.bypassed;
       spawned->showMiniViewport = rec.showMiniViewport;
       spawned->showAdvancedParams = rec.showAdvancedParams;
-      if (auto* fgn = dynamic_cast<FieldGraphNode*>(spawned->node.get()))
-         fgn->encapsulated = false;
-      spawned->node->BeforeLoadParams();
+      if (Patch::SavedBefore(data, rec)) // see PatchLoad
+         spawned->node->BeforeLoadParams();
       Patch::LoadParams(spawned->node.get(), rec.params);
       ReloadDerivedState(spawned->node.get());
       if (auto* geomOp = dynamic_cast<GeometryOpNode*>(spawned->node.get()))
          geomOp->MigrateDeprecatedOp();
       if (auto* rn = dynamic_cast<RandomNode*>(spawned->node.get()))
          rn->seed = RandomNode::NextSeed();
+      if (auto* lfo = dynamic_cast<LFONode*>(spawned->node.get()))
+         lfo->seed = LFONode::NextSeed();
       if (auto* fgn = dynamic_cast<FieldGraphNode*>(spawned->node.get()))
          fgn->SetUid(FieldGraphNode::NewUid());
    }
@@ -211,6 +212,7 @@ NodePasteResult NodeClipboardPaste(const std::string& text, const ImVec2& at)
       source.hasRange = m.hasRange;
       source.enabled = m.enabled;
       source.curve = m.curve;
+      source.smoothMs = m.smoothMs;
       Modulation::Instance().RestoreLink(dst->index, m.dstParam, source);
    }
    for (const Patch::PaletteRecord& c : data.palette)

@@ -906,6 +906,7 @@ bool RunEnvelopeFixture()
    auto EnvLevelFromOut = [](float out01, float in01) { return (out01 - 0.5f) / (in01 - 0.5f); };
 
    EnvelopeNode env;
+   env.BeforeLoadParams(); // legacy centred maths: this fixture pins the pre-v0.5 formula
    env.attackMs = 50.0f;
    env.decayMs = 100.0f;
    env.sustainLevel = 0.4f;
@@ -959,6 +960,7 @@ bool RunEnvelopeFixture()
    // sits exactly at centre, so 0.5 + (in01-0.5)*envLevel collapses to 0.5
    // whatever the envelope is doing.
    EnvelopeNode unpatched;
+   unpatched.BeforeLoadParams(); // legacy centred maths: this fixture pins the pre-v0.5 formula
    unpatched.attackMs = 5.0f;
    unpatched.decayMs = 5.0f;
    unpatched.releaseMs = 5.0f;
@@ -994,6 +996,20 @@ bool RunVoiceStealFixture()
    printf("DSPTEST voice steal picks oldest: oldest=%d  stolen=%d  %s\n",
           firstVoice, stolen, stealOk ? "OK" : "FAIL");
    all &= stealOk;
+
+   // A node that renders only its first n voices (Field Synth: 8 of 16) must
+   // never be handed a voice past n, or that note is silent and never frees.
+   VoiceAllocator limited(16);
+   limited.SetSampleRate(48000.0);
+   limited.SetADSR(1000.0f, 1000.0f, 1.0f, 1000.0f);
+   limited.SetActiveLimit(8);
+   int maxIdx = -1;
+   for (int i = 0; i < 24; i++)
+      maxIdx = std::max(maxIdx, limited.NoteOn(60 + i, 1.0f, i + 1));
+   const bool limitOk = maxIdx == 7;
+   printf("DSPTEST voice limit keeps allocation in the rendered range: max index=%d  %s\n",
+          maxIdx, limitOk ? "OK" : "FAIL");
+   all &= limitOk;
    return all;
 }
 
@@ -1179,11 +1195,10 @@ bool RunAudioFilterFixture()
       all &= ok;
    }
 
-   // 2) -3 dB point per slope: extra cascaded stages pull it below the
-   //    nominal cutoff (SynthModes.h documents the same effect for
-   //    Wavetable's filter), so slope order - not an exact frequency - is
-   //    what's asserted: LP36's -3dB point is lower than LP24's, which is
-   //    lower than LP12's, which is at or below the nominal cutoff.
+   // 2) -3 dB point per slope: the cascaded stages are the Butterworth pole
+   //    pairs of the whole slope (AudioFilterDsp::SvfStageK), so at q 0.707
+   //    LP12, LP24 and LP36 all cross -3 dB at the nominal cutoff - the knob
+   //    reads the frequency it cuts at, whatever the slope.
    {
       auto Find3dB = [&](int type, float cutoff, float q) {
          float lo = 20.0f, hi = cutoff;
@@ -1204,7 +1219,8 @@ bool RunAudioFilterFixture()
       const float f12 = Find3dB(AudioFilterDsp::kLP12, 2000.0f, 0.707f);
       const float f24 = Find3dB(AudioFilterDsp::kLP24, 2000.0f, 0.707f);
       const float f36 = Find3dB(AudioFilterDsp::kLP36, 2000.0f, 0.707f);
-      const bool orderOk = f36 <= f24 + 1.0f && f24 <= f12 + 1.0f && f12 <= 2000.0f + 1.0f;
+      auto AtCutoff = [](float f) { return fabsf(f - 2000.0f) < 2000.0f * 0.02f; };
+      const bool orderOk = AtCutoff(f12) && AtCutoff(f24) && AtCutoff(f36);
       printf("DSPTEST filter -3dB point per slope: LP12=%.0fHz LP24=%.0fHz LP36=%.0fHz (cutoff 2000Hz)  %s\n",
              f12, f24, f36, orderOk ? "OK" : "FAIL");
       all &= orderOk;
@@ -1911,8 +1927,11 @@ bool RunReverbFixture()
    //    ReverbKernelLegacy.cpp): 10 s at 48 kHz / 256, B1's Reverb settings
    //    (the defaults), analog off and on. The input is a B1-like voice: a
    //    detuned saw with a new note every 250 ms and a decaying envelope.
-   //    Halfway through, every param moves (both kernels get the same push),
-   //    so any cached coefficient that fails to invalidate shows up here.
+   //    Halfway through, decay/damping/width move (both kernels get the same
+   //    push), so any cached coefficient that fails to invalidate shows up
+   //    here. size and predelay are left out on purpose: the live kernel
+   //    glides/crossfades them where the legacy one clicked, so the two are
+   //    meant to differ there - section 8 gates those moves instead.
    //    kReverbLegacyTol is the quality rule from docs/plans/perf: 0 while
    //    only exact changes are in, 1e-4 (-80 dBFS) once an approximate one
    //    (the fast LFO sine) is in. The measured max diff is always printed.
@@ -1960,10 +1979,8 @@ bool RunReverbFixture()
          {
             if (offset == totalFrames / 2)
             {
-               *node.ParamPtr("size") = 0.85f;
                *node.ParamPtr("decay") = 4.0f;
                *node.ParamPtr("damping") = 0.7f;
-               *node.ParamPtr("predelay") = 37.0f;
                *node.ParamPtr("width") = 0.3f;
                live.PushParams(node, sampleRate);
                legacy.PushParams(node, sampleRate);
@@ -1983,6 +2000,7 @@ bool RunReverbFixture()
                inChR[k] = 0.35f * env * (0.8f * saw + 0.2f * (2.0f * phaseA - 1.0f));
             }
             live.ProcessBlockSimd(inBuf, nullptr, liveBuf);
+            legacy.SnapParamsIfPending(); // the live path does this itself
             legacy.ProcessBlockLegacy(inBuf, nullptr, oldBuf);
             for (int ch = 0; ch < 2; ch++)
                for (int k = 0; k < blockSize; k++)
@@ -1991,6 +2009,67 @@ bool RunReverbFixture()
          const bool ok = maxDiff <= kReverbLegacyTol;
          printf("DSPTEST reverb live vs pre-perf kernel, analog %s, 10 s: max diff %.3e (tol %.1e)  %s\n",
                 analogOn ? "on" : "off", maxDiff, kReverbLegacyTol, ok ? "OK" : "FAIL");
+         all &= ok;
+      }
+
+      // 8) size and predelay steps are click-free. Each one, stepped 30% ->
+      //    70% of its range at once, on a steady 440 Hz tone: the largest
+      //    second difference in the 50 ms after the step against the largest
+      //    in the 200 ms before it. Jumping the line lengths (size) and the
+      //    predelay tap read a fresh position every sample while the knob
+      //    smoothed: +20 dB and +21 dB.
+      struct Step
+      {
+         const char* param;
+         float from, to;
+      };
+      const Step steps[] = { { "size", 0.3f, 0.7f }, { "predelay", 60.0f, 140.0f } };
+      for (const Step& st : steps)
+      {
+         if (!reverbDef)
+            break;
+         AudioEffectNode node(*reverbDef);
+         *node.ParamPtr(st.param) = st.from;
+         ReverbKernel k;
+         k.PrepareToPlay(sampleRate, blockSize);
+         k.PushParams(node, sampleRate);
+         float bl[blockSize], br[blockSize], ol[blockSize], orr[blockSize];
+         float* ich[2] = { bl, br };
+         float* och[2] = { ol, orr };
+         AudioBuffer ib, ob;
+         ib.channels = ich;
+         ob.channels = och;
+         ib.numChannels = ob.numChannels = 2;
+         ib.numFrames = ob.numFrames = blockSize;
+         const int stepAt = (int)(2.0 * sampleRate) / blockSize * blockSize;
+         const int end = stepAt + (int)(0.05 * sampleRate);
+         float before = 0.0f, after = 0.0f, y1 = 0.0f, y2 = 0.0f;
+         for (int offset = 0; offset < end; offset += blockSize)
+         {
+            if (offset == stepAt)
+            {
+               *node.ParamPtr(st.param) = st.to;
+               k.PushParams(node, sampleRate);
+            }
+            for (int i = 0; i < blockSize; i++)
+               bl[i] = br[i] = 0.25f * std::sin(2.0f * (float)M_PI * 440.0f * (float)(offset + i) / (float)sampleRate);
+            k.ProcessBlockSimd(ib, nullptr, ob);
+            for (int i = 0; i < blockSize; i++)
+            {
+               const int n = offset + i;
+               const float d2 = std::fabs(ol[i] - 2.0f * y1 + y2);
+               y2 = y1;
+               y1 = ol[i];
+               if (n >= stepAt - (int)(0.2 * sampleRate) && n < stepAt)
+                  before = std::max(before, d2);
+               else if (n >= stepAt)
+                  after = std::max(after, d2);
+            }
+         }
+         const float db = 20.0f * std::log10(std::max(after, 1e-12f) / std::max(before, 1e-12f));
+         const bool ok = db <= 6.0f;
+         printf("DSPTEST reverb %s step %g -> %g click: %+.1f dB (gate +6.0)  %s\n", st.param, st.from, st.to, db,
+                ok ? "OK" : "FAIL");
          all &= ok;
       }
    }
@@ -2040,7 +2119,13 @@ bool RunWavetableShaperFixture()
       const float position = 0.3f;
       const float driveDb = 6.0f;
       const float bias = 0.15f;
-      const float smooth = 0.2f;
+      // Smooth high enough that the reference curve's own output is
+      // band-limited (a few harmonics of a slow sweep): the node now runs
+      // 8x oversampled with a slew-tracking mip, so it can only match a
+      // reference that does not itself alias. At this setting the node's
+      // anti-aliasing must be transparent - same curve, delayed by exactly
+      // its reported latency.
+      const float smooth = 0.8f;
       *node->ParamPtr("table") = (float)table;
       *node->ParamPtr("position") = position;
       *node->ParamPtr("drive") = driveDb;
@@ -2056,7 +2141,8 @@ bool RunWavetableShaperFixture()
       const int warmupSamples = (int)(0.5 * sampleRate);
       DelayTest::RunSamples(*node, warmupSamples, 1, [](int, int) { return 0.0f; }, nullptr);
 
-      const int testSamples = 4000;
+      const int latency = node->GetAudioNode()->LatencySamples();
+      const int testSamples = 4000 + latency;
       const float sweepHz = 37.0f; // slow relative to sample rate, sweeps the full -1..1 range repeatedly
       std::vector<std::vector<float>> out;
       DelayTest::RunSamples(
@@ -2064,17 +2150,19 @@ bool RunWavetableShaperFixture()
          [sweepHz](int i, int) { return sinf(2.0f * (float)M_PI * sweepHz * (float)i / (float)44100.0); }, &out);
 
       DcBlocker refBlocker; // starts zeroed, matching the node's post-warmup state
+      refBlocker.SetSampleRate(sampleRate);
       float maxErr = 0.0f;
-      for (int i = 0; i < testSamples; i++)
+      for (int i = 0; i + latency < testSamples; i++)
       {
          const float x = sinf(2.0f * (float)M_PI * sweepHz * (float)i / (float)44100.0);
          const float shaped = WavetableShaperDsp::Shape(x, table, position, driveDb, bias, smooth);
          const float expected = refBlocker.Process(shaped);
-         maxErr = std::max(maxErr, std::fabs(expected - out[0][(size_t)i]));
+         if (i >= 256) // past the oversampler's start-up transient
+            maxErr = std::max(maxErr, std::fabs(expected - out[0][(size_t)(i + latency)]));
       }
-      const bool parityOk = maxErr < 1.0e-3f;
-      printf("DSPTEST wavetable shaper node parity: max error vs WavetableShaperDsp::Shape %.6f  %s\n", maxErr,
-             parityOk ? "OK" : "FAIL");
+      const bool parityOk = latency > 0 && maxErr < 2.0e-3f;
+      printf("DSPTEST wavetable shaper node parity: latency %d, max error vs WavetableShaperDsp::Shape %.6f  %s\n",
+             latency, maxErr, parityOk ? "OK" : "FAIL");
       all &= parityOk;
    }
 

@@ -113,6 +113,104 @@ namespace
       };
       Entry mEntries[Capacity];
    };
+
+   // The step clock shared by Arpeggiator, Note Sequencer, Random Note Gen and
+   // Chorder: which step boundaries (multiples of stepBeats) fall inside this
+   // audio block, and on which frame.
+   //
+   // AdvanceAudioClock has already run when a node's ProcessBlock does, so
+   // Beats() is the block's end. Polling it (sampleAccurate false, patches
+   // saved before the fix) fires a boundary anywhere in the block at frame 0:
+   // up to one block early. Sample-accurate mode walks the block's own beat
+   // span from BlockStartBeats() (as MIDI File and MIDI Out do) and splits it
+   // at the loop end on the lap block, so the step at the loop start lands on
+   // the wrap frame. The span after a seek, a start or a tempo jump fires the
+   // step under the playhead at the span's first frame, as polling did.
+   struct StepTick
+   {
+      long long step;
+      int frame;
+   };
+
+   class StepClock
+   {
+   public:
+      static constexpr int kMaxTicks = 64;
+
+      void Reset()
+      {
+         mLastStep = -1;
+         mExpectedBeat = -1.0;
+      }
+
+      long long LastStep() const { return mLastStep; }
+
+      int Ticks(double stepBeats, double bpm, double sampleRate, int numFrames, bool sampleAccurate, StepTick* out)
+      {
+         const Transport& tr = Transport::Instance();
+         if (!sampleAccurate || !tr.IsPlaying() || sampleRate <= 0.0 || numFrames <= 0)
+         {
+            mExpectedBeat = -1.0;
+            const long long step = (long long)std::floor(tr.Beats() / stepBeats);
+            if (step == mLastStep)
+               return 0;
+            mLastStep = step;
+            out[0] = { step, 0 };
+            return 1;
+         }
+
+         const double beatsPerFrame = std::max(1.0, bpm) / (60.0 * sampleRate);
+         const double b0 = tr.BlockStartBeats();
+         const double b1 = b0 + (double)numFrames * beatsPerFrame;
+         int count = 0;
+         auto span = [&](double from, double to, int frame0, bool jumped)
+         {
+            if (jumped)
+            {
+               const long long step = (long long)std::floor(from / stepBeats + 1e-9);
+               if (step != mLastStep && count < kMaxTicks)
+               {
+                  mLastStep = step;
+                  out[count++] = { step, frame0 };
+               }
+            }
+            for (long long k = (long long)std::ceil(from / stepBeats - 1e-9); (double)k * stepBeats < to - 1e-9; k++)
+            {
+               if (k == mLastStep)
+                  continue;
+               if (count >= kMaxTicks)
+                  break;
+               const int frame = frame0 + (int)std::lround(((double)k * stepBeats - from) / beatsPerFrame);
+               mLastStep = k;
+               out[count++] = { k, std::clamp(frame, 0, numFrames - 1) };
+            }
+         };
+
+         // Half a frame of slack: BlockStartBeats() is the transport's own
+         // sum, the expectation is ours.
+         const bool jumped = mExpectedBeat < 0.0 || std::fabs(b0 - mExpectedBeat) > beatsPerFrame * 0.5;
+         const double from = jumped ? b0 : mExpectedBeat;
+         const double loopStart = tr.LoopStartBeats(), loopEnd = tr.LoopEndBeats();
+         if (tr.LoopEnabled() && !tr.LoopSuspended() && loopEnd > loopStart && b0 < loopEnd && b1 >= loopEnd)
+         {
+            const int wrapFrame = std::clamp((int)std::ceil((loopEnd - b0) / beatsPerFrame - 1e-6), 0, numFrames - 1);
+            span(from, loopEnd, 0, jumped);
+            const double after = loopStart + std::fmod(b1 - loopStart, loopEnd - loopStart);
+            span(loopStart, after, wrapFrame, true);
+            mExpectedBeat = after;
+         }
+         else
+         {
+            span(from, b1, 0, jumped);
+            mExpectedBeat = b1;
+         }
+         return count;
+      }
+
+   private:
+      long long mLastStep = -1;
+      double mExpectedBeat = -1.0;
+   };
 }
 
 // ------------------------------------------------------------------ MIDI Notes
@@ -1302,7 +1400,9 @@ public:
          else
          {
             GateState* state = mGateState.Find(in.voiceId);
-            if (state != nullptr && state->suppressOff)
+            if (state == nullptr)
+               continue; // the hold already closed this voice - a second note-off would be an orphan downstream
+            if (state->suppressOff)
                continue; // the scheduled internal note-off will close this voice
             NoteEvent out = in;
             out.source = this;
@@ -1529,6 +1629,7 @@ public:
       mSampleRate = sampleRate;
       mSamplePos = 0;
       mOutNote.Clear();
+      mShift.Clear();
    }
 
    void ProcessBlock(const AudioBuffer* const* /*inputs*/, int /*numInputs*/, AudioBuffer& output) override
@@ -1556,6 +1657,7 @@ public:
                onsetAbs = (uint64_t)(std::ceil((double)onsetAbs / gridSamples) * gridSamples);
             }
             mOutNote.GetOrInsert(in.voiceId) = in.note;
+            mShift.GetOrInsert(in.voiceId) = onsetAbs - (mSamplePos + (uint64_t)in.frameOffset);
 
             if (onsetAbs < mSamplePos + (uint64_t)numFrames)
             {
@@ -1594,11 +1696,35 @@ public:
          {
             if (mOutNote.Find(in.voiceId) == nullptr)
                continue;
+            // The note-off moves by the same amount as its note-on, so a note
+            // held across a grid line keeps its length and never reaches the
+            // consumer before the on it closes.
+            uint64_t shift = 0;
+            if (const uint64_t* sh = mShift.Find(in.voiceId))
+               shift = *sh;
+            const uint64_t offAbs = mSamplePos + (uint64_t)in.frameOffset + shift;
             NoteEvent out = in;
             out.source = this;
             out.voiceId = in.voiceId;
-            mOutbox.Push(out);
+            if (offAbs < mSamplePos + (uint64_t)numFrames)
+            {
+               out.frameOffset = (int)(offAbs - mSamplePos);
+               mOutbox.Push(out);
+            }
+            else if (DeferredNote* slot = mPending.FreeSlot())
+            {
+               slot->active = true;
+               slot->note = in.note;
+               slot->velocity = 0.0f;
+               slot->isNoteOn = false;
+               slot->targetSample = offAbs;
+               slot->voiceId = in.voiceId;
+               slot->bendSemitones = 0.0f;
+            }
+            else
+               mOutbox.Push(out); // pending queue saturated: close now rather than leave the note stuck
             mOutNote.Erase(in.voiceId);
+            mShift.Erase(in.voiceId);
          }
       }
 
@@ -1618,6 +1744,7 @@ private:
    double mSampleRate = 48000.0;
    uint64_t mSamplePos = 0;
    VoiceIdMap<int, 128> mOutNote;
+   VoiceIdMap<uint64_t, 128> mShift; // samples each held voice's note-on was moved onto the grid
    DeferredNoteQueue<kMaxPending> mPending;
    std::atomic<int> mDiv { 0 };
 };
@@ -1835,6 +1962,7 @@ public:
       mSamplePos = 0;
       for (int i = 0; i < kMaxPending; i++)
          mPending[i].active = false;
+      mRepeatIds.Clear();
    }
 
    void ProcessBlock(const AudioBuffer* const* /*inputs*/, int /*numInputs*/, AudioBuffer& output) override
@@ -1870,15 +1998,33 @@ public:
 
          for (int k = 1; k <= repeats; k++)
          {
+            // Each repeat is its own voice: sharing the source's id would let the dry
+            // note-off (or another repeat's) release the wrong voice downstream.
+            const int key = in.voiceId * 16 + k;
+            int repeatId = 0;
+            if (in.isNoteOn)
+            {
+               repeatId = NextVoiceId();
+            }
+            else
+            {
+               int* found = mRepeatIds.Find(key);
+               if (found == nullptr)
+                  continue; // its note-on was dropped (saturated): nothing to release
+               repeatId = *found;
+            }
             Pending* slot = FreeSlot();
             if (slot == nullptr)
                break; // saturated - drop remaining repeats, nothing is left stuck
+            if (in.isNoteOn)
+               mRepeatIds.GetOrInsert(key) = repeatId;
             slot->active = true;
             slot->note = std::clamp(in.note + transposeStep * k, 0, 127);
             slot->velocity = in.isNoteOn ? std::clamp(in.velocity * std::pow(decay, (float)k), 0.0f, 1.0f)
                                           : in.velocity;
             slot->isNoteOn = in.isNoteOn;
-            slot->voiceId = in.voiceId; // independent delayed copies - just forward the source voice's id
+            slot->voiceId = repeatId;
+            slot->idKey = in.isNoteOn ? 0 : key; // a note-off frees its id once emitted
             slot->targetSample = mSamplePos + (uint64_t)in.frameOffset + (uint64_t)(delaySamples * k);
          }
       }
@@ -1899,6 +2045,8 @@ public:
             out.source = this;
             out.voiceId = p.voiceId;
             mOutbox.Push(out);
+            if (p.idKey != 0)
+               mRepeatIds.Erase(p.idKey);
             p.active = false;
          }
          else
@@ -1936,6 +2084,7 @@ private:
       float velocity = 0.0f;
       bool isNoteOn = false;
       int voiceId = 0;
+      int idKey = 0; // mRepeatIds key to erase when this note-off is emitted (0 = none)
       uint64_t targetSample = 0;
    };
 
@@ -1953,6 +2102,7 @@ private:
    double mSampleRate = 48000.0;
    uint64_t mSamplePos = 0;
    Pending mPending[kMaxPending];
+   VoiceIdMap<int, 128> mRepeatIds; // source voiceId * 16 + repeat -> the repeat's own voiceId
 
    std::atomic<int> mRateMode { 1 };
    std::atomic<float> mRateBeats { 0.25f };
@@ -2488,7 +2638,7 @@ public:
       mSampleRate = sampleRate;
       mSamplePos = 0;
       mHeldCount = 0;
-      mLastStep = -1;
+      mClock.Reset();
       mStepCounter = 0;
       mGridStep = 0;
       mCurrentOutNote = -1;
@@ -2554,8 +2704,10 @@ public:
 
       // Fire a previously-scheduled gate-off before considering a new step,
       // so two output notes are never sounding at once.
-      if (mPendingOffActive && mPendingOffSample < mSamplePos + (uint64_t)numFrames)
+      auto flushOff = [&](uint64_t before)
       {
+         if (!mPendingOffActive || mPendingOffSample >= before)
+            return;
          NoteEvent off;
          off.note = mCurrentOutNote;
          off.velocity = 0.0f;
@@ -2567,13 +2719,17 @@ public:
          mOutbox.Push(off);
          mPendingOffActive = false;
          mCurrentOutNote = -1;
-      }
+      };
 
-      const double beats = Transport::Instance().Beats();
-      const long long step = (long long)std::floor(beats / (double)rateBeats);
-      if (step != mLastStep)
+      const bool accurate = mStepTiming.load(std::memory_order_relaxed) != 0;
+      if (!accurate)
+         flushOff(mSamplePos + (uint64_t)numFrames);
+      StepTick ticks[StepClock::kMaxTicks];
+      const int nTicks = mClock.Ticks(rateBeats, bpm, mSampleRate, numFrames, accurate, ticks);
+      for (int t = 0; t < nTicks; t++)
       {
-         mLastStep = step;
+         const int frame = ticks[t].frame;
+         flushOff(mSamplePos + (uint64_t)frame + 1);
 
          // The grid-gate clock advances on every step tick, unconditionally -
          // including when nothing is held and when the step is gated off.
@@ -2622,7 +2778,7 @@ public:
                   off.note = mCurrentOutNote;
                   off.velocity = 0.0f;
                   off.isNoteOn = false;
-                  off.frameOffset = 0;
+                  off.frameOffset = frame;
                   off.source = this;
                   off.voiceId = mCurrentOutVoiceId;
                   mOutbox.Push(off);
@@ -2640,7 +2796,7 @@ public:
                   on.note = outNote;
                   on.velocity = seqVel[idx];
                   on.isNoteOn = true;
-                  on.frameOffset = 0;
+                  on.frameOffset = frame;
                   on.source = this;
                   on.voiceId = NextVoiceId();
                   mOutbox.Push(on);
@@ -2651,7 +2807,7 @@ public:
                   const double samplesPerBeat = mSampleRate * 60.0 / std::max(1.0, bpm);
                   const double stepSamples = rateBeats * samplesPerBeat;
                   const double gateSamples = stepSamples * (double)gatePercent / 100.0;
-                  mPendingOffSample = mSamplePos + (uint64_t)gateSamples;
+                  mPendingOffSample = mSamplePos + (uint64_t)frame + (uint64_t)gateSamples;
                   mPendingOffActive = true;
                }
                else
@@ -2671,7 +2827,7 @@ public:
                off.note = mCurrentOutNote;
                off.velocity = 0.0f;
                off.isNoteOn = false;
-               off.frameOffset = 0;
+               off.frameOffset = frame;
                off.source = this;
                off.voiceId = mCurrentOutVoiceId;
                mOutbox.Push(off);
@@ -2681,6 +2837,8 @@ public:
             }
          }
       }
+      if (accurate)
+         flushOff(mSamplePos + (uint64_t)numFrames);
 
       mSamplePos += (uint64_t)numFrames;
    }
@@ -2699,6 +2857,7 @@ public:
       mGatePercent.store(n.gatePercent, std::memory_order_relaxed);
       mStepGates.store(n.stepGates, std::memory_order_relaxed);
       mUseGlobalScale.store(n.useGlobalScale, std::memory_order_relaxed);
+      mStepTiming.store(n.stepTiming, std::memory_order_relaxed);
    }
 
    int HeldCount() const { return mHeldCountReadout.load(std::memory_order_relaxed); }
@@ -2860,7 +3019,7 @@ private:
    HeldNote mHeld[kMaxHeld];
    int mHeldCount = 0;
 
-   long long mLastStep = -1;
+   StepClock mClock;
    uint64_t mStepCounter = 0;
    uint64_t mGridStep = 0;
    int mCurrentOutNote = -1;
@@ -2876,6 +3035,7 @@ private:
    std::atomic<float> mGatePercent { 80.0f };
    std::atomic<int> mStepGates { 0xFF };
    std::atomic<bool> mUseGlobalScale { false };
+   std::atomic<int> mStepTiming { 1 };
    std::atomic<int> mHeldCountReadout { 0 };
    std::atomic<int> mCurrentOutNoteReadout { -1 };
    std::atomic<int> mGridStepReadout { -1 };
@@ -2904,6 +3064,7 @@ void ArpeggiatorNode::VisitParams(ParamVisitor& v)
    v.Float("gatePercent", gatePercent);
    v.Int("stepGates", stepGates);
    v.Bool("useGlobalScale", useGlobalScale);
+   v.Int("stepTiming", stepTiming); // not a control: 0 = block-start step timing (saved before the fix)
 }
 
 AudioNode* ArpeggiatorNode::GetAudioNode()
@@ -2994,7 +3155,7 @@ public:
    {
       mSampleRate = sampleRate;
       mSamplePos = 0;
-      mLastStep = -1;
+      mClock.Reset();
       mCurrentOutNote = -1;
       mCurrentOutVoiceId = 0;
       mPendingOffActive = false;
@@ -3011,8 +3172,10 @@ public:
       const double bpm = (double)Transport::Instance().Tempo();
       const double rateBeats = std::max(0.001, rateMode == 1 ? (double)rateSecondsP * bpm / 60.0 : (double)rateBeatsP);
 
-      if (mPendingOffActive && mPendingOffSample < mSamplePos + (uint64_t)numFrames)
+      auto flushOff = [&](uint64_t before)
       {
+         if (!mPendingOffActive || mPendingOffSample >= before)
+            return;
          NoteEvent off;
          off.note = mCurrentOutNote;
          off.velocity = 0.0f;
@@ -3024,13 +3187,18 @@ public:
          mOutbox.Push(off);
          mPendingOffActive = false;
          mCurrentOutNote = -1;
-      }
+      };
 
-      const double beats = Transport::Instance().Beats();
-      const long long step = (long long)std::floor(beats / (double)rateBeats);
-      if (step != mLastStep)
+      const bool accurate = mStepTiming.load(std::memory_order_relaxed) != 0;
+      if (!accurate)
+         flushOff(mSamplePos + (uint64_t)numFrames);
+      StepTick ticks[StepClock::kMaxTicks];
+      const int nTicks = mClock.Ticks(rateBeats, bpm, mSampleRate, numFrames, accurate, ticks);
+      for (int t = 0; t < nTicks; t++)
       {
-         mLastStep = step;
+         const long long step = ticks[t].step;
+         const int frame = ticks[t].frame;
+         flushOff(mSamplePos + (uint64_t)frame + 1);
          const int idx = (int)(((step % steps) + steps) % steps);
          mCurrentStepReadout.store(idx, std::memory_order_relaxed);
 
@@ -3042,7 +3210,7 @@ public:
                off.note = mCurrentOutNote;
                off.velocity = 0.0f;
                off.isNoteOn = false;
-               off.frameOffset = 0;
+               off.frameOffset = frame;
                off.source = this;
                off.voiceId = mCurrentOutVoiceId;
                mOutbox.Push(off);
@@ -3056,7 +3224,7 @@ public:
             on.note = std::clamp(outNote, 0, 127);
             on.velocity = std::clamp(mVelocity[idx].load(std::memory_order_relaxed), 0.0f, 1.0f);
             on.isNoteOn = true;
-            on.frameOffset = 0;
+            on.frameOffset = frame;
             on.source = this;
             on.voiceId = NextVoiceId();
             mOutbox.Push(on);
@@ -3066,10 +3234,12 @@ public:
             const double samplesPerBeat = mSampleRate * 60.0 / std::max(1.0, bpm);
             const double stepSamples = rateBeats * samplesPerBeat;
             const double gateSamples = stepSamples * (double)gatePercent / 100.0;
-            mPendingOffSample = mSamplePos + (uint64_t)gateSamples;
+            mPendingOffSample = mSamplePos + (uint64_t)frame + (uint64_t)gateSamples;
             mPendingOffActive = true;
          }
       }
+      if (accurate)
+         flushOff(mSamplePos + (uint64_t)numFrames);
 
       mSamplePos += (uint64_t)numFrames;
    }
@@ -3085,6 +3255,7 @@ public:
       mRateSeconds.store(n.rateSeconds, std::memory_order_relaxed);
       mGatePercent.store(n.gatePercent, std::memory_order_relaxed);
       mUseGlobalScale.store(n.useGlobalScale, std::memory_order_relaxed);
+      mStepTiming.store(n.stepTiming, std::memory_order_relaxed);
       for (int i = 0; i < NoteSequencerNode::kMaxSteps; i++)
       {
          mNote[i].store(n.stepNote[i], std::memory_order_relaxed);
@@ -3100,7 +3271,7 @@ private:
    double mSampleRate = 48000.0;
    uint64_t mSamplePos = 0;
 
-   long long mLastStep = -1;
+   StepClock mClock;
    int mCurrentOutNote = -1;
    int mCurrentOutVoiceId = 0;
    bool mPendingOffActive = false;
@@ -3112,6 +3283,7 @@ private:
    std::atomic<float> mRateSeconds { 0.2f };
    std::atomic<float> mGatePercent { 70.0f };
    std::atomic<bool> mUseGlobalScale { false };
+   std::atomic<int> mStepTiming { 1 };
    std::atomic<int> mNote[NoteSequencerNode::kMaxSteps] = {};
    std::atomic<float> mVelocity[NoteSequencerNode::kMaxSteps] = {};
    std::atomic<bool> mEnabled[NoteSequencerNode::kMaxSteps] = {};
@@ -3157,6 +3329,7 @@ void NoteSequencerNode::VisitParams(ParamVisitor& v)
       snprintf(key, sizeof(key), "en%d", i);
       v.Bool(key, stepEnabled[i]);
    }
+   v.Int("stepTiming", stepTiming); // not a control: 0 = block-start step timing (saved before the fix)
 }
 
 AudioNode* NoteSequencerNode::GetAudioNode()
@@ -3179,10 +3352,11 @@ public:
    {
       mSampleRate = sampleRate;
       mSamplePos = 0;
-      mLastStep = -1;
+      mClock.Reset();
       mCurrentOutNote = -1;
       mCurrentOutVoiceId = 0;
       mPendingOffActive = false;
+      mSwingOnActive = false;
       mPrevNote = -1;
       mMelody = NoteTheory::MelodyState();
       mRng = DspMath::WhiteNoise(); // same seed every (re)start: an offline pass must not inherit live blocks' draws
@@ -3204,26 +3378,48 @@ public:
       const double bpm = (double)Transport::Instance().Tempo();
       const double rateBeats = std::max(0.001, rateMode == 1 ? (double)rateSecondsP * bpm / 60.0 : (double)rateBeatsP);
 
-      if (mPendingOffActive && mPendingOffSample < mSamplePos + (uint64_t)numFrames)
+      // A swung note-on that lands after its step's frame (a later block, or
+      // later in this one), then a gate-off that is due.
+      auto flush = [&](uint64_t before)
       {
-         NoteEvent off;
-         off.note = mCurrentOutNote;
-         off.velocity = 0.0f;
-         off.isNoteOn = false;
-         const int offset = (mPendingOffSample > mSamplePos) ? (int)(mPendingOffSample - mSamplePos) : 0;
-         off.frameOffset = std::clamp(offset, 0, numFrames - 1);
-         off.source = this;
-         off.voiceId = mCurrentOutVoiceId;
-         mOutbox.Push(off);
-         mPendingOffActive = false;
-         mCurrentOutNote = -1;
-      }
+         if (mSwingOnActive && mSwingOnSample < before)
+         {
+            NoteEvent on;
+            on.note = mSwingOnNote;
+            on.velocity = mSwingOnVelocity;
+            on.isNoteOn = true;
+            on.frameOffset = (mSwingOnSample > mSamplePos) ? (int)(mSwingOnSample - mSamplePos) : 0;
+            on.source = this;
+            on.voiceId = mCurrentOutVoiceId;
+            mOutbox.Push(on);
+            mSwingOnActive = false;
+         }
+         if (mPendingOffActive && mPendingOffSample < before)
+         {
+            NoteEvent off;
+            off.note = mCurrentOutNote;
+            off.velocity = 0.0f;
+            off.isNoteOn = false;
+            const int offset = (mPendingOffSample > mSamplePos) ? (int)(mPendingOffSample - mSamplePos) : 0;
+            off.frameOffset = std::clamp(offset, 0, numFrames - 1);
+            off.source = this;
+            off.voiceId = mCurrentOutVoiceId;
+            mOutbox.Push(off);
+            mPendingOffActive = false;
+            mCurrentOutNote = -1;
+         }
+      };
 
-      const double beats = Transport::Instance().Beats();
-      const long long step = (long long)std::floor(beats / rateBeats);
-      if (step != mLastStep)
+      const bool accurate = mStepTiming.load(std::memory_order_relaxed) != 0;
+      if (!accurate)
+         flush(mSamplePos + (uint64_t)numFrames);
+      StepTick ticks[StepClock::kMaxTicks];
+      const int nTicks = mClock.Ticks(rateBeats, bpm, mSampleRate, numFrames, accurate, ticks);
+      for (int t = 0; t < nTicks; t++)
       {
-         mLastStep = step;
+         const long long step = ticks[t].step;
+         const int frame = ticks[t].frame;
+         flush(mSamplePos + (uint64_t)frame + 1);
 
          // Constrained melodic walk (proximity, gap fill, tonal stability, centre pull, phrase
          // cadence) over the in-scale notes of the range - see NoteTheory::PickMelodyNote.
@@ -3245,7 +3441,7 @@ public:
             off.note = mCurrentOutNote;
             off.velocity = 0.0f;
             off.isNoteOn = false;
-            off.frameOffset = 0;
+            off.frameOffset = frame;
             off.source = this;
             off.voiceId = mCurrentOutVoiceId;
             mOutbox.Push(off);
@@ -3262,11 +3458,15 @@ public:
          const bool isOddStep = (step & 1) != 0;
          const double swingSamplesD = isOddStep ? (double)groove * 0.5 * rateBeats * samplesPerBeat : 0.0;
          assert(swingSamplesD < stepSamples); // never allowed to cross the next step boundary
-         // The audio thread only detects the step boundary once per block (at
-         // frameOffset 0), so the swing delay is expressed as this note-on's
-         // frameOffset within the current block rather than as new pending
-         // state - sample-accurate up to one block, and adds no new state.
-         const int swingFrame = std::clamp((int)std::lround(swingSamplesD), 0, numFrames - 1);
+         // stepTiming 1: the swung note-on waits as pending state and goes out
+         // on its own sample, in time order with the gate-offs. stepTiming 0
+         // (patches saved before the step-timing fix) found the boundary at
+         // frame 0, so the delay was the note-on's frameOffset in this block;
+         // swingMode 0 (saved before the swing fix) caps it to this block,
+         // 1 defers it to its sample.
+         const bool deferSwing = accurate ? swingSamplesD > 0.0
+                                          : mSwingMode.load(std::memory_order_relaxed) != 0 && swingSamplesD >= (double)numFrames;
+         const int swingFrame = accurate ? frame : std::clamp((int)std::lround(swingSamplesD), 0, numFrames - 1);
 
          NoteEvent on;
          on.note = note;
@@ -3276,7 +3476,15 @@ public:
          on.frameOffset = swingFrame;
          on.source = this;
          on.voiceId = NextVoiceId();
-         mOutbox.Push(on);
+         if (deferSwing)
+         {
+            mSwingOnActive = true;
+            mSwingOnSample = mSamplePos + (uint64_t)frame + (uint64_t)std::llround(swingSamplesD);
+            mSwingOnNote = on.note;
+            mSwingOnVelocity = on.velocity;
+         }
+         else
+            mOutbox.Push(on);
          mCurrentOutNote = note;
          mCurrentOutVoiceId = on.voiceId;
 
@@ -3286,9 +3494,11 @@ public:
          // the full step - that keeps the off strictly before the next
          // boundary for any groove in [0, 1].
          const double availableSamples = stepSamples - swingSamplesD;
-         mPendingOffSample = mSamplePos + (uint64_t)std::llround(swingSamplesD) + (uint64_t)(availableSamples * 0.7);
+         mPendingOffSample = mSamplePos + (uint64_t)frame + (uint64_t)std::llround(swingSamplesD) + (uint64_t)(availableSamples * 0.7);
          mPendingOffActive = true;
       }
+      if (accurate)
+         flush(mSamplePos + (uint64_t)numFrames);
 
       mSamplePos += (uint64_t)numFrames;
    }
@@ -3308,6 +3518,8 @@ public:
       mMaxStep.store(n.maxStep, std::memory_order_relaxed);
       mUseGlobalScale.store(n.useGlobalScale, std::memory_order_relaxed);
       mGroove.store(n.groove, std::memory_order_relaxed);
+      mSwingMode.store(n.swingMode, std::memory_order_relaxed);
+      mStepTiming.store(n.stepTiming, std::memory_order_relaxed);
    }
 
    int LastNote() const { return mLastNoteReadout.load(std::memory_order_relaxed); }
@@ -3318,14 +3530,20 @@ private:
    uint64_t mSamplePos = 0;
    DspMath::WhiteNoise mRng;
 
-   long long mLastStep = -1;
+   StepClock mClock;
    int mCurrentOutNote = -1;
    int mCurrentOutVoiceId = 0;
    int mPrevNote = -1;
    NoteTheory::MelodyState mMelody;
    bool mPendingOffActive = false;
    uint64_t mPendingOffSample = 0;
+   bool mSwingOnActive = false;
+   uint64_t mSwingOnSample = 0;
+   int mSwingOnNote = 0;
+   float mSwingOnVelocity = 0.0f;
 
+   std::atomic<int> mSwingMode { 1 };
+   std::atomic<int> mStepTiming { 1 };
    std::atomic<int> mRangeLow { 48 };
    std::atomic<int> mRangeHigh { 72 };
    std::atomic<int> mScale { 13 };
@@ -3364,6 +3582,8 @@ void RandomNoteGeneratorNode::VisitParams(ParamVisitor& v)
    v.Int("maxStep", maxStep);
    v.Bool("useGlobalScale", useGlobalScale);
    v.Float("groove", groove); // appended after existing params - save-compat
+   v.Int("swingMode", swingMode);
+   v.Int("stepTiming", stepTiming); // not a control: 0 = block-start step timing (saved before the fix)
 }
 
 AudioNode* RandomNoteGeneratorNode::GetAudioNode()
@@ -3389,7 +3609,7 @@ public:
    {
       mSampleRate = sampleRate;
       mSamplePos = 0;
-      mLastStep = -1;
+      mClock.Reset();
       mPrevDegree = 0;
       mPrevVoicingN = 0;
       mStrumDown = true;
@@ -3410,11 +3630,13 @@ public:
       const float humanizeVel = std::max(0.0f, mHumanizeVelocity.load(std::memory_order_relaxed));
       const float upperHarmonics = std::clamp(mUpperHarmonics.load(std::memory_order_relaxed), 0.0f, 100.0f);
 
-      const double beats = Transport::Instance().Beats();
-      const long long step = (long long)std::floor(beats / (double)rateBeats);
-      if (step != mLastStep)
+      const bool accurate = mStepTiming.load(std::memory_order_relaxed) != 0;
+      StepTick ticks[StepClock::kMaxTicks];
+      const int nTicks = mClock.Ticks((double)rateBeats, (double)Transport::Instance().Tempo(), mSampleRate, numFrames,
+                                      accurate, ticks);
+      for (int t = 0; t < nTicks; t++)
       {
-         mLastStep = step;
+         const int frame = ticks[t].frame;
 
          const int degreeCount = std::max(1, MusicTime::ScaleTable(scale).count);
          // Root by functional-harmony transition (I->IV/V, V->I ...), not a uniform draw.
@@ -3454,7 +3676,7 @@ public:
          {
             const double jitter = humanizeMs > 0.0f ? (double)(mRng.Next() * humanizeMs * 0.001 * mSampleRate) : 0.0;
             const int order = down ? i : n - 1 - i;
-            const uint64_t onset = mSamplePos + (uint64_t)std::max(0.0, (double)order * strumSamples + jitter);
+            const uint64_t onset = mSamplePos + (uint64_t)frame + (uint64_t)std::max(0.0, (double)order * strumSamples + jitter);
             float vel = (i == n - 1) ? 0.8f : 0.72f; // the top voice sings slightly
             if (humanizeVel > 0.0f)
                vel = std::clamp(vel + mRng.Next() * (humanizeVel / 100.0f) * 0.5f, 0.05f, 1.0f);
@@ -3517,6 +3739,7 @@ public:
       mHumanizeVelocity.store(n.humanizeVelocity, std::memory_order_relaxed);
       mUpperHarmonics.store(n.upperHarmonics, std::memory_order_relaxed);
       mUseGlobalScale.store(n.useGlobalScale, std::memory_order_relaxed);
+      mStepTiming.store(n.stepTiming, std::memory_order_relaxed);
    }
 
    int LastChordSize() const { return mLastChordSizeReadout.load(std::memory_order_relaxed); }
@@ -3544,7 +3767,7 @@ private:
    double mSampleRate = 48000.0;
    uint64_t mSamplePos = 0;
    DspMath::WhiteNoise mRng;
-   long long mLastStep = -1;
+   StepClock mClock;
    Pending mPending[kMaxPending];
    int mPrevDegree = 0;
    int mPrevVoicing[NoteTheory::kMaxVoicing] = {};
@@ -3560,6 +3783,7 @@ private:
    std::atomic<float> mHumanizeVelocity { 15.0f };
    std::atomic<float> mUpperHarmonics { 20.0f };
    std::atomic<bool> mUseGlobalScale { true };
+   std::atomic<int> mStepTiming { 1 };
    std::atomic<int> mLastChordSizeReadout { 0 };
 };
 
@@ -3587,6 +3811,7 @@ void ChorderNode::VisitParams(ParamVisitor& v)
    v.Float("humanizeVelocity", humanizeVelocity);
    v.Float("upperHarmonics", upperHarmonics);
    v.Bool("useGlobalScale", useGlobalScale);
+   v.Int("stepTiming", stepTiming); // not a control: 0 = block-start step timing (saved before the fix)
 }
 
 AudioNode* ChorderNode::GetAudioNode()

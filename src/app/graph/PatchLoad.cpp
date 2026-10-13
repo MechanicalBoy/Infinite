@@ -111,20 +111,11 @@ namespace app
          spawned->node->bypassed = rec.bypassed;
          spawned->showMiniViewport = rec.showMiniViewport;
          spawned->showAdvancedParams = rec.showAdvancedParams;
-         // Build step 15 §6 / trap 5: a FieldGraphNode's `encapsulated`
-         // compile-time default (true) is correct for a brand-new node from
-         // the node picker, which never goes through LoadParams - but a
-         // patch saved before this field existed has no "b encapsulated"
-         // line, and ParamVisitor::Bool (Patch::Reader) leaves a field
-         // untouched when its key is absent. Forcing false here first means
-         // an old patch (no key at all) loads with its children visible on
-         // canvas, exactly as they were before this step existed, while a
-         // patch that DOES carry the key (any patch saved by this build or
-         // later, including in-session Undo/Redo and copy/paste snapshots)
-         // still gets overwritten to the saved value by LoadParams below.
-         if (auto* fgn = dynamic_cast<FieldGraphNode*>(spawned->node.get()))
-            fgn->encapsulated = false;
-         spawned->node->BeforeLoadParams();
+         // A key missing from a node the GUI saved before rev 2 means "saved before this key existed":
+         // BeforeLoadParams sets the old behaviour, which the saved keys then overwrite. A hand-written
+         // node, or one from a rev 2 file, keeps its defaults (Patch::SavedBefore, patch-format.md).
+         if (Patch::SavedBefore(data, rec))
+            spawned->node->BeforeLoadParams(); // e.g. FieldGraphNode::encapsulated, LayerStackNode::fit
          Patch::LoadParams(spawned->node.get(), rec.params);
          ReloadDerivedState(spawned->node.get());
          // Phase 4 (selection as an input): rewrites a saved kDeleteSelected/
@@ -216,6 +207,7 @@ namespace app
             source.hasRange = m.hasRange;
             source.enabled = m.enabled;
             source.curve = m.curve;
+            source.smoothMs = m.smoothMs;
             Modulation::Instance().RestoreLink(dst->index, m.dstParam, source);
          }
       }
@@ -1344,6 +1336,8 @@ namespace app
             ReloadDerivedState(copy->node.get());
             if (auto* rn = dynamic_cast<RandomNode*>(copy->node.get()))
                rn->seed = RandomNode::NextSeed();
+            if (auto* lfo = dynamic_cast<LFONode*>(copy->node.get()))
+               lfo->seed = LFONode::NextSeed();
             if (auto* fgn = dynamic_cast<FieldGraphNode*>(copy->node.get()))
             {
                fgn->SetUid(FieldGraphNode::NewUid());

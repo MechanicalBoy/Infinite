@@ -39,6 +39,66 @@ if command -v ffmpeg >/dev/null; then
   python3 -c "import sys; sys.exit(0 if float('${mv2:--999}') > -20 else 1)"; check "render --start 2: audio starts at 2 s, not 0" $?
 fi
 
+# Audio File export: a file far longer than the take used to stall the macOS writer for good
+# (audio was appended only up to the picture, the writer waited for audio ahead of it), and the
+# AAC settings took only 32-48 kHz (an 8 kHz file failed, 96 kHz threw and killed the app).
+python3 - "$OUT" <<'PY'
+import wave, sys
+for name, rate, ch, secs in (("long", 48000, 1, 600), ("r8k", 8000, 1, 3), ("r96k", 96000, 2, 3)):
+    w = wave.open(sys.argv[1] + "/%s.wav" % name, "wb"); w.setnchannels(ch); w.setsampwidth(2); w.setframerate(rate)
+    w.writeframes(b"\0\0" * ch * rate * secs); w.close()
+PY
+for name in long r8k r96k; do
+  cat > "$OUT/af_$name.inf" <<INF
+infinite-patch 1
+node 1 Source Shape
+  f width 320
+  f height 180
+end
+node 2 Modulators Audio File
+  s path $OUT/$name.wav
+  b loop 0
+end
+node 3 Utility Output
+  b includeAudio 1
+end
+cable 3 0 1
+aud 3 1 2
+INF
+done
+r=$("$BIN" --render "$OUT/af_long.inf" "$OUT/af_long.mp4" --duration 120 --fps 30 --timeout 90); rc=$?
+[ "$rc" = 0 ] && [ "$(echo "$r" | json "d['frames']")" = "3600" ]; check "render: a 600 s audio file under a 120 s take finishes" $?
+if command -v afinfo >/dev/null; then
+  ad=$(afinfo "$OUT/af_long.mp4" 2>/dev/null | sed -n 's/estimated duration: \([0-9.]*\).*/\1/p')
+  python3 -c "import sys; sys.exit(0 if abs(float('${ad:-0}') - 120) < 0.05 else 1)"; check "render: that take's audio track is as long as its picture" $?
+fi
+for name in r8k r96k; do
+  "$BIN" --render "$OUT/af_$name.inf" "$OUT/af_$name.mp4" --duration 2 --fps 30 --timeout 30 >/dev/null 2>&1
+  check "render: a $name audio file exports" $?
+done
+rm -f "$OUT/long.wav"
+
+# Saving: a write that fails partway (here a 4 KB file-size limit standing in for a full disk) must
+# leave the previous file whole - Save used to truncate the user's only copy in place. And a folder
+# with a non-ASCII name saves and opens (Windows read std::string paths in the ANSI code page).
+python3 - "$OUT/big.inf" <<'EOF'
+import sys
+L = ["infinite-patch 1", "node 1 Source Shape", "end"]
+for i in range(2, 600):
+    L += ["node %d Compositing %s" % (i, ("invert", "opacity", "posterize")[i % 3]), "end", "cable %d 0 %d" % (i, i - 1)]
+L += ["node 600 Utility Output", "end", "cable 600 0 599"]
+open(sys.argv[1], "w").write("\n".join(L) + "\n")
+EOF
+"$BIN" --canonicalize "$OUT/big.inf" "$OUT/saved.inf" >/dev/null 2>&1 && cp "$OUT/saved.inf" "$OUT/saved.before"
+(trap '' XFSZ; ulimit -f 4; "$BIN" --canonicalize "$OUT/big.inf" "$OUT/saved.inf" >/dev/null 2>&1)
+check "save: a write that fails partway reports it" $([ $? -ne 0 ] && echo 0 || echo 1)
+cmp -s "$OUT/saved.inf" "$OUT/saved.before" && [ ! -e "$OUT/saved.inf.tmp" ]
+check "save: ...and leaves the previous file whole, no temp behind" $?
+mkdir -p "$OUT/Müller ñ"
+"$BIN" --canonicalize "$OUT/big.inf" "$OUT/Müller ñ/p.inf" >/dev/null 2>&1 && "$BIN" --validate "$OUT/Müller ñ/p.inf" >/dev/null 2>&1
+check "save: a patch in a non-ASCII folder saves and opens" $?
+rm -rf "${OUT:?}/big.inf" "${OUT:?}/saved.inf" "${OUT:?}/saved.before" "${OUT:?}/Müller ñ"
+
 # R275: overlapping translucent meshes composite back-to-front whatever their slot order
 R3="$ROOT/tests/headless/render3d"
 "$BIN" --frame "$R3/translucent_ab.inf" 0 "$OUT/tr_ab.png" >/dev/null
@@ -96,6 +156,30 @@ for f in "$ROOT"/tests/headless/topology/*.inf; do
   got=$("$BIN" --validate "$f" --for-render 2>/dev/null | json "' '.join(sorted(set(i['code'] for i in d['errors'] + d['warnings']))) or '-'")
   want=$(tr ' ' '\n' < "${f%.inf}.expect" | grep -v '^$' | sort | tr '\n' ' ' | sed 's/ $//')
   [ "$got" = "$want" ]; check "topology $name ($want)" $?
+done
+
+# Field compile errors (re-survey D.md P4): every Field node type with a kernel that calls an
+# unknown function. --validate, --explain and the render modes must all name the kernel
+# (E_FIELD_COMPILE, the `s code` line, the function name), never blame the cable. The same file
+# with bogusfn -> sin must validate clean, so the kernel is the only thing wrong.
+FLD="$ROOT/tests/headless/field"
+for f in "$FLD"/*.inf; do
+  name=$(basename "$f" .inf)
+  codeline=$(grep -n '^  s code ' "$f" | cut -d: -f1)
+  r=$("$BIN" --validate "$f" 2>/dev/null); rc=$?
+  [ "$rc" = 3 ] && [ "$(echo "$r" | json "[(e['code'], e['line'], 'bogusfn' in e['message']) for e in d['errors']]")" = "[('E_FIELD_COMPILE', $codeline, True)]" ]
+  check "field $name: validate exit 3, E_FIELD_COMPILE at line $codeline names bogusfn" $?
+  sed 's/bogusfn(/sin(/' "$f" > "$OUT/field_ok_$name.inf"
+  "$BIN" --validate "$OUT/field_ok_$name.inf" >/dev/null 2>&1; check "field $name: same patch with sin( validates" $?
+  r=$("$BIN" --explain "$f" 2>/dev/null); rc=$?
+  [ "$rc" = 3 ] && [ "$(echo "$r" | json "[e['code'] for e in d['errors']]")" = "['E_FIELD_COMPILE']" ]
+  check "field $name: explain exit 3 with E_FIELD_COMPILE" $?
+  case "$name" in
+    pixel|primitive|modifier|graph) r=$("$BIN" --frame "$f" 0 "$OUT/field_$name.png" 2>/dev/null); rc=$?; what=frame ;;
+    *) r=$("$BIN" --audio-summary "$f" "$OUT/field_$name.json" --duration 0.2 2>/dev/null); rc=$?; what=audio-summary ;;
+  esac
+  [ "$rc" = 3 ] && [ "$(echo "$r" | json "[e['code'] for e in d['errors']]")" = "['E_FIELD_COMPILE']" ]
+  check "field $name: $what exit 3 with E_FIELD_COMPILE, not a cable error" $?
 done
 
 # C0: the probe waits for every node to draw, not a fixed 8 ticks. patch_1 has a
@@ -214,6 +298,109 @@ rn=$("$BIN" --audio-summary "$NF/notes.inf" "$OUT/n.json" --duration 2.2 --notes
 [ "$(echo "$rn" | json "d['notes']['injected']")" = "3" ]; check "notes: three mapped events injected" $?
 [ "$(echo "$rn" | json "d['notes']['unmapped_types']")" = "['whoosh']" ]; check "notes: an unmapped event type is listed, not played" $?
 [ "$(echo "$rn" | json "'W_UNMAPPED_EVENT' in [w['code'] for w in d['warnings']]")" = "True" ]; check "notes: W_UNMAPPED_EVENT is raised" $?
+# Field Synth voice pool: 16 short notes must all sound (voices past the rendered 8 once went silent).
+python3 - "$NF" "$OUT" <<'PY'
+import json, sys
+nf, out = sys.argv[1:3]
+json.dump([{"t": 0.3 + 0.3 * i, "type": "impact", "dur": 0.1, "intensity": 1.0} for i in range(16)], open(out + "/fs_events.json", "w"))
+json.dump({"impact": {"node": "fsyn", "pitch": 60, "velocity_from": "intensity", "length_from": "dur"}}, open(out + "/fs_map.json", "w"))
+PY
+cat > "$OUT/fieldsynth16.inf" <<'INF'
+infinite-patch 1
+node 1 Notes Keyboard
+  id keys
+end
+node 2 Synths Field Synth
+  id fsyn
+end
+node 3 Utility Audio Out
+  id speakers
+end
+note fsyn 0 keys
+aud speakers 0 fsyn
+INF
+"$BIN" --audio-summary "$OUT/fieldsynth16.inf" "$OUT/fs.json" --duration 5.6 --wav "$OUT/fs.wav" --notes "$OUT/fs_events.json" --note-map "$OUT/fs_map.json" >/dev/null 2>&1
+python3 - "$OUT/fs.wav" <<'PY'
+import wave, array, sys
+w = wave.open(sys.argv[1]); r = w.getframerate(); n = w.getnchannels()
+a = array.array('h'); a.frombytes(w.readframes(w.getnframes())); L = a[0::n]
+def peak(i):  # window after note i's onset (0.3 + 0.3 i), 0.12 s
+    s = int((0.3 + 0.3 * i) * r); return max((abs(x) for x in L[s:s + int(0.12 * r)]), default=0)
+sys.exit(0 if all(peak(i) > 300 for i in range(16)) else 1)
+PY
+check "field synth: all 16 short notes are audible (voice pool recycles)" $?
+# Field Synth release: the kernel owns the tail. A fixed 30 ms voice release once cut every preset dead
+# at note-off; the default pad must still sound 100 ms after its note ends, then free its voice (silent).
+python3 - "$OUT" <<'PY'
+import json, sys
+out = sys.argv[1]
+json.dump([{"t": 0.3, "type": "impact", "dur": 0.1, "intensity": 1.0}], open(out + "/fsr_events.json", "w"))
+PY
+"$BIN" --audio-summary "$OUT/fieldsynth16.inf" "$OUT/fsr.json" --duration 2.0 --wav "$OUT/fsr.wav" --notes "$OUT/fsr_events.json" --note-map "$OUT/fs_map.json" >/dev/null 2>&1
+python3 - "$OUT/fsr.wav" <<'PY'
+import wave, array, sys
+w = wave.open(sys.argv[1]); r = w.getframerate(); n = w.getnchannels()
+a = array.array('h'); a.frombytes(w.readframes(w.getnframes())); L = a[0::n]
+def peak(t0, t1): return max((abs(x) for x in L[int(t0 * r):int(t1 * r)]), default=0)
+sys.exit(0 if peak(0.5, 0.52) > 300 and peak(1.5, 2.0) == 0 else 1)
+PY
+check "field synth: a note's tail rings past note-off, then the voice frees" $?
+# Note fan-out: one Keyboard into 12 synths, every Mixer input muted but the 12th. The 9th consumer
+# and later once got no notes (NoteEventQueue capped at 8 cursors).
+python3 - "$OUT" <<'PY'
+import json, sys
+out = sys.argv[1]
+L = ["infinite-patch 1", "node 1 Notes Keyboard", "  id keys", "end"]
+W = []
+for k in range(12):
+    L += ["node %d Synths Analog" % (10 + k), "  id a%d" % k, "end"]
+    W += ["note a%d 0 keys" % k, "aud mx in_%d a%d" % (k + 1, k)]
+L += ["node 30 Utility Mixer", "  id mx", "  i channels 12"] + ["  f gain%d -120" % i for i in range(11)] + ["end", "node 31 Utility Audio Out", "end"]
+open(out + "/fanout12.inf", "w").write("\n".join(L + W + ["aud 31 audio mx"]) + "\n")
+json.dump([{"t": 0.2, "type": "hit", "dur": 0.5, "v": 1.0}], open(out + "/fo_events.json", "w"))
+json.dump({"hit": {"node": "keys", "pitch": 60, "velocity_from": "v", "length_from": "dur"}}, open(out + "/fo_map.json", "w"))
+F = ["infinite-patch 1", "node 1 Notes Keyboard", "  id keys", "end", "node 2 Utility Audio Out", "end"]
+for k in range(65):
+    F += ["node %d Synths Analog" % (10 + k), "end"]
+open(out + "/fanout65.inf", "w").write("\n".join(F + ["note %d 0 keys" % (10 + k) for k in range(65)] + ["aud 2 audio 10"]) + "\n")
+PY
+"$BIN" --audio-summary "$OUT/fanout12.inf" "$OUT/fo.json" --duration 1 --wav "$OUT/fo.wav" --notes "$OUT/fo_events.json" --note-map "$OUT/fo_map.json" >/dev/null 2>&1
+python3 - "$OUT/fo.wav" <<'PY'
+import wave, array, sys
+w = wave.open(sys.argv[1]); n = w.getnchannels()
+a = array.array('h'); a.frombytes(w.readframes(w.getnframes()))
+sys.exit(0 if max(abs(x) for x in a[0::n]) > 300 else 1)
+PY
+check "notes: the 12th synth on one Keyboard gets notes (fan-out past 8)" $?
+fo=$("$BIN" --validate "$OUT/fanout65.inf" 2>/dev/null); [ "$(echo "$fo" | json "'W_NOTE_FANOUT' in [i['code'] for i in d['errors'] + d['warnings']]")" = "True" ]; check "notes: 65 consumers on one note output raise W_NOTE_FANOUT" $?
+# Arrangement audio: --timeline plays a 120 BPM click clip (one click every 0.5 s from 0.25 s) placed at beat 2;
+# at 60 BPM it must start at 2.0 s and stretch to one click per second. Without --timeline headless played the canvas only.
+python3 - "$OUT" <<'PY'
+import wave, struct, sys
+out, r = sys.argv[1], 48000
+f = [0] * (2 * r)
+for k in range(4):
+    for i in range(48):
+        f[int((0.25 + 0.5 * k) * r) + i] = 20000 if i < 24 else -20000
+w = wave.open(out + "/clicks.wav", "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(r)
+w.writeframes(struct.pack("<%dh" % len(f), *f)); w.close()
+open(out + "/clip.inf", "w").write("\n".join(["infinite-patch 1", "node 1 Modulators Audio File", "  uid 9001",
+    "  s path " + out + "/clicks.wav", "  b loop 0", "end", "stream 1 0 1 0 0 1 0 A",
+    "cliptick 0 1 1920 3840 9001 0 0 0 0 1 0 0 0 0 clicks", "clipsample 0 1 1", "clipbpm 0 1 120 2"]) + "\n")
+PY
+"$BIN" --audio-summary "$OUT/clip.inf" "$OUT/clip.json" --duration 6.5 --bpm 60 --timeline --wav "$OUT/clip.wav" >/dev/null 2>&1
+python3 - "$OUT/clip.wav" <<'PY'
+import wave, array, sys
+w = wave.open(sys.argv[1]); r = w.getframerate()
+a = array.array('h'); a.frombytes(w.readframes(w.getnframes()))
+L = a[0::w.getnchannels()]; on, last = [], -r
+for i, x in enumerate(L):
+    if abs(x) > 6000 and i - last > r // 10:
+        on.append(i / r); last = i
+sys.exit(0 if len(on) == 4 and all(abs(o - t) <= 0.005 for o, t in zip(on, (2.5, 3.5, 4.5, 5.5))) else 1)
+PY
+check "arrangement: --timeline plays a sample clip at its beat, tempo-synced (120 BPM clip at 60 BPM)" $?
+"$BIN" --audio-summary "$OUT/clip.inf" "$OUT/clip.json" --timeline --output 1 >/dev/null 2>&1; [ $? = 2 ]; check "arrangement: --timeline with --output exits 2" $?
 [ -f "$OUT/stems/hit.wav" ]; check "stems: one WAV per node" $?
 python3 - "$OUT/stems/hit.wav" <<'PY'
 import wave, array, sys
@@ -317,6 +504,9 @@ r=$("$BIN" --explain "$S/misspelled.inf" 2>/dev/null); rc=$?
 "$BIN" --explain "$S/misspelled.inf" --lenient 2>/dev/null | grep -q '^Relations ('; check "explain --lenient: explains it anyway" $?
 "$BIN" --explain "$OUT/missing.inf" >/dev/null 2>&1; [ $? = 3 ]; check "explain: missing patch exit 3" $?
 "$BIN" --explain >/dev/null 2>&1; [ $? = 2 ]; check "explain: no patch exit 2" $?
+
+# --- release: a new version must be above every published one (else old copies keep opening patches) ---
+python3 "$ROOT/scripts/release_version_gate.py" --self-test | grep -q '^RELEASEGATE OK'; check "release gate: version ordering cases" $?
 
 # --- summaries (block 2): audio numbers and per-frame image stats ---
 M="$ROOT/tests/headless/summary"

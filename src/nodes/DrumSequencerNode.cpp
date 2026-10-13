@@ -128,6 +128,8 @@ public:
 
    void PushStep(int lane, int step, float vel) { mStepVel[lane][step].store(vel, std::memory_order_relaxed); }
 
+   void SetRateFix(bool on) { mRateFix.store(on, std::memory_order_relaxed); }
+
    void PushGlobals(int rate, int numSteps, float swing, float masterVolume, bool run)
    {
       mRate.store(rate, std::memory_order_relaxed);
@@ -430,7 +432,12 @@ private:
       // accent semitones higher. Both terms are clamped to +-24 on the main
       // thread, so the sum stays within +-48 st with no clamp needed here.
       const float accent = velocity >= 0.99f ? mLaneAccentPitch[lane].load(std::memory_order_relaxed) : 0.0f;
-      voice.rate = NoteRateForPitch(lanePitchNow[lane] + accent);
+      // Scaled by the sample's own rate over the device rate, so a 44.1 kHz
+      // hit plays at its pitch on a 48 kHz device (1 when rateFix is 0).
+      const double srRatio = (mRateFix.load(std::memory_order_relaxed) && buf->sampleRate > 0.0 && mSampleRate > 0.0)
+                                ? buf->sampleRate / mSampleRate
+                                : 1.0;
+      voice.rate = NoteRateForPitch(lanePitchNow[lane] + accent) * (float)srRatio;
       voice.velocity = velocity * laneVolNow[lane];
       DspMath::EqualPowerPan(lanePanNow[lane], voice.panL, voice.panR);
       voice.attackLevel = 0.0f;
@@ -482,6 +489,7 @@ private:
    std::atomic<float> mSwing { 0.0f };
    std::atomic<float> mMasterVolume { 0.8f };
    std::atomic<bool> mRun { true };
+   std::atomic<bool> mRateFix { true };
 
    friend class ::DrumSequencerNode;
 };
@@ -548,6 +556,7 @@ void DrumSequencerNode::PushDirtyParams()
    // two cooks, so a coefficient already pushed this session might have
    // been computed against the pre-PrepareToPlay default rate. Force one
    // corrective re-push, for every lane, the cook after that happens.
+   mAudioNode->SetRateFix(rateFix != 0);
    const double currentSr = mAudioNode->mSampleRate;
    const bool srChanged = currentSr != mLastCoeffSampleRate;
    mLastCoeffSampleRate = currentSr;
@@ -726,6 +735,7 @@ void DrumSequencerNode::VisitParams(ParamVisitor& v)
       }
    }
    v.Int("rate", rate);
+   v.Int("rateFix", rateFix); // not a control: 0 = plays samples at the device rate (saved before the fix)
    v.Int("steps", numSteps);
    v.Float("swing", swing);
    v.Float("volume", volume);

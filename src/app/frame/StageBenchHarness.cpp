@@ -601,6 +601,25 @@ void DrawBenchHarness(FrameCtx& fc)
                   }
                }
             }
+            else if (activeMode == "select")
+            {
+               // R5: select-all and clear, alternating every 30 frames, through
+               // the editor's own selection (what Cmd+A / a box-select leave
+               // behind), at the zoom that shows the whole grid.
+               ed::SetViewScroll(ImVec2(0.0f, 0.0f));
+               ed::SetViewZoom(0.25f);
+               if (modeRelFrame % 30 == 0)
+               {
+                  if ((modeRelFrame / 30) % 2 == 0)
+                  {
+                     for (GraphNode& gn : gNodes)
+                        ed::SelectNode(gn.NodeId(), true);
+                  }
+                  else
+                     ed::ClearSelection();
+               }
+               sBenchB6SelectedMax = std::max(sBenchB6SelectedMax, ed::GetSelectedObjectCount());
+            }
             else if (activeMode == "dropdown")
             {
                ed::SetViewScroll(ImVec2(0.0f, 0.0f));
@@ -646,10 +665,27 @@ void DrawBenchHarness(FrameCtx& fc)
                   sBenchB6DragFrameMs.Push(gLastFrameMs);
                else if (activeMode == "dropdown")
                   sBenchB6DropdownFrameMs.Push(gLastFrameMs);
+               else if (activeMode == "select")
+                  sBenchB6SelectFrameMs.Push(gLastFrameMs);
             }
          }
 
-         if (frameId == b6TotalFrames)
+         // B6DELETE (R5): one delete-all after the sampled window, through the
+         // Delete-key handler (gRequestDelete: one undo checkpoint, one audio
+         // rebuild). The keyboard stage may run before or after this harness in
+         // a frame, so the worst of the next two frame times holds the delete.
+         const int b6ReportFrame = b6TotalFrames + (sBenchB6Delete ? 3 : 0);
+         if (sBenchB6Delete && frameId == b6TotalFrames)
+         {
+            sBenchB6NodesBeforeDelete = (int)gNodes.size();
+            for (GraphNode& gn : gNodes)
+               ed::SelectNode(gn.NodeId(), true);
+            gRequestDelete = true;
+         }
+         if (sBenchB6Delete && (frameId == b6TotalFrames + 1 || frameId == b6TotalFrames + 2))
+            sBenchB6DeleteFrameMs = std::max(sBenchB6DeleteFrameMs, gLastFrameMs);
+
+         if (frameId == b6ReportFrame)
          {
             if (GImGui->OpenPopupStack.Size > 0) // indexes [0]: crashes on an empty stack
                ImGui::ClosePopupToLevel(0, false);
@@ -660,7 +696,7 @@ void DrawBenchHarness(FrameCtx& fc)
             report.bench = "B6_canvas_nav";
             report.variant = sBenchB6Variant;
             report.frames = b6TotalFrames;
-            report.nodes = (int)gNodes.size();
+            report.nodes = sBenchB6NodesBeforeDelete >= 0 ? sBenchB6NodesBeforeDelete : (int)gNodes.size();
             report.frameMs = sBenchB6FrameMs;
 
             report.stagesCpuMs = {
@@ -698,6 +734,13 @@ void DrawBenchHarness(FrameCtx& fc)
             report.dropdownFrameMs = sBenchB6DropdownFrameMs;
             report.dragNodeMovedPx = sBenchB6DragMovedPx;
             report.dropdownOpenFrames = sBenchB6DropdownOpenFrames;
+            report.selectFrameMs = sBenchB6SelectFrameMs;
+            report.selectedMax = sBenchB6SelectedMax;
+            if (sBenchB6Delete)
+            {
+               report.deleteAllFrameMs = std::max(0.0, sBenchB6DeleteFrameMs);
+               report.nodesAfterDelete = (int)gNodes.size();
+            }
 
             const double onVsyncFrac = (sBenchB6IntervalFrames > 0)
                ? (double)sBenchB6OnVsyncFrames / (double)sBenchB6IntervalFrames : 0.0;

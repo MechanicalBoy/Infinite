@@ -35,9 +35,11 @@ class AudioFieldSynthNode : public AudioNode
 public:
    AudioFieldSynthNode() : mVoices(kMaxVoices)
    {
+      mVoices.SetActiveLimit(mNumVoicesInUse);
       std::memset(mStateCur, 0, sizeof(mStateCur));
       std::memset(mStateNext, 0, sizeof(mStateNext));
       std::memset(mGateHeld, 0, sizeof(mGateHeld));
+      std::fill(mTailSamples, mTailSamples + kMaxVoices, -1);
       std::memset(mDelayBuffer, 0, sizeof(mDelayBuffer));
       std::memset(mDelaySwapBuffer, 0, sizeof(mDelaySwapBuffer));
       std::memset(mDelayCursors, 0, sizeof(mDelayCursors));
@@ -52,9 +54,12 @@ public:
       mMailbox.PrepareToPlay(sampleRate);
       mVoices.SetSampleRate(sampleRate);
       // Fast attack/release on the voice envelope to prevent click artifacts
-      // on note trigger/release; kernel state cells can implement bespoke ADSR
-      // or filter dynamics.
+      // on note trigger and on voice free. The kernel owns the sound's own
+      // envelope: note-off only drops `gate`, and the voice envelope's release
+      // starts once the kernel's tail is silent (see EndQuietTails).
       mVoices.SetADSR(2.0f, 0.0f, 1.0f, 30.0f);
+      mQuietLimit = (int)(sampleRate * kTailQuietSeconds);
+      mTailLimit = (int)(sampleRate * kTailMaxSeconds);
    }
 
    void SetNoteInbox(NoteEventQueue* inbox, int cursor) override
@@ -66,7 +71,11 @@ public:
    void PushProgram(Field::SampleProgram* prog) { mProgramSlot.Push(prog); }
    void DrainRetired() { mProgramSlot.DrainRetired(); }
    void PushParam(int mailboxId, float value) { mMailbox.Push(mailboxId, value); }
-   void SetMaxVoices(int n) { mNumVoicesInUse = std::clamp(n, 1, kMaxVoices); }
+   void SetMaxVoices(int n)
+   {
+      mNumVoicesInUse = std::clamp(n, 1, kMaxVoices);
+      mVoices.SetActiveLimit(mNumVoicesInUse);
+   }
 
    uint64_t FaultCount() const { return mFaultCount.load(std::memory_order_relaxed); }
    bool ReadRmsLatest(float& out) { return mMeter.ReadLatest(out); }
@@ -213,6 +222,7 @@ public:
                const int v = mVoices.NoteOn(evts[evtIdx].note, evts[evtIdx].velocity, evts[evtIdx].voiceId);
                mVoiceId[v] = evts[evtIdx].voiceId;
                mGateHeld[v] = true;
+               mTailSamples[v] = -1;
                noteOnEdge = true;
                mLastNotePitchHz = MidiNoteToHz(evts[evtIdx].note);
                mLastNoteVel = evts[evtIdx].velocity;
@@ -231,11 +241,17 @@ public:
             }
             else
             {
-               mVoices.NoteOff(evts[evtIdx].voiceId);
+               // Only the gate drops here: the kernel's own release (a decay on
+               // gate, a ringing resonator, a one-shot that ignores gate) keeps
+               // sounding until EndQuietTails frees the voice.
                for (int gv = 0; gv < kMaxVoices; gv++)
                {
-                  if (mVoiceId[gv] == evts[evtIdx].voiceId)
+                  if (mVoiceId[gv] == evts[evtIdx].voiceId && mGateHeld[gv])
+                  {
                      mGateHeld[gv] = false;
+                     mTailSamples[gv] = 0;
+                     mQuietSamples[gv] = 0;
+                  }
                }
             }
             evtIdx++;
@@ -285,6 +301,8 @@ public:
             const float env = mVoices.EnvelopeAt(v).Process();
             const float vel = mVoices.VelocityAt(v);
             sampleAcc += kernelOut * env * vel;
+            if (mTailSamples[v] >= 0)
+               EndQuietTails(v, kernelOut * vel);
 
             std::memcpy(mStateCur[v], mStateNext[v], sizeof(mStateCur[v]));
          }
@@ -389,6 +407,27 @@ private:
    VoiceAllocator mVoices;
    int mVoiceId[kMaxVoices] = {};
    bool mGateHeld[kMaxVoices] = {};
+
+   // After note-off a voice stays alive while its kernel still sounds: it is
+   // freed (the voice envelope's 30 ms release) after kTailQuietSeconds below
+   // kTailQuietLevel, or after kTailMaxSeconds for a kernel that never decays.
+   static constexpr float kTailQuietLevel = 1.0e-4f; // -80 dBFS
+   static constexpr double kTailQuietSeconds = 0.05;
+   static constexpr double kTailMaxSeconds = 10.0;
+   int mTailSamples[kMaxVoices] = {}; // samples since note-off; -1 = held or already fading
+   int mQuietSamples[kMaxVoices] = {};
+   int mQuietLimit = 2400;
+   int mTailLimit = 480000;
+
+   void EndQuietTails(int v, float out)
+   {
+      mQuietSamples[v] = std::fabs(out) < kTailQuietLevel ? mQuietSamples[v] + 1 : 0;
+      if (mQuietSamples[v] >= mQuietLimit || ++mTailSamples[v] >= mTailLimit)
+      {
+         mVoices.EnvelopeAt(v).NoteOff();
+         mTailSamples[v] = -1;
+      }
+   }
    int mNumVoicesInUse = 8;
 
    ParamMailbox mMailbox;
@@ -456,7 +495,7 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "f = clamp((cutoff / sr) * 3.14159, 0.001, 0.95)\n"
         "lp = lp + f * (sat - lp)\n"
         "filt = lp + (sat - lp) * (1.0 - res)\n"
-        "out = filt * env\n" },
+        "out = filt * env * 0.33\n" },
       { "Resonant String Pluck",
         "param float damp = 0.35 [0.05, 0.95]\n"
         "param float brightness = 2.5 [1.0, 8.0]\n"
@@ -736,14 +775,14 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "dCoeff = clamp(1.0 - 1.0 / (sr * max(subDecay, 0.1)), 0.99, 0.99999)\n"
         "pCoeff = clamp(1.0 - 1.0 / (sr * 0.035), 0.9, 0.999)\n\n"
         "pFreq = if(pFreq < 1.0, freq, pFreq * gCoeff + freq * (1.0 - gCoeff))\n"
-        "env = if(noteOn > 0.5, noteVel, env * dCoeff)\n"
+        "damp = if(gate > 0.5, 1.0, 0.998)\n"
+        "env = if(noteOn > 0.5, noteVel, env * dCoeff * damp)\n"
         "pEnv = if(noteOn > 0.5, 1.0, pEnv * pCoeff)\n\n"
         "curPitch = pFreq * (1.0 + pEnv * (punch - 1.0))\n"
         "phase = (phase + curPitch / sr) % 1.0\n\n"
         "sine = sin(6.283185 * phase)\n"
         "sat = sine * warmth / (1.0 + abs(sine * warmth) * 0.4)\n"
-        "damp = if(gate > 0.5, 1.0, 0.998)\n"
-        "out = sat * env * damp\n" },
+        "out = sat * env\n" },
       { "West Coast Wavefolder",
         "param float fold = 2.8 [1.0, 6.0]\n"
         "param float decay = 0.8 [0.05, 3.0]\n"
@@ -787,7 +826,8 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "w1 = min(6.283185 * clamp(freq, 25.0, sr * 0.42) / sr, 2.8)\n"
         "w2 = min(w1 * 2.035, 2.8)\n\n"
         "dRate = clamp(1.0 / (sr * max(decay, 0.2)), 0.00001, 0.01)\n"
-        "dCoeff = clamp(1.0 - dRate, 0.96, 0.99999)\n"
+        "damp = if(gate > 0.5, 1.0, 0.997)\n"
+        "dCoeff = clamp(1.0 - dRate, 0.96, 0.99999) * damp\n"
         "dc2 = dCoeff * 0.985\n\n"
         "cosW1 = cos(w1)\n"
         "sinW1 = sin(w1)\n"
@@ -803,8 +843,7 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "s4 = n4\n\n"
         "fSb = clamp((120.0 / sr) * 3.14159, 0.001, 0.1)\n"
         "soundboard = soundboard + fSb * (abs(s1) * 0.3 - soundboard)\n\n"
-        "damp = if(gate > 0.5, 1.0, 0.997)\n"
-        "out = (s1 + s3 * 0.5 + soundboard * 0.4) * damp\n" },
+        "out = s1 + s3 * 0.5 + soundboard * 0.4\n" },
       { "Rhodes Mark I Electric Piano",
         "param float tineDecay = 1.8 [0.3, 4.0]\n"
         "param float bellAmt = 0.7 [0.0, 2.0]\n"
@@ -818,8 +857,9 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "state float tremPhase = 0.0\n\n"
         "dCoeff = clamp(1.0 - 1.0 / (sr * max(tineDecay, 0.1)), 0.99, 0.99999)\n"
         "bCoeff = clamp(1.0 - 1.0 / (sr * 0.35), 0.9, 0.9995)\n\n"
-        "env = if(noteOn > 0.5, noteVel, env * dCoeff)\n"
-        "bellEnv = if(noteOn > 0.5, noteVel * bellAmt, bellEnv * bCoeff)\n\n"
+        "damp = if(gate > 0.5, 1.0, 0.998)\n"
+        "env = if(noteOn > 0.5, noteVel, env * dCoeff * damp)\n"
+        "bellEnv = if(noteOn > 0.5, noteVel * bellAmt, bellEnv * bCoeff * damp)\n\n"
         "pTine = (pTine + freq / sr) % 1.0\n"
         "pBell = (pBell + (freq * 4.01) / sr) % 1.0\n\n"
         "tine = sin(6.283185 * pTine)\n"
@@ -828,8 +868,7 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "pickupSat = tone / (1.0 + abs(tone) * 0.4)\n\n"
         "tremPhase = (tremPhase + tremoloRate / sr) % 1.0\n"
         "trem = 1.0 - (sin(6.283185 * tremPhase) * 0.5 + 0.5) * tremoloDepth\n\n"
-        "damp = if(gate > 0.5, 1.0, 0.998)\n"
-        "out = pickupSat * trem * damp\n" },
+        "out = pickupSat * trem\n" },
       { "DX7 FM Electric Piano",
         "param float fmIndex = 2.4 [0.0, 6.0]\n"
         "param float decay = 2.2 [0.3, 5.0]\n"
@@ -841,14 +880,14 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "state float envMod = 0.0\n\n"
         "dCar = clamp(1.0 - 1.0 / (sr * max(decay, 0.1)), 0.99, 0.99999)\n"
         "dMod = clamp(1.0 - 1.0 / (sr * max(modDecay, 0.02)), 0.98, 0.9999)\n\n"
-        "envCar = if(noteOn > 0.5, noteVel, envCar * dCar)\n"
+        "damp = if(gate > 0.5, 1.0, 0.997)\n"
+        "envCar = if(noteOn > 0.5, noteVel, envCar * dCar * damp)\n"
         "envMod = if(noteOn > 0.5, noteVel * fmIndex, envMod * dMod)\n\n"
         "pMod = (pMod + (freq * ratio) / sr) % 1.0\n"
         "modSig = sin(6.283185 * pMod) * envMod\n\n"
         "pCar = (pCar + freq / sr + (modSig / 6.283185)) % 1.0\n"
         "carSig = sin(6.283185 * pCar)\n\n"
-        "damp = if(gate > 0.5, 1.0, 0.997)\n"
-        "out = carSig * envCar * damp\n" },
+        "out = carSig * envCar\n" },
       { "Crystalline Tubular Bell",
         "param float decay = 3.5 [0.5, 10.0]\n"
         "param float strike = 0.8 [0.1, 2.0]\n"
@@ -973,7 +1012,7 @@ const std::vector<FieldSynthNode::Preset>& FieldSynthNode::Presets()
         "dCoeff = clamp(1.0 - 1.0 / (sr * max(decay, 0.01)), 0.9, 0.9999)\n"
         "dropEnv = dropEnv * dCoeff\n\n"
         "timer = timer + dripRate / sr\n"
-        "isNewDrop = if(timer > 1.0 || noteOn > 0.5, 1.0, 0.0)\n"
+        "isNewDrop = if((timer > 1.0 && gate > 0.5) || noteOn > 0.5, 1.0, 0.0)\n"
         "timer = if(isNewDrop > 0.5, 0.0, timer)\n\n"
         "nseed = (nseed + 1.0) % 9973.0\n"
         "hsrc = sin(nseed * 12.9898) * 43758.5453\n"

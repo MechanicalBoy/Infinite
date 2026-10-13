@@ -2400,6 +2400,8 @@ void DrawFrameTestsA(FrameCtx& fc)
 
       FrameTest_GROUP3DTEST(frameId, window);
 
+      FrameTest_LAYERSTACKFITTEST(frameId, window);
+
       FrameTest_WRAPTEST(frameId, window);
 
       FrameTest_PHASEDTEST(frameId, window);
@@ -2570,6 +2572,9 @@ void DrawFrameTestsA(FrameCtx& fc)
       FrameTest_PATCHTEST(frameId, window);
 
       FrameTest_AUTOSAVETEST(frameId, window);
+
+      // A missing key is the default except on a node the GUI saved before rev 2.
+      FrameTest_LEGACYLOADTEST(frameId, window);
 
       // R30: the live validate pass marks a half-wired Blend and an empty
       // Output, leaves a fully wired graph alone, and clears when it is fixed.

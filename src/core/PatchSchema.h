@@ -104,6 +104,11 @@ namespace PatchSchema
       // The real rule (IsInputSlotCompatible via probe nodes). tag is
       // cable|geo|aud|note.
       std::function<Link(const std::string& srcType, int srcOutput, const std::string& dstType, int dstSlot)> link;
+      // The schema of one node with its saved params applied (nullptr = not
+      // available). Asked only when the fresh-node schema misses a key or a
+      // slot: some nodes grow keys and pins from their state (a Plugin holding
+      // an instrument has a note pin, a mapped one has map<N>_* keys).
+      std::function<const TypeSchema*(const Patch::NodeRecord&)> instanceSchema;
       // Highest `mod`/`expr` parameter index the node type registers when drawn:
       // -2 = not known here, -1 = it registers none. Filled from a drawn node,
       // so it is only available once a window has drawn one.

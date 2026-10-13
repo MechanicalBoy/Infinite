@@ -77,7 +77,7 @@ done
 # emits, and separately require a positive verdict (below), so a fixture that
 # dies before printing anything can no longer masquerade as a pass either.
 FAIL_MARK='FAIL|BUG$|MISMATCH|SUSPECT|DID NOT MOVE|TONE MISSING'
-PASS_MARK=' OK$|OK$|PASS$|SKIP$|CLEAN$'
+PASS_MARK=' OK$|OK$|PASS$|SKIP$|CLEAN$|PASS \([0-9]+ flags?\)$'
 PASS=0
 FAIL=0
 FAILED_NAMES=()
@@ -116,6 +116,7 @@ TIER1_CHECKS=(
   "ARRANGESAMPLETEST:400"
   "PATCHTEST:30"
   "ROUNDTRIPTEST:35"
+  "LEGACYLOADTEST:8"
   "ROUNDTRIPTEST@de:35"
   "I18NTEST:1"
   "SYPHONPATCHTEST:1"
@@ -137,6 +138,7 @@ TIER1_CHECKS=(
   "FIELDSAMPLETEST:1"
   "FIELDPIXELTEST:35"
   "SHAPEEDGETEST:35"
+  "LAYERSTACKFITTEST:10"
   "FIELDPINSTEST:35"
   "FIELDPINDECLTEST:1"
   "FIELDPINNODETEST:35"
@@ -150,6 +152,7 @@ TIER1_CHECKS=(
   "PATCHWATCHTEST:12"
   "RPCBATCHTEST:12"
   "HISTORYTEST:12"
+  "PATCHOPENERTEST:1"
   "CLIPBOARDTEST:10"
 )
 
@@ -178,6 +181,14 @@ GROUP_AUDIO=(
   "RECEXPORTTEST:1"
   "METALLICDECAYTEST:1"
   "FILTERCURVECACHETEST:110"
+  "ALIASTEST:1"
+  "PITCHTEST:1"
+  "FXAUDIT:1"
+  "SYNTHAUDIT:1"
+  "NOTEAUDIT:1"
+  "IOAUDIT:1"
+  "GEOAUDIT:1"
+  "COMPAUDIT:1"
 )
 if [ "$OS" = "Linux" ]; then
   GROUP_AUDIO+=("MIDIPARSETEST:1")
@@ -242,6 +253,7 @@ GROUP_UI=(
 )
 
 GROUP_MODULATION=(
+  "MODAUDIT:1"
   "MACROTEST:30"
   "MODBOUNDSTEST:30"
   "MPCMODTEST:30"
@@ -305,6 +317,15 @@ GROUP_COMPOSITING=(
 )
 
 FULL_TESTS=(
+  "ALIASTEST:1"
+  "PITCHTEST:1"
+  "FXAUDIT:1"
+  "MODAUDIT:1"
+  "SYNTHAUDIT:1"
+  "NOTEAUDIT:1"
+  "IOAUDIT:1"
+  "GEOAUDIT:1"
+  "COMPAUDIT:1"
   "NODETITLETEST:10"
   "FILTERCURVECACHETEST:110"
   "FIELDTEST:1"
@@ -418,6 +439,7 @@ FULL_TESTS=(
   "PATCHWATCHTEST:12"
   "RPCBATCHTEST:12"
   "HISTORYTEST:12"
+  "PATCHOPENERTEST:1"
   "CLIPBOARDTEST:10"
   "REMOVEBGTEST:1"
   "CURVESLUTTEST:10"
@@ -710,6 +732,18 @@ for spec in "${SELECTED_TESTS[@]}"; do
     fi
   else
     verdict=$(grep -E "$PASS_MARK" "$out" | tail -1)
+    # Quality gate (docs/quality/README.md): QUALITY rows a check prints are held
+    # to the targets in docs/quality/registry.tsv; a release-gated miss fails it.
+    if grep -q '^QUALITY ' "$out"; then
+      qout=$(python3 "$ROOT/tools/quality/quality.py" check --source "$base" "$out" 2>&1); qrc=$?
+      if [ $qrc -ne 0 ]; then
+        echo "  [FAIL]  $name — quality gate, see $out"
+        echo "$qout" | grep -E "CHECK FAIL|quality:" | sed 's/^/          /'
+        FAIL=$((FAIL+1)); FAILED_NAMES+=("$name (quality gate)")
+        continue
+      fi
+      verdict="$verdict; $(echo "$qout" | tail -1)"
+    fi
     if is_known_failure "$name"; then
       echo "  [stale-baseline] $name — now passes, delete its line from known-test-failures.txt"
       STALE_NAMES+=("$name")

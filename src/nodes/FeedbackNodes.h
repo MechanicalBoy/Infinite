@@ -8,7 +8,11 @@
 #include "GLUtil.h"
 
 // --- Feedback -----------------------------------------------------------
-// Outputs what its input produced on the PREVIOUS frame. That one-frame delay
+// Captures its input once per frame and outputs the capture. The delay comes from the
+// cycle, not from a second buffer: inside a loop the input is the loop's own output from
+// the previous cook, so the loop sees a one-frame delay; in a plain chain the capture is
+// the current frame and the node is a pass-through copy (COMPAUDIT FEEDBACK, by design:
+// saved loops depend on exactly this timing). That one-frame delay
 // is what makes cycles legal: patch a node's output back into something
 // upstream through a Feedback and the graph can loop without the cook
 // recursing forever. This is the primitive the whole trails/echo/growth family
@@ -28,7 +32,7 @@ public:
    ImageCable& Input() { return mInput; }
    INode* BypassSource() override { return mInput.GetSource(); }
 
-   float delayFrames = 1.0f; // held for information; the delay is always one frame
+   float delayFrames = 1.0f; // held for information; the node has no adjustable delay
 
    void VisitParams(ParamVisitor& v) override { v.Float("delayFrames", delayFrames); }
 

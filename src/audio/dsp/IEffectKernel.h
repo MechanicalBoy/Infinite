@@ -46,6 +46,13 @@ public:
    // here; see §0.5.
    virtual int LatencySamples() const { return 0; }
 
+   // The most LatencySamples() can ever return for this kernel (a kernel
+   // whose latency depends on a mode). AudioEffectRuntime sizes the dry
+   // path's delay to this once, on the main thread; when the reported
+   // latency changes, PollAudioLatencyChanges() re-runs PDC. Defaults to the
+   // fixed latency.
+   virtual int MaxLatencySamples() const { return LatencySamples(); }
+
    // Optional second meter a kernel publishes beyond AudioEffectRuntime's own
    // generic post-mix peak (AudioEffectNode::Level()) - Dynamics' live gain-
    // reduction dB, read by its visualizer's operating-point dot/GR bar.
@@ -54,4 +61,10 @@ public:
    // thread) via AudioEffectNode::ExtraMeterValue() - same MeterRing
    // discipline as every other audio->main readback in this tree.
    virtual MeterRing* ExtraMeter() { return nullptr; }
+
+   // Main thread only. True while the kernel is still building what it needs
+   // to sound (Shape Resonator's background mode solve). An offline render
+   // (--audio-summary / --render) waits on this before its first sample, so a
+   // render that runs faster than real time does not start into silence.
+   virtual bool Preparing() const { return false; }
 };

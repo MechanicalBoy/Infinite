@@ -8,6 +8,7 @@ to writing files.
 ## Files and line rules
 
 - First line: `infinite-patch 1`.
+- `rev <n>` (the GUI writes `rev 2`): what a missing key means, see the defaults rule below.
 - One record per line. Free-form text (type names, strings, expressions, labels) is always **last**
   on its line and runs to the end of the line.
 - Blank lines and lines starting with `#` are ignored.
@@ -36,6 +37,11 @@ end
   and `--stems` use the file's numbers.
 - **Defaults rule:** any parameter you leave out keeps the node's default. A hand-written node needs
   only the keys it changes. The GUI writes every key; `--canonicalize` does too.
+  The one exception keeps old saves sounding as they did: a node with a `flags` line (the GUI has
+  always written one) in a file with no `rev` line, or `rev 1`, was saved before some nodes fixed a
+  behaviour, so a key it lacks means the old behaviour (`INode::BeforeLoadParams`; for example
+  Sampler `rateFix`, Arpeggiator `stepTiming`, LFO `maths`). If you write `flags` by hand, also write
+  `rev 2`. `--canonicalize` keeps a file's revision.
 - Find category, type name, keys, ranges and dropdown options with `Infinite --describe [type]`.
 - An `id` is a word: starts with a letter or `_`, then letters, digits and `_`. Ids are unique per file.
 
@@ -110,6 +116,7 @@ written. `--canonicalize` and `--validate` never lay out: a pos-less node still 
 | `--frame f.inf 0 out.png` | one picture, plus its numbers (`frame_stats`) in the status line |
 | `--frame f.inf 0,1,2 dir/ --contact-sheet sheet.png` | several times in one image, each cell stamped with its time |
 | `--audio-summary f.inf out.json [--duration S] [--wav out.wav]` | what it sounds like, as numbers: loudness, peaks, clipping, silence, spectrum, tempo guess |
+| `--audio-summary f.inf out.json --timeline` | the same for the arrangement's audio lanes (Timeline audio mode) instead of the canvas Audio Outs; a clip's source node needs no cable |
 | `--canonicalize in out` | the numeric form the GUI would write |
 
 Reading the result without opening a file: the status line (last line of stdout) carries the headline
@@ -131,7 +138,7 @@ own render length, else 10 s. The patch needs no Output: an Audio Out is enough.
 | `W_BLACK_FRAME` | 0 | a frame is 100 % black: nothing reached the Output at that time |
 | `W_CLIPPING` | 0 | samples at or over full scale; a file written from this distorts |
 | `W_SILENT` | 0 | nothing above -70 LUFS in the whole range |
-| `E_NO_AUDIO` | 3 | no Audio Out and no Output with audio wired in |
+| `E_NO_AUDIO` | 3 | no Audio Out and no Output with audio wired in (`--timeline`: no clip on an audio lane) |
 
 `--explain` prints the graph that was built, not the file, then the status JSON on the last line.
 For `tests/headless/format/modulation.inf`:

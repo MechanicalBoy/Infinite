@@ -52,7 +52,9 @@ Tools must stay **MIT-clean** (no GPL code pasted in), **three-platform aware** 
 | Drive a running app | `scripts/live_rpc_smoke.py` (RPC) |
 | Modulatable params inventory | `scripts/audit_node_params.py` (`node-param-audit`) |
 | Knob range vs DSP truth | `scripts/audit_param_truth.py` (`param-truth-audit`) |
+| Every audio effect measured (gain, stereo, tail, stress/NaN, param clicks, 44.1/48/96 kHz consistency, RT60/delay/rate/cutoff truths) | `INFINITE_FXAUDIT=1 [INFINITE_FXAUDIT_ONLY=Name] Infinite` (`src/app/selftest/FxAudit.cpp`; in the hygiene `audio` group) |
 | Field preset compiles? | `tools/field_preset_check.cpp` |
+| Quality registry, release gate, scoreboard (QUALITY rows from audits/probes/benches) | `tools/quality/quality.py` (`check`, `ingest`, `board`, `--self-test`; skill `quality-system`) |
 | Benchmarks / A/B | `tools/bench.py`, `scripts/bench/ab.sh`, `base.sh`, `compare.py`, `rgbadiff.py` |
 | Design tokens, glyphs, contrast, goldens | `tools/design/` (`contrast.py`, `golden.py`, `inventory.py`, ...) |
 | i18n extract/lint | `tools/i18n/` |
@@ -70,6 +72,7 @@ Tools must stay **MIT-clean** (no GPL code pasted in), **three-platform aware** 
 | Off-brand / retired colours (ratchet); apply swaps | `tools/brand/brand_lint.py [PATH]`, `tools/brand/migrate_colours.py [--apply]` |
 | Confusable category colours per theme + brand.json drift | `tools/brand/category_audit.py` |
 | Motion laws (tempo clock, one mass, beat-locked springs, mark arcs, golden phase, log zoom); token grid check | `tools/brand/motion.py [--check]`; import it in films/3D/site |
+| Competitor survey: app inventory, plugin probe (latency/THD/alias/CPU vs Infinite nodes), synth probe (pitch/alias/envelope/velocity/CPU vs Infinite synths), UI map (menus/shortcuts via accessibility), capability map (official scripting APIs), app bench (launch/idle CPU/memory/threads), bounce kit (DAW export truth), host audit (every installed AU/VST3 loaded: crash/hang/silent, load time, auval, AU vs VST3), AU out-of-process cost (instantiate/render/CPU in vs out of Apple's hosting service), load bench (N synth+effect tracks, % of one core), stretch kit (time-stretch length/timing/pre-echo/flam/pitch/artefacts from each app's own stretched renders), built-ins kit (DAW-only instruments/effects measured from their own bounces vs Infinite nodes), render bench (movie render fps, H264 PSNR/SSIM vs own lossless frames, 10-min flash+click AV drift; Infinite vs Blender, movies read via AVFoundation `video_read.swift`), Blender bench (geometry nodes / cloth / depsgraph fps vs matched Infinite patches), AV bench (audio→picture latency, beat-to-frame lock, TD live audio-reactive frame times), project bench (N-node patch size and load/save time, old releases' patches opened today, other apps' project containers), workflow cost (ten common tasks: steps and KLM seconds per app, Infinite steps cited to code), round-trip latency through BlackHole, cables/.als/.amxd/.fcpxml/.toe/Blender readers, dossier lint + capability diff, ~/re-output storage | `tools/re-survey/` (`selftest.py`; plan in `docs/plans/re-survey/`) |
 
 ## Exit check
 

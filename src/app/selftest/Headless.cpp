@@ -156,6 +156,49 @@ std::string ExplainLive(bool json, bool all)
    return json ? PatchExplain::ToJson(ex) : PatchExplain::ToText(ex, all);
 }
 
+// A plugin that never loaded passes its input through untouched, so the render
+// still "works" and nothing else would say the plugin was missing. The
+// "plugins" block names every plugin node and whether it loaded; with
+// --plugin-params it also carries the parameters with the plugin's own ranges
+// (what a patch's map<N>_min/max/value must use - not the display units).
+static void ReportPlugins(Headless::Status& st, bool withParams)
+{
+   std::string json;
+   for (int i = 0; i < (int)gNodes.size(); i++)
+   {
+      auto* plugin = dynamic_cast<AudioPluginNode*>(gNodes[i].node.get());
+      if (plugin == nullptr || !plugin->HasPlugin())
+         continue;
+      const std::string name = plugin->PluginDisplayName().empty() ? std::string("a plugin") : plugin->PluginDisplayName();
+      if (!plugin->IsReady())
+      {
+         const std::string why = plugin->IsLoading() ? std::string("still loading when the render ended") : plugin->Status();
+         st.warnings.push_back({ "W_PLUGIN_NOT_LOADED", name + " did not load (" + why + "); its input passed through unprocessed",
+                                 0, gNodes[i].index, "check the plugin is installed and listed in the plugin index" });
+      }
+      const auto& params = plugin->AvailableParams();
+      json += std::string(json.empty() ? "" : ",") + "{\"node\":" + std::to_string(gNodes[i].index) + ",\"name\":\"" +
+              Headless::JsonEscape(name) + "\",\"ready\":" + (plugin->IsReady() ? "true" : "false") +
+              ",\"param_count\":" + std::to_string(params.size());
+      if (withParams)
+      {
+         json += ",\"params\":[";
+         char num[160];
+         for (size_t k = 0; k < params.size(); k++)
+         {
+            const Platform::PluginParamInfo& p = params[k];
+            std::snprintf(num, sizeof(num), "\"min\":%.9g,\"max\":%.9g,\"default\":%.9g", p.minValue, p.maxValue, p.defaultValue);
+            json += std::string(k ? "," : "") + "{\"address\":\"" + std::to_string(p.address) + "\",\"name\":\"" +
+                    Headless::JsonEscape(p.displayName) + "\"," + num + ",\"unit\":\"" + Headless::JsonEscape(p.unit) + "\"}";
+         }
+         json += "]";
+      }
+      json += "}";
+   }
+   if (!json.empty())
+      st.extraJson.push_back("\"plugins\":[" + json + "]");
+}
+
 static void HeadlessFinish(GLFWwindow* window, Headless::Status& st, double startWall)
 {
    st.elapsedMs = (long long)((glfwGetTime() - startWall) * 1000.0);
@@ -545,6 +588,66 @@ static void PrimeOfflineStart(int& frameId, double startSeconds)
    RebuildAudioTopology();
 }
 
+// A Field node whose code does not compile produces nothing, so without this check --validate said ok
+// and --frame blamed the Output's cable (re-survey D.md, P4). One error per node, citing the node's
+// `s code` line in the file (or its `node` line when the code is a default).
+static Headless::Issue FieldCompileIssue(const Patch::NodeRecord* rec, int node, const std::string& type,
+                                         const std::string& error)
+{
+   Headless::Issue is;
+   is.code = "E_FIELD_COMPILE";
+   is.node = node;
+   is.message = type + " node " + std::to_string(node) + ": its Field code does not compile: " + NodeIssues::FirstLine(error);
+   is.hint = "fix the kernel on the node's `s code` line; a Field node whose code does not compile produces nothing";
+   if (rec != nullptr)
+   {
+      is.line = rec->line;
+      for (size_t i = 0; i < rec->params.size(); i++)
+         if (rec->params[i].first == "s code" && i < rec->paramLines.size())
+            is.line = rec->paramLines[i];
+   }
+   return is;
+}
+
+// --validate does not load the patch, so each node that carries code is built off-canvas the way the
+// load builds it (LoadParams, then ReloadDerivedState runs the node's own Apply) and asked for its error.
+// Same compile as the render, so the two can never disagree.
+static void CheckFieldCode(const Patch::Data& data, std::vector<Headless::Issue>& errors)
+{
+   for (const Patch::NodeRecord& rec : data.nodes)
+   {
+      bool hasCode = false;
+      for (const auto& kv : rec.params)
+         hasCode = hasCode || kv.first == "s code";
+      if (!hasCode)
+         continue;
+      std::unique_ptr<INode> node { NodeFactory::Instance().MakeNode(rec.typeName) };
+      if (!node)
+         continue;
+      Patch::LoadParams(node.get(), rec.params);
+      ReloadDerivedState(node.get());
+      const std::string err = node->CodeError();
+      if (!err.empty())
+         errors.push_back(FieldCompileIssue(&rec, rec.index, rec.typeName, err));
+   }
+}
+
+// The loaded graph's version of CheckFieldCode, for --frame / --render / --explain / --audio-summary.
+static void CheckLiveFieldCode(const Patch::Data& file, std::vector<Headless::Issue>& errors)
+{
+   for (GraphNode& g : gNodes)
+   {
+      const std::string err = g.node ? g.node->CodeError() : std::string();
+      if (err.empty())
+         continue;
+      const Patch::NodeRecord* rec = nullptr;
+      for (const Patch::NodeRecord& r : file.nodes)
+         if (r.index == g.index && r.typeName == g.typeName)
+            rec = &r;
+      errors.push_back(FieldCompileIssue(rec, g.index, g.typeName, err));
+   }
+}
+
 void HeadlessTick(int& frameId, GLFWwindow* window)
 {
    enum class Phase { Warm, Running, Frames, NodeRender, Audio, Done };
@@ -800,6 +903,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       PatchSchema::ResolveKeys(sData, env, sStatus.errors);
       if (sStatus.errors.empty())
          PatchSchema::Validate(sData, env, sStatus.errors, sStatus.warnings);
+      CheckFieldCode(sData, sStatus.errors);
       if (!job.lenient)
          Headless::PromoteWarnings(sStatus.warnings, sStatus.errors);
       sStatus.extraJson.push_back("\"nodes\":" + std::to_string(sData.nodes.size()));
@@ -982,6 +1086,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
                gModulatableMax[g.typeName] = -1;
          std::vector<Headless::Issue> bad;
          PatchSchema::CheckParamIndices(gHeadlessPatch, MakeSchemaEnv(true), bad);
+         CheckLiveFieldCode(gHeadlessPatch, bad);
          if (!bad.empty() || !gHeadlessPromoted.empty())
          {
             // Everything strict mode found, in file order, so one fix round clears it.
@@ -1007,6 +1112,23 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
          sPhase = Phase::Done;
          HeadlessFinish(window, sStatus, sWall);
          return;
+      }
+
+      // An offline render outruns real time, so an effect still building in
+      // the background (Shape Resonator's mode solve) would miss the start.
+      // Wait for it, bounded so a patch that keeps re-solving still renders.
+      if (job.mode == Headless::Mode::AudioSummary || job.mode == Headless::Mode::Render)
+      {
+         static int sPrepTicks = 0;
+         bool preparing = false;
+         for (GraphNode& g : gNodes)
+            if (auto* fx = dynamic_cast<AudioEffectNode*>(g.node.get()))
+               preparing = preparing || fx->KernelPreparing();
+         if (preparing && ++sPrepTicks < 4 * kHeadlessProbeCapTicks)
+         {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            return;
+         }
       }
 
       if (job.mode == Headless::Mode::AudioSummary)
@@ -1048,7 +1170,12 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
             if (wired)
                sinks.push_back({ g.index, g.typeName, audioOut ? &audioOut->CaptureRing() : &outNode->CaptureRing() });
          }
-         if (sinks.empty())
+         bool timelineClips = false;
+         for (const Arrange::Lane& lane : gArrange.lanes)
+            timelineClips = timelineClips || (lane.type == Arrange::kLaneAudio && !lane.clips.empty());
+         if (job.timeline && !timelineClips)
+            return fail("E_NO_AUDIO", "--timeline: the arrangement has no clip on an audio lane");
+         if (sinks.empty() && !job.timeline)
             return fail("E_NO_AUDIO", "no audio reaches an Audio Out or an Output's audio input, so there is nothing to measure");
 
          sSinkRing = nullptr;
@@ -1192,6 +1319,10 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
             AudioEngine::Instance().SetOfflineTaps(&sTaps);
 
          sAnalyzer = std::make_unique<AudioSummary::Analyzer>(gHeadlessAudioRate);
+         // A loaded patch always opens in Canvas mode (the mode is not saved), so arrangement
+         // clips only sound when asked for; PrimeOfflineStart's rebuild picks the mode up.
+         if (job.timeline)
+            gAudioMode = AudioMode::Timeline;
          Transport::Instance().Seek(job.start);
          Transport::Instance().SetOfflineMode(true, gHeadlessAudioRate);
          Transport::Instance().SetPlaying(true);
@@ -1418,6 +1549,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       if (!Headless::MovieHasIndex(job.out))
          return fail("E_RENDER", "the file was written but has no index (moov), so it cannot be played");
       sStatus.files.push_back(job.out);
+      ReportPlugins(sStatus, job.pluginParams);
       sPhase = Phase::Done;
       HeadlessFinish(window, sStatus, sWall);
       return;
@@ -1501,6 +1633,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       sStatus.height = sNodeRecH;
       sStatus.frames = written;
       sStatus.files.push_back(job.out);
+      ReportPlugins(sStatus, job.pluginParams);
       sPhase = Phase::Done;
       HeadlessFinish(window, sStatus, sWall);
       return;
@@ -1684,6 +1817,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
                                      "],\"cells\":" + std::to_string(sSheet.Count()) +
                                      ",\"cell_width\":" + std::to_string(ContactSheet::kCellWidth) + "}");
       }
+      ReportPlugins(sStatus, job.pluginParams);
       sPhase = Phase::Done;
       HeadlessFinish(window, sStatus, sWall);
       return;
@@ -1711,6 +1845,9 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
          for (GraphNode& gn : gNodes)
             if (!gn.node->bypassed)
                gn.node->CookIfNeeded(frameId);
+         // Once a video frame, as the GUI's frame pump does: a plugin or node
+         // whose latency changed since the topology was built gets PDC again.
+         PollAudioLatencyChanges();
          sAudioStep++;
 
          const long long target = std::min(sAudioTotal, (long long)std::llround((double)sAudioStep * rate / (double)job.fps));
@@ -1819,6 +1956,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       if (!std::isfinite(res.integratedLufs))
          sStatus.warnings.push_back({ "W_SILENT", "the whole range is silent (nothing above -70 LUFS)", 0, -1,
                                       "check that a note or audio source is playing in this range" });
+      ReportPlugins(sStatus, job.pluginParams);
       sPhase = Phase::Done;
       HeadlessFinish(window, sStatus, sWall);
    }

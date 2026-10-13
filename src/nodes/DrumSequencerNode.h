@@ -155,6 +155,8 @@ public:
    // ---- global ---------------------------------------------------------
    int rate = 12;      // MusicTime::RateDivision, stored as plain int (see Transport.h's mScale for why)
    int numSteps = 8;    // 1..kMaxSteps (32)
+   int rateFix = 1;     // not a control: 0 = plays samples at the device rate, not their own (saved before the fix)
+   void BeforeLoadParams() override { rateFix = 0; }
    int editPage = 0;    // UI only, not saved: which 16-step page the grid shows (clamped in CookIfNeeded)
    float swing = 0.0f;  // 0..1
    float volume = 0.8f; // node output level

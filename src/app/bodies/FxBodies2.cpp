@@ -550,7 +550,16 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("analog") = analogBool ? 1.0f : 0.0f;
          }
-         row.Skip();
+         // TPDF dither: trades the crush's quantisation distortion for a
+         // flat noise floor - a choice of character, so a toggle.
+         bool ditherBool = n->Param("dither") != 0.0f;
+         bool ditherUserChanged = false;
+         if (row.Checkbox("dither##bitcrushDither", &ditherBool, &ditherUserChanged))
+         {
+            if (ditherUserChanged)
+               PushUndoCheckpoint();
+            *n->ParamPtr("dither") = ditherBool ? 1.0f : 0.0f;
+         }
          row.Skip();
          row.End();
       }

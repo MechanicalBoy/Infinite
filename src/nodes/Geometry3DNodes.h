@@ -462,8 +462,14 @@ public:
    float dispersion = 0.0f;
    float alphaCutoff = 0.0f;
 
+   // 0 on a patch saved before the primitives were made outward-wound: the shapes that used to
+   // come out inside-out are flipped back so the saved look is unchanged. Not a control.
+   int windingFix = 1;
+   void BeforeLoadParams() override { windingFix = 0; }
+
    void VisitParams(ParamVisitor& v) override
    {
+      v.Int("windingFix", windingFix);
       v.Int("shape", shape); v.Int("detail", detail); v.Int("sides", sides);
       v.Float("tube", tubeRadius); v.Int("knotP", knotP); v.Int("knotQ", knotQ);
       v.Float("bevel", bevel); v.Int("bevelSegments", bevelSegments);
@@ -712,6 +718,10 @@ private:
       // mirrors `revision`/`meshRevision` at the point the instance buffer was
       // last uploaded.
       unsigned long long instanceOverrideRevision = 0;
+      // A translucent instanced mesh uploads its copies sorted far-to-near from the camera (see drawSlot); the eye
+      // they were sorted for, so a camera move re-sorts and a still camera uploads nothing.
+      bool instanceSorted = false;
+      float instanceSortEye[3] = { 0.0f, 0.0f, 0.0f };
    };
 
    bool EnsureResources(int w, int h, int sampleCount);

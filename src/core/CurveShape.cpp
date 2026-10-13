@@ -106,9 +106,11 @@ float CurveShape::Evaluate(float x) const
    }
 
    // Catmull-Rom through the neighbours, so the curve is smooth rather than
-   // faceted, with the ends duplicated to avoid overshoot at the edges.
-   const Point& p0 = (i > 0) ? points[i - 1] : p1;
-   const Point& p3 = (i + 2 < points.size()) ? points[i + 2] : p2;
+   // faceted. The end neighbours are reflected (not duplicated): duplicating
+   // them bent the two-point default (0,0)-(1,1) into an S, so a fresh Curves
+   // node was not identity. Any overshoot is clamped below.
+   const Point p0 = (i > 0) ? points[i - 1] : Point{ 2.0f * p1.x - p2.x, 2.0f * p1.y - p2.y };
+   const Point p3 = (i + 2 < points.size()) ? points[i + 2] : Point{ 2.0f * p2.x - p1.x, 2.0f * p2.y - p1.y };
 
    const float t2 = t * t;
    const float t3 = t2 * t;

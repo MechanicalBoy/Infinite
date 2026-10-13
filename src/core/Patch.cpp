@@ -1,4 +1,5 @@
 #include "Patch.h"
+#include "BlendModes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -229,6 +230,11 @@ void LoadParams(INode* node, const std::vector<std::pair<std::string, std::strin
 
 int FormatVersion() { return kVersion; }
 
+bool SavedBefore(const Data& data, const NodeRecord& rec, int rev)
+{
+   return rec.hasFlags && std::max(data.rev, 1) < rev;
+}
+
 static void WriteBody(std::ostream& file, const Data& data);
 
 bool WriteText(const Data& data, std::string& out)
@@ -241,24 +247,22 @@ bool WriteText(const Data& data, std::string& out)
 
 bool Write(const std::string& path, const Data& data, std::string& outError)
 {
-   std::ofstream file(path);
-   if (!file)
-   {
-      outError = "could not open " + path + " for writing";
-      return false;
-   }
-   WriteBody(file, data);
-   if (!file.good())
-   {
-      outError = "write failed partway through " + path;
-      return false;
-   }
-   return true;
+   std::string text;
+   WriteText(data, text);
+   return AppPaths::WriteFileAtomic(path, text, outError);
 }
 
 static void WriteBody(std::ostream& file, const Data& data)
 {
    file << kMagic << " " << kVersion << "\n";
+   // Blend modes 11..13 are the corrected Overlay/Soft Light/Hard Light; a file without this
+   // line predates the fix and its clips are mapped to the (old) modes 32..34 on load.
+   file << "blendfix 1\n";
+   // Records read from an older file and written straight back (--canonicalize) keep its revision, so their
+   // missing keys still mean what they meant; records built from live nodes carry every key.
+   const bool fromOlderFile = std::any_of(data.nodes.begin(), data.nodes.end(),
+                                          [&](const NodeRecord& n) { return SavedBefore(data, n); });
+   file << "rev " << (fromOlderFile ? std::max(data.rev, 1) : kRevision) << "\n";
    for (const NodeRecord& node : data.nodes)
    {
       const float px = (std::isfinite(node.x) && std::abs(node.x) <= 1e6f && node.x > -2e9f) ? node.x : 0.0f;
@@ -302,15 +306,21 @@ static void WriteBody(std::ostream& file, const Data& data)
       // enabled is positional and trails lo/hi, so a disabled binding that
       // hasn't resolved a range yet still needs one written to carry
       // enabled at all - force hasRange so the tokens line up.
-      const bool hasRange = m.hasRange || !m.enabled || std::abs(m.curve) > 0.0001f;
+      // smoothMs trails curve, so a smoothed binding writes curve (even 0)
+      // and enabled ahead of it for the tokens to line up.
+      const bool hasSmooth = m.smoothMs > 0.0f;
+      const bool hasCurve = std::abs(m.curve) > 0.0001f || hasSmooth;
+      const bool hasRange = m.hasRange || !m.enabled || hasCurve;
       if (hasRange)
       {
          file << " " << FloatToString(m.lo) << " " << FloatToString(m.hi);
-         if (!m.enabled || std::abs(m.curve) > 0.0001f)
+         if (!m.enabled || hasCurve)
          {
             file << " " << (m.enabled ? "1" : "0");
-            if (std::abs(m.curve) > 0.0001f)
+            if (hasCurve)
                file << " " << FloatToString(m.curve);
+            if (hasSmooth)
+               file << " " << FloatToString(m.smoothMs);
          }
       }
       file << "\n";
@@ -501,7 +511,7 @@ static void WriteBody(std::ostream& file, const Data& data)
 
 bool Read(const std::string& path, Data& outData, std::string& outError)
 {
-   std::ifstream file(path);
+   std::ifstream file(AppPaths::FsPath(path));
    if (!file)
    {
       outError = "could not open " + path;
@@ -565,6 +575,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
    };
    std::vector<LegacyClip> legacyClips;
    bool sawArrangeLine = false;
+   bool sawBlendFix = false;
 
    int lineNo = 1; // the header was line 1
    while (std::getline(file, line))
@@ -642,6 +653,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
          current.bypassed = bypass != 0;
          current.showMiniViewport = miniViewport != 0;
          current.showAdvancedParams = advanced != 0;
+         current.hasFlags = true;
       }
       else if (inNode && (tag == "f" || tag == "i" || tag == "b" || tag == "c" || tag == "s"))
       {
@@ -731,6 +743,9 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
          float curve = 0.0f;
          if (in >> curve)
             m.curve = curve;
+         float smoothMs = 0.0f;
+         if (in >> smoothMs)
+            m.smoothMs = std::max(0.0f, smoothMs);
          outData.modulation.push_back(m);
       }
       else if (tag == "pal")
@@ -968,7 +983,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
             raw.erase(0, 1);
          s.name = UnescapeLine(raw);
          if (s.type != kStreamVideo && s.type != kStreamAudio) s.type = kStreamVideo;
-         if (s.blendMode < 0 || s.blendMode > 31) s.blendMode = 0;
+         if (s.blendMode < 0 || s.blendMode > 34) s.blendMode = 0;
          if (!std::isfinite(s.opacity)) s.opacity = 1.0f;
          s.opacity = std::clamp(s.opacity, 0.0f, 1.0f);
          if (!std::isfinite(s.gainDb)) s.gainDb = 0.0f;
@@ -1000,6 +1015,10 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
              std::isfinite(rowHeight))
             outData.streams[streamIdx].rowHeight = rowHeight;
       }
+      else if (tag == "blendfix")
+         sawBlendFix = true;
+      else if (tag == "rev")
+         in >> outData.rev;
       else if (tag == "clipblend")
       {
          int streamIdx = -1, mode = 0;
@@ -1008,7 +1027,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
              clipId != 0)
             for (ClipRecord& c : outData.streams[streamIdx].clips)
                if (c.id == clipId)
-                  c.blendMode = (mode >= 0 && mode <= 31) ? mode : 0;
+                  c.blendMode = (mode >= 0 && mode <= 34) ? mode : 0;
       }
       else if (tag == "clipaudio")
       {
@@ -1350,6 +1369,16 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
    }
    std::stable_sort(outData.markers.begin(), outData.markers.end(),
                     [](const MarkerRecord& a, const MarkerRecord& b) { return a.posTick < b.posTick; });
+   // A hand-written file (no node with a `flags` line) or a rev 2 one never predates the fix.
+   const bool guiSaved = std::any_of(outData.nodes.begin(), outData.nodes.end(),
+                                     [](const NodeRecord& n) { return n.hasFlags; });
+   if (!sawBlendFix && guiSaved && outData.rev < 2)
+      for (StreamRecord& st : outData.streams)
+      {
+         st.blendMode = BlendModes::LegacyMode(st.blendMode);
+         for (ClipRecord& c : st.clips)
+            c.blendMode = BlendModes::LegacyMode(c.blendMode);
+      }
    if (sawArrangeLine)
    {
       ArrangeSettingsRecord& a = outData.arrangeSettings;

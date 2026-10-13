@@ -61,6 +61,31 @@ namespace
       }
    }
 
+   // Signed volume of the closed surface (divergence theorem). Positive = triangles wind
+   // counter-clockwise seen from outside, which is what Render 3D's cull and shadow pass expect.
+   double SignedVolume(const Mesh& m)
+   {
+      double v = 0.0;
+      for (size_t t = 0; t + 2 < m.indices.size(); t += 3)
+      {
+         const Vertex& a = m.vertices[m.indices[t]];
+         const Vertex& b = m.vertices[m.indices[t + 1]];
+         const Vertex& c = m.vertices[m.indices[t + 2]];
+         v += (double)a.px * ((double)b.py * c.pz - (double)b.pz * c.py)
+            - (double)a.py * ((double)b.px * c.pz - (double)b.pz * c.px)
+            + (double)a.pz * ((double)b.px * c.py - (double)b.py * c.px);
+      }
+      return v / 6.0;
+   }
+
+   // Primitives built from a parametric grid come out inside-out; flip them once at the end.
+   Mesh& OrientOutward(Mesh& m)
+   {
+      if (SignedVolume(m) < 0.0)
+         Primitives::FlipWinding(m);
+      return m;
+   }
+
    void PushQuad(Mesh& mesh, unsigned int a, unsigned int b, unsigned int c, unsigned int d)
    {
       mesh.indices.push_back(a); mesh.indices.push_back(b); mesh.indices.push_back(c);
@@ -100,6 +125,12 @@ namespace
 
 namespace Primitives
 {
+   void FlipWinding(Mesh& mesh)
+   {
+      for (size_t t = 0; t + 2 < mesh.indices.size(); t += 3)
+         std::swap(mesh.indices[t + 1], mesh.indices[t + 2]);
+   }
+
    Mesh Plane(int segments)
    {
       Mesh mesh;
@@ -138,7 +169,8 @@ namespace Primitives
       {
          const float phi = kPi * (float)i / r;          // 0..pi, pole to pole
          const float y = std::cos(phi);
-         const float ringRadius = std::sin(phi);
+         // Exactly zero at the poles: sin(pi) is -8.7e-8, which leaves sliver triangles with a random winding.
+         const float ringRadius = (i == 0 || i == r) ? 0.0f : std::sin(phi);
          for (int j = 0; j <= s; j++)
          {
             const float theta = 2.0f * kPi * (float)j / s;
@@ -157,7 +189,7 @@ namespace Primitives
             PushQuad(mesh, a, b, b + 1, a + 1);
          }
       }
-      return mesh;
+      return OrientOutward(mesh);
    }
 
    Mesh Torus(int rings, int sides, float tubeRadius)
@@ -250,7 +282,7 @@ namespace Primitives
             }
          }
       }
-      return mesh;
+      return OrientOutward(mesh);
    }
 
    Mesh Cone(int sides, int rings)
@@ -387,7 +419,7 @@ namespace Primitives
             const unsigned int b = a + (unsigned int)sid + 1;
             PushQuad(mesh, a, b, b + 1, a + 1);
          }
-      return mesh;
+      return OrientOutward(mesh);
    }
 }
 
@@ -1755,6 +1787,15 @@ namespace MeshOps
             float nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
             const float len = std::sqrt(nx*nx + ny*ny + nz*nz);
             if (len > 1e-8f) { nx /= len; ny /= len; nz /= len; }
+            else
+            {
+               // Zero-area triangle (cone apex ring, pole fans): draws nothing, but a zero
+               // normal is not a valid one, so borrow the first corner's own.
+               nx = a.nx; ny = a.ny; nz = a.nz;
+               const float l0 = std::sqrt(nx*nx + ny*ny + nz*nz);
+               if (l0 > 1e-8f) { nx /= l0; ny /= l0; nz /= l0; }
+               else { nx = 0.0f; ny = 1.0f; nz = 0.0f; }
+            }
             if (flip) { nx = -nx; ny = -ny; nz = -nz; }
             // When flipping, also reverse the triangle's winding (swap the
             // 2nd/3rd vertex) so the geometry's orientation is genuinely
@@ -1844,17 +1885,50 @@ namespace MeshOps
       const size_t vertCount = in.vertices.size();
       out.vertices.reserve(vertCount * 2);
 
+      // Vertices that sit at the same position (the split corners of a hard-edged shape) must move
+      // together, or the inner shell tears open along every hard edge. Each welded group offsets along
+      // the average of its normals.
+      struct Key
+      {
+         long long x, y, z;
+         bool operator<(const Key& o) const { return std::tie(x, y, z) < std::tie(o.x, o.y, o.z); }
+      };
+      std::vector<int> group(vertCount);
+      std::map<Key, int> groupOf;
+      std::vector<std::array<float, 3>> groupNormal;
+      for (size_t i = 0; i < vertCount; i++)
+      {
+         const Vertex& v = in.vertices[i];
+         const Key k { std::llround((double)v.px * 1e4), std::llround((double)v.py * 1e4), std::llround((double)v.pz * 1e4) };
+         auto it = groupOf.find(k);
+         if (it == groupOf.end())
+         {
+            it = groupOf.emplace(k, (int)groupNormal.size()).first;
+            groupNormal.push_back({ 0.0f, 0.0f, 0.0f });
+         }
+         group[i] = it->second;
+         groupNormal[(size_t)it->second][0] += v.nx;
+         groupNormal[(size_t)it->second][1] += v.ny;
+         groupNormal[(size_t)it->second][2] += v.nz;
+      }
+      for (auto& n : groupNormal)
+      {
+         const float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+         if (len > 1e-8f) { n[0] /= len; n[1] /= len; n[2] /= len; }
+      }
+
       // outer shell
       for (const Vertex& v : in.vertices)
          out.vertices.push_back(v);
-      // inner shell, pushed back along the normal
-      for (const Vertex& v : in.vertices)
+      // inner shell, pushed back along the welded normal
+      for (size_t i = 0; i < vertCount; i++)
       {
-         Vertex inner = v;
-         inner.px -= v.nx * thickness;
-         inner.py -= v.ny * thickness;
-         inner.pz -= v.nz * thickness;
-         inner.nx = -v.nx; inner.ny = -v.ny; inner.nz = -v.nz;
+         Vertex inner = in.vertices[i];
+         const auto& n = groupNormal[(size_t)group[i]];
+         inner.px -= n[0] * thickness;
+         inner.py -= n[1] * thickness;
+         inner.pz -= n[2] * thickness;
+         inner.nx = -inner.nx; inner.ny = -inner.ny; inner.nz = -inner.nz;
          out.vertices.push_back(inner);
       }
 
@@ -1867,6 +1941,30 @@ namespace MeshOps
          out.indices.push_back((unsigned int)(in.indices[t + 2] + vertCount));
          out.indices.push_back((unsigned int)(in.indices[t + 1] + vertCount));
          out.indices.push_back((unsigned int)(in.indices[t] + vertCount));
+      }
+
+      // An open input has a rim: close it with a wall between the outer and inner edge. Only when the
+      // outer shell is kept, since the wall has nothing to join otherwise.
+      if (keepOriginal)
+      {
+         std::map<std::pair<int, int>, int> uses;
+         for (size_t t = 0; t + 2 < in.indices.size(); t += 3)
+            for (int e = 0; e < 3; e++)
+            {
+               const int p = group[in.indices[t + e]], q = group[in.indices[t + (e + 1) % 3]];
+               if (p != q)
+                  uses[{ std::min(p, q), std::max(p, q) }]++;
+            }
+         for (size_t t = 0; t + 2 < in.indices.size(); t += 3)
+            for (int e = 0; e < 3; e++)
+            {
+               const unsigned int a = in.indices[t + e], b = in.indices[t + (e + 1) % 3];
+               const int p = group[a], q = group[b];
+               if (p == q || uses[{ std::min(p, q), std::max(p, q) }] != 1)
+                  continue;
+               const unsigned int ai = a + (unsigned int)vertCount, bi = b + (unsigned int)vertCount;
+               out.indices.insert(out.indices.end(), { a, ai, bi, a, bi, b });
+            }
       }
       return out;
    }
@@ -3237,7 +3335,7 @@ namespace Primitives
          const float v = (float)i / (float)r;
          const float phi = v * kPi;
          const float y = std::cos(phi) * radius;
-         const float ring = std::sin(phi) * radius;
+         const float ring = (i == 0 || i == r) ? 0.0f : std::sin(phi) * radius; // exact zero at the poles
          // Offset the top half up and the bottom half down by the barrel length.
          const float offset = (phi <= kPi * 0.5f) ? half : -half;
 
@@ -3358,11 +3456,9 @@ namespace Primitives
          const float x0 = std::cos(t0) * radius, z0 = std::sin(t0) * radius;
          const float x1 = std::cos(t1) * radius, z1 = std::sin(t1) * radius;
 
-         float ax = x1 - x0, az = z1 - z0;
-         float bx = -x0, by = apexY - baseY, bz = -z0;
-         float nx = az * by - 0.0f * bz;
-         float ny = 0.0f * bx - ax * bz;
-         float nz = ax * by - 0.0f * bx;
+         // Outward slant normal: horizontal part along the face's mid-angle, vertical part from the slope.
+         const float tm = 0.5f * (t0 + t1);
+         float nx = std::cos(tm) * (apexY - baseY), ny = radius, nz = std::sin(tm) * (apexY - baseY);
          const float len = std::sqrt(nx*nx + ny*ny + nz*nz);
          if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
 
@@ -3389,7 +3485,7 @@ namespace Primitives
          mesh.indices.push_back(centre + 1 + (unsigned int)j + 1);
          mesh.indices.push_back(centre + 1 + (unsigned int)j);
       }
-      return mesh;
+      return OrientOutward(mesh);
    }
 
    Mesh Prism(int sides, int rings)
@@ -3455,7 +3551,7 @@ namespace Primitives
                      (unsigned int)((i + 1) * stride + j),
                      (unsigned int)((i + 1) * stride + j + 1),
                      (unsigned int)(i * stride + j + 1));
-      return mesh;
+      return OrientOutward(mesh);
    }
 
    namespace
@@ -3843,10 +3939,11 @@ namespace Primitives
          for (int i = 0; i < n; i++)
          {
             const unsigned int a = base + (unsigned int)i * 2;
+            // Wound so the geometric normal agrees with the vertex normal (+y on the top side, -y below).
             if (side == 0)
-               PushQuad(mesh, a, a + 1, a + 3, a + 2);
-            else
                PushQuad(mesh, a, a + 2, a + 3, a + 1);
+            else
+               PushQuad(mesh, a, a + 1, a + 3, a + 2);
          }
       }
       return mesh;
@@ -3913,9 +4010,10 @@ namespace Primitives
             const float u = (float)j / (float)sec;
             const float theta = (u - 0.5f) * 2.0f * kPi;
             const float r1 = super(theta, m1, n1, n2, n3);
-            const float x = r1 * std::cos(theta) * r2 * std::cos(phi) * 0.5f;
+            const float cphi = (i == 0 || i == r) ? 0.0f : std::cos(phi); // exact zero at the poles
+            const float x = r1 * std::cos(theta) * r2 * cphi * 0.5f;
             const float y = r2 * std::sin(phi) * 0.5f;
-            const float z = r1 * std::sin(theta) * r2 * std::cos(phi) * 0.5f;
+            const float z = r1 * std::sin(theta) * r2 * cphi * 0.5f;
             PushVertex(mesh, x, y, z, 0.0f, 1.0f, 0.0f, u, v);
          }
       }
@@ -3929,6 +4027,7 @@ namespace Primitives
                      (unsigned int)((i + 1) * stride + j));
       // Normals are derived rather than analytic: the superformula's gradient
       // is unpleasant and the mesh is dense enough that derived ones are fine.
+      OrientOutward(mesh);
       return MeshOps::RecalculateNormals(mesh, false, false);
    }
 }
@@ -4335,8 +4434,9 @@ namespace MeshOps
       for (size_t i = 0; i < rings; i++)
       {
          const size_t index = i % count;
-         const size_t nextIndex = (index + 1) % count;
-         const size_t prevIndex = (index + count - 1) % count;
+         // An open line does not wrap: its end rings take the tangent of the one segment they have.
+         const size_t nextIndex = (!line.closed && index + 1 == count) ? index : (index + 1) % count;
+         const size_t prevIndex = (!line.closed && index == 0) ? index : (index + count - 1) % count;
 
          float tangent[3];
          for (int k = 0; k < 3; k++)
@@ -4398,10 +4498,11 @@ namespace MeshOps
       const int stride = n + 1;
       for (size_t i = 0; i + 1 < rings; i++)
          for (int j = 0; j < n; j++)
+            // Wound so the geometric normal points away from the axis, matching the radial vertex normals.
             PushQuad(mesh, (unsigned int)(i * stride + j),
-                     (unsigned int)((i + 1) * stride + j),
+                     (unsigned int)(i * stride + j + 1),
                      (unsigned int)((i + 1) * stride + j + 1),
-                     (unsigned int)(i * stride + j + 1));
+                     (unsigned int)((i + 1) * stride + j));
       return mesh;
    }
 }

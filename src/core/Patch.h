@@ -70,6 +70,9 @@ class INode;
 //            <fadeInTick> <fadeOutTick> <gainDb> <enabled> <groupId> <r> <g> <b> <name>
 //   streammix <streamIndex> <mute> <solo>
 //     Audio lane mute/solo. Only written when either is set.
+//   blendfix 1
+//     Written first; marks blend modes 11..13 as the corrected Overlay/Soft Light/Hard Light.
+//     Files without it get their clip/stream modes mapped to the old 32..34 on load.
 //   clipblend <streamIndex> <clipId> <blendMode>
 //     A video clip's compositing mode, only written when non-Normal. Files
 //     without it inherit the stream line's (legacy, lane-wide) blendMode.
@@ -112,6 +115,10 @@ namespace Patch
    // index * GraphNode::kStride (1050) in an int. PatchSchema::Validate
    // reports E_BAD_INDEX outside 1..kMaxNodeIndex.
    constexpr int kMaxNodeIndex = 1000000;
+   // What a key missing from a node means (the `rev` line). Rev 1, every file before the line existed:
+   // nodes that fixed a behaviour keep the old one, so a patch saved before the fix sounds as it did.
+   // Rev 2: a missing key is the node's default, the documented rule for hand-written patches.
+   constexpr int kRevision = 2;
 
    struct NodeRecord
    {
@@ -137,6 +144,9 @@ namespace Patch
       bool bypassed = false;
       bool showMiniViewport = false;
       bool showAdvancedParams = false; // audio nodes only, see GraphNode.h
+      // Reader only: the block had a `flags` line. The GUI has written one on every node since the
+      // first build, so with no `rev` line it marks a node saved by an older Infinite (SavedBefore).
+      bool hasFlags = false;
       // Raw key/value lines, replayed into the node through its ParamVisitor.
       std::vector<std::pair<std::string, std::string>> params;
       // Reader line numbers (1-based, 0 = not read from a file), so the
@@ -193,6 +203,7 @@ namespace Patch
       // written) alongside lo/hi - see the format comment above.
       bool enabled = true;
       float curve = 0.0f; // in [-1.0, 1.0], 0 = linear
+      float smoothMs = 0.0f; // see Modulation::Source::smoothMs; trails curve on the line
       int line = 0;
       std::string dstRef, srcRef, outRef; // authoring names, see CableRecord
       std::string dstKey;                 // a control key in place of dstParam (`mod 5 radius ...`)
@@ -483,7 +494,14 @@ namespace Patch
       // True when a mod/expr line used a control key, or an `i` value is a dropdown
       // option name. PatchSchema::ResolveKeys needs a probed node per type for those.
       bool hasKeyRefs = false;
+      // Reader only: the file's `rev` line, 0 when it has none (see kRevision).
+      int rev = 0;
    };
+
+   // True when `rec` was saved by an Infinite older than `rev`: the GUI wrote it (a `flags` line) and the
+   // file's revision is lower. Only then do missing keys mean that build's behaviour (INode::BeforeLoadParams).
+   // A hand-written node and an in-memory record (undo, clipboard snapshot) always get the defaults.
+   bool SavedBefore(const Data& data, const NodeRecord& rec, int rev = kRevision);
 
    bool Write(const std::string& path, const Data& data, std::string& outError);
    // The same text Write puts in a file, held in memory (the node clipboard).

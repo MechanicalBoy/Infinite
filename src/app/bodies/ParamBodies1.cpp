@@ -60,9 +60,9 @@ namespace app
       {
          // wrap pos is window-relative; passing a bare width put it left of the
          // cursor and wrapped every single character onto its own line
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (!n->LoadedPath().empty())
       {
@@ -70,9 +70,9 @@ namespace app
          size_t slash = file.find_last_of('/');
          if (slash != std::string::npos)
             file = file.substr(slash + 1);
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%s  (%dx%d)", file.c_str(), n->GetOutputWidth(), n->GetOutputHeight());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
    }
 
@@ -97,7 +97,7 @@ namespace app
       ModSlider("width", &n->width, 16.0f, 4096.0f, "%.0f");
       ModSlider("height", &n->height, 16.0f, 4096.0f, "%.0f");
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (!n->LastError().empty())
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
       if (n->ImageCount() > 0)
@@ -105,7 +105,7 @@ namespace app
          const std::string file = n->CurrentFileName();
          ImGui::TextDisabled("%d/%d  %s", n->CurrentImageNumber(), n->ImageCount(), file.c_str());
       }
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
       if (n->ImageCount() == 0)
          EmptyBlock("No images", "Choose a folder containing images");
    }
@@ -114,9 +114,9 @@ namespace app
    void DrawSyphonOutParams(SyphonOutNode* n)
    {
 #if !defined(__APPLE__) && !defined(_WIN32)
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("Syphon/Spout texture sharing is unavailable on Linux.");
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
       return;
 #else
       ImGui::SetNextItemWidth(kPreviewSize);
@@ -129,7 +129,7 @@ namespace app
          n->SetServerName(n->serverNameInput);
       }
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (n->PublishedWidth() > 0 && n->PublishedHeight() > 0)
       {
          ImGui::TextColored(tok::V4(tok::palf::v_400_1000_500_1000), "Broadcasting: %dx%d", n->PublishedWidth(), n->PublishedHeight());
@@ -144,7 +144,7 @@ namespace app
       {
          ImGui::TextDisabled("Connect an image input to publish");
       }
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 #endif
    }
 
@@ -152,9 +152,9 @@ namespace app
    void DrawSyphonInParams(SyphonInNode* n)
    {
 #if !defined(__APPLE__) && !defined(_WIN32)
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("Syphon/Spout texture sharing is unavailable on Linux.");
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
       return;
 #else
       if (ActionButton::Draw("Refresh Servers", ImVec2(kPreviewSize, 0)))
@@ -189,7 +189,7 @@ namespace app
             n->SelectServer(idx);
          }, kPreviewSize);
 
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          if (n->IsConnected())
          {
             ImGui::TextColored(tok::V4(tok::palf::v_400_1000_500_1000), "Receiving: %dx%d", n->GetOutputWidth(), n->GetOutputHeight());
@@ -198,7 +198,7 @@ namespace app
          {
             ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "Connecting...");
          }
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
 #endif
    }
@@ -218,7 +218,7 @@ namespace app
       if (ImGui::IsItemDeactivatedAfterEdit())
          n->SetSourceName(n->sourceNameInput);
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (n->IsPublishing())
       {
          ImGui::TextColored(tok::V4(tok::palf::v_400_1000_500_1000), "Broadcasting: %dx%d", n->PublishedWidth(), n->PublishedHeight());
@@ -229,20 +229,20 @@ namespace app
       }
       else
          ImGui::TextDisabled("Connect an image input to publish");
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
    }
 
 
    void DrawNdiInParams(NdiInNode* n)
    {
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (!Ndi::Available())
       {
          ImGui::TextDisabled("NDI runtime not found (install from ndi.video)");
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
          return;
       }
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       const std::vector<std::string> sources = n->AvailableSources();
       if (sources.empty())
@@ -263,14 +263,14 @@ namespace app
          n->SelectSource(sources[(size_t)idx]);
       }, kPreviewSize);
 
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       if (n->SourceName().empty())
          ImGui::TextDisabled("Pick a source");
       else if (n->IsReceiving())
          ImGui::TextColored(tok::V4(tok::palf::v_400_1000_500_1000), "Receiving: %dx%d", n->GetOutputWidth(), n->GetOutputHeight());
       else
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "Waiting for frames...");
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
    }
 
 
@@ -307,9 +307,9 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (!n->LoadedPath().empty())
       {
@@ -317,15 +317,15 @@ namespace app
          size_t slash = file.find_last_of('/');
          if (slash != std::string::npos)
             file = file.substr(slash + 1);
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%s  (%dx%d)", file.c_str(), n->GetOutputWidth(), n->GetOutputHeight());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("no image: Render 3D uses its procedural sky");
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
 
       ModSlider("intensity", &n->intensity, 0.0f, 8.0f);
@@ -400,9 +400,9 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
 
       ModSlider("width", &n->width, 16.0f, 4096.0f, "%.0f");
@@ -480,9 +480,9 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (!n->LoadedPath().empty())
       {
@@ -490,9 +490,9 @@ namespace app
          size_t slash = file.find_last_of('/');
          if (slash != std::string::npos)
             file = file.substr(slash + 1);
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%s", file.c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
          ImGui::TextDisabled("%dx%d  %.1fs / %.1fs", n->GetOutputWidth(), n->GetOutputHeight(),
                              n->Position(), n->Duration());
       }
@@ -514,9 +514,9 @@ namespace app
       else if (!n->AudioError().empty())
       {
          NodeSeparator();
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("audio: %s", n->AudioError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
    }
 
@@ -531,9 +531,9 @@ namespace app
       const auto& devices = n->AvailableDevices();
       if (devices.empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("No camera devices found.");
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else
       {
@@ -562,15 +562,15 @@ namespace app
 
       if (!n->LastError().empty())
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_200_1000), "%s", n->LastError().c_str());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
       else if (n->IsRunning() && n->GetOutputWidth() > 0 && n->GetOutputHeight() > 0)
       {
-         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+         PushTextWrapWidth(kPreviewSize);
          ImGui::TextDisabled("%dx%d", n->GetOutputWidth(), n->GetOutputHeight());
-         ImGui::PopTextWrapPos();
+         PopTextWrapWidth();
       }
    }
 
@@ -803,19 +803,85 @@ namespace app
    }
 
 
+   // Registers a float param without drawing it, at a fixed ordinal, so a
+   // binding on a control the current mode hides stays alive (and comes back
+   // when the mode does) and the ParamRef.key join still finds the member.
+   // Same trick as DrawRateModeControls in NoteBodies.
+   void RegisterHiddenParam(float* value, float minV, float maxV, const char* name, int ordinal)
+   {
+      ParamRef slot;
+      slot.nodeIndex = gCurrentNodeIndex;
+      slot.paramIndex = ordinal;
+      slot.value = value;
+      slot.minValue = minV;
+      slot.maxValue = maxV;
+      slot.name = name;
+      Modulation::Instance().RegisterParam(slot);
+   }
+
+
+   // LFO / Random rate: "rate in" picks beats (free float, the legacy
+   // control), a MusicTime division (exact, same menu as the note nodes) or
+   // Hz. The beats slider keeps ordinal 0 in every mode (hidden when not
+   // drawn); Hz takes the fixed ordinal `hzOrdinal`, above the body's count.
+   void DrawModRateControls(int* rateMode, float* rateBeats, float* rateHz, int hzOrdinal)
+   {
+      DropdownButton("rate in", LFONode::RateModeNames(), *rateMode,
+                     [rateMode](int i) { PushUndoCheckpoint(); *rateMode = i; });
+      if (*rateMode == LFONode::kRateBeats)
+      {
+         ModSlider("rate", rateBeats, 0.05f, 32.0f, "%.2f beats");
+      }
+      else
+      {
+         RegisterHiddenParam(rateBeats, 0.05f, 32.0f, "rate", gParamCounter++);
+         if (*rateMode == LFONode::kRateSynced)
+         {
+            const int div = MusicTime::NearestRateDivision(*rateBeats);
+            DropdownButton("division", MusicTime::RateDivisionList(), div, [rateBeats](int i) {
+               PushUndoCheckpoint();
+               *rateBeats = (float)MusicTime::BeatsFor((MusicTime::RateDivision)std::clamp(i, 0, (int)MusicTime::kNumRateDivisions - 1));
+            });
+         }
+      }
+      if (*rateMode == LFONode::kRateHz)
+      {
+         FixedParamOrdinal at(hzOrdinal);
+         ModSlider("rate (Hz)", rateHz, 0.01f, 40.0f, "%.2f Hz", kParamWidth, false, 0.0f,
+                   LogTaper::PosToValue, LogTaper::ValueToPos);
+      }
+      else
+      {
+         RegisterHiddenParam(rateHz, 0.01f, 40.0f, "rate (Hz)", hzOrdinal);
+      }
+   }
+
+
    void DrawLFOParams(LFONode* n)
    {
       DropdownButton("shape", LFONode::ShapeNames(), n->shape, [n](int i) { n->shape = i; });
-      ModSlider("rate", &n->rateBeats, 0.05f, 32.0f, "%.2f beats");
+      DrawModRateControls(&n->rateMode, &n->rateBeats, &n->rateHz, 4);
       ModSlider("phase", &n->phase, 0.0f, 1.0f);
       ModSlider("low", &n->low, 0.0f, 1.0f);
       ModSlider("high", &n->high, 0.0f, 1.0f);
+      DropdownButton("phase from", LFONode::PhaseModeNames(), n->phaseMode,
+                     [n](int i) { PushUndoCheckpoint(); n->phaseMode = i; });
+      // Seed only means something for S&H (shape 5) on the new maths.
+      if (n->shape == 5 && n->maths >= 1)
+      {
+         FixedParamOrdinal at(5);
+         ModSlider("seed", &n->seed, 0.0f, 200.0f, "%.0f", kParamWidth, false, 1.0f);
+      }
+      else
+      {
+         RegisterHiddenParam(&n->seed, 0.0f, 200.0f, "seed", 5);
+      }
    }
 
 
    void DrawRandomParams(RandomNode* n)
    {
-      ModSlider("rate", &n->rateBeats, 0.05f, 32.0f, "%.2f beats");
+      DrawModRateControls(&n->rateMode, &n->rateBeats, &n->rateHz, 5);
       ModSlider("smooth", &n->smooth, 0.0f, 1.0f);
       ModSlider("low", &n->low, 0.0f, 1.0f);
       ModSlider("high", &n->high, 0.0f, 1.0f);
@@ -1026,7 +1092,7 @@ namespace app
 
       const float labelRowH = ImGui::GetFontSize() + 5.0f;
       ImGui::SetCursorScreenPos(ImVec2(origin.x, br.y + labelRowH));
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + size);
+      PushTextWrapWidth(size);
       if (hoverStep >= 0)
       {
          ImGui::TextDisabled("step %d: %.2f", hoverStep + 1, n->steps[hoverStep]);
@@ -1035,7 +1101,7 @@ namespace app
       {
          ImGui::TextDisabled("%d steps, looped", count);
       }
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
    }
 
 
@@ -1104,8 +1170,11 @@ namespace app
          ModSlider("in (no cable)", &n->constantIn, 0.0f, 1.0f);
       else
          ImGui::TextDisabled("in: patched");
-      static const std::vector<std::string> kModes = { "per frame", "time", "spring" };
-      DropdownButton("mode", kModes, n->mode, [n](int i) { PushUndoCheckpoint(); n->mode = i; });
+      // Legacy (maths 0) amount is a per-frame factor; on the new maths it is
+      // the same feel at 60 fps turned into a time constant, so fps-free.
+      static const std::vector<std::string> kLegacyModes = { "per frame", "time", "spring" };
+      static const std::vector<std::string> kModes = { "amount", "time", "spring" };
+      DropdownButton("mode", n->maths >= 1 ? kModes : kLegacyModes, n->mode, [n](int i) { PushUndoCheckpoint(); n->mode = i; });
       if (n->mode == SmoothNode::kTime)
          ModSlider("time (s)", &n->timeConstant, 0.001f, 5.0f);
       else if (n->mode == SmoothNode::kSpring)
@@ -1722,9 +1791,9 @@ namespace app
          MidiLearnCancelAll();
          n->StartLearn();
       }
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("%s", n->Status().c_str());
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       if (n->IsBound())
          ImGui::Text("bound: %s", n->BindingLabel().c_str());
@@ -1754,9 +1823,9 @@ namespace app
             n->StartLearn();
          }
       }
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + kPreviewSize);
+      PushTextWrapWidth(kPreviewSize);
       ImGui::TextDisabled("%s", n->Status().c_str());
-      ImGui::PopTextWrapPos();
+      PopTextWrapWidth();
 
       if (n->IsBound())
          ImGui::Text("bound: %s", n->BindingLabel().c_str());

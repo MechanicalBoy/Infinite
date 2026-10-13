@@ -1,0 +1,1353 @@
+infinite-patch 1
+# Glass molecules (see tools: art/gen_molecule.py). Bulbs = spectrum bands, hubs = level, light = onsets.
+node 1 3D Sphere
+  id hubsrc0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 36
+end
+node 2 3D Transform
+  id hub0
+  f scaleX 0.9600
+  f scaleY 0.9600
+  f scaleZ 0.9600
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX 0.0000
+  f offsetY 0.8500
+  f offsetZ 0.1000
+end
+node 3 3D Cone
+  id arm0_0
+  f posX -0.0413
+  f posY 1.2933
+  f posZ 0.5139
+  f scaleX 0.3908
+  f scaleY 0.6397
+  f scaleZ 0.3908
+  f rotX -136.963
+  f rotZ -3.895
+  f rotY 0.000
+end
+node 4 3D Sphere
+  id bulbsrc0_0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 5 3D Torus
+  id seamsrc0_0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 6 3D Transform
+  id bulb0_0
+  f scaleX 0.5257
+  f scaleY 0.5257
+  f scaleZ 0.5257
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX -0.0666
+  f offsetY 1.5648
+  f offsetZ 0.7675
+end
+node 7 3D Transform
+  id seam0_0
+  f scaleX 0.5362
+  f scaleY 0.5362
+  f scaleZ 0.5362
+  f rotX 84.761
+  f rotY 0.000
+  f rotZ 67.530
+  f offsetX -0.0666
+  f offsetY 1.5648
+  f offsetZ 0.7675
+end
+node 8 3D Cone
+  id arm0_1
+  f posX 0.4906
+  f posY 0.9263
+  f posZ -0.1403
+  f scaleX 0.4210
+  f scaleY 0.5272
+  f scaleZ 0.4210
+  f rotX 107.614
+  f rotZ 62.803
+  f rotY 0.000
+end
+node 9 3D Sphere
+  id bulbsrc0_1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 10 3D Torus
+  id seamsrc0_1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 11 3D Transform
+  id bulb0_1
+  f scaleX 0.5448
+  f scaleY 0.5448
+  f scaleZ 0.5448
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX 0.7735
+  f offsetY 0.9703
+  f offsetZ -0.2788
+end
+node 12 3D Transform
+  id seam0_1
+  f scaleX 0.5557
+  f scaleY 0.5557
+  f scaleZ 0.5557
+  f rotX 43.945
+  f rotY 0.000
+  f rotZ 34.374
+  f offsetX 0.7735
+  f offsetY 0.9703
+  f offsetZ -0.2788
+end
+node 13 3D Cone
+  id arm0_2
+  f posX 0.1270
+  f posY 1.3177
+  f posZ -0.1387
+  f scaleX 0.3928
+  f scaleY 0.5045
+  f scaleZ 0.3928
+  f rotX 152.960
+  f rotZ 13.593
+  f rotY 0.000
+end
+node 14 3D Sphere
+  id bulbsrc0_2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 15 3D Torus
+  id seamsrc0_2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 16 3D Transform
+  id bulb0_2
+  f scaleX 0.4307
+  f scaleY 0.4307
+  f scaleZ 0.4307
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX 0.1964
+  f offsetY 1.5734
+  f offsetZ -0.2692
+end
+node 17 3D Transform
+  id seam0_2
+  f scaleX 0.4393
+  f scaleY 0.4393
+  f scaleZ 0.4393
+  f rotX -118.774
+  f rotY 0.000
+  f rotZ 30.021
+  f offsetX 0.1964
+  f offsetY 1.5734
+  f offsetZ -0.2692
+end
+node 18 3D Sphere
+  id hubsrc1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 36
+end
+node 19 3D Transform
+  id hub1
+  f scaleX 0.8400
+  f scaleY 0.8400
+  f scaleZ 0.8400
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX -1.0000
+  f offsetY -0.0500
+  f offsetZ 0.5500
+end
+node 20 3D Cone
+  id arm1_0
+  f posX -1.3525
+  f posY -0.1145
+  f posZ 1.0059
+  f scaleX 0.4040
+  f scaleY 0.6557
+  f scaleZ 0.4040
+  f rotX -81.952
+  f rotZ -37.436
+  f rotY 0.000
+end
+node 21 3D Sphere
+  id bulbsrc1_0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 22 3D Torus
+  id seamsrc1_0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 23 3D Transform
+  id bulb1_0
+  f scaleX 0.5100
+  f scaleY 0.5100
+  f scaleZ 0.5100
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX -1.5828
+  f offsetY -0.1566
+  f offsetZ 1.3038
+end
+node 24 3D Transform
+  id seam1_0
+  f scaleX 0.5202
+  f scaleY 0.5202
+  f scaleZ 0.5202
+  f rotX -100.888
+  f rotY 0.000
+  f rotZ -35.720
+  f offsetX -1.5828
+  f offsetY -0.1566
+  f offsetZ 1.3038
+end
+node 25 3D Cone
+  id arm1_1
+  f posX -0.9181
+  f posY 0.3406
+  f posZ 1.0089
+  f scaleX 0.3715
+  f scaleY 0.7123
+  f scaleZ 0.3715
+  f rotX -130.400
+  f rotZ 7.738
+  f rotY 0.000
+end
+node 26 3D Sphere
+  id bulbsrc1_1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 27 3D Torus
+  id seamsrc1_1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 28 3D Transform
+  id bulb1_1
+  f scaleX 0.4613
+  f scaleY 0.4613
+  f scaleZ 0.4613
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX -0.8639
+  f offsetY 0.5989
+  f offsetZ 1.3125
+end
+node 29 3D Transform
+  id seam1_1
+  f scaleX 0.4706
+  f scaleY 0.4706
+  f scaleZ 0.4706
+  f rotX 148.218
+  f rotY 0.000
+  f rotZ 22.649
+  f offsetX -0.8639
+  f offsetY 0.5989
+  f offsetZ 1.3125
+end
+node 30 3D Cone
+  id arm1_2
+  f posX -1.5315
+  f posY 0.2990
+  f posZ 0.6626
+  f scaleX 0.4247
+  f scaleY 0.7874
+  f scaleZ 0.4247
+  f rotX -162.125
+  f rotZ -55.396
+  f rotY 0.000
+end
+node 31 3D Sphere
+  id bulbsrc1_2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 32 3D Torus
+  id seamsrc1_2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 33 3D Transform
+  id bulb1_2
+  f scaleX 0.4201
+  f scaleY 0.4201
+  f scaleZ 0.4201
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX -1.8901
+  f offsetY 0.5345
+  f offsetZ 0.7385
+end
+node 34 3D Transform
+  id seam1_2
+  f scaleX 0.4285
+  f scaleY 0.4285
+  f scaleZ 0.4285
+  f rotX -4.184
+  f rotY 0.000
+  f rotZ 35.209
+  f offsetX -1.8901
+  f offsetY 0.5345
+  f offsetZ 0.7385
+end
+node 35 3D Sphere
+  id hubsrc2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 36
+end
+node 36 3D Transform
+  id hub2
+  f scaleX 0.9200
+  f scaleY 0.9200
+  f scaleZ 0.9200
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX 0.9500
+  f offsetY -0.1500
+  f offsetZ -0.1000
+end
+node 37 3D Cone
+  id arm2_0
+  f posX 1.4949
+  f posY -0.2518
+  f posZ -0.3786
+  f scaleX 0.4179
+  f scaleY 0.6888
+  f scaleZ 0.4179
+  f rotX 69.938
+  f rotZ 61.438
+  f rotY 0.000
+end
+node 38 3D Sphere
+  id bulbsrc2_0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 39 3D Torus
+  id seamsrc2_0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 40 3D Transform
+  id bulb2_0
+  f scaleX 0.4686
+  f scaleY 0.4686
+  f scaleZ 0.4686
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX 1.8386
+  f offsetY -0.3159
+  f offsetZ -0.5544
+end
+node 41 3D Transform
+  id seam2_0
+  f scaleX 0.4779
+  f scaleY 0.4779
+  f scaleZ 0.4779
+  f rotX 109.837
+  f rotY 0.000
+  f rotZ 39.924
+  f offsetX 1.8386
+  f offsetY -0.3159
+  f offsetZ -0.5544
+end
+node 42 3D Cone
+  id arm2_1
+  f posX 1.3786
+  f posY -0.4252
+  f posZ -0.2828
+  f scaleX 0.3460
+  f scaleY 0.5303
+  f scaleZ 0.3460
+  f rotX 33.597
+  f rotZ 52.367
+  f rotY 0.000
+end
+node 43 3D Sphere
+  id bulbsrc2_1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 44 3D Torus
+  id seamsrc2_1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 45 3D Transform
+  id bulb2_1
+  f scaleX 0.5635
+  f scaleY 0.5635
+  f scaleZ 0.5635
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX 1.6332
+  f offsetY -0.5887
+  f offsetZ -0.3915
+end
+node 46 3D Transform
+  id seam2_1
+  f scaleX 0.5747
+  f scaleY 0.5747
+  f scaleZ 0.5747
+  f rotX -41.562
+  f rotY 0.000
+  f rotZ 76.187
+  f offsetX 1.6332
+  f offsetY -0.5887
+  f offsetZ -0.3915
+end
+node 47 3D Cone
+  id arm2_2
+  f posX 1.1330
+  f posY 0.0652
+  f posZ -0.6548
+  f scaleX 0.3517
+  f scaleY 0.6931
+  f scaleZ 0.3517
+  f rotX 111.201
+  f rotZ 17.097
+  f rotY 0.000
+end
+node 48 3D Sphere
+  id bulbsrc2_2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 49 3D Torus
+  id seamsrc2_2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 50 3D Transform
+  id bulb2_2
+  f scaleX 0.4957
+  f scaleY 0.4957
+  f scaleZ 0.4957
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX 1.2495
+  f offsetY 0.2021
+  f offsetZ -1.0078
+end
+node 51 3D Transform
+  id seam2_2
+  f scaleX 0.5057
+  f scaleY 0.5057
+  f scaleZ 0.5057
+  f rotX 116.051
+  f rotY 0.000
+  f rotZ 28.713
+  f offsetX 1.2495
+  f offsetY 0.2021
+  f offsetZ -1.0078
+end
+node 52 3D Sphere
+  id hubsrc3
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 36
+end
+node 53 3D Transform
+  id hub3
+  f scaleX 0.8000
+  f scaleY 0.8000
+  f scaleZ 0.8000
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX -0.1500
+  f offsetY -0.9500
+  f offsetZ 0.3500
+end
+node 54 3D Cone
+  id arm3_0
+  f posX -0.0054
+  f posY -1.3272
+  f posZ 0.6799
+  f scaleX 0.3794
+  f scaleY 0.5632
+  f scaleZ 0.3794
+  f rotX -41.173
+  f rotZ 16.094
+  f rotY 0.000
+end
+node 55 3D Sphere
+  id bulbsrc3_0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 56 3D Torus
+  id seamsrc3_0
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 57 3D Transform
+  id bulb3_0
+  f scaleX 0.5738
+  f scaleY 0.5738
+  f scaleZ 0.5738
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX 0.0886
+  f offsetY -1.5724
+  f offsetZ 0.8944
+end
+node 58 3D Transform
+  id seam3_0
+  f scaleX 0.5853
+  f scaleY 0.5853
+  f scaleZ 0.5853
+  f rotX 129.242
+  f rotY 0.000
+  f rotZ -12.653
+  f offsetX 0.0886
+  f offsetY -1.5724
+  f offsetZ 0.8944
+end
+node 59 3D Cone
+  id arm3_1
+  f posX -0.3703
+  f posY -1.3637
+  f posZ 0.6169
+  f scaleX 0.3696
+  f scaleY 0.5987
+  f scaleZ 0.3696
+  f rotX -32.827
+  f rotZ -24.106
+  f rotY 0.000
+end
+node 60 3D Sphere
+  id bulbsrc3_1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 61 3D Torus
+  id seamsrc3_1
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 62 3D Transform
+  id bulb3_1
+  f scaleX 0.4332
+  f scaleY 0.4332
+  f scaleZ 0.4332
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX -0.5102
+  f offsetY -1.6265
+  f offsetZ 0.7864
+end
+node 63 3D Transform
+  id seam3_1
+  f scaleX 0.4419
+  f scaleY 0.4419
+  f scaleZ 0.4419
+  f rotX -72.154
+  f rotY 0.000
+  f rotZ 56.628
+  f offsetX -0.5102
+  f offsetY -1.6265
+  f offsetZ 0.7864
+end
+node 64 3D Cone
+  id arm3_2
+  f posX -0.1109
+  f posY -1.5707
+  f posZ 0.4726
+  f scaleX 0.3884
+  f scaleY 0.7877
+  f scaleZ 0.3884
+  f rotX -11.170
+  f rotZ 3.537
+  f rotY 0.000
+end
+node 65 3D Sphere
+  id bulbsrc3_2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  i detail 28
+end
+node 66 3D Torus
+  id seamsrc3_2
+  f posX 0.0000
+  f posY 0.0000
+  f posZ 0.0000
+  f scaleX 1.0000
+  f scaleY 1.0000
+  f scaleZ 1.0000
+  f rotX 0.000
+  f rotZ 0.000
+  f rotY 0.000
+  f tube 0.06
+end
+node 67 3D Transform
+  id bulb3_2
+  f scaleX 0.5234
+  f scaleY 0.5234
+  f scaleZ 0.5234
+  f rotX 0.000
+  f rotY 0.000
+  f rotZ 0.000
+  f offsetX -0.0834
+  f offsetY -2.0076
+  f offsetZ 0.5588
+end
+node 68 3D Transform
+  id seam3_2
+  f scaleX 0.5339
+  f scaleY 0.5339
+  f scaleZ 0.5339
+  f rotX -132.522
+  f rotY 0.000
+  f rotZ -37.991
+  f offsetX -0.0834
+  f offsetY -2.0076
+  f offsetZ 0.5588
+end
+node 69 3D Cylinder
+  id bridge01
+  f posX -0.5000
+  f posY 0.4000
+  f posZ 0.3250
+  f scaleX 0.2000
+  f scaleY 1.4186
+  f scaleZ 0.2000
+  f rotX 153.435
+  f rotZ 44.822
+  f rotY 0.000
+end
+node 70 3D Cylinder
+  id bridge02
+  f posX 0.4750
+  f posY 0.3500
+  f posZ 0.0000
+  f scaleX 0.2000
+  f scaleY 1.3937
+  f scaleZ 0.2000
+  f rotX -168.690
+  f rotZ -42.970
+  f rotY 0.000
+end
+node 71 3D Cylinder
+  id bridge13
+  f posX -0.5750
+  f posY -0.5000
+  f posZ 0.4500
+  f scaleX 0.2000
+  f scaleY 1.2540
+  f scaleZ 0.2000
+  f rotX -167.471
+  f rotZ -42.675
+  f rotY 0.000
+end
+node 72 3D Cylinder
+  id bridge23
+  f posX 0.4000
+  f posY -0.5500
+  f posZ 0.1250
+  f scaleX 0.2000
+  f scaleY 1.4327
+  f scaleZ 0.2000
+  f rotX 150.642
+  f rotZ 50.157
+  f rotY 0.000
+end
+node 73 3D Cylinder
+  id bridge12
+  f posX -0.0250
+  f posY -0.1000
+  f posZ 0.2250
+  f scaleX 0.2000
+  f scaleY 2.0579
+  f scaleZ 0.2000
+  f rotX -98.746
+  f rotZ -71.363
+  f rotY 0.000
+end
+node 74 3D Join Geometry
+  id join0
+end
+node 75 3D Join Geometry
+  id join1
+end
+node 76 3D Join Geometry
+  id join2
+end
+node 77 3D Join Geometry
+  id join3
+end
+node 78 3D Join Geometry
+  id join4
+end
+node 79 3D Join Geometry
+  id join5
+end
+node 80 3D Join Geometry
+  id join6
+end
+node 81 3D Join Geometry
+  id join7
+end
+node 82 3D Material
+  id matbody
+  c color 0.62 0.82 0.93
+  f roughness 0.28
+  f metallic 0
+  f opacity 0.9
+  f transmission 0.35
+  f ior 1.45
+  f specular 0.9
+  f clearcoat 0.9
+  f clearcoatRoughness 0.08
+  f sheen 0.5
+  c sheenColor 0.8 0.85 1
+  f subsurface 0.25
+  c subsurfaceColor 0.55 0.75 0.95
+  f iridescence 0.15
+end
+node 83 3D Join Geometry
+  id join8
+end
+node 84 3D Join Geometry
+  id join9
+end
+node 85 3D Join Geometry
+  id join10
+end
+node 86 3D Join Geometry
+  id join11
+end
+node 87 3D Material
+  id matbulb
+  c color 0.72 0.66 0.93
+  f roughness 0.28
+  f metallic 0
+  f opacity 0.9
+  f transmission 0.35
+  f ior 1.45
+  f specular 0.9
+  f clearcoat 0.9
+  f clearcoatRoughness 0.08
+  f sheen 0.5
+  c sheenColor 0.8 0.85 1
+  f subsurface 0.25
+  c subsurfaceColor 0.55 0.75 0.95
+  f iridescence 0.35
+end
+node 88 3D Join Geometry
+  id join12
+end
+node 89 3D Join Geometry
+  id join13
+end
+node 90 3D Join Geometry
+  id join14
+end
+node 91 3D Join Geometry
+  id join15
+end
+node 92 3D Material
+  id matseam
+  c color 1 1 1
+  f opacity 0.9
+  f roughness 0.2
+  c emissionColor 0.85 0.92 1
+  f emission 0.4
+end
+node 93 3D Camera
+  id cam
+  f distance 7.2
+  f elevation 12
+  f azimuth 20
+  f fov 40
+  f orbitPerBeat 0.08
+end
+node 94 3D Light
+  id key
+  f azimuth 35
+  f elevation 40
+  f intensity 2.6
+  c color 0.85 0.92 1
+end
+node 95 3D Light
+  id rimlight
+  f azimuth -160
+  f elevation 15
+  f intensity 2.4
+  c color 0.7 0.75 1
+end
+node 96 3D Render 3D
+  id scene
+  f width 1280
+  f height 1280
+  c bg 0 0 0
+  b envAsBackground 0
+  c ambient 0.25 0.3 0.45
+  f rim 0.8
+  c envSky 0.55 0.7 0.95
+  c envHorizon 0.25 0.3 0.45
+  c envGround 0.02 0.02 0.04
+  f envIntensity 2.5
+  i samples 3
+  b shadows 0
+  f exposure 1.1
+end
+node 97 Effects bloom
+  id glow
+  f uThreshold 0.5
+  f uIntensity 1.1
+  f uRadius 6
+end
+node 98 Compositing Trails
+  id ghost
+  f decay 0.55
+  f zoom 1.004
+  f driftY 0.0005
+end
+node 99 Effects lensdistortion
+  id lens
+  f uBarrel 0.08
+  f uChroma 0.5
+end
+node 100 Compositing color adjustments
+  id grade
+  f uContrast 0.12
+  f uSaturation 1.1
+  f uVibrance 0.2
+end
+node 101 Effects vignette
+  id vig
+  f uAmount 0.7
+end
+node 102 Effects addnoise
+  id grain
+  f uAmount 0.03
+end
+node 103 Utility Output
+  id out
+end
+node 104 Notes Random Note Generator
+  id padnotes
+  i rangeLow 48
+  i rangeHigh 67
+  i rateMode 0
+  f rateBeats 2
+  i maxStep 3
+end
+node 105 Notes Random Note Generator
+  id bellnotes
+  i rangeLow 72
+  i rangeHigh 91
+  i rateMode 0
+  f rateBeats 0.5
+  i maxStep 5
+end
+node 106 Synths Wavetable
+  id pad
+  f volume 0.7
+  i a.unison 5
+  f a.detune 18
+  f a.stereoWidth 0.9
+  f a.ampAttack 400
+  f a.ampRelease 1500
+  f a.cutoff 2500
+  b b.on 1
+  i b.octave -1
+  f b.volume 0.5
+end
+node 107 Synths Metallic
+  id bell
+  f volume 0.55
+  f decay 3.2
+  f stiffness 0.35
+end
+node 108 AudioEffects Chorus
+  id padchorus
+  f mix 0.45
+  f rate 0.3
+  f depth 6
+end
+node 109 AudioEffects Delay
+  id belldelay
+  f mix 0.4
+  f feedback 45
+end
+node 110 Utility Mixer
+  id mix
+  i channels 2
+end
+node 111 AudioEffects Reverb
+  id hall
+  f mix 0.4
+  f size 0.8
+  f decay 4
+end
+node 112 AudioEffects Limiter
+  id lim
+end
+node 113 Modulators Audio Analyze
+  id ana
+  f gain 1.6
+  f attack 0.35
+  f release 0.3
+end
+node 114 Modulators LFO
+  id slow
+  i shape 0
+  f rateBeats 32
+end
+node 115 Modulators LFO
+  id drift
+  i shape 0
+  f rateBeats 11
+end
+geo hub0 0 hubsrc0
+geo bulb0_0 0 bulbsrc0_0
+geo seam0_0 0 seamsrc0_0
+geo bulb0_1 0 bulbsrc0_1
+geo seam0_1 0 seamsrc0_1
+geo bulb0_2 0 bulbsrc0_2
+geo seam0_2 0 seamsrc0_2
+geo hub1 0 hubsrc1
+geo bulb1_0 0 bulbsrc1_0
+geo seam1_0 0 seamsrc1_0
+geo bulb1_1 0 bulbsrc1_1
+geo seam1_1 0 seamsrc1_1
+geo bulb1_2 0 bulbsrc1_2
+geo seam1_2 0 seamsrc1_2
+geo hub2 0 hubsrc2
+geo bulb2_0 0 bulbsrc2_0
+geo seam2_0 0 seamsrc2_0
+geo bulb2_1 0 bulbsrc2_1
+geo seam2_1 0 seamsrc2_1
+geo bulb2_2 0 bulbsrc2_2
+geo seam2_2 0 seamsrc2_2
+geo hub3 0 hubsrc3
+geo bulb3_0 0 bulbsrc3_0
+geo seam3_0 0 seamsrc3_0
+geo bulb3_1 0 bulbsrc3_1
+geo seam3_1 0 seamsrc3_1
+geo bulb3_2 0 bulbsrc3_2
+geo seam3_2 0 seamsrc3_2
+geo join0 0 hub0
+geo join0 1 arm0_0
+geo join0 2 arm0_1
+geo join0 3 arm0_2
+geo join1 0 hub1
+geo join1 1 arm1_0
+geo join1 2 arm1_1
+geo join1 3 arm1_2
+geo join2 0 hub2
+geo join2 1 arm2_0
+geo join2 2 arm2_1
+geo join2 3 arm2_2
+geo join3 0 hub3
+geo join3 1 arm3_0
+geo join3 2 arm3_1
+geo join3 3 arm3_2
+geo join4 0 bridge01
+geo join4 1 bridge02
+geo join4 2 bridge13
+geo join4 3 bridge23
+geo join5 0 join0
+geo join5 1 join1
+geo join5 2 join2
+geo join5 3 join3
+geo join6 0 join4
+geo join6 1 bridge12
+geo join7 0 join5
+geo join7 1 join6
+geo matbody 0 join7
+geo join8 0 bulb0_0
+geo join8 1 bulb0_1
+geo join8 2 bulb0_2
+geo join8 3 bulb1_0
+geo join9 0 bulb1_1
+geo join9 1 bulb1_2
+geo join9 2 bulb2_0
+geo join9 3 bulb2_1
+geo join10 0 bulb2_2
+geo join10 1 bulb3_0
+geo join10 2 bulb3_1
+geo join10 3 bulb3_2
+geo join11 0 join8
+geo join11 1 join9
+geo join11 2 join10
+geo matbulb 0 join11
+geo join12 0 seam0_0
+geo join12 1 seam0_1
+geo join12 2 seam0_2
+geo join12 3 seam1_0
+geo join13 0 seam1_1
+geo join13 1 seam1_2
+geo join13 2 seam2_0
+geo join13 3 seam2_1
+geo join14 0 seam2_2
+geo join14 1 seam3_0
+geo join14 2 seam3_1
+geo join14 3 seam3_2
+geo join15 0 join12
+geo join15 1 join13
+geo join15 2 join14
+geo matseam 0 join15
+geo scene 0 matbody
+geo scene 1 matbulb
+geo scene 2 matseam
+geo scene 4 cam
+geo scene 5 key
+geo scene 6 rimlight
+cable glow 0 scene
+cable ghost 0 glow
+cable lens 0 ghost
+cable grade 0 lens
+cable vig 0 grade
+cable grain 0 vig
+cable out 0 grain
+note pad 0 padnotes
+note bell 0 bellnotes
+aud padchorus 0 pad
+aud belldelay 0 bell
+aud mix 0 padchorus
+aud mix 1 belldelay
+aud hall 0 mix
+aud lim 0 hall
+aud out 1 lim
+aud ana 0 lim
+mod hub0 scaleX ana 0 0 1 0.5 0.8640 1.2480
+mod hub0 scaleY ana 0 0 1 0.5 0.8640 1.2480
+mod hub0 scaleZ ana 0 0 1 0.5 0.8640 1.2480
+mod bulb0_0 scaleX ana 5 0 1 0.5 0.3943 0.8412
+mod bulb0_0 scaleY ana 5 0 1 0.5 0.3943 0.8412
+mod bulb0_0 scaleZ ana 5 0 1 0.5 0.3943 0.8412
+mod seam0_0 scaleX ana 5 0 1 0.5 0.4022 0.8580
+mod seam0_0 scaleY ana 5 0 1 0.5 0.4022 0.8580
+mod seam0_0 scaleZ ana 5 0 1 0.5 0.4022 0.8580
+mod bulb0_1 scaleX ana 6 0 1 0.5 0.4086 0.8717
+mod bulb0_1 scaleY ana 6 0 1 0.5 0.4086 0.8717
+mod bulb0_1 scaleZ ana 6 0 1 0.5 0.4086 0.8717
+mod seam0_1 scaleX ana 6 0 1 0.5 0.4168 0.8891
+mod seam0_1 scaleY ana 6 0 1 0.5 0.4168 0.8891
+mod seam0_1 scaleZ ana 6 0 1 0.5 0.4168 0.8891
+mod bulb0_2 scaleX ana 7 0 1 0.5 0.3230 0.6892
+mod bulb0_2 scaleY ana 7 0 1 0.5 0.3230 0.6892
+mod bulb0_2 scaleZ ana 7 0 1 0.5 0.3230 0.6892
+mod seam0_2 scaleX ana 7 0 1 0.5 0.3295 0.7029
+mod seam0_2 scaleY ana 7 0 1 0.5 0.3295 0.7029
+mod seam0_2 scaleZ ana 7 0 1 0.5 0.3295 0.7029
+mod hub1 scaleX ana 0 0 1 0.5 0.7560 1.0920
+mod hub1 scaleY ana 0 0 1 0.5 0.7560 1.0920
+mod hub1 scaleZ ana 0 0 1 0.5 0.7560 1.0920
+mod bulb1_0 scaleX ana 8 0 1 0.5 0.3825 0.8159
+mod bulb1_0 scaleY ana 8 0 1 0.5 0.3825 0.8159
+mod bulb1_0 scaleZ ana 8 0 1 0.5 0.3825 0.8159
+mod seam1_0 scaleX ana 8 0 1 0.5 0.3901 0.8323
+mod seam1_0 scaleY ana 8 0 1 0.5 0.3901 0.8323
+mod seam1_0 scaleZ ana 8 0 1 0.5 0.3901 0.8323
+mod bulb1_1 scaleX ana 9 0 1 0.5 0.3460 0.7381
+mod bulb1_1 scaleY ana 9 0 1 0.5 0.3460 0.7381
+mod bulb1_1 scaleZ ana 9 0 1 0.5 0.3460 0.7381
+mod seam1_1 scaleX ana 9 0 1 0.5 0.3529 0.7529
+mod seam1_1 scaleY ana 9 0 1 0.5 0.3529 0.7529
+mod seam1_1 scaleZ ana 9 0 1 0.5 0.3529 0.7529
+mod bulb1_2 scaleX ana 10 0 1 0.5 0.3151 0.6722
+mod bulb1_2 scaleY ana 10 0 1 0.5 0.3151 0.6722
+mod bulb1_2 scaleZ ana 10 0 1 0.5 0.3151 0.6722
+mod seam1_2 scaleX ana 10 0 1 0.5 0.3214 0.6856
+mod seam1_2 scaleY ana 10 0 1 0.5 0.3214 0.6856
+mod seam1_2 scaleZ ana 10 0 1 0.5 0.3214 0.6856
+mod hub2 scaleX ana 0 0 1 0.5 0.8280 1.1960
+mod hub2 scaleY ana 0 0 1 0.5 0.8280 1.1960
+mod hub2 scaleZ ana 0 0 1 0.5 0.8280 1.1960
+mod bulb2_0 scaleX ana 11 0 1 0.5 0.3514 0.7497
+mod bulb2_0 scaleY ana 11 0 1 0.5 0.3514 0.7497
+mod bulb2_0 scaleZ ana 11 0 1 0.5 0.3514 0.7497
+mod seam2_0 scaleX ana 11 0 1 0.5 0.3584 0.7647
+mod seam2_0 scaleY ana 11 0 1 0.5 0.3584 0.7647
+mod seam2_0 scaleZ ana 11 0 1 0.5 0.3584 0.7647
+mod bulb2_1 scaleX ana 12 0 1 0.5 0.4226 0.9015
+mod bulb2_1 scaleY ana 12 0 1 0.5 0.4226 0.9015
+mod bulb2_1 scaleZ ana 12 0 1 0.5 0.4226 0.9015
+mod seam2_1 scaleX ana 12 0 1 0.5 0.4310 0.9196
+mod seam2_1 scaleY ana 12 0 1 0.5 0.4310 0.9196
+mod seam2_1 scaleZ ana 12 0 1 0.5 0.4310 0.9196
+mod bulb2_2 scaleX ana 5 0 1 0.5 0.3718 0.7932
+mod bulb2_2 scaleY ana 5 0 1 0.5 0.3718 0.7932
+mod bulb2_2 scaleZ ana 5 0 1 0.5 0.3718 0.7932
+mod seam2_2 scaleX ana 5 0 1 0.5 0.3792 0.8090
+mod seam2_2 scaleY ana 5 0 1 0.5 0.3792 0.8090
+mod seam2_2 scaleZ ana 5 0 1 0.5 0.3792 0.8090
+mod hub3 scaleX ana 0 0 1 0.5 0.7200 1.0400
+mod hub3 scaleY ana 0 0 1 0.5 0.7200 1.0400
+mod hub3 scaleZ ana 0 0 1 0.5 0.7200 1.0400
+mod bulb3_0 scaleX ana 6 0 1 0.5 0.4303 0.9181
+mod bulb3_0 scaleY ana 6 0 1 0.5 0.4303 0.9181
+mod bulb3_0 scaleZ ana 6 0 1 0.5 0.4303 0.9181
+mod seam3_0 scaleX ana 6 0 1 0.5 0.4389 0.9364
+mod seam3_0 scaleY ana 6 0 1 0.5 0.4389 0.9364
+mod seam3_0 scaleZ ana 6 0 1 0.5 0.4389 0.9364
+mod bulb3_1 scaleX ana 7 0 1 0.5 0.3249 0.6931
+mod bulb3_1 scaleY ana 7 0 1 0.5 0.3249 0.6931
+mod bulb3_1 scaleZ ana 7 0 1 0.5 0.3249 0.6931
+mod seam3_1 scaleX ana 7 0 1 0.5 0.3314 0.7070
+mod seam3_1 scaleY ana 7 0 1 0.5 0.3314 0.7070
+mod seam3_1 scaleZ ana 7 0 1 0.5 0.3314 0.7070
+mod bulb3_2 scaleX ana 8 0 1 0.5 0.3926 0.8375
+mod bulb3_2 scaleY ana 8 0 1 0.5 0.3926 0.8375
+mod bulb3_2 scaleZ ana 8 0 1 0.5 0.3926 0.8375
+mod seam3_2 scaleX ana 8 0 1 0.5 0.4004 0.8542
+mod seam3_2 scaleY ana 8 0 1 0.5 0.4004 0.8542
+mod seam3_2 scaleZ ana 8 0 1 0.5 0.4004 0.8542
+mod matbulb iridescence ana 3 0 1 0.5 0.2000 0.9500
+mod matbulb transmission ana 2 0 1 0.5 0.5000 0.9500
+mod matseam emission ana 4 0 1 0.5 0.2000 2.5000
+mod matbody sheen ana 1 0 1 0.5 0.3000 1.0000
+mod key intensity ana 4 0 1 0.5 2.0000 4.0000
+mod rimlight azimuth slow 0 0 1 0.5 120.0000 179.0000
+mod cam elevation drift 0 0 1 0.5 4.0000 28.0000
+mod cam distance ana 1 0 1 0.5 7.7000 6.6000
+mod glow uIntensity ana 0 0 1 0.5 0.7000 2.2000
+mod lens uChroma ana 3 0 1 0.5 0.2000 1.4000
+mod ghost decay ana 1 0 1 0.5 0.3500 0.8000
+mod grade uHueShift slow 0 0 1 0.5 -0.0800 0.1000
+mod pad a.cutoff slow 0 0 1 0.5 900.0000 7000.0000
+mod hall mix ana 0 0 1 0.5 0.2500 0.6000

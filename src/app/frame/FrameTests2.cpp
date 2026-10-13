@@ -1601,8 +1601,11 @@ void FrameTest_THEMECONTRASTTEST(int frameId, GLFWwindow* window)
          for (int i = 0; i < (int)names.size(); ++i)
          {
             const CategoryColors::UiTheme& t = CategoryColors::UiThemeForPreset(i);
-            const float rows[4] = { CategoryColors::ContrastRatio(t.text, t.windowBg), CategoryColors::ContrastRatio(t.text, t.panelBg),
-                                    CategoryColors::ContrastRatio(t.textDim, t.windowBg), CategoryColors::ContrastRatio(t.textDim, t.panelBg) };
+            // The field well too: hint text and typed text sit there, and it is lower contrast than the panel.
+            const CategoryColors::Color well = CategoryColors::FieldWellBg(t);
+            const float rows[6] = { CategoryColors::ContrastRatio(t.text, t.windowBg), CategoryColors::ContrastRatio(t.text, t.panelBg),
+                                    CategoryColors::ContrastRatio(t.text, well), CategoryColors::ContrastRatio(t.textDim, t.windowBg),
+                                    CategoryColors::ContrastRatio(t.textDim, t.panelBg), CategoryColors::ContrastRatio(t.textDim, well) };
             float lowest = rows[0];
             for (float r : rows) lowest = std::min(lowest, r);
             const bool good = lowest >= 4.499f;

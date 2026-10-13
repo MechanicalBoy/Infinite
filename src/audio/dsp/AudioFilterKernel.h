@@ -74,6 +74,28 @@ namespace AudioFilterDsp
    }
 
    inline bool IsSvf(int type) { return SvfStageCount(type) > 0; }
+
+   // Damping k (= 1/Q) of stage `stage` of a `stages`-deep SVF cascade. The
+   // stages are the Butterworth pole pairs of the whole 12/24/36 dB slope,
+   // so at q 0.707 every slope is -3 dB at the cutoff (the same Q on every
+   // stage put LP24 at -6 dB, LP36 at -9 dB). Only the last, highest-Q pair
+   // takes the resonance, scaled so the cascade's gain at the cutoff is q
+   // for every slope (the product of the Butterworth Qs is 0.707) - the same
+   // peak a 12 dB filter has, where q on each stage squared or cubed it.
+   inline float SvfStageK(int stages, int stage, float q)
+   {
+      static constexpr float kButterworthQ[3][3] = {
+         { 0.70710678f, 0.0f, 0.0f },
+         { 0.54119610f, 1.30656296f, 0.0f },
+         { 0.51763809f, 0.70710678f, 1.93185165f },
+      };
+      stages = std::clamp(stages, 1, 3);
+      stage = std::clamp(stage, 0, stages - 1);
+      float stageQ = kButterworthQ[stages - 1][stage];
+      if (stage == stages - 1)
+         stageQ *= std::max(0.01f, q) / 0.70710678f;
+      return 1.0f / std::max(0.01f, stageQ);
+   }
    inline bool IsHighpass(int type) { return type == kHP12 || type == kHP24 || type == kHP36; }
    inline bool UsesGain(int type) { return type == kLowShelf || type == kHighShelf || type == kPeak; }
    inline bool IsComb(int type) { return type == kCombPos || type == kCombNeg; }
@@ -134,12 +156,15 @@ namespace AudioFilterDsp
          svf.SetCutoff(freqHz, q);
          const double w = tan(M_PI * std::min((double)evalHz, 0.4999 * sampleRate) / (double)svf.sampleRate) /
                           std::max(1e-12, (double)svf.g);
-         const double re = 1.0 - w * w, im = (double)svf.k * w;
-         double stageSq = 1.0 / std::max(1e-300, re * re + im * im);
-         if (IsHighpass(type))
-            stageSq *= w * w * w * w;
-         for (int s = 0; s < SvfStageCount(type); s++)
+         const int stages = SvfStageCount(type);
+         for (int s = 0; s < stages; s++)
+         {
+            const double re = 1.0 - w * w, im = (double)SvfStageK(stages, s, q) * w;
+            double stageSq = 1.0 / std::max(1e-300, re * re + im * im);
+            if (IsHighpass(type))
+               stageSq *= w * w * w * w;
             magSq *= stageSq;
+         }
       }
       else
       {
@@ -298,12 +323,11 @@ public:
             if (AudioFilterDsp::IsSvf(type))
             {
                const float g = tanf((float)M_PI * freqMod / (float)mSampleRate);
-               const float k = 1.0f / std::max(0.01f, q);
                const int stages = AudioFilterDsp::SvfStageCount(type);
                for (int s = 0; s < stages; s++)
                {
                   coeffs[s][0] = g;
-                  coeffs[s][1] = k;
+                  coeffs[s][1] = AudioFilterDsp::SvfStageK(stages, s, q);
                }
             }
             else

@@ -33,8 +33,45 @@ namespace DspMath
 
       float Process(float target)
       {
-         current = target + (current - target) * coeff;
+         // In float the step stops moving once it rounds back to `current`,
+         // ~0.5 ulp / (1 - coeff) short of target (hundreds of ulps at 96 kHz
+         // with a 5 ms time constant). Harmless for a gain; fatal for a
+         // smoothed biquad coefficient, where a 50 Hz band's 1 + a1 + a2 is
+         // ~1e-5 and that error moved its response by up to 18 dB. Snap
+         // when a step makes no progress.
+         const float next = target + (current - target) * coeff;
+         current = (next == current) ? target : next;
          return current;
+      }
+   };
+
+   // One-pole DC blocker (y[n] = x[n] - x[n-1] + R*y[n-1]). R =
+   // exp(-2 pi fc / fs) puts the cutoff at kCutoffHz at every sample rate, so
+   // it has no audible effect on the signal itself. (Drive's used to be a
+   // fixed R = 0.995, which is 35 Hz at 44.1 kHz and 76 Hz at 96 kHz -
+   // audibly thinning the bass of everything through it.) Used after Drive's
+   // and Wavetable Shaper's asymmetric shapers and as Analog's AC coupling.
+   struct DcBlocker
+   {
+      static constexpr double kCutoffHz = 8.0;
+
+      float prevIn = 0.0f, prevOut = 0.0f;
+      float r = (float)std::exp(-2.0 * M_PI * kCutoffHz / 44100.0);
+
+      void SetSampleRate(double sampleRate)
+      {
+         if (sampleRate > 0.0)
+            r = (float)std::exp(-2.0 * M_PI * kCutoffHz / sampleRate);
+      }
+
+      void Reset() { prevIn = prevOut = 0.0f; }
+
+      float Process(float x)
+      {
+         const float y = x - prevIn + r * prevOut;
+         prevIn = x;
+         prevOut = y;
+         return y;
       }
    };
 
@@ -68,6 +105,19 @@ namespace DspMath
       return std::fabs(x) < 1.0e-20f ? 0.0f : x;
    }
 
+   // Soft ceiling: the identity below `knee`, then a tanh shoulder that is C1
+   // at the knee and tops out at 1. For a feedback loop or a resonator that
+   // must stay bounded without colouring anything at normal levels -
+   // bit-identical to no limiter at all while |x| <= knee.
+   inline float SoftCeiling(float x, float knee = 0.8f)
+   {
+      const float a = std::fabs(x);
+      if (a <= knee)
+         return x;
+      const float y = knee + (1.0f - knee) * std::tanh((a - knee) / (1.0f - knee));
+      return x < 0.0f ? -y : y;
+   }
+
    // ------------------------------------------------------------- Fast tanh
    // Pade-style rational approximation, x*(27+x*x)/(27+9*x*x), clamped
    // outside +/-3 where the rational form stops tracking tanh (saturates to
@@ -83,6 +133,48 @@ namespace DspMath
       const float x2 = x * x;
       return x * (27.0f + x2) / (27.0f + 9.0f * x2);
    }
+
+   // Antiderivative of FastTanh: the rational part x(27+x^2)/(27+9x^2)
+   // divides to x/9 + 24x/(9x^2+27), and past |x| = 3 the curve is a flat
+   // +-1. Continuous at 3, and even.
+   inline double FastTanhAntiderivative(double u)
+   {
+      const double a = std::fabs(u);
+      const double atThree = 9.0 / 18.0 + (4.0 / 3.0) * std::log(9.0 * 9.0 + 27.0);
+      if (a > 3.0)
+         return atThree + (a - 3.0);
+      return a * a / 18.0 + (4.0 / 3.0) * std::log(9.0 * a * a + 27.0);
+   }
+
+   // First-order antiderivative anti-aliasing (ADAA) of FastTanh: the
+   // average of the curve over the straight line between the previous input
+   // and this one, (F(u) - F(u')) / (u - u'), instead of its value at one
+   // point (Parker, Zavalishin & Le Bivic, DAFx-16). Suppresses the aliasing
+   // a saturator generates by roughly an extra 6 dB/octave, at the cost of
+   // half a sample of delay. Double precision: the difference quotient of
+   // two antiderivative values is mostly rounding in float.
+   struct FastTanhAdaa
+   {
+      double prevU = 0.0;
+      double prevF = FastTanhAntiderivative(0.0);
+
+      void Reset()
+      {
+         prevU = 0.0;
+         prevF = FastTanhAntiderivative(0.0);
+      }
+
+      float Process(float u)
+      {
+         const double F = FastTanhAntiderivative(u);
+         const double du = (double)u - prevU;
+         const float y = (std::fabs(du) < 1.0e-5) ? FastTanh((float)(0.5 * ((double)u + prevU)))
+                                                   : (float)((F - prevF) / du);
+         prevU = u;
+         prevF = F;
+         return y;
+      }
+   };
 
    // --------------------------------------------------------------- PolyBLEP
    // Band-limited sawtooth/square/sine/triangle via a phase-accumulator

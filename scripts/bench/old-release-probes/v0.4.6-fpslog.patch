@@ -1,0 +1,32 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 158541de..48c724d5 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -74903,6 +74903,7 @@ int main(int argc, char** argv)
+       }
+       else if (getenv("INFINITE_BENCH_B5EMPTY") != nullptr)
+       {
++         if (const char* lp = getenv("INFINITE_LOADPATCH")) LoadPatchFrom(lp);
+          // B5(a) empty-patch fixture (benchmark-suite.md §4): the floor -
+          // frame cost with zero nodes, nothing to cook, nothing to draw.
+          // Intentionally spawns nothing; the measurement half below is what
+@@ -103642,6 +103643,19 @@ int main(int argc, char** argv)
+          if (sPrevTime > 0.0)
+             gLastFrameMs = (now - sPrevTime) * 1000.0;
+          sPrevTime = now;
++         if (getenv("INFINITE_FPSLOG") != nullptr && gLastFrameMs > 0.0)
++         {
++            static int sFlN = 0;
++            static double sFlSum = 0.0, sFlMax = 0.0;
++            sFlSum += gLastFrameMs;
++            if (gLastFrameMs > sFlMax) sFlMax = gLastFrameMs;
++            if (++sFlN == 60)
++            {
++               fprintf(stderr, "FPSLOG t=%.1f avg=%.2f max=%.2f\n", now, sFlSum / sFlN, sFlMax);
++               fflush(stderr);
++               sFlN = 0; sFlSum = 0.0; sFlMax = 0.0;
++            }
++         }
+       }
+ 
+       // Dev harness: quit after N frames. The self-tests above printf their

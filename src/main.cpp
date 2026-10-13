@@ -1,6 +1,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "app/frame/FrameCtx.h"
 #include "app/frame/FrameTests.h"
+#include "core/SelfUpdate.h"
 
 namespace app
 {
@@ -72,6 +73,7 @@ int main(int argc, char** argv)
    Platform::StopDisplayRefreshClock();
    AudioEngine::Instance().Stop();
    Extensions::Shutdown();
+   SelfUpdate::Shutdown();
    UpdateCheck::Shutdown(); // joins the worker thread so the process doesn't exit mid-request
    MovementLog::Stop();
    if (ColorStats::Engine::Instance().HasLearnedData())
