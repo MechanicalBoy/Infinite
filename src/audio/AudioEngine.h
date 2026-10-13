@@ -398,9 +398,14 @@ public:
    // Master output over full scale (|sample| > 1.0), which the device and every
    // integer file format hard-clip. Counted on each finished block, live
    // (after the preview and metronome) and offline. MasterOverPeak() is the
-   // largest sample of the most recent block that went over.
+   // largest sample of the most recent block that went over;
+   // MasterOverPeakHold() is the largest since ResetMasterOverPeakHold()
+   // (a render resets it at its start, so its notice names the worst peak
+   // of the take, not the last one).
    uint64_t MasterOverSamples() const;
    float MasterOverPeak() const;
+   float MasterOverPeakHold() const;
+   void ResetMasterOverPeakHold();
 
    // Called by the platform audio backend when the device itself reports an
    // overload/underrun (macOS kAudioDeviceProcessorOverload listener, Windows
@@ -656,6 +661,7 @@ private:
    std::atomic<uint64_t> mCallbackGaps { 0 };
    std::atomic<uint64_t> mMasterOvers { 0 };
    std::atomic<float> mMasterOverPeak { 0.0f };
+   std::atomic<float> mMasterOverPeakHold { 0.0f };
    void NoteMasterOvers(const AudioBuffer& buffer);
    std::atomic<double> mLastCallbackMs { -1.0 };
    std::atomic<double> mLastBlockLoad { 0.0 };

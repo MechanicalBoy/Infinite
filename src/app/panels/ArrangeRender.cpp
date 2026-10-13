@@ -1242,7 +1242,7 @@ namespace app
          return;
       char note[96];
       snprintf(note, sizeof(note), "The loudest peak was %.1f dB over. Lower the level and render again.",
-               20.0f * std::log10(std::max(1.0f, AudioEngine::Instance().MasterOverPeak())));
+               20.0f * std::log10(std::max(1.0f, AudioEngine::Instance().MasterOverPeakHold())));
       job.message = job.message.empty() ? std::string(note) : job.message + "; " + note;
       sRenderNoticeClipped = true;
       gArrangeRenderFailNotice = "\"" + job.path + "\"\n\n" + note;
@@ -1466,6 +1466,7 @@ namespace app
       if (ArrangeRenderBusy())
          return false;
       job.oversAtStart = AudioEngine::Instance().MasterOverSamples();
+      AudioEngine::Instance().ResetMasterOverPeakHold();
 
       const double startSec = ArrangeRenderTickSeconds(job.startTick);
       const double endSec = ArrangeRenderTickSeconds(job.endTick);

@@ -189,6 +189,16 @@ float AudioEngine::MasterOverPeak() const
    return mMasterOverPeak.load(std::memory_order_relaxed);
 }
 
+float AudioEngine::MasterOverPeakHold() const
+{
+   return mMasterOverPeakHold.load(std::memory_order_relaxed);
+}
+
+void AudioEngine::ResetMasterOverPeakHold()
+{
+   mMasterOverPeakHold.store(0.0f, std::memory_order_relaxed);
+}
+
 void AudioEngine::NoteMasterOvers(const AudioBuffer& buffer)
 {
    uint64_t overs = 0;
@@ -207,6 +217,8 @@ void AudioEngine::NoteMasterOvers(const AudioBuffer& buffer)
    {
       mMasterOvers.fetch_add(overs, std::memory_order_relaxed);
       mMasterOverPeak.store(peak, std::memory_order_relaxed);
+      if (peak > mMasterOverPeakHold.load(std::memory_order_relaxed))
+         mMasterOverPeakHold.store(peak, std::memory_order_relaxed);
    }
 }
 

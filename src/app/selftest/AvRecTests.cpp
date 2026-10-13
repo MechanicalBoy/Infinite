@@ -1023,6 +1023,7 @@ bool RunAudioPdcTest()
    // applies, then without it to prove the check can see a double count.
    AudioEngine::Instance().SetTopology(zeroLatency);
    const uint64_t oversBefore = AudioEngine::Instance().MasterOverSamples();
+   AudioEngine::Instance().ResetMasterOverPeakHold();
    AudioEngine::Instance().ProcessOffline(buffer);
    const uint64_t oversDoubled = AudioEngine::Instance().MasterOverSamples() - oversBefore;
    const float overPeak = AudioEngine::Instance().MasterOverPeak();
@@ -1038,12 +1039,19 @@ bool RunAudioPdcTest()
    const bool oversOk = oversDoubled == (uint64_t)buffer.numChannels && std::abs(overPeak - doubled.value) < 1e-4f && oversDeduped == 0;
    printf("AUDIOPDCTEST master overs: 2.0 impulse counted %llu (want %d, peak %.4f), 1.0 impulse counted %llu (want 0)  %s\n",
           (unsigned long long)oversDoubled, buffer.numChannels, overPeak, (unsigned long long)oversDeduped, oversOk ? "OK" : "FAIL");
+   // The held peak is the worst of the take: a later block that stays under
+   // full scale must not lower it (a render's notice reads this one).
+   const float heldPeak = AudioEngine::Instance().MasterOverPeakHold();
+   AudioEngine::Instance().ResetMasterOverPeakHold();
+   const bool holdOk = std::abs(heldPeak - doubled.value) < 1e-4f && AudioEngine::Instance().MasterOverPeakHold() == 0.0f;
+   printf("AUDIOPDCTEST master over peak held across a clean block: %.4f (want %.4f), 0 after reset  %s\n",
+          heldPeak, doubled.value, holdOk ? "OK" : "FAIL");
    const bool dedupeOk = markOk && doubled.value > dryAlone.value * 1.9f &&
                          std::abs(deduped.value - dryAlone.value) <= dryAlone.value * 0.001f;
    printf("AUDIOPDCTEST same source on two terminals mixes once: alone %.4f  doubled %.4f  deduped %.4f  %s\n",
           dryAlone.value, doubled.value, deduped.value, dedupeOk ? "OK" : "FAIL");
 
-   const bool ok = hasLatency && dryOffsetOk && wetOffsetOk && alignedOk && amplitudeOk && zeroAllocOk && dedupeOk && oversOk;
+   const bool ok = hasLatency && dryOffsetOk && wetOffsetOk && alignedOk && amplitudeOk && zeroAllocOk && dedupeOk && oversOk && holdOk;
    printf("%s\n", ok ? "AUDIOPDCTEST OK" : "AUDIOPDCTEST FAIL");
    return ok;
 }
