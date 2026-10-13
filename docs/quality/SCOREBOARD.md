@@ -89,7 +89,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `comp.blend_x255` | Blend modes against the W3C formulas, worst over modes | <= 1.00 x/255 | release | met | 0.5 (node:Blend) | - |
+| `comp.blend_x255` | Blend modes against the W3C formulas, worst over modes | <= 1.00 x/255 | release | met | 0.125 (node:Blend) | - |
 
 ## P7 3D, compositing, output: Geometry
 
@@ -203,4 +203,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 aa7da27f; 2026-10-13 ab741380; 2026-10-13 c5fd65c0; 2026-10-13 d6020b77; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 aa7da27f; 2026-10-13 ab741380; 2026-10-13 c2f7d0d1; 2026-10-13 d6020b77; 2026-10-13 e182230c.

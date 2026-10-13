@@ -1626,3 +1626,116 @@
 {"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.crest_err_db", "subject": "Infinite", "value": 2.4993}
 {"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.extra_onsets", "subject": "Infinite", "value": 0.0}
 {"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.timing_ms", "subject": "Infinite", "value": 3.25}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.cloth_stretch_pct", "subject": "node:Cloth", "value": 1.3891}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.decimate_bbox_pct", "subject": "node:Decimate", "value": 0.8511}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.inst_mirrored", "subject": "node:Instance on Points", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Capsule", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Cone", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Cylinder", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Dodecahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Icosphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Normals on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Normals on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Octahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Prism", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Pyramid", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Rounded Cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Smooth on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Smooth on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Solidify on a plane", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Solidify on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Solidify on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Subdivide on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Subdivide on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Tetrahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Torus", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Transform on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Transform on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Twist on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Twist on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:one ball r24", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:one ball r40", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:one ball r96", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:8 balls r96", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Array on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Array on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Arrow 3D", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Capsule", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Cone", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Curve Ops hostile", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Curve Ops no input", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Curve source tube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Cylinder", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Decimate Icosphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Decimate Torus", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Decimate on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Decimate on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Delaunay", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Delete on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Delete on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Disc", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Dodecahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Explode on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Explode on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Extrude on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Extrude on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Gear 3D", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Helix", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Icosphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Join merge", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Klein Bottle", "value": 7.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Merge by Distance", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Metaballs", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Metaballs extreme", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Mirror on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Mirror on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Mobius Strip", "value": 2.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Normals on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Normals on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Ocean", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Octahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Plane", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Prism", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Pyramid", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Rounded Cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Screw on cube", "value": 1456.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Screw on sphere", "value": 14608.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Select on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Select on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Smooth on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Smooth on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Solidify on a plane", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Solidify on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Solidify on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Star 3D", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Subdivide on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Subdivide on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Supershape", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Tetrahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Torus", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Torus Knot", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Transform on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Transform on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Triangulate on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Triangulate on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Tube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Twist on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Twist on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Voronoi", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Wireframe on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Wireframe on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:default", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:node Offset", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:node Resample", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:node Simplify", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:node Smooth", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:one ball r24", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:one ball r40", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:one ball r96", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:pinned", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:realised", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 COMPAUDIT re-sweep", "id": "comp.blend_x255", "subject": "node:Blend", "value": 0.1253}

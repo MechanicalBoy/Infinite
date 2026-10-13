@@ -160,7 +160,7 @@ COMPAUDIT result (`baseline-2026-10-12-comp.txt`; needs the GL context, hidden w
 | Switcher manual slot shows exactly the chosen input | clean |
 | GEOAUDIT GRAPH section (`baseline-2026-10-12-geo-coverage.txt`): Distribute random matches density x area (125 of 125), Poisson spacing holds (0.2001 vs 0.2), Delaunay has zero empty-circumcircle violations, Voronoi / Join merge / Merge by Distance / Ocean are valid and deterministic, Join counts add up, Merge by Distance leaves no pair closer than the threshold | clean, 0 new flags |
 | PDC: `AUDIOPDCTEST` (existing, in the driver) already covers branch alignment, no-latency no-delay and terminal dedupe; re-run 2026-10-12, OK | covered elsewhere |
-| Not yet covered: Reaction Diffusion, Remove Background, image sources; blur accuracy; RES and BYPASS sweeps; Metaballs, Cloth, Curve Ops, Instances, Displacement | next |
+| Not yet covered: none. Swept by L1-L7; re-run 2026-10-13 for v0.6 1.8 (`baseline-2026-10-13-geo-v06.txt`, `baseline-2026-10-13-comp-v06.txt`): GEOAUDIT PASS (22 flags), COMPAUDIT PASS (2 flags), and every flag is an accepted exception (UV-pole degenerate triangles, F16, F18, Metaballs radius, Feedback by design, blur sigma L1). No new correctness bug. Since the morning baseline, winding mismatches dropped from 41 lines to 4, after the outward-winding, pole and Solidify fixes. Remove Background stays with REMOVEBGTEST (needs its ONNX model) | covered |
 
 GEOAUDIT covers the 37 geometry nodes (Delaunay, Metaballs, Ocean, Cloth, Curve Ops, Instances,
 Join, Merge by Distance, Distribute, Displacement and the rest).
