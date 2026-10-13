@@ -10,7 +10,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 |---|---|
 | Next release | v0.6 |
 | Makes right | Quality lead over the re-survey peers: audio correctness, first run, DSP lead (plan: `docs/plans/v0.6-quality/README.md`); every escaped v0.5.0 fix lands with a regression test |
-| Done when | Plan blocks 1-3 merged (70 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
+| Done when | Plan blocks 1-3 merged (69 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
 
 ## Claims (add a row before touching anything; remove it when done)
 
@@ -24,6 +24,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 ## Decisions (newest first, keep the last 10)
 
+- 2026-10-13 Owner: reopening a patch need not be identical; the software evolves with the user and a show is a holistic art experience, not a replay. Agent: dropped 1.15; user patches only need to open, play and show a picture; show set and show safety stay. 69 items.
 - 2026-10-13 Owner: a patch made while designing must reopen and play live in a show. Agent: added 1.15 reopen-identical (save-load-render diff on every patch, mappings and learned state come back), 2.35 show set (preloaded patches, gapless switch), 2.36 show safety (lock, global panic, pre-show check). 70 items.
 - 2026-10-13 Owner: Infinite is a live design instrument: design as you go, stream of consciousness, then render, share or take it live. Agent: rule now ranks flow first (instant feedback, no hitch/click/crash while editing); new item 1.14 edit-without-hitch bench (0 audio dropouts, 0 late frames during an edit storm); render quality and volumes are real time first, offline mode only adds samples. 67 items.
 - 2026-10-13 Owner: users treat Infinite as a design instrument (they send sound-design and 3D patches, share and render the work); nobody performs live. Agent: v0.6 rule changed from live AV instrument to design (better designed sound/picture; easier to make, render, export, share; or a measured miss). Dropped DMX/Art-Net and LTC/MTC + gamepad; taken: resynthesis, string/modal modelling, linear-phase EQ, render quality + offline render mode + 16-bit/EXR stills, area/IES/light linking, volumes, share bundle with preview render; user patches join the validate and render smoke sets. 66 items.
