@@ -2909,3 +2909,64 @@
 {"ts": "2026-10-12T20:56:12+05:30", "event": "add", "id": "R735", "after": [], "user": false, "src": "merge:bugfix/selfupdate-cleanup", "track": "engine", "kind": "fix", "horizon": "later", "title": "Selfupdate cleanup", "why": "merged into main (c1d453b)", "origin": "merge"}
 {"ts": "2026-10-12T20:56:12+05:30", "event": "done", "id": "R735", "why": "merged into main (c1d453b)"}
 {"ts": "2026-10-12T20:56:12+05:30", "event": "edit", "id": "R735", "opened": "2026-10-12T20:56:12+05:30", "closed": "2026-10-12T20:56:12+05:30", "release": "", "commits": ["c1d453b"]}
+{"ts": "2026-10-12T20:59:39+05:30", "event": "add", "id": "R736", "after": [], "user": false, "src": "merge:bugfix/update-badge-in-place", "track": "growth", "kind": "fix", "horizon": "later", "title": "Update badge in place", "why": "merged into main (d0a1cdf)", "origin": "merge"}
+{"ts": "2026-10-12T20:59:40+05:30", "event": "done", "id": "R736", "why": "merged into main (d0a1cdf)"}
+{"ts": "2026-10-12T20:59:40+05:30", "event": "edit", "id": "R736", "opened": "2026-10-12T20:59:39+05:30", "closed": "2026-10-12T20:59:40+05:30", "release": "", "commits": ["d0a1cdf"]}
+{"ts": "2026-10-12T22:17:13+05:30", "event": "add", "id": "R737", "after": [], "user": false, "src": "merge:bugfix/blend-mode-w3c", "track": "nodes", "kind": "fix", "horizon": "later", "title": "Blend mode w3c", "why": "merged into main (2c26220)", "origin": "merge"}
+{"ts": "2026-10-12T22:17:13+05:30", "event": "done", "id": "R737", "why": "merged into main (2c26220)"}
+{"ts": "2026-10-12T22:17:13+05:30", "event": "edit", "id": "R737", "opened": "2026-10-12T22:17:13+05:30", "closed": "2026-10-12T22:17:13+05:30", "release": "", "commits": ["2c26220"]}
+{"ts": "2026-10-12T22:18:30+05:30", "event": "add", "id": "R738", "after": [], "user": false, "src": "merge:bugfix/audit-leftovers", "track": "engine", "kind": "fix", "horizon": "later", "title": "Audit leftovers", "why": "merged into main (a81682d)", "origin": "merge"}
+{"ts": "2026-10-12T22:33:38+05:30", "event": "done", "id": "R738", "why": "merged into main (a81682d)"}
+{"ts": "2026-10-12T22:33:38+05:30", "event": "edit", "id": "R738", "opened": "2026-10-12T22:18:30+05:30", "closed": "2026-10-12T22:33:38+05:30", "release": "", "commits": ["a81682d"]}
+{"ts": "2026-10-12T22:35:13+05:30", "event": "add", "id": "R739", "after": [], "user": false, "src": "merge:bugfix/field-synth-release-tail", "track": "field", "kind": "fix", "horizon": "later", "title": "Field synth release tail", "why": "merged into main (e490877)", "origin": "merge"}
+{"ts": "2026-10-12T22:35:13+05:30", "event": "done", "id": "R739", "why": "merged into main (e490877)"}
+{"ts": "2026-10-12T22:35:13+05:30", "event": "edit", "id": "R739", "opened": "2026-10-12T22:35:13+05:30", "closed": "2026-10-12T22:35:13+05:30", "release": "", "commits": ["e490877"]}
+{"ts": "2026-10-12T22:05:44+05:30", "event": "add", "id": "R740", "after": [], "user": false, "src": "merge:feature/re-survey-builtins", "track": "nodes", "kind": "feature", "horizon": "later", "title": "Re survey builtins", "why": "merged into main (d47e5f4)", "origin": "merge"}
+{"ts": "2026-10-12T22:35:28+05:30", "event": "done", "id": "R740", "why": "merged into main (d47e5f4)"}
+{"ts": "2026-10-12T22:35:28+05:30", "event": "edit", "id": "R740", "opened": "2026-10-12T22:05:44+05:30", "closed": "2026-10-12T22:35:28+05:30", "release": "", "commits": ["d47e5f4"]}
+{"ts": "2026-10-12T22:35:39+05:30", "event": "add", "id": "R741", "after": [], "user": false, "src": "merge:bugfix/note-echo-voiceid", "track": "engine", "kind": "fix", "horizon": "later", "title": "Note echo voiceid", "why": "merged into main (26d539c)", "origin": "merge"}
+{"ts": "2026-10-12T22:35:39+05:30", "event": "done", "id": "R741", "why": "merged into main (26d539c)"}
+{"ts": "2026-10-12T22:35:39+05:30", "event": "edit", "id": "R741", "opened": "2026-10-12T22:35:39+05:30", "closed": "2026-10-12T22:35:39+05:30", "release": "", "commits": ["26d539c"]}
+{"ts": "2026-10-12T22:37:19+05:30", "event": "add", "id": "R742", "after": [], "user": false, "src": "merge:docs/re-survey-block-c", "track": "field", "kind": "infra", "horizon": "later", "title": "Re survey block c", "why": "merged into main (33bcf78)", "origin": "merge"}
+{"ts": "2026-10-12T22:37:20+05:30", "event": "done", "id": "R742", "why": "merged into main (33bcf78)"}
+{"ts": "2026-10-12T22:37:20+05:30", "event": "edit", "id": "R742", "opened": "2026-10-12T22:37:19+05:30", "closed": "2026-10-12T22:37:20+05:30", "release": "", "commits": ["33bcf78"]}
+{"ts": "2026-10-12T23:50:35+05:30", "event": "add", "id": "R743", "after": [], "user": false, "src": "merge:bugfix/equation-velocity", "track": "field", "kind": "fix", "horizon": "later", "title": "Equation velocity", "why": "merged into main (be754bf)", "origin": "merge"}
+{"ts": "2026-10-12T23:50:36+05:30", "event": "done", "id": "R743", "why": "merged into main (be754bf)"}
+{"ts": "2026-10-12T23:50:36+05:30", "event": "edit", "id": "R743", "opened": "2026-10-12T23:50:35+05:30", "closed": "2026-10-12T23:50:36+05:30", "release": "", "commits": ["be754bf"]}
+{"ts": "2026-10-12T23:55:57+05:30", "event": "add", "id": "R744", "after": [], "user": false, "src": "merge:feature/comp-audit-coverage", "track": "nodes", "kind": "feature", "horizon": "later", "title": "Comp audit coverage", "why": "merged into main (927493d)", "origin": "merge"}
+{"ts": "2026-10-12T23:55:57+05:30", "event": "done", "id": "R744", "why": "merged into main (927493d)"}
+{"ts": "2026-10-12T23:55:57+05:30", "event": "edit", "id": "R744", "opened": "2026-10-12T23:55:57+05:30", "closed": "2026-10-12T23:55:57+05:30", "release": "", "commits": ["927493d"]}
+{"ts": "2026-10-12T23:57:59+05:30", "event": "add", "id": "R745", "after": [], "user": false, "src": "merge:feature/geo-audit-coverage", "track": "engine", "kind": "feature", "horizon": "later", "title": "Geo audit coverage", "why": "merged into main (e513515)", "origin": "merge"}
+{"ts": "2026-10-12T23:57:59+05:30", "event": "done", "id": "R745", "why": "merged into main (e513515)"}
+{"ts": "2026-10-12T23:57:59+05:30", "event": "edit", "id": "R745", "opened": "2026-10-12T23:57:59+05:30", "closed": "2026-10-12T23:57:59+05:30", "release": "", "commits": ["e513515"]}
+{"ts": "2026-10-12T23:58:10+05:30", "event": "add", "id": "R746", "after": [], "user": false, "src": "merge:ecf573a", "track": "growth", "kind": "feature", "horizon": "later", "title": "Feature/geo-audit-coverage (README)", "why": "merged into main (ecf573a)", "origin": "merge"}
+{"ts": "2026-10-12T23:58:10+05:30", "event": "done", "id": "R746", "why": "merged into main (ecf573a)"}
+{"ts": "2026-10-12T23:58:10+05:30", "event": "edit", "id": "R746", "opened": "2026-10-12T23:58:10+05:30", "closed": "2026-10-12T23:58:10+05:30", "release": "", "commits": ["ecf573a"]}
+{"ts": "2026-10-13T01:01:48+05:30", "event": "add", "id": "R747", "after": [], "user": false, "src": "merge:bugfix/offline-render-file-audio-stall", "track": "timeline", "kind": "fix", "horizon": "later", "title": "Offline render file audio stall", "why": "merged into main (06d76c2)", "origin": "merge"}
+{"ts": "2026-10-13T01:01:48+05:30", "event": "done", "id": "R747", "why": "merged into main (06d76c2)"}
+{"ts": "2026-10-13T01:01:48+05:30", "event": "edit", "id": "R747", "opened": "2026-10-13T01:01:48+05:30", "closed": "2026-10-13T01:01:48+05:30", "release": "", "commits": ["06d76c2"]}
+{"ts": "2026-10-13T01:05:13+05:30", "event": "add", "id": "R748", "after": [], "user": false, "src": "merge:bugfix/templates-legacy-keys", "track": "engine", "kind": "fix", "horizon": "later", "title": "Templates legacy keys", "why": "merged into main (3f4128d)", "origin": "merge"}
+{"ts": "2026-10-13T01:05:13+05:30", "event": "done", "id": "R748", "why": "merged into main (3f4128d)"}
+{"ts": "2026-10-13T01:05:13+05:30", "event": "edit", "id": "R748", "opened": "2026-10-13T01:05:13+05:30", "closed": "2026-10-13T01:05:13+05:30", "release": "", "commits": ["3f4128d"]}
+{"ts": "2026-10-12T19:36:10+00:00", "event": "done", "id": "R708", "why": "PR #28 head 89555bc0 already merged into main as fdf0c3a3 (FX audit DSP fixes + Discord fixes); PR closes when main is pushed"}
+{"ts": "2026-10-12T19:36:10+00:00", "event": "edit", "id": "R708", "commits": ["fdf0c3a3"]}
+{"ts": "2026-10-13T01:26:54+05:30", "event": "add", "id": "R749", "after": [], "user": false, "src": "merge:bugfix/legacy-flag-defaults", "track": "nodes", "kind": "fix", "horizon": "later", "title": "Legacy flag defaults", "why": "merged into main (5a55e81)", "origin": "merge"}
+{"ts": "2026-10-13T02:55:43+05:30", "event": "done", "id": "R749", "why": "merged into main (5a55e81)"}
+{"ts": "2026-10-13T02:55:43+05:30", "event": "edit", "id": "R749", "opened": "2026-10-13T01:26:54+05:30", "closed": "2026-10-13T02:55:43+05:30", "release": "", "commits": ["5a55e81"]}
+{"ts": "2026-10-12T21:26:26+00:00", "event": "edit", "id": "R702", "opened": "2026-08-25T07:30:26-03:00", "commits": ["963c822", "2cd2c9f", "478114f", "29bcbad", "ed5c59f", "191485c", "c2de2a4", "a148023", "3ed7a73", "fb607c9", "b0f8d7e", "42b9290", "805bf83", "08977c3", "8d3f913", "96a5ae5", "4dd950a", "e6b50fd", "725be41"], "closed": "2026-10-02T21:09:17Z", "release": ""}
+{"ts": "2026-10-12T21:26:26+00:00", "event": "edit", "id": "R703", "opened": "2026-10-03T04:10:19Z", "commits": ["a3ab731"], "closed": "2026-10-03T04:10:19Z", "release": ""}
+{"ts": "2026-10-12T21:26:26+00:00", "event": "edit", "id": "R704", "opened": "2026-10-03T19:40:32Z", "commits": ["ac3bce4"], "closed": "2026-10-03T19:40:32Z", "release": ""}
+{"ts": "2026-10-12T21:26:26+00:00", "event": "edit", "id": "R705", "opened": "2026-10-03T20:01:19-03:00", "commits": ["5e5187e"], "closed": "2026-10-03T20:01:19-03:00", "release": ""}
+{"ts": "2026-10-12T21:26:26+00:00", "event": "edit", "id": "R708", "opened": "2026-10-12T01:51:13+05:30", "commits": ["fdf0c3a"], "closed": "2026-10-12T01:51:13+05:30", "release": ""}
+{"ts": "2026-10-13T01:34:44+05:30", "event": "add", "id": "R750", "after": [], "user": false, "src": "merge:bugfix/field-text-contrast", "track": "field", "kind": "fix", "horizon": "later", "title": "Field text contrast", "why": "merged into main (6f27804)", "origin": "merge"}
+{"ts": "2026-10-13T03:09:49+05:30", "event": "done", "id": "R750", "why": "merged into main (6f27804)"}
+{"ts": "2026-10-13T03:09:49+05:30", "event": "edit", "id": "R750", "opened": "2026-10-13T01:34:44+05:30", "closed": "2026-10-13T03:09:49+05:30", "release": "", "commits": ["6f27804"]}
+{"ts": "2026-10-13T01:34:55+05:30", "event": "add", "id": "R751", "after": [], "user": false, "src": "merge:bugfix/atomic-save", "track": "field", "kind": "fix", "horizon": "later", "title": "Atomic save", "why": "merged into main (3bac05c)", "origin": "merge"}
+{"ts": "2026-10-13T03:09:49+05:30", "event": "done", "id": "R751", "why": "merged into main (3bac05c)"}
+{"ts": "2026-10-13T03:09:49+05:30", "event": "edit", "id": "R751", "opened": "2026-10-13T01:34:55+05:30", "closed": "2026-10-13T03:09:49+05:30", "release": "", "commits": ["3bac05c"]}
+{"ts": "2026-10-13T07:55:32+05:30", "event": "add", "id": "R752", "after": [], "user": false, "src": "merge:docs/node-audits-left", "track": "nodes", "kind": "infra", "horizon": "later", "title": "Node audits left", "why": "merged into main (0fdbdcb)", "origin": "merge"}
+{"ts": "2026-10-13T07:55:33+05:30", "event": "done", "id": "R752", "why": "merged into main (0fdbdcb)"}
+{"ts": "2026-10-13T07:55:33+05:30", "event": "edit", "id": "R752", "opened": "2026-10-13T07:55:32+05:30", "closed": "2026-10-13T07:55:33+05:30", "release": "", "commits": ["0fdbdcb"]}
+{"ts": "2026-10-13T01:03:40+05:30", "event": "add", "id": "R753", "after": [], "user": false, "src": "merge:feature/re-survey-render-bench", "track": "timeline", "kind": "feature", "horizon": "later", "title": "Re survey render bench", "why": "merged into main (ed461e5)", "origin": "merge"}
+{"ts": "2026-10-13T08:07:37+05:30", "event": "done", "id": "R753", "why": "merged into main (ed461e5)"}
+{"ts": "2026-10-13T08:07:37+05:30", "event": "edit", "id": "R753", "opened": "2026-10-13T01:03:40+05:30", "closed": "2026-10-13T08:07:37+05:30", "release": "", "commits": ["ed461e5"]}
