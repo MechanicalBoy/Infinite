@@ -8,8 +8,8 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 |---|---|---|---|---|---|
 | P1 Live AV workstation | 3 | 3 | 0 | 0 | 0 |
 | P5 Audio quality and hosting | 25 | 18 | 4 | 3 | 0 |
-| P7 3D, compositing, output | 7 | 6 | 0 | 0 | 1 |
-| P8 Performance | 2 | 1 | 0 | 0 | 1 |
+| P7 3D, compositing, output | 7 | 7 | 0 | 0 | 0 |
+| P8 Performance | 2 | 1 | 0 | 1 | 0 |
 
 ## P1 Live AV workstation: Note nodes
 
@@ -74,14 +74,14 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `geo.cloth_stretch_pct` | Worst edge stretch of a pinned cloth after 12 s | <= 50.00 % | release | met | 1.39 (node:Cloth) | - |
 | `geo.inst_mirrored` | Instance transforms with a negative determinant | <= 0 count | release | met | 0 (node:Instance on Points) | - |
 | `geo.decimate_bbox_pct` | Decimate: worst vertex distance to the original surface | <= 5.00 % bbox | release | met | 0.851 (node:Decimate) | - |
-| `geo.disp_offset` | Displacement: worst vertex off the formula (run with INFINITE_GEOAUDIT_ONLY=DISP) | <= 0.02 units | report | unmeasured | - | - |
+| `geo.disp_offset` | Displacement: worst vertex off the formula (run with INFINITE_GEOAUDIT_ONLY=DISP) | <= 0.02 units | report | met | 0 (node:Displacement) | - |
 
 ## P8 Performance: Built-in instruments
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
 | `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 346 (node:Spectral Synth) | - |
-| `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | unmeasured | - | - |
+| `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | info | 14.08 (node:Analog) | - |
 
 ## Per subject
 
@@ -100,5 +100,6 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `fx.rate_spread_db` (dB): node:Audio Filter 0 · node:Limiter 0 · node:Stereo 0 · node:Transient Shaper 0 · node:Tremolo 0 · node:Pitch Shifter 0.0001 · node:EQ 0.0005 · node:Frequency Shifter 0.0013 · node:Wavetable Shaper 0.0034 · node:Drive 0.0062 · node:Cycle Shaper 0.0078 · node:Spectrum Slide 0.0379 · node:Dynamics 0.0978 · node:Chorus 0.127 · node:Delay 0.133 · node:Spec Blur 0.136 · node:Flanger 0.144 · node:Ring Mod 0.18 · node:Phaser 0.243 · node:Formant Filter 0.268 · node:Stutter 0.72 · node:Shape Resonator 0.786 · node:Reverb 0.816 · node:Key-Snap 0.994 · node:Resonator Bank 2.43 (exc F15) · node:Bitcrush 5.38 (exc F14)
 - `geo.winding_mismatch` (triangles): node:8 balls r96 0 · node:Array on cube 0 · node:Array on sphere 0 · node:Arrow 3D 0 · node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Curve Ops hostile 0 · node:Curve Ops no input 0 · node:Curve source tube 0 · node:Cylinder 0 · node:Decimate Icosphere 0 · node:Decimate Torus 0 · node:Decimate on cube 0 · node:Decimate on sphere 0 · node:Delaunay 0 · node:Delete on cube 0 · node:Delete on sphere 0 · node:Disc 0 · node:Dodecahedron 0 · node:Explode on cube 0 · node:Explode on sphere 0 · node:Extrude on cube 0 · node:Extrude on sphere 0 · node:Gear 3D 0 · node:Helix 0 · node:Icosphere 0 · node:Join merge 0 · node:Merge by Distance 0 · node:Metaballs 0 · node:Metaballs extreme 0 · node:Mirror on cube 0 · node:Mirror on sphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Ocean 0 · node:Octahedron 0 · node:Plane 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Select on cube 0 · node:Select on sphere 0 · node:Smooth on cube 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Sphere 0 · node:Star 3D 0 · node:Subdivide on cube 0 · node:Supershape 0 · node:Tetrahedron 0 · node:Torus 0 · node:Torus Knot 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Triangulate on cube 0 · node:Triangulate on sphere 0 · node:Tube 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:Voronoi 0 · node:Wireframe on cube 0 · node:Wireframe on sphere 0 · node:default 0 · node:node Offset 0 · node:node Resample 0 · node:node Simplify 0 · node:node Smooth 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:pinned 0 · node:realised 0 · node:Solidify on a plane 0 · node:Mobius Strip 2.00 (exc F16) · node:Klein Bottle 7.00 (exc F16) · node:Smooth on sphere 64.00 (exc F17) · node:Subdivide on sphere 64.00 (exc F17) · node:Screw on cube 1456 (exc F18) · node:Screw on sphere 14608 (exc F18)
 - `geo.nonmanifold` (edges): node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Cylinder 0 · node:Dodecahedron 0 · node:Icosphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Octahedron 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Smooth on cube 0 · node:Sphere 0 · node:Subdivide on cube 0 · node:Tetrahedron 0 · node:Torus 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:Solidify on a plane 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Smooth on sphere 198 (exc F17) · node:Subdivide on sphere 198 (exc F17)
+- `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 14.08
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 6136354a.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 6136354a; 2026-10-13 d6020b77.

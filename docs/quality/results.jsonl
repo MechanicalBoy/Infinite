@@ -625,3 +625,6 @@
 {"ts": "2026-10-13T05:03:37+00:00", "commit": "41322848", "host": "Mac14,7", "note": "leftovers fixed", "id": "geo.winding_mismatch", "subject": "node:one ball r96", "value": 0.0}
 {"ts": "2026-10-13T05:03:37+00:00", "commit": "41322848", "host": "Mac14,7", "note": "leftovers fixed", "id": "geo.winding_mismatch", "subject": "node:pinned", "value": 0.0}
 {"ts": "2026-10-13T05:03:37+00:00", "commit": "41322848", "host": "Mac14,7", "note": "leftovers fixed", "id": "geo.winding_mismatch", "subject": "node:realised", "value": 0.0}
+{"ts": "2026-10-13T05:44:07+00:00", "commit": "d6020b77", "host": "Mac14,7", "note": "GEOAUDIT DISP (INFINITE_GEOAUDIT_ONLY=DISP)", "id": "geo.disp_offset", "subject": "node:Displacement", "value": 0.0}
+{"ts": "2026-10-13T05:44:08+00:00", "commit": "d6020b77", "host": "Mac14,7", "note": "synth_probe cpu (shared machine, noisy)", "id": "probe.cpu_voice_ms_s", "subject": "node:Analog", "value": 14.0792}
+{"ts": "2026-10-13T05:44:08+00:00", "commit": "d6020b77", "host": "Mac14,7", "note": "synth_probe cpu (shared machine, noisy)", "id": "probe.cpu_voice_ms_s", "subject": "node:Wavetable", "value": 3.0292}
