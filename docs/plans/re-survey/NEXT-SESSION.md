@@ -237,6 +237,7 @@ Left, in order:
 4. `ui_map.py run "Final Cut Pro Creator Studio"`; add the Final Cut timeline section to `dossiers/F.md`.
 5. Write `dossiers/D.md` (TD sitting pending, GPU memory not measured, resolution ceiling, `--validate` unknown-function, mp4 no alpha, Blender white luma 0.77, Audio File export stall fixed 01059f67, feedback scene not done) and `dossiers/E.md` (scaling, history 102/109 load with all 7 fails explained, formats, library gaps, autosave 60 s default + recovery + 200 undo, atomic-save fix, PROTOCOL for GUI save/load + browser search timing).
 6. Coverage rows 9, 10, 12, 18, 19, 20, 22; regenerate capability diff; lint all dossiers; merge `feature/re-survey-render-bench` `--no-ff`.
+   - D.md render findings: Infinite 50–263 fps vs Blender EEVEE 0.2–1.6 fps (≈70–300×; realtime engine vs offline renderer, say so); H264 PSNR at each app's default bitrate (not matched): Infinite 50.6–51.8 / 35.5–37.1 dB vs Blender 44.3–46.1 / 28.8–32.2 dB, and on instanced Blender uses more Mbit/s yet scores lower; 10-min AV sync both within 0.04 ms, no drift.
 7. `storage.py status` + `clean-tmp`; delete scratchpad leftovers; remove the `infinte-fix` worktree and merged bugfix branches.
 
 ## After the resume list: coverage becomes an app × dimension grid (owner, 2026-10-13)
