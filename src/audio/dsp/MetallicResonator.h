@@ -371,6 +371,15 @@ namespace MetallicDsp
          s2 = 0.0f;
       }
 
+      // The mode mute line, fixed in Hz across rates (F1): at 0.45 * SR a 96 kHz
+      // voice kept modes up to 43 kHz that 44.1 kHz muted, and the bank
+      // normalisation counted them too, so one patch was 2.9 dB apart by rate.
+      // 0.45 * 44.1 kHz is the line every supported rate can hold.
+      static float ModeBandLimitHz(double sampleRate)
+      {
+         return std::min((float)sampleRate * 0.45f, 19845.0f);
+      }
+
       void Setup(float freqHz, float t60Sec, float amplitude, float pan, double sampleRate)
       {
          if (sampleRate <= 0.0) return;
@@ -378,7 +387,7 @@ namespace MetallicDsp
          // materials put most of their 12 ratios out of band at normal fundamentals
          // (kVibraphone ratio 150, kTitanium 74); clamping stacks them all at the
          // top of the spectrum with r ~= 1, which is a shriek by construction.
-         const float maxHz = (float)sampleRate * 0.45f;
+         const float maxHz = ModeBandLimitHz(sampleRate);
          const bool inBand = (freqHz <= maxHz);
          const float f = std::clamp(freqHz, 10.0f, maxHz);
          const float dt = 1.0f / (float)sampleRate;
@@ -476,12 +485,23 @@ namespace MetallicDsp
       float pulseInc = 0.0f;
       float hardness = 1.0f;
       float noiseMix = 0.2f;
+      // The mallet noise runs on a fixed 48 kHz clock, read at the host rate
+      // by linear interpolation (F1). Drawn once per host sample, each device
+      // rate struck the modes with a different burst in time and at a
+      // different density, which moved single modes by up to 5 dB and the
+      // calibrated strike's body by 2.9 dB between 44.1 and 96 kHz.
+      float noisePhase = 0.0f;
+      float noiseInc = 1.0f;
+      float noisePrev = 0.0f;
+      float noiseCur = 0.0f;
       bool active = false;
 
       void Reset()
       {
          env = 0.0f;
          pulsePhase = 0.0f;
+         noisePhase = 0.0f;
+         noisePrev = noiseCur = 0.0f;
          active = false;
          filter.Reset();
       }
@@ -503,6 +523,7 @@ namespace MetallicDsp
          filter.SetSampleRate(sampleRate);
          filter.SetCutoff(cutoff, 0.707f);
          noiseMix = std::clamp(0.15f + 0.35f * hardness, 0.05f, 0.8f);
+         noiseInc = (float)(48000.0 / sampleRate);
 
          active = true;
       }
@@ -522,7 +543,14 @@ namespace MetallicDsp
             pulsePhase += pulseInc;
          }
 
-         float n = noise.Next();
+         noisePhase += noiseInc;
+         while (noisePhase >= 1.0f)
+         {
+            noisePhase -= 1.0f;
+            noisePrev = noiseCur;
+            noiseCur = noise.Next();
+         }
+         const float n = noisePrev + (noiseCur - noisePrev) * noisePhase;
          auto filtOut = filter.Process(n);
          float exciter = pulse * (1.0f - noiseMix) + filtOut.low * noiseMix;
 
@@ -777,12 +805,12 @@ namespace MetallicDsp
          // pole radius, so the "longer decay must not mean a quieter strike"
          // property that motivated amplitude * sin(w) still holds.
          //
-         // Only in-band modes are counted, matching Setup()'s own 0.45 * SR
+         // Only in-band modes are counted, matching Setup()'s own band-limit
          // mute: several materials put most of their ratios above Nyquist at
          // normal fundamentals (Vibraphone's ratio 150, Titanium's 74), and
          // dividing by amplitudes that were then silenced would make exactly
          // those patches far too quiet.
-         const float bandLimitHz = (float)sampleRate * 0.45f;
+         const float bandLimitHz = ResonantMode::ModeBandLimitHz(sampleRate);
          float ampSum = 0.0f;
          for (int m = 0; m < kNumModes; m++)
             if (modeFreq[m] <= bandLimitHz)
