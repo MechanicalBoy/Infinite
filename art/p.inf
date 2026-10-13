@@ -1,0 +1,12 @@
+infinite-patch 1
+node 1 3D Sphere
+  id s
+end
+node 2 3D Transform
+  id t
+  f scaleX 0.5
+  f scaleY 0.5
+  f scaleZ 0.5
+  f offsetX 1
+end
+geo t 0 s
