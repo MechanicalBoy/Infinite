@@ -4439,10 +4439,11 @@ namespace MeshOps
       const int stride = n + 1;
       for (size_t i = 0; i + 1 < rings; i++)
          for (int j = 0; j < n; j++)
+            // Wound so the geometric normal points away from the axis, matching the radial vertex normals.
             PushQuad(mesh, (unsigned int)(i * stride + j),
-                     (unsigned int)((i + 1) * stride + j),
+                     (unsigned int)(i * stride + j + 1),
                      (unsigned int)((i + 1) * stride + j + 1),
-                     (unsigned int)(i * stride + j + 1));
+                     (unsigned int)((i + 1) * stride + j));
       return mesh;
    }
 }
