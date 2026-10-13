@@ -10,7 +10,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 |---|---|
 | Next release | v0.6 |
 | Makes right | Quality lead over the re-survey peers: audio correctness, first run, DSP lead (plan: `docs/plans/v0.6-quality/README.md`); every escaped v0.5.0 fix lands with a regression test |
-| Done when | Plan blocks 1-3 merged (69 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
+| Done when | Plan blocks 1-3 merged (60 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
 
 ## Claims (add a row before touching anything; remove it when done)
 
@@ -25,6 +25,8 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 ## Decisions (newest first, keep the last 10)
 
+- 2026-10-13 Owner asked for a professional, industry-standard verdict on every item; final v0.6 = 60 items. Back in: 1.0 competitor specs and 1.0b data ledger (owner's use-all-data decision), 2.5 plugin sidechain, 2.24 multicore audio (null-identical gate, audio workgroups, fallback), 2.31 OSC control, 3.14 clip speed, 3.15 GPU particles (gate then build). Out: CLAP, dynamic EQ, drum synth, note entry, .als import, starter content, linear-phase EQ, bokeh (in 3.5), Cables comparison. Supersedes the 54-item line below.
+- 2026-10-13 Owner vetted the v0.6 list and asked the agent to decide the rest; this is final. 54 items. In: Block 1 1.1-1.14; sound incl. designed-space convolution reverb, per-voice/audio-rate modulation, unison, crossover, tape delay, compressor styles + sidechain, filters, warps, strings, MPE, SIMD voices, Field phase shaping; picture incl. sweep/revolve, render quality, area light, bevel, rigid bodies, plexus, L-system, volumes, share. Out (plan section "Not in v0.6"): 1.0, 1.0b, CLAP, dynamic EQ, multicore, drum synth, note entry, .als import, starter content, full OSC API, linear-phase EQ, bokeh (in 3.5), Cables comparison, clip speed, GPU particles.
 - 2026-10-13 Owner: reopening a patch need not be identical; the software evolves with the user and a show is a holistic art experience, not a replay. Agent: dropped 1.15; user patches only need to open, play and show a picture; show set and show safety stay. 69 items.
 - 2026-10-13 Owner: a patch made while designing must reopen and play live in a show. Agent: added 1.15 reopen-identical (save-load-render diff on every patch, mappings and learned state come back), 2.35 show set (preloaded patches, gapless switch), 2.36 show safety (lock, global panic, pre-show check). 70 items.
 - 2026-10-13 Owner: Infinite is a live design instrument: design as you go, stream of consciousness, then render, share or take it live. Agent: rule now ranks flow first (instant feedback, no hitch/click/crash while editing); new item 1.14 edit-without-hitch bench (0 audio dropouts, 0 late frames during an edit storm); render quality and volumes are real time first, offline mode only adds samples. 67 items.
