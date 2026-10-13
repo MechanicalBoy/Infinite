@@ -2,10 +2,12 @@
 
 Owner scope (2026-10-13): everything the re-survey found worth taking goes into v0.6; nothing is
 planned for v0.7. Direction is the agent's call, by one rule, set from how people actually use
-Infinite (owner, 2026-10-13: users treat it as a design instrument and send sound-design and 3D
-patches, or share and render the work; nobody performs live with it): **take depth that (a) makes the sound or picture a user
-designs better, (b) makes a patch easier to make, finish, render, export or share, or (c) fixes a measured
-miss; ignore the rest, and say why.** Live-stage features rank last. Sources: the re-survey
+Infinite (owner, 2026-10-13): **Infinite is a live design instrument.** Users design sound and 3D
+work as they go, stream of consciousness, everything running while they patch; then they render it,
+share the patch, or take the same patch live. Rule: **take depth that (a) keeps the flow (instant
+feedback, no waiting, no hitch, click or crash while editing), (b) makes the sound or picture better
+in real time, (c) makes the result easy to render, share or take live, or (d) fixes a measured miss;
+ignore the rest, and say why.** Stage plumbing (DMX, timecode) ranks last; the patch is the show. Sources: the re-survey
 dossiers, the extracted data in `~/re-output/`, and `docs/quality/SCOREBOARD.md`. v0.6 absorbs the
 v0.5.1 goal (every escaped fix with a regression test). Judged by the NOW.md quality table.
 
@@ -58,6 +60,7 @@ without ask. Bench runs are serialized with any other benching session (check NO
 | 1.11 | Synth defaults that measure wrong | FieldSynth default: non-harmonic -3.9 dB at MIDI 96, 13.8 ¢ off, 362 ms attack; Metallic 41.4 ¢ off | each is fixed, or recorded as by design with the reason | FieldSynth default program, Metallic tuning | builtins-kit rows; `param-truth-audit` |
 | 1.12 | RC-20 crashes in Infinite's host | SIGSEGV in AU and VST3 (host-audit); it runs in DAWs, so it is a host bug | loads, processes, closes | plugin host (`plugin-host-hardening`) | host-audit row OK |
 | 1.13 | Load-bench clipping | every load-bench render peaks at exactly 1.000 | master never hard-clips silently: meter shows it, export warns | master bus / export | load-bench peak < 1.0 with a sane patch |
+| 1.14 | Edit without a hitch | not measured | adding, deleting, connecting nodes, shader and Field recompiles, and preset loads never drop audio or a video frame while the patch runs | graph edit path, shader/Field compile (async where it blocks today) | new bench: scripted edit storm on the load-bench patches, audio dropouts 0, frames over budget 0 |
 
 Settled:
 - **1.0** sources, by what each can give: commercial plugins (85 plugins, 17,718 parameters with min, max, default and unit: the richest); Ableton (5,243 parameter names and types, sub-module grouping); Bitwig (232 Grid module names, 43 modulators); Blender (245 geometry nodes with sockets); Cables (1,298 ops with ports; MIT, so its op source may be read for algorithms). Only names, ranges and groupings are used; the DSP comes from papers. Spec rule: every control a node gains must be in at least two competitors or fix a measured miss.
@@ -138,7 +141,7 @@ Settled:
 | 3.2 | Time machine | Trails/Feedback hold one frame | per-pixel delay from a grey map over a 60-frame ring | new compositing node | slit-scan reference frame matches |
 | 3.3 | Proximity lines | none (TD POP, plexus looks) | lines between points within a radius, spatial hash, 100k points ≤ 4 ms | new geometry node | `geometry-transform-sweep` |
 | 3.4 | Sweep and revolve | Screw covers part of lathe | sweep a profile along a curve; revolve a curve (TD Sweep/Revolve, Blender Curve to Mesh) | new geometry nodes, `CurveOpsNode.h` | winding and normals pass GEOAUDIT |
-| 3.5 | Render quality | not compared against a reference renderer | render the dossier G scenes in Infinite and Blender Eevee; add what is missing of soft shadows, ambient occlusion, depth of field, 3D motion blur, supersampled stills, 16-bit PNG / EXR output plus an offline render mode: export quality set by samples per frame, not by the real-time budget | Render 3D path, `src/core/HeadlessJob.cpp` (`--frame`) | side-by-side contact sheet per scene; each added feature has a reference image |
+| 3.5 | Render quality | not compared against a reference renderer | render the dossier G scenes in Infinite and Blender Eevee; add what is missing of soft shadows, ambient occlusion, depth of field, 3D motion blur, supersampled stills, 16-bit PNG / EXR output. Real time first: each look runs inside the frame budget while you design; an offline render mode only adds samples per frame on top | Render 3D path, `src/core/HeadlessJob.cpp` (`--frame`) | side-by-side contact sheet per scene; each added feature has a reference image |
 | 3.6 | Lights and world | directional, point, sun, ambient, spot | area light, light linking, IES profiles; HDRI and sky world | `SceneNodes.h`, `EnvironmentNode.h` | render reference images |
 | 3.7 | Bevel and inset | none | bevel edges (width, segments), inset faces | GeometryOp table | GEOAUDIT manifold check |
 | 3.8 | Rigid bodies | Cloth and particles only (Cables Rapier ops) | boxes, spheres, convex hulls, ground, impulses; deterministic at fixed step | new simulation node | same result on all three platforms |
@@ -149,7 +152,7 @@ Settled:
 | 3.13 | 2D fluid | none (TouchDesigner, Cables staple) | GPU stable fluids (Stam 1999): velocity, dye, vorticity, obstacles from an image; 1080p ≤ 3 ms | new compositing node | divergence below 1e-3 after projection |
 | 3.14 | Clip speed in the arrangement | Video Source has speed; arrangement clips do not | per-clip speed and reverse, audio follows with 1.6's stretch | `src/arrange/` (`timeline-arrangement-architecture`) | export of a 2× clip has the right length and pitch |
 | 3.15 | GPU particles (Metal compute) | CPU, capped 200k | run gate G1 of `docs/plans/metal-compute.md`; if it passes, build to its G2 bar (1M in < 2 ms); else record the number | `SimulationNodes.h` | G1 row either way |
-| 3.16 | Volumes | none | volumetric fog, smoke and clouds (ray-marched density field, Field-programmable), for stills and export first, real time where the budget allows | new geometry/render node | reference images; frame time recorded |
+| 3.16 | Volumes | none | volumetric fog, smoke and clouds (ray-marched density field, Field-programmable), real time at a reduced step count while designing, full steps in offline render | new geometry/render node | reference images; frame time recorded |
 | 3.17 | Share a patch | users send `.inf` files by hand | one action writes a share bundle: the patch, a thumbnail and a short preview render; the website gallery lists bundles (same path as the Extensions page) | Stage menu, `tools/website/` | a bundle opens on a clean machine and matches its preview |
 
 Settled:
