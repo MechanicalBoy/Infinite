@@ -81,6 +81,8 @@ def auval(t, timeout):
         return {"auval": "hang", "auval_s": timeout}
     ok = "AU VALIDATION SUCCEEDED" in r.stdout
     why = ""
+    if r.returncode < 0:  # the validator itself died inside the plugin
+        return {"auval": "crash", "auval_s": time.time() - t0, "auval_why": "auval killed by signal %d" % -r.returncode}
     if not ok:
         errs = [l.strip() for l in r.stdout.splitlines() if "ERROR" in l or "FATAL" in l]
         why = (errs[0] if errs else (r.stdout.strip().splitlines() or ["rc %d" % r.returncode])[-1])[:160]
@@ -270,10 +272,29 @@ def audit(formats=("au", "vst3"), flt=None, do_auval=True, timeout=90, log=print
         rows.append(row)
         log("  [%d/%d] %-34s %-9s %5.1f s %s%s" % (i + 1, len(tg), t["label"][:34], r["state"], r["load_s"],
                                                 ",".join(r.get("flags", [])), ("  auval " + r["auval"]) if "auval" in r else ""))
-    return {"base_s": base, "rows": rows, "scans": scans}
+    return {"base_s": base, "rows": mark_whose(rows), "scans": scans}
+
+
+def mark_whose(rows):
+    """Whose fault a crash is. It is the plugin's when there is evidence from outside Infinite: macOS rejects the
+    bundle's signature, or Apple's own validator dies in the same product (the VST3 inherits its AU's verdict).
+    Anything else stays ours until shown otherwise."""
+    av = {product_key(r["name"]): r["auval"] for r in rows if r.get("auval")}
+    for r in rows:
+        if r["state"] != "crash":
+            continue
+        if r.get("signature") in ("invalid", "unsigned"):
+            r["whose"] = "plugin: signature " + r["signature"]
+        elif av.get(product_key(r["name"])) == "crash":
+            r["whose"] = "plugin: auval crashes too"
+        else:
+            r["whose"] = "host?"
+    return rows
 
 
 def bad(r):
+    if r.get("whose", "").startswith("plugin"):
+        return False
     return r["state"] != "ok" or bool(set(r.get("flags", [])) - {"silent"} if r["instrument"] else r.get("flags"))
 
 
@@ -305,10 +326,10 @@ def to_markdown(res):
                   os.path.basename(max(sc, key=lambda s: s["scan_s"])["bundle"]), max(s["scan_s"] for s in sc)), ""]
     probs = [r for r in rows if r["state"] != "ok" or r.get("flags")]
     if probs:
-        L += ["## Problems", "", md_table(["Plugin", "Format", "State", "Flags", "Why / culprit", "Signature", "Load s"],
+        L += ["## Problems", "", md_table(["Plugin", "Format", "State", "Flags", "Why / culprit", "Whose", "Signature", "Load s"],
                                           [(r["name"], r["kind"].upper(), r["state"], ",".join(r.get("flags", [])) or "-",
                                             (r.get("why") or " ".join(x for x in (r.get("culprit"), r.get("exception")) if x))[:90],
-                                            r.get("signature") or "-", "%.1f" % r["load_s"]) for r in probs]), ""]
+                                            r.get("whose") or "-", r.get("signature") or "-", "%.1f" % r["load_s"]) for r in probs]), ""]
     badsig = [r for r in rows if r.get("signature") in ("invalid", "unsigned")]
     L += ["Code signature (`codesign --verify --deep --strict`): %d of %d bundles invalid or unsigned%s. macOS kills a "
           "process that pages in modified signed code, so no host can load an invalid one." % (
@@ -332,7 +353,7 @@ def to_markdown(res):
         L += ["## Apple's validator vs Infinite", "",
               "auval: %d pass, %d fail, %d hang; median %.1f s. Disagreements (auval pass but Infinite fails = ours to fix; "
               "auval fail but Infinite ok = we are lenient):" % (
-                  sum(r["auval"] == "pass" for r in av), sum(r["auval"] == "fail" for r in av), sum(r["auval"] == "hang" for r in av),
+                  sum(r["auval"] == "pass" for r in av), sum(r["auval"] in ("fail", "crash") for r in av), sum(r["auval"] == "hang" for r in av),
                   sorted(r["auval_s"] for r in av)[len(av) // 2]), ""]
         L += [md_table(["Plugin", "auval", "Infinite", "auval says"], [(r["name"], r["auval"], r["state"], r.get("auval_why", "")[:90]) for r in dis])
               if dis else "None.", ""]
@@ -371,6 +392,12 @@ def self_test():
     t.check(b == ("Infinite-x.ips", "Plug", "EXC_BAD_ACCESS SIGSEGV"), "report matched by pid, top named frame (%s)" % (b,))
     t.check(c == (None, None, None), "a report is handed out once (%s)" % (c,))
     t.check(code_signature("/System/Library/CoreServices/Finder.app") .startswith("valid"), "codesign verdict on a signed bundle")
+    w = mark_whose([{"name": "Vendor: Fx", "state": "crash", "auval": "crash", "instrument": False},
+                    {"name": "Fx", "state": "crash", "instrument": False},
+                    {"name": "Cut", "state": "crash", "signature": "invalid", "instrument": False},
+                    {"name": "Other", "state": "crash", "auval": "pass", "instrument": False}])
+    t.check([bad(r) for r in w] == [False, False, False, True] and w[3]["whose"] == "host?",
+            "a crash is the plugin's only with outside evidence: auval dies too (VST3 inherits it) or a bad signature (%s)" % [r["whose"] for r in w])
     binp = infinite_bin()
     if not binp:
         t.skip("no Infinite binary: the AUDelay load is not run")

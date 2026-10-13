@@ -58,7 +58,7 @@ without ask. Bench runs are serialized with any other benching session (check NO
 | 1.9 | Default levels | at default settings Delay +3.0 dB, Reverb +4.3 dB, Dynamics -3.7 dB at 1 kHz (builtins-kit) | inserting an effect at default changes loudness by ≤ 1 dB (Drive excepted: drive is gain) | Delay, Reverb, Dynamics defaults | builtins-kit row per effect |
 | 1.10 | Chorus / Flanger at high level | THD at -1 dBFS: Chorus -24.5 dB, Flanger -38.2 dB (at -12 dBFS: -102.6, -91.8), so they clip inside | ≤ -60 dB at -1 dBFS | Chorus, Flanger kernels | builtins-kit THD -1 column |
 | 1.11 | Synth defaults that measure wrong | FieldSynth default: non-harmonic -3.9 dB at MIDI 96, 13.8 ¢ off, 362 ms attack; Metallic 41.4 ¢ off | each is fixed, or recorded as by design with the reason | FieldSynth default program, Metallic tuning | builtins-kit rows; `param-truth-audit` |
-| 1.12 | RC-20 crashes in Infinite's host | SIGSEGV in AU and VST3 (host-audit); it runs in DAWs, so it is a host bug | loads, processes, closes | plugin host (`plugin-host-hardening`) | host-audit row OK |
+| 1.12 | RC-20 crashes in Infinite's host | Done: not a host bug. The installed copy (1.5.0, not signed by its vendor) dereferences null in its own code while it is created, on the main thread. Apple's validator (`auval`) and Apple's AU host process die at the same frames. Tier 3 in `plugin-host-hardening`: creation can't be guarded in-process | host-audit names whose crash it is | plugin host (`plugin-host-hardening`) | host-audit: `Whose` = plugin, exit 0 |
 | 1.13 | Load-bench clipping | every load-bench render peaks at exactly 1.000 | master never hard-clips silently: meter shows it, export warns | master bus / export | load-bench peak < 1.0 with a sane patch |
 | 1.14 | Edit without a hitch | not measured | adding, deleting, connecting nodes, shader and Field recompiles, and preset loads never drop audio or a video frame while the patch runs | graph edit path, shader/Field compile (async where it blocks today) | new bench: scripted edit storm on the load-bench patches, audio dropouts 0, frames over budget 0 |
 
@@ -184,7 +184,7 @@ Owner vetted the list and asked for a professional, industry-standard verdict on
 | VCV Rack (GPL: manual and behaviour only; the dossier built from its source manifests was removed) | polyphonic cables | 2.12 |
 | builtins-kit (our nodes measured like the DAWs') | default level jumps, Chorus/Flanger clipping, FieldSynth and Metallic defaults | 1.9-1.11 |
 | load-bench | 13-track ceiling for Analog+EQ on one core | 2.24, 2.16 |
-| host-audit | RC-20 crashes only in our host | 1.12 |
+| host-audit | RC-20 crashes in every host tried here (ours, auval, Apple's AU host): the plugin copy, not our host | 1.12 |
 | project-bench formats | Ableton sets and presets are open XML; ours are the smallest (0.8 KB) | preset statistics (2.29 not in v0.6) |
 | capability-map (scripting APIs) | 63 scriptable members vs 584-3,649 | 2.31 |
 | ui-map | shared shortcut sets | 2.3 |
