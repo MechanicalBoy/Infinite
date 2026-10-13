@@ -1,4 +1,6 @@
 infinite-patch 1
+blendfix 1
+rev 1
 node 1 Notes Random Note Generator
   pos -140 -700
   flags 0 0 1 0
@@ -11,6 +13,7 @@ node 1 Notes Random Note Generator
   f rateSeconds 0.200000003
   i maxStep 4
   b useGlobalScale 1
+  i stepTiming 1
 end
 node 2 Synths Wavetable
   pos 240 -480
@@ -190,6 +193,7 @@ node 12 Synths PaulStretch
   f start 0.545235097
   f end 0.655600965
   b loop 1
+  i rateFix 1
 end
 node 13 AudioEffects Reverb
   pos 1340 -1280
