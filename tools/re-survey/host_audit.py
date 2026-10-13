@@ -316,6 +316,14 @@ def to_markdown(res):
                      sum(1 for r in k if "nan" in r.get("flags", [])),
                      "%.2f / %.2f" % (loads[len(loads) // 2], loads[-1]) if loads else "-"))
     L += [md_table(["Format", "Plugins", "OK", "Failed", "Crashed", "Hung", "Silent", "NaN", "Load s median / max"], summ), ""]
+    for kind in ("au", "vst3"):
+        k = [r for r in rows if r["kind"] == kind]
+        if k:
+            # Ours to fix: a crash or hang with no outside evidence that the plugin is at fault.
+            ours = sum(1 for r in k if r["state"] in ("crash", "hang") and not r.get("whose", "").startswith("plugin"))
+            L.append('QUALITY id=host.unexplained_crashes subject="Infinite: %s" value=%.4f' % (kind.upper(), ours))
+            L.append('QUALITY id=host.ok_pct subject="Infinite: %s" value=%.4f' % (kind.upper(), 100.0 * sum(1 for r in k if r["state"] == "ok") / len(k)))
+    L.append("")
     if res["scans"]:
         sc = res["scans"]
         L += ["VST3 scan (out of process, per bundle): %d bundles, %d ok, %d crashed, %d hung, %d with no classes; "

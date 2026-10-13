@@ -2135,3 +2135,104 @@
 {"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:PaulStretch", "value": 6.847}
 {"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:Sampler", "value": 0.0158}
 {"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:Slicer", "value": 0.0248}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.beat_lock_pct", "subject": "Infinite", "value": 100.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.clock_lock_pct", "subject": "Infinite", "value": 100.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.drift_ms_min", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.react_jitter_ms", "subject": "Infinite", "value": 9.3315}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.react_latency_ms", "subject": "Infinite", "value": 16.6253}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: AudioFilter", "value": 0.1875}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Chorus", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Delay", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Drive", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dry", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dynamics", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: EQ", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Flanger", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Limiter", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Phaser", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Reverb", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: AudioFilter", "value": -90.7604}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Chorus", "value": -102.4367}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Drive", "value": -35.0135}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dry", "value": -92.2117}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dynamics", "value": -92.2117}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: EQ", "value": -97.2956}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Flanger", "value": -91.975}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Limiter", "value": -92.2117}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Phaser", "value": -110.483}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Analog", "value": -81.1983}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: EquationSynth", "value": -83.8895}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: FieldSynth", "value": -3.6556}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Metallic", "value": -6.2842}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Oscillator", "value": -82.1419}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Wavetable", "value": -83.9169}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Analog", "value": 0.1736}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: EquationSynth", "value": 0.1738}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: FieldSynth", "value": 6.9031}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Metallic", "value": 41.4494}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Oscillator", "value": 0.1742}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Wavetable", "value": 0.1737}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "geo.instance_ms", "subject": "Infinite", "value": 3.0778}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "geo.subdiv_ms", "subject": "Infinite", "value": 7.1944}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "host.ok_pct", "subject": "Infinite: AU", "value": 97.619}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "host.ok_pct", "subject": "Infinite: VST3", "value": 97.5904}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "host.unexplained_crashes", "subject": "Infinite: AU", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "host.unexplained_crashes", "subject": "Infinite: VST3", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "load.ms_per_track_s", "subject": "node:Analog+node:EQ", "value": 68.309}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "load.ms_per_track_s", "subject": "node:Wavetable+node:Reverb", "value": 18.172}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "load.tracks_at_70pct", "subject": "node:Analog+node:EQ", "value": 10.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "load.tracks_at_70pct", "subject": "node:Wavetable+node:Reverb", "value": 34.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "patch.community_fail", "subject": "Infinite: community patches", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_fail", "subject": "Infinite: 10 nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_fail", "subject": "Infinite: 100 nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_fail", "subject": "Infinite: 1000 nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_fail", "subject": "Infinite: 4000 nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_s", "subject": "Infinite: 4000 nodes", "value": 0.8739}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: blur_1080p", "value": 44.3403}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: blur_2160p", "value": 44.8708}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: blur_720p", "value": 46.1327}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: instanced_1080p", "value": 29.6929}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: instanced_2160p", "value": 32.1598}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: instanced_720p", "value": 28.8302}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: blur_1080p", "value": 51.8106}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: blur_2160p", "value": 51.5428}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: blur_720p", "value": 50.6323}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: instanced_1080p", "value": 36.3903}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: instanced_2160p", "value": 37.0964}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: instanced_720p", "value": 35.4653}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_1080p/h264", "value": 1.1648}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_1080p/prores4444", "value": 1.1697}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_2160p/h264", "value": 0.4339}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_2160p/prores4444", "value": 0.4704}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_720p/h264", "value": 1.5552}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_720p/prores4444", "value": 1.5768}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_1080p/h264", "value": 0.5866}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_1080p/prores4444", "value": 0.6643}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_2160p/h264", "value": 0.1938}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_2160p/prores4444", "value": 0.207}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_720p/h264", "value": 0.8703}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_720p/prores4444", "value": 0.8831}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_1080p/h264", "value": 81.001}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_1080p/prores4444", "value": 81.4345}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_2160p/h264", "value": 49.9686}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_2160p/prores4444", "value": 44.4563}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_720p/h264", "value": 263.358}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_720p/prores4444", "value": 170.323}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_1080p/h264", "value": 73.2348}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_1080p/prores4444", "value": 80.2315}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_2160p/h264", "value": 60.1549}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_2160p/prores4444", "value": 56.7598}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_720p/h264", "value": 200.6974}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_720p/prores4444", "value": 128.2936}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.sync_drift_ms_min", "subject": "Blender", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.sync_drift_ms_min", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.sync_offset_ms", "subject": "Blender", "value": 0.0208}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.sync_offset_ms", "subject": "Infinite", "value": 0.0417}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "sim.cloth_ms", "subject": "Infinite", "value": 0.4222}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stress.failures", "subject": "Infinite: fuzz", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stress.failures", "subject": "Infinite: killsave", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stress.failures", "subject": "Infinite: nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stress.failures", "subject": "Infinite: random", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.crest_err_db", "subject": "Infinite", "value": 2.4993}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.extra_onsets", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.timing_ms", "subject": "Infinite", "value": 3.25}

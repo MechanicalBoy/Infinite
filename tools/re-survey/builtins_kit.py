@@ -31,7 +31,7 @@ import tempfile
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, write_out  # noqa: E402
+from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, quality_line, write_out  # noqa: E402
 import bounce_kit as bk  # noqa: E402
 import plugin_probe as pp  # noqa: E402
 import synth_probe as sp  # noqa: E402
@@ -212,7 +212,30 @@ def report(rows):
     for row in rows:
         if not row["synths"] and not row["fx"]:
             L.append("- %s: no synth_*.wav or fx_*.wav bounces" % row["app"])
-    return "\n".join(L) + "\n"
+    return "\n".join(L + quality(rows)) + "\n"
+
+
+def quality(rows):
+    """One QUALITY row per instrument and effect per app (docs/quality/registry.tsv, builtin.*): the same
+    stimulus through every app's own built-ins, so a row for Infinite compares with the row for Live."""
+    out = []
+    for row in rows:
+        for r in row["synths"]:
+            subject = "%s: %s" % (row["app"], r["name"])
+            if r.get("cents_worst") is not None:
+                out.append(quality_line("builtin.pitch_c", subject, r["cents_worst"]))
+            if r.get("nonharm_108") is not None:
+                out.append(quality_line("builtin.nonharm108_db", subject, r["nonharm_108"]))
+        for r in row["fx"]:
+            if r.get("error"):
+                continue
+            subject = "%s: %s" % (row["app"], r["name"])
+            if r.get("latency_onset") is not None:
+                out.append(quality_line("builtin.fx_latency_ms", subject, r["latency_onset"] * 1000.0 / SR))
+            # A long tail makes the THD window measure the tail (the report's `*`).
+            if (r.get("tail_s") or 0) <= 0.5 and r["lo"].get("thd_db") is not None:
+                out.append(quality_line("builtin.fx_thd12_db", subject, r["lo"]["thd_db"]))
+    return ([""] + out) if out else []
 
 
 # ---------------------------------------------------------------- self-test

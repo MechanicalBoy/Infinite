@@ -28,7 +28,7 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, write_out  # noqa: E402
+from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, quality_line, write_out  # noqa: E402
 import plugin_probe as pp  # noqa: E402
 
 SR = 48000
@@ -198,6 +198,10 @@ def to_markdown(label, rows):
     L += ["", "- Estimated ceiling at 70 %% of one core: about %d tracks." % ceiling(rows)]
     if over:
         L.append("- At or over 70 %%: %s tracks." % ", ".join(map(str, over)))
+    if rows:
+        # The cheapest row is the per-track cost before the cache runs out; the ceiling is what a user feels.
+        L += ["", quality_line("load.ms_per_track_s", label, min(r["per_track_ms_per_s"] for r in rows)),
+              quality_line("load.tracks_at_70pct", label, ceiling(rows))]
     return "\n".join(L) + "\n"
 
 

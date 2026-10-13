@@ -365,6 +365,7 @@ def cmd_all(args):
     lines += ["", "## Failures", ""]
     allf = [f for _, _, fs in results for f in fs]
     lines += ["- **%s** %s: %s" % (f["kind"], f["name"], f["detail"]) for f in allf] or ["none"]
+    lines += [""] + ['QUALITY id=stress.failures subject="Infinite: %s" value=%.4f' % (name, len(fails)) for name, _, fails in results]
     with open(os.path.join(OUT, "results.md"), "w") as fh:
         fh.write("\n".join(lines) + "\n")
     print("wrote %s" % os.path.join(OUT, "results.md"))

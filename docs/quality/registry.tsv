@@ -85,3 +85,19 @@ stretch.timing_ms	P5	Timeline audio	ms	lower	5	report	stretch_kit		Worst drum hi
 stretch.crest_err_db	P5	Timeline audio	dB	lower	0.5	report	stretch_kit	Infinite=F20	Worst drum crest against the ideal stretch (hits at their own length, clipped to full scale) over the four ratios
 live.frame_p95_ms	P8	Live scene	ms	lower	16.7	report	av_bench		p95 frame time of a real-time audio-reactive 10,000-instance scene at 1280x720 (TD logs its own; Infinite needs the GUI)
 live.drop_pct	P8	Live scene	%	lower	1	report	av_bench		Frames over 1.5x the 60 fps budget in that scene
+builtin.pitch_c	P5	Built-in instruments	cents	lower		report	builtins_kit		Worst pitch error of a built-in instrument at its default patch, same MIDI through each app's own bounce (compared, not judged: defaults differ)
+builtin.nonharm108_db	P5	Built-in instruments	dB	lower		report	builtins_kit		Non-harmonic energy at MIDI 108 of a built-in instrument at its default patch (aliasing), per app
+builtin.fx_latency_ms	P5	Effects	ms	lower		report	builtins_kit		Latency of a built-in effect after the app's own compensation (a bounce should read 0)
+builtin.fx_thd12_db	P5	Effects	dB	lower		report	builtins_kit		THD of a built-in effect at defaults, 1 kHz at -12 dBFS; effects with a tail over 0.5 s are not measured
+load.ms_per_track_s	P8	Bench: audio	ms/s	lower		report	load_bench		Audio-thread ms per second of audio per track (synth + effect, held 4-note chords, offline), cheapest track count
+load.tracks_at_70pct	P8	Bench: audio	tracks	higher		report	load_bench		Tracks of that synth + effect at 70 % of one core
+stress.failures	P1	Stability	count	lower	0	report	stress_kit		Crashes, hangs or unstable saves over every node type, 300 fuzzed patches, random patches and 40 kill-during-save rounds
+project.load_s	P6	Project files	s	lower		report	project_bench		Headless load (parse, build every node, check) of the largest generated patch, process start included
+project.load_fail	P6	Project files	bool	lower	0	report	project_bench		1 when a generated patch of that size fails to load or to write back
+host.unexplained_crashes	P5	Plugin hosting	count	lower	0	report	host_audit		Installed plugins that crash or hang Infinite's host with no outside evidence the plugin is at fault (bad signature, auval crashes too)
+host.ok_pct	P5	Plugin hosting	%	higher		report	host_audit		Installed plugins that load and pass audio in Infinite's host, headless
+patch.community_fail	P1	Project files	count	lower	0	report	community_patches		Published community patches that fail the smoke (tools/website/community_patches.py --smoke): each must open, play and show a picture or sound. Pixels are never compared; patches may change as Infinite evolves
+render.movie_fps	P8	Bench: offline render	fps	higher		report	render_bench		Movie render speed (render + encode) per scene and codec, from the slope between a 1 s and a 3 s render (render_bench)
+render.h264_psnr_db	P8	Bench: offline render	dB	higher		report	render_bench		Luma PSNR of the H264 movie against the same frames written lossless (render_bench)
+render.sync_offset_ms	P8	Bench: offline render	ms	lower		report	render_bench		Sound minus picture in a 10 minute rendered movie of flashes and clicks, absolute (render_bench)
+render.sync_drift_ms_min	P8	Bench: offline render	ms/min	lower		report	render_bench		Sync drift over the same 10 minute movie, absolute (render_bench)

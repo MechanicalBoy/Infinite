@@ -245,7 +245,10 @@ def report_infinite(rows):
                                [[r["nodes"], "%.1f" % (r["bytes_min"] / 1024), "%.1f" % (r["bytes_full"] / 1024), "%.1f" % (r["gzip_full"] / 1024),
                                  "%.3f" % r["load_s"], "%.3f" % r["load_write_s"],
                                  "%.2f" % ((r["load_s"] - floor) * 1000 / max(1, r["nodes"] - rows[0]["nodes"])) if r is not rows[0] else "-",
-                                 "yes" if r["load_ok"] and r["write_ok"] else "NO"] for r in rows]), ""])
+                                 "yes" if r["load_ok"] and r["write_ok"] else "NO"] for r in rows]), ""]
+                     + ['QUALITY id=project.load_s subject="Infinite: %d nodes" value=%.4f' % (r["nodes"], r["load_s"]) for r in rows[-1:]]
+                     + ['QUALITY id=project.load_fail subject="Infinite: %d nodes" value=%.4f' % (r["nodes"], 0 if r["load_ok"] and r["write_ok"] else 1) for r in rows]
+                     + [""])
 
 
 def tags():

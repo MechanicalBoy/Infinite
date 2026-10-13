@@ -59,6 +59,16 @@ Regardless of what's touched:
 - `invariant-interaction-audit` — if `git diff` shows any clamp/normalize/snap/bounds/
   budget-cap logic added or touched (grep the diff for these shapes first). If genuinely
   none is present, say so and skip it rather than running it pro forma.
+- Data ledger — `python3 tools/re-survey/data_ledger.py changed --base <base>` lists every
+  measurement kit whose sources the diff touched, with the command to re-run it. Re-run
+  each one (serially; the ones marked `[quiet machine]` only when nothing else is building
+  or benching, else report them as owed), then `python3 tools/re-survey/data_ledger.py lint`
+  must print 0 datasets without a consumer and 0 stale, and
+  `python3 tools/quality/quality.py check <the kit's result file>` must pass.
+- Community patches — `python3 tools/website/community_patches.py --smoke` whenever the diff
+  touches `src/`: every patch users sent must still open, play and show a picture or
+  sound. It never compares pixels or values (patches may change as Infinite evolves);
+  a patch that stops opening or playing is a finding.
 
 ## 3. Report
 
