@@ -39,11 +39,18 @@ void BitcrushKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*si
       const float rateHz = std::clamp(mMailbox.SmoothedValue(kRateHz), 100.0f, (float)mSampleRate);
       const float bits = mMailbox.SmoothedValue(kBits);
 
-      const float phaseInc = rateHz / (float)mSampleRate;
-      mPhase += phaseInc;
-      const bool tick = mPhase >= 1.0f;
+      // mPhase is the hold clock at this sample (i * rate / SR), advanced
+      // after use: advancing first put every hold one host sample early, a
+      // different slice of the waveform at each device rate. The hold
+      // instant falls between two host samples, `ago` samples before this
+      // one, and the input is read there (linear), not at this sample:
+      // ticks snapped to the host grid jittered differently at 44.1, 48 and
+      // 96 kHz. Together they crushed one tone to levels 5.4 dB apart (F14).
+      const double phaseInc = (double)rateHz / mSampleRate;
+      const bool tick = mPhase >= 1.0;
       if (tick)
-         mPhase -= floorf(mPhase);
+         mPhase -= floor(mPhase);
+      const float ago = tick ? (float)std::min(1.0, mPhase / std::max(phaseInc, 1.0e-6)) : 0.0f;
 
       if (analog)
       {
@@ -58,9 +65,11 @@ void BitcrushKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*si
 
          if (tick)
          {
-            mHoldL = inL;
-            mHoldR = inR;
+            mHoldL = inL + (mPrevL - inL) * ago;
+            mHoldR = inR + (mPrevR - inR) * ago;
          }
+         mPrevL = inL;
+         mPrevR = inR;
 
          float outL = AnalogDsp::MuLawQuantize(mHoldL, bits, 255.0f, dither ? Tpdf() : 0.0f);
          float outR = AnalogDsp::MuLawQuantize(mHoldR, bits, 255.0f, dither ? Tpdf() : 0.0f);
@@ -76,17 +85,22 @@ void BitcrushKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*si
       else
       {
          // Digital exact path
+         const float inL = in.channels[0][i];
+         const float inR = numChannels >= 2 ? in.channels[1][i] : inL;
          if (tick)
          {
-            mHoldL = in.channels[0][i];
-            mHoldR = numChannels >= 2 ? in.channels[1][i] : mHoldL;
+            mHoldL = inL + (mPrevL - inL) * ago;
+            mHoldR = inR + (mPrevR - inR) * ago;
          }
+         mPrevL = inL;
+         mPrevR = inR;
 
          out.channels[0][i] = QuantizeToBits(mHoldL, bits, dither ? Tpdf() : 0.0f);
          if (numChannels >= 2)
             out.channels[1][i] = QuantizeToBits(mHoldR, bits, dither ? Tpdf() : 0.0f);
       }
 
+      mPhase += phaseInc;
       for (int ch = 2; ch < out.numChannels; ch++)
          out.channels[ch][i] = 0.0f;
    }
