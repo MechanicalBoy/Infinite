@@ -46,7 +46,7 @@ Paused because the owner ran out of budget. Nothing has been merged or pushed. T
    - Likely estimator variance: about 0.88 Hz pole bandwidth over a 3 s window, roughly 2.6 degrees of freedom per seed.
    - Test with more seeds or longer renders in FxAudit's rate check (lines 385-472). If the spread collapses, fix the metric.
 3. ~~**F7 Wavetable** (note-on +8.2 dB).~~ Done: linear-attack corner on a sine, not a click; recorded in F7, no code change. Not investigated yet. Look at the envelope start, the initial phase, and the decay-to-sustain overshoot.
-4. **F7/F1 Metallic** (click metric on decaying resonators). Use max(steady at hold/2, MaxD2 over on+5..50 ms) as the reference, then check what it does to Wavetable.
+4. ~~**F7/F1 Metallic** (click metric on decaying resonators).~~ Done: note-on reference = max(steady, 5-50 ms body); Metallic +32.3 -> -1.7 dB, Wavetable +8.2 -> +5.7; synthetic metric check added; F7 exception removed. F1 (Metallic rate spread) stays an accepted exception. Use max(steady at hold/2, MaxD2 over on+5..50 ms) as the reference, then check what it does to Wavetable.
 5. **F17 Sphere poles under Subdivide/Smooth** (64 winding mismatches, 198 non-manifold edges).
    - In MeshOps::Subdivide (Mesh.cpp:751), skip triangles that are degenerate under the weld map (two welded corners equal).
    - Leave the Sphere primitive alone, so saved patches stay the same.

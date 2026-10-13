@@ -34,7 +34,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `synth.note_cents` | Pitch error of note 69 played through the note cable | <= 1.00 cents | release | met | 0.009 (node:Analog) | - |
 | `synth.alias_db` | Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz | <= -80.00 dB | release | met | -82.63 (node:Oscillator) | - |
 | `synth.rate_spread_db` | Level spread of the same 3 s render over 44.1/48/96 kHz | <= 1.00 dB | release | exc | 2.93 (node:Metallic) | - |
-| `synth.click_on_db` | Note-on second difference re steady state | <= 12.00 dB | release | exc | 32.28 (node:Metallic) | - |
+| `synth.click_on_db` | Note-on second difference re the larger of steady state and the 5-50 ms body | <= 12.00 dB | release | met | 5.70 (node:Wavetable) | - |
 | `synth.click_off_db` | Note-off second difference re steady state | <= 12.00 dB | release | met | -0.0027 (node:Equation Synth) | - |
 | `synth.poly_tail_dbfs` | Level 9.5 s after all notes off (stuck voices); free-running nodes are not measured | <= -100 dBFS | release | met | -240 (node:Analog) | - |
 | `synth.chord4_peak_dbfs` | Peak of a 4-note chord at velocity 0.8, defaults | <= 0 dBFS | release | met | -1.15 (node:Field Synth) | - |
@@ -80,7 +80,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 736 (node:Spectral Synth) | - |
+| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 490 (node:Spectral Synth) | - |
 | `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | info | 29.94 (node:Analog) | - |
 
 ## Per subject
@@ -88,7 +88,6 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 Every subject for metrics that miss, carry exceptions, have no direction, or compare against other apps.
 
 - `synth.rate_spread_db` (dB): node:Wavetable 0 · node:Granular 0.0013 · node:Grain Molder 0.0042 · node:Molder 0.0042 · node:Sampler 0.0042 · node:Equation Synth 0.0079 · node:Analog 0.0379 · node:Wave Terrain 0.051 · node:Spectral Synth 0.0543 · node:Oscillator 0.0573 · node:PaulStretch 0.824 · node:Metallic 2.93 (exc F1)
-- `synth.click_on_db` (dB): node:PaulStretch -240 · node:Spectral Synth -43.17 · node:Field Synth -20.98 · node:Granular -11.74 · node:Analog -2.95 · node:MPC -0.781 · node:Slicer -0.781 · node:Molder -0.746 · node:Wave Terrain 0.0278 · node:Grain Molder 0.0556 · node:Equation Synth 1.78 · node:Oscillator 2.49 · node:Sampler 4.59 · node:Wavetable 8.18 · node:Metallic 32.28 (exc F7)
 - `probe.pitch_worst_c` (cents): node:Analog 0.173 · node:Wavetable 0.174 · Vital Audio: Vital 0.174 · Xfer Records: Serum 2 0.174 · u-he: Diva 7.73
 - `probe.nonharm60_db` (dB): node:Analog -84.51 · node:Wavetable -84.16 · Vital Audio: Vital -84.34 · Xfer Records: Serum 2 -82.96 · u-he: Diva -40.80
 - `probe.nonharm96_db` (dB): node:Wavetable -84.94 · node:Analog -83.26 · Vital Audio: Vital -84.31 · Xfer Records: Serum 2 -82.59 · u-he: Diva -27.00
@@ -102,4 +101,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `geo.nonmanifold` (edges): node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Cylinder 0 · node:Dodecahedron 0 · node:Icosphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Octahedron 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Smooth on cube 0 · node:Sphere 0 · node:Subdivide on cube 0 · node:Tetrahedron 0 · node:Torus 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:Solidify on a plane 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Smooth on sphere 198 (exc F17) · node:Subdivide on sphere 198 (exc F17)
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8ca686d5; 2026-10-13 d6020b77.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 51affa29; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8ca686d5; 2026-10-13 d6020b77.
