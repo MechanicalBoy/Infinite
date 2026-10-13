@@ -588,6 +588,66 @@ static void PrimeOfflineStart(int& frameId, double startSeconds)
    RebuildAudioTopology();
 }
 
+// A Field node whose code does not compile produces nothing, so without this check --validate said ok
+// and --frame blamed the Output's cable (re-survey D.md, P4). One error per node, citing the node's
+// `s code` line in the file (or its `node` line when the code is a default).
+static Headless::Issue FieldCompileIssue(const Patch::NodeRecord* rec, int node, const std::string& type,
+                                         const std::string& error)
+{
+   Headless::Issue is;
+   is.code = "E_FIELD_COMPILE";
+   is.node = node;
+   is.message = type + " node " + std::to_string(node) + ": its Field code does not compile: " + NodeIssues::FirstLine(error);
+   is.hint = "fix the kernel on the node's `s code` line; a Field node whose code does not compile produces nothing";
+   if (rec != nullptr)
+   {
+      is.line = rec->line;
+      for (size_t i = 0; i < rec->params.size(); i++)
+         if (rec->params[i].first == "s code" && i < rec->paramLines.size())
+            is.line = rec->paramLines[i];
+   }
+   return is;
+}
+
+// --validate does not load the patch, so each node that carries code is built off-canvas the way the
+// load builds it (LoadParams, then ReloadDerivedState runs the node's own Apply) and asked for its error.
+// Same compile as the render, so the two can never disagree.
+static void CheckFieldCode(const Patch::Data& data, std::vector<Headless::Issue>& errors)
+{
+   for (const Patch::NodeRecord& rec : data.nodes)
+   {
+      bool hasCode = false;
+      for (const auto& kv : rec.params)
+         hasCode = hasCode || kv.first == "s code";
+      if (!hasCode)
+         continue;
+      std::unique_ptr<INode> node { NodeFactory::Instance().MakeNode(rec.typeName) };
+      if (!node)
+         continue;
+      Patch::LoadParams(node.get(), rec.params);
+      ReloadDerivedState(node.get());
+      const std::string err = node->CodeError();
+      if (!err.empty())
+         errors.push_back(FieldCompileIssue(&rec, rec.index, rec.typeName, err));
+   }
+}
+
+// The loaded graph's version of CheckFieldCode, for --frame / --render / --explain / --audio-summary.
+static void CheckLiveFieldCode(const Patch::Data& file, std::vector<Headless::Issue>& errors)
+{
+   for (GraphNode& g : gNodes)
+   {
+      const std::string err = g.node ? g.node->CodeError() : std::string();
+      if (err.empty())
+         continue;
+      const Patch::NodeRecord* rec = nullptr;
+      for (const Patch::NodeRecord& r : file.nodes)
+         if (r.index == g.index && r.typeName == g.typeName)
+            rec = &r;
+      errors.push_back(FieldCompileIssue(rec, g.index, g.typeName, err));
+   }
+}
+
 void HeadlessTick(int& frameId, GLFWwindow* window)
 {
    enum class Phase { Warm, Running, Frames, NodeRender, Audio, Done };
@@ -843,6 +903,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       PatchSchema::ResolveKeys(sData, env, sStatus.errors);
       if (sStatus.errors.empty())
          PatchSchema::Validate(sData, env, sStatus.errors, sStatus.warnings);
+      CheckFieldCode(sData, sStatus.errors);
       if (!job.lenient)
          Headless::PromoteWarnings(sStatus.warnings, sStatus.errors);
       sStatus.extraJson.push_back("\"nodes\":" + std::to_string(sData.nodes.size()));
@@ -1025,6 +1086,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
                gModulatableMax[g.typeName] = -1;
          std::vector<Headless::Issue> bad;
          PatchSchema::CheckParamIndices(gHeadlessPatch, MakeSchemaEnv(true), bad);
+         CheckLiveFieldCode(gHeadlessPatch, bad);
          if (!bad.empty() || !gHeadlessPromoted.empty())
          {
             // Everything strict mode found, in file order, so one fix round clears it.

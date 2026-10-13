@@ -1,0 +1,10 @@
+infinite-patch 1
+# E_FIELD_COMPILE: a Field Synth voice kernel that calls a function that does not exist.
+node 1 Synths Field Synth
+  id syn
+  s code out = bogusfn(6.283185 * ((n * freq) / sr)) * gate
+end
+node 2 Utility Audio Out
+  id speaker
+end
+aud speaker 0 syn

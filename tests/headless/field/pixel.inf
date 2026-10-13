@@ -1,0 +1,12 @@
+infinite-patch 1
+# E_FIELD_COMPILE: a FieldPixel kernel that calls a function that does not exist.
+node 1 Source FieldPixel
+  id fp
+  f width 64
+  f height 64
+  s code col = vec3(uv.x, 0.5 + 0.5 * bogusfn(uv.y * 20.0 + t), 0.5);
+end
+node 2 Utility Output
+  id out
+end
+cable out 0 fp

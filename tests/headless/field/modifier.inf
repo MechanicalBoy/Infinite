@@ -1,0 +1,18 @@
+infinite-patch 1
+# E_FIELD_COMPILE: a Field Modifier kernel that calls a function that does not exist.
+node 1 3D Sphere
+  id ball
+end
+node 2 3D Field Modifier
+  id warp
+  s code P.y += bogusfn(P.x * 2.0 + t) * 0.2
+end
+node 3 3D Render 3D
+  id r3d
+end
+node 4 Utility Output
+  id out
+end
+geo warp 0 ball
+geo r3d 0 warp
+cable out 0 r3d
