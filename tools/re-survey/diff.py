@@ -8,6 +8,9 @@
                         no template placeholders left. Default: every dossier.
   claims [doc.md...]    every `XxxNode` class a doc names must exist in src/ (default: every
                         re-survey mapping/gaps doc and dossier): catches invented Infinite nodes.
+                        Also reads the data summaries (~/re-output/*/*.md): an "Infinite equivalent"
+                        cell is backticked census node names or "none", and no line says how
+                        Infinite is built (SIMD, Metal, C++...).
   report [--out MD] [--json FILE]
                         aggregate every dossier's comparison table into the capability diff
                         (default docs/plans/re-survey/capability-diff.md, generated) and fail if
@@ -34,7 +37,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import PILLARS, REPO, SelfTest, copyleft_hits, md_table, write_out  # noqa: E402
+from common import PILLARS, RE_OUTPUT, REPO, SelfTest, copyleft_hits, md_table, norm_node, write_out  # noqa: E402
 
 DOSSIER_DIR = os.path.join(REPO, "docs", "plans", "re-survey", "dossiers")
 TEMPLATE = os.path.join(DOSSIER_DIR, "TEMPLATE.md")
@@ -125,6 +128,53 @@ def unknown_census_names(text, repo=REPO):
                 continue
             out.append((i, n))
     return out
+
+
+# How Infinite is built is not something a competitor extractor measured; it says the node name only.
+IMPL_WORDS = r"\b(simd|avx|neon|sse\d?|metal|c\+\+|vulkan|avfoundation|zero[- ]latency|zero[- ]copy|lock[- ]free)(?![\w+])"
+EQUIV_HEAD = r"infinite (equivalent|outpace|strategic|advantage|lead)|^the leap$"
+
+
+def summary_claims(text, types=None):
+    """[(line, message)] for a data summary (~/re-output/*/*.md).
+
+    In a table column headed "Infinite equivalent" (or outpace / advantage), a cell names
+    backticked census node types, an `XxxNode` class (checked by unknown_node_classes), or starts
+    with "none". Any line that puts Infinite or Field next to an implementation word is an error.
+    """
+    if types is None:
+        from common import census_types
+        types = census_types()
+    out, cols = [], None
+    for i, line in enumerate(text.splitlines(), 1):
+        low = line.lower()
+        m = re.search(IMPL_WORDS, low)
+        if m and re.search(r"\b(infinite|field)\b", low) and "clean room" not in low:
+            out.append((i, "says how Infinite is built ('%s'); name the node only" % m.group(1)))
+        if not line.startswith("|"):
+            cols = None
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if cols is None:
+            cols = [k for k, c in enumerate(cells) if re.search(EQUIV_HEAD, c.lower())]
+            continue
+        if not cols or set(line.strip()) <= set("|-: "):
+            continue
+        for k in cols:
+            cell = cells[k] if k < len(cells) else ""
+            names = re.findall(r"`([^`]+)`", cell)
+            if not names and not cell.lower().startswith("none"):
+                out.append((i, "Infinite cell '%s' names no `node` and is not 'none'" % cell[:60]))
+            for n in names:
+                if re.search(r"\b[A-Z][A-Za-z0-9]*Node\b", n) or n.lower() == "none":
+                    continue
+                if types and norm_node(n) not in types:
+                    out.append((i, "`%s` is not a census node" % n))
+    return out
+
+
+def summary_docs():
+    return sorted(glob.glob(os.path.join(RE_OUTPUT, "*", "*.md")))
 
 
 def lint_text(text, name, repo=REPO):
@@ -218,6 +268,17 @@ def cmd_claims(paths):
         if not hits:
             print("ok    %s" % os.path.relpath(p, REPO))
         bad += bool(hits)
+    if not paths:
+        docs = summary_docs()
+        dirty = 0
+        for p in docs:
+            text = open(p).read()
+            hits = [(ln, "%s is not a class in src/" % n) for ln, n in unknown_node_classes(text)] + summary_claims(text)
+            for ln, msg in sorted(hits):
+                print("ERROR %s:%d: %s" % (p.replace(os.path.expanduser("~"), "~"), ln, msg))
+            dirty += bool(hits)
+        print("%s %d data summaries in %s, %d with claims to fix" % ("ERROR" if dirty else "ok   ", len(docs), RE_OUTPUT, dirty))
+        bad += dirty
     return 1 if bad else 0
 
 
@@ -300,6 +361,14 @@ def self_test():
         bad += "```cpp\n" + "x;\n" * 20 + "```\n"
         bad = bad.replace("`src/Lfo.h` | parity", "`src` | parity").replace("(LFONode)", "(ConvolveReverbNode)")
         t.check(unknown_node_classes("Action: build a new `LatheNode`.", tmp) == [], "proposed node is not a claim")
+        summ = "\n".join(["| Their family | Count | Infinite equivalent |", "|---|---|---|",
+                          "| Filters | 9 | Infinite multi-mode filters with SIMD ladder circuits. |",
+                          "| Delays | 5 | `Delay`; no tape mode |", "| Fractals | 2 | none. |",
+                          "| Mod | 3 | `LFONode (Saw)` |", "| Glow | 1 | `Tape Delay` |", "",
+                          "Field language (C++/Metal DSP) beats it.", "Their engine uses Metal."])
+        hits = summary_claims(summ, types={"delay"})
+        t.check(sorted(ln for ln, _ in hits) == [3, 3, 7, 9], "a summary's invented cell, unknown node and build claim are flagged; real ones pass")
+        t.check(summary_claims("| A | Infinite |\n|---|---|\n| fps | 81.0 |", types={"delay"}) == [], "a measurement column is not a claim column")
         if os.path.exists(os.path.join(REPO, "build", "census", "census.json")):
             t.check([n for _, n in unknown_census_names("Infinite's `Color Grade` node", REPO)] == ["Color Grade"], "invented node name flagged")
             t.check(unknown_census_names("Their `Alchemy`; Infinite's `Granular`", REPO) == [], "competitor name and real node pass")

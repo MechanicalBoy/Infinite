@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOOLS = ["inventory.py", "plugin_probe.py", "synth_probe.py", "ui_map.py", "capability_map.py", "app_bench.py", "bounce_kit.py", "host_audit.py", "au_oop.py", "load_bench.py", "stretch_kit.py", "builtins_kit.py", "render_bench.py", "blender_bench.py", "av_bench.py", "project_bench.py", "workflow_cost.py", "latency_probe.py", "readers.py", "diff.py", "storage.py"]
+TOOLS = ["inventory.py", "plugin_probe.py", "synth_probe.py", "ui_map.py", "capability_map.py", "app_bench.py", "bounce_kit.py", "host_audit.py", "au_oop.py", "load_bench.py", "stretch_kit.py", "builtins_kit.py", "render_bench.py", "blender_bench.py", "av_bench.py", "project_bench.py", "workflow_cost.py", "latency_probe.py", "readers.py", "diff.py", "storage.py", "param_diff.py"]
 
 
 def main():

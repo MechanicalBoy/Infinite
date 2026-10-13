@@ -277,15 +277,15 @@ def render_markdown(catalog):
     lines.append("## 3. High-Performance Modern Extensions")
     lines.append("")
     ext_groups = Counter(o["extension_group"] for o in ext_ops.values())
-    ext_headers = ["Extension Group", "Operator Count", "Capabilities", "Infinite Outpace Architecture"]
+    ext_headers = ["Extension Group", "Operator Count", "Capabilities", "Infinite equivalent"]
     ext_rows = [
-        ["Rapier3d", ext_groups.get("Rapier3d", 0), "Real-time 3D rigid body dynamics, collision shapes, impulses, and forces.", "Infinite native SIMD particle & physics solver."],
-        ["GlParticles", ext_groups.get("GlParticles", 0), "GPU particle systems with noise vector fields and curl noise.", "Infinite Particle System + Field Modifier kernels."],
-        ["WebGpu", ext_groups.get("WebGpu", 0), "Next-gen WebGPU compute shaders, GPU buffers, and materials.", "Infinite Metal/C++ native compute pipeline."],
-        ["Mediapipe", ext_groups.get("Mediapipe", 0), "FaceMesh (468 landmarks), Hand tracking, and pose detection.", "Vision framework / AV camera gesture tracking."],
-        ["LSystem", ext_groups.get("LSystem", 0), "Procedural 3D fractal branching and plant generation.", "Infinite L-System & procedural geometry generator."],
-        ["SuperShapes", ext_groups.get("SuperShapes", 0), "Gielis 3D superformula parametric geometric curves and meshes.", "Infinite Parametric Mesh & Field Primitive."],
-        ["ReactionDiffusion", ext_groups.get("ReactionDiffusion", 0), "Gray-Scott chemical reaction-diffusion simulation textures.", "Infinite Reaction Diffusion 2D compositing node."],
+        ["Rapier3d", ext_groups.get("Rapier3d", 0), "Real-time 3D rigid body dynamics, collision shapes, impulses, and forces.", "`Particle System`, `Cloth`; no rigid bodies (plan item 3.8)."],
+        ["GlParticles", ext_groups.get("GlParticles", 0), "GPU particle systems with noise vector fields and curl noise.", "`Particle System`, `Field Modifier`."],
+        ["WebGpu", ext_groups.get("WebGpu", 0), "Next-gen WebGPU compute shaders, GPU buffers, and materials.", "none (GPU particles are plan item 3.15)."],
+        ["Mediapipe", ext_groups.get("Mediapipe", 0), "FaceMesh (468 landmarks), Hand tracking, and pose detection.", "`Face Track`, `Hand Track`, `Pose Track`."],
+        ["LSystem", ext_groups.get("LSystem", 0), "Procedural 3D fractal branching and plant generation.", "none."],
+        ["SuperShapes", ext_groups.get("SuperShapes", 0), "Gielis 3D superformula parametric geometric curves and meshes.", "`Supershape`, `Field Primitive`."],
+        ["ReactionDiffusion", ext_groups.get("ReactionDiffusion", 0), "Gray-Scott chemical reaction-diffusion simulation textures.", "`Reaction Diffusion`."],
     ]
     lines.append(md_table(ext_headers, ext_rows))
     lines.append("")

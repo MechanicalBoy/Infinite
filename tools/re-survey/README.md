@@ -24,7 +24,8 @@ macOS-shipped tools plus Infinite's own CLI. Big output goes to `~/re-output` (o
 | `workflow_cost.py` | `python3 tools/re-survey/workflow_cost.py table [--out f.md]` / `check` | Ten common tasks (instrument to export) per app: step count and Keystroke-Level Model seconds; Infinite steps cite `path::token` and `check` fails when one goes stale; DAW steps from their manuals, confirmed in the timed sitting (`PROTOCOL-workflow.md`) |
 | `latency_probe.py` | `python3 tools/re-survey/latency_probe.py run "Live 128"` | real round-trip latency and jitter of any app through BlackHole (the app monitors input to output); clicks in, echo gap out (`PROTOCOL-latency.md`) |
 | `readers.py` | `python3 tools/re-survey/readers.py cables --fetch` / `als song.als` / `amxd dev.amxd` / `fcpxml x.fcpxml` / `toe x.toe` / `blender --demo` | Structure of each format: op catalog, devices/clips/automation, timeline lanes/roles, operator families/wires, node trees/domains |
-| `diff.py` | `python3 tools/re-survey/diff.py new C8 "Bitwig Studio"` / `lint` / `report` | Dossier scaffold, clean-room + outcome lint, capability diff (`docs/plans/re-survey/capability-diff.md`), 5-quest cap |
+| `diff.py` | `python3 tools/re-survey/diff.py new C8 "Bitwig Studio"` / `lint` / `claims` / `report` | Dossier scaffold, clean-room + outcome lint, capability diff (`docs/plans/re-survey/capability-diff.md`), 5-quest cap |
+| `param_diff.py` | `python3 tools/re-survey/param_diff.py spec 2.21` / `all` | A plan item's spec: the nearest competitor devices' controls (name, range, default, unit) next to ours, and the controls they share that we lack. Writes `docs/plans/v0.6-quality/specs/` |
 | `storage.py` | `python3 tools/re-survey/storage.py status` / `compress` / `clean-tmp` / `check-repo` | `~/re-output` sizes, gzip big files, delete temps, no artefacts in the repo |
 | `selftest.py` | `python3 tools/re-survey/selftest.py [--quick]` | Runs every tool's `--self-test` |
 

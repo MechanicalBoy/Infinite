@@ -206,7 +206,7 @@ def render_markdown(catalog):
         fam = p["family"]
         by_family.setdefault(fam, []).append(p)
 
-    fam_headers = ["DSP Domain", "Plugins", "Parameters", "Key Models", "Infinite Equivalent / Outpace"]
+    fam_headers = ["DSP Domain", "Plugins", "Parameters", "Key Models", "Infinite equivalent"]
     fam_rows = []
 
     for fam, items in sorted(by_family.items()):
@@ -217,17 +217,17 @@ def render_markdown(catalog):
             key_names += f" (+{len(items)-4} more)"
 
         eq_map = {
-            "Dynamic EQ & Spectral Shaping": "Infinite Dynamic EQ / Spectral Suppression kernel (clean zero-latency FFT/FIR)",
-            "Distortion & Multi-Band Saturation": "Infinite Saturator, Multiband Waveshaper, Overdrive (Field SIMD kernels)",
-            "Reverb & Spatial Acoustics": "Infinite Reverb 3D, Dattorro/FDN Algorithmic Reverbs, Convolution",
-            "Delays & Modulated Echoes": "Infinite Delay, Tape Delay, Grain Delay, Pitch Shifted BBD Echo",
-            "Dynamics & Mastering Processors": "Infinite Compressor, Multiband Compressor, True-Peak Limiter, De-Esser",
-            "Creative Filters & Modular Multi-FX": "Infinite Ladder Filter, SVF, Formant, Comb, and Patchable Multi-FX",
-            "Synthesizers & Drum Instruments": "Infinite 17 Native Synths (Polymer, Wavetable, FM, Analog, Physical Modeling)",
-            "Modulation & Pitch Effects": "Infinite Chorus, Flanger, Phaser, Pitch Shift, Frequency Shifter",
-            "Utility & Channel Tools": "Infinite Gain, Pan, Stereo Imager, Channel Strip",
+            "Dynamic EQ & Spectral Shaping": "`EQ`, `Spec Blur`, `Spectrum Slide`; no dynamic EQ",
+            "Distortion & Multi-Band Saturation": "`Drive`, `Wavetable Shaper`, `Cycle Shaper`, `Bitcrush`; multi-stage and multiband are plan items 2.17 and 2.18",
+            "Reverb & Spatial Acoustics": "`Reverb`; convolution is plan item 2.9",
+            "Delays & Modulated Echoes": "`Delay`, `Stutter`; tape delay is plan item 2.20",
+            "Dynamics & Mastering Processors": "`Dynamics`, `Limiter`, `Transient Shaper`; no multiband compressor or de-esser",
+            "Creative Filters & Modular Multi-FX": "`Audio Filter`, `Formant Filter`, `Resonator Bank`; more filter models are plan item 2.25",
+            "Synthesizers & Drum Instruments": "`Analog`, `Wavetable`, `Oscillator`, `Metallic`, `Granular`, `Spectral Synth`, `Field Synth`; FM is plan item 2.22",
+            "Modulation & Pitch Effects": "`Chorus`, `Flanger`, `Phaser`, `Pitch Shifter`, `Frequency Shifter`, `Tremolo`, `Ring Mod`",
+            "Utility & Channel Tools": "`Gain`, `Stereo`, `Mixer`, `Audio Meter`",
         }
-        outpace = eq_map.get(fam, "Infinite native audio DSP node suite")
+        outpace = eq_map.get(fam, "none mapped")
 
         fam_rows.append([fam, pcount, f"{param_sum:,}", key_names, outpace])
 
@@ -245,7 +245,7 @@ def render_markdown(catalog):
         "Vital", "Drumazon 2", "Phase Plant", "Multipass", "TDR Nova"
     ]
 
-    flag_headers = ["Plugin Name", "Vendor", "Type", "Parameters", "Key Parameter Sockets", "Infinite Equivalent"]
+    flag_headers = ["Plugin Name", "Vendor", "Type", "Parameters", "Key Parameter Sockets", "Infinite equivalent"]
     flag_rows = []
 
     for f in flagships:
@@ -260,7 +260,7 @@ def render_markdown(catalog):
                 match["type"],
                 match["params_count"],
                 sample_p,
-                "Native Infinite audio engine equivalent"
+                "none mapped"
             ])
 
     lines.append(md_table(flag_headers, flag_rows))
