@@ -1660,6 +1660,17 @@ namespace app
       ImGui::TextDisabled("%d geometry, %s camera", connected, n->camera ? "patched" : "built-in");
       ImGui::SameLine(0.0f, 16.0f);
       ImGui::TextDisabled("%zu triangles in %zu draw calls", n->LastTriangleCount(), n->LastDrawCalls());
+      {
+         // The count changes every frame; pad to a fixed worst-case width so the node body doesn't resize with the digits.
+         const ImVec2 textMin = ImGui::GetItemRectMin();
+         const ImVec2 textSize = ImGui::GetItemRectSize();
+         const float fixedW = ImGui::CalcTextSize("00000000 triangles in 000 draw calls").x;
+         if (textSize.x < fixedW)
+         {
+            ImGui::SetCursorScreenPos(ImVec2(textMin.x + textSize.x, textMin.y));
+            ImGui::Dummy(ImVec2(fixedW - textSize.x, textSize.y));
+         }
+      }
 
       gParamWidthLive = kParamWidthBase;   // two-column body keeps its column width; only single-column bodies stretch to the header (R3)
       const float colW = kParamWidth;
@@ -1897,10 +1908,53 @@ namespace app
    void DrawFilterParams(FilterNode* n)
    {
       const FilterDef& def = n->Def();
+
+      // "color adjustments" is long enough that its rarely-used grading sections sit behind a "show more" button
+      // (GraphNode::showAdvancedParams, saved with the patch). Folded params are still registered, in the same
+      // order, so their indices, modulation, expressions and the matrix are unchanged; a folded param that has a
+      // cable, expression or palette binding opens the section so its pin is never hidden.
+      size_t foldFrom = def.params.size();
+      if (def.name == "color adjustments")
+         for (size_t i = 0; i < def.params.size(); i++)
+            if (def.params[i].sectionLabel == "Channel Mixer")
+               foldFrom = i;
+      const bool savedRegisterOnly = gParamRegisterOnly;
       for (size_t i = 0; i < def.params.size(); i++)
       {
          const FilterParamDef& p = def.params[i];
-         if (!p.sectionLabel.empty())
+         if (i == foldFrom)
+         {
+            GraphNode* gn = FindNodeByIndex(gCurrentNodeIndex);
+            bool open = gn != nullptr && gn->showAdvancedParams;
+            if (!open)
+            {
+               int pc = gParamCounter, cc = gColorCounter;
+               for (size_t k = foldFrom; k < def.params.size() && !open; k++)
+               {
+                  const FilterParamDef& hp = def.params[k];
+                  if (hp.type == FilterParamDef::Type::Float)
+                  {
+                     open = Modulation::Instance().IsModulated(gCurrentNodeIndex, pc) ||
+                            Modulation::Instance().HasExpression(gCurrentNodeIndex, pc);
+                     pc++;
+                  }
+                  else if (hp.type == FilterParamDef::Type::Color)
+                     open = PaletteBinding::Instance().IsBound(gCurrentNodeIndex, cc++);
+                  else
+                  {
+                     const int slot = DiscreteParamSlot(gCurrentNodeIndex, hp.label);
+                     open = Modulation::Instance().IsModulated(gCurrentNodeIndex, slot);
+                  }
+               }
+            }
+            ImGui::PushID("showMoreFilter");
+            if (ActionButton::Column(open && !(gn != nullptr && gn->showAdvancedParams) ? "show more (in use)"
+                                     : open ? "show less" : "show more", kParamWidth) && gn != nullptr)
+               gn->showAdvancedParams = !gn->showAdvancedParams;
+            ImGui::PopID();
+            gParamRegisterOnly = savedRegisterOnly || !open;
+         }
+         if (!p.sectionLabel.empty() && !gParamRegisterOnly)
             NodeSeparator(p.sectionLabel.c_str());
          if (def.name == "convolve" && i < 9)
          {
@@ -1952,6 +2006,7 @@ namespace app
          }
          ImGui::PopID();
       }
+      gParamRegisterOnly = savedRegisterOnly;
       if (def.params.empty())
          ImGui::TextDisabled("(no parameters)");
    }
