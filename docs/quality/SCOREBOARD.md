@@ -8,8 +8,8 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 |---|---|---|---|---|---|
 | P1 Live AV workstation | 8 | 6 | 1 | 1 | 0 |
 | P5 Audio quality and hosting | 25 | 18 | 4 | 3 | 0 |
-| P7 3D, compositing, output | 10 | 7 | 2 | 0 | 1 |
-| P8 Performance | 30 | 18 | 2 | 0 | 10 |
+| P7 3D, compositing, output | 10 | 8 | 2 | 0 | 0 |
+| P8 Performance | 30 | 18 | 2 | 1 | 9 |
 
 ## P1 Live AV workstation: AV integration
 
@@ -92,7 +92,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `geo.cloth_stretch_pct` | Worst edge stretch of a pinned cloth after 12 s | <= 50.00 % | release | met | 1.39 (node:Cloth) | - |
 | `geo.inst_mirrored` | Instance transforms with a negative determinant | <= 0 count | release | met | 0 (node:Instance on Points) | - |
 | `geo.decimate_bbox_pct` | Decimate: worst vertex distance to the original surface | <= 5.00 % bbox | release | met | 0.851 (node:Decimate) | - |
-| `geo.disp_offset` | Displacement: worst vertex off the formula (run with INFINITE_GEOAUDIT_ONLY=DISP) | <= 0.02 units | report | unmeasured | - | - |
+| `geo.disp_offset` | Displacement: worst vertex off the formula (run with INFINITE_GEOAUDIT_ONLY=DISP) | <= 0.02 units | report | met | 0 (node:Displacement) | - |
 
 ## P8 Performance: Bench: audio
 
@@ -165,7 +165,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
 | `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 346 (node:Spectral Synth) | - |
-| `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | unmeasured | - | - |
+| `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | info | 14.08 (node:Analog) | - |
 
 ## P8 Performance: Live scene
 
@@ -198,5 +198,6 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `geo.nonmanifold` (edges): node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Cylinder 0 · node:Dodecahedron 0 · node:Icosphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Octahedron 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Smooth on cube 0 · node:Sphere 0 · node:Subdivide on cube 0 · node:Tetrahedron 0 · node:Torus 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:Solidify on a plane 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Smooth on sphere 198 (exc F17) · node:Subdivide on sphere 198 (exc F17)
 - `bench.b8_window_p99_ms` (ms): bench:B8:2x1080+2w:w1 17.69 · bench:B8:2x1080+3w:w2 17.69 · bench:B8:2x1080+3w:w1 17.70 · bench:B8:2x1080+2w:w0 17.72 · bench:B8:2x1080+3w:w0 17.78 · bench:B8:4x2160+3w+cam+syphon:w0 33.04 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 33.09 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 33.21 (miss)
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
+- `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 14.08
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 d6020b77; 2026-10-13 e182230c.

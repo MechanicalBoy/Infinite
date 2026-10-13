@@ -748,3 +748,6 @@
 {"ts": "2026-10-13T05:58:43+00:00", "commit": "4466dd20", "host": "Mac14,7", "note": "re-survey blender_bench + av_bench first run 2026-10-13 (shared M2, load ~10)", "id": "geo.subdiv_ms", "subject": "Infinite", "value": 12.0111}
 {"ts": "2026-10-13T05:58:43+00:00", "commit": "4466dd20", "host": "Mac14,7", "note": "re-survey blender_bench + av_bench first run 2026-10-13 (shared M2, load ~10)", "id": "sim.cloth_ms", "subject": "Blender", "value": 18.3958}
 {"ts": "2026-10-13T05:58:43+00:00", "commit": "4466dd20", "host": "Mac14,7", "note": "re-survey blender_bench + av_bench first run 2026-10-13 (shared M2, load ~10)", "id": "sim.cloth_ms", "subject": "Infinite", "value": 0.9444}
+{"ts": "2026-10-13T05:44:07+00:00", "commit": "d6020b77", "host": "Mac14,7", "note": "GEOAUDIT DISP (INFINITE_GEOAUDIT_ONLY=DISP)", "id": "geo.disp_offset", "subject": "node:Displacement", "value": 0.0}
+{"ts": "2026-10-13T05:44:08+00:00", "commit": "d6020b77", "host": "Mac14,7", "note": "synth_probe cpu (shared machine, noisy)", "id": "probe.cpu_voice_ms_s", "subject": "node:Analog", "value": 14.0792}
+{"ts": "2026-10-13T05:44:08+00:00", "commit": "d6020b77", "host": "Mac14,7", "note": "synth_probe cpu (shared machine, noisy)", "id": "probe.cpu_voice_ms_s", "subject": "node:Wavetable", "value": 3.0292}
