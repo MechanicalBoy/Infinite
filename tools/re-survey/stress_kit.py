@@ -3,8 +3,9 @@
 
   stress_kit.py nodes [--only TYPE] [--jobs 4]   every node type alone and wired to an Output: validate, render 2 frames, save twice
   stress_kit.py fuzz [--rounds 300] [--seed 1]   damaged copies of real patches (cut, flipped bytes, dropped/doubled lines, bad numbers)
+  stress_kit.py random [--rounds 200]            random graphs with legal cables and in-range parameters: render, listen, save
   stress_kit.py killsave [--rounds 40]           kill a save at a random moment; the file on disk must still open
-  stress_kit.py all                              the three above, one table, written to ~/re-output/stress/results.md
+  stress_kit.py all                              the four above, one table, written to ~/re-output/stress/results.md
 
 What counts as a failure: a crash (signal exit), a hang (timeout), a save that leaves a file that no
 longer opens, or a second save that differs from the first (the format is not stable). A clean refusal
@@ -267,6 +268,79 @@ def cmd_killsave(args):
     return "killsave", args.rounds, fails
 
 
+def load_describe(binp, td):
+    import json
+    path = os.path.join(td, "describe.json")
+    run([binp, "--describe", "--json", path], timeout=120)
+    return [t for t in json.load(open(path))["types"] if not t.get("hardware_driven")]
+
+
+WIRE = {"image": "cable", "geometry": "geo", "camera": "geo", "light": "geo", "audio": "aud", "note": "note"}
+
+
+def random_patch(types, r):
+    """A small random graph with legal cables (kinds match) and parameters inside their declared range."""
+    pick = [r.choice(types) for _ in range(r.randint(3, 9))]
+    lines, outs, wires = ["infinite-patch 1"], [], []
+    for i, t in enumerate(pick, 1):
+        lines += ["node %d %s %s" % (i, t["category"], t["type"]), "  id n%d" % i]
+        for m in t.get("modulatable", []):
+            if r.random() < 0.3 and m.get("key") and m["max"] > m["min"]:
+                row = next((x for x in t["params"] if x.get("key") == m["key"]), None)
+                if row and row["tag"] == "f":
+                    lines.append("  f %s %.6g" % (m["key"], r.uniform(m["min"], m["max"])))
+        lines.append("end")
+        for inp in t["inputs"]:
+            w = WIRE.get(inp["kind"])
+            srcs = [(j, o) for j, o in outs if o["kind"] == inp["kind"]]
+            if w and srcs and r.random() < 0.85:
+                j, o = r.choice(srcs)
+                wires.append("%s n%d %d n%d" % (w, i, inp["slot"], j))
+        outs += [(i, o) for o in t["outputs"]]
+    n = len(pick)
+    imgs = [j for j, o in outs if o["kind"] == "image"]
+    auds = [j for j, o in outs if o["kind"] == "audio"]
+    lines += ["node %d Utility Output" % (n + 1), "  id out", "end", "node %d Utility Audio Out" % (n + 2), "  id spk", "end"]
+    if imgs:
+        wires.append("cable out 0 n%d" % r.choice(imgs))
+    if auds:
+        wires.append("aud spk 0 n%d" % r.choice(auds))
+    return "\n".join(lines + wires) + "\n"
+
+
+def cmd_random(args):
+    binp = infinte_or_die()
+    r = random.Random(args.seed)
+    fails = []
+    os.makedirs(OUT, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=_tmp()) as td:
+        types = load_describe(binp, td)
+        jobs = [(i, random_patch(types, r)) for i in range(args.rounds)]
+
+        def go(job):
+            i, text = job
+            p = os.path.join(td, "r%d.inf" % i)
+            open(p, "w").write(text)
+            out = []
+            for name, cmd in (("frame", [binp, "--frame", p, "0,1", os.path.join(td, "r%d_f" % i)]),
+                              ("audio", [binp, "--audio-summary", p, os.path.join(td, "r%d.json" % i)]),
+                              ("save", [binp, "--canonicalize", p, os.path.join(td, "r%d.c" % i)])):
+                rc, _, err = run(cmd, timeout=120)
+                c = classify(rc)
+                if c in ("crash", "hang") or c.startswith("odd"):
+                    keep = os.path.join(OUT, "random-%d-%s.inf" % (i, name))
+                    open(keep, "w").write(text)
+                    out.append(_fail(c, "random patch %d %s" % (i, name), "kept %s" % keep))
+            return out
+        with cf.ThreadPoolExecutor(args.jobs) as ex:
+            for res in ex.map(go, jobs):
+                fails += res
+                for f in res:
+                    print("FAIL %-14s %s: %s" % (f["kind"], f["name"], f["detail"]))
+    print("random: %d patches, %d failures" % (args.rounds, len(fails)))
+    return "random", args.rounds, fails
+
+
 def infinte_or_die():
     b = infinite_bin()
     if not b:
@@ -282,7 +356,7 @@ def _tmp():
 
 def cmd_all(args):
     os.makedirs(OUT, exist_ok=True)
-    results = [cmd_nodes(args), cmd_fuzz(args)]
+    results = [cmd_nodes(args), cmd_fuzz(args), cmd_random(args)]
     args.rounds = 40
     results.append(cmd_killsave(args))
     lines = ["# Stress kit results", "", "| Test | Cases | Failures |", "|---|---|---|"]
@@ -311,7 +385,7 @@ def selftest():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for n in ("nodes", "fuzz", "killsave", "all"):
+    for n in ("nodes", "fuzz", "random", "killsave", "all"):
         s = sub.add_parser(n)
         s.add_argument("--jobs", type=int, default=4)
         s.add_argument("--only")
@@ -323,7 +397,7 @@ def main():
         return selftest()
     if a.cmd == "all":
         a.rounds = 300
-    {"nodes": cmd_nodes, "fuzz": cmd_fuzz, "killsave": cmd_killsave, "all": cmd_all}[a.cmd](a)
+    {"nodes": cmd_nodes, "fuzz": cmd_fuzz, "random": cmd_random, "killsave": cmd_killsave, "all": cmd_all}[a.cmd](a)
 
 
 if __name__ == "__main__":

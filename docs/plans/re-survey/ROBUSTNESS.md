@@ -16,13 +16,13 @@ Run: `python3 tools/re-survey/stress_kit.py all` (results in `~/re-output/stress
 | R6 | Plugin that crashes or hangs while loaded and while playing | `host_audit.py` (dossier A) | Plugin isolation | done, dossier A |
 | R7 | Audio device unplugged mid-play, then replugged | owner sitting | Device-loss recovery | pending |
 | R8 | Eight-hour soak: memory and frame time flat | `app_bench.py` on a looped patch | Leaks | not run |
-| R9 | Random patches: random nodes, random legal cables, random parameter values, render | not built | Cable-rule and parameter-range bugs the one-node test cannot reach | next |
+| R9 | Random patches: 3 to 9 random nodes, legal cables, in-range parameters; render, listen, save | `stress_kit.py random` | Cable-rule and parameter-range bugs the one-node test cannot reach | 1,200 patches, 0 failures (about 40% render a picture; the rest end in a clean refusal) |
 
 ## What the first run says
 
-- R1 to R3 found nothing. The headless load, render and save paths are sturdy against what these tests throw at them.
+- R1 to R3 and R9 found nothing. The headless load, render and save paths are sturdy against what these tests throw at them.
 - What this does not cover: anything only the GUI does (canvas interaction, undo, drag-connect, the node UI), nodes that need a connected input to do real work, hardware nodes (cameras, MIDI, microphones refuse headless by design), and combinations of nodes.
-- So the open risk sits in R9 and in the GUI rows R4, R5 and R7.
+- So the open risk sits in the GUI rows R4, R5 and R7, and in modulation bindings, which R9 does not yet add.
 
 ## Next
 
