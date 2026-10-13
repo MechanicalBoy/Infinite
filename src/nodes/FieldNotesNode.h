@@ -39,6 +39,8 @@ public:
 
    NodeIssue Issue() const override { return NodeIssues::FieldCompile(mLastError); }
 
+   std::string CodeError() const override { return mLastError; }
+
    bool Apply();
    const std::string& LastError() const { return mLastError; }
    const std::string& Notice() const { return mNotice; }
