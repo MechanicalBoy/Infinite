@@ -17,6 +17,9 @@
 // the frame values regardless of when in the block they landed. A value
 // that arrives while the previous ramp is still running waits for it. Before
 // any frame has been published (headless DSP tests) a change ramps over 5 ms.
+// A slot's first value is taken as is: ramping up to it from 0 made every
+// kernel start on a 5 ms sweep from zero, read at a different point per
+// device rate by anything sampled at the start (a strike, a hold clock).
 //
 // This is deliberately not a ring/FIFO: a knob-driven param only ever needs
 // its most recent value, never an ordered, none-dropped history of every
@@ -76,6 +79,7 @@ private:
       float target = 0.0f;
       float seen = 0.0f;
       int remaining = 0;
+      bool primed = false; // a slot's first value lands, it does not ramp up from 0
       bool hasPending = false;
       float pendingValue = 0.0f;
       double endTime = 0.0;
@@ -85,6 +89,7 @@ private:
    void StartRamp(Ramp& r, float value, double startTime, double endTime);
 
    std::atomic<float> mTarget[kMaxParams] {};
+   std::atomic<bool> mPushed { false }; // any Push yet: a slot is primed on its first read after one
    Ramp mRamps[kMaxParams];
    double mSampleRate = 0.0;
 };
