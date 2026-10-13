@@ -43,7 +43,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `synth.pitch_cents` | Pitch error per note at 44.1/48/96 kHz (spectrum peak, sustained render) | <= 1.00 cents | release | met | 0.0345 (node:Analog) | - |
 | `synth.note_cents` | Pitch error of note 69 played through the note cable | <= 1.00 cents | release | met | 0.009 (node:Analog) | - |
 | `synth.alias_db` | Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz | <= -80.00 dB | release | met | -82.63 (node:Oscillator) | - |
-| `synth.rate_spread_db` | Level spread of the same 3 s render over 44.1/48/96 kHz | <= 1.00 dB | release | exc | 2.93 (node:Metallic) | - |
+| `synth.rate_spread_db` | Level spread of the same 3 s render over 44.1/48/96 kHz | <= 1.00 dB | release | met | 0.824 (node:PaulStretch) | - |
 | `synth.click_on_db` | Note-on second difference re the larger of steady state and the 5-50 ms body | <= 12.00 dB | release | met | 5.70 (node:Wavetable) | - |
 | `synth.click_off_db` | Note-off second difference re steady state | <= 12.00 dB | release | met | -0.0027 (node:Equation Synth) | - |
 | `synth.poly_tail_dbfs` | Level 9.5 s after all notes off (stuck voices); free-running nodes are not measured | <= -100 dBFS | release | met | -240 (node:Analog) | - |
@@ -64,10 +64,10 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `fx.dc_dbfs` | Mean DC left by an effect under noise, at defaults | <= -50.00 dBFS | release | met | -53.40 (node:Bitcrush) | - |
+| `fx.dc_dbfs` | Mean DC left by an effect under noise, at defaults | <= -50.00 dBFS | release | met | -55.11 (node:Bitcrush) | - |
 | `fx.tail_dbfs` | Level 10 s after the input goes silent | <= -100 dBFS | release | met | -240 (node:Audio Filter) | - |
-| `fx.click_db` | Worst step transient when a parameter jumps | <= 12.00 dB | release | exc | 17.30 (node:Audio Filter) | - |
-| `fx.rate_spread_db` | Tone level difference across 44.1/48/96 kHz | <= 1.00 dB | release | exc | 5.38 (node:Bitcrush) | - |
+| `fx.click_db` | Worst step transient when a parameter jumps | <= 12.00 dB | release | met | 9.04 (node:Dynamics) | - |
+| `fx.rate_spread_db` | Tone level difference across 44.1/48/96 kHz | <= 1.00 dB | release | met | 0.996 (node:Key-Snap) | - |
 
 ## P7 3D, compositing, output: 3D engine
 
@@ -164,7 +164,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 490 (node:Spectral Synth) | - |
+| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 348 (node:Spectral Synth) | - |
 | `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | info | 29.94 (node:Analog) | - |
 
 ## P8 Performance: Live scene
@@ -180,7 +180,6 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 
 - `av.react_latency_ms` (ms): Infinite 49.96 (miss)
 - `av.react_jitter_ms` (ms): Infinite 9.33
-- `synth.rate_spread_db` (dB): node:Wavetable 0 · node:Granular 0.0013 · node:Grain Molder 0.0042 · node:Molder 0.0042 · node:Sampler 0.0042 · node:Equation Synth 0.0079 · node:Analog 0.0379 · node:Wave Terrain 0.051 · node:Spectral Synth 0.0543 · node:Oscillator 0.0573 · node:PaulStretch 0.824 · node:Metallic 2.93 (exc F1)
 - `probe.pitch_worst_c` (cents): node:Analog 0.173 · node:Wavetable 0.174 · Vital Audio: Vital 0.174 · Xfer Records: Serum 2 0.174 · u-he: Diva 7.73
 - `probe.nonharm60_db` (dB): node:Analog -84.51 · node:Wavetable -84.16 · Vital Audio: Vital -84.34 · Xfer Records: Serum 2 -82.96 · u-he: Diva -40.80
 - `probe.nonharm96_db` (dB): node:Wavetable -84.94 · node:Analog -83.26 · Vital Audio: Vital -84.31 · Xfer Records: Serum 2 -82.59 · u-he: Diva -27.00
@@ -188,8 +187,6 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `probe.attack_ms` (ms): node:Analog 3.00 · node:Wavetable 4.00 · Vital Audio: Vital 1.00 · Xfer Records: Serum 2 2.00 · u-he: Diva 44.00
 - `probe.release_s` (s): node:Analog 0.252 · node:Wavetable 0.263 · Xfer Records: Serum 2 0.018 · Vital Audio: Vital 0.084 · u-he: Diva 1.61
 - `probe.vel_span_db` (dB): node:Analog 24.08 · node:Wavetable 24.08 · Vital Audio: Vital -0.0023 · Xfer Records: Serum 2 -0.0021 · u-he: Diva 12.92
-- `fx.click_db` (dB): node:Stutter -30.82 · node:Reverb -0.579 · node:Shape Resonator -0.156 · node:Delay -0.0898 · node:Tremolo -0.0129 · node:Cycle Shaper -0.0012 · node:Spectrum Slide -0.0009 · node:Ring Mod -0.0001 · node:Bitcrush 0 · node:Chorus 0.0003 · node:Pitch Shifter 0.0107 · node:Key-Snap 0.0703 · node:Stereo 0.218 · node:Frequency Shifter 0.407 · node:Phaser 0.723 · node:Drive 0.772 · node:Spec Blur 1.54 · node:EQ 3.94 · node:Flanger 3.99 · node:Resonator Bank 4.05 · node:Formant Filter 4.63 · node:Limiter 8.76 · node:Wavetable Shaper 8.80 · node:Transient Shaper 8.82 · node:Dynamics 9.04 · node:Audio Filter 17.30 (exc F13)
-- `fx.rate_spread_db` (dB): node:Audio Filter 0 · node:Frequency Shifter 0 · node:Limiter 0 · node:Pitch Shifter 0 · node:Stereo 0 · node:Transient Shaper 0 · node:Tremolo 0 · node:EQ 0.0005 · node:Delay 0.0007 · node:Wavetable Shaper 0.0034 · node:Drive 0.0062 · node:Cycle Shaper 0.0078 · node:Spectrum Slide 0.0314 · node:Ring Mod 0.0853 · node:Dynamics 0.0978 · node:Chorus 0.116 · node:Stutter 0.13 · node:Flanger 0.144 · node:Phaser 0.243 · node:Formant Filter 0.266 · node:Resonator Bank 0.413 · node:Spec Blur 0.447 · node:Shape Resonator 0.465 · node:Reverb 0.824 · node:Key-Snap 0.996 · node:Bitcrush 5.38 (exc F14)
 - `geo.instance_ms` (ms): Infinite 2.73 (miss) · Blender 1.26
 - `geo.subdiv_ms` (ms): Infinite 12.01 (miss) · Blender 8.14
 - `sim.cloth_ms` (ms): Infinite 0.944 · Blender 18.40
@@ -198,4 +195,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 51affa29; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8ca686d5; 2026-10-13 c5fd65c0; 2026-10-13 d6020b77; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 c5fd65c0; 2026-10-13 d6020b77; 2026-10-13 e182230c.

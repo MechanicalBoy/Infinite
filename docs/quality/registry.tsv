@@ -5,7 +5,7 @@
 synth.pitch_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error per note at 44.1/48/96 kHz (spectrum peak, sustained render)
 synth.note_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error of note 69 played through the note cable
 synth.alias_db	P5	Built-in instruments	dB	lower	-80	release	SYNTHAUDIT		Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz
-synth.rate_spread_db	P5	Built-in instruments	dB	lower	1.0	release	SYNTHAUDIT	node:Metallic=F1	Level spread of the same 3 s render over 44.1/48/96 kHz
+synth.rate_spread_db	P5	Built-in instruments	dB	lower	1.0	release	SYNTHAUDIT		Level spread of the same 3 s render over 44.1/48/96 kHz
 synth.click_on_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT		Note-on second difference re the larger of steady state and the 5-50 ms body
 synth.click_off_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT		Note-off second difference re steady state
 synth.poly_tail_dbfs	P5	Built-in instruments	dBFS	lower	-100	release	SYNTHAUDIT		Level 9.5 s after all notes off (stuck voices); free-running nodes are not measured
@@ -25,8 +25,9 @@ probe.vel_span_db	P5	Built-in instruments	dB	none		report	synth_probe		Level cha
 probe.cpu_voice_ms_s	P8	Built-in instruments	ms/s	lower		report	synth_probe		Render ms per second of audio per voice, offline
 fx.dc_dbfs	P5	Effects	dBFS	lower	-50	release	FXAUDIT		Mean DC left by an effect under noise, at defaults
 fx.tail_dbfs	P5	Effects	dBFS	lower	-100	release	FXAUDIT		Level 10 s after the input goes silent
-fx.click_db	P5	Effects	dB	lower	12	release	FXAUDIT	node:Audio Filter=F13	Worst step transient when a parameter jumps
-fx.rate_spread_db	P5	Effects	dB	lower	1.0	release	FXAUDIT	node:Bitcrush=F14	Tone level difference across 44.1/48/96 kHz
+fx.click_db	P5	Effects	dB	lower	12	release	FXAUDIT		Worst step transient when a parameter jumps
+fx.rate_spread_db	P5	Effects	dB	lower	1.0	release	FXAUDIT		Tone level difference across 44.1/48/96 kHz
+# fx.rate_spread_db probe note (2026-10-13, F14): Bitcrush's 6 kHz probe sits on its default 6 kHz hold rate, so a correct hold samples the tone at its zero crossings and reads silence (-240 dBFS) at every rate; the -80 dBFS floor drops that band and Bitcrush is gated on 100 Hz and 1 kHz. Evidence: the old kernel with no start-up ramp still read -26.8 / -23.1 / -28.2 dBFS (holds one host sample early); the fixed clock with the ramp read -30.1 / -25.2 / -30.1 (the mailbox's ramp from 0 left a per-rate clock phase); fixed clock plus primed mailbox -240 at all three. A non-zero reading there is clock phase, not level.
 note.pair_unpaired	P1	Note nodes	count	lower	0	release	NOTEAUDIT		Stuck, orphan-off, duplicate-on and off-before-on events
 note.grid_samples	P1	Note nodes	samples	lower	1.0	release	NOTEAUDIT		Worst note-on error against the grid across block sizes and tempi
 note.jitter_samples	P1	Note nodes	samples	lower	0	release	NOTEAUDIT		Note-on error through the node, plus missing notes
