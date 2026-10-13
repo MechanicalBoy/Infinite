@@ -31,18 +31,18 @@ Status: written 2026-10-13 from TouchDesigner's public documentation wiki (the c
 
 | Pillar | Their feature | Infinite equivalent | Status | Outcome | Evidence |
 |---|---|---|---|---|---|
-| P7 | TOP generators, filters and compositing (about 80 of the 130) | `src/nodes/` | parity | ignore: Source, Compositing and Effects cover the working set | node list |
-| P7 | TOP Optical Flow and Time Machine | `src/nodes/` | gap | ignore: no user has asked; Time Machine is the more live-useful of the two (a delayed frame scrubbed by a modulator), revisit with evidence | node list |
-| P7 | GLSL TOP, user shader | `src/core/field/` | parity | ignore: FieldPixel and Formula | `.claude/skills/field-language/SKILL.md` |
-| P7 | Depth and sensor cameras (Kinect, RealSense, ZED) | `src/nodes/` | gap | ignore: hardware-specific, no user asked | node list |
-| P1 | CHOP control signals (LFO, Noise, Lag, Filter, Trigger, Logic, Timer) | `src/nodes/` | parity | ignore: 30 modulators | node list |
-| P1 | CHOP I/O (DMX, Serial, Joystick, Keyboard, LTC) | `src/nodes/` | gap | ignore: OSC and MIDI cover live use; DMX is the one a lighting user would ask for | node list |
-| P5 | CHOP audio (spectrum, dynamics, EQ, VST) | `src/nodes/` | lead | ignore: 28 audio effects, 17 synths and a plugin host, in sample-accurate audio | `dossiers/A.md` |
-| P7 | SOP generators and operators (Box, Torus, Extrude, Boolean, Subdivide, Twist) | `src/nodes/` | parity | ignore: all present | node list |
-| P7 | SOP Revolve, Sweep, Polyloft, Fillet, Lattice, LSystem | `src/nodes/` | gap | ignore: same reasoning as Blender curve profile and bevel; wait for a user who asks | `dossiers/G.md` |
-| P4 | POP attribute operations, GPU simulation, GLSL POP | `src/core/field/` | parity | ignore: Field kernels with audio and modulation inputs; named attribute operations are TouchDesigner's breadth | `.claude/skills/field-language/SKILL.md` |
-| P7 | MAT (Phong, PBR, GLSL MAT) | `src/nodes/` | parity | ignore: Material carries the full Principled set | `--describe "Material"` |
-| P1 | DAT and Python in every operator | `src/core/field/` | gap | ignore: the Field language is Infinite's scripting layer | `dossiers/F.md` |
+| P7 | TOP generators, filters and compositing (about 80 of the 130) | `src/core/FilterDefs.cpp` | parity | ignore: Source 34, Compositing 37, Effects 28; Source, Compositing and Effects cover the working set | `src/core/FilterDefs.cpp` |
+| P7 | TOP Optical Flow and Time Machine | none | gap | ignore: Trails, Feedback are the nearest; no user has asked; Time Machine is the more live-useful of the two (a delayed frame scrubbed by a modulator), revisit with evidence | census: no optical flow node |
+| P7 | GLSL TOP, user shader | `src/nodes/FieldPixelNode.h` | parity | ignore: FieldPixel, Formula; FieldPixel compiles to GLSL (`src/core/field/GlslBackend.cpp`) | `src/nodes/FieldPixelNode.h` |
+| P7 | Depth and sensor cameras (Kinect, RealSense, ZED) | none | gap | ignore: Video In is a plain camera; hardware-specific, no user asked | census: no depth camera node |
+| P1 | CHOP control signals (LFO, Noise, Lag, Filter, Trigger, Logic, Timer) | `src/nodes/ModulatorNodes.h` | parity | ignore: LFO, Random, Smoothing, Compare, Math ...; 30 modulators; no Timer | `src/nodes/ModulatorNodes.h` |
+| P1 | CHOP I/O (DMX, Serial, Joystick, Keyboard, LTC) | `src/nodes/OscNodes.cpp` | gap | ignore: OSC Receive/Send, MIDI CC; OSC and MIDI cover live use; DMX is the one a lighting user would ask for | `src/nodes/OscNodes.cpp` |
+| P5 | CHOP audio (spectrum, dynamics, EQ, VST) | `src/audio/EffectDefs.cpp` | lead | ignore: 28 audio effects, 17 synths, VST3/AU Plugin; TouchDesigner's audio is a side path; Infinite's is the sample-accurate core | `src/audio/EffectDefs.cpp` |
+| P7 | SOP generators and operators (Box, Torus, Extrude, Boolean, Subdivide, Twist) | `src/nodes/GeometryOpNodes.cpp` | parity | ignore: Cube, Torus, Extrude, Union/Intersect/Difference, Subdivide, Twist; all present | `src/nodes/GeometryOpNodes.cpp` |
+| P7 | SOP Revolve, Sweep, Polyloft, Fillet, Lattice, LSystem | none | gap | ignore: Screw (revolve-like) only; same reasoning as Blender curve profile and bevel; wait for a user who asks | `dossiers/G.md` |
+| P4 | POP attribute operations, GPU simulation, GLSL POP | `src/nodes/FieldElementNode.h` | parity | ignore: Field Modifier; Field kernels with audio and modulation inputs; named attribute operations are TouchDesigner's breadth | `src/nodes/FieldElementNode.h` |
+| P7 | MAT (Phong, PBR, GLSL MAT) | `src/nodes/UtilityNodes.h` | parity | ignore: Material; Material carries the full Principled set; no user GLSL material | `src/nodes/UtilityNodes.h` |
+| P1 | DAT and Python in every operator | none | gap | ignore: Field language (not Python); the Field language is Infinite's scripting layer | `dossiers/F.md` |
 | P7 | Output resolution (non-commercial cap 1280×720) | `src/core/HeadlessJob.cpp` | lead | ignore: 4K measured | `dossiers/D.md` |
 
 ## 5. Measurements

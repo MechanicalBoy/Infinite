@@ -35,20 +35,20 @@ Status: written 2026-10-13 from Blender's public manual and public Python API re
 
 | Pillar | Their feature | Infinite equivalent | Status | Outcome | Evidence |
 |---|---|---|---|---|---|
-| P7 | Primitives (about 10) | `src/nodes/` | lead | ignore: Infinite has 30-odd parametric generators | `--describe` per node |
-| P7 | Procedural mesh operators (extrude, subdivide, solidify, array, mirror, booleans, decimate) | `src/nodes/` | parity | ignore: all present as nodes | node list |
-| P7 | Bevel, inset, remesh, weld-by-angle | `src/nodes/` | gap | ignore: a bevel node is the one candidate, wait for a user to ask; the rest are interactive-modeller tools | node list |
-| P7 | Curve to mesh with a profile, fillet, trim | `src/nodes/` | gap | ignore: Tube covers the round profile; revisit if a patch needs a custom profile | `--describe "Curve Ops"` |
-| P7 | Distribute and instance points (faces, grid, volume, realize, randomize) | `src/nodes/` | parity | ignore: volume and realize missing, Field Modifier covers per-element variation | node list |
-| P4 | Geometry nodes: fields, attributes, zones, about 150 operations | `src/core/field/` | parity | ignore: different model; Infinite is real-time, audio-driven and text | `.claude/skills/field-language/SKILL.md` |
-| P7 | Light types (point, sun, spot, area), light linking, IES | `src/nodes/` | gap | quality-gap: an area light (soft box) is the one a visual look needs; linking and IES ignored | `--describe "Light"` |
-| P7 | Principled BSDF and the shader graph | `src/nodes/` | parity | ignore: Material has the full Principled set; graph mixing not tested | `--describe "Material"` |
-| P7 | Procedural textures (10) | `src/core/field/` | parity | ignore: each is a short Field kernel | node list |
-| P7 | World and sky (HDRI, Nishita sky) | `src/nodes/` | gap | ignore: HDRI covers the live use | `--describe "HDRI"` |
-| P7 | UV unwrap, retopology | `src/nodes/` | parity | ignore: triplanar Mapping suits generated geometry | `--describe "Mapping"` |
-| P7 | Sculpting (30 brushes, masks, multires) | `src/nodes/` | gap | ignore: interactive authoring, outside a live instrument | node list |
-| P7 | Volumes, rigid body, fluid | `src/nodes/` | gap | ignore: not live-instrument work; revisit on evidence | node list |
-| P8 | Viewport evaluation speed | `src/core/` | lead | ignore: renders measured 70 to 300 times faster in Block D | `dossiers/D.md` |
+| P7 | Primitives (about 10) | `src/nodes/Geometry3DNodes.cpp` | lead | ignore: about 25 parametric 3D primitives (Cube, Torus Knot, Klein Bottle, Supershape, Metaballs ...) | `src/nodes/Geometry3DNodes.cpp` |
+| P7 | Procedural mesh operators (extrude, subdivide, solidify, array, mirror, booleans, decimate) | `src/nodes/GeometryOpNodes.cpp` | parity | ignore: Extrude, Subdivide, Solidify, Array, Mirror, Decimate, Union/Intersect/Difference present | `src/nodes/GeometryOpNodes.cpp` |
+| P7 | Bevel, inset, remesh, weld-by-angle | none | gap | ignore: Merge by Distance welds by distance only; a bevel node is the one candidate, wait for a user to ask; the rest are interactive-modeller tools | census: no Bevel/Inset/Remesh |
+| P7 | Curve to mesh with a profile, fillet, trim | `src/nodes/CurveOpsNode.h` | gap | ignore: Tube, Curve Ops; Tube covers the round profile; revisit if a patch needs a custom profile | `src/nodes/CurveOpsNode.h` |
+| P7 | Distribute and instance points (faces, grid, volume, realize, randomize) | `src/nodes/GeometryOpNodes.h` | parity | ignore: Distribute Points on Faces / in Grid, Instance on Points; volume and realize missing, Field Modifier covers per-element variation | `src/nodes/GeometryOpNodes.h` |
+| P4 | Geometry nodes: fields, attributes, zones, about 150 operations | `src/nodes/FieldElementNode.h` | parity | ignore: Field Modifier; different model; Infinite is real-time, audio-driven and text | `src/nodes/FieldElementNode.h` |
+| P7 | Light types (point, sun, spot, area), light linking, IES | `src/nodes/SceneNodes.h` | gap | quality-gap: Light: directional, point, sun, ambient, spot; an area light (soft box) is the one a visual look needs; linking and IES ignored | `src/nodes/SceneNodes.h` |
+| P7 | Principled BSDF and the shader graph | `src/nodes/UtilityNodes.h` | parity | ignore: Material; Material has the full Principled set; graph mixing not tested | `src/nodes/UtilityNodes.h` |
+| P7 | Procedural textures (10) | `src/nodes/TextureNode.h` | parity | ignore: Texture, Noise, FieldPixel; Texture and Noise cover the common set, anything else is a short FieldPixel kernel | `src/nodes/TextureNode.h` |
+| P7 | World and sky (HDRI, Nishita sky) | `src/nodes/EnvironmentNode.h` | gap | ignore: HDRI; HDRI covers the live use; no physical sky | `src/nodes/EnvironmentNode.h` |
+| P7 | UV unwrap, retopology | `src/nodes/UtilityNodes.h` | gap | ignore: Mapping (triplanar); no unwrap or retopology; triplanar Mapping suits generated geometry | `src/nodes/UtilityNodes.h` |
+| P7 | Sculpting (30 brushes, masks, multires) | none | gap | ignore: interactive authoring, outside a live instrument | census: no sculpt node |
+| P7 | Volumes, rigid body, fluid | `src/nodes/SimulationNodes.h` | gap | ignore: Cloth, Particle System only; not live-instrument work; revisit on evidence | `src/nodes/SimulationNodes.h` |
+| P8 | Render + encode speed (viewport evaluation not measured) | `src/core/HeadlessJob.cpp` | lead | ignore: headless render; render + encode measured 68 to 300 times Blender in Block D | `dossiers/D.md` |
 
 ## 5. Measurements
 

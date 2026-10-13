@@ -8,9 +8,9 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 | Field | Value |
 |---|---|
-| Next release | v0.5.1 |
-| Makes right | Make Infinite right: fix what escaped v0.5.0, each with a regression test |
-| Done when | Fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
+| Next release | v0.6 |
+| Makes right | Quality lead over the re-survey peers: audio correctness, first run, DSP lead (plan: `docs/plans/v0.6-quality/README.md`); every escaped v0.5.0 fix lands with a regression test |
+| Done when | Plan blocks 1-3 merged; scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
 
 ## Claims (add a row before touching anything; remove it when done)
 
@@ -24,6 +24,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 ## Decisions (newest first, keep the last 10)
 
+- 2026-10-13 Owner: v0.6 = Tier 1 + Tier 2 + at most 3 Tier 3 items (`docs/plans/v0.6-quality/README.md`); it absorbs the v0.5.1 goal. Per-voice/audio-rate modulation opens v0.7 (design doc + semi-brain first); SIMD voices after it; multicore graph parked until the audio thread passes 50%. Re-survey data fixed: node list from the patch skill (319 types), claims lint, false parities moved to gaps.
 - 2026-10-13 Owner: `feature/image-fx-maths` - accept and merge as recommended (old patches keep the old look; G9 GPU misses about 0.16 ms/node), then a perf quest for motion and radial blur. Queued in the re-survey-finish plan.
 - 2026-10-13 Owner: Codex `release-v050` - drop the notes rewrite; the website Extensions page moves to `feature/site-extensions`. Direction: each extension gets an Install button that installs it live into the running app (same path as live update), extensions do not ship inside the app bundle; for now the page only tracks them, built to grow later.
 - 2026-10-13 Owner: the quest board is the agent's internal tracker; the owner rarely reads it.
@@ -50,30 +51,31 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-13 02:38 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-13 11:53 UTC. Do not edit inside this block; rerun the tool._
 
-### Open quests (3)
+### Open quests (4)
 
 - R709 [later] Plan: re-survey: deconstruct competitors, one by one
 - R711 [later] Plan: Modulators to industry grade
 - R717 [later] Plan: Node audits: beyond effects and modulators
+- R754 [next] Perf: motion blur and radial blur cost
 
 ### Releases
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| v0.5.0 | 2026-10-10 | 149 |
+| v0.5.0 | 2026-10-10 | 165 |
 | v0.4.7 | 2026-10-07 | 74 |
-| v0.4.6 | 2026-10-01 | 164 |
+| v0.4.6 | 2026-10-01 | 165 |
 | v0.4.5 | 2026-09-26 | 203 |
 
 ### Quality of v0.5.0 (since v0.4.7; the release measure)
 
 | Measure | Value | Want |
 |---|---|---|
-| Escaped fixes: fixes after v0.5.0 touching src it changed | 7 fc683464 e90f84fe 01059f67 2846a30a d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
+| Escaped fixes: fixes after v0.5.0 touching src it changed | 8 b40f8c8e fc683464 e90f84fe 01059f67 2846a30a d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
 | Reverts after v0.5.0 | 0 | 0 |
-| Fix-shaped commits after v0.5.0 (all) | 17 | context |
+| Fix-shaped commits after v0.5.0 (all) | 24 | context |
 | Known test failures (macOS / Linux) | 3 / 6 | never grows |
 | Open GitHub issues labelled bug | 0 | 0 |
 | Crash reports filed since v0.5.0 | 0 | 0 |
@@ -85,10 +87,10 @@ _Generated 2026-10-13 02:38 UTC. Do not edit inside this block; rerun the tool._
 
 ### Last merges to main
 
-- 2026-10-13 Merge feature/re-survey-render-bench
-- 2026-10-13 Merge docs/node-audits-left
-- 2026-10-13 Merge bugfix/atomic-save
-- 2026-10-13 Merge bugfix/field-text-contrast
-- 2026-10-13 Merge bugfix/legacy-flag-defaults
+- 2026-10-13 Merge bugfix/step4-offline-audio
+- 2026-10-13 Merge bugfix/render3d-stats-width: fold label fix
+- 2026-10-13 Merge bugfix/render3d-stats-width: fixed-width Render 3D stats, color adjustments show more
+- 2026-10-13 Merge bugfix/patch1-canonical
+- 2026-10-13 Merge feature/re-survey-finish: resume note and NOW decisions
 
 <!-- FACTS:END -->
