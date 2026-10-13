@@ -15,7 +15,7 @@ synth.sample_pitch_spread_c	P5	Built-in instruments	cents	lower	20	release	SYNTH
 synth.sample_length_ratio	P5	Built-in instruments	ratio	lower	1.02	release	SYNTHAUDIT		Fixture WAV playback length, longest over shortest across device rates (F11)
 synth.det_differs	P5	Built-in instruments	bool	lower	0	release	SYNTHAUDIT		1 when the same render twice is not bit-identical
 synth.cpu_ns_frame	P8	Built-in instruments	ns/frame	lower	4000	report	SYNTHAUDIT		Render cost per frame, one voice (noisy: report only)
-probe.pitch_worst_c	P5	Built-in instruments	cents	lower	1.0	report	synth_probe		Worst pitch error over MIDI 24-108, black box through the host
+probe.pitch_worst_c	P5	Built-in instruments	cents	lower	1.0	release	synth_probe		Worst pitch error over MIDI 24-108, black box through the host
 probe.nonharm60_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 60 (clean reference); best competitor about -84
 probe.nonharm96_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 96 (aliasing)
 probe.nonharm108_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 108 (aliasing)

@@ -20,7 +20,7 @@
 //
 // and, driven through a real NoteEventQueue (note cable) at defaults:
 //
-//   NOTE    note 69 pitch error in cents
+//   NOTE    note 69 pitch error in cents, quiet and at true defaults (drift on)
 //   ENV     attack (10..90% of the held peak) and release (note-off to -60 dB
 //           re the held peak), ms
 //   CLICK   worst second difference within 5 ms of note-on and of note-off,
@@ -347,14 +347,15 @@ namespace
       std::vector<float> l, r;
       std::vector<int> ids;
 
-      bool Init(const Synth& s, double rate)
+      bool Init(const Synth& s, double rate, bool quiet = true)
       {
          sr = rate;
          node.reset(s.create());
          IAudioSource* src = AsSource(node.get());
          if (src == nullptr)
             return false;
-         s.quiet(node.get());
+         if (quiet)
+            s.quiet(node.get());
          audio = src->GetAudioNode();
          audio->PrepareToPlay(sr, kBlock);
          node->CookIfNeeded(frame++);
@@ -472,10 +473,27 @@ namespace
             std::vector<float> seg(x.begin() + (long)offAt - kN, x.begin() + (long)offAt);
             const double got = PeakHz(Spectrum(seg), 440.0, sr);
             const double cents = 1200.0 * std::log2(got / 440.0);
-            printf("SYNTHAUDIT NOTE  %-15s note 69 pitch %+.2f cents\n", s.name, cents);
-            Quality("synth.note_cents", s.name, std::fabs(cents));
-            if (std::fabs(cents) > kFlagPitchCents)
-               flags.Flag("NOTE", s.name, "cents", cents);
+            // The same note at true defaults: `quiet` turns off analog drift and noise for the
+            // other measurements, but a user's first patch plays with them on. Analog's first voice
+            // card was 3.5 c flat there and only the black-box probe saw it.
+            double defCents = cents;
+            {
+               NoteRig def;
+               if (def.Init(s, sr, false))
+               {
+                  std::vector<float> y;
+                  def.Run(kBlock * 4, y);
+                  def.On(s.note, 1.0f);
+                  def.Run((int)hold, y);
+                  std::vector<float> dseg(y.end() - kN, y.end());
+                  defCents = 1200.0 * std::log2(PeakHz(Spectrum(dseg), 440.0, sr) / 440.0);
+               }
+            }
+            printf("SYNTHAUDIT NOTE  %-15s note 69 pitch %+.2f cents | at defaults %+.2f cents\n", s.name, cents, defCents);
+            const double worstCents = std::max(std::fabs(cents), std::fabs(defCents));
+            Quality("synth.note_cents", s.name, worstCents);
+            if (worstCents > kFlagPitchCents)
+               flags.Flag("NOTE", s.name, "cents", std::fabs(defCents) > std::fabs(cents) ? defCents : cents);
          }
          const std::vector<double> env = Envelope(x, sr);
          const size_t eOn = onAt / (size_t)(sr * 0.001), eOff = offAt / (size_t)(sr * 0.001);
