@@ -7,7 +7,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | Pillar | Metrics | Met | Behind / miss | Info | Unmeasured |
 |---|---|---|---|---|---|
 | P1 Live AV workstation | 3 | 3 | 0 | 0 | 0 |
-| P5 Audio quality and hosting | 25 | 18 | 4 | 3 | 0 |
+| P5 Audio quality and hosting | 25 | 19 | 3 | 3 | 0 |
 | P7 3D, compositing, output | 7 | 7 | 0 | 0 | 0 |
 | P8 Performance | 2 | 1 | 0 | 1 | 0 |
 
@@ -42,10 +42,10 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `synth.sample_pitch_spread_c` | Fixture WAV (48 kHz) pitch spread over 44.1/48/96 kHz device rates (F11) | <= 20.00 cents | release | met | 6.85 (node:PaulStretch) | - |
 | `synth.sample_length_ratio` | Fixture WAV playback length, longest over shortest across device rates (F11) | <= 1.02 ratio | release | met | 1.00 (node:Granular) | - |
 | `synth.det_differs` | 1 when the same render twice is not bit-identical | <= 0 bool | release | met | 0 (node:Analog) | - |
-| `probe.pitch_worst_c` | Worst pitch error over MIDI 24-108, black box through the host | <= 1.00 cents | report | behind | 3.52 (node:Analog) | 0.174 (Vital Audio: Vital) |
-| `probe.nonharm60_db` | Non-harmonic energy at MIDI 60 (clean reference); best competitor about -84 | <= -80.00 dB | report | behind | -67.77 (node:Analog) | -84.34 (Vital Audio: Vital) |
-| `probe.nonharm96_db` | Non-harmonic energy at MIDI 96 (aliasing) | <= -80.00 dB | report | behind | -63.32 (node:Analog) | -84.31 (Vital Audio: Vital) |
-| `probe.nonharm108_db` | Non-harmonic energy at MIDI 108 (aliasing) | <= -80.00 dB | report | behind | -60.92 (node:Analog) | -83.63 (Vital Audio: Vital) |
+| `probe.pitch_worst_c` | Worst pitch error over MIDI 24-108, black box through the host | <= 1.00 cents | release | met | 0.174 (node:Wavetable) | 0.174 (Vital Audio: Vital) |
+| `probe.nonharm60_db` | Non-harmonic energy at MIDI 60 (clean reference); best competitor about -84 | <= -80.00 dB | report | behind | -68.18 (node:Analog) | -84.34 (Vital Audio: Vital) |
+| `probe.nonharm96_db` | Non-harmonic energy at MIDI 96 (aliasing) | <= -80.00 dB | report | behind | -63.26 (node:Analog) | -84.31 (Vital Audio: Vital) |
+| `probe.nonharm108_db` | Non-harmonic energy at MIDI 108 (aliasing) | <= -80.00 dB | report | behind | -61.00 (node:Analog) | -83.63 (Vital Audio: Vital) |
 | `probe.attack_ms` | Default-patch attack 10-90 % (a design choice, compared not judged) |  | report | info | - | - |
 | `probe.release_s` | Default-patch release to -60 dB |  | report | info | - | - |
 | `probe.vel_span_db` | Level change velocity 0.25 -> 1.0 |  | report | info | - | - |
@@ -80,7 +80,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 346 (node:Spectral Synth) | - |
+| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 359 (node:Spectral Synth) | - |
 | `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | info | 14.08 (node:Analog) | - |
 
 ## Per subject
@@ -89,12 +89,12 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 
 - `synth.rate_spread_db` (dB): node:Wavetable 0 · node:Granular 0.0013 · node:Grain Molder 0.0042 · node:Molder 0.0042 · node:Sampler 0.0042 · node:Equation Synth 0.0079 · node:Analog 0.0407 · node:Wave Terrain 0.051 · node:Spectral Synth 0.0543 · node:Oscillator 0.0573 · node:PaulStretch 0.824 · node:Metallic 2.93 (exc F1)
 - `synth.click_on_db` (dB): node:PaulStretch -240 · node:Spectral Synth -43.17 · node:Field Synth -20.98 · node:Granular -11.74 · node:Analog -3.54 · node:MPC -0.781 · node:Slicer -0.781 · node:Molder -0.746 · node:Wave Terrain 0.0278 · node:Grain Molder 0.0556 · node:Equation Synth 1.78 · node:Oscillator 2.49 · node:Sampler 4.59 · node:Wavetable 8.18 · node:Metallic 32.28 (exc F7)
-- `probe.pitch_worst_c` (cents): node:Wavetable 0.174 · node:Analog 3.52 (miss) · Vital Audio: Vital 0.174 · Xfer Records: Serum 2 0.174 · u-he: Diva 7.73
-- `probe.nonharm60_db` (dB): node:Wavetable -84.16 · node:Analog -67.77 (miss) · Vital Audio: Vital -84.34 · Xfer Records: Serum 2 -82.96 · u-he: Diva -40.80
-- `probe.nonharm96_db` (dB): node:Wavetable -84.94 · node:Analog -63.32 (miss) · Vital Audio: Vital -84.31 · Xfer Records: Serum 2 -82.59 · u-he: Diva -27.00
-- `probe.nonharm108_db` (dB): node:Wavetable -83.92 · node:Analog -60.92 (miss) · Vital Audio: Vital -83.63 · Xfer Records: Serum 2 -81.86 · u-he: Diva -10.35
+- `probe.pitch_worst_c` (cents): node:Analog 0.172 · node:Wavetable 0.174 · Vital Audio: Vital 0.174 · Xfer Records: Serum 2 0.174 · u-he: Diva 7.73
+- `probe.nonharm60_db` (dB): node:Wavetable -84.16 · node:Analog -68.18 (miss) · Vital Audio: Vital -84.34 · Xfer Records: Serum 2 -82.96 · u-he: Diva -40.80
+- `probe.nonharm96_db` (dB): node:Wavetable -84.94 · node:Analog -63.26 (miss) · Vital Audio: Vital -84.31 · Xfer Records: Serum 2 -82.59 · u-he: Diva -27.00
+- `probe.nonharm108_db` (dB): node:Wavetable -83.92 · node:Analog -61.00 (miss) · Vital Audio: Vital -83.63 · Xfer Records: Serum 2 -81.86 · u-he: Diva -10.35
 - `probe.attack_ms` (ms): node:Analog 4.00 · node:Wavetable 4.00 · Vital Audio: Vital 1.00 · Xfer Records: Serum 2 2.00 · u-he: Diva 44.00
-- `probe.release_s` (s): node:Analog 0.253 · node:Wavetable 0.263 · Xfer Records: Serum 2 0.018 · Vital Audio: Vital 0.084 · u-he: Diva 1.61
+- `probe.release_s` (s): node:Analog 0.252 · node:Wavetable 0.263 · Xfer Records: Serum 2 0.018 · Vital Audio: Vital 0.084 · u-he: Diva 1.61
 - `probe.vel_span_db` (dB): node:Analog 24.08 · node:Wavetable 24.08 · Vital Audio: Vital -0.0023 · Xfer Records: Serum 2 -0.0021 · u-he: Diva 12.92
 - `fx.click_db` (dB): node:Stutter -30.82 · node:Reverb -0.579 · node:Shape Resonator -0.156 · node:Delay -0.0898 · node:Tremolo -0.0129 · node:Cycle Shaper -0.0012 · node:Spectrum Slide -0.0009 · node:Ring Mod -0.0001 · node:Bitcrush 0 · node:Chorus 0.0003 · node:Pitch Shifter 0.0107 · node:Key-Snap 0.0703 · node:Stereo 0.218 · node:Frequency Shifter 0.407 · node:Phaser 0.723 · node:Drive 0.772 · node:Spec Blur 1.54 · node:EQ 3.94 · node:Flanger 3.99 · node:Resonator Bank 4.05 · node:Formant Filter 4.63 · node:Limiter 8.76 · node:Wavetable Shaper 8.80 · node:Transient Shaper 8.82 · node:Dynamics 9.04 · node:Audio Filter 17.30 (exc F13)
 - `fx.rate_spread_db` (dB): node:Audio Filter 0 · node:Limiter 0 · node:Stereo 0 · node:Transient Shaper 0 · node:Tremolo 0 · node:Pitch Shifter 0.0001 · node:EQ 0.0005 · node:Frequency Shifter 0.0013 · node:Wavetable Shaper 0.0034 · node:Drive 0.0062 · node:Cycle Shaper 0.0078 · node:Spectrum Slide 0.0379 · node:Dynamics 0.0978 · node:Chorus 0.127 · node:Delay 0.133 · node:Spec Blur 0.136 · node:Flanger 0.144 · node:Ring Mod 0.18 · node:Phaser 0.243 · node:Formant Filter 0.268 · node:Stutter 0.72 · node:Shape Resonator 0.786 · node:Reverb 0.816 · node:Key-Snap 0.994 · node:Resonator Bank 2.43 (exc F15) · node:Bitcrush 5.38 (exc F14)
@@ -102,4 +102,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `geo.nonmanifold` (edges): node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Cylinder 0 · node:Dodecahedron 0 · node:Icosphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Octahedron 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Smooth on cube 0 · node:Sphere 0 · node:Subdivide on cube 0 · node:Tetrahedron 0 · node:Torus 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:Solidify on a plane 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Smooth on sphere 198 (exc F17) · node:Subdivide on sphere 198 (exc F17)
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 14.08
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 6136354a; 2026-10-13 d6020b77.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 6136354a; 2026-10-13 d6020b77; 2026-10-13 fbed531b.

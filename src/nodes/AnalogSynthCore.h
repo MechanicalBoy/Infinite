@@ -67,9 +67,15 @@ namespace AnalogSynthCore
       0.472136f, 0.090170f, 0.708204f
    };
 
-   // Per-voice subtle analog tolerance pitch offsets (-0.08 to +0.08 semitones)
+   // Per-voice analog tolerance pitch offsets in semitones (-0.045 to +0.041).
+   // Voice 0 is the tuning reference, the card a technician tunes to A440
+   // before matching the others: NoteOn always takes the first free voice, so
+   // every single-note line and the first note of every chord plays on it.
+   // It was -0.035 (3.5 c flat), which put every default patch out of tune
+   // (synth_probe probe.pitch_worst_c 3.52 c). The other cards keep their
+   // spread, so a chord still has its voice-to-voice mistuning.
    constexpr float kVoiceDriftPitch[kMaxVoices] = {
-      -0.035f, 0.022f, -0.018f, 0.041f, -0.027f, 0.033f, -0.045f, 0.015f
+      0.0f, 0.022f, -0.018f, 0.041f, -0.027f, 0.033f, -0.045f, 0.015f
    };
 
    // Per-voice subtle analog tolerance cutoff offsets in octaves (-0.1 to +0.1)
