@@ -310,26 +310,32 @@ bool RunAliasTest()
    const std::vector<SynthCase> synthCases = {
       // Before (same metric): saw -29 / -37 dB (1.75 kHz / 220 Hz), square -30,
       // triangle -50, sync -12 / -22, drive 100% -21, ladder 8 kHz res 0.5
-      // +13.6 (a limit cycle, not aliasing). Now: BLEP/BLAMP oscillators
-      // (BlepOscillator.h), exact ZDF ladder, drive + filter at 2x with ADAA.
-      { "Analog saw 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveSaw; }, -65.0 },
-      { "Analog square 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveSquare; }, -65.0 },
-      { "Analog triangle 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveTriangle; }, -95.0 },
-      { "Analog saw 220 Hz", 75, [](AnalogNode& n) { n.wave1 = kAWaveSaw; }, -72.0 },
+      // +13.6 (a limit cycle, not aliasing). Then: BLEP/BLAMP oscillators
+      // (BlepOscillator.h), exact ZDF ladder, drive + filter at 2x with ADAA:
+      // saw -69 / -78, square -70, triangle -103, sync -69 / -76, FM -58,
+      // drive 100% -51, ladder -49. Now (2026-10-13, node-audits F2): narrow-
+      // band oscillators and drive + filter at 4x: saw -89 / -97, square -88,
+      // triangle -123, sync -87 / -96, FM -59, drive 100% -80, ladder -73.
+      // Gates sit about 4 dB under "now", so a return to the wide kernel or
+      // to 2x fails here.
+      { "Analog saw 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveSaw; }, -85.0 },
+      { "Analog square 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveSquare; }, -84.0 },
+      { "Analog triangle 1.75 kHz", 597, [](AnalogNode& n) { n.wave1 = kAWaveTriangle; }, -115.0 },
+      { "Analog saw 220 Hz", 75, [](AnalogNode& n) { n.wave1 = kAWaveSaw; }, -93.0 },
       { "Analog hard sync (osc2 +7 st) 1.75 kHz", 597,
         [](AnalogNode& n) {
            n.sync = true;
            n.semi2 = 7.0f;
            n.oscMix = 1.0f; // hear the synced slave
         },
-        -65.0 },
+        -83.0 },
       { "Analog hard sync (osc2 +7 st) 220 Hz", 75,
         [](AnalogNode& n) {
            n.sync = true;
            n.semi2 = 7.0f;
            n.oscMix = 1.0f;
         },
-        -70.0 },
+        -91.0 },
       // FM depth kept under the point where the frequency ratio clips at 0 Hz
       // (1 + 2.5 fm > 0 throughout), so the output stays periodic at the note.
       { "Analog FM 0.3 (sine osc2 -> saw) 1.75 kHz", 597,
@@ -337,8 +343,8 @@ bool RunAliasTest()
            n.wave2 = kAWaveSine;
            n.fm = 0.3f;
         },
-        -50.0 },
-      { "Analog saw + drive 100% 1.75 kHz", 597, [](AnalogNode& n) { n.drive = 1.0f; }, -47.0 },
+        -54.0 },
+      { "Analog saw + drive 100% 1.75 kHz", 597, [](AnalogNode& n) { n.drive = 1.0f; }, -76.0 },
       { "Analog saw -> ladder 8 kHz res 0.5 1.75 kHz", 597,
         [](AnalogNode& n) {
            n.filterType = kAFilterLadder;
@@ -346,7 +352,7 @@ bool RunAliasTest()
            n.resonance = 0.5f;
            n.drive = 0.5f;
         },
-        -45.0 },
+        -69.0 },
    };
    for (const SynthCase& c : synthCases)
    {

@@ -70,7 +70,7 @@ namespace
 
    constexpr double kFlagPitchCents = 1.0;
    constexpr double kFlagSampleCents = 20.0; // the smallest real rate bug (44.1 vs 48 kHz) is 147 c; PaulStretch phase jitter reads ~7 c
-   constexpr double kFlagAliasDb = -60.0;
+   constexpr double kFlagAliasDb = -80.0; // was -60 until F2 (2026-10-13): every synth now reads -82 or lower
    constexpr double kFlagPeakDbfs = 0.0;
    constexpr double kFlagRateDb = 1.0;
    constexpr double kFlagCpuNs = 4000.0;

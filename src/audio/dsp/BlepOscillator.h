@@ -16,9 +16,9 @@
 // Synthesis of Classic Analog Waveforms", ICMC 1996; Esqueda, Valimaki &
 // Bilbao, "Rounding Corners with BLAMP", DAFx-16). The kernel is a
 // Kaiser-windowed (beta 9) sinc, kKernelHalf (12) samples either side, cut
-// at 0.9 of Nyquist; it is linear-phase, so the output is delayed by
-// kKernelHalf samples (kLatency) and the corrections land on both sides of
-// each edge. Work is per discontinuity, not per sample.
+// at 0.9 of Nyquist (0.8 for NarrowOscillator, see Band); it is
+// linear-phase, so the output is delayed by kKernelHalf samples (kLatency)
+// and the corrections land on both sides of each edge. Work is per discontinuity, not per sample.
 //
 // It replaces DspMath::PolyBlepOsc's 2-point polynomial step (and its naive
 // triangle) in the synth: that left -34 dB of aliasing on a 1.75 kHz saw.
@@ -29,8 +29,9 @@
 // Waveforms and pulse-width behaviour match PolyBlepOsc exactly (same
 // naive shapes, same WarpPhase), so a patch keeps its timbre.
 //
-// Real-time: tables are built once (EnsureTables(), main thread, before any
-// audio-thread use); Step() touches only the object's own fixed arrays.
+// Real-time: tables are built once (EnsureTables(band), main thread, before
+// any audio-thread use of that band); Step() touches only the object's own
+// fixed arrays.
 namespace BlepOsc
 {
    constexpr int kKernelHalf = 12;
@@ -58,12 +59,30 @@ namespace BlepOsc
       float ramp[kTableRes + 1][kTaps]; // band-limited ramp minus the ideal ramp
    };
 
-   inline const Tables& EnsureTables()
+   // Kernel cutoffs, as fractions of Nyquist. Same length (so the same
+   // kLatency) either way; only where the band edge sits differs.
+   //  kBandWide (0.90): flat to ~18 kHz at 48 kHz, leaves some content in
+   //    20-24 kHz. Right for an output that goes straight out (Wavetable,
+   //    whose PDC is kLatency).
+   //  kBandNarrow (0.80): -0.4 dB at 16 kHz, -2.7 dB at 18 kHz, -52 dB at
+   //    24 kHz. For an oscillator that feeds a nonlinearity (the Analog
+   //    synth's drive and ladder): the 20-24 kHz content of the wide kernel
+   //    intermodulates in the tanh stages and folds into the audible band,
+   //    which no oversampling after the oscillator can remove (Analog went
+   //    from -64 to -86 dB non-harmonic at 4.2 kHz with this plus 4x).
+   enum Band
    {
-      static const Tables* tables = [] {
+      kBandWide = 0,
+      kBandNarrow,
+   };
+
+   inline const Tables* BuildTables(double cutoff)
+   {
+      // (kept at its original indentation: this was EnsureTables' lambda)
+      {
          auto* t = new Tables();
-         constexpr double kCutoff = 0.90; // fraction of Nyquist
-         constexpr double kBeta = 9.0;    // Kaiser window
+         const double kCutoff = cutoff; // fraction of Nyquist
+         constexpr double kBeta = 9.0;  // Kaiser window
          constexpr int kFine = 4;         // integration points per table step
          const double dx = 1.0 / ((double)kTableRes * kFine);
          const int points = (int)std::lround(2.0 * kKernelHalf / dx) + 1;
@@ -126,8 +145,16 @@ namespace BlepOsc
             }
          }
          return t;
-      }();
-      return *tables;
+      }
+   }
+
+   inline const Tables& EnsureTables(Band band = kBandWide)
+   {
+      static const Tables* wide = BuildTables(0.90);
+      if (band == kBandWide)
+         return *wide;
+      static const Tables* narrow = BuildTables(0.80);
+      return *narrow;
    }
 
    // The correction machinery on its own, for any signal whose
@@ -136,7 +163,8 @@ namespace BlepOsc
    // fraction of the step) before pushing, and read back the band-limited
    // signal kLatency samples late. Used by Oscillator below and by the
    // Wavetable synth's phase warps (WavetableSynthCore.h).
-   class Corrector
+   template <int B>
+   class BasicCorrector
    {
    public:
       void Reset()
@@ -158,7 +186,7 @@ namespace BlepOsc
       {
          if (std::fabs(dv) < 1e-9 && std::fabs(ds) < 1e-12)
             return;
-         const Tables& tb = EnsureTables();
+         const Tables& tb = EnsureTables((Band)B);
          // frac in (0, 1]: an event exactly on a sample time belongs to the
          // step that ends there (that sample already includes it).
          const double whole = std::ceil(t) - 1.0;
@@ -199,7 +227,10 @@ namespace BlepOsc
       long mTime = 0;
    };
 
-   class Oscillator
+   using Corrector = BasicCorrector<kBandWide>;
+
+   template <int B>
+   class BasicOscillator
    {
    public:
       double phase = 0.0; // 0..1
@@ -333,6 +364,9 @@ namespace BlepOsc
 
       void AddEvent(double t, double dv, double ds) { mCorr.AddEventAt(t, dv, ds); }
 
-      Corrector mCorr;
+      BasicCorrector<B> mCorr;
    };
+
+   using Oscillator = BasicOscillator<kBandWide>;
+   using NarrowOscillator = BasicOscillator<kBandNarrow>;
 }
