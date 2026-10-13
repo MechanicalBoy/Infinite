@@ -24,7 +24,8 @@
 //   ENV     attack (10..90% of the held peak) and release (note-off to -60 dB
 //           re the held peak), ms
 //   CLICK   worst second difference within 5 ms of note-on and of note-off,
-//           dB re the steady-state worst (FXAUDIT threshold 12 dB)
+//           dB re the steady-state worst (note-on: re the larger of steady
+//           state and the note's 5-50 ms body) (FXAUDIT threshold 12 dB)
 //   VEL     RMS at velocity 0.25 / 0.5 re velocity 1, dB
 //   SAMPLE  sample synths (fixture WAV loaded): pitch and length of a held
 //           note at 44.1 / 48 / 96 kHz, spread across the rates
@@ -431,6 +432,42 @@ namespace
       return m;
    }
 
+   // Note-on click, dB: the worst second difference in the first 5 ms re the
+   // larger of the sustain (from hold / 2) and the note's own 5-50 ms body.
+   // The body term is for struck or plucked voices (Metallic): they have
+   // decayed by hold / 2, so against the sustain alone every strike read as
+   // a click (+32 dB, node-audits F7). A real click is a step inside the
+   // first 5 ms and stands out against both (ClickMetricSelfCheck).
+   double ClickOnDb(const std::vector<float>& x, size_t onAt, size_t hold, double sr)
+   {
+      const size_t w = (size_t)(0.005 * sr);
+      const double steady = MaxD2(x, onAt + hold / 2, onAt + hold / 2 + (size_t)(0.1 * sr));
+      const double body = MaxD2(x, onAt + w, onAt + (size_t)(0.05 * sr));
+      return Db(MaxD2(x, onAt, onAt + w) / std::max({ steady, body, 1e-12 }));
+   }
+
+   // The metric on synthetic notes, so a change to it cannot quietly stop
+   // seeing clicks: a 440 Hz sine that starts at its peak (a step) and a
+   // strike that decays to -28 dB by hold / 2 (the case the body term is for).
+   bool ClickMetricSelfCheck()
+   {
+      const double sr = 48000.0, w = 2.0 * M_PI * 440.0 / sr;
+      const size_t pre = 256, hold = (size_t)(1.6 * sr);
+      std::vector<float> step(pre + hold, 0.0f), strike(pre + hold, 0.0f);
+      for (size_t i = 0; i < hold; i++)
+      {
+         step[pre + i] = (float)(0.5 * std::cos(w * (double)i));
+         const double a = std::min(1.0, (double)i / (0.002 * sr)); // 2 ms raised-cosine strike
+         const double atk = 0.5 - 0.5 * std::cos(M_PI * a);
+         strike[pre + i] = (float)(0.5 * atk * std::exp(-(double)i / (0.25 * sr)) * std::sin(w * (double)i));
+      }
+      const double cStep = ClickOnDb(step, pre, hold, sr), cStrike = ClickOnDb(strike, pre, hold, sr);
+      const bool ok = cStep > kFlagClickDb && cStrike < kFlagClickDb;
+      printf("SYNTHAUDIT CLICK metric check: step %+.1f dB (must flag), decaying strike %+.1f dB (must not) %s\n",
+             cStep, cStrike, ok ? "OK" : "FAIL");
+      return ok;
+   }
+
    bool AuditNotes(const Synth& s, Flags& flags)
    {
       if (s.noNotes != nullptr)
@@ -515,7 +552,7 @@ namespace
                 a10 >= 0 && a90 >= 0 ? a90 - a10 : -1.0, rel60 < 0 ? ">" : "", rel60 < 0 ? 10000.0 : rel60);
          const double steady = MaxD2(x, onAt + hold / 2, onAt + hold / 2 + (size_t)(0.1 * sr));
          const size_t w = (size_t)(0.005 * sr);
-         const double cOn = Db(MaxD2(x, onAt, onAt + w) / std::max(steady, 1e-12));
+         const double cOn = ClickOnDb(x, onAt, hold, sr);
          const double cOff = Db(MaxD2(x, offAt, offAt + w) / std::max(steady, 1e-12));
          printf("SYNTHAUDIT CLICK %-15s note-on %+.1f dB | note-off %+.1f dB re steady\n", s.name, cOn, cOff);
          Quality("synth.click_on_db", s.name, cOn);
@@ -708,6 +745,8 @@ bool RunSynthAudit()
    auto want = [&](const char* sec) { return only == nullptr || *only == 0 || strstr(only, sec) != nullptr; };
    Flags flags;
    bool ok = true;
+   if (want("CLICK"))
+      ok = ClickMetricSelfCheck() && ok;
    const double rates[3] = { 44100.0, 48000.0, 96000.0 };
    const float notes[4] = { 110.0f, 440.0f, 1760.0f, 7040.0f };
 
