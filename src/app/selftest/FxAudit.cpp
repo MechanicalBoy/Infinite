@@ -151,6 +151,26 @@ namespace
          x = a * r.Next();
       return v;
    }
+   // Pink noise (Kellet's economy filter, -3 dB/octave), scaled to `rms`:
+   // closer to music than white noise for a loudness reading.
+   std::vector<float> PinkNoise(int n, float rms, uint32_t seed)
+   {
+      std::vector<float> v = Noise(n, 1.0f, seed);
+      float b0 = 0, b1 = 0, b2 = 0;
+      double sum = 0;
+      for (auto& x : v)
+      {
+         b0 = 0.99765f * b0 + x * 0.0990460f;
+         b1 = 0.96300f * b1 + x * 0.2965164f;
+         b2 = 0.57000f * b2 + x * 1.0526913f;
+         x = b0 + b1 + b2 + x * 0.1848f;
+         sum += (double)x * x;
+      }
+      const float k = rms / (float)std::sqrt(sum / std::max(1, n));
+      for (auto& x : v)
+         x *= k;
+      return v;
+   }
    // Periodic noise with an exactly flat spectrum: unit magnitude and a
    // random phase in every bin of one power-of-two period (2.7-3.0 s at
    // 44.1/48/96 kHz), repeated `periods` times. Through a linear system the
@@ -520,6 +540,23 @@ namespace
          flag(fx, "gain", "1 kHz tone %+.1f dB at defaults", gTone);
       if (std::fabs(bal) > 1.0)
          flag(fx, "stereo", "mono in -> L/R balance %+.1f dB", bal);
+      // Insert gain: what a user hears when the node opens - default mix,
+      // pink noise at -20 dBFS RMS, level change after 1 s (v0.6 1.9). A
+      // steady sine is the wrong probe here: it adds coherently with a delay
+      // or reverb's own echoes (Delay read +3 dB on a 1 kHz tone, +0.1 on this).
+      double gInsert;
+      {
+         auto rig = MakeRig(def, sr, {});
+         rig->node->mix = def.defaultMix;
+         std::vector<float> in = PinkNoise(n3, 0.1f, 5), oL, oR;
+         Process(*rig, in, in, oL, oR);
+         const size_t a = (size_t)sr;
+         const double inRms = Rms(in, a, in.size());
+         const double outRms = std::sqrt(0.5 * (std::pow(Rms(oL, a, oL.size()), 2) + std::pow(Rms(oR, a, oR.size()), 2)));
+         gInsert = Db(outRms / std::max(1e-12, inRms));
+      }
+      printf("FXAUDIT %-18s insert gain %+.2f dB (mix %.2f, pink noise)\n", fx.c_str(), gInsert, def.defaultMix);
+      Quality("fx.insert_gain_db", fx, std::fabs(gInsert));
       Quality("fx.dc_dbfs", fx, dcDb);
       Quality("fx.tail_dbfs", fx, tailDb);
       Quality("fx.click_db", fx, worstClick);
