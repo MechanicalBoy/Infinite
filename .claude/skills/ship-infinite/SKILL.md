@@ -219,6 +219,15 @@ gh release create v0.2.7 --title v0.2.7 --notes-file notes.md --target main   # 
 gh release edit v0.2.7 --notes-file notes.md                                   # revise an existing tag's notes
 ```
 
+## Extension packs (independent of app releases)
+
+Packs and the catalog live on the fixed release tag `extensions`, not on the app release (the app reads
+`releases/download/extensions/extensions.json`). Shipping an app release needs no pack step. To publish or update a pack:
+`python3 tools/release/publish_extensions.py PACKDIR --publish` (zips named `<id>-<platform>.zip`, each with `pack.json`),
+then `--verify`. Add `--also-latest` while apps that predate the fixed tag are in use. Users see an **Update** button in
+Settings > Extensions the next time they open the tab. Never put `extensions.json` only on an app release.
+
+
 ## Cleanup
 
 ```bash

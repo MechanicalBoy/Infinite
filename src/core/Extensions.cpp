@@ -25,7 +25,12 @@ namespace Extensions
 {
 namespace
 {
+   // The catalog lives on its own release tag, so shipping an app release never moves or drops it (tools/release/
+   // publish_extensions.py updates it). Apps before this one read the "latest" release instead; the fallback keeps
+   // a catalog that was only attached there reachable.
    const char* const kCatalogUrl =
+      "https://github.com/n1m21n/Infinite/releases/download/extensions/extensions.json";
+   const char* const kCatalogFallbackUrl =
       "https://github.com/n1m21n/Infinite/releases/latest/download/extensions.json";
    const uint64_t kMaxPackBytes = 1ull << 31; // 2 GB hard cap on one pack's unpacked size
 
@@ -507,11 +512,24 @@ void RefreshCatalog()
    {
       { std::lock_guard<std::mutex> l(gMutex); gShared.catalogLoading = true; }
       std::string body, httpErr;
-      const bool ok = Platform::HttpGet(kCatalogUrl, std::string("Infinite/") + INFINITE_VERSION_STRING,
-                                        body, httpErr, 15);
+      const std::string agent = std::string("Infinite/") + INFINITE_VERSION_STRING;
       std::vector<Pack> packs;
       std::string err;
-      const bool parsed = ok && ParseManifest(body, PlatformKey(), packs, err);
+      bool ok = Platform::HttpGet(kCatalogUrl, agent, body, httpErr, 15);
+      bool parsed = ok && ParseManifest(body, PlatformKey(), packs, err);
+      if (!parsed)
+      {
+         std::string fbErr;
+         std::string fbBody;
+         std::vector<Pack> fbPacks;
+         std::string fbParseErr;
+         if (Platform::HttpGet(kCatalogFallbackUrl, agent, fbBody, fbErr, 15) &&
+             ParseManifest(fbBody, PlatformKey(), fbPacks, fbParseErr))
+         {
+            packs = std::move(fbPacks);
+            ok = parsed = true;
+         }
+      }
       std::lock_guard<std::mutex> l(gMutex);
       gShared.catalogLoading = false;
       gShared.installed = ScanInstalled();

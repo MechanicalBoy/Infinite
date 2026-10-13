@@ -27,7 +27,9 @@ New tab in `src/app/panels/SettingsWindow.cpp` (beside Appearance / Audio / Fiel
 | Status | Not installed / Installed vX / Update available |
 | Action | Install / Remove / Update |
 
-- Manifest fetched from the GitHub release (same host as `src/core/UpdateCheck.cpp`). One JSON with per-OS/arch URLs + SHA-256.
+- Manifest fetched from the fixed GitHub release tag `extensions` (`releases/download/extensions/extensions.json`), so packs and app releases ship independently; apps before 2026-10-13 read the "latest" release, which `publish_extensions.py --also-latest` keeps fed. One JSON with per-OS/arch URLs + SHA-256.
+- Publishing: `python3 tools/release/publish_extensions.py PACKDIR --publish` (builds the catalog, uploads zips then catalog, `--verify` re-checks every SHA-256 live). Zips are uploaded as `<id>-<version>-<platform>.zip`.
+- The tab refetches the catalog when it opens (at most every 5 minutes) and on **Check for updates**; each pack shows its version and up-to-date state, a catalog failure is shown, and an available app update appears at the top with the same in-place Update as the update window.
 - Download happens on a worker thread with a progress bar; files are verified before unpacking; the pack becomes active without a restart where the loader allows it.
 - Offline install: "Install from file…" for studios without internet.
 
