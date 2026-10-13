@@ -16,14 +16,19 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 | Session | Branch / worktree | Quest | Uses | Since |
 |---|---|---|---|---|
+| re-survey-finish | `feature/re-survey-finish` at `infinte` (+ agent worktrees) | re-survey leftovers, quality misses, B1-B10 into scoreboard | main build, bench (later, serial), DAW/TD GUI scripting | 2026-10-13 |
 
 ## Waiting on owner (one at a time, recommended answer first)
 
 
-2. `feature/image-fx-maths` (21 commits, plan says "done, not merged"): fails G9 on GPU: Bloom +16%, Diffuse Glow +13%, motion blur +94%, radial blur +124% vs legacy. Recommend: accept and merge, since old patches keep the old look and the misses are about 0.16 ms per node, then open a perf quest for the two line blurs. Worktree `../infinte-imgfx` kept until then.
-3. Codex worktree `~/.codex/worktrees/release-v050` holds unpublished work: a shorter rewrite of the v0.5.0 release notes and a website Extensions page (69 MB of assets, not brand-linted). Recommend: drop the notes rewrite (v0.5.0 is shipped with main's notes), move the Extensions page to its own `feature/site-extensions` branch, run brand_lint, then remove the worktree.
 
 ## Decisions (newest first, keep the last 10)
+
+- 2026-10-13 Owner: `feature/image-fx-maths` - accept and merge as recommended (old patches keep the old look; G9 GPU misses about 0.16 ms/node), then a perf quest for motion and radial blur. Queued in the re-survey-finish plan.
+- 2026-10-13 Owner: Codex `release-v050` - drop the notes rewrite; the website Extensions page moves to `feature/site-extensions`. Direction: each extension gets an Install button that installs it live into the running app (same path as live update), extensions do not ship inside the app bundle; for now the page only tracks them, built to grow later.
+- 2026-10-13 Owner: the quest board is the agent's internal tracker; the owner rarely reads it.
+
+- 2026-10-13 Owner: reverses L9 for Analog aliasing. Make Analog's oscillators meet the probe targets (non-harmonic <= -80 dB at MIDI 60/96/108) even though every saved Analog patch will sound cleaner; no legacy flag for the old sound.
 
 - 2026-10-13 Owner: deleted local-only tags v0.46.0 (963c822e), v0.47.0 (b9785bbb), v0.47.0_fixed (a3ab7319), v0.48.0 (e17c63a4), v0.49.0 (ac3bce40), v0.50.0 (5e5187eb); kept v0.4.25 (a real release).
 - 2026-10-13 Agent: node audio audits closed (F11 Sampler-family sample-rate bug fixed via rateFix, regression in SYNTHAUDIT); quality system pilot merged (docs/quality, quality-system skill, driver gate). Shipped templates/examples now write rateFix/stepTiming (f63a0cf1); the systemic legacy-flag vs defaults-rule issue is a separate task.
