@@ -14,7 +14,8 @@
 //            all-max, all-min and seeded random settings
 //   click    worst param step (30% -> 70% of range, instant) on a 440 Hz
 //            tone: second-difference peak in the 50 ms after the step re
-//            the steady state either side, dB
+//            the steady state either side and the same 50 ms rendered
+//            with the param held at either end, dB
 //   rate     44.1 / 48 / 96 kHz at defaults: level spread (dB) of a 100 Hz /
 //            1 kHz / 6 kHz tone (octave bands of noise for a decorrelating
 //            wet, whose modes move with the rate) and
@@ -410,7 +411,21 @@ namespace
          for (size_t s = (size_t)(0.25 * sr); s + w10 <= oL2.size(); s += w10)
             post = std::max(post, D2Peak(oL2, s, w10));
          const double step = D2Peak(oL2, 0, (size_t)(0.05 * sr));
-         const double c = Db(step / std::max({ pre, post, 1e-5 }));
+         // The same 50 ms with no step, the param held at lo and at hi from
+         // the start: a param that moves an internal LFO's depth (Audio
+         // Filter envAmount) or a time-varying wet legitimately looks
+         // different at the step than 0.3 s either side. A click is what
+         // exceeds both steady settings at the same moment (F13).
+         double steady = 0.0;
+         for (const float v : { lo, hi })
+         {
+            auto ref = MakeRig(def, sr, { { p.name, v } });
+            std::vector<float> rL1, rR1, rL2, rR2;
+            Process(*ref, a, a, rL1, rR1);
+            Process(*ref, b, b, rL2, rR2);
+            steady = std::max(steady, D2Peak(rL2, 0, (size_t)(0.05 * sr)));
+         }
+         const double c = Db(step / std::max({ pre, post, steady, 1e-5 }));
          if (c > worstClick)
          {
             worstClick = c;
