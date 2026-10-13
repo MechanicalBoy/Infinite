@@ -25,6 +25,15 @@ Static checks alone, no build, ~1s:
 python3 .claude/skills/compositing-pipeline-sweep/check.py
 ```
 
+Image quality (not plumbing) is measured by IMGAUDIT: every FilterDef plus
+Curves and Blend against the published formulas. Exit 0 unless a node renders
+nothing or non-finite; FLAG lines compare against the baseline in
+`docs/plans/image-fx/README.md`.
+
+```bash
+INFINITE_IMGAUDIT=1 INFINITE_EXITAFTER=1 build/Infinite.app/Contents/MacOS/Infinite
+```
+
 ## What the 2D chain actually is
 
 ```

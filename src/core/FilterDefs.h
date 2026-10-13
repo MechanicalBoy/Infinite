@@ -41,6 +41,12 @@ struct FilterParamDef
    // `integer` snaps the slider to whole numbers; the stored value stays a float so saved patches are unchanged.
    std::string format;
    bool integer = false;
+
+   // Migration: when set, a patch saved before this param existed loads it at
+   // legacyVal instead of defaultVal[0], so the old look is kept while new
+   // nodes get the corrected default (FilterNode::BeforeLoadParams).
+   bool hasLegacy = false;
+   float legacyVal = 0.0f;
 };
 
 struct FilterDef
@@ -60,6 +66,20 @@ struct FilterDef
    // that intermediate bound as uPass. A 2D Gaussian written as a horizontal
    // prePass plus a vertical main pass reads 2N texels instead of N².
    std::string prePassBody;
+
+   // Two-pass blurs only. When Linear light is on and the filter's Quality
+   // param is above 0 (Smooth), FilterNode first converts the input once to
+   // premultiplied linear light in a float scratch, then runs prePassBody on
+   // that with uConverted = 1, so the body can pair its taps through bilinear
+   // filtering (exact: the data is linear and premultiplied) instead of
+   // decoding and premultiplying every tap.
+   bool convertFirst = false;
+
+   // Optional body for that convert pass (same preamble and uniforms), for a
+   // filter that does per-pixel work before it blurs: Bloom's bright-pass
+   // runs here once per pixel instead of once per tap. Empty = plain ImgTap.
+   // A filter without a Quality param converts whenever Linear light is on.
+   std::string convertBody;
 };
 
 const std::vector<FilterDef>& GetFilterDefs();

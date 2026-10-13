@@ -22,7 +22,11 @@ namespace
             "uniform int uActive[4];\n"
             "uniform int uModes[4];\n"
             "uniform float uOpacity[4];\n"
-            "uniform vec2 uUvScale[4];\n")
+            "uniform vec2 uUvScale[4];\n"
+            "uniform int uLinear;\n"
+            "uniform int uW3C;\n"
+            "uniform int uImgHeadroom;\n")
+         + GLUtil::kSrgbGlsl
          + BlendModes::kBlendGLSL
          + "vec4 fetch(int i) {\n"
            // Per-layer aspect placement (see LayerStackNode::Fit); outside the layer is transparent.
@@ -39,11 +43,12 @@ namespace
            "   for (int i = 0; i < 4; i++) {\n"
            "      if (uActive[i] == 0) continue;\n"
            "      vec4 layer = fetch(i);\n"
+           "      if (uLinear == 1) layer.rgb = SrgbDecode(layer.rgb);\n"
            "      float amt = uOpacity[i] * layer.a;\n"
            "      if (!haveBase) { acc = vec4(layer.rgb, layer.a * uOpacity[i]); haveBase = true; continue; }\n"
            "      if (uModes[i] == " + std::to_string(BlendModes::kEraseMode) + ") { acc.a *= (1.0 - amt); continue; }\n"
            "      if (uModes[i] == " + std::to_string(BlendModes::kAntiEraseMode) + ") { acc.a *= (1.0 - (1.0 - layer.a) * uOpacity[i]); continue; }\n"
-           "      vec3 blended = blendMode(uModes[i], acc.rgb, layer.rgb);\n"
+           "      vec3 blended = blendModeImage(uModes[i], acc.rgb, layer.rgb, uW3C, uImgHeadroom);\n"
            "      vec3 cs = mix(layer.rgb, blended, acc.a);\n"
            "      float ar = amt + acc.a * (1.0 - amt);\n"
            "      vec3 cr = (ar > 1e-5) ? (cs * amt + acc.rgb * acc.a * (1.0 - amt)) / ar : vec3(0.0);\n"
@@ -93,7 +98,7 @@ bool LayerStackNode::EnsureShader()
    if (mShaderTried)
       return mProgram != 0;
    mShaderTried = true;
-   mProgram = GLUtil::CompileProgram(FragSrc().c_str());
+   mProgram = GLUtil::CompileProgram(GLUtil::WithClampedOutput(FragSrc(), "if (uLinear == 1) fragColor.rgb = SrgbEncode(fragColor.rgb);").c_str());
    return mProgram != 0;
 }
 
@@ -153,7 +158,7 @@ void LayerStackNode::CookIfNeeded(int frameId)
 
    if (!EnsureShader())
       return;
-   if (!GLUtil::EnsureFbo(mOut, w, h))
+   if (!GLUtil::EnsureFbo(mOut, w, h, GLUtil::ImageWorkingFormat(), "LayerStack"))
       return;
 
    GLUtil::RunShaderPass(mOut, mProgram, [this, &tex, &active, &uvScale]()
@@ -172,5 +177,8 @@ void LayerStackNode::CookIfNeeded(int frameId)
       glUniform1iv(glGetUniformLocation(mProgram, "uModes"), kSlots, eff);
       glUniform1fv(glGetUniformLocation(mProgram, "uOpacity"), kSlots, opacities);
       glUniform2fv(glGetUniformLocation(mProgram, "uUvScale"), kSlots, uvScale);
+      glUniform1i(glGetUniformLocation(mProgram, "uLinear"), linear ? 1 : 0);
+      glUniform1i(glGetUniformLocation(mProgram, "uW3C"), blendFix);
+      GLUtil::SetImageHeadroom(mProgram, headroom);
    });
 }

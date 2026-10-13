@@ -13,12 +13,16 @@
 
 namespace
 {
-   const char* kFragSrc =
+   // The Output's own buffer is RGBA8 (what recorders, Syphon/Spout and
+   // projectors take), so this copy is where the float image chain rounds
+   // to 8 bits - dithered, so gradients don't band in exports.
+   const std::string kFragSrc = std::string(
       "#version 150\n"
       "in vec2 vUv;\n"
       "out vec4 fragColor;\n"
-      "uniform sampler2D uTex;\n"
-      "void main() { fragColor = texture(uTex, vUv); }\n";
+      "uniform sampler2D uTex;\n") +
+      GLUtil::kOutputDitherGlsl +
+      "void main() { vec4 c = texture(uTex, vUv); fragColor = vec4(OutputDither(c.rgb), c.a); }\n";
 
    // B10 (docs/plans/perf/benchmark-suite.md §4) offline-render A/V sync
    // markers, analogous to INFINITE_RECEXPORTTEST's tone+flash pair but laid
@@ -75,7 +79,7 @@ bool OutputNode::EnsureShader()
    if (mShaderTried)
       return mProgram != 0;
    mShaderTried = true;
-   mProgram = GLUtil::CompileProgram(kFragSrc);
+   mProgram = GLUtil::CompileProgram(kFragSrc.c_str());
    return mProgram != 0;
 }
 

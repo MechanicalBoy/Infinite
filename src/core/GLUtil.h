@@ -36,10 +36,12 @@ namespace GLUtil
    //
    // The contents are valid ONLY until the next AcquireScratchFbo call, from
    // any caller: write it and consume it straight away, with no Pull, cook or
-   // other acquire in between. Main GL context only - every image cook runs
+   // other acquire in between. `slot` gives one cook several distinct buffers
+   // of the same size and format (acquire them all first, then re-acquire
+   // the first: a later acquire can move the earlier pointers). Main GL context only - every image cook runs
    // there (projector contexts only blit), and FBO names are per context.
    // Returns nullptr if the allocation fails.
-   Fbo* AcquireScratchFbo(int w, int h, unsigned int internalFormat);
+   Fbo* AcquireScratchFbo(int w, int h, unsigned int internalFormat, int slot = 0);
 
    // Call once per main-loop frame: frees scratch targets that have gone
    // unused for 300 frames (a resized or deleted filter's old
@@ -55,6 +57,39 @@ namespace GLUtil
    unsigned long long FboAllocationCount();
 
    inline unsigned int FboTexture(const Fbo& fbo) { return fbo.tex; }
+
+   // Storage format of the 2D image chain (filters, Curves, Blend, Layer
+   // Stack, Color Ramp). Half float, so a chain of N nodes rounds once at
+   // the output instead of N times to 8 bits (docs/plans/image-fx).
+   // INFINITE_IMAGE_RGBA8=1 restores the old 8-bit chain for A/B benches.
+   unsigned int ImageWorkingFormat();
+
+   // Wraps a fragment shader so its write is clamped to 0..1, the range an
+   // RGBA8 target used to clamp to for free. Keeps the look of existing
+   // patches while the chain stores float; nodes that want headroom opt out
+   // by not using it. Renames the source's `void main()`.
+   // `beforeClamp` is spliced in after the original main returns (FilterNode
+   // encodes linear light back to sRGB there).
+   // With headroom (uniform `int uImgHeadroom` = 1, declared by the wrapper
+   // unless the source already declares it) the write keeps light above 1.0
+   // and only clamps alpha and negatives: the float chain then carries
+   // over-white values to the output node. Patches saved before headroom
+   // existed load with it off and clip as they always did.
+   std::string WithClampedOutput(const std::string& fragSrc, const char* beforeClamp = "");
+   // Sets uImgHeadroom on the bound program (no-op when it has none).
+   void SetImageHeadroom(unsigned int program, bool on);
+
+   // GLSL: `vec3 OutputDither(vec3 c)` adds a fixed per-pixel offset in
+   // +-0.5/255, so a value already on an 8-bit code rounds back to the same
+   // code (byte-identical exports for 8-bit content) and anything between
+   // codes dithers instead of banding. Paste after `out vec4 fragColor;`.
+   extern const char* const kOutputDitherGlsl;
+
+   // GLSL: `vec3 SrgbDecode(vec3)` / `vec3 SrgbEncode(vec3)`, the IEC
+   // 61966-2-1 transfer pair for nodes that do their maths in linear light
+   // (FilterNode's "Linear light", Blend, Layer Stack). Decode is a fit, exact
+   // at 8 bits and cheap enough to call per blur tap; encode is exact.
+   extern const char* const kSrgbGlsl;
 
    // Compiles fragSrc against a shared fullscreen-quad vertex shader (attributes
    // aPos/aUv at locations 0/1). Returns 0 on failure; if outError is non-null the

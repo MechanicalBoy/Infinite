@@ -175,6 +175,7 @@ namespace GLUtil
       struct ScratchEntry
       {
          Fbo fbo;
+         int slot = 0;
          unsigned long long lastUsedFrame = 0;
       };
       constexpr unsigned long long kScratchIdleFrames = 300;
@@ -182,17 +183,18 @@ namespace GLUtil
       unsigned long long sScratchFrame = 0;
    }
 
-   Fbo* AcquireScratchFbo(int w, int h, unsigned int internalFormat)
+   Fbo* AcquireScratchFbo(int w, int h, unsigned int internalFormat, int slot)
    {
       for (ScratchEntry& e : sScratch)
       {
-         if (e.fbo.w == w && e.fbo.h == h && e.fbo.internalFormat == internalFormat)
+         if (e.fbo.w == w && e.fbo.h == h && e.fbo.internalFormat == internalFormat && e.slot == slot)
          {
             e.lastUsedFrame = sScratchFrame;
             return &e.fbo;
          }
       }
       ScratchEntry e;
+      e.slot = slot;
       if (!EnsureFbo(e.fbo, w, h, internalFormat, "ScratchFbo"))
          return nullptr;
       e.lastUsedFrame = sScratchFrame;
@@ -256,6 +258,72 @@ namespace GLUtil
       glDeleteShader(shader);
       return 0;
    }
+
+   unsigned int ImageWorkingFormat()
+   {
+      static const unsigned int sFormat = getenv("INFINITE_IMAGE_RGBA8") != nullptr ? GL_RGBA8 : GL_RGBA16F;
+      return sFormat;
+   }
+
+   std::string WithClampedOutput(const std::string& fragSrc, const char* beforeClamp)
+   {
+      std::string src = fragSrc;
+      const size_t at = src.find("void main()");
+      if (at == std::string::npos)
+         return src;
+      src.replace(at, 11, "void imageMain()");
+      // uImgHeadroom (SetImageHeadroom): 0, the default, is the old 0..1
+      // clip; 1 keeps light above 1.0 (half-float max), alpha stays 0..1.
+      if (src.find("uniform int uImgHeadroom;") == std::string::npos)
+      {
+         const size_t eol = src.rfind("#version", 0) == 0 ? src.find('\n') + 1 : 0;
+         src.insert(eol, "uniform int uImgHeadroom;\n");
+      }
+      // Half-float targets truncate toward zero on write, so a value a hair
+      // under a half step loses the whole step: 2^-10 above 1.0, 0.2% of
+      // the light per node. With headroom, adding half a step first makes
+      // the write round to nearest (legacy writes are left byte-identical).
+      src += std::string("\nvoid main() { imageMain(); ") + beforeClamp +
+             " if (uImgHeadroom == 1) {"
+             " vec3 c = clamp(fragColor.rgb, 0.0, 65504.0);"
+             " c += exp2(floor(log2(max(c, vec3(6.103515625e-05)))) - 11.0);"
+             " fragColor = vec4(min(c, vec3(65504.0)), clamp(fragColor.a, 0.0, 1.0)); }"
+             " else fragColor = clamp(fragColor, 0.0, 1.0); }\n";
+      return src;
+   }
+
+   void SetImageHeadroom(unsigned int program, bool on)
+   {
+      const GLint loc = glGetUniformLocation(program, "uImgHeadroom");
+      if (loc >= 0)
+         glUniform1i(loc, on ? 1 : 0);
+   }
+
+   const char* const kOutputDitherGlsl =
+      "vec3 OutputDither(vec3 c) {\n"
+      "   // interleaved gradient noise (Jimenez 2014): fixed, so renders stay deterministic\n"
+      "   float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n"
+      "   return c + (n - 0.5) * (0.999 / 255.0);\n"
+      "}\n";
+
+   // The curved decode segment is a degree-5 fit of ((c+0.055)/1.055)^2.4 on
+   // [0.04045, 1] pinned to the exact values at both ends (continuous with
+   // the linear segment, white stays 1.0 for the dividing blend modes), max
+   // error 0.03 of an 8-bit code: every 8-bit code round trips through
+   // SrgbEncode unchanged. Negatives take the linear segment,
+   // which is already odd-symmetric.
+   const char* const kSrgbGlsl =
+      "vec3 SrgbDecode(vec3 c) {\n"
+      "   vec3 curve = 0.0008922681118 + c * (0.03350293781 + c * (0.5124953018 + c * (0.6903623787 + c * (-0.3381287731 + c * 0.1008758867))));\n"
+      "   vec3 d = mix(c / 12.92, curve, step(0.04045, c));\n"
+      // the fit only holds on [0, 1]: headroom above white decodes exactly
+      "   if (any(greaterThan(c, vec3(1.0)))) d = mix(d, pow(max(c + 0.055, 0.0) / 1.055, vec3(2.4)), step(1.0, c));\n"
+      "   return d;\n"
+      "}\n"
+      "vec3 SrgbEncode(vec3 c) {\n"
+      "   vec3 a = abs(c);\n"
+      "   return sign(c) * mix(a * 12.92, 1.055 * pow(a, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, a));\n"
+      "}\n";
 
    unsigned int CompileProgram(const char* fragSrc, std::string* outError)
    {
@@ -335,41 +403,44 @@ namespace GLUtil
    void DrawTextureToScreen(unsigned int tex, int windowW, int windowH, int texW, int texH,
                              bool checkerBg, bool transparentWindow)
    {
-      static const char* kBlitFragSrc =
+      static const std::string kBlitFragSrc = std::string(
          "#version 150\n"
          "in vec2 vUv;\n"
          "out vec4 fragColor;\n"
-         "uniform sampler2D uTex;\n"
-         "void main() { fragColor = texture(uTex, vUv); }\n";
+         "uniform sampler2D uTex;\n") +
+         kOutputDitherGlsl +
+         "void main() { vec4 c = texture(uTex, vUv); fragColor = vec4(OutputDither(c.rgb), c.a); }\n";
 
       // Composites the texture's own alpha over the same dark checkerboard
       // pattern the node editor draws behind a transparent preview (see
       // DrawCheckerboardBackdrop in main.cpp), so a node with a transparent
       // background reads the same way here as it does inline/in the viewport
       // panel instead of just showing solid black where alpha is 0.
-      static const char* kBlitCheckerFragSrc =
+      static const std::string kBlitCheckerFragSrc = std::string(
          "#version 150\n"
          "in vec2 vUv;\n"
          "out vec4 fragColor;\n"
-         "uniform sampler2D uTex;\n"
+         "uniform sampler2D uTex;\n") +
+         kOutputDitherGlsl +
          "void main()\n"
          "{\n"
          "   vec4 c = texture(uTex, vUv);\n"
          "   vec2 cell = floor(gl_FragCoord.xy / 12.0);\n"
          "   float parity = mod(cell.x + cell.y, 2.0);\n"
          "   vec3 bg = mix(vec3(30.0, 30.0, 38.0) / 255.0, vec3(18.0, 18.0, 24.0) / 255.0, parity);\n"
-         "   fragColor = vec4(mix(bg, c.rgb, c.a), 1.0);\n"
+         "   fragColor = vec4(OutputDither(mix(bg, c.rgb, c.a)), 1.0);\n"
          "}\n";
 
       // For a window with a transparent framebuffer: the texture's own alpha
       // goes to the window (premultiplied, what every compositor expects) so
       // the desktop / OBS window capture sees through it, no backdrop.
-      static const char* kBlitPremulFragSrc =
+      static const std::string kBlitPremulFragSrc = std::string(
          "#version 150\n"
          "in vec2 vUv;\n"
          "out vec4 fragColor;\n"
-         "uniform sampler2D uTex;\n"
-         "void main() { vec4 c = texture(uTex, vUv); fragColor = vec4(c.rgb * c.a, c.a); }\n";
+         "uniform sampler2D uTex;\n") +
+         kOutputDitherGlsl +
+         "void main() { vec4 c = texture(uTex, vUv); fragColor = vec4(OutputDither(c.rgb * c.a), c.a); }\n";
 
       static unsigned int sPremulProgram = 0;
       static int sLocTexPremul = -1;
@@ -379,17 +450,17 @@ namespace GLUtil
       static int sLocTexChecker = -1;
       if (sBlitProgram == 0)
       {
-         sBlitProgram = CompileProgram(kBlitFragSrc);
+         sBlitProgram = CompileProgram(kBlitFragSrc.c_str());
          sLocTex = glGetUniformLocation(sBlitProgram, "uTex");
       }
       if (sCheckerProgram == 0)
       {
-         sCheckerProgram = CompileProgram(kBlitCheckerFragSrc);
+         sCheckerProgram = CompileProgram(kBlitCheckerFragSrc.c_str());
          sLocTexChecker = glGetUniformLocation(sCheckerProgram, "uTex");
       }
       if (transparentWindow && sPremulProgram == 0)
       {
-         sPremulProgram = CompileProgram(kBlitPremulFragSrc);
+         sPremulProgram = CompileProgram(kBlitPremulFragSrc.c_str());
          sLocTexPremul = glGetUniformLocation(sPremulProgram, "uTex");
       }
       const unsigned int program = transparentWindow ? sPremulProgram : (checkerBg ? sCheckerProgram : sBlitProgram);

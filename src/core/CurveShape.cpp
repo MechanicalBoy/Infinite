@@ -86,6 +86,25 @@ float CurveShape::Evaluate(float x) const
    const float span = std::max(1e-5f, p2.x - p1.x);
    const float t = (x - p1.x) / span;
 
+   if (exactLine)
+   {
+      // Hermite with finite-difference slopes in y-per-x units: linear
+      // precision on any spacing, and a fresh curve is the identity.
+      auto slope = [this](size_t k) -> float
+      {
+         const size_t a = k > 0 ? k - 1 : k;
+         const size_t b = k + 1 < points.size() ? k + 1 : k;
+         return (points[b].y - points[a].y) / std::max(1e-5f, points[b].x - points[a].x);
+      };
+      const float m1 = slope(i) * span;
+      const float m2 = slope(i + 1) * span;
+      const float t2 = t * t;
+      const float t3 = t2 * t;
+      const float y = (2.0f * t3 - 3.0f * t2 + 1.0f) * p1.y + (t3 - 2.0f * t2 + t) * m1 +
+                      (-2.0f * t3 + 3.0f * t2) * p2.y + (t3 - t2) * m2;
+      return std::min(1.0f, std::max(0.0f, y));
+   }
+
    // Catmull-Rom through the neighbours, so the curve is smooth rather than
    // faceted. The end neighbours are reflected (not duplicated): duplicating
    // them bent the two-point default (0,0)-(1,1) into an S, so a fresh Curves

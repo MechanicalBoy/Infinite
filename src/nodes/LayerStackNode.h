@@ -43,17 +43,23 @@ public:
    static const std::vector<std::string>& FitNames();
    int fit = kFit;
 
-   // 0 on a patch saved before the Overlay / Soft Light / Hard Light fix (old maths,
-   // BlendModes::LegacyMode); 1 on a new node. Not a control.
+   // 0 on a patch saved before the Overlay / Soft Light / Hard Light / Hard Mix fix
+   // (old maths, BlendModes::LegacyMode); 1 on a new node. Not a control.
    int blendFix = 1;
-   // Patches from before "fit" existed composited stretched.
-   void BeforeLoadParams() override { blendFix = 0; fit = kStretch; }
 
    int modes[kSlots] = { 0, 0, 0, 0 };
    float opacities[kSlots] = { 1.0f, 1.0f, 1.0f, 1.0f };
+   bool linear = true; // composite in linear light
+   bool headroom = true; // light above 1.0 survives (GLUtil::WithClampedOutput)
+
+   // Patches saved before these existed keep the look they were made with
+   // (stretched, gamma-space, old blend maths, clipped).
+   void BeforeLoadParams() override { fit = kStretch; linear = false; blendFix = 0; headroom = false; }
 
    void VisitParams(ParamVisitor& v) override
    {
+      v.Bool("linear", linear);
+      v.Bool("headroom", headroom);
       static const char* kModeKeys[kSlots] = { "mode0", "mode1", "mode2", "mode3" };
       static const char* kOpKeys[kSlots] = { "opacity0", "opacity1", "opacity2", "opacity3" };
       v.Int("fit", fit);

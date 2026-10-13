@@ -39,6 +39,22 @@ public:
    // Direct handle for widgets that edit in place (colour picker).
    float* ParamPtr(size_t paramIndex) { return mParamValues[paramIndex].data(); }
 
+   // Params added after a patch was saved (linear light, the corrected
+   // modes) are missing from it: they load at their legacyVal so the patch
+   // keeps the look it was made with. New nodes keep the defaults.
+   void BeforeLoadParams() override
+   {
+      for (size_t i = 0; i < mDef.params.size(); i++)
+         if (mDef.params[i].hasLegacy)
+            mParamValues[i][0] = mDef.params[i].legacyVal;
+      mHeadroom = false;
+   }
+
+   // Light above 1.0 survives this node (GLUtil::WithClampedOutput). On for
+   // new nodes; patches saved before it existed load it off and keep clipping.
+   bool Headroom() const { return mHeadroom; }
+   void SetHeadroom(bool on) { mHeadroom = on; }
+
    // Keyed by uniformName rather than by index: the FilterDef table is shared
    // across every FilterNode of this kind, so the name is the one thing stable
    // enough to survive across app versions if params are reordered.
@@ -52,6 +68,7 @@ public:
          else
             v.Float(def.uniformName.c_str(), mParamValues[i][0]);
       }
+      v.Bool("headroom", mHeadroom);
    }
 
 private:
@@ -67,13 +84,15 @@ private:
       GLint pass = -1;
       GLint texel = -1;
       GLint time = -1;
+      GLint converted = -1;
+      GLint headroom = -1;
       std::vector<GLint> params;
    };
 
    bool EnsureShader();
    void LookupLocs(unsigned int program, PassLocs& locs) const;
    void BindUniforms(const PassLocs& locs, unsigned int srcTex, unsigned int srcTex2,
-                     unsigned int passTex, float time) const;
+                     unsigned int passTex, float time, int converted = 0) const;
 
    // Everything the shader pass's output depends on. Reusing mOut's contents
    // is only safe when all of this is identical to the last time it ran -
@@ -90,12 +109,13 @@ private:
       // on a stopped transport caches like any other instead of re-rendering
       // an identical image and forcing everything downstream to recook.
       float time = 0.0f;
+      bool headroom = true;
 
       bool operator==(const Signature& o) const
       {
          return upstreamRev == o.upstreamRev && upstreamRev2 == o.upstreamRev2 &&
                 width == o.width && height == o.height && params == o.params &&
-                time == o.time;
+                time == o.time && headroom == o.headroom;
       }
    };
 
@@ -107,15 +127,20 @@ private:
    GLUtil::Fbo mOut;
    unsigned int mProgram = 0;
    unsigned int mPreProgram = 0;
+   unsigned int mConvProgram = 0;
+   int mLinearParam = -1;  // index of uLinear in mDef.params, or -1
+   int mQualityParam = -1; // index of uQuality, or -1
    bool mShaderTried = false;
    int mLastCookFrame = -1;
 
    PassLocs mMainLocs;
    PassLocs mPreLocs;
+   PassLocs mConvLocs;
 
    // Filters whose shader reads uTime are inherently animated, so the
    // uploaded time value is part of Signature.
    bool mUsesTime = false;
+   bool mHeadroom = true;
    bool mHasBuilt = false;
    Signature mBuilt;
    unsigned long long mRevision = 0;

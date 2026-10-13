@@ -65,6 +65,14 @@ public:
    int activeChannel = kRGB;
    float mix = 1.0f;
 
+   // Straight-line-exact spline (CurveShape::exactLine). On for new nodes;
+   // patches saved before the fix lack the key and keep their old curve.
+   bool ExactLine() const { return mShapes[0].exactLine; }
+   void SetExactLine(bool on) { for (int c = 0; c < kChannelCount; c++) mShapes[c].SetExactLine(on); }
+   // Light above 1.0 survives (GLUtil::WithClampedOutput); old patches clip.
+   bool headroom = true;
+   void BeforeLoadParams() override { SetExactLine(false); headroom = false; }
+
    // Points are round-tripped as one "x0,y0;x1,y1;..." string per channel
    // rather than adding array support to ParamVisitor for a shape used by only
    // this node. Decoding runs on both save and load - on save the string was
@@ -73,6 +81,10 @@ public:
    {
       v.Int("activeChannel", activeChannel);
       v.Float("mix", mix);
+      bool exact = ExactLine();
+      v.Bool("exactLine", exact);
+      SetExactLine(exact);
+      v.Bool("headroom", headroom);
       static const char* kKeys[kChannelCount] = {
          "curveRGB", "curveR", "curveG", "curveB"
       };
@@ -97,6 +109,7 @@ private:
    unsigned long long mLutVersion[kChannelCount] = {};
    int mLutRebuildCount = 0;
    unsigned int mLutTex = 0;
+   float mEndSlope[4] = { 1.0f, 1.0f, 1.0f, 1.0f }; // per LUT row, at x = 1
 
    ImageCable mInput;
    GLUtil::Fbo mOut;

@@ -16,14 +16,21 @@ namespace
             "uniform sampler2D uTexA;\n"
             "uniform sampler2D uTexB;\n"
             "uniform int uMode;\n"
-            "uniform float uMix;\n")
+            "uniform float uMix;\n"
+            "uniform int uLinear;\n"
+            "uniform int uW3C;\n"
+            "uniform int uImgHeadroom;\n")
+         + GLUtil::kSrgbGlsl
          + BlendModes::kBlendGLSL
          + "void main() {\n"
            "   vec4 a = texture(uTexA, vUv);\n"
            "   vec4 b = texture(uTexB, vUv);\n"
+           // linear light: modes and the over composite act on light (as in
+           // Nuke, AE's linearized space, Affinity's 32-bit documents)
+           "   if (uLinear == 1) { a.rgb = SrgbDecode(a.rgb); b.rgb = SrgbDecode(b.rgb); }\n"
            "   if (uMode == " + std::to_string(BlendModes::kEraseMode) + ") { fragColor = vec4(a.rgb, a.a * (1.0 - b.a * uMix)); return; }\n"
            "   if (uMode == " + std::to_string(BlendModes::kAntiEraseMode) + ") { fragColor = vec4(a.rgb, a.a * (1.0 - (1.0 - b.a) * uMix)); return; }\n"
-           "   vec3 blended = blendMode(uMode, a.rgb, b.rgb);\n"
+           "   vec3 blended = blendModeImage(uMode, a.rgb, b.rgb, uW3C, uImgHeadroom);\n"
            "   float as = b.a * uMix;\n"
            "   vec3 cs = mix(b.rgb, blended, a.a);\n"
            "   float ar = as + a.a * (1.0 - as);\n"
@@ -51,7 +58,7 @@ bool BlendNode::EnsureShader()
    if (mShaderTried)
       return mProgram != 0;
    mShaderTried = true;
-   mProgram = GLUtil::CompileProgram(FragSrc().c_str());
+   mProgram = GLUtil::CompileProgram(GLUtil::WithClampedOutput(FragSrc(), "if (uLinear == 1) fragColor.rgb = SrgbEncode(fragColor.rgb);").c_str());
    return mProgram != 0;
 }
 
@@ -74,7 +81,7 @@ void BlendNode::CookIfNeeded(int frameId)
 
    if (!EnsureShader())
       return;
-   if (!GLUtil::EnsureFbo(mOut, w, h))
+   if (!GLUtil::EnsureFbo(mOut, w, h, GLUtil::ImageWorkingFormat(), "Blend"))
       return;
 
    GLUtil::RunShaderPass(mOut, mProgram, [this, texA, texB]()
@@ -83,6 +90,8 @@ void BlendNode::CookIfNeeded(int frameId)
       GLint locB = glGetUniformLocation(mProgram, "uTexB");
       GLint locMode = glGetUniformLocation(mProgram, "uMode");
       GLint locMix = glGetUniformLocation(mProgram, "uMix");
+      GLint locLinear = glGetUniformLocation(mProgram, "uLinear");
+      GLint locW3C = glGetUniformLocation(mProgram, "uW3C");
 
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, texA);
@@ -94,5 +103,8 @@ void BlendNode::CookIfNeeded(int frameId)
 
       glUniform1i(locMode, mBlendFix ? mModeIndex : BlendModes::LegacyMode(mModeIndex));
       glUniform1f(locMix, mMix);
+      glUniform1i(locLinear, mLinear ? 1 : 0);
+      glUniform1i(locW3C, mBlendFix);
+      GLUtil::SetImageHeadroom(mProgram, mHeadroom);
    });
 }

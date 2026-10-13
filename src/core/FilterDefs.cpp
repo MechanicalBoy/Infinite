@@ -44,6 +44,34 @@ namespace
    }
 
    // Display format (carries the unit) and whole-number snapping; storage is untouched.
+   // "Linear light": the filter decodes sRGB to linear light before its
+   // maths and encodes after (Nuke/Resolve/AE 32-bit). On for a new node;
+   // FilterNode::BeforeLoadParams turns it off for patches saved before it
+   // existed, so their look is unchanged. Always the LAST param of a def, so
+   // existing modulation indices stay put. Bodies sample with ImgSrc().
+   // Marks a param added after patches were saved: those patches load it at
+   // `legacy` (the old behaviour); a new node gets the param's default.
+   FilterParamDef OLD(float legacy, FilterParamDef p)
+   {
+      p.hasLegacy = true;
+      p.legacyVal = legacy;
+      return p;
+   }
+
+   // Relief filters: read colour premultiplied, so transparent pixels are
+   // height 0 instead of whatever colour is hidden under alpha 0.
+   FilterParamDef PREMUL()
+   {
+      return OLD(0.0f, P("Premultiplied", "uPremul", FilterParamDef::Type::Bool, 0.0f, 1.0f, 1.0f));
+   }
+
+   // Linear light also makes multi-tap filters average premultiplied colour
+   // (ImgTap / ImgUnpremul), so colour hidden under alpha 0 cannot bleed in.
+   FilterParamDef LIN()
+   {
+      return OLD(0.0f, P("Linear light", "uLinear", FilterParamDef::Type::Bool, 0.0f, 1.0f, 1.0f));
+   }
+
    FilterParamDef F(const char* fmt, FilterParamDef p)
    {
       p.format = fmt;
@@ -96,6 +124,13 @@ const std::vector<FilterDef>& GetFilterDefs()
       // quality: Classic keeps the original nine taps spaced `radius` px apart
       // (saved looks unchanged). Smooth walks every pixel out to 4 sigma with
       // the same gaussian, so a large radius blurs instead of ghosting.
+      // Smooth (the default for new nodes) walks every pixel, so there are no
+      // holes between taps. Its vertical pass reads the linear 16F
+      // intermediate in pairs: one bilinear fetch at the weighted midpoint of
+      // two texels gives both their weighted sum (exact, since the pass is
+      // already linear), which halves the reads. The horizontal pass must
+      // read texel by texel: bilinear on sRGB-encoded input would mix before
+      // decoding.
       { "gaussianblur", "Effects",
         "uniform float uRadius;\n"
         "uniform int uQuality;\n"
@@ -109,24 +144,46 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   } else {\n"
         "      float r = max(uRadius, 0.001);\n"
         "      int n = min(int(ceil(4.0 * r)), 40);\n"
-        "      for (int y = -n; y <= n; y++) {\n"
-        "         float d = float(y) / r;\n"
-        "         float w = exp(-d * d / 8.0);\n"
-        "         sum += texture(uPass, vUv + vec2(0.0, float(y) * uTexelSize.y)) * w; total += w;\n"
+        "      sum = texture(uPass, vUv); total = 1.0;\n"
+        "      for (int y = 1; y <= n; y += 2) {\n"
+        "         float d1 = float(y) / r, d2 = float(y + 1) / r;\n"
+        "         float w1 = exp(-d1 * d1 / 8.0);\n"
+        "         float w2 = y + 1 <= n ? exp(-d2 * d2 / 8.0) : 0.0;\n"
+        "         float w = w1 + w2;\n"
+        "         if (w < 1e-6) break;\n"
+        "         vec2 off = vec2(0.0, (float(y) * w1 + float(y + 1) * w2) / w * uTexelSize.y);\n"
+        "         sum += (texture(uPass, vUv + off) + texture(uPass, vUv - off)) * w; total += 2.0 * w;\n"
         "      }\n"
         "   }\n"
-        "   fragColor = sum / total;\n"
+        "   fragColor = ImgUnpremul(sum / total);\n"
         "}\n",
         { F("%.1f px", P("Radius", "uRadius", T::Float, 0.0f, 10.0f, 2.0f)),
-          E("Quality", "uQuality", { "Classic", "Smooth" }, 0) }, 1,
+          OLD(0.0f, E("Quality", "uQuality", { "Classic", "Smooth" }, 1)),
+          LIN() }, 1,
         "uniform float uRadius;\n"
         "uniform int uQuality;\n"
         "void main() {\n"
         "   vec4 sum = vec4(0.0); float total = 0.0;\n"
+        "   if (uConverted == 1) {\n"
+        "      float r = max(uRadius, 0.001);\n"
+        "      int n = min(int(ceil(4.0 * r)), 40);\n"
+        "      sum = texture(uSrc, vUv); total = 1.0;\n"
+        "      for (int x = 1; x <= n; x += 2) {\n"
+        "         float d1 = float(x) / r, d2 = float(x + 1) / r;\n"
+        "         float w1 = exp(-d1 * d1 / 8.0);\n"
+        "         float w2 = x + 1 <= n ? exp(-d2 * d2 / 8.0) : 0.0;\n"
+        "         float w = w1 + w2;\n"
+        "         if (w < 1e-6) break;\n"
+        "         vec2 off = vec2((float(x) * w1 + float(x + 1) * w2) / w * uTexelSize.x, 0.0);\n"
+        "         sum += (texture(uSrc, vUv + off) + texture(uSrc, vUv - off)) * w; total += 2.0 * w;\n"
+        "      }\n"
+        "      fragColor = sum / total;\n"
+        "      return;\n"
+        "   }\n"
         "   if (uQuality == 0) {\n"
         "      for (int x = -4; x <= 4; x++) {\n"
         "         float w = exp(-float(x*x) / 8.0);\n"
-        "         sum += texture(uSrc, vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)) * w; total += w;\n"
+        "         sum += ImgTap(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)) * w; total += w;\n"
         "      }\n"
         "   } else {\n"
         "      float r = max(uRadius, 0.001);\n"
@@ -134,28 +191,63 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      for (int x = -n; x <= n; x++) {\n"
         "         float d = float(x) / r;\n"
         "         float w = exp(-d * d / 8.0);\n"
-        "         sum += texture(uSrc, vUv + vec2(float(x) * uTexelSize.x, 0.0)) * w; total += w;\n"
+        "         sum += ImgTap(vUv + vec2(float(x) * uTexelSize.x, 0.0)) * w; total += w;\n"
         "      }\n"
         "   }\n"
         "   fragColor = sum / total;\n"
-        "}\n" },
+        "}\n", true },
 
+      // quality: Classic is the original nine taps `radius` px apart (patches
+      // saved before Quality existed load with it). Smooth averages every
+      // pixel out to the same reach, 4 x radius, with paired vertical reads.
       { "boxblur", "Effects",
         "uniform float uRadius;\n"
+        "uniform int uQuality;\n"
         "void main() {\n"
         "   vec4 sum = vec4(0.0);\n"
-        "   for (int y = -4; y <= 4; y++)\n"
-        "      sum += texture(uPass, vUv + vec2(0.0, float(y) * uTexelSize.y * uRadius));\n"
-        "   fragColor = sum / 9.0;\n"
+        "   if (uQuality == 0) {\n"
+        "      for (int y = -4; y <= 4; y++)\n"
+        "         sum += texture(uPass, vUv + vec2(0.0, float(y) * uTexelSize.y * uRadius));\n"
+        "      fragColor = ImgUnpremul(sum / 9.0);\n"
+        "      return;\n"
+        "   }\n"
+        "   int n = min(int(floor(4.0 * uRadius + 0.5)), 40);\n"
+        "   sum = texture(uPass, vUv);\n"
+        "   for (int y = 1; y <= n; y += 2) {\n"
+        "      float w = y + 1 <= n ? 2.0 : 1.0;\n"
+        "      vec2 off = vec2(0.0, (w > 1.5 ? float(y) + 0.5 : float(y)) * uTexelSize.y);\n"
+        "      sum += (texture(uPass, vUv + off) + texture(uPass, vUv - off)) * w;\n"
+        "   }\n"
+        "   fragColor = ImgUnpremul(sum / float(2 * n + 1));\n"
         "}\n",
-        { F("%.1f px", P("Radius", "uRadius", T::Float, 0.0f, 10.0f, 2.0f)) }, 1,
+        { F("%.1f px", P("Radius", "uRadius", T::Float, 0.0f, 10.0f, 2.0f)), LIN(),
+          OLD(0.0f, E("Quality", "uQuality", { "Classic", "Smooth" }, 1)) }, 1,
         "uniform float uRadius;\n"
+        "uniform int uQuality;\n"
         "void main() {\n"
         "   vec4 sum = vec4(0.0);\n"
-        "   for (int x = -4; x <= 4; x++)\n"
-        "      sum += texture(uSrc, vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0));\n"
-        "   fragColor = sum / 9.0;\n"
-        "}\n" },
+        "   if (uConverted == 1) {\n"
+        "      int n = min(int(floor(4.0 * uRadius + 0.5)), 40);\n"
+        "      sum = texture(uSrc, vUv);\n"
+        "      for (int x = 1; x <= n; x += 2) {\n"
+        "         float w = x + 1 <= n ? 2.0 : 1.0;\n"
+        "         vec2 off = vec2((w > 1.5 ? float(x) + 0.5 : float(x)) * uTexelSize.x, 0.0);\n"
+        "         sum += (texture(uSrc, vUv + off) + texture(uSrc, vUv - off)) * w;\n"
+        "      }\n"
+        "      fragColor = sum / float(2 * n + 1);\n"
+        "      return;\n"
+        "   }\n"
+        "   if (uQuality == 0) {\n"
+        "      for (int x = -4; x <= 4; x++)\n"
+        "         sum += ImgTap(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0));\n"
+        "      fragColor = sum / 9.0;\n"
+        "      return;\n"
+        "   }\n"
+        "   int n = min(int(floor(4.0 * uRadius + 0.5)), 40);\n"
+        "   for (int x = -n; x <= n; x++)\n"
+        "      sum += ImgTap(vUv + vec2(float(x) * uTexelSize.x, 0.0));\n"
+        "   fragColor = sum / float(2 * n + 1);\n"
+        "}\n", true },
 
       { "motionblur", "Effects",
         "uniform float uAngle;\n"
@@ -165,12 +257,13 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   vec4 sum = vec4(0.0); const int N = 16;\n"
         "   for (int i = 0; i < N; i++) {\n"
         "      float t = float(i) / float(N - 1) - 0.5;\n"
-        "      sum += texture(uSrc, vUv + dir * t);\n"
+        "      sum += ImgPre(vUv + dir * t);\n"
         "   }\n"
-        "   fragColor = sum / float(N);\n"
+        "   fragColor = ImgUnpremul(sum / float(N));\n"
         "}\n",
         { F("%.2f rad", P("Angle", "uAngle", T::Float, 0.0f, 6.2832f, 0.0f)),
-          F("%.0f px", P("Distance", "uDistance", T::Float, 0.0f, 60.0f, 15.0f)) } },
+          F("%.0f px", P("Distance", "uDistance", T::Float, 0.0f, 60.0f, 15.0f)),
+          LIN() } },
 
       { "radialblur", "Effects",
         "uniform float uAmount;\n"
@@ -182,13 +275,14 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   vec4 sum = vec4(0.0); const int N = 16;\n"
         "   for (int i = 0; i < N; i++) {\n"
         "      float t = float(i) / float(N - 1);\n"
-        "      sum += texture(uSrc, vUv - dir * uAmount * t * 0.1);\n"
+        "      sum += ImgPre(vUv - dir * uAmount * t * 0.1);\n"
         "   }\n"
-        "   fragColor = sum / float(N);\n"
+        "   fragColor = ImgUnpremul(sum / float(N));\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 5.0f, 1.0f),
           P("Center X", "uCenterX", T::Float, 0.0f, 1.0f, 0.5f),
-          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f) } },
+          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f),
+          LIN() } },
 
       // ---------------- Effects: sharpen ----------------
       { "unsharpmask", "Effects",
@@ -221,12 +315,13 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   float amt = smoothstep(uRadius, 0.0, dist) * uAngle;\n"
         "   float s = sin(amt), c = cos(amt);\n"
         "   vec2 rd = vec2(c*d.x - s*d.y, s*d.x + c*d.y);\n"
-        "   fragColor = texture(uSrc, center + rd);\n"
+        "   fragColor = ImgSample(center + rd);\n"
         "}\n",
         { F("%.2f rad", P("Angle", "uAngle", T::Float, -6.2832f, 6.2832f, 2.0f)),
           P("Radius", "uRadius", T::Float, 0.05f, 1.0f, 0.5f),
           P("Center X", "uCenterX", T::Float, 0.0f, 1.0f, 0.5f),
-          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f) } },
+          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f),
+          LIN() } },
 
       { "pinchpunch", "Effects",
         "uniform float uAmount;\n"
@@ -243,12 +338,13 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      float factor = pow(n, uAmount);\n"
         "      uv = center + normalize(d) * factor * uRadius;\n"
         "   }\n"
-        "   fragColor = texture(uSrc, uv);\n"
+        "   fragColor = ImgSample(uv);\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.1f, 4.0f, 1.5f),
           P("Radius", "uRadius", T::Float, 0.05f, 1.0f, 0.5f),
           P("Center X", "uCenterX", T::Float, 0.0f, 1.0f, 0.5f),
-          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f) } },
+          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f),
+          LIN() } },
 
       { "ripple", "Effects",
         "uniform float uAmplitude;\n"
@@ -261,13 +357,14 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   float dist = length(d);\n"
         "   float wave = sin(dist * uWavelength * 6.2832 - uPhase) * uAmplitude;\n"
         "   vec2 uv = vUv + normalize(d + vec2(0.0001)) * wave * uTexelSize * 10.0;\n"
-        "   fragColor = texture(uSrc, uv);\n"
+        "   fragColor = ImgSample(uv);\n"
         "}\n",
         { P("Amplitude", "uAmplitude", T::Float, 0.0f, 2.0f, 0.5f),
           P("Wavelength", "uWavelength", T::Float, 1.0f, 40.0f, 10.0f),
           P("Phase", "uPhase", T::Float, 0.0f, 20.0f, 0.0f),
           P("Center X", "uCenterX", T::Float, 0.0f, 1.0f, 0.5f),
-          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f) } },
+          P("Center Y", "uCenterY", T::Float, 0.0f, 1.0f, 0.5f),
+          LIN() } },
 
       { "pixelate", "Effects",
         "uniform float uBlockSize;\n"
@@ -410,11 +507,10 @@ const std::vector<FilterDef>& GetFilterDefs()
       { "exposure", "Compositing",
         "uniform float uExposure;\n"
         "void main() {\n"
-        "   vec4 c = texture(uSrc, vUv);\n"
-        "   vec3 col = c.rgb * pow(2.0, uExposure);\n"
-        "   fragColor = vec4(clamp(col, 0.0, 1.0), c.a);\n"
+        "   vec4 c = ImgSrc(vUv);\n"
+        "   fragColor = vec4(c.rgb * pow(2.0, uExposure), c.a);\n"
         "}\n",
-        { F("%.2f EV", P("Exposure", "uExposure", T::Float, -3.0f, 3.0f, 0.0f)) } },
+        { F("%.2f EV", P("Exposure", "uExposure", T::Float, -3.0f, 3.0f, 0.0f)), LIN() } },
 
       // ---------------- Alpha / opacity operators ----------------
       // Nothing above edits an existing alpha channel directly - chroma/luma
@@ -497,7 +593,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "uniform float uIntensity;\n"
         "uniform float uRadius;\n"
         "void main() {\n"
-        "   vec4 c = texture(uSrc, vUv);\n"
+        "   vec4 c = ImgSrc(vUv);\n"
         "   vec3 bloom = vec3(0.0); float total = 0.0;\n"
         "   for (int y = -5; y <= 5; y++) {\n"
         "      float w = exp(-float(y*y) / 12.0);\n"
@@ -508,26 +604,46 @@ const std::vector<FilterDef>& GetFilterDefs()
         "}\n",
         { P("Threshold", "uThreshold", T::Float, 0.0f, 1.0f, 0.6f),
           P("Intensity", "uIntensity", T::Float, 0.0f, 5.0f, 1.4f),
-          F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)) }, 1,
+          F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)), LIN() }, 1,
         "uniform float uThreshold;\n"
         "uniform float uRadius;\n"
         "void main() {\n"
+        // linear light: the threshold knob keeps its perceptual meaning and
+        // luminance uses the Rec.709 weights that apply to linear RGB
+        "   float thr = ImgDecode(vec3(uThreshold)).x;\n"
+        "   vec3 lw = uLinear == 1 ? vec3(0.2126, 0.7152, 0.0722) : vec3(0.299, 0.587, 0.114);\n"
         "   vec3 bloom = vec3(0.0); float total = 0.0;\n"
         "   for (int x = -5; x <= 5; x++) {\n"
-        "      vec3 s = texture(uSrc, vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)).rgb;\n"
-        "      float lum = dot(s, vec3(0.299, 0.587, 0.114));\n"
-        "      vec3 bright = max(s - vec3(uThreshold), vec3(0.0)) * step(uThreshold, lum);\n"
+        "      vec2 uv = vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0);\n"
+        "      vec3 bright;\n"
+        "      if (uConverted == 1) bright = texture(uSrc, uv).rgb;\n"
+        "      else {\n"
+        "         vec3 s = ImgTap(uv).rgb;\n"
+        "         bright = max(s - vec3(thr), vec3(0.0)) * step(thr, dot(s, lw));\n"
+        "      }\n"
         "      float w = exp(-float(x*x) / 12.0);\n"
         "      bloom += bright * w; total += w;\n"
         "   }\n"
         "   fragColor = vec4(bloom / max(total, 1e-4), 1.0);\n"
+        "}\n", true,
+        // Linear light: the bright-pass runs once per pixel into the float
+        // scratch, so the 11 strided taps above are plain fetches. Decoding
+        // per tap was the whole of linear light's +26% on Bloom. Identical at
+        // integer Radius (taps on texel centres); at fractional Radius the
+        // taps now interpolate bright light rather than encoded colour.
+        "uniform float uThreshold;\n"
+        "void main() {\n"
+        "   float thr = ImgDecode(vec3(uThreshold)).x;\n"
+        "   vec3 s = ImgTap(vUv).rgb;\n"
+        "   float lum = dot(s, vec3(0.2126, 0.7152, 0.0722));\n"
+        "   fragColor = vec4(max(s - vec3(thr), vec3(0.0)) * step(thr, lum), 1.0);\n"
         "}\n" },
 
       { "diffuseglow", "Effects",
         "uniform float uAmount;\n"
         "uniform float uRadius;\n"
         "void main() {\n"
-        "   vec4 c = texture(uSrc, vUv);\n"
+        "   vec4 c = ImgSrc(vUv);\n"
         "   vec3 blur = vec3(0.0); float total = 0.0;\n"
         "   for (int y = -4; y <= 4; y++) {\n"
         "      float w = exp(-float(y*y) / 10.0);\n"
@@ -538,13 +654,13 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   fragColor = vec4(mix(c.rgb, screen, uAmount), c.a);\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 1.0f, 0.6f),
-          F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)) }, 1,
+          F("%.1f px", P("Radius", "uRadius", T::Float, 0.5f, 12.0f, 4.0f)), LIN() }, 1,
         "uniform float uRadius;\n"
         "void main() {\n"
         "   vec3 blur = vec3(0.0); float total = 0.0;\n"
         "   for (int x = -4; x <= 4; x++) {\n"
         "      float w = exp(-float(x*x) / 10.0);\n"
-        "      blur += texture(uSrc, vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)).rgb * w; total += w;\n"
+        "      blur += ImgTap(vUv + vec2(float(x) * uTexelSize.x * uRadius, 0.0)).rgb * w; total += w;\n"
         "   }\n"
         "   fragColor = vec4(blur / max(total, 1e-4), 1.0);\n"
         "}\n" },
@@ -566,20 +682,20 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   if (uKind == 0) {\n"           // Slice shift (the original)
         "      float blockY = floor(uv.y * max(1.0, uDetail * 40.0));\n"
         "      uv.x += (rand(vec2(blockY, floor(t * 10.0))) - 0.5) * uAmount * 0.2;\n"
-        "      vec4 c = texture(uSrc, uv);\n"
-        "      vec4 cr = texture(uSrc, uv + vec2(uAmount * 0.01, 0.0));\n"
-        "      vec4 cb = texture(uSrc, uv - vec2(uAmount * 0.01, 0.0));\n"
+        "      vec4 c = ImgSample(uv);\n"
+        "      vec4 cr = ImgSample(uv + vec2(uAmount * 0.01, 0.0));\n"
+        "      vec4 cb = ImgSample(uv - vec2(uAmount * 0.01, 0.0));\n"
         "      fragColor = vec4(cr.r, c.g, cb.b, c.a);\n"
         "      return;\n"
         "   }\n"
         "   if (uKind == 1) {\n"           // RGB shift
         "      vec2 dir = vec2(cos(uDetail * 6.2832), sin(uDetail * 6.2832)) * uAmount * 0.02;\n"
-        "      fragColor = vec4(texture(uSrc, uv + dir).r, texture(uSrc, uv).g,\n"
-        "                       texture(uSrc, uv - dir).b, texture(uSrc, uv).a);\n"
+        "      fragColor = vec4(ImgSample(uv + dir).r, ImgSample(uv).g,\n"
+        "                       ImgSample(uv - dir).b, ImgSample(uv).a);\n"
         "      return;\n"
         "   }\n"
         "   if (uKind == 2) {\n"           // Scanlines
-        "      vec4 c = texture(uSrc, uv);\n"
+        "      vec4 c = ImgSample(uv);\n"
         "      float line = sin((uv.y + t * 0.1) * max(10.0, uDetail * 800.0) * 3.14159);\n"
         "      fragColor = vec4(c.rgb * (1.0 - uAmount * step(0.0, -line)), c.a);\n"
         "      return;\n"
@@ -589,19 +705,19 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      vec2 cell = floor(uv * grid);\n"
         "      if (rand(cell + floor(t * 8.0)) > 1.0 - uAmount)\n"
         "         uv += (vec2(rand(cell + 1.0), rand(cell + 2.0)) - 0.5) * 0.15;\n"
-        "      fragColor = texture(uSrc, clamp(uv, 0.0, 1.0));\n"
+        "      fragColor = ImgSample(clamp(uv, 0.0, 1.0));\n"
         "      return;\n"
         "   }\n"
         "   if (uKind == 4) {\n"           // Wave
         "      uv.x += sin(uv.y * max(1.0, uDetail * 200.0) + t * 2.0) * uAmount * 0.05;\n"
-        "      fragColor = texture(uSrc, clamp(uv, 0.0, 1.0));\n"
+        "      fragColor = ImgSample(clamp(uv, 0.0, 1.0));\n"
         "      return;\n"
         "   }\n"
         "   // Datamosh\n"
         "   float slice = floor(uv.y * max(2.0, uDetail * 120.0));\n"
         "   float r = rand(vec2(slice, floor(t * 4.0)));\n"
         "   uv.x = fract(uv.x + (r - 0.5) * uAmount * 0.5);\n"
-        "   vec4 c = texture(uSrc, uv);\n"
+        "   vec4 c = ImgSample(uv);\n"
         "   if (r > 0.85) c.rgb = c.gbr;\n"
         "   fragColor = c;\n"
         "}\n",
@@ -609,7 +725,8 @@ const std::vector<FilterDef>& GetFilterDefs()
           P("Amount", "uAmount", T::Float, 0.0f, 2.0f, 0.6f),
           P("Detail", "uDetail", T::Float, 0.02f, 1.0f, 0.4f),
           P("Speed", "uSpeed", T::Float, 0.0f, 4.0f, 1.0f),
-          N("%.0f", P("Seed", "uSeed", T::Float, 0.0f, 100.0f, 0.0f)) } },
+          N("%.0f", P("Seed", "uSeed", T::Float, 0.0f, 100.0f, 0.0f)),
+          LIN() } },
 
       // ---------------- Effects: lens / warp ----------------
       { "lensdistortion", "Effects",
@@ -645,10 +762,11 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      float n = sin(vUv.x * 20.0 * uScale + uTime) * cos(vUv.y * 20.0 * uScale - uTime);\n"
         "      offset = vec2(n, -n);\n"
         "   }\n"
-        "   fragColor = texture(uSrc, clamp(vUv + offset * uAmount * 0.1, 0.0, 1.0));\n"
+        "   fragColor = ImgSample(clamp(vUv + offset * uAmount * 0.1, 0.0, 1.0));\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 2.0f, 0.3f),
-          P("Map Scale", "uScale", T::Float, 0.1f, 8.0f, 1.0f) },
+          P("Map Scale", "uScale", T::Float, 0.1f, 8.0f, 1.0f),
+          LIN() },
         2 },
 
       { "liquify", "Effects",
@@ -668,11 +786,12 @@ const std::vector<FilterDef>& GetFilterDefs()
         "void main() {\n"
         "   float t = uTime * uSpeed;\n"
         "   vec2 flow = vec2(noise(vUv * uScale + t), noise(vUv * uScale + 5.2 - t)) - 0.5;\n"
-        "   fragColor = texture(uSrc, clamp(vUv + flow * uAmount * 0.2, 0.0, 1.0));\n"
+        "   fragColor = ImgSample(clamp(vUv + flow * uAmount * 0.2, 0.0, 1.0));\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 2.0f, 0.4f),
           P("Scale", "uScale", T::Float, 0.5f, 20.0f, 4.0f),
-          P("Speed", "uSpeed", T::Float, 0.0f, 3.0f, 0.4f) } },
+          P("Speed", "uSpeed", T::Float, 0.0f, 3.0f, 0.4f),
+          LIN() } },
 
       // ---------------- Effects: symmetry ----------------
       { "symmetry", "Effects",
@@ -821,26 +940,30 @@ const std::vector<FilterDef>& GetFilterDefs()
         "uniform float uAngle;\n"
         "uniform float uDistance;\n"
         "uniform int uKeepColor;\n"
+        "uniform int uPremul;\n"
         "void main() {\n"
         "   vec2 off = vec2(cos(uAngle), sin(uAngle)) * uTexelSize * uDistance;\n"
-        "   vec3 a = texture(uSrc, vUv + off).rgb;\n"
-        "   vec3 b = texture(uSrc, vUv - off).rgb;\n"
+        "   vec3 a = uPremul == 1 ? ImgTapPremul(vUv + off).rgb : texture(uSrc, vUv + off).rgb;\n"
+        "   vec3 b = uPremul == 1 ? ImgTapPremul(vUv - off).rgb : texture(uSrc, vUv - off).rgb;\n"
         "   vec3 diff = (a - b) * uAmount;\n"
         "   float e = dot(diff, vec3(0.299, 0.587, 0.114));\n"
         "   vec4 src = texture(uSrc, vUv);\n"
-        "   if (uKeepColor == 1) fragColor = vec4(clamp(src.rgb + diff, 0.0, 1.0), src.a);\n"
+        "   if (uKeepColor == 1) fragColor = vec4(ImgClip(src.rgb + diff), src.a);\n"
         "   else fragColor = vec4(vec3(clamp(e + 0.5, 0.0, 1.0)), src.a);\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 8.0f, 2.0f),
           F("%.2f rad", P("Angle", "uAngle", T::Float, 0.0f, 6.2832f, 0.785f)),
           F("%.1f px", P("Distance", "uDistance", T::Float, 0.5f, 12.0f, 1.5f)),
-          E("style", "uKeepColor", { "Grey", "Over colour" }, 0) } },
+          E("style", "uKeepColor", { "Grey", "Over colour" }, 0),
+          PREMUL() } },
 
       { "normal map", "Effects",
         "uniform float uStrength;\n"
         "uniform int uInvertY;\n"
         "uniform int uOutput;\n"
-        "float lum(vec2 uv) { return dot(texture(uSrc, uv).rgb, vec3(0.299, 0.587, 0.114)); }\n"
+        "uniform int uPremul;\n"
+        // taps sit on texel centres, so multiplying by alpha after the fetch is exact
+        "float lum(vec2 uv) { vec4 c = texture(uSrc, uv); return dot(c.rgb, vec3(0.299, 0.587, 0.114)) * (uPremul == 1 ? c.a : 1.0); }\n"
         "void main() {\n"
         "   vec2 t = uTexelSize;\n"
         "   // Sobel gradient of luminance treated as a height field\n"
@@ -857,7 +980,8 @@ const std::vector<FilterDef>& GetFilterDefs()
         "}\n",
         { P("Strength", "uStrength", T::Float, 0.1f, 12.0f, 3.0f),
           E("flip Y", "uInvertY", { "OpenGL", "DirectX" }, 0),
-          E("output", "uOutput", { "Normals", "Height", "Slope" }, 0) } },
+          E("output", "uOutput", { "Normals", "Height", "Slope" }, 0),
+          PREMUL() } },
 
       { "convolve", "Effects",
         // A user-editable 3x3 kernel. Blur, sharpen, edge and emboss are all just
@@ -879,7 +1003,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      }\n"
         "   }\n"
         "   float div = abs(uDivisor) < 1e-4 ? 1.0 : uDivisor;\n"
-        "   vec3 outCol = clamp(sum / div + uBias, 0.0, 1.0);\n"
+        "   vec3 outCol = ImgClip(sum / div + uBias);\n"
         "   fragColor = vec4(mix(src.rgb, outCol, uMix), src.a);\n"
         "}\n",
         { P("k11", "uK[0]", T::Float, -8.0f, 8.0f, 0.0f),
@@ -901,6 +1025,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "uniform float uMix;\n"
         "uniform int uChannel;\n"
         "uniform float uOffset;\n"
+        "uniform int uEnds;\n"
         "void main() {\n"
         "   vec4 c = texture(uSrc, vUv);\n"
         "   if (uHasSrc2 == 0) { fragColor = c; return; }\n"
@@ -910,13 +1035,22 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   else if (uChannel == 3) idx = c.b;\n"
         "   else if (uChannel == 4) idx = c.a;\n"
         "   else idx = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
-        "   idx = fract(idx + uOffset);\n"
-        "   vec3 mapped = texture(uSrc2, vec2(idx, 0.5)).rgb;\n"
+        "   vec3 mapped;\n"
+        "   if (uEnds == 0) mapped = texture(uSrc2, vec2(fract(idx + uOffset), 0.5)).rgb;\n"
+        // Exact: white stays the palette's last colour (offset still cycles),
+        // and the index lands on texel centres, so an identity ramp is identity.
+        "   else {\n"
+        "      float x = clamp(idx, 0.0, 1.0) + uOffset;\n"
+        "      x = x > 1.0 ? x - 1.0 : x;\n"
+        "      float w = float(textureSize(uSrc2, 0).x);\n"
+        "      mapped = texture(uSrc2, vec2((x * (w - 1.0) + 0.5) / w, 0.5)).rgb;\n"
+        "   }\n"
         "   fragColor = vec4(mix(c.rgb, mapped, uMix), c.a);\n"
         "}\n",
         { E("index by", "uChannel", { "Luminance", "Red", "Green", "Blue", "Alpha" }, 0),
           P("Offset", "uOffset", T::Float, 0.0f, 1.0f, 0.0f),
-          P("Mix", "uMix", T::Float, 0.0f, 1.0f, 1.0f) },
+          P("Mix", "uMix", T::Float, 0.0f, 1.0f, 1.0f),
+          OLD(0.0f, E("ends", "uEnds", { "Wrap", "Exact" }, 1)) },
         2 },
 
       // ---------------- Effects: halftone / edges ----------------
@@ -986,25 +1120,63 @@ const std::vector<FilterDef>& GetFilterDefs()
       // ---------------- Color: LUT ----------------
       { "lut", "Compositing",
         // Second input is a HALD/strip LUT image: an N*N by N grid of slices.
+        // interpolation: Original is the first version (no half-texel inset,
+        // so even an identity LUT shifts colours); patches saved before the
+        // choice existed keep it. Trilinear and Tetrahedral address texel
+        // centres; Tetrahedral (Resolve's default) splits each cube into six
+        // tetrahedra, which keeps neutrals neutral.
         "uniform float uSize;\n"
         "uniform float uMix;\n"
+        "uniform int uInterp;\n"
+        "vec3 Lt(vec3 i, float n) { return texture(uSrc2, vec2((i.b * n + i.r + 0.5) / (n * n), (i.g + 0.5) / n)).rgb; }\n"
         "void main() {\n"
         "   vec4 c = texture(uSrc, vUv);\n"
         "   if (uHasSrc2 == 0) { fragColor = c; return; }\n"
         "   float n = max(2.0, floor(uSize));\n"
-        "   float blue = clamp(c.b, 0.0, 1.0) * (n - 1.0);\n"
-        "   float slice0 = floor(blue);\n"
-        "   float slice1 = min(slice0 + 1.0, n - 1.0);\n"
-        "   float f = blue - slice0;\n"
-        "   vec2 texel = vec2(1.0 / (n * n), 1.0 / n);\n"
-        "   vec2 base = vec2(clamp(c.r, 0.0, 1.0) / n, clamp(c.g, 0.0, 1.0));\n"
-        "   vec3 s0 = texture(uSrc2, base + vec2(slice0 / n, 0.0) * vec2(1.0, 0.0)).rgb;\n"
-        "   vec3 s1 = texture(uSrc2, base + vec2(slice1 / n, 0.0) * vec2(1.0, 0.0)).rgb;\n"
-        "   vec3 graded = mix(s0, s1, f);\n"
+        "   vec3 graded;\n"
+        "   if (uInterp == 0) {\n"
+        "      float blue = clamp(c.b, 0.0, 1.0) * (n - 1.0);\n"
+        "      float slice0 = floor(blue);\n"
+        "      float slice1 = min(slice0 + 1.0, n - 1.0);\n"
+        "      float f = blue - slice0;\n"
+        "      vec2 base = vec2(clamp(c.r, 0.0, 1.0) / n, clamp(c.g, 0.0, 1.0));\n"
+        "      vec3 s0 = texture(uSrc2, base + vec2(slice0 / n, 0.0)).rgb;\n"
+        "      vec3 s1 = texture(uSrc2, base + vec2(slice1 / n, 0.0)).rgb;\n"
+        "      graded = mix(s0, s1, f);\n"
+        "   } else {\n"
+        "      vec3 p = clamp(c.rgb, 0.0, 1.0) * (n - 1.0);\n"
+        "      vec3 i = min(floor(p), vec3(n - 2.0));\n"
+        "      vec3 f = p - i;\n"
+        "      if (uInterp == 1) {\n"
+        // red and green blend in hardware inside one slice; blue across two
+        "         vec2 rg = vec2(i.r + f.r + 0.5, i.g + f.g + 0.5);\n"
+        "         vec3 s0 = texture(uSrc2, vec2((i.b * n + rg.x) / (n * n), rg.y / n)).rgb;\n"
+        "         vec3 s1 = texture(uSrc2, vec2(((i.b + 1.0) * n + rg.x) / (n * n), rg.y / n)).rgb;\n"
+        "         graded = mix(s0, s1, f.b);\n"
+        "      } else {\n"
+        "         vec3 c000 = Lt(i, n), c111 = Lt(i + 1.0, n);\n"
+        "         if (f.r >= f.g) {\n"
+        "            if (f.g >= f.b) { vec3 c100 = Lt(i + vec3(1,0,0), n), c110 = Lt(i + vec3(1,1,0), n);\n"
+        "               graded = c000 + f.r * (c100 - c000) + f.g * (c110 - c100) + f.b * (c111 - c110); }\n"
+        "            else if (f.r >= f.b) { vec3 c100 = Lt(i + vec3(1,0,0), n), c101 = Lt(i + vec3(1,0,1), n);\n"
+        "               graded = c000 + f.r * (c100 - c000) + f.b * (c101 - c100) + f.g * (c111 - c101); }\n"
+        "            else { vec3 c001 = Lt(i + vec3(0,0,1), n), c101 = Lt(i + vec3(1,0,1), n);\n"
+        "               graded = c000 + f.b * (c001 - c000) + f.r * (c101 - c001) + f.g * (c111 - c101); }\n"
+        "         } else {\n"
+        "            if (f.b >= f.g) { vec3 c001 = Lt(i + vec3(0,0,1), n), c011 = Lt(i + vec3(0,1,1), n);\n"
+        "               graded = c000 + f.b * (c001 - c000) + f.g * (c011 - c001) + f.r * (c111 - c011); }\n"
+        "            else if (f.b >= f.r) { vec3 c010 = Lt(i + vec3(0,1,0), n), c011 = Lt(i + vec3(0,1,1), n);\n"
+        "               graded = c000 + f.g * (c010 - c000) + f.b * (c011 - c010) + f.r * (c111 - c011); }\n"
+        "            else { vec3 c010 = Lt(i + vec3(0,1,0), n), c110 = Lt(i + vec3(1,1,0), n);\n"
+        "               graded = c000 + f.g * (c010 - c000) + f.r * (c110 - c010) + f.b * (c111 - c110); }\n"
+        "         }\n"
+        "      }\n"
+        "   }\n"
         "   fragColor = vec4(mix(c.rgb, graded, uMix), c.a);\n"
         "}\n",
         { N("%.0f", P("LUT Size", "uSize", T::Float, 2.0f, 64.0f, 16.0f)),
-          P("Mix", "uMix", T::Float, 0.0f, 1.0f, 1.0f) },
+          P("Mix", "uMix", T::Float, 0.0f, 1.0f, 1.0f),
+          OLD(0.0f, E("interpolation", "uInterp", { "Original", "Trilinear", "Tetrahedral" }, 2)) },
         2 },
 
       { "gradientmap", "Compositing",
@@ -1066,6 +1238,11 @@ const std::vector<FilterDef>& GetFilterDefs()
         "uniform float uRedWeight;\n"
         "uniform float uGreenWeight;\n"
         "uniform float uBlueWeight;\n"
+        "uniform int uSatModel;\n"
+        "uniform float uSlopeR, uSlopeG, uSlopeB;\n"
+        "uniform float uOffsetR, uOffsetG, uOffsetB;\n"
+        "uniform float uPowerR, uPowerG, uPowerB;\n"
+        "uniform float uCdlSat;\n"
         "float toneCurve(float x) {\n"
         "   float s = mix(x, x*x*(3.0-2.0*x), uContrastPivot);\n"
         "   float lift = uShadows * (1.0 - x) * (1.0 - x);\n"
@@ -1073,32 +1250,55 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   float mid = uMidtones * 4.0 * x * (1.0 - x);\n"
         "   return clamp(s + lift + gain + mid, 0.0, 1.0);\n"
         "}\n"
+        // headroom: the curve shapes 0..1, light above white carries on at unit slope
+        "float toneCurveH(float x) { return uImgHeadroom == 1 && x > 1.0 ? toneCurve(1.0) + x - 1.0 : toneCurve(x); }\n"
         "void main() {\n"
         "   vec4 c = texture(uSrc, vUv);\n"
         "   vec3 col = c.rgb;\n"
         "\n"
-        "   col = clamp((col - 0.5) * (uContrast + 1.0) + 0.5 + uBrightness, 0.0, 1.0);\n"
+        "   col = ImgClip((col - 0.5) * (uContrast + 1.0) + 0.5 + uBrightness);\n"
         "\n"
-        "   col = clamp((col - uBlackPoint) / max(uWhitePoint - uBlackPoint, 0.0001), 0.0, 1.0);\n"
+        "   col = ImgClip((col - uBlackPoint) / max(uWhitePoint - uBlackPoint, 0.0001));\n"
         "   col = pow(col, vec3(1.0 / max(uGamma, 0.0001)));\n"
         "\n"
-        "   col = clamp(col + vec3(uCyanRed, uMagentaGreen, uYellowBlue), 0.0, 1.0);\n"
+        "   col = ImgClip(col + vec3(uCyanRed, uMagentaGreen, uYellowBlue));\n"
         "\n"
         "   vec3 hsv = rgb2hsv(col);\n"
         "   hsv.x = fract(hsv.x + uHueShift);\n"
-        "   hsv.y = clamp(hsv.y * uSaturation, 0.0, 1.0);\n"
-        "   col = clamp(hsv2rgb(hsv) + uLightness, 0.0, 1.0);\n"
+        "   if (uSatModel == 0) hsv.y = clamp(hsv.y * uSaturation, 0.0, 1.0);\n"
+        "   col = hsv2rgb(hsv);\n"
+        // Rec.709: scale away from luminance in linear light, so saturation 0
+        // is the grey of equal brightness (HSV keeps V = max, which is white
+        // for a pure primary).
+        "   if (uSatModel == 1 && uSaturation != 1.0) {\n"
+        "      vec3 lin = SrgbDecode(col);\n"
+        "      float y = dot(lin, vec3(0.2126, 0.7152, 0.0722));\n"
+        "      col = SrgbEncode(ImgClip(y + (lin - y) * uSaturation));\n"
+        "   }\n"
+        "   col = ImgClip(col + uLightness);\n"
         "\n"
         "   float avgc = (col.r + col.g + col.b) / 3.0;\n"
-        "   col = clamp(mix(vec3(avgc), col, 1.0 + uVibrance), 0.0, 1.0);\n"
+        "   col = ImgClip(mix(vec3(avgc), col, 1.0 + uVibrance));\n"
         "\n"
-        "   col = vec3(toneCurve(col.r), toneCurve(col.g), toneCurve(col.b));\n"
+        "   col = vec3(toneCurveH(col.r), toneCurveH(col.g), toneCurveH(col.b));\n"
         "\n"
-        "   col = clamp(vec3(dot(col, uRedRow), dot(col, uGreenRow), dot(col, uBlueRow)), 0.0, 1.0);\n"
+        "   col = ImgClip(vec3(dot(col, uRedRow), dot(col, uGreenRow), dot(col, uBlueRow)));\n"
         "\n"
         "   if (uBWEnabled == 1) {\n"
         "      float lum = col.r*uRedWeight + col.g*uGreenWeight + col.b*uBlueWeight;\n"
         "      col = vec3(lum);\n"
+        "   }\n"
+        "\n"
+        // ASC CDL v1.2: out = clamp(in * slope + offset)^power, then
+        // saturation about Rec.709 luma of the result. Last, so a CDL from
+        // set or a colourist reads the same here as in Resolve or Nuke.
+        "   vec3 slope = vec3(uSlopeR, uSlopeG, uSlopeB);\n"
+        "   vec3 offset = vec3(uOffsetR, uOffsetG, uOffsetB);\n"
+        "   vec3 power = vec3(uPowerR, uPowerG, uPowerB);\n"
+        "   if (slope != vec3(1.0) || offset != vec3(0.0) || power != vec3(1.0) || uCdlSat != 1.0) {\n"
+        "      col = pow(clamp(col * slope + offset, 0.0, 1.0), power);\n"
+        "      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));\n"
+        "      col = clamp(l + (col - l) * uCdlSat, 0.0, 1.0);\n"
         "   }\n"
         "\n"
         "   fragColor = vec4(col, c.a);\n"
@@ -1125,14 +1325,25 @@ const std::vector<FilterDef>& GetFilterDefs()
           S("Black & White", P("Enable", "uBWEnabled", T::Bool, 0.0f, 1.0f, 0.0f)),
           P("Red Weight", "uRedWeight", T::Float, 0.0f, 2.0f, 0.299f),
           P("Green Weight", "uGreenWeight", T::Float, 0.0f, 2.0f, 0.587f),
-          P("Blue Weight", "uBlueWeight", T::Float, 0.0f, 2.0f, 0.114f) } },
+          P("Blue Weight", "uBlueWeight", T::Float, 0.0f, 2.0f, 0.114f),
+          S("Saturation", OLD(0.0f, E("model", "uSatModel", { "HSV", "Rec.709" }, 1))),
+          S("ASC CDL", P("Slope R", "uSlopeR", T::Float, 0.0f, 4.0f, 1.0f)),
+          P("Slope G", "uSlopeG", T::Float, 0.0f, 4.0f, 1.0f),
+          P("Slope B", "uSlopeB", T::Float, 0.0f, 4.0f, 1.0f),
+          P("Offset R", "uOffsetR", T::Float, -1.0f, 1.0f, 0.0f),
+          P("Offset G", "uOffsetG", T::Float, -1.0f, 1.0f, 0.0f),
+          P("Offset B", "uOffsetB", T::Float, -1.0f, 1.0f, 0.0f),
+          P("Power R", "uPowerR", T::Float, 0.1f, 4.0f, 1.0f),
+          P("Power G", "uPowerG", T::Float, 0.1f, 4.0f, 1.0f),
+          P("Power B", "uPowerB", T::Float, 0.1f, 4.0f, 1.0f),
+          P("Saturation", "uCdlSat", T::Float, 0.0f, 4.0f, 1.0f) } },
 
       // ---------------- Compositing: layer-effect style filters ----------------
       { "outerglow", "Compositing",
         "uniform float uAmount;\n"
         "uniform vec3 uColor;\n"
         "void main() {\n"
-        "   vec4 c = texture(uSrc, vUv);\n"
+        "   vec4 c = ImgSrc(vUv);\n"
         "   vec4 blur = vec4(0.0); float total = 0.0;\n"
         "   for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) {\n"
         "      vec2 off = vec2(float(x), float(y)) * uTexelSize * 4.0;\n"
@@ -1140,11 +1351,11 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      blur += texture(uSrc, vUv + off) * w; total += w;\n"
         "   }\n"
         "   blur /= total;\n"
-        "   vec3 glow = uColor * blur.a * uAmount;\n"
+        "   vec3 glow = ImgDecode(uColor) * blur.a * uAmount;\n"
         "   fragColor = vec4(c.rgb + glow * (1.0 - c.a), max(c.a, blur.a * uAmount));\n"
         "}\n",
         { P("Amount", "uAmount", T::Float, 0.0f, 2.0f, 1.0f),
-          P("Color", "uColor", T::Color, 0.0f, 1.0f, 1.0f, 0.9f, 0.3f) } },
+          P("Color", "uColor", T::Color, 0.0f, 1.0f, 1.0f, 0.9f, 0.3f), LIN() } },
 
       { "coloroverlay", "Compositing",
         "uniform vec3 uColor;\n"

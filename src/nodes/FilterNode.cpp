@@ -11,7 +11,7 @@
 namespace
 {
    // Shared preamble every FilterDef's fragmentBody is appended to.
-   const char* kPreamble =
+   const char* kPreambleHead =
       "#version 150\n"
       "in vec2 vUv;\n"
       "out vec4 fragColor;\n"
@@ -20,7 +20,54 @@ namespace
       "uniform float uTime;\n"
       "uniform sampler2D uSrc2;\n"
       "uniform int uHasSrc2;\n"
-      "uniform sampler2D uPass;\n"; // prePassBody's output, two-pass filters only
+      "uniform sampler2D uPass;\n" // prePassBody's output, two-pass filters only
+      // Linear light (FilterDefs LIN()): ImgSrc decodes the input to linear
+      // when uLinear is on and passes it through untouched when off; the
+      // main pass encodes on the way out. A pre-pass writes linear values
+      // to its float scratch, so uPass samples need no decode.
+      "uniform int uLinear;\n"
+      // 1 when uSrc holds the convert pass's premultiplied linear copy
+      // (FilterDef::convertFirst, two-pass filters).
+      "uniform int uConverted;\n"
+      // Headroom (GLUtil::WithClampedOutput): 1 keeps light above 1.0.
+      "uniform int uImgHeadroom;\n";
+   const char* kPreambleTail =
+      "vec3 ImgDecode(vec3 c) { return uLinear == 0 ? c : SrgbDecode(c); }\n"
+      "vec3 ImgEncode(vec3 c) { return uLinear == 0 ? c : SrgbEncode(c); }\n"
+      "vec4 ImgSrc(vec2 uv) { vec4 c = texture(uSrc, uv); return vec4(ImgDecode(c.rgb), c.a); }\n"
+      // Multi-tap filters: average premultiplied light (Porter-Duff), then
+      // divide alpha back out, so colour under alpha 0 weighs nothing. With
+      // linear light off both are the old straight-alpha pass-through.
+      "vec4 ImgTap(vec2 uv) { vec4 c = ImgSrc(uv); return uLinear == 0 ? c : vec4(c.rgb * c.a, c.a); }\n"
+      "vec4 ImgUnpremul(vec4 c) { return (uLinear == 0 || c.a <= 0.0) ? c : vec4(c.rgb / c.a, c.a); }\n"
+      // Bilinear tap that decodes (lin = 1) and premultiplies each texel
+      // before mixing, so an off-centre tap at an alpha edge mixes light,
+      // not the colour hidden under alpha 0. Four fetches, no extra pass.
+      "vec4 ImgBilinearPremul(vec2 uv, int lin) {\n"
+      "   vec2 p = uv / uTexelSize - 0.5; vec2 f = fract(p); ivec2 i = ivec2(floor(p));\n"
+      "   ivec2 m = textureSize(uSrc, 0) - 1;\n"
+      "   vec4 t[4]; ivec2 o[4] = ivec2[4](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1));\n"
+      "   for (int k = 0; k < 4; k++) {\n"
+      "      vec4 c = texelFetch(uSrc, clamp(i + o[k], ivec2(0), m), 0);\n"
+      "      if (lin == 1) c.rgb = SrgbDecode(c.rgb);\n"
+      "      t[k] = vec4(c.rgb * c.a, c.a);\n"
+      "   }\n"
+      "   return mix(mix(t[0], t[1], f.x), mix(t[2], t[3], f.x), f.y);\n"
+      "}\n"
+      // Relief filters (stored encoding): ImgBilinearPremul without decode.
+      "vec4 ImgTapPremul(vec2 uv) { return ImgBilinearPremul(uv, 0); }\n"
+      // Warps and line blurs: exact premultiplied linear tap with Linear
+      // light on, the old straight bilinear texture() with it off.
+      "vec4 ImgPre(vec2 uv) { return uLinear == 0 ? texture(uSrc, uv) : ImgBilinearPremul(uv, 1); }\n"
+      "vec4 ImgSample(vec2 uv) { return ImgUnpremul(ImgPre(uv)); }\n"
+      // A body's own range clamp: 0..1 as before, or floor-only with headroom.
+      "vec3 ImgClip(vec3 c) { return uImgHeadroom == 1 ? max(c, vec3(0.0)) : clamp(c, 0.0, 1.0); }\n";
+
+   const std::string& Preamble()
+   {
+      static const std::string s = std::string(kPreambleHead) + GLUtil::kSrgbGlsl + kPreambleTail;
+      return s;
+   }
 
 
 }
@@ -32,6 +79,8 @@ FilterNode::~FilterNode()
       glDeleteProgram(mProgram);
    if (mPreProgram != 0)
       glDeleteProgram(mPreProgram);
+   if (mConvProgram != 0)
+      glDeleteProgram(mConvProgram);
 }
 
 FilterNode::FilterNode(const FilterDef& def)
@@ -43,6 +92,13 @@ FilterNode::FilterNode(const FilterDef& def)
       mParamValues[i][0] = def.params[i].defaultVal[0];
       mParamValues[i][1] = def.params[i].defaultVal[1];
       mParamValues[i][2] = def.params[i].defaultVal[2];
+   }
+   for (size_t i = 0; i < def.params.size(); i++)
+   {
+      if (def.params[i].uniformName == "uLinear")
+         mLinearParam = (int)i;
+      else if (def.params[i].uniformName == "uQuality")
+         mQualityParam = (int)i;
    }
    mUsesTime = mDef.fragmentBody.find("uTime") != std::string::npos ||
                mDef.prePassBody.find("uTime") != std::string::npos;
@@ -56,14 +112,25 @@ bool FilterNode::EnsureShader()
 
    if (!mDef.prePassBody.empty())
    {
-      std::string preSrc = std::string(kPreamble) + mDef.prePassBody;
+      std::string preSrc = Preamble() + mDef.prePassBody;
       mPreProgram = GLUtil::CompileProgram(preSrc.c_str());
       if (mPreProgram == 0)
          return false;
       LookupLocs(mPreProgram, mPreLocs);
    }
 
-   std::string src = std::string(kPreamble) + mDef.fragmentBody;
+   if (mDef.convertFirst && !mDef.prePassBody.empty())
+   {
+      std::string convSrc = Preamble() + (mDef.convertBody.empty()
+                                             ? std::string("void main() { fragColor = ImgTap(vUv); }\n")
+                                             : mDef.convertBody);
+      mConvProgram = GLUtil::CompileProgram(convSrc.c_str());
+      if (mConvProgram == 0)
+         return false;
+      LookupLocs(mConvProgram, mConvLocs);
+   }
+
+   std::string src = GLUtil::WithClampedOutput(Preamble() + mDef.fragmentBody, "fragColor.rgb = ImgEncode(fragColor.rgb);");
    mProgram = GLUtil::CompileProgram(src.c_str());
    if (mProgram == 0)
       return false;
@@ -79,13 +146,15 @@ void FilterNode::LookupLocs(unsigned int program, PassLocs& locs) const
    locs.pass = glGetUniformLocation(program, "uPass");
    locs.texel = glGetUniformLocation(program, "uTexelSize");
    locs.time = glGetUniformLocation(program, "uTime");
+   locs.converted = glGetUniformLocation(program, "uConverted");
+   locs.headroom = glGetUniformLocation(program, "uImgHeadroom");
    locs.params.resize(mDef.params.size());
    for (size_t i = 0; i < mDef.params.size(); i++)
       locs.params[i] = glGetUniformLocation(program, mDef.params[i].uniformName.c_str());
 }
 
 void FilterNode::BindUniforms(const PassLocs& locs, unsigned int srcTex, unsigned int srcTex2,
-                              unsigned int passTex, float time) const
+                              unsigned int passTex, float time, int converted) const
 {
    glActiveTexture(GL_TEXTURE0);
    glBindTexture(GL_TEXTURE_2D, srcTex);
@@ -106,6 +175,10 @@ void FilterNode::BindUniforms(const PassLocs& locs, unsigned int srcTex, unsigne
    glUniform2f(locs.texel, 1.0f / mInput.Width(), 1.0f / mInput.Height());
 
    glUniform1f(locs.time, time);
+   if (locs.converted >= 0)
+      glUniform1i(locs.converted, converted);
+   if (locs.headroom >= 0)
+      glUniform1i(locs.headroom, mHeadroom ? 1 : 0);
 
    for (size_t i = 0; i < mDef.params.size(); i++)
    {
@@ -153,7 +226,7 @@ void FilterNode::CookIfNeeded(int frameId)
 
    if (!EnsureShader())
       return;
-   if (!GLUtil::EnsureFbo(mOut, mInput.Width(), mInput.Height()))
+   if (!GLUtil::EnsureFbo(mOut, mInput.Width(), mInput.Height(), GLUtil::ImageWorkingFormat(), "Filter"))
       return;
 
    Signature sig;
@@ -162,6 +235,7 @@ void FilterNode::CookIfNeeded(int frameId)
    sig.width = mInput.Width();
    sig.height = mInput.Height();
    sig.params = mParamValues;
+   sig.headroom = mHeadroom;
    sig.time = mUsesTime ? (float)Transport::Instance().Seconds() : 0.0f;
 
    if (mHasBuilt && sig == mBuilt)
@@ -177,12 +251,36 @@ void FilterNode::CookIfNeeded(int frameId)
       // because both input Pulls already ran above, so no other cook (and no
       // other AcquireScratchFbo) can run between the two passes. Keep it that
       // way - a Pull or cook moved in between would overwrite it.
-      GLUtil::Fbo* mid = GLUtil::AcquireScratchFbo(mInput.Width(), mInput.Height(), GL_RGBA16F);
+      const int w = mInput.Width();
+      const int h = mInput.Height();
+      const bool convert = mConvProgram != 0 && mLinearParam >= 0 && mParamValues[mLinearParam][0] >= 0.5f &&
+                           (mQualityParam < 0 || mParamValues[mQualityParam][0] >= 0.5f);
+      unsigned int preSrc = srcTex;
+      GLUtil::Fbo* mid = nullptr;
+      if (convert)
+      {
+         // Acquire both buffers before using either: a later acquire can
+         // move the earlier pointer, so re-fetch slot 0 afterwards.
+         if (GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F, 0) == nullptr ||
+             GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F, 1) == nullptr)
+            return;
+         GLUtil::Fbo* conv = GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F, 0);
+         mid = GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F, 1);
+         GLUtil::RunShaderPass(*conv, mConvProgram, [this, srcTex, srcTex2, &sig]()
+         {
+            BindUniforms(mConvLocs, srcTex, srcTex2, 0, sig.time, 0);
+         });
+         preSrc = GLUtil::FboTexture(*conv);
+      }
+      else
+      {
+         mid = GLUtil::AcquireScratchFbo(w, h, GL_RGBA16F);
+      }
       if (mid == nullptr)
          return;
-      GLUtil::RunShaderPass(*mid, mPreProgram, [this, srcTex, srcTex2, &sig]()
+      GLUtil::RunShaderPass(*mid, mPreProgram, [this, preSrc, srcTex2, &sig, convert]()
       {
-         BindUniforms(mPreLocs, srcTex, srcTex2, 0, sig.time);
+         BindUniforms(mPreLocs, preSrc, srcTex2, 0, sig.time, convert ? 1 : 0);
       });
       passTex = GLUtil::FboTexture(*mid);
    }

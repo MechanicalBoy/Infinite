@@ -28,14 +28,21 @@ public:
    ImageCable& InputB() { return mInputB; }
    int& ModeIndex() { return mModeIndex; }
    float& Mix() { return mMix; }
+   bool& Linear() { return mLinear; }
+   int& BlendFix() { return mBlendFix; }
+   bool& Headroom() { return mHeadroom; }
 
-   // Saved patches predate the Overlay / Soft Light / Hard Light fix: absence of
-   // blendFix means the old shader maths (BlendModes::LegacyMode). Not a control.
-   void BeforeLoadParams() override { mBlendFix = 0; }
+   // Patches saved before linear light existed lack the key: they keep the
+   // gamma-space look they were made with. New nodes default on. Same for
+   // the W3C fix of Overlay, Soft Light, Hard Light and Hard Mix (blendFix 0 =
+   // old maths, BlendModes::LegacyMode; not a control), and for headroom
+   // (light above 1.0 survives; old patches keep clipping).
+   void BeforeLoadParams() override { mLinear = false; mBlendFix = 0; mHeadroom = false; }
 
    void VisitParams(ParamVisitor& v) override
    {
-      v.Int("mode", mModeIndex); v.Float("mix", mMix); v.Int("blendFix", mBlendFix);
+      v.Int("mode", mModeIndex); v.Float("mix", mMix); v.Bool("linear", mLinear); v.Int("blendFix", mBlendFix);
+      v.Bool("headroom", mHeadroom);
    }
 
 private:
@@ -45,7 +52,9 @@ private:
    ImageCable mInputB;
    int mModeIndex = 0;
    float mMix = 1.0f;
+   bool mLinear = true;
    int mBlendFix = 1;
+   bool mHeadroom = true;
 
    GLUtil::Fbo mOut;
    unsigned int mProgram = 0;

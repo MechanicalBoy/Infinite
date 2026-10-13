@@ -1049,6 +1049,15 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       return ok ? 0 : 1;
    }
 
+   if (getenv("INFINITE_IMGAUDIT") != nullptr)
+   {
+      // Image-effect measurement audit; needs the GL context, like SPOUTLOOPTEST.
+      bool ok = RunImgAudit();
+      glfwDestroyWindow(window);
+      glfwTerminate();
+      return ok ? 0 : 1;
+   }
+
    if (gHeadlessTestWindow)
       SetCanvasSwapInterval(0);
    else

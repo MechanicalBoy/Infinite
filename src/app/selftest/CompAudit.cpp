@@ -288,8 +288,15 @@ namespace
    {
       TexSource a, b;
       BlendNode node;
-      BlendRig()
+      // The formula checks are on encoded values: run the node in encoded mode
+      // (linear light and headroom off, the fixed modes on). COLOUR keeps the defaults.
+      explicit BlendRig(bool encoded = true)
       {
+         if (encoded)
+         {
+            node.Linear() = false;
+            node.Headroom() = false;
+         }
          node.InputA().Connect(&a);
          node.InputB().Connect(&b);
       }
@@ -475,7 +482,9 @@ namespace
       stack.Input(0).Connect(&a);
       stack.Input(1).Connect(&b);
       stack.fit = LayerStackNode::kStretch;
+      stack.linear = stack.headroom = false;
       BlendNode blend;
+      blend.Linear() = blend.Headroom() = false;
       blend.InputA().Connect(&a);
       blend.InputB().Connect(&b);
       const auto& names = BlendNode::ModeNames();
@@ -841,6 +850,7 @@ namespace
          for (double r : { 1.0, 2.0, 4.0 })
          {
             FilterNode n(*def);
+            n.BeforeLoadParams(); // encoded mode: the kernel reference is on encoded values
             n.Input().Connect(&src);
             n.SetParamValue(0, 0, (float)r);
             if (k.kind != 2)
@@ -888,6 +898,7 @@ namespace
          TexSource flat;
          flat.Set(Solid(kW, kH, 128));
          FilterNode n(*def);
+         n.BeforeLoadParams();
          n.Input().Connect(&flat);
          n.SetParamValue(0, 0, 4.0f);
          if (k.kind != 2)
@@ -967,7 +978,7 @@ namespace
       // Blend: black over white at 50 %.
       double blendMid = -1.0;
       {
-         BlendRig rig;
+         BlendRig rig(false);
          rig.a.Set(Solid(kW, kH, 255));
          rig.b.Set(Solid(kW, kH, 0));
          std::vector<float> out;
