@@ -30,7 +30,7 @@ Status: done 2026-10-13 from application bundle manifests and parameter trees vi
 |---|---|---|---|---|---|
 | P5 | Dynamic resonance suppression (soothe2 56 params) | none | gap | ignore: candidate spectral node, no user asked | `~/re-output/plugins/plugins_all_models.json` |
 | P5 | 24-band Dynamic EQ with linear phase (Pro-Q 4 600 params) | `src/audio/EffectDefs.cpp` | gap | ignore: EQ (5 matched biquad bands); no dynamic bands, no linear phase | `src/audio/EffectDefs.cpp` |
-| P5 | Multi-band saturation with 28 tube/tape models (Saturn 2 951 params) | `src/audio/EffectDefs.cpp` | gap | ignore: Drive (one oversampled tanh stage); no multiband, one curve; ADAA on Drive is v0.6 Tier 3 | `src/audio/EffectDefs.cpp` |
+| P5 | Multi-band saturation with 28 tube/tape models (Saturn 2 951 params) | `src/audio/EffectDefs.cpp` | gap | ignore: Drive (one oversampled tanh stage); no multiband, one curve; ADAA on Drive is v0.6 | `src/audio/EffectDefs.cpp` |
 | P5 | Classic algorithmic reverb models (Valhalla VintageVerb 17 params) | `src/audio/EffectDefs.cpp` | parity | ignore: Reverb (16-line Hadamard FDN); one modern algorithm against VintageVerb's mode list | `src/audio/EffectDefs.cpp` |
 | P5 | Modulated dual tape delay with multimode filters (Timeless 3 1007 params) | `src/audio/EffectDefs.cpp` | gap | ignore: Delay: time, tone, feedback, pan, duck, bounce; one tone filter, no tape modulation | `src/audio/EffectDefs.cpp` |
 | P5 | True-peak mastering brickwall limiter (Pro-L 2 32 params) | `src/audio/EffectDefs.cpp` | parity | ignore: Limiter (lookahead peak); brickwall lookahead covered; true-peak detection not checked | `src/audio/EffectDefs.cpp` |
@@ -49,7 +49,7 @@ Status: done 2026-10-13 from application bundle manifests and parameter trees vi
 
 - Quests: none (within 5-quest cap across all dossiers).
 - Perf targets: none.
-- Quality gaps: none taken; ADAA on Drive is v0.6 Tier 3 (docs/plans/v0.6-quality/README.md).
+- Quality gaps: none taken; ADAA on Drive is v0.6 (docs/plans/v0.6-quality/README.md).
 
 ## 7. Storage
 

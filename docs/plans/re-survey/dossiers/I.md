@@ -34,7 +34,7 @@ Status: done 2026-10-13 from public XML schema `12.0_12402.txt` within the insta
 | P5 | Drift: Subtractive synth with analog drift & cycling env | none | gap | ignore: Analog (Infinite's Drift is a Prediction node); Analog covers subtractive; no cycling envelope | `~/re-output/ableton/ableton_all_models.json` |
 | P5 | Wavetable: Dual morphing wavetable synth with dual filters | `src/nodes/WavetableNode.h` | parity | ignore: Wavetable (two engines over one voice allocator, per-engine filter); two morphing engines with unison and filters | `src/nodes/WavetableNode.h` |
 | P5 | Operator: 4-operator FM / additive synth | `src/nodes/OscillatorNode.h` | gap | ignore: Oscillator fm in (phase or through-zero FM); Analog osc 2 → osc 1 FM; 2-operator FM is a patch; no 4-operator synth with per-operator envelopes | `src/nodes/OscillatorNode.h` |
-| P5 | Hybrid Reverb: Convolution blended with 5 algorithmic engines | none | gap | quality-gap: Reverb (16-line FDN); no IR reverb (convolve is an image filter); IR convolution reverb is v0.6 Tier 3 (docs/plans/v0.6-quality/README.md) | `~/re-output/ableton/ableton_all_models.json` |
+| P5 | Hybrid Reverb: Convolution blended with 5 algorithmic engines | none | gap | quality-gap: Reverb (16-line FDN); no IR reverb (convolve is an image filter); IR convolution reverb is v0.6 (docs/plans/v0.6-quality/README.md) | `~/re-output/ableton/ableton_all_models.json` |
 | P5 | Echo: Tape delay with ducking, wobble, and reverb | `src/audio/EffectDefs.cpp` | gap | ignore: Delay: time, tone, feedback, pan, duck, bounce; ducking matches; no wobble or built-in reverb | `src/audio/EffectDefs.cpp` |
 | P5 | Glue Compressor: SSL-style VCA bus compressor | `src/audio/EffectDefs.cpp` | gap | ignore: Dynamics: peak/RMS plus an opto-like Analog mode; clean compression covered; no VCA bus character | `src/audio/EffectDefs.cpp` |
 | P5 | Auto Filter: Cytomic analog circuit models (SMP, OSR, MS2, PRD) | none | gap | ignore: Audio Filter (TPT SVF); no nonlinear circuit models | `~/re-output/ableton/ableton_all_models.json` |
@@ -55,7 +55,7 @@ Status: done 2026-10-13 from public XML schema `12.0_12402.txt` within the insta
 
 - Quests: none (IR reverb, ADAA and the stretch work are in docs/plans/v0.6-quality/README.md).
 - Perf targets: none.
-- Quality gaps: IR convolution reverb (v0.6 Tier 3). Roar is a patch template first (ABLETON-GAPS-AND-OUTPACE.md); Meld and Drift are ignored until a user asks.
+- Quality gaps: IR convolution reverb (v0.6). Roar is a patch template first (ABLETON-GAPS-AND-OUTPACE.md); Meld and Drift are ignored until a user asks.
 - Ignored, with reason: AAS legacy physical modeling emulations (Collision, Tension, Electric, Amp, Cabinet) are proprietary third-party modules; Infinite has Metallic and Resonator Bank for modal sounds; no string model.
 
 ## 7. Storage

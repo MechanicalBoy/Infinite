@@ -10,7 +10,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 |---|---|
 | Next release | v0.6 |
 | Makes right | Quality lead over the re-survey peers: audio correctness, first run, DSP lead (plan: `docs/plans/v0.6-quality/README.md`); every escaped v0.5.0 fix lands with a regression test |
-| Done when | Plan blocks 1-3 merged; scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
+| Done when | Plan blocks 1-3 merged (46 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
 
 ## Claims (add a row before touching anything; remove it when done)
 
@@ -24,6 +24,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 ## Decisions (newest first, keep the last 10)
 
+- 2026-10-13 Owner: nothing planned for v0.7; everything worth taking from the re-survey goes into v0.6, direction is the agent's call. Agent: rule = live AV instrument (live path, day-one expectation, or measured miss); plan rewritten as Block 1 trust, Block 2 sound (per-voice modulation, CLAP, FM, saturator, dynamic EQ ...), Block 3 picture (optical flow, time machine, proximity, sweep/revolve, DMX, rigid bodies, visual perf); not-taken lists with reasons.
 - 2026-10-13 Owner: v0.6 = Tier 1 + Tier 2 + at most 3 Tier 3 items (`docs/plans/v0.6-quality/README.md`); it absorbs the v0.5.1 goal. Per-voice/audio-rate modulation opens v0.7 (design doc + semi-brain first); SIMD voices after it; multicore graph parked until the audio thread passes 50%. Re-survey data fixed: node list from the patch skill (319 types), claims lint, false parities moved to gaps.
 - 2026-10-13 Owner: `feature/image-fx-maths` - accept and merge as recommended (old patches keep the old look; G9 GPU misses about 0.16 ms/node), then a perf quest for motion and radial blur. Queued in the re-survey-finish plan.
 - 2026-10-13 Owner: Codex `release-v050` - drop the notes rewrite; the website Extensions page moves to `feature/site-extensions`. Direction: each extension gets an Install button that installs it live into the running app (same path as live update), extensions do not ship inside the app bundle; for now the page only tracks them, built to grow later.
