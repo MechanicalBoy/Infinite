@@ -47,7 +47,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `synth.click_on_db` | Note-on second difference re the larger of steady state and the 5-50 ms body | <= 12.00 dB | release | met | 5.70 (node:Wavetable) | - |
 | `synth.click_off_db` | Note-off second difference re steady state | <= 12.00 dB | release | met | -0.0027 (node:Equation Synth) | - |
 | `synth.poly_tail_dbfs` | Level 9.5 s after all notes off (stuck voices); free-running nodes are not measured | <= -100 dBFS | release | met | -240 (node:Analog) | - |
-| `synth.chord4_peak_dbfs` | Peak of a 4-note chord at velocity 0.8, defaults | <= 0 dBFS | release | met | -1.15 (node:Field Synth) | - |
+| `synth.chord4_peak_dbfs` | Peak of a 4-note chord at velocity 0.8, defaults | <= 0 dBFS | release | met | -2.33 (node:Field Synth) | - |
 | `synth.peak_dbfs` | Peak of a single sustained note, defaults | <= 0 dBFS | release | met | -3.11 (node:Analog) | - |
 | `synth.sample_pitch_spread_c` | Fixture WAV (48 kHz) pitch spread over 44.1/48/96 kHz device rates (F11) | <= 20.00 cents | release | met | 6.85 (node:PaulStretch) | - |
 | `synth.sample_length_ratio` | Fixture WAV playback length, longest over shortest across device rates (F11) | <= 1.02 ratio | release | met | 1.00 (node:Granular) | - |
@@ -174,7 +174,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 348 (node:Spectral Synth) | - |
+| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 347 (node:Spectral Synth) | - |
 | `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | info | 29.94 (node:Analog) | - |
 
 ## P8 Performance: Live scene
@@ -206,4 +206,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 0531853e; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 aa7da27f; 2026-10-13 ab741380; 2026-10-13 c2f7d0d1; 2026-10-13 d6020b77; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 0531853e; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 aa7da27f; 2026-10-13 ab741380; 2026-10-13 c2f7d0d1; 2026-10-13 d6020b77; 2026-10-13 db820427; 2026-10-13 e182230c.

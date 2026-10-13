@@ -773,6 +773,34 @@ bool RunSynthAudit()
       if (AllFinite(x) && Peak(x) < 1e-5 && !s.pitched && strcmp(s.name, "Metallic") != 0)
       {
          printf("SYNTHAUDIT SKIP %-15s silent free-running (note-driven): notes only\n", s.name);
+         // Field Synth has no frequency param, so its default program is
+         // played through the note cable (v0.6 1.11). detune 1 and sub 0 leave
+         // one harmonic series through the program's saturator: the detune's
+         // beating and the sub octave are the patch, not aliasing.
+         if (want("ALIAS") && strcmp(s.name, "Field Synth") == 0)
+         {
+            for (int note : { 96, 108 })
+            {
+               NoteRig rig;
+               if (!rig.Init(s, 48000.0))
+                  continue;
+               Field::ParamTable& params = static_cast<FieldSynthNode*>(rig.node.get())->GetParamTable();
+               if (Field::ParamEntry* p = params.Find("detune"))
+                  p->value = 1.0f;
+               if (Field::ParamEntry* p = params.Find("sub"))
+                  p->value = 0.0f;
+               rig.On(note, 0.8f);
+               std::vector<float> settle, y;
+               rig.Run(24000, settle);
+               rig.Run(kN, y);
+               const double hz = 440.0 * std::pow(2.0, (note - 69) / 12.0);
+               const double a = AliasDb(Spectrum(y), hz, 48000.0);
+               printf("SYNTHAUDIT ALIAS %-15s %5.0f Hz  %7.1f dB (default program, detune 1, sub 0)\n", s.name, hz, a);
+               Quality("synth.alias_db", s.name, a);
+               if (a > kFlagAliasDb)
+                  flags.Flag("ALIAS", s.name, "dB", a);
+            }
+         }
          if (want("NOTE") || want("POLY"))
             ok = AuditNotes(s, flags) && ok;
          continue;
@@ -828,6 +856,8 @@ bool RunSynthAudit()
                flags.Flag("ALIAS", s.name, "dB", a);
          }
       }
+
+
 
       if (want("RATE"))
       {
