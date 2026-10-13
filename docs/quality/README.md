@@ -74,6 +74,12 @@ that output.
 Bench metrics are not run by `driver.sh`. Check a whole-suite run with `check --source bench`; a partial run
 (`run_all.sh --only ...`) is checked without `--source`, since the benches it skipped emit nothing.
 
+Two long runs are opt-in and stay out of a default run. ROBUSTNESS.md R5 is `run_all.sh --r5 --only B6`: B6 at
+4000 nodes, the usual pan/zoom/drag/dropdown script plus `mode=select` (select-all and clear alternate) with one
+delete-all through the Delete-key path (`INFINITE_BENCH_B6DELETE=1`). Rows above 1000 nodes go to `bench.r5_*`,
+never to the 200-400 node `bench.b6_pan_*` targets. R8 is `run_all.sh --soak-long --only B7` (B7 for 480 min);
+its rows are the B7 metrics under subject `bench:B7:s:480min`.
+
 ## Gates
 
 - `release`: the driver runs `quality.py check --source <CHECK>` on every check whose log has QUALITY rows. A miss
@@ -98,6 +104,6 @@ Record (`ingest`) after a fix, a new competitor run or a release, not after ever
 | Step | Area | State |
 |---|---|---|
 | 1 | Synths: SYNTHAUDIT + `synth_probe` (Diva, Serum 2, Vital) | done 2026-10-13 |
-| 2 | Benchmark suite B1 to B8 (`tools/bench.py`), reference machine base M2 8 GB | next |
+| 2 | Benchmark suite (`tools/bench.py quality`, trusted rows only): 26 P8 metrics, baseline `bench/baselines/m2-8gb.jsonl` ingested (18 met, 2 behind: B8 heavy windows); B7 and R5 unmeasured until a focused run; R5/R8 behind `run_all.sh --r5` / `--soak-long` | done 2026-10-13 |
 | 3 | Re-survey areas: each block ends in registered metrics plus a short dossier | after 2 |
 | 4 | Node audits: FXAUDIT, NOTEAUDIT, IOAUDIT, GEOAUDIT, COMPAUDIT emit `Quality(...)` rows (16 metrics, first rows 2026-10-13); more are added as each audit grows | started 2026-10-13 |

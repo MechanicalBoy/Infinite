@@ -12,10 +12,10 @@ Run: `python3 tools/re-survey/stress_kit.py all` (results in `~/re-output/stress
 | R2 | Damaged patches: cut, flipped bytes, dropped or doubled lines, NaN/inf/huge numbers, wild cable indexes, self-cables | `stress_kit.py fuzz` | Whether a bad file can take the app down on open | 300 files, 0 crashes or hangs |
 | R3 | Kill the save at a random moment; the file on disk must still open | `stress_kit.py killsave` | Whether atomic save (fc683464) holds | 150 rounds, 133 killed mid-save, 0 bad files |
 | R4 | Kill the GUI mid-session; reopen shows the recovery prompt with the work | owner sitting (`dossiers/A.md`) | Whether autosave is enough | pending |
-| R5 | 4000-node project in the GUI: first frame, pan, zoom, select-all, delete | owner sitting (`PROTOCOL-projects.md`); the canvas is not scripted | Canvas cull and draw budget | pending |
+| R5 | 4000-node project in the GUI: first frame, pan, zoom, select-all, delete | bench, not UI scripting: `caffeinate -dimsu scripts/bench/run_all.sh --quiet --r5 --only B6` (B6 at 4000 nodes, `mode=all` plus `mode=select` with one delete-all; rows `bench.r5_*`); first frame and feel stay an owner sitting (`PROTOCOL-projects.md`) | Canvas cull and draw budget | pending |
 | R6 | Plugin that crashes or hangs while loaded and while playing | `host_audit.py` (dossier A) | Plugin isolation | done, dossier A |
 | R7 | Audio device unplugged mid-play, then replugged | owner sitting | Device-loss recovery | pending |
-| R8 | Eight-hour soak: memory and frame time flat | `app_bench.py` on a looped patch | Leaks | not run |
+| R8 | Eight-hour soak: memory and frame time flat | `caffeinate -dimsu scripts/bench/run_all.sh --soak-long --quiet --only B7` (B7 for 480 min; rows `bench.b7_*`, subject `bench:B7:s:480min`) | Leaks | not run |
 | R9 | Random patches: 3 to 9 random nodes, legal cables, in-range parameters; render, listen, save | `stress_kit.py random` | Cable-rule and parameter-range bugs the one-node test cannot reach | 1,200 patches, 0 failures (about 40% render a picture; the rest end in a clean refusal) |
 
 ## What the first run says
