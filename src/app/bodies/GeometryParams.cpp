@@ -1916,7 +1916,7 @@ namespace app
       size_t foldFrom = def.params.size();
       if (def.name == "color adjustments")
          for (size_t i = 0; i < def.params.size(); i++)
-            if (def.params[i].sectionLabel == "Channel Mixer")
+            if (def.params[i].sectionLabel == "channel mixer")
                foldFrom = i;
       const bool savedRegisterOnly = gParamRegisterOnly;
       for (size_t i = 0; i < def.params.size(); i++)
