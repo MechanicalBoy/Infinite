@@ -29,6 +29,7 @@
 // the thresholds below, for a person to triage.
 #include "app/AppShared.h"
 #include "audio/dsp/EqKernel.h"
+#include "audio/dsp/PortableFft.h"
 
 #include <chrono>
 #include <map>
@@ -147,6 +148,41 @@ namespace
       const float a = rms * std::sqrt(3.0f);
       for (auto& x : v)
          x = a * r.Next();
+      return v;
+   }
+   // Periodic noise with an exactly flat spectrum: unit magnitude and a
+   // random phase in every bin of one power-of-two period (2.7-3.0 s at
+   // 44.1/48/96 kHz), repeated `periods` times. Through a linear system the
+   // band power of the last period is then the band average of |H|^2 with no
+   // realisation variance: plain white noise through a resonator with
+   // ~1 Hz-wide modes left a few degrees of freedom per seed, and the
+   // Resonator Bank's 100 Hz band read 2.4 dB apart across rates by luck
+   // (node-audits F15). *periodOut receives the period in samples.
+   std::vector<float> FlatNoise(double sr, int periods, float rms, uint32_t seed, int* periodOut)
+   {
+      int log2N = 2;
+      while ((1 << (log2N + 1)) <= (int)(3.0 * sr))
+         log2N++;
+      const int n = 1 << log2N;
+      PortableFft::RealFft fft;
+      fft.Prepare(log2N);
+      std::vector<float> re((size_t)n / 2, 0.0f), im((size_t)n / 2, 0.0f), one((size_t)n);
+      Lcg r(seed);
+      for (int k = 1; k < n / 2; k++)
+      {
+         const double ph = M_PI * (double)r.Next(); // Next() is uniform in [-1, 1)
+         re[(size_t)k] = (float)std::cos(ph);
+         im[(size_t)k] = (float)std::sin(ph);
+      }
+      fft.Inverse(re.data(), im.data(), log2N, one.data());
+      double e = 0.0;
+      for (float x : one)
+         e += (double)x * x;
+      const float g = (float)(rms / std::sqrt(std::max(1e-30, e / (double)n)));
+      std::vector<float> v((size_t)n * (size_t)periods);
+      for (size_t i = 0; i < v.size(); i++)
+         v[i] = one[i % (size_t)n] * g;
+      *periodOut = n;
       return v;
    }
    std::vector<float> Tone(int n, double hz, double sr, float rms)
@@ -409,20 +445,23 @@ namespace
                // Power averaged over three noise seeds: a wet that repeats
                // a short slice (Stutter) leaves only a couple of harmonics
                // in the 100 Hz band, and one seed's luck read 1.9 dB apart.
+               // The noise is flat-spectrum and periodic (FlatNoise), and
+               // only the second period is measured, once the wet's own
+               // transient has rung out.
                double pin[3] = {}, pout[3] = {};
                for (unsigned seed : { 11u, 12u, 13u })
                {
                   auto rig = MakeRig(def, rr);
-                  const int n = (int)(4.0 * rr);
-                  std::vector<float> in = Noise(n, 0.1f, seed), oL, oR;
+                  int period = 0;
+                  std::vector<float> in = FlatNoise(rr, 2, 0.1f, seed, &period), oL, oR;
                   Process(*rig, in, in, oL, oR);
                   for (int ti = 0; ti < 3; ti++)
                   {
                      const std::vector<float> bi = Band(in, tones[ti], rr), bl = Band(oL, tones[ti], rr),
                                               br = Band(oR, tones[ti], rr);
-                     pin[ti] += std::pow(Rms(bi, (size_t)rr, bi.size()), 2);
-                     pout[ti] += 0.5 * (std::pow(Rms(bl, (size_t)rr, bl.size()), 2) +
-                                        std::pow(Rms(br, (size_t)rr, br.size()), 2));
+                     pin[ti] += std::pow(Rms(bi, (size_t)period, bi.size()), 2);
+                     pout[ti] += 0.5 * (std::pow(Rms(bl, (size_t)period, bl.size()), 2) +
+                                        std::pow(Rms(br, (size_t)period, br.size()), 2));
                   }
                }
                for (int ti = 0; ti < 3; ti++)
