@@ -139,7 +139,11 @@ echo "$r" | grep -q '"line":2'; check "validate cites line numbers" $?
 r=$("$BIN" --validate "$PATCH" --for-render); [ $? = 0 ]; check "validate good patch exit 0" $?
 r=$("$BIN" --describe Blend); [ $? = 0 ] && [ "$(echo "$r" | json "d['types'][0]['type']")" = "Blend" ]; check "describe one type" $?
 "$BIN" --describe Blnd >/dev/null; [ $? = 3 ]; check "describe unknown type exit 3" $?
-r=$("$BIN" --describe); [ "$(echo "$r" | json "d['count'] > 250")" = "True" ]; check "describe lists every type" $?
+r=$("$BIN" --describe); rc=$?; [ "$rc" = 0 ] && [ "$(echo "$r" | json "d['count'] > 250")" = "True" ]; check "describe lists every type, exit 0" $?
+# Bare --describe aborted (exit 134): probing Spatial Mixer's head-track dropdown started CoreMotion, and
+# macOS kills a terminal-started process on that call (no motion usage string of its own). HeadTracker
+# is off in headless runs (bde3a909); this is the row that would have caught it.
+"$BIN" --describe "Spatial Mixer" >/dev/null 2>&1; check "describe Spatial Mixer exit 0 (no CoreMotion in headless)" $?
 
 # A1/A3: a CRLF copy with a UTF-8 BOM reads the same as the original
 (printf '\xef\xbb\xbf'; sed 's/$/\r/' "$PATCH") > "$OUT/crlf.inf"
