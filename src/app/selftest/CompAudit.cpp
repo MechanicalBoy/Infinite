@@ -33,13 +33,28 @@
 //             centre pixel
 //   SWITCH    Switcher in manual mode shows exactly the chosen slot
 //
-// Not covered yet: Reaction Diffusion, Remove Background and the image
-// sources; blur accuracy (see the plan).
+//   BLUR      Gaussian (Classic, Smooth) and Box blur at radius 1/2/4 on a hard
+//             edge: output against the shader's own kernel in double (flag > 1/255),
+//             the effective sigma of the edge response against the nominal sigma the
+//             slider implies (report; flag > 10 % off), energy kept on a flat image,
+//             and ms per cook against radius at 1024^2
+//   COLOUR    which colour space blur, blend and ramp work in: a 0/1 checker blurred,
+//             black over white at 50 %, and a ramp midpoint, as encoded values against
+//             the linear-light answer (flag when blur and blend disagree)
+//   RES       Gaussian and Blend at 1 / 4 / 16 Mpx: ms per cook, output bytes
+//   BYPASS    a bypassed node's pull-through is the input's texture; toggling bypass
+//             on then off gives the same pixels as the first cook
+//   SOURCES   every Source node and Reaction Diffusion cooks: output exists, finite,
+//             range, and (Reaction Diffusion) stays inside [0, 1] over 120 frames
+//
+// Not covered: Remove Background (needs the ONNX model; checked by REMOVEBGTEST).
 //
 // Only hard invariants fail the run (a node that produces no output at all).
 // Everything else is reported, with FLAG lines.
 #include "app/AppShared.h"
+#include "core/FilterDefs.h"
 #include "nodes/BlendNode.h"
+#include "nodes/FilterNode.h"
 #include "nodes/ColorRampNode.h"
 #include "nodes/CurvesNode.h"
 #include "nodes/FeedbackNodes.h"
@@ -48,6 +63,7 @@
 #include "nodes/SwitcherNode.h"
 
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <functional>
 
@@ -71,7 +87,7 @@ namespace
    class TexSource : public INode
    {
    public:
-      TexSource()
+      explicit TexSource(int w = kW, int h = kH) : mW(w), mH(h)
       {
          glGenTextures(1, &mTex);
          glBindTexture(GL_TEXTURE_2D, mTex);
@@ -86,17 +102,18 @@ namespace
       {
          glBindTexture(GL_TEXTURE_2D, mTex);
          glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, kW, kH, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mW, mH, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
          glBindTexture(GL_TEXTURE_2D, 0);
          mRevision = NextTextureRevision();
       }
       unsigned int GetOutputTexture() override { return mTex; }
-      int GetOutputWidth() const override { return kW; }
-      int GetOutputHeight() const override { return kH; }
+      int GetOutputWidth() const override { return mW; }
+      int GetOutputHeight() const override { return mH; }
       void CookIfNeeded(int) override {}
       unsigned long long TextureRevision() const override { return mRevision; }
 
    private:
+      int mW = kW, mH = kH;
       unsigned int mTex = 0;
       unsigned long long mRevision = 0;
    };
@@ -700,6 +717,477 @@ namespace
             f.Flag("SWITCH", "manual slot " + std::to_string(slot) + " shows the wrong input, off by (x/255)", e * 255.0);
       }
    }
+
+   // ---------------------------------------------------------------- helpers
+   const FilterDef* FindDef(const char* name)
+   {
+      for (const FilterDef& d : GetFilterDefs())
+         if (d.name == name)
+            return &d;
+      return nullptr;
+   }
+
+   bool ReadSized(unsigned int tex, int w, int h, std::vector<float>& out)
+   {
+      unsigned int fbo = 0;
+      const bool ok = GLUtil::ReadTexturePixels(fbo, tex, w, h, out);
+      if (fbo != 0)
+         glDeleteFramebuffers(1, &fbo);
+      return ok;
+   }
+
+   std::vector<unsigned char> Solid(int w, int h, unsigned char v)
+   {
+      std::vector<unsigned char> px((size_t)w * h * 4, v);
+      for (size_t i = 0; i < (size_t)w * h; i++)
+         px[i * 4 + 3] = 255;
+      return px;
+   }
+
+   // Left half 0, right half 255: the edge sits between columns kW/2-1 and kW/2.
+   std::vector<unsigned char> EdgeImage()
+   {
+      std::vector<unsigned char> px((size_t)kW * kH * 4, 0);
+      for (int y = 0; y < kH; y++)
+         for (int x = 0; x < kW; x++)
+         {
+            const size_t i = ((size_t)y * kW + x) * 4;
+            px[i] = px[i + 1] = px[i + 2] = x >= kW / 2 ? 255 : 0;
+            px[i + 3] = 255;
+         }
+      return px;
+   }
+
+   // The shader's own 1D kernel (taps and weights), normalised.
+   struct Tap { double off, w; };
+   std::vector<Tap> KernelOf(int kind, double r) // 0 classic, 1 smooth, 2 box
+   {
+      std::vector<Tap> k;
+      double total = 0.0;
+      if (kind == 1)
+      {
+         const double rr = std::max(r, 0.001);
+         const int n = std::min((int)std::ceil(4.0 * rr), 40);
+         for (int i = -n; i <= n; i++)
+         {
+            const double d = i / rr;
+            k.push_back({ (double)i, std::exp(-d * d / 8.0) });
+         }
+      }
+      else if (kind == 0)
+         for (int i = -4; i <= 4; i++)
+            k.push_back({ i * r, std::exp(-(double)(i * i) / 8.0) });
+      else
+         for (int i = -4; i <= 4; i++)
+            k.push_back({ i * r, 1.0 });
+      for (const Tap& t : k)
+         total += t.w;
+      for (Tap& t : k)
+         t.w /= total;
+      return k;
+   }
+
+   double KernelSigma(const std::vector<Tap>& k)
+   {
+      double v = 0.0;
+      for (const Tap& t : k)
+         v += t.w * t.off * t.off;
+      return std::sqrt(v);
+   }
+
+   // Effective sigma of an edge response row: the pixel differences are the kernel.
+   double EdgeSigma(const std::vector<float>& px, int y)
+   {
+      double sum = 0.0, mean = 0.0, var = 0.0;
+      std::vector<double> d((size_t)kW - 1);
+      for (int x = 0; x < kW - 1; x++)
+      {
+         d[(size_t)x] = (double)px[((size_t)y * kW + x + 1) * 4] - px[((size_t)y * kW + x) * 4];
+         sum += d[(size_t)x];
+      }
+      if (sum < 1e-6)
+         return 0.0;
+      for (int x = 0; x < kW - 1; x++)
+         mean += d[(size_t)x] / sum * (x + 0.5);
+      for (int x = 0; x < kW - 1; x++)
+         var += d[(size_t)x] / sum * (x + 0.5 - mean) * (x + 0.5 - mean);
+      return std::sqrt(std::max(var, 0.0));
+   }
+
+   // ------------------------------------------------------------------ BLUR
+   void AuditBlur(Flags& f, bool& ok)
+   {
+      struct Kind { const char* def; int kind; const char* label; };
+      const Kind kinds[3] = { { "gaussianblur", 0, "Gaussian Classic" }, { "gaussianblur", 1, "Gaussian Smooth" }, { "boxblur", 2, "Box" } };
+      for (const Kind& k : kinds)
+      {
+         const FilterDef* def = FindDef(k.def);
+         if (def == nullptr)
+         {
+            printf("COMPAUDIT FAIL BLUR no def %s\n", k.def);
+            ok = false;
+            continue;
+         }
+         TexSource src;
+         src.Set(EdgeImage());
+         for (double r : { 1.0, 2.0, 4.0 })
+         {
+            FilterNode n(*def);
+            n.Input().Connect(&src);
+            n.SetParamValue(0, 0, (float)r);
+            if (k.kind != 2)
+               n.SetParamValue(1, 0, (float)k.kind);
+            n.CookIfNeeded(gFrame++);
+            std::vector<float> px;
+            if (n.GetOutputTexture() == 0 || !ReadSized(n.GetOutputTexture(), kW, kH, px))
+            {
+               printf("COMPAUDIT FAIL BLUR %s no output\n", k.label);
+               ok = false;
+               return;
+            }
+            const std::vector<Tap> ker = KernelOf(k.kind, r);
+            // Reference: horizontal pass of the shader kernel on the edge, clamped at the border (the vertical pass of a
+            // vertically constant image changes nothing).
+            double worst = 0.0;
+            const int y = kH / 2;
+            for (int x = 0; x < kW; x++)
+            {
+               double v = 0.0;
+               for (const Tap& t : ker)
+               {
+                  // GL_LINEAR sampling at texel centres: an integer tap hits one texel, a fractional tap blends two.
+                  const double pos = x + t.off;
+                  const int x0 = (int)std::floor(pos);
+                  const double fr = pos - x0;
+                  auto at = [&](int xi) { return std::clamp(xi, 0, kW - 1) >= kW / 2 ? 1.0 : 0.0; };
+                  v += t.w * (at(x0) * (1.0 - fr) + at(x0 + 1) * fr);
+               }
+               worst = std::max(worst, std::fabs(v - (double)px[((size_t)y * kW + x) * 4]));
+            }
+            const double sigNom = KernelSigma(ker);
+            const double sigEff = EdgeSigma(px, y);
+            // The slider's nominal sigma: exp(-d^2/8) is a gaussian with sigma 2 r (box: the 9-tap variance).
+            const double sigWanted = k.kind == 2 ? sigNom : 2.0 * r;
+            printf("COMPAUDIT BLUR %-16s r %.0f: vs shader kernel %.2f/255 | sigma measured %.2f, kernel %.2f, slider implies %.2f px\n",
+                   k.label, r, worst * 255.0, sigEff, sigNom, sigWanted);
+            if (worst > 1.5 / 255.0)
+               f.Flag("BLUR", std::string(k.label) + " differs from its own kernel, worst (x/255)", worst * 255.0);
+            if (k.kind != 2 && std::fabs(sigEff / sigWanted - 1.0) > 0.10)
+               f.Flag("BLUR", std::string(k.label) + " r " + std::to_string((int)r) + " sigma off the gaussian the radius implies, %",
+                      (sigEff / sigWanted - 1.0) * 100.0);
+         }
+         // Flat image: nothing may be gained or lost.
+         TexSource flat;
+         flat.Set(Solid(kW, kH, 128));
+         FilterNode n(*def);
+         n.Input().Connect(&flat);
+         n.SetParamValue(0, 0, 4.0f);
+         if (k.kind != 2)
+            n.SetParamValue(1, 0, (float)k.kind);
+         n.CookIfNeeded(gFrame++);
+         std::vector<float> px;
+         if (n.GetOutputTexture() != 0 && ReadSized(n.GetOutputTexture(), kW, kH, px))
+         {
+            double e = 0.0;
+            for (size_t i = 0; i < (size_t)kW * kH; i++)
+               e = std::max(e, std::fabs((double)px[i * 4] - 128.0 / 255.0));
+            printf("COMPAUDIT BLUR %-16s flat 128 stays: worst %.2f / 255\n", k.label, e * 255.0);
+            if (e > 1.5 / 255.0)
+               f.Flag("BLUR", std::string(k.label) + " changes a flat image, worst (x/255)", e * 255.0);
+         }
+      }
+
+      // Cost against radius at 1024^2, Gaussian Smooth.
+      if (const FilterDef* def = FindDef("gaussianblur"))
+      {
+         TexSource big(1024, 1024);
+         big.Set(Solid(1024, 1024, 100));
+         printf("COMPAUDIT BLUR cost at 1024^2 (Gaussian Smooth, ms per cook):");
+         for (float r : { 1.0f, 2.0f, 5.0f, 10.0f })
+         {
+            FilterNode n(*def);
+            n.Input().Connect(&big);
+            n.SetParamValue(0, 0, r);
+            n.SetParamValue(1, 0, 1.0f);
+            n.CookIfNeeded(gFrame++);
+            glFinish();
+            const auto t0 = std::chrono::steady_clock::now();
+            const int reps = 10;
+            for (int i = 0; i < reps; i++)
+            {
+               n.SetParamValue(0, 0, r + 0.001f * (float)(i + 1)); // changes the signature, forces a recook
+               n.CookIfNeeded(gFrame++);
+            }
+            glFinish();
+            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+            printf("  r%.0f %.2f", r, ms);
+         }
+         printf("\n");
+      }
+   }
+
+   // ---------------------------------------------------------------- COLOUR
+   void AuditColour(Flags& f, bool& ok)
+   {
+      auto toLinear = [](double e) { return e <= 0.04045 ? e / 12.92 : std::pow((e + 0.055) / 1.055, 2.4); };
+      auto toEnc = [](double l) { return l <= 0.0031308 ? l * 12.92 : 1.055 * std::pow(l, 1.0 / 2.4) - 0.055; };
+      (void)toLinear;
+      const double linearAnswer = toEnc(0.5); // 0.735: the mean of black and white, in linear light
+
+      // Blur: fine checker, large radius, the centre pixel.
+      double blurMid = -1.0;
+      {
+         std::vector<unsigned char> px((size_t)kW * kH * 4, 255);
+         for (int y = 0; y < kH; y++)
+            for (int x = 0; x < kW; x++)
+               px[((size_t)y * kW + x) * 4] = px[((size_t)y * kW + x) * 4 + 1] = px[((size_t)y * kW + x) * 4 + 2] =
+                  ((x + y) & 1) ? 255 : 0;
+         TexSource src;
+         src.Set(px);
+         if (const FilterDef* def = FindDef("gaussianblur"))
+         {
+            FilterNode n(*def);
+            n.Input().Connect(&src);
+            n.SetParamValue(0, 0, 4.0f);
+            n.SetParamValue(1, 0, 1.0f);
+            n.CookIfNeeded(gFrame++);
+            std::vector<float> out;
+            if (n.GetOutputTexture() != 0 && ReadSized(n.GetOutputTexture(), kW, kH, out))
+               blurMid = out[((size_t)(kH / 2) * kW + kW / 2) * 4];
+         }
+      }
+      // Blend: black over white at 50 %.
+      double blendMid = -1.0;
+      {
+         BlendRig rig;
+         rig.a.Set(Solid(kW, kH, 255));
+         rig.b.Set(Solid(kW, kH, 0));
+         std::vector<float> out;
+         if (rig.Run(0, 0.5f, out))
+            blendMid = out[((size_t)(kH / 2) * kW + kW / 2) * 4];
+      }
+      // Ramp: the midpoint of black to white.
+      double rampMid = -1.0;
+      {
+         TexSource src;
+         src.Set(Solid(kW, kH, 128));
+         ColorRampNode n;
+         n.Input().Connect(&src);
+         n.stopCount = 2;
+         n.stopPos[0] = 0.0f; n.stopPos[1] = 1.0f;
+         for (int c = 0; c < 3; c++) { n.stopColor[0][c] = 0.0f; n.stopColor[1][c] = 1.0f; }
+         n.interpMode = ColorRampNode::kLinear;
+         n.MarkDirty();
+         n.CookIfNeeded(gFrame++);
+         std::vector<float> out;
+         if (n.GetOutputTexture() != 0 && ReadSized(n.GetOutputTexture(), kW, kH, out))
+            rampMid = out[0] - 128.0 / 255.0; // ramp(0.502) against the grey itself: ~0 when the ramp is the identity
+      }
+      auto space = [&](double v) { return std::fabs(v - 0.5) < 0.02 ? "encoded (gamma) values" : std::fabs(v - linearAnswer) < 0.02 ? "linear light" : "neither"; };
+      printf("COMPAUDIT COLOUR blur of a 0/1 checker: %.3f -> %s (0.500 encoded, %.3f linear)\n", blurMid, space(blurMid), linearAnswer);
+      printf("COMPAUDIT COLOUR Blend black over white at 50 %%: %.3f -> %s\n", blendMid, space(blendMid));
+      printf("COMPAUDIT COLOUR Color Ramp black->white at t = 128/255: offset from the grey itself %.4f (encoded interpolation is exact)\n", rampMid);
+      if (blurMid < 0 || blendMid < 0)
+      {
+         printf("COMPAUDIT FAIL COLOUR no output\n");
+         ok = false;
+         return;
+      }
+      if (std::fabs(blurMid - blendMid) > 0.02)
+         f.Flag("COLOUR", "blur and blend work in different colour spaces, difference", std::fabs(blurMid - blendMid));
+      if (std::fabs(rampMid) > 1.5 / 255.0)
+         f.Flag("COLOUR", "ramp interpolation is not in encoded space, offset (x/255)", rampMid * 255.0);
+   }
+
+   // ------------------------------------------------------------------- RES
+   void AuditRes(Flags& f, bool& ok)
+   {
+      (void)f;
+      struct Res { int w, h; const char* label; };
+      const Res res[3] = { { 1024, 1024, "1 Mpx" }, { 2048, 2048, "4 Mpx" }, { 4096, 4096, "16 Mpx" } };
+      for (const Res& r : res)
+      {
+         TexSource a(r.w, r.h), b(r.w, r.h);
+         a.Set(Solid(r.w, r.h, 90));
+         b.Set(Solid(r.w, r.h, 200));
+         const FilterDef* def = FindDef("gaussianblur");
+         if (def == nullptr)
+         {
+            ok = false;
+            return;
+         }
+         FilterNode g(*def);
+         g.Input().Connect(&a);
+         g.SetParamValue(0, 0, 4.0f);
+         g.SetParamValue(1, 0, 1.0f);
+         BlendNode bl;
+         bl.InputA().Connect(&a);
+         bl.InputB().Connect(&b);
+         bl.ModeIndex() = 0;
+         bl.Mix() = 0.5f;
+         g.CookIfNeeded(gFrame++);
+         bl.CookIfNeeded(gFrame++);
+         glFinish();
+         const int reps = 5;
+         auto timeIt = [&](std::function<void(int)> bump, INode& n) {
+            const auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < reps; i++)
+            {
+               bump(i);
+               n.CookIfNeeded(gFrame++);
+            }
+            glFinish();
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         };
+         const double gMs = timeIt([&](int i) { g.SetParamValue(0, 0, 4.0f + 0.001f * (float)(i + 1)); }, g);
+         const double bMs = timeIt([&](int i) { bl.Mix() = 0.5f + 0.001f * (float)(i + 1); }, bl);
+         printf("COMPAUDIT RES %-6s Gaussian Smooth r4 %.2f ms | Blend %.2f ms | output %d x %d (%.0f MB at 8 bit)\n", r.label, gMs, bMs,
+                g.GetOutputWidth(), g.GetOutputHeight(), (double)g.GetOutputWidth() * g.GetOutputHeight() * 4.0 / 1048576.0);
+         if (g.GetOutputWidth() != r.w || g.GetOutputHeight() != r.h)
+            f.Flag("RES", std::string("Gaussian output is not the input size at ") + r.label + ", width", g.GetOutputWidth());
+      }
+   }
+
+   // each pixel of two reads compared exactly
+   double MaxPixelDiff(const std::vector<float>& a, const std::vector<float>& b)
+   {
+      if (a.size() != b.size())
+         return 1.0;
+      double m = 0.0;
+      for (size_t i = 0; i < a.size(); i++)
+         m = std::max(m, (double)std::fabs(a[i] - b[i]));
+      return m;
+   }
+
+   // ---------------------------------------------------------------- BYPASS
+   void AuditBypass(Flags& f, bool& ok)
+   {
+      TexSource src;
+      src.Set(RandomImage(77, false));
+      std::vector<float> srcPx;
+      ReadSized(src.GetOutputTexture(), kW, kH, srcPx);
+
+      struct Item { const char* name; std::function<INode*(TexSource&)> make; };
+      std::vector<Item> items = {
+         { "Gaussian Blur", [](TexSource& s) { FilterNode* n = new FilterNode(*FindDef("gaussianblur")); n->Input().Connect(&s); return (INode*)n; } },
+         { "Hue/Saturation or first Color def", [](TexSource& s) { FilterNode* n = new FilterNode(*FindDef("boxblur")); n->Input().Connect(&s); return (INode*)n; } },
+         { "Curves", [](TexSource& s) { auto* n = new CurvesNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Color Ramp", [](TexSource& s) { auto* n = new ColorRampNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Fit", [](TexSource& s) { auto* n = new FitNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Trails", [](TexSource& s) { auto* n = new TrailsNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Reaction Diffusion", [](TexSource& s) { auto* n = new ReactionDiffusionNode(); n->Input().Connect(&s); return (INode*)n; } },
+      };
+      items[1].name = "Box Blur";
+      for (Item& it : items)
+      {
+         std::unique_ptr<INode> n(it.make(src));
+         INode* pass = n->BypassSource();
+         const bool hasPass = pass == &src;
+         // Cooked twice, bypass toggled in between, same pixels.
+         n->CookIfNeeded(gFrame++);
+         std::vector<float> first, again;
+         const bool got1 = n->GetOutputTexture() != 0 && ReadSized(n->GetOutputTexture(), n->GetOutputWidth(), n->GetOutputHeight(), first);
+         n->bypassed = true;
+         n->CookIfNeeded(gFrame++);
+         n->bypassed = false;
+         n->CookIfNeeded(gFrame++);
+         const bool got2 = n->GetOutputTexture() != 0 && ReadSized(n->GetOutputTexture(), n->GetOutputWidth(), n->GetOutputHeight(), again);
+         const double d = (got1 && got2) ? MaxPixelDiff(first, again) : -1.0;
+         // Stateful nodes (Trails, Reaction Diffusion) integrate over frames, so only the pass-through is asserted.
+         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Reaction Diffusion") == 0;
+         printf("COMPAUDIT BYPASS %-18s pass-through is the input: %s | cook, bypass, un-bypass, cook: %s%s\n", it.name,
+                hasPass ? "yes" : "NO", d < 0 ? "no output" : d == 0.0 ? "identical" : "differs",
+                stateful ? " (stateful, not asserted)" : "");
+         if (!hasPass)
+            f.Flag("BYPASS", std::string(it.name) + " BypassSource is not its input", 1.0);
+         else if (d > 0.0 && !stateful)
+            f.Flag("BYPASS", std::string(it.name) + " pixels change after a bypass toggle, worst", d);
+      }
+      (void)ok;
+   }
+
+   // --------------------------------------------------------------- SOURCES
+   void AuditSources(Flags& f, bool& ok)
+   {
+      if (NodeFactory::Instance().GetNodesInCategory("Source").empty())
+         RegisterNodes(); // headless dispatch runs before the editor registers its node types
+      const std::vector<std::string> names = NodeFactory::Instance().GetNodesInCategory("Source");
+      for (const std::string& name : names)
+      {
+         // File, device, text-entry and script sources have nothing to show without their own input.
+         if (name == "Image Source" || name == "Slideshow" || name == "Video" || name == "Video In" || name == "Audio Texture" || name == "Sketch" || name == "Text")
+         {
+            printf("COMPAUDIT SOURCE %-16s skipped (needs a file, device, audio input or script)\n", name.c_str());
+            continue;
+         }
+         std::unique_ptr<INode> n(NodeFactory::Instance().MakeNode(name));
+         if (!n)
+            continue;
+         for (int i = 0; i < 3; i++)
+            n->CookIfNeeded(gFrame++);
+         if (n->GetOutputTexture() == 0)
+         {
+            printf("COMPAUDIT SOURCE %-16s no output texture\n", name.c_str());
+            f.Flag("SOURCE", name + " produces no output", 1.0);
+            continue;
+         }
+         std::vector<float> px;
+         if (!ReadSized(n->GetOutputTexture(), n->GetOutputWidth(), n->GetOutputHeight(), px))
+         {
+            printf("COMPAUDIT SOURCE %-16s unreadable\n", name.c_str());
+            continue;
+         }
+         double lo = 1e9, hi = -1e9;
+         size_t bad = 0;
+         for (float v : px)
+         {
+            if (!std::isfinite(v))
+               bad++;
+            else
+            {
+               lo = std::min(lo, (double)v);
+               hi = std::max(hi, (double)v);
+            }
+         }
+         printf("COMPAUDIT SOURCE %-16s %dx%d range %.3f..%.3f non-finite %zu\n", name.c_str(), n->GetOutputWidth(), n->GetOutputHeight(), lo,
+                hi, bad);
+         if (bad > 0)
+            f.Flag("SOURCE", name + " has non-finite pixels", (double)bad);
+      }
+
+      // Reaction Diffusion: stays bounded and alive over 120 frames.
+      ReactionDiffusionNode rd;
+      rd.width = 128.0f;
+      rd.height = 128.0f;
+      double lo = 1e9, hi = -1e9;
+      size_t bad = 0;
+      for (int i = 0; i < 120; i++)
+         rd.CookIfNeeded(gFrame++);
+      std::vector<float> px;
+      if (rd.GetOutputTexture() != 0 && ReadSized(rd.GetOutputTexture(), rd.GetOutputWidth(), rd.GetOutputHeight(), px))
+      {
+         for (float v : px)
+         {
+            if (!std::isfinite(v))
+               bad++;
+            else
+            {
+               lo = std::min(lo, (double)v);
+               hi = std::max(hi, (double)v);
+            }
+         }
+         printf("COMPAUDIT SOURCE Reaction Diffusion 120 frames: range %.3f..%.3f non-finite %zu\n", lo, hi, bad);
+         if (bad > 0 || lo < -0.01 || hi > 1.01)
+            f.Flag("SOURCE", "Reaction Diffusion leaves [0, 1] or goes non-finite, range", std::max(std::fabs(lo), hi));
+         if (hi - lo < 0.05)
+            f.Flag("SOURCE", "Reaction Diffusion is flat after 120 frames, range", hi - lo);
+      }
+      else
+      {
+         printf("COMPAUDIT FAIL SOURCE Reaction Diffusion no output\n");
+         ok = false;
+      }
+   }
 } // namespace
 
 bool RunCompAudit()
@@ -729,6 +1217,16 @@ bool RunCompAudit()
       AuditFit(flags, ok);
    if (want("SWITCH"))
       AuditSwitch(flags, ok);
+   if (want("BLUR"))
+      AuditBlur(flags, ok);
+   if (want("COLOUR"))
+      AuditColour(flags, ok);
+   if (want("RES"))
+      AuditRes(flags, ok);
+   if (want("BYPASS"))
+      AuditBypass(flags, ok);
+   if (want("SOURCES"))
+      AuditSources(flags, ok);
    printf("COMPAUDIT %s (%d flags)\n", ok ? "PASS" : "FAIL", flags.n);
    return ok;
 }
