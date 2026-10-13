@@ -48,6 +48,13 @@ namespace
    constexpr double kFlagGridSamples = 1.0;
    constexpr double kFlagSwingPct = 1.0;
 
+   // One measured value for the quality system (docs/quality/README.md): tools/quality/quality.py keeps
+   // the worst per metric and subject and owns the target and the release gate.
+   void Quality(const char* id, const std::string& node, double v)
+   {
+      printf("QUALITY id=%s subject=\"node:%s\" value=%.4f\n", id, node.c_str(), v);
+   }
+
    struct Flags
    {
       int n = 0;
@@ -292,6 +299,7 @@ namespace
              p.offs, p.stuck, p.orphanOff, p.dupOn, p.offBeforeOn);
       if (p.ons == 0)
          printf("NOTEAUDIT NOTE  %-18s produced no notes in this scenario\n", c.name);
+      Quality("note.pair_unpaired", c.name, p.stuck + p.orphanOff + p.dupOn + p.offBeforeOn);
       if (p.Bad())
       {
          flags.Flag("PAIR", c.name, "unpaired events", p.stuck + p.orphanOff + p.dupOn + p.offBeforeOn);
@@ -405,6 +413,7 @@ namespace
             }
          printf("NOTEAUDIT GRID  %-18s worst %7.1f samples (%.0f bpm, block %.0f) | by block 64/512/800/333/2048: %d %d %d %d %d\n",
                 g.name, worst, worstBpm, worstBlock, perBlock[0], perBlock[1], perBlock[2], perBlock[3], perBlock[4]);
+         Quality("note.grid_samples", g.name, worst);
          if (worst > kFlagGridSamples)
             flags.Flag("GRID", g.name, "worst note-on error samples", worst);
       }
@@ -627,6 +636,7 @@ namespace
          }
          printf("NOTEAUDIT JITTER %-17s worst %.1f samples over blocks 64/333/512/800/2000/2048, %d notes missing\n", c.name,
                 worst, missing);
+         Quality("note.jitter_samples", c.name, std::max(worst, (double)missing));
          if (worst > kFlagGridSamples || missing > 0)
             flags.Flag("JITTER", c.name, "note-on error samples or missing notes", std::max(worst, (double)missing));
       }

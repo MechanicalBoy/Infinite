@@ -84,4 +84,4 @@ Record (`ingest`) after a fix, a new competitor run or a release, not after ever
 | 1 | Synths: SYNTHAUDIT + `synth_probe` (Diva, Serum 2, Vital) | done 2026-10-13 |
 | 2 | Benchmark suite B1 to B8 (`tools/bench.py`), reference machine base M2 8 GB | next |
 | 3 | Re-survey areas: each block ends in registered metrics plus a short dossier | after 2 |
-| 4 | Node audits: FXAUDIT, NOTEAUDIT, IOAUDIT, then block 3 (GEOAUDIT, COMPAUDIT) written straight in | after 3 |
+| 4 | Node audits: FXAUDIT, NOTEAUDIT, IOAUDIT, GEOAUDIT, COMPAUDIT emit `Quality(...)` rows (16 metrics, first rows 2026-10-13); more are added as each audit grows | started 2026-10-13 |

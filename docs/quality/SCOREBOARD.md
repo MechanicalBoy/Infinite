@@ -6,8 +6,25 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Pillar | Metrics | Met | Behind / miss | Info | Unmeasured |
 |---|---|---|---|---|---|
-| P5 Audio quality and hosting | 19 | 12 | 4 | 3 | 0 |
+| P1 Live AV workstation | 3 | 3 | 0 | 0 | 0 |
+| P5 Audio quality and hosting | 25 | 16 | 6 | 3 | 0 |
+| P7 3D, compositing, output | 7 | 4 | 2 | 0 | 1 |
 | P8 Performance | 2 | 1 | 0 | 0 | 1 |
+
+## P1 Live AV workstation: Note nodes
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `note.pair_unpaired` | Stuck, orphan-off, duplicate-on and off-before-on events | <= 0 count | release | met | 0 (node:Arpeggiator) | - |
+| `note.grid_samples` | Worst note-on error against the grid across block sizes and tempi | <= 1.00 samples | release | met | 0.793 (node:Arpeggiator) | - |
+| `note.jitter_samples` | Note-on error through the node, plus missing notes | <= 0 samples | release | met | 0 (node:Note Filter) | - |
+
+## P5 Audio quality and hosting: Audio I/O
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `io.gain_knob_db` | Gain knob error over -48..+24 dB | <= 0.01 dB | release | met | 0 (node:Gain) | - |
+| `io.sum_error` | Mixer sum error against a double-precision reference | <= 1e-06 abs | release | met | 0 (node:Mixer) | - |
 
 ## P5 Audio quality and hosting: Built-in instruments
 
@@ -33,6 +50,32 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `probe.release_s` | Default-patch release to -60 dB |  | report | info | - | - |
 | `probe.vel_span_db` | Level change velocity 0.25 -> 1.0 |  | report | info | - | - |
 
+## P5 Audio quality and hosting: Effects
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `fx.dc_dbfs` | Mean DC left by an effect under noise, at defaults | <= -50.00 dBFS | release | met | -53.40 (node:Bitcrush) | - |
+| `fx.tail_dbfs` | Level 10 s after the input goes silent | <= -100 dBFS | release | met | -240 (node:Audio Filter) | - |
+| `fx.click_db` | Worst step transient when a parameter jumps | <= 12.00 dB | report | behind | 25.20 (node:Flanger) | - |
+| `fx.rate_spread_db` | Tone level difference across 44.1/48/96 kHz | <= 1.00 dB | report | behind | 5.38 (node:Bitcrush) | - |
+
+## P7 3D, compositing, output: Compositing
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `comp.blend_x255` | Blend modes against the W3C formulas, worst over modes | <= 1.00 x/255 | release | met | 0.5 (node:Blend) | - |
+
+## P7 3D, compositing, output: Geometry
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `geo.winding_mismatch` | Triangles whose winding disagrees with their vertex normals | <= 0 triangles | report | behind | 14608 (node:Screw on sphere) | - |
+| `geo.nonmanifold` | Non-manifold or one-direction edges on shapes that promise a closed mesh | <= 0 edges | report | behind | 582 (node:Smooth on sphere) | - |
+| `geo.cloth_stretch_pct` | Worst edge stretch of a pinned cloth after 12 s | <= 50.00 % | release | met | 1.39 (node:Cloth) | - |
+| `geo.inst_mirrored` | Instance transforms with a negative determinant | <= 0 count | release | met | 0 (node:Instance on Points) | - |
+| `geo.decimate_bbox_pct` | Decimate: worst vertex distance to the original surface | <= 5.00 % bbox | release | met | 0.851 (node:Decimate) | - |
+| `geo.disp_offset` | Displacement: worst vertex off the formula (run with INFINITE_GEOAUDIT_ONLY=DISP) | <= 0.02 units | report | unmeasured | - | - |
+
 ## P8 Performance: Built-in instruments
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
@@ -53,5 +96,9 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `probe.attack_ms` (ms): node:Analog 4.00 · node:Wavetable 4.00 · Vital Audio: Vital 1.00 · Xfer Records: Serum 2 2.00 · u-he: Diva 44.00
 - `probe.release_s` (s): node:Analog 0.253 · node:Wavetable 0.263 · Xfer Records: Serum 2 0.018 · Vital Audio: Vital 0.084 · u-he: Diva 1.61
 - `probe.vel_span_db` (dB): node:Analog 24.08 · node:Wavetable 24.08 · Vital Audio: Vital -0.0023 · Xfer Records: Serum 2 -0.0021 · u-he: Diva 12.92
+- `fx.click_db` (dB): node:Stutter -30.82 · node:Reverb -0.579 · node:Shape Resonator -0.156 · node:Delay -0.0898 · node:Tremolo -0.0129 · node:Cycle Shaper -0.0012 · node:Spectrum Slide -0.0009 · node:Ring Mod -0.0001 · node:Bitcrush 0 · node:Pitch Shifter 0.0107 · node:Key-Snap 0.0703 · node:Stereo 0.218 · node:Frequency Shifter 0.407 · node:Phaser 0.723 · node:Drive 0.772 · node:Spec Blur 1.54 · node:EQ 3.94 · node:Resonator Bank 4.05 · node:Formant Filter 4.63 · node:Limiter 8.76 · node:Wavetable Shaper 8.80 · node:Transient Shaper 8.82 · node:Dynamics 9.04 · node:Audio Filter 17.30 (miss) · node:Chorus 24.03 (miss) · node:Flanger 25.20 (miss)
+- `fx.rate_spread_db` (dB): node:Audio Filter 0 · node:Limiter 0 · node:Stereo 0 · node:Transient Shaper 0 · node:Tremolo 0 · node:Pitch Shifter 0.0001 · node:EQ 0.0005 · node:Frequency Shifter 0.0013 · node:Wavetable Shaper 0.0034 · node:Drive 0.0062 · node:Cycle Shaper 0.0078 · node:Spectrum Slide 0.0379 · node:Dynamics 0.0978 · node:Chorus 0.127 · node:Delay 0.133 · node:Spec Blur 0.136 · node:Flanger 0.144 · node:Ring Mod 0.18 · node:Phaser 0.243 · node:Formant Filter 0.268 · node:Stutter 0.72 · node:Shape Resonator 0.786 · node:Reverb 0.816 · node:Key-Snap 0.994 · node:Resonator Bank 2.43 (miss) · node:Bitcrush 5.38 (miss)
+- `geo.winding_mismatch` (triangles): node:8 balls r96 0 · node:Array on cube 0 · node:Arrow 3D 0 · node:Cone 0 · node:Cube 0 · node:Curve Ops hostile 0 · node:Curve Ops no input 0 · node:Cylinder 0 · node:Decimate Icosphere 0 · node:Decimate Torus 0 · node:Decimate on cube 0 · node:Decimate on sphere 0 · node:Delaunay 0 · node:Delete on cube 0 · node:Delete on sphere 0 · node:Dodecahedron 0 · node:Explode on cube 0 · node:Extrude on cube 0 · node:Gear 3D 0 · node:Helix 0 · node:Icosphere 0 · node:Join merge 0 · node:Merge by Distance 0 · node:Metaballs 0 · node:Metaballs extreme 0 · node:Mirror on cube 0 · node:Normals on cube 0 · node:Ocean 0 · node:Octahedron 0 · node:Plane 0 · node:Prism 0 · node:Rounded Cube 0 · node:Select on cube 0 · node:Smooth on cube 0 · node:Solidify on cube 0 · node:Star 3D 0 · node:Subdivide on cube 0 · node:Tetrahedron 0 · node:Torus 0 · node:Torus Knot 0 · node:Transform on cube 0 · node:Triangulate on cube 0 · node:Tube 0 · node:Twist on cube 0 · node:Voronoi 0 · node:Wireframe on cube 0 · node:Wireframe on sphere 0 · node:default 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:pinned 0 · node:realised 0 · node:Mobius Strip 2.00 (miss) · node:Klein Bottle 7.00 (miss) · node:Pyramid 8.00 (miss) · node:node Offset 16.00 (miss) · node:node Resample 16.00 (miss) · node:node Simplify 16.00 (miss) · node:node Smooth 16.00 (miss) · node:Curve source tube 24.00 (miss) · node:Transform on sphere 24.00 (miss) · node:Explode on sphere 31.00 (miss) · node:Capsule 32.00 (miss) · node:Extrude on sphere 32.00 (miss) · node:Normals on sphere 32.00 (miss) · node:Select on sphere 32.00 (miss) · node:Sphere 32.00 (miss) · node:Triangulate on sphere 32.00 (miss) · node:Twist on sphere 32.00 (miss) · node:Supershape 38.00 (miss) · node:Disc 64.00 (miss) · node:Mirror on sphere 64.00 (miss) · node:Smooth on sphere 64.00 (miss) · node:Solidify on sphere 64.00 (miss) · node:Subdivide on sphere 64.00 (miss) · node:Array on sphere 128 (miss) · node:Screw on cube 1456 (miss) · node:Screw on sphere 14608 (miss)
+- `geo.nonmanifold` (edges): node:Cube 0 · node:Cylinder 0 · node:Dodecahedron 0 · node:Icosphere 0 · node:Normals on cube 0 · node:Octahedron 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Smooth on cube 0 · node:Subdivide on cube 0 · node:Tetrahedron 0 · node:Torus 0 · node:Transform on cube 0 · node:Twist on cube 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:Cone 48.00 (miss) · node:Capsule 192 (miss) · node:Normals on sphere 192 (miss) · node:Sphere 192 (miss) · node:Transform on sphere 192 (miss) · node:Twist on sphere 192 (miss) · node:Smooth on sphere 582 (miss) · node:Subdivide on sphere 582 (miss)
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 6136354a.

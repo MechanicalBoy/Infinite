@@ -73,6 +73,13 @@ namespace
 {
    constexpr int kW = 64, kH = 64;
 
+   // One measured value for the quality system (docs/quality/README.md): tools/quality/quality.py keeps
+   // the worst per metric and subject and owns the target and the release gate.
+   void Quality(const char* id, const std::string& node, double v)
+   {
+      printf("QUALITY id=%s subject=\"node:%s\" value=%.4f\n", id, node.c_str(), v);
+   }
+
    struct Flags
    {
       int n = 0;
@@ -344,6 +351,7 @@ namespace
             continue;
          }
          printf("COMPAUDIT BLEND  %-14s worst error %.2f / 255\n", names[m].c_str(), worst * 255.0);
+         Quality("comp.blend_x255", "Blend", worst * 255.0);
          if (worst > 1.0 / 255.0 + 1e-6)
             f.Flag("BLEND", names[m] + " differs from the W3C formula by (x/255)", worst * 255.0);
       }

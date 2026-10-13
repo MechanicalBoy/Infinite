@@ -80,6 +80,13 @@ namespace app
 {
 namespace
 {
+   // One measured value for the quality system (docs/quality/README.md): tools/quality/quality.py keeps
+   // the worst per metric and subject and owns the target and the release gate.
+   void Quality(const char* id, const std::string& node, double v)
+   {
+      printf("QUALITY id=%s subject=\"node:%s\" value=%.4f\n", id, node.c_str(), v);
+   }
+
    struct Flags
    {
       int n = 0;
@@ -250,10 +257,13 @@ namespace
          f.Flag(sec, name, "normals off unit length (>1%)", s.badNormalLen);
       if (s.degenerate > 0)
          f.Flag(sec, name, "degenerate triangles", s.degenerate);
+      Quality("geo.winding_mismatch", name, s.windingVsNormal);
       if (s.windingVsNormal > 0)
          f.Flag(sec, name, "winding disagrees with normals", s.windingVsNormal);
       if (s.sideMismatch > 0)
          f.Flag(sec, name, "side arrays do not match the mesh", s.sideMismatch);
+      if (expectClosed)
+         Quality("geo.nonmanifold", name, s.nonManifold + s.inconsistent);
       if (expectClosed)
       {
          if (s.boundary > 0)
@@ -1172,6 +1182,7 @@ namespace
             drift = std::max(drift, Dist3(before.vertices[i], c.GetMesh().vertices[i]));
          printf("GEOAUDIT CLOTH  pinned top, 12 s: %zu verts | max edge stretch %.1f %% | pins moved %.5f | mean y %.3f -> %.3f | extent %.2f | drift in the next 0.5 s %.4f\n",
                 s.verts, maxStretch * 100.0, maxPinMove, meanY0, meanY1, bbox, drift);
+         Quality("geo.cloth_stretch_pct", "Cloth", maxStretch * 100.0);
          Report(f, "CLOTH", "pinned", s, false, ok);
          if (s.nonFinite > 0)
             ok = false;
@@ -1337,6 +1348,7 @@ namespace
          printf("GEOAUDIT INST   pointMode %d: %zu instances | off the sphere by %.4f | scale off by %.5f | no axis along the normal by %.4f | non-finite %d\n",
                 mode, m.InstanceCount(), worstR, worstScale, worstAlign, nonFinite);
          printf("GEOAUDIT INST   pointMode %d: %d of %zu transforms mirror the stamp (negative determinant)\n", mode, negDet, m.InstanceCount());
+         Quality("geo.inst_mirrored", "Instance on Points", negDet);
          if (negDet > 0)
             f.Flag("INST", "mode " + std::to_string(mode), "transforms with negative determinant", negDet);
          if (nonFinite > 0)
@@ -1570,6 +1582,7 @@ namespace
             const double vol = so.volume != 0.0 ? sd.volume / so.volume - 1.0 : 0.0;
             printf("GEOAUDIT REF    Decimate %-9s ratio %.2f: %zu -> %zu tris (%.0f %% of asked) | vertex-to-original distance mean %.5f worst %.5f (%.2f %% of bbox diagonal) | volume %+.1f %% | boundary edges %d\n",
                    sh.name, ratio, so.tris, sd.tris, countRatio * 100.0, mean, worst, worst / diag * 100.0, vol * 100.0, sd.boundary);
+            Quality("geo.decimate_bbox_pct", "Decimate", worst / diag * 100.0);
             Report(f, "REF", std::string("Decimate ") + sh.name, sd, false, ok);
             if (std::fabs(countRatio - 1.0) > 0.10)
                f.Flag("REF", std::string("Decimate ") + sh.name, "triangle count off the requested ratio, %", (countRatio - 1.0) * 100.0);
@@ -1682,6 +1695,7 @@ namespace
          }
          const Stats s = Measure(m);
          printf("GEOAUDIT DISP   %-28s: worst vertex off the expected offset %.5f | boundary edges %d (was %d)\n", c.label, worst, s.boundary, so.boundary);
+         Quality("geo.disp_offset", "Displacement", worst);
          Report(f, "DISP", c.label, s, false, ok);
          if (worst > 0.02)
             f.Flag("DISP", c.label, "vertex off the expected offset, worst", worst);
