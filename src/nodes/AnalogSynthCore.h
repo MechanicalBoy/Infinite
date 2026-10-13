@@ -613,8 +613,8 @@ public:
             // Drive and filter at the oversampled rate (DriveAndFilter). The
             // analog hiss is drawn separately per side - two circuits, two
             // noise floors - which decorrelates the pair a little further.
-            const float hissL = analog ? mFreeNoise.Next() * 0.001f : 0.0f;
-            const float hissR = analog ? mFreeNoise.Next() * 0.001f : 0.0f;
+            const float hissL = analog ? mFreeNoise.Next() * 0.0001f : 0.0f;
+            const float hissR = analog ? mFreeNoise.Next() * 0.0001f : 0.0f;
 
             // The right-hand chain starts from silence rather than from
             // whatever it held the last time the stack was wide, so turning
@@ -745,8 +745,8 @@ public:
                v.stereoPath = wantStereo;
 
                // Drive (one noise draw per side) and filter, oversampled.
-               const float hissL = analog ? v.noise.Next() * 0.001f : 0.0f;
-               const float hissR = analog ? v.noise.Next() * 0.001f : 0.0f;
+               const float hissL = analog ? v.noise.Next() * 0.0001f : 0.0f;
+               const float hissR = analog ? v.noise.Next() * 0.0001f : 0.0f;
                const FilterCoeffs fc = MakeFilterCoeffs(filterType, effectiveCutoff, resonance,
                                                         mSampleRate * AnalogSynthCore::kFilterOversample);
                const float filteredL = DriveAndFilter(v.os, 0, v.acL, v.driveL, v.ladder, v.svf, mixedL, driveGain, hissL, fc);
