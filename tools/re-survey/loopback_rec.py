@@ -34,6 +34,7 @@ import synth_probe as sp  # noqa: E402
 SR = 48000
 THRESH = 10 ** (-54 / 20)
 DEVICE = "BlackHole 2ch"
+LEAD_S = 30.0  # time to press Play after the recorder starts; the trim removes it
 
 
 def first_at(kind):
@@ -56,15 +57,19 @@ def trim_array(x, first_s, sr=SR):
 
 def record(path, seconds, device=DEVICE):
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-i", ":" + device,
-           "-t", str(seconds), "-ar", str(SR), "-ac", "2", "-c:a", "pcm_f32le", path]
+           "-t", str(seconds), "-ar", str(SR), "-ac", "2", "-c:a", "pcm_s24le", path]
     return subprocess.run(cmd).returncode == 0
 
 
+def read_capture(path):
+    """ffmpeg's own WAV header variants (float, extensible) defeat the wave module, so decode through ffmpeg."""
+    r = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", path, "-f", "f32le", "-ac", "2", "-ar", str(SR), "-"],
+                       capture_output=True)
+    return np.frombuffer(r.stdout, dtype=np.float32).reshape(-1, 2).astype(np.float64)
+
+
 def trim_file(src, dst, first_s):
-    x, sr, _ = bk.load(src)
-    x = np.atleast_2d(x)
-    x = x.T if x.shape[0] < x.shape[1] else x
-    y = trim_array(x, first_s, sr)
+    y = trim_array(read_capture(src), first_s)
     if y is None:
         return False
     bk.write_wav24(dst, y)
@@ -105,7 +110,7 @@ def main():
     if a.cmd == "trim":
         return 0 if trim_file(a.src, a.dst, a.first_at) else 1
     if a.cmd == "rec":
-        secs = a.seconds or (bkit.synth_len() if a.kind == "synth" else pp.TOTAL_S) + 4.0
+        secs = a.seconds or (bkit.synth_len() if a.kind == "synth" else pp.TOTAL_S) + LEAD_S + 4.0
         d = ensure_dir(os.path.join(RE_OUTPUT, "builtins-kit", a.app))
         out = os.path.join(d, bkit.fname(a.kind, a.name))
         raw = os.path.join(tempfile.mkdtemp(), "raw.wav")
