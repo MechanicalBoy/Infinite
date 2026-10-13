@@ -1,9 +1,11 @@
 # v0.6 plan: quality lead
 
 Owner scope (2026-10-13): everything the re-survey found worth taking goes into v0.6; nothing is
-planned for v0.7. Direction is the agent's call, by one rule: **Infinite is a live AV instrument,
-so take depth that (a) sits on the live sound-and-picture path, (b) a DAW or visual user expects
-on day one, or (c) fixes a measured miss; ignore the rest, and say why.** Sources: the re-survey
+planned for v0.7. Direction is the agent's call, by one rule, set from how people actually use
+Infinite (owner, 2026-10-13: users treat it as a design instrument and send sound-design and 3D
+patches, or share and render the work; nobody performs live with it): **take depth that (a) makes the sound or picture a user
+designs better, (b) makes a patch easier to make, finish, render, export or share, or (c) fixes a measured
+miss; ignore the rest, and say why.** Live-stage features rank last. Sources: the re-survey
 dossiers, the extracted data in `~/re-output/`, and `docs/quality/SCOREBOARD.md`. v0.6 absorbs the
 v0.5.1 goal (every escaped fix with a regression test). Judged by the NOW.md quality table.
 
@@ -42,7 +44,7 @@ without ask. Bench runs are serialized with any other benching session (check NO
 | # | Item | Today | Bar | Target files | Done check |
 |---|---|---|---|---|---|
 | 1.0 | Competitor data as specs | the extracted parameter trees are unused; summary files in `~/re-output` carry unchecked claims ("SIMD ladder circuits", "C++/Metal DSP") | `tools/re-survey/param_diff.py`: for each node this plan touches, the nearest competitor devices' controls (name, range, default, unit) next to ours; `diff.py claims` also reads the `~/re-output/*/*.md` summaries | the tool's self-test; one spec table per Block 2/3 item in `docs/plans/v0.6-quality/specs/`; claims lint clean |
-| 1.0b | Data ledger: no dataset unused, no result stale | 35 datasets in `~/re-output`; several have no consumer (builtins-kit, load-bench, host-audit, project-bench, capability-map, ui-map); builtins-kit still shows Analog before its fix | `tools/re-survey/data_ledger.py`: each dataset → its consumers (scoreboard metric, spec, plan item); every kit and probe emits `QUALITY` lines into `docs/quality/registry.tsv` (synth-probe already does); `verify-gate` re-runs any kit whose source changed | ledger lint: 0 datasets without a consumer, 0 stale results |
+| 1.0b | Data ledger: no dataset unused, no result stale (and user patches as test input) | 35 datasets in `~/re-output`; several have no consumer (builtins-kit, load-bench, host-audit, project-bench, capability-map, ui-map); builtins-kit still shows Analog before its fix | `tools/re-survey/data_ledger.py`: each dataset → its consumers (scoreboard metric, spec, plan item); every kit and probe emits `QUALITY` lines into `docs/quality/registry.tsv` (synth-probe already does); `verify-gate` re-runs any kit whose source changed; patches users send (with their permission) join the community validate and render smoke sets | ledger lint: 0 datasets without a consumer, 0 stale results |
 | 1.1 | Export / bounce latency shift | bounce through Drive is 73 samples late (Oversampler), Limiter lookahead ~72, plugins report their own | 0-sample offset vs dry, for Drive, Limiter, a latent plugin | `src/app/graph/AudioTopology.cpp` (PDC total already computed), offline render path (`src/core/HeadlessJob.cpp`), export writer | dossier C bounce probe re-run reads 0; smoke row per node |
 | 1.2 | Audio Filter click (F13) | fx.click_db 17.30 | ≤ 12 dB | Audio Filter kernel in `src/audio/dsp/` + its row in `src/audio/EffectDefs.cpp` | scoreboard row met, exception F13 removed |
 | 1.3 | Bitcrush rate spread (F14) | fx.rate_spread_db 5.38 | ≤ 1 dB | Bitcrush kernel (hold length in seconds, not samples) | row met, F14 removed |
@@ -103,7 +105,9 @@ Settled:
 | 2.29 | Open an Ableton set | none; `.als` is gzip XML (project-bench) | import tempo, track names, MIDI clips and locators; instruments map to Infinite synths by role | new importer in `src/core/` | 3 sample sets import; notes match |
 | 2.30 | Starter content | no samples or clips (gap P6 E) | drum one-shots and loops rendered by Infinite's own synths (2.27), shipped as patches | tools script + `patches/` | count check |
 | 2.31 | Control API | 63 scriptable members vs Live 584, Bitwig 1,729, TouchDesigner 3,649 (capability-map) | every param addressable over OSC with query and listen; node create/delete/connect | `src/nodes/OscNodes.cpp`, param registry | external script drives a patch in the smoke set |
-| 2.32 | Show sync and controllers | none | LTC and MTC in/out; gamepad modulator | beside `MidiNodes.h` | loopback smoke |
+| 2.32 | Resynthesis | none | analyse a sample into partials (sinusoidal + residual, McAulay-Quatieri 1986, Serra 1989) and play it back with pitch, formant, partial-count and morph controls (Alchemy shape) | new synth (`new-audio-node`) | resynthesised sample within 1 dB spectral error; synth-probe rows |
+| 2.33 | String and modal modelling | Metallic (41 ¢ off), Shape Resonator, Resonator Bank | after 1.11: waveguide string + modal body with exciter choice (pluck, bow, strike) (Sculpture shape) | new synth or a Metallic mode, decided by the 1.0 spec | pitch within 2 ¢ across the range; synth-probe rows |
+| 2.34 | Linear-phase EQ mode | minimum phase only | linear-phase option on EQ for design and export (latency reported, PDC handles it) | EQ kernel | phase response flat; PDC smoke |
 
 Settled:
 - **2.6** crash-only: in process as today; after a crash the plugin re-opens out of process on next load. Full sandboxing of every plugin costs latency and is not taken.
@@ -113,16 +117,14 @@ Settled:
 - **2.12** shape: VCV Rack's polyphonic cables (from its public manual; Rack is GPL, no source) and Bitwig's poly modulators (docs). One cable type, N channels, mono consumers sum. Order inside the block: 2.12 before 2.13, 2.15, 2.16.
 - **2.17-2.22** are the owner-asked quality pass, so the `new-audio-node` minimalism rule yields for these nodes only; each control must pass the 1.0 spec rule.
 - Factory presets of other apps (Ableton `.adv`/`.adg` are open XML) are read for **statistics only** (which ranges sound designers use, to set our defaults and ranges); none are copied or shipped.
-- Re-evaluated 2026-10-13 and now taken: filter models (2.25), wavetable warps (2.26), drum synth (2.27), note entry (2.28), control API (2.31, the real need behind "Python everywhere"), show sync (2.32).
+- Re-evaluated 2026-10-13 and now taken: filter models (2.25), wavetable warps (2.26), drum synth (2.27), note entry (2.28), control API (2.31, the real need behind "Python everywhere"). After the design-instrument correction: resynthesis (2.32), string/modal modelling (2.33), linear-phase EQ (2.34).
 - Still not taken, with the reason:
 
 | Item | Reason |
 |---|---|
-| Alchemy-style resynthesis | Granular, Grain Molder, Spec Blur and Field Synth cover the live uses; full resynthesis is a product of its own |
-| Sculpture-style string modelling | Metallic, Shape Resonator, Resonator Bank exist; fix their measured faults (1.11) before adding a fourth |
 | Vintage console EQ emulations | character, not capability; the saturator (2.17) and dynamic EQ (2.19) cover the sound |
-| Resonance suppressor (soothe2) | mixing tool, not live; revisit if a user asks |
-| Linear-phase EQ | adds latency, wrong for live play |
+| Resonance suppressor (soothe2) | a mix-repair tool; users send designed sounds, not mixes; revisit if one asks |
+| Show sync (LTC/MTC), DMX/Art-Net, gamepad | stage features; nobody performs live with Infinite |
 | VST2 | Steinberg no longer licenses the SDK |
 | Harmonizer | Key-Snap + Pitch Shifter already patch it |
 | Hybrid algorithmic + IR reverb | patch Reverb and the IR reverb (2.9) in parallel |
@@ -136,8 +138,8 @@ Settled:
 | 3.2 | Time machine | Trails/Feedback hold one frame | per-pixel delay from a grey map over a 60-frame ring | new compositing node | slit-scan reference frame matches |
 | 3.3 | Proximity lines | none (TD POP, plexus looks) | lines between points within a radius, spatial hash, 100k points ≤ 4 ms | new geometry node | `geometry-transform-sweep` |
 | 3.4 | Sweep and revolve | Screw covers part of lathe | sweep a profile along a curve; revolve a curve (TD Sweep/Revolve, Blender Curve to Mesh) | new geometry nodes, `CurveOpsNode.h` | winding and normals pass GEOAUDIT |
-| 3.5 | DMX / Art-Net out | OSC only | Art-Net and sACN universes from modulators | beside `src/nodes/OscNodes.cpp` | packet capture smoke |
-| 3.6 | Lights and world | directional, point, sun, ambient, spot | area light; HDRI and sky world | `SceneNodes.h`, `EnvironmentNode.h` | render reference images |
+| 3.5 | Render quality | not compared against a reference renderer | render the dossier G scenes in Infinite and Blender Eevee; add what is missing of soft shadows, ambient occlusion, depth of field, 3D motion blur, supersampled stills, 16-bit PNG / EXR output plus an offline render mode: export quality set by samples per frame, not by the real-time budget | Render 3D path, `src/core/HeadlessJob.cpp` (`--frame`) | side-by-side contact sheet per scene; each added feature has a reference image |
+| 3.6 | Lights and world | directional, point, sun, ambient, spot | area light, light linking, IES profiles; HDRI and sky world | `SceneNodes.h`, `EnvironmentNode.h` | render reference images |
 | 3.7 | Bevel and inset | none | bevel edges (width, segments), inset faces | GeometryOp table | GEOAUDIT manifold check |
 | 3.8 | Rigid bodies | Cloth and particles only (Cables Rapier ops) | boxes, spheres, convex hulls, ground, impulses; deterministic at fixed step | new simulation node | same result on all three platforms |
 | 3.9 | L-system | none | axiom + rules + angle + iterations → curve | new geometry node | known plant reference |
@@ -147,10 +149,12 @@ Settled:
 | 3.13 | 2D fluid | none (TouchDesigner, Cables staple) | GPU stable fluids (Stam 1999): velocity, dye, vorticity, obstacles from an image; 1080p ≤ 3 ms | new compositing node | divergence below 1e-3 after projection |
 | 3.14 | Clip speed in the arrangement | Video Source has speed; arrangement clips do not | per-clip speed and reverse, audio follows with 1.6's stretch | `src/arrange/` (`timeline-arrangement-architecture`) | export of a 2× clip has the right length and pitch |
 | 3.15 | GPU particles (Metal compute) | CPU, capped 200k | run gate G1 of `docs/plans/metal-compute.md`; if it passes, build to its G2 bar (1M in < 2 ms); else record the number | `SimulationNodes.h` | G1 row either way |
+| 3.16 | Volumes | none | volumetric fog, smoke and clouds (ray-marched density field, Field-programmable), for stills and export first, real time where the budget allows | new geometry/render node | reference images; frame time recorded |
+| 3.17 | Share a patch | users send `.inf` files by hand | one action writes a share bundle: the patch, a thumbnail and a short preview render; the website gallery lists bundles (same path as the Extensions page) | Stage menu, `tools/website/` | a bundle opens on a clean machine and matches its preview |
 
 Settled:
-- Re-evaluated 2026-10-13 and now taken: 2D fluid (3.13), clip speed (3.14).
-- Still not taken: sculpting and retopology (modelling, not live); 3D volumes (cost per frame); depth cameras (vendor SDKs on three platforms; Apple Vision body tracking covers the live use); export to web (a second renderer); magnetic storyline (an editing model, not a live one); light linking and IES.
+- Re-evaluated 2026-10-13 and now taken: 2D fluid (3.13), clip speed (3.14); after the design-instrument correction: render quality (3.5), light linking and IES (3.6), volumes (3.16), patch sharing (3.17).
+- Still not taken: sculpting and retopology (Blender's job; Infinite designs procedurally); depth cameras (vendor SDKs on three platforms; Apple Vision tracking covers it); a web player (a second renderer; 3.17 shares a preview render instead); magnetic storyline (a film-editing model); DMX/Art-Net (stage only).
 
 ## What each source taught (2026-10-13)
 
@@ -161,7 +165,7 @@ Settled:
 | Bitwig (232 Grid modules, 43 modulators) | poly modulators, Segments/Curves, phase family, crossover splits, CLAP | 2.8, 2.10, 2.12, 2.18, 2.23 |
 | Logic (dossier K) | Space Designer, compressor circuit styles | 2.9, 2.21 |
 | Blender (245 geometry nodes, bench) | instance and subdivide are 2× faster; bevel, curve-to-mesh | 3.4, 3.7, 3.12 |
-| TouchDesigner | optical flow, time machine, proximity, sweep/revolve, DMX | 3.1-3.5 |
+| TouchDesigner | optical flow, time machine, proximity, sweep/revolve | 3.1-3.4 |
 | Cables (1,298 ops; MIT) | rigid bodies, L-systems, the image-op catalogue; source readable | 3.8, 3.9, 3.11 |
 | Pixelmator | defocus blur | 3.10 |
 | VCV Rack (GPL: manual and behaviour only; the dossier built from its source manifests was removed) | polyphonic cables | 2.12 |
