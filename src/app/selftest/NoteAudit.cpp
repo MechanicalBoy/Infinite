@@ -20,6 +20,12 @@
 //   HUMAN   humanizer timing: spread within the knob, and the same stream
 //           after PrepareToPlay gives the same output (seeded determinism)
 //   LOOP    a transport loop wrap and a seek during playback: pair integrity
+//   JITTER  pass-through nodes: note-on sample out against sample in at 24/60/144
+//           fps blocks (2000/800/333 frames) and 64/512/2048; flag > 1 sample
+//   BYPASS  a node between a source and a consumer is bypassed (consumer rewired
+//           to the source's queue, as the topology builder does) or deleted
+//           (consumer's inbox cleared) while notes sound: pair integrity at the
+//           consumer, and how many voices it holds open afterwards
 //   CPU     ns per 512-frame block while active
 //
 // Only hard invariants fail the run (a note-on without its off at the end of
@@ -102,9 +108,10 @@ namespace
 
       // Transport must be playing; advances the audio clock first, as the
       // engine does, then runs one block and collects the outbox.
-      void Step()
+      void Step(bool advanceClock = true)
       {
-         Transport::Instance().AdvanceAudioClock(block);
+         if (advanceClock)
+            Transport::Instance().AdvanceAudioClock(block);
          node->CookIfNeeded(frame++);
          AudioBuffer buf;
          float* ch[2] = { l.data(), r.data() };
@@ -570,6 +577,125 @@ namespace
       }
    }
 
+
+   // ---- JITTER -----------------------------------------------------------
+   // Pass-through nodes keep an event's frame offset: note-on sample out must be
+   // note-on sample in at every block size the app runs (24/60/144 fps at 48 kHz
+   // is 2000/800/333 frames).
+   void AuditJitter(Flags& flags)
+   {
+      const int blocks[6] = { 64, 333, 512, 800, 2000, 2048 };
+      for (const Case& c : Cases())
+      {
+         const std::string n = c.name;
+         if (n != "Note Filter" && n != "Note Transpose" && n != "Velocity Curve" && n != "Pitch Bend")
+            continue;
+         double worst = 0.0;
+         int missing = 0;
+         for (int block : blocks)
+         {
+            Rig rig;
+            if (!rig.Init(c.create(), block))
+               continue;
+            if (c.setup)
+               c.setup(rig.node.get());
+            rig.node->CookIfNeeded(rig.frame++);
+            StartTransport(120.0);
+            std::vector<long long> inPos;
+            for (int i = 0; i < 40; i++)
+               inPos.push_back(1000 + (long long)i * 7919 + (i % 5) * 13); // off every block lattice
+            int next = 0;
+            while (rig.pos < (long long)(8.0 * kRate))
+            {
+               while (next < (int)inPos.size() && inPos[next] < rig.pos + block)
+               {
+                  Push(rig.in[0], 60 + next % 12, 0.8f, true, 4000 + next, (int)(inPos[next] - rig.pos));
+                  Push(rig.in[0], 60 + next % 12, 0.0f, false, 4000 + next, (int)(inPos[next] - rig.pos));
+                  next++;
+               }
+               rig.Step();
+            }
+            StopTransport();
+            int found = 0;
+            for (const Evt& e : rig.got)
+               if (e.e.isNoteOn && e.e.voiceId >= 4000 && e.e.voiceId < 4040)
+               {
+                  found++;
+                  worst = std::max(worst, std::fabs((double)(e.sample - inPos[e.e.voiceId - 4000])));
+               }
+            missing += 40 - found;
+         }
+         printf("NOTEAUDIT JITTER %-17s worst %.1f samples over blocks 64/333/512/800/2000/2048, %d notes missing\n", c.name,
+                worst, missing);
+         if (worst > kFlagGridSamples || missing > 0)
+            flags.Flag("JITTER", c.name, "note-on error samples or missing notes", std::max(worst, (double)missing));
+      }
+   }
+
+   // ---- BYPASS -----------------------------------------------------------
+   // source queue -> node -> consumer (a Note Filter that passes everything, whose
+   // output is the pair check). Mid-note the node is bypassed: it stops cooking and the
+   // consumer reads the source's queue from the tail, as RebuildAudioTopology does.
+   // Deleted: the consumer's inbox is cleared and nothing replaces it.
+   void AuditBypass(Flags& flags, bool& ok)
+   {
+      for (const Case& c : Cases())
+      {
+         if (c.source)
+            continue;
+         for (int mode = 0; mode < 2; mode++) // 0 bypass, 1 delete
+         {
+            Rig a, cons;
+            if (!a.Init(c.create()) || !cons.Init(NoteFilterNode::Create()))
+               continue;
+            if (c.setup)
+               c.setup(a.node.get());
+            a.node->CookIfNeeded(a.frame++);
+            cons.audio->SetNoteInbox(0, a.out, a.out->RegisterConsumer());
+            StartTransport(120.0);
+            const double bypassAt = 0.55; // 9001, 9003, 9004 are held
+            bool cut = false;
+            int voicesOnAtCut = 0;
+            while (a.pos < (long long)(4.0 * kRate))
+            {
+               const double t = (double)a.pos / kRate;
+               ScriptedStream(a, t);
+               if (!cut && t >= bypassAt)
+               {
+                  cut = true;
+                  std::map<int, bool> open;
+                  for (const Evt& e : cons.got)
+                     if (!e.e.bendUpdate)
+                        e.e.isNoteOn ? (void)(open[e.e.voiceId] = true) : (void)open.erase(e.e.voiceId);
+                  voicesOnAtCut = (int)open.size();
+                  if (mode == 0)
+                     cons.audio->SetNoteInbox(0, &a.in[0], a.in[0].RegisterConsumer());
+                  else
+                     cons.audio->SetNoteInbox(0, nullptr, -1);
+               }
+               if (!cut)
+                  a.Step(true);
+               else
+               {
+                  Transport::Instance().AdvanceAudioClock(a.block);
+                  a.pos += a.block;
+               }
+               cons.Step(false);
+               cons.pos = a.pos;
+            }
+            StopTransport();
+            const PairReport p = Pairs(cons.got);
+            printf("NOTEAUDIT BYPASS %-17s %-6s %d voices open at the cut | at the consumer: on %3d off %3d stuck %d orphan-off %d\n",
+                   c.name, mode == 0 ? "bypass" : "delete", voicesOnAtCut, p.ons, p.offs, p.stuck, p.orphanOff);
+            // Delete is reported only: a deleted producer cannot send note-offs, so every node leaves its
+            // consumer's open voices open (the consumer drops to its free-running state, nothing sounds).
+            if (mode == 0 && (p.stuck || p.orphanOff))
+               flags.Flag("BYPASS", c.name, "bypass mid-note: stuck + orphan-off", p.stuck + p.orphanOff);
+         }
+      }
+      (void)ok;
+   }
+
    // ---- CPU --------------------------------------------------------------
    void AuditCpu()
    {
@@ -616,6 +742,10 @@ bool RunNoteAudit()
       AuditHuman(flags);
    if (want("LOOP"))
       AuditLoop(flags, ok);
+   if (want("JITTER"))
+      AuditJitter(flags);
+   if (want("BYPASS"))
+      AuditBypass(flags, ok);
    if (want("CPU"))
       AuditCpu();
 
