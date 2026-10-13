@@ -141,7 +141,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 |---|---|---|---|---|---|---|
 | `bench.b1_cb_load_p99` | B1 audio callback load p99, 24 voices, per buffer size (suite §6) | <= 50.00 % | release | met | 44.75 (bench:B1:buf256) | - |
 | `bench.b1_xruns` | B1 xruns at 256 frames, the §6 buffer (64 is not a target: Found in Block 1) | <= 0 count | release | met | 0 (bench:B1:buf256) | - |
-| `load.ms_per_track_s` | Audio-thread ms per second of audio per track (synth + effect, held 4-note chords, offline), cheapest track count |  | report | info | 68.31 (node:Analog+node:EQ) | - |
+| `load.ms_per_track_s` | Audio-thread ms per second of audio per track (synth + effect, held 4-note chords, offline), cheapest track count |  | report | info | 68.36 (node:Analog+node:EQ) | - |
 | `load.tracks_at_70pct` | Tracks of that synth + effect at 70 % of one core |  | report | info | 10.00 (node:Analog+node:EQ) | - |
 
 ## P8 Performance: Bench: canvas
@@ -253,7 +253,7 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `geo.subdiv_ms` (ms): Infinite 7.19 · Blender 8.14
 - `sim.cloth_ms` (ms): Infinite 0.422 · Blender 18.40
 - `geo.winding_mismatch` (triangles): node:8 balls r96 0 · node:Array on cube 0 · node:Array on sphere 0 · node:Arrow 3D 0 · node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Curve Ops hostile 0 · node:Curve Ops no input 0 · node:Curve source tube 0 · node:Cylinder 0 · node:Decimate Icosphere 0 · node:Decimate Torus 0 · node:Decimate on cube 0 · node:Decimate on sphere 0 · node:Delaunay 0 · node:Delete on cube 0 · node:Delete on sphere 0 · node:Disc 0 · node:Dodecahedron 0 · node:Explode on cube 0 · node:Explode on sphere 0 · node:Extrude on cube 0 · node:Extrude on sphere 0 · node:Gear 3D 0 · node:Helix 0 · node:Icosphere 0 · node:Join merge 0 · node:Merge by Distance 0 · node:Metaballs 0 · node:Metaballs extreme 0 · node:Mirror on cube 0 · node:Mirror on sphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Ocean 0 · node:Octahedron 0 · node:Plane 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Select on cube 0 · node:Select on sphere 0 · node:Smooth on cube 0 · node:Smooth on sphere 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Sphere 0 · node:Star 3D 0 · node:Subdivide on cube 0 · node:Subdivide on sphere 0 · node:Supershape 0 · node:Tetrahedron 0 · node:Torus 0 · node:Torus Knot 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Triangulate on cube 0 · node:Triangulate on sphere 0 · node:Tube 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:Voronoi 0 · node:Wireframe on cube 0 · node:Wireframe on sphere 0 · node:default 0 · node:node Offset 0 · node:node Resample 0 · node:node Simplify 0 · node:node Smooth 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:pinned 0 · node:realised 0 · node:Solidify on a plane 0 · node:Mobius Strip 2.00 (exc F16) · node:Klein Bottle 7.00 (exc F16) · node:Screw on cube 1456 (exc F18) · node:Screw on sphere 14608 (exc F18)
-- `load.ms_per_track_s` (ms/s): node:Wavetable+node:Reverb 18.17 · node:Analog+node:EQ 68.31
+- `load.ms_per_track_s` (ms/s): node:Wavetable+node:Reverb 18.57 · node:Analog+node:EQ 68.36
 - `load.tracks_at_70pct` (tracks): node:Wavetable+node:Reverb 34.00 · node:Analog+node:EQ 10.00
 - `bench.b8_window_p99_ms` (ms): bench:B8:2x1080+2w:w1 17.69 · bench:B8:2x1080+3w:w2 17.69 · bench:B8:2x1080+3w:w1 17.70 · bench:B8:2x1080+2w:w0 17.72 · bench:B8:2x1080+3w:w0 17.78 · bench:B8:4x2160+3w+cam+syphon:w0 33.04 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 33.09 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 33.21 (miss)
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
@@ -263,4 +263,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `render.sync_drift_ms_min` (ms/min): Infinite 0 · Blender 0
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 0531853e; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 c2f7d0d1; 2026-10-13 c64eb6fe; 2026-10-13 d6020b77; 2026-10-13 db820427; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 0531853e; 2026-10-13 38e754be; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 c2f7d0d1; 2026-10-13 c64eb6fe; 2026-10-13 d6020b77; 2026-10-13 db820427; 2026-10-13 e182230c.

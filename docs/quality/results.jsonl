@@ -2236,3 +2236,39 @@
 {"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.crest_err_db", "subject": "Infinite", "value": 2.4993}
 {"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.extra_onsets", "subject": "Infinite", "value": 0.0}
 {"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.timing_ms", "subject": "Infinite", "value": 3.25}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: AudioFilter", "value": 0.1875}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Chorus", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Delay", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Drive", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dry", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dynamics", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: EQ", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Flanger", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Limiter", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Phaser", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Reverb", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: AudioFilter", "value": -90.7604}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Chorus", "value": -102.4367}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Drive", "value": -35.0135}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dry", "value": -92.2117}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dynamics", "value": -92.2117}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: EQ", "value": -97.2956}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Flanger", "value": -91.975}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Limiter", "value": -92.2117}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Phaser", "value": -110.483}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Analog", "value": -81.1983}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: EquationSynth", "value": -83.8895}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: FieldSynth", "value": -3.6556}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Metallic", "value": -6.2842}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Oscillator", "value": -82.1419}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Wavetable", "value": -83.9169}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Analog", "value": 0.1736}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: EquationSynth", "value": 0.1738}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: FieldSynth", "value": 6.9031}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Metallic", "value": 41.4494}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Oscillator", "value": 0.1742}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Wavetable", "value": 0.1737}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "load.ms_per_track_s", "subject": "node:Analog+node:EQ", "value": 68.3627}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "load.ms_per_track_s", "subject": "node:Wavetable+node:Reverb", "value": 18.5705}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "load.tracks_at_70pct", "subject": "node:Analog+node:EQ", "value": 10.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "load.tracks_at_70pct", "subject": "node:Wavetable+node:Reverb", "value": 34.0}
