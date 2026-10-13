@@ -168,19 +168,22 @@ def result_files(path):
 
 
 def source_time(sources):
-    """When the sources last changed: newest commit touching them, or the file time if one is edited now."""
+    """When the sources' content last changed.
+
+    The older of the last commit touching them and the newest file time: a kit run before its own
+    commit stays current (file time is the edit), and a fresh checkout does too (commit time is older).
+    A file edited and not committed counts from its file time."""
     if not sources:
         return 0.0
-    t = 0.0
     r = subprocess.run(["git", "-C", REPO, "log", "-1", "--format=%ct", "--"] + sources, capture_output=True, text=True)
-    if r.stdout.strip():
-        t = float(r.stdout.strip())
+    commit_t = float(r.stdout.strip()) if r.stdout.strip() else 0.0
+    r = subprocess.run(["git", "-C", REPO, "ls-files", "--"] + sources, capture_output=True, text=True)
+    file_t = max([os.path.getmtime(os.path.join(REPO, f)) for f in r.stdout.split("\n")
+                  if f and os.path.exists(os.path.join(REPO, f))] or [0.0])
     r = subprocess.run(["git", "-C", REPO, "status", "--porcelain", "--"] + sources, capture_output=True, text=True)
-    for line in r.stdout.split("\n"):
-        p = os.path.join(REPO, line[3:].strip())
-        if line.strip() and os.path.exists(p):
-            t = max(t, os.path.getmtime(p))
-    return t
+    if r.stdout.strip() or not commit_t:
+        return file_t
+    return min(commit_t, file_t)
 
 
 def quality_ids(files, limit=40):
