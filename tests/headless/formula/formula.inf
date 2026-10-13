@@ -1,0 +1,10 @@
+infinite-patch 1
+# E_FORMULA_COMPILE: a Formula shader that calls a function that does not exist.
+node 1 Source Formula
+  id fx
+  s formula return vec4(bogusfn(p.x * 6.0), 0.5, 1.0, 1.0);
+end
+node 2 Utility Output
+  id out
+end
+cable out 0 fx
