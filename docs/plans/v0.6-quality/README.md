@@ -33,7 +33,7 @@ without ask. Bench runs are serialized with any other benching session (check NO
 | Node audits not yet covered: Reaction Diffusion, Remove Background, image sources, blur accuracy, RES/BYPASS sweeps, Metaballs, Cloth, Curve Ops, Instances, Displacement | next in `docs/plans/node-audits` | Block 1 item 1.8: run the sweeps; fix what they find only if it is a correctness bug (perf findings go to the perf lane) |
 | Escaped fixes since v0.5.0 (8) | each already has its fix | nothing new; the release gate counts escapes after v0.6 |
 | Motion and radial blur GPU cost (image-fx G9, about 0.16 ms/node over) | perf quest in the re-survey-finish ledger | Block 3 item 3.12 |
-| Metal compute for particles (R757) | parked, gates G1/G2 unmeasured | Block 3 item 3.13 (gate, then build) |
+| Metal compute for particles (R757) | parked, gates G1/G2 unmeasured | Block 3 item 3.16 (gate, then build) |
 | Modulation smaller gaps: Envelope hold stage and per-stage curves, MPE | open in `docs/plans/modulation`, `docs/plans/mpe` | Block 2 items 2.14, 2.15 |
 | `feature/ui-engine` (1 commit), `feature/node-audits-plan` (1 docs commit) | the fix is already on main; the docs are superseded | delete both branches at Block 1 start, no merge |
 
@@ -42,6 +42,7 @@ without ask. Bench runs are serialized with any other benching session (check NO
 | # | Item | Today | Bar | Target files | Done check |
 |---|---|---|---|---|---|
 | 1.0 | Competitor data as specs | the extracted parameter trees are unused; summary files in `~/re-output` carry unchecked claims ("SIMD ladder circuits", "C++/Metal DSP") | `tools/re-survey/param_diff.py`: for each node this plan touches, the nearest competitor devices' controls (name, range, default, unit) next to ours; `diff.py claims` also reads the `~/re-output/*/*.md` summaries | the tool's self-test; one spec table per Block 2/3 item in `docs/plans/v0.6-quality/specs/`; claims lint clean |
+| 1.0b | Data ledger: no dataset unused, no result stale | 35 datasets in `~/re-output`; several have no consumer (builtins-kit, load-bench, host-audit, project-bench, capability-map, ui-map); builtins-kit still shows Analog before its fix | `tools/re-survey/data_ledger.py`: each dataset → its consumers (scoreboard metric, spec, plan item); every kit and probe emits `QUALITY` lines into `docs/quality/registry.tsv` (synth-probe already does); `verify-gate` re-runs any kit whose source changed | ledger lint: 0 datasets without a consumer, 0 stale results |
 | 1.1 | Export / bounce latency shift | bounce through Drive is 73 samples late (Oversampler), Limiter lookahead ~72, plugins report their own | 0-sample offset vs dry, for Drive, Limiter, a latent plugin | `src/app/graph/AudioTopology.cpp` (PDC total already computed), offline render path (`src/core/HeadlessJob.cpp`), export writer | dossier C bounce probe re-run reads 0; smoke row per node |
 | 1.2 | Audio Filter click (F13) | fx.click_db 17.30 | ≤ 12 dB | Audio Filter kernel in `src/audio/dsp/` + its row in `src/audio/EffectDefs.cpp` | scoreboard row met, exception F13 removed |
 | 1.3 | Bitcrush rate spread (F14) | fx.rate_spread_db 5.38 | ≤ 1 dB | Bitcrush kernel (hold length in seconds, not samples) | row met, F14 removed |
@@ -50,6 +51,11 @@ without ask. Bench runs are serialized with any other benching session (check NO
 | 1.6 | Transient-aware stretch | drums: 10–14 extra onsets, -3 dB crest | 0 extra onsets in `stretch_kit`, crest within 0.5 dB | `src/audio/dsp/ClipTimeStretch.h` | `tools/re-survey/stretch_kit.py` passes; tonal cases do not regress |
 | 1.7 | 9 unmeasured P8 metrics | R5 ×4, B7 soak ×3, live.frame_p95, live.drop_pct | all measured (met or a dated exception) | bench scripts | scoreboard Unmeasured = 0 |
 | 1.8 | Node audit coverage | 10 node families not swept | every family swept; correctness bugs fixed with a regression row | `tools/` audit drivers, `docs/plans/node-audits/README.md` | node-audits "not yet covered" row empty |
+| 1.9 | Default levels | at default settings Delay +3.0 dB, Reverb +4.3 dB, Dynamics -3.7 dB at 1 kHz (builtins-kit) | inserting an effect at default changes loudness by ≤ 1 dB (Drive excepted: drive is gain) | Delay, Reverb, Dynamics defaults | builtins-kit row per effect |
+| 1.10 | Chorus / Flanger at high level | THD at -1 dBFS: Chorus -24.5 dB, Flanger -38.2 dB (at -12 dBFS: -102.6, -91.8), so they clip inside | ≤ -60 dB at -1 dBFS | Chorus, Flanger kernels | builtins-kit THD -1 column |
+| 1.11 | Synth defaults that measure wrong | FieldSynth default: non-harmonic -3.9 dB at MIDI 96, 13.8 ¢ off, 362 ms attack; Metallic 41.4 ¢ off | each is fixed, or recorded as by design with the reason | FieldSynth default program, Metallic tuning | builtins-kit rows; `param-truth-audit` |
+| 1.12 | RC-20 crashes in Infinite's host | SIGSEGV in AU and VST3 (host-audit); it runs in DAWs, so it is a host bug | loads, processes, closes | plugin host (`plugin-host-hardening`) | host-audit row OK |
+| 1.13 | Load-bench clipping | every load-bench render peaks at exactly 1.000 | master never hard-clips silently: meter shows it, export warns | master bus / export | load-bench peak < 1.0 with a sane patch |
 
 Settled:
 - **1.0** sources, by what each can give: commercial plugins (85 plugins, 17,718 parameters with min, max, default and unit: the richest); Ableton (5,243 parameter names and types, sub-module grouping); Bitwig (232 Grid module names, 43 modulators); Blender (245 geometry nodes with sockets); Cables (1,298 ops with ports; MIT, so its op source may be read for algorithms). Only names, ranges and groupings are used; the DSP comes from papers. Spec rule: every control a node gains must be in at least two competitors or fix a measured miss.
@@ -68,7 +74,7 @@ Settled:
 |---|---|---|---|---|---|
 | 2.1 | First sound | 12 steps / 24.8 s (workflow_cost task 1; Bitwig 3, Live and Logic 4) | ≤ 3 steps | `src/app/frame/StageMenuBar.cpp` (a "New: Synth" start that wires Synth → Audio Out) | `tools/re-survey/workflow_cost.py` task 1 |
 | 2.2 | Sample drop auto-wire | 3 steps (task 8; the others 1) | 1 step: dropped file plays through Audio Out | `src/app/frame/StageDropHandling.cpp` | workflow_cost task 8 = 1 step |
-| 2.3 | Zoom to fit key | none | one key frames all nodes | canvas shortcut table | `shortcuts-sweep` row |
+| 2.3 | Standard keys | no zoom-to-fit | keys the competitors share (ui-map: Final Cut 226 shortcuts; DAW manuals): zoom to fit, zoom in/out, play/stop, loop, J/K/L shuttle, I/O in-out | shortcut table | `shortcuts-sweep` rows |
 | 2.4 | Factory presets | no preset store for audio nodes | ≥ 8 on every synth and on Delay, Reverb, Drive, Dynamics, EQ, the new saturator and reverb | factory preset table keyed by node type, applied through the save/load param path | selftest: count, each preset loads and is audible |
 | 2.5 | Plugin sidechain input | no sidechain bus | VST3 + AU sidechain as a second audio input | `src/nodes/AudioPluginNode.h`, VST3/AU host files | sidechain compressor ducks in a smoke patch; Windows/Linux compile |
 | 2.6 | Crash-only plugin fallback | a plugin crash takes the app down | node goes silent + badge, app lives | `src/platform/Platform.mm` (+ Windows/Linux), au_oop table | crash-test plugin in selftest |
@@ -89,7 +95,15 @@ Settled:
 | 2.21 | Compressor styles | one Dynamics character | detector and knee styles: clean, VCA bus (glue), opto, FET (Pro-C 2, Glue) | Dynamics kernel | measured attack/release curve per style |
 | 2.22 | 4-operator FM synth | Oscillator has one FM input | 4 operators, 11 algorithms, ratio/fixed, per-op envelope (Operator, FM-4) | new synth (`new-audio-node`) | `audio-node-sweep`; synth-probe pitch and aliasing rows |
 | 2.23 | Phase shaping in Field | no phase-shaping builtins | bend, pinch, mirror, skew, formant builtins (Bitwig Grid phase family) | Field builtins (`field-language`) | `tests/field/corpus.txt` rows |
-| 2.24 | Multicore audio graph | single audio thread | measure first (B1 heavy patch); build only if audio thread > 50% of the budget, else record "not needed" with the number | `AudioTopology.cpp` | B1 row either way |
+| 2.24 | Multicore audio graph | single audio thread; load-bench: 8 tracks of Analog+EQ use 41.8% of a core, ceiling about 13 tracks (Wavetable+Reverb about 32) | independent branches run on a worker pool; 64 tracks of Analog+EQ in real time on 8 cores | `AudioTopology.cpp` | load-bench ceiling ≥ 64 tracks |
+| 2.25 | Filter models | Audio Filter: one SVF; Analog: one ladder | ladder, Sallen-Key (MS-20 style), diode, SVF; zero-delay feedback, per-stage saturation (Bitwig Grid 13 filters, Auto Filter models, Diva) | Audio Filter kernel, Analog core | `audio-node-sweep`; self-oscillation pitch within 5 ¢ |
+| 2.26 | Wavetable phase warps | morph only | bend, sync, formant, mirror, quantize warps (Vital, Serum shape) sharing code with 2.23 | `WavetableEngine` | synth-probe aliasing rows hold |
+| 2.27 | Drum voice synth | DrumSequencer, no drum synth | kick, snare, hat, clap, tom voices from published analog-drum models; one node, voice selector | new synth (`new-audio-node`) | synth-probe rows; Drum Sequencer smoke patch |
+| 2.28 | Note entry | workflow_cost task 6: 8 steps (Bitwig 5) | ≤ 5 steps | arrangement clip editor | workflow_cost task 6 |
+| 2.29 | Open an Ableton set | none; `.als` is gzip XML (project-bench) | import tempo, track names, MIDI clips and locators; instruments map to Infinite synths by role | new importer in `src/core/` | 3 sample sets import; notes match |
+| 2.30 | Starter content | no samples or clips (gap P6 E) | drum one-shots and loops rendered by Infinite's own synths (2.27), shipped as patches | tools script + `patches/` | count check |
+| 2.31 | Control API | 63 scriptable members vs Live 584, Bitwig 1,729, TouchDesigner 3,649 (capability-map) | every param addressable over OSC with query and listen; node create/delete/connect | `src/nodes/OscNodes.cpp`, param registry | external script drives a patch in the smoke set |
+| 2.32 | Show sync and controllers | none | LTC and MTC in/out; gamepad modulator | beside `MidiNodes.h` | loopback smoke |
 
 Settled:
 - **2.6** crash-only: in process as today; after a crash the plugin re-opens out of process on next load. Full sandboxing of every plugin costs latency and is not taken.
@@ -98,7 +112,21 @@ Settled:
 - **2.11** Ring Mod stays 4× oversampled (a product of two signals, ADAA does not apply). Old Drive patches sound slightly cleaner; no legacy flag.
 - **2.12** shape: VCV Rack's polyphonic cables (from its public manual; Rack is GPL, no source) and Bitwig's poly modulators (docs). One cable type, N channels, mono consumers sum. Order inside the block: 2.12 before 2.13, 2.15, 2.16.
 - **2.17-2.22** are the owner-asked quality pass, so the `new-audio-node` minimalism rule yields for these nodes only; each control must pass the 1.0 spec rule.
-- Not taken (no user ask, or not this product): circuit-modelled filters (Diva), spectral warp wavetable (Vital), Alchemy, Sculpture, vintage console EQs, drum-machine emulations, resonance suppressor (soothe2), linear-phase EQ, VST2 (SDK no longer licensed), pitch-tracking harmonizer.
+- Factory presets of other apps (Ableton `.adv`/`.adg` are open XML) are read for **statistics only** (which ranges sound designers use, to set our defaults and ranges); none are copied or shipped.
+- Re-evaluated 2026-10-13 and now taken: filter models (2.25), wavetable warps (2.26), drum synth (2.27), note entry (2.28), control API (2.31, the real need behind "Python everywhere"), show sync (2.32).
+- Still not taken, with the reason:
+
+| Item | Reason |
+|---|---|
+| Alchemy-style resynthesis | Granular, Grain Molder, Spec Blur and Field Synth cover the live uses; full resynthesis is a product of its own |
+| Sculpture-style string modelling | Metallic, Shape Resonator, Resonator Bank exist; fix their measured faults (1.11) before adding a fourth |
+| Vintage console EQ emulations | character, not capability; the saturator (2.17) and dynamic EQ (2.19) cover the sound |
+| Resonance suppressor (soothe2) | mixing tool, not live; revisit if a user asks |
+| Linear-phase EQ | adds latency, wrong for live play |
+| VST2 | Steinberg no longer licenses the SDK |
+| Harmonizer | Key-Snap + Pitch Shifter already patch it |
+| Hybrid algorithmic + IR reverb | patch Reverb and the IR reverb (2.9) in parallel |
+| Multipass-style container | the canvas is the container |
 
 ## Block 3: picture (`feature/v06-picture`)
 
@@ -116,10 +144,13 @@ Settled:
 | 3.10 | Defocus (bokeh) blur | none (Pixelmator) | depth-driven bokeh | new FilterDef | `compositing-pipeline-sweep` |
 | 3.11 | Cables image-op gaps | 108 Cables ImageCompose ops not compared op by op | gaps from the 1.0 tool that pass the spec rule become FilterDefs | `src/core/FilterDefs.cpp` | each new filter in the image-fx audit |
 | 3.12 | Visual perf | geo.instance 2.73 ms (Blender 1.26); geo.subdiv 12.01 ms (8.1); B8 heavy p99 33.2 ms, 9.36% missed; motion/radial blur 0.16 ms/node over | instance ≤ 1.3 ms, subdiv ≤ 8.1 ms, B8 heavy p99 ≤ 18.3 ms and < 0.5% missed, blur within G9 | perf tracker `docs/plans/perf/README.md` | scoreboard rows met |
-| 3.13 | GPU particles (Metal compute) | CPU, capped 200k | run gate G1 of `docs/plans/metal-compute.md`; if it passes, build to its G2 bar (1M in < 2 ms); else record the number | `SimulationNodes.h` | G1 row either way |
+| 3.14 | 2D fluid | none (TouchDesigner, Cables staple) | GPU stable fluids (Stam 1999): velocity, dye, vorticity, obstacles from an image; 1080p ≤ 3 ms | new compositing node | divergence below 1e-3 after projection |
+| 3.15 | Clip speed in the arrangement | Video Source has speed; arrangement clips do not | per-clip speed and reverse, audio follows with 1.6's stretch | `src/arrange/` (`timeline-arrangement-architecture`) | export of a 2× clip has the right length and pitch |
+| 3.16 | GPU particles (Metal compute) | CPU, capped 200k | run gate G1 of `docs/plans/metal-compute.md`; if it passes, build to its G2 bar (1M in < 2 ms); else record the number | `SimulationNodes.h` | G1 row either way |
 
 Settled:
-- Not taken: sculpting, UV unwrap and retopology, fluids and volumes, depth cameras, Python in every node (Field is the answer), export to web, magnetic storyline, clip retime.
+- Re-evaluated 2026-10-13 and now taken: 2D fluid (3.14), clip speed (3.15).
+- Still not taken: sculpting and retopology (modelling, not live); 3D volumes (cost per frame); depth cameras (vendor SDKs on three platforms; Apple Vision body tracking covers the live use); export to web (a second renderer); magnetic storyline (an editing model, not a live one); light linking and IES.
 
 ## What each source taught (2026-10-13)
 
@@ -134,6 +165,12 @@ Settled:
 | Cables (1,298 ops; MIT) | rigid bodies, L-systems, the image-op catalogue; source readable | 3.8, 3.9, 3.11 |
 | Pixelmator | defocus blur | 3.10 |
 | VCV Rack (GPL: manual and behaviour only; the dossier built from its source manifests was removed) | polyphonic cables | 2.12 |
+| builtins-kit (our nodes measured like the DAWs') | default level jumps, Chorus/Flanger clipping, FieldSynth and Metallic defaults | 1.9-1.11 |
+| load-bench | 13-track ceiling for Analog+EQ on one core | 2.24, 2.16 |
+| host-audit | RC-20 crashes only in our host | 1.12 |
+| project-bench formats | Ableton sets and presets are open XML; ours are the smallest (0.8 KB) | 2.29, preset statistics |
+| capability-map (scripting APIs) | 63 scriptable members vs 584-3,649 | 2.31 |
+| ui-map | shared shortcut sets | 2.3 |
 
 ## Release gate (v0.6)
 
