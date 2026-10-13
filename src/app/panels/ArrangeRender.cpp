@@ -54,8 +54,7 @@ namespace app
       // would only write silence anyway.
       const bool deviceWasRunningBefore = AudioEngine::Instance().SampleRate() > 0.0;
       const bool wantsGraphAudio =
-         n->includeAudio && (isArrange || (n->AudioInput().IsConnected() &&
-         dynamic_cast<AudioFileNode*>(n->AudioInput().GetSource()) == nullptr));
+         n->includeAudio && (isArrange || n->AudioInput().IsConnected());
       // A headless job never opens a device: the take runs at the job's own
       // rate (gHeadlessAudioRate), which is what makes it reproducible.
       if (wantsGraphAudio && AudioEngine::Instance().SampleRate() <= 0.0 && gHeadlessAudioRate <= 0.0)

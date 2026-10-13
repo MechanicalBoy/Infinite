@@ -743,14 +743,14 @@ namespace PatchSchema
                dfs(kv.first);
       }
 
-      // Terminals: an Output or the audio master. Everything that cannot reach one does nothing.
+      // Terminals: an Output, the audio master, or a Spatial Mixer (a terminal like Audio Out). Everything that cannot reach one does nothing.
       std::vector<int> terminals;
       int outputs = 0;
       for (const Patch::NodeRecord& n : data.nodes)
       {
          if (n.typeName == "Output")
             outputs++;
-         if (n.typeName == "Output" || n.typeName == "Audio Out")
+         if (n.typeName == "Output" || n.typeName == "Audio Out" || n.typeName == "Spatial Mixer")
             terminals.push_back(n.index);
       }
       // A clip's source node plays from the timeline, which is its own routing: it needs no cable.
@@ -763,7 +763,7 @@ namespace PatchSchema
       {
          if (env.forRender)
             errors.push_back(Make("E_NO_OUTPUT", "the patch has no Output node", 0, -1, "add a node 'Utility Output' and cable your image into it"));
-         else
+         else if (terminals.empty())   // an audio-only patch (Audio Out / Spatial Mixer) is complete: it is measured, not rendered
             warnings.push_back(Make("W_NO_OUTPUT", "the patch has no Output node, so it cannot be rendered", 0, -1));
       }
       std::multimap<int, int> flowsFrom;

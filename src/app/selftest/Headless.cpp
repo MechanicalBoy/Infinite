@@ -1233,14 +1233,16 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
             auto* outNode = dynamic_cast<OutputNode*>(g.node.get());
             if (outNode != nullptr)
                videoOuts.push_back(outNode);
-            if (audioOut == nullptr && outNode == nullptr)
+            auto* spatial = dynamic_cast<SpatialMixerNode*>(g.node.get());
+            if (audioOut == nullptr && outNode == nullptr && spatial == nullptr)
                continue;
             bool wired = false;
             for (int slot = 0; slot < kMaxAudioSlots; slot++)
                if (AudioCable* cable = g.node->AudioInputSlot(slot))
                   wired = wired || cable->IsConnected();
             if (wired)
-               sinks.push_back({ g.index, g.typeName, audioOut ? &audioOut->CaptureRing() : &outNode->CaptureRing() });
+               sinks.push_back({ g.index, g.typeName,
+                                 audioOut ? &audioOut->CaptureRing() : outNode ? &outNode->CaptureRing() : &spatial->CaptureRing() });
          }
          bool timelineClips = false;
          for (const Arrange::Lane& lane : gArrange.lanes)
