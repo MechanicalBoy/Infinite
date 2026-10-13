@@ -80,6 +80,10 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Field Domains](https://infinitedevices.org/library/field-domains-skill.html): Move data between rates in Field: reduce, map, broadcast, resample and downsample. (file: https://infinitedevices.org/assets/skills/field-domains.md)
 - [Field State](https://infinitedevices.org/library/field-state-skill.html): Delay, feedback and smoothing in Field: how state cells reset, save and hot-reload. (file: https://infinitedevices.org/assets/skills/field-state.md)
 
+## Library: Extensions
+
+- [Tracking pack](https://infinitedevices.org/library/ext-tracking.html): Turn a camera or a picture into controls: hands, face and body landmarks become modulators. (file: https://infinitedevices.org/extensions.html#tracking)
+
 ## Library: Pixel
 
 - [Ordered Dither](https://infinitedevices.org/library/ordered-dither.html): A 4x4 Bayer dither: any picture becomes two inks on paper. The series look from the films. (file: https://infinitedevices.org/assets/library/pixel/ordered-dither.field)

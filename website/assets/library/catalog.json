@@ -1,7 +1,7 @@
 {
  "name": "Infinite Library",
  "url": "https://infinitedevices.org/library.html",
- "count": 59,
+ "count": 60,
  "items": [
   {
    "id": "first-sound",
@@ -578,6 +578,18 @@
    "file": "https://infinitedevices.org/assets/skills/field-state.md",
    "preview": "https://infinitedevices.org/assets/skills/field-state.webp",
    "page": "https://infinitedevices.org/library/field-state-skill.html"
+  },
+  {
+   "id": "ext-tracking",
+   "name": "Tracking pack",
+   "category": "Extensions",
+   "type": "Extension",
+   "description": "Turn a camera or a picture into controls: hands, face and body landmarks become modulators.",
+   "author": "n1m21n",
+   "price": 0,
+   "file": "https://infinitedevices.org/extensions.html#tracking",
+   "preview": "https://infinitedevices.org/assets/extensions/tracking.webp",
+   "page": "https://infinitedevices.org/library/ext-tracking.html"
   },
   {
    "id": "ordered-dither",
