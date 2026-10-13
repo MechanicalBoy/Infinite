@@ -39,6 +39,12 @@ if command -v ffmpeg >/dev/null; then
   python3 -c "import sys; sys.exit(0 if float('${mv2:--999}') > -20 else 1)"; check "render --start 2: audio starts at 2 s, not 0" $?
 fi
 
+# Spatial Mixer is a terminal like Audio Out: no W_UNUSED_NODE / E_NO_AUDIO for an Oscillator patched only into it
+SP="$ROOT/tests/headless/summary/spatial_only.inf"
+"$BIN" --validate "$SP" >/dev/null 2>&1; check "spatial-only patch passes strict validate" $?
+r=$("$BIN" --audio-summary "$SP" "$OUT/sp.json" --duration 0.5 2>/dev/null)
+[ "$(echo "$r" | json "d['ok']")" = "True" ]; check "spatial-only patch measures audio (sink = Spatial Mixer)" $?
+
 # Audio File -> Output direct used to mux the raw file, ignoring volume/gain: volume 0.2 must render ~12 dB under 0.8
 if command -v ffmpeg >/dev/null; then
   FV="$ROOT/tests/headless/filevol/file_volume.inf"

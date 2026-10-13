@@ -1,0 +1,9 @@
+infinite-patch 1
+# Oscillator into a Spatial Mixer only: a terminal like Audio Out, so strict validate is clean and --audio-summary measures it.
+node 1 Synths Oscillator
+  id osc
+end
+node 2 Utility Spatial Mixer
+  id sp
+end
+aud sp 0 osc
