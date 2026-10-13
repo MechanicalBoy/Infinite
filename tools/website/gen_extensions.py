@@ -4,7 +4,8 @@
 What: one card per pack in the release catalog (the same extensions.json the app reads in
 Settings > Extensions). Each card has an Install button that opens the live-install steps (the app
 downloads, verifies and installs the pack while it runs, no restart) and offline links to the
-release assets. Also writes website/assets/extensions/extensions.json (the tracked list) and adds the
+release assets. Also writes website/assets/extensions/extensions.json (the tracked list), index.json + a preview per pack
+(the packs as Library items, category Extensions) and adds the
 nav link to index.html and library.html.
 Why: packs never ship inside the app and never live on the website; the release is the one host.
 The page only tracks them, so a new pack in the catalog is a new card with no page edit.
@@ -15,10 +16,11 @@ Usage:
 Then python3 tools/website/gen_seo.py (sitemap, llms.txt) and python3 tools/brand/brand_lint.py.
 """
 import argparse, html, json, os, re, urllib.request
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 W = os.path.join(ROOT, "website")
-CATALOG_URL = "https://github.com/n1m21n/Infinite/releases/latest/download/extensions.json"
+CATALOG_URL = "https://github.com/n1m21n/Infinite/releases/download/extensions/extensions.json"
 
 # Hand-kept per pack: what it adds and the first app version that can install it.
 # A pack missing here still gets a card from the catalog alone.
@@ -48,7 +50,7 @@ def card(p):
             <details class="ext-install">
               <summary class="btn btn-primary btn-sm">Install</summary>
               <div class="ext-steps">
-                <p>In Infinite, open <b>Settings &rarr; Extensions</b> and press <b>Install</b> next to {e(p["name"])}. It downloads, checks and installs while the app runs, the same way live updates do. No restart.</p>
+                <p>In Infinite, open <b>Settings &rarr; Extensions</b> and press <b>Install</b> next to {e(p["name"])}. It downloads, checks and installs while the app runs, the same way live updates do. No restart. When a newer version is published, the same row shows <b>Update</b> the next time you open the tab.</p>
                 <p class="ext-offline">Offline? Download your platform's pack and use <b>Install from file</b>: {links}</p>
               </div>
             </details>
@@ -103,6 +105,40 @@ def add_nav(name):
     open(p, "w").write(s)
 
 
+def preview(p, path):
+    """The Library card picture: same look as the AI Skills previews (tools/website/sync_skills.py)."""
+    def font(sz):
+        try:
+            return ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", sz)
+        except Exception:
+            return ImageFont.load_default()
+    meta = PACKS.get(p["id"], {})
+    im = Image.new("RGB", (900, 600), "#151930")
+    g = ImageDraw.Draw(im)
+    g.rounded_rectangle((70, 110, 830, 490), 24, fill="#20263F")
+    for k, c in enumerate(["#F57F66", "#343B5E", "#343B5E"]):
+        g.ellipse((100 + k * 26, 140, 118 + k * 26, 158), fill=c)
+    lines = [("extension pack", "#8890B1"), (p["name"], "#EEF1FA"), ("v" + p["version"], "#A3AACB"), ("", "#fff")]
+    lines += [("+ " + n, "#FF6B35") for n in meta.get("nodes", [])[:3]]
+    lines += [("", "#fff"), ("Install from Settings > Extensions", "#A7B1FF")]
+    for n, (t, c) in enumerate(lines):
+        g.text((105, 190 + n * 32), t, font=font(24), fill=c)
+    im.save(path, quality=85)
+
+
+def library_index(packs):
+    """assets/extensions/index.json: the packs as Library items (category Extensions), read by library.js and gen_seo.py."""
+    items = []
+    for p in packs:
+        meta = PACKS.get(p["id"], {})
+        rel = f'assets/extensions/{p["id"]}.webp'
+        preview(p, os.path.join(W, rel))
+        items.append({"id": "ext-" + p["id"], "name": p["name"] + " pack", "category": "Extensions", "kind": "Extension",
+                      "author": "n1m21n", "description": meta.get("blurb", p.get("purpose", "")), "price": 0,
+                      "preview": rel, "file": "extensions.html#" + p["id"]})
+    json.dump({"version": 1, "items": items}, open(os.path.join(W, "assets/extensions/index.json"), "w"), indent=1, ensure_ascii=False)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--catalog", help="local extensions.json (default: the latest release)")
@@ -115,10 +151,11 @@ def main():
     tracked = {"name": "Infinite Extensions", "source": CATALOG_URL,
                "packs": [dict(p, **{k: v for k, v in PACKS.get(p["id"], {}).items()}) for p in packs]}
     json.dump(tracked, open(os.path.join(W, "assets/extensions/extensions.json"), "w"), indent=1, ensure_ascii=False)
+    library_index(packs)
     for n in ("index.html", "library.html"):
         add_nav(n)
     open(os.path.join(W, "extensions.html"), "w").write(page(packs))
-    print(len(packs), "packs; extensions.html, assets/extensions/extensions.json, nav links written")
+    print(len(packs), "packs; extensions.html, assets/extensions/{extensions,index}.json, Library previews, nav links written")
 
 
 if __name__ == "__main__":

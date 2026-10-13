@@ -1,0 +1,6 @@
+{
+  "tracking": {
+    "name": "Tracking",
+    "purpose": "Hand, face and pose tracking from camera or image input"
+  }
+}

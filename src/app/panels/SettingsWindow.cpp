@@ -1274,16 +1274,30 @@ namespace app
          // 7. Extensions Tab: optional packs (docs/plans/extensions/README.md)
          if (ImGui::BeginTabItem(L("Extensions")))
          {
-            static bool sFetched = false;
-            if (!sFetched)
+            // Ask the catalog again whenever the tab opens, at most every 5 minutes, so a pack published while
+            // Infinite is running shows up without a restart.
+            static double sFetchedAt = -1.0e9;
+            const double now = ImGui::GetTime();
+            if (now - sFetchedAt > 300.0 && Extensions::GetState().busyId.empty())
             {
-               sFetched = true;
+               sFetchedAt = now;
                Extensions::RefreshCatalog();
             }
             const Extensions::State& ex = Extensions::GetState();
             const bool busy = !ex.busyId.empty() || ex.catalogLoading;
 
+            const float btnW = 96.0f; // one action-button width for every row in this tab
             ImGui::Spacing();
+            if (UpdateCheck::GetStatus() == UpdateCheck::Status::UpdateAvailable)
+            {
+               // Infinite itself: same in-place update as the Check for updates window, surfaced where packs are.
+               FormParts::Section(T("Infinite"));
+               ImGui::Text(T("Infinite %s is available"), UpdateCheck::ResultVersion().c_str());
+               FormParts::Inline(ImGui::GetWindowContentRegionMax().x - btnW);
+               if (ActionButton::Draw(L("Update##extApp"), ImVec2(btnW, 0), ActionButton::Kind::Primary))
+                  gShowUpdateCheckModal = true;
+               ImGui::Dummy(ImVec2(0.0f, tok::space_1));
+            }
             FormParts::Section(T("Extensions"));
 
             auto installedVersion = [&](const std::string& id) -> const std::string*
@@ -1305,7 +1319,6 @@ namespace app
                const std::string* have = installedVersion(id);
                const bool update = have && offer && *have != offer->version;
                const bool working = ex.busyId == id;
-               const float btnW = 96.0f;
                const float btnX = ImGui::GetWindowContentRegionMax().x - btnW;
                const float y0 = ImGui::GetCursorPosY();
 
@@ -1319,6 +1332,22 @@ namespace app
                   ImGui::TextUnformatted(name.c_str());
                if (!purpose.empty())
                   ImGui::TextDisabled("%s", purpose.c_str());
+               {
+                  char st[160];
+                  st[0] = '\0';
+                  if (have && update)
+                     snprintf(st, sizeof st, T("Installed v%s, v%s available"), have->c_str(), offer->version.c_str());
+                  else if (have && offer)
+                     snprintf(st, sizeof st, T("Installed v%s, up to date"), have->c_str());
+                  else if (have)
+                     snprintf(st, sizeof st, T("Installed v%s"), have->c_str());
+                  else if (offer && offer->size)
+                     snprintf(st, sizeof st, T("v%s, %.0f MB download"), offer->version.c_str(), (double)offer->size / 1.0e6);
+                  else if (offer)
+                     snprintf(st, sizeof st, T("v%s"), offer->version.c_str());
+                  if (st[0])
+                     ImGui::TextDisabled("%s", st);
+               }
                if (working)
                {
                   ImGui::Dummy(ImVec2(0.0f, tok::space_1));
@@ -1367,7 +1396,18 @@ namespace app
 
             if (!ex.message.empty() && ex.messageIsError)
                ImGui::TextColored(tok::V4(tok::palf::v_1000_550_500_1000), "%s", ex.message.c_str());
+            if (!ex.catalogLoaded && !ex.catalogLoading && !ex.catalogError.empty())
+               ImGui::TextColored(tok::V4(tok::palf::v_1000_550_500_1000), "%s",
+                                  T("Can't reach the extension catalog. Check your connection and try again."));
             ImGui::Dummy(ImVec2(0.0f, tok::space_1));
+            ImGui::BeginDisabled(busy);
+            if (FormParts::Button(L("Check for updates##extCheck")))
+            {
+               sFetchedAt = ImGui::GetTime();
+               Extensions::RefreshCatalog();
+            }
+            ImGui::EndDisabled();
+            ActionButton::RowNext();
             if (FormParts::Button(L("Install from file...##extFile")))
             {
                const std::string file = Platform::OpenExtensionPackDialog();
