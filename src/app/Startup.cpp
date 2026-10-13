@@ -14,6 +14,7 @@ bool RunSynthAudit(); // selftest/SynthAudit.cpp
 bool RunNoteAudit(); // selftest/NoteAudit.cpp
 bool RunIoAudit(); // selftest/IoAudit.cpp
 bool RunGeoAudit(); // selftest/GeoAudit.cpp
+bool GeoAuditWantsGl(); // selftest/GeoAudit.cpp: the section list names DISP
 bool RunCompAudit(); // selftest/CompAudit.cpp
 // Resolves the main window's DPI + the manual slider into UiScale::Current(), hands the point
 // scale to the GLFW backend and (re)bakes the font atlas at the resulting physical size. Safe
@@ -576,7 +577,8 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_IOAUDIT") != nullptr)
       return RunIoAudit() ? 0 : 1;
    // Geometry audit: validity, watertightness, normals, degenerate input, scale, determinism, cache (selftest/GeoAudit.cpp).
-   if (getenv("INFINITE_GEOAUDIT") != nullptr)
+   // DISP (Displacement) needs a GL texture, so INFINITE_GEOAUDIT_ONLY=DISP is run from the GL-ready dispatch below.
+   if (getenv("INFINITE_GEOAUDIT") != nullptr && !GeoAuditWantsGl())
       return RunGeoAudit() ? 0 : 1;
 
    // The --audio-summary maths on synthesized signals with known answers
@@ -1016,6 +1018,14 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_SYSINFO") != nullptr)
    {
       SysInfo::PrintAndExit(window);
+   }
+
+   if (getenv("INFINITE_GEOAUDIT") != nullptr && GeoAuditWantsGl())
+   {
+      const bool ok = RunGeoAudit();
+      glfwDestroyWindow(window);
+      glfwTerminate();
+      return ok ? 0 : 1;
    }
 
    if (getenv("INFINITE_COMPAUDIT") != nullptr)

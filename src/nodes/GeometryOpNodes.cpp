@@ -933,7 +933,8 @@ void InstanceOnPointsNode::Rebuild()
          float t[3] = { up[1]*n[2] - up[2]*n[1], up[2]*n[0] - up[0]*n[2], up[0]*n[1] - up[1]*n[0] };
          const float tl = std::sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
          if (tl > 1e-6f) { t[0] /= tl; t[1] /= tl; t[2] /= tl; }
-         const float b[3] = { n[1]*t[2] - n[2]*t[1], n[2]*t[0] - n[0]*t[2], n[0]*t[1] - n[1]*t[0] };
+         // t x n, so the basis (t, n, b) is right-handed; n x t would mirror every instance and turn its winding inside out.
+         const float b[3] = { t[1]*n[2] - t[2]*n[1], t[2]*n[0] - t[0]*n[2], t[0]*n[1] - t[1]*n[0] };
 
          Mat4 basis;
          basis.m[0] = t[0]; basis.m[1] = t[1]; basis.m[2] = t[2];
