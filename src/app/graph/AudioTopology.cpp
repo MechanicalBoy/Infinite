@@ -813,8 +813,8 @@ namespace app
       // does. A Timeline Strict clip terminal has no ring, so it falls back
       // to its own value (rebuilt fresh, and correctly so - it only exists
       // for the lifetime of one active-clip generation to begin with).
+      int maxAmongTerminals = 0;
       {
-         int maxAmongTerminals = 0;
          for (const AudioTerminal& terminal : terminals)
             if (!terminal.live && terminal.bufferIndex >= 0 && terminal.bufferIndex < (int)cumulativeLatencyByBuffer.size())
                maxAmongTerminals = std::max(maxAmongTerminals, cumulativeLatencyByBuffer[(size_t)terminal.bufferIndex]);
@@ -841,6 +841,7 @@ namespace app
       topology.terminalBufferIndices = std::move(terminals);
       topology.clipWindows = std::move(clipWindows);
       topology.numBuffers = nextBufferIndex;
+      topology.outputLatencySamples = maxAmongTerminals;
       topology.noteOutboxes = std::move(noteOutboxes);
       topology.noteWires = std::move(noteWires);
       AudioEngine::Instance().SetTopology(std::move(topology));

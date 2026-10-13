@@ -115,6 +115,7 @@ void AudioEngine::Stop()
 
 void AudioEngine::SetTopology(AudioTopology topology)
 {
+   mOutputLatencySamples.store(topology.outputLatencySamples, std::memory_order_relaxed);
    ProcessList* fresh = new ProcessList();
    fresh->topology = std::move(topology);
    fresh->buffers.resize(fresh->topology.numBuffers);

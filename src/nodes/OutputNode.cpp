@@ -302,6 +302,8 @@ bool OutputNode::StartOfflineRender(const std::string& path, double audioSampleR
    mOfflineAudioSampleRate = 0.0;
    mOfflineAudioFramesGenerated = 0;
    mOfflineAudioFramesAppended = 0;
+   mOfflineLatencySkip = 0;
+   mOfflineLatencyTotal = 0;
 
    std::string audioPath;
    bool audioLoop = true;
@@ -370,7 +372,17 @@ void OutputNode::DrainOfflineAudioCapture()
    int n;
    while ((n = mCaptureRing.Read(scratch, 4096)) > 0)
    {
-      const int frames = n / 2;
+      int frames = n / 2;
+      float* data = scratch;
+      if (mOfflineLatencySkip > 0)
+      {
+         const int drop = (int)std::min<long long>(mOfflineLatencySkip, frames);
+         mOfflineLatencySkip -= drop;
+         frames -= drop;
+         data += (size_t)drop * 2;
+         if (frames <= 0)
+            continue;
+      }
       if (B10BenchActive() && mOfflineAudioSampleRate > 0.0)
       {
          // Added on top of the real B3-shaped mix, not a replacement - this
@@ -382,12 +394,12 @@ void OutputNode::DrainOfflineAudioCapture()
             if (B10MarkerAt(t))
             {
                const float v = (float)(0.9 * std::sin(2.0 * M_PI * B10Bench::kToneHz * t));
-               scratch[(size_t)k * 2 + 0] = std::clamp(scratch[(size_t)k * 2 + 0] + v, -1.0f, 1.0f);
-               scratch[(size_t)k * 2 + 1] = std::clamp(scratch[(size_t)k * 2 + 1] + v, -1.0f, 1.0f);
+               data[(size_t)k * 2 + 0] = std::clamp(data[(size_t)k * 2 + 0] + v, -1.0f, 1.0f);
+               data[(size_t)k * 2 + 1] = std::clamp(data[(size_t)k * 2 + 1] + v, -1.0f, 1.0f);
             }
          }
       }
-      Platform::RecorderAppendAudio(mOfflineRecorder, scratch, frames);
+      Platform::RecorderAppendAudio(mOfflineRecorder, data, frames);
       mOfflineAudioFramesAppended += frames;
    }
 }
@@ -406,7 +418,7 @@ int OutputNode::OfflineAudioFramesOwed(int lookaheadFrames) const
                                      (long long)mOfflineTotalFrames);
    const long long target = (long long)std::llround(
       (double)ahead * mOfflineAudioSampleRate / (double)fps);
-   const long long owed = target - mOfflineAudioFramesGenerated;
+   const long long owed = target + mOfflineLatencyTotal - mOfflineAudioFramesGenerated;
    return owed > 0 ? (int)owed : 0;
 }
 

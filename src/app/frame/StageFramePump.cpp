@@ -161,6 +161,8 @@ void DrawFramePump(FrameCtx& fc)
                // 4096-frame slab renders something the user never heard
                // (see OfflineAudioBlockFrames).
                const int blockCap = OfflineAudioBlockFrames();
+               // The take's output latency, latched before its first block.
+               on->LatchOfflineLatency(AudioEngine::Instance().OutputLatencySamples());
                int owed = on->OfflineAudioFramesOwed(lookahead);
                while (owed > 0)
                {

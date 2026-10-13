@@ -232,6 +232,17 @@ public:
    // or the two sides wait on each other forever.
    int OfflineAudioFramesOwed(int lookaheadFrames = 0) const;
    void NoteOfflineAudioGenerated(int frames) { mOfflineAudioFramesGenerated += frames; }
+   // The graph's output latency after PDC (AudioEngine::OutputLatencySamples),
+   // latched once before the take's first audio block: that many leading
+   // samples are generated but never muxed, and that many more are generated
+   // at the end, so a bounce through a latent node (Drive, Limiter, a plugin)
+   // lines up with the picture and with the dry signal. No-op after the first
+   // block.
+   void LatchOfflineLatency(int samples)
+   {
+      if (mOfflineAudioFramesGenerated == 0)
+         mOfflineLatencySkip = mOfflineLatencyTotal = samples > 0 ? samples : 0;
+   }
    // Audio frames actually handed to the muxer this take (self-test hook:
    // this should equal round(totalFrames * sampleRate / fps)).
    long long OfflineAudioFramesAppended() const { return mOfflineAudioFramesAppended; }
@@ -412,6 +423,8 @@ private:
    double mOfflineAudioSampleRate = 0.0;
    long long mOfflineAudioFramesGenerated = 0;
    long long mOfflineAudioFramesAppended = 0;
+   long long mOfflineLatencySkip = 0;   // leading frames still to drop (LatchOfflineLatency)
+   long long mOfflineLatencyTotal = 0;  // frames dropped plus still to drop, for the budget
 
    std::thread mOfflineFinalizeThread;
    std::atomic<bool> mOfflineFinalizeDone{ false };

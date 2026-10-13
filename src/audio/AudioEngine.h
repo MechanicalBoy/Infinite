@@ -313,6 +313,10 @@ struct AudioTopology
    // still being filled would not).
    std::vector<ClipWindow> clipWindows;
    int numBuffers = 0; // buffer indices used across `order` span [0, numBuffers)
+   // Latency of the summed output after PDC: every non-live terminal lands
+   // this many samples behind its source. An offline render drops this many
+   // leading samples so a bounce through a latent node starts on time.
+   int outputLatencySamples = 0;
 
    // Note-port wiring, DESCRIBED here by RebuildAudioTopology (main.cpp) and
    // APPLIED by AudioEngine::ApplyNoteWiringIfNew - never mutated directly by
@@ -356,6 +360,8 @@ public:
    // cables), not per block, so this one-generation grace window is cheap
    // and sufficient.
    void SetTopology(AudioTopology topology);
+   // outputLatencySamples of the last published topology (main thread).
+   int OutputLatencySamples() const { return mOutputLatencySamples.load(std::memory_order_relaxed); }
 
    double SampleRate() const;
 
@@ -571,6 +577,7 @@ private:
    // DrainRetired(). Main thread only.
    std::vector<ProcessList*> mRetiring;
    std::atomic<bool> mDeviceOpen { false };
+   std::atomic<int> mOutputLatencySamples { 0 };
    double mPumpFrames = 0.0;   // main thread: fractional frames owed to the device-less note pump
    double mPumpLastMs = -1.0;
    void DrainRetired();

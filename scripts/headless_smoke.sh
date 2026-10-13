@@ -39,6 +39,52 @@ if command -v ffmpeg >/dev/null; then
   python3 -c "import sys; sys.exit(0 if float('${mv2:--999}') > -20 else 1)"; check "render --start 2: audio starts at 2 s, not 0" $?
 fi
 
+# v0.6 1.1: an offline bounce through a latent effect starts on time. PDC delays the master by the graph's
+# output latency (Drive 73, Limiter 80 samples at 48 kHz); the render drops that head, so the click lands
+# where it lands dry, in the WAV and in the exported movie.
+python3 - "$OUT" <<'PY'
+import wave, struct, sys
+out, r = sys.argv[1], 48000
+f = [0] * r
+for i in range(48):
+    f[int(0.25 * r) + i] = 12000 if i < 24 else -12000
+w = wave.open(out + "/lat_click.wav", "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(r)
+w.writeframes(struct.pack("<%dh" % len(f), *f)); w.close()
+src = ["infinite-patch 1", "node 1 Modulators Audio File", "  id src", "  s path " + out + "/lat_click.wav", "  b loop 0", "end",
+       "node 4 Source Shape", "  id picture", "end"]
+for name, fx in (("dry", None), ("drive", "Drive"), ("limiter", "Limiter")):
+    L = list(src)
+    if fx:
+        L += ["node 2 AudioEffects " + fx, "  id fx", "end"]
+    L += ["node 3 Utility Audio Out", "  id speakers", "end", "node 5 Utility Output", "  id out", "  b includeAudio 1", "end",
+          "cable out 0 picture", "aud speakers audio " + ("fx" if fx else "src"), "aud out 1 " + ("fx" if fx else "src")]
+    if fx:
+        L += ["aud fx 0 src"]
+    open(out + "/lat_%s.inf" % name, "w").write("\n".join(L) + "\n")
+PY
+for n in dry drive limiter; do
+  "$BIN" --audio-summary "$OUT/lat_$n.inf" "$OUT/lat_$n.json" --duration 1 --output 3 --wav "$OUT/lat_$n.wav" >/dev/null 2>&1
+done
+LATPY='
+import array, subprocess, sys, wave
+def load(p):
+    if p.endswith(".wav"):
+        w = wave.open(p); a = array.array("h"); a.frombytes(w.readframes(w.getnframes())); return list(a[0::w.getnchannels()])
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", p, "-ac", "1", "-ar", "48000", "-f", "s16le", "-"], capture_output=True).stdout
+    a = array.array("h"); a.frombytes(raw[:len(raw) // 2 * 2]); return list(a)
+def lag(dry, wet):  # cross-correlation peak over +-200 samples around the click
+    c = int(0.25 * 48000); d = dry[c - 400:c + 800]
+    best = max(range(-200, 201), key=lambda k: sum(x * y for x, y in zip(d, wet[c - 400 + k:c + 800 + k])))
+    return best
+dry = load(sys.argv[1]); tol = int(sys.argv[2])
+sys.exit(0 if all(abs(lag(dry, load(p))) <= tol for p in sys.argv[3:]) else 1)
+'
+python3 -c "$LATPY" "$OUT/lat_dry.wav" 0 "$OUT/lat_drive.wav" "$OUT/lat_limiter.wav"; check "bounce: Drive and Limiter land on the dry click (0 samples, --audio-summary)" $?
+if command -v ffmpeg >/dev/null; then
+  for n in dry drive limiter; do "$BIN" --render "$OUT/lat_$n.inf" "$OUT/lat_$n.mp4" --duration 1 --fps 30 >/dev/null 2>&1; done
+  python3 -c "$LATPY" "$OUT/lat_dry.mp4" 2 "$OUT/lat_drive.mp4" "$OUT/lat_limiter.mp4"; check "export: Drive and Limiter land on the dry click in the movie (within 2 samples)" $?
+fi
+
 # Spatial Mixer is a terminal like Audio Out: no W_UNUSED_NODE / E_NO_AUDIO for an Oscillator patched only into it
 SP="$ROOT/tests/headless/summary/spatial_only.inf"
 "$BIN" --validate "$SP" >/dev/null 2>&1; check "spatial-only patch passes strict validate" $?
