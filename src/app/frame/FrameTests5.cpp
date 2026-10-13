@@ -1433,7 +1433,9 @@ void FrameTest_MESHOPTEST(int frameId, GLFWwindow* window)
          const Mesh plane = Primitives::Plane(4);
          bool all = true;
          all &= check("source", sphere, 100);
-         all &= check("subdivide", MeshOps::Subdivide(sphere, 1, 1.0f), 4 * (sphere.indices.size() / 3));
+         // Not a full 4x: Subdivide drops the pole fan's zero-area triangles
+         // (two corners on one welded vertex) rather than splitting them.
+         all &= check("subdivide", MeshOps::Subdivide(sphere, 1, 1.0f), 3 * (sphere.indices.size() / 3));
          all &= check("smooth", MeshOps::Smooth(sphere, 5, 0.8f), sphere.indices.size() / 3);
          all &= check("mirror", MeshOps::Mirror(sphere, 0, 1.0f, true, true), 2 * (sphere.indices.size() / 3));
          all &= check("screw", MeshOps::Screw(plane, 32, 1.0f, 0.4f, 0.6f, 1), 32);

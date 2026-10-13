@@ -772,8 +772,21 @@ namespace MeshOps
          using Edge = std::pair<unsigned int, unsigned int>;
          std::map<Edge, int> edgeCount;
          std::map<Edge, std::vector<unsigned int>> edgeOpposite;
+
+         // A triangle with two corners on one welded vertex (a UV sphere's pole
+         // fan) has no area and is not surface. Counting it would give its one
+         // real edge a third and fourth user, so that edge reads as a crease, and
+         // splitting it would emit sliver triangles that fold back over their
+         // neighbours once the pole moves. It is dropped from the pass instead.
+         auto degenerate = [&](size_t t) {
+            const unsigned int a = weld[current.indices[t]], b = weld[current.indices[t + 1]],
+                               c = weld[current.indices[t + 2]];
+            return a == b || b == c || a == c;
+         };
          for (size_t t = 0; t + 2 < current.indices.size(); t += 3)
          {
+            if (degenerate(t))
+               continue;
             const unsigned int w[3] = { weld[current.indices[t]], weld[current.indices[t + 1]],
                                         weld[current.indices[t + 2]] };
             for (int e = 0; e < 3; e++)
@@ -928,6 +941,8 @@ namespace MeshOps
 
          for (size_t t = 0; t + 2 < current.indices.size(); t += 3)
          {
+            if (degenerate(t))
+               continue;
             const unsigned int a = current.indices[t];
             const unsigned int b = current.indices[t + 1];
             const unsigned int c = current.indices[t + 2];
