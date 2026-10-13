@@ -98,6 +98,30 @@ for f in "$ROOT"/tests/headless/topology/*.inf; do
   [ "$got" = "$want" ]; check "topology $name ($want)" $?
 done
 
+# Field compile errors (re-survey D.md P4): every Field node type with a kernel that calls an
+# unknown function. --validate, --explain and the render modes must all name the kernel
+# (E_FIELD_COMPILE, the `s code` line, the function name), never blame the cable. The same file
+# with bogusfn -> sin must validate clean, so the kernel is the only thing wrong.
+FLD="$ROOT/tests/headless/field"
+for f in "$FLD"/*.inf; do
+  name=$(basename "$f" .inf)
+  codeline=$(grep -n '^  s code ' "$f" | cut -d: -f1)
+  r=$("$BIN" --validate "$f" 2>/dev/null); rc=$?
+  [ "$rc" = 3 ] && [ "$(echo "$r" | json "[(e['code'], e['line'], 'bogusfn' in e['message']) for e in d['errors']]")" = "[('E_FIELD_COMPILE', $codeline, True)]" ]
+  check "field $name: validate exit 3, E_FIELD_COMPILE at line $codeline names bogusfn" $?
+  sed 's/bogusfn(/sin(/' "$f" > "$OUT/field_ok_$name.inf"
+  "$BIN" --validate "$OUT/field_ok_$name.inf" >/dev/null 2>&1; check "field $name: same patch with sin( validates" $?
+  r=$("$BIN" --explain "$f" 2>/dev/null); rc=$?
+  [ "$rc" = 3 ] && [ "$(echo "$r" | json "[e['code'] for e in d['errors']]")" = "['E_FIELD_COMPILE']" ]
+  check "field $name: explain exit 3 with E_FIELD_COMPILE" $?
+  case "$name" in
+    pixel|primitive|modifier|graph) r=$("$BIN" --frame "$f" 0 "$OUT/field_$name.png" 2>/dev/null); rc=$?; what=frame ;;
+    *) r=$("$BIN" --audio-summary "$f" "$OUT/field_$name.json" --duration 0.2 2>/dev/null); rc=$?; what=audio-summary ;;
+  esac
+  [ "$rc" = 3 ] && [ "$(echo "$r" | json "[e['code'] for e in d['errors']]")" = "['E_FIELD_COMPILE']" ]
+  check "field $name: $what exit 3 with E_FIELD_COMPILE, not a cable error" $?
+done
+
 # C0: the probe waits for every node to draw, not a fixed 8 ticks. patch_1 has a
 # Wavetable that used to give a false E_BAD_PARAM; run it several times.
 ok=0

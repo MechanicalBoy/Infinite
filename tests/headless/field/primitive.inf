@@ -1,0 +1,14 @@
+infinite-patch 1
+# E_FIELD_COMPILE: a Field Primitive kernel that calls a function that does not exist.
+node 1 3D Field Primitive
+  id prim
+  s code P = vec3(bogusfn(i / count), 0.0, 0.0)
+end
+node 2 3D Render 3D
+  id r3d
+end
+node 3 Utility Output
+  id out
+end
+geo r3d 0 prim
+cable out 0 r3d
