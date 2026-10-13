@@ -310,6 +310,13 @@ private:
    };
    FinalizeResult FinishRecorder(Platform::RecorderHandle* handle, uint64_t audioDropped);
    void ApplyFinalizeResult(const FinalizeResult& r);
+public:
+   // Raises `peak` to the largest |sample| in `data`.
+   static void NoteAudioPeak(const float* data, int samples, float& peak);
+   // " (audio clipped, +x dB over)" when the take's peak passed full scale,
+   // empty otherwise.
+   static std::string ClipSuffix(float peak);
+private:
    // Blocks until any in-flight StopRecordingAsync() finalize has actually
    // completed and joins the thread. A no-op if none is in flight. Called by
    // the destructor (a dangling `this` in the background thread's lambda
@@ -386,6 +393,9 @@ private:
    bool mPaceToAudio = false;
    double mAudioSampleRate = 0.0;
    long long mAudioFramesAppended = 0; // audio frames handed to the recorder
+   // Largest |sample| handed to the recorder this take (live or offline). The
+   // encoders clamp at full scale, so anything over 1 is written clipped.
+   float mTakeAudioPeak = 0.0f;
    long long mFramesEmitted = 0;       // video frames handed to the recorder
 
    static constexpr int kPboCount = 3;

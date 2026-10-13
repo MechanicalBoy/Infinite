@@ -130,6 +130,7 @@ bool OutputNode::StartRecording(const std::string& path)
    }
 
    mAudioFramesAppended = 0;
+   mTakeAudioPeak = 0.0f;
    mFramesEmitted = 0;
    mReadbackFormatDecided = false;
    mReadbackIsBgra = true;
@@ -251,9 +252,25 @@ void OutputNode::ApplyFinalizeResult(const FinalizeResult& r)
          mRecordStatus += " (" + std::to_string(r.dropped) + " dropped)";
       if (r.audioDropped > 0)
          mRecordStatus += " (audio gap: " + std::to_string(r.audioDropped / 2) + " frames lost)";
+      mRecordStatus += ClipSuffix(mTakeAudioPeak);
    }
    else
       mRecordStatus = r.error;
+}
+
+void OutputNode::NoteAudioPeak(const float* data, int samples, float& peak)
+{
+   for (int i = 0; i < samples; ++i)
+      peak = std::max(peak, std::fabs(data[i]));
+}
+
+std::string OutputNode::ClipSuffix(float peak)
+{
+   if (!(peak > 1.0f))
+      return std::string();
+   char note[64];
+   snprintf(note, sizeof(note), " (audio clipped, +%.1f dB over)", 20.0f * std::log10(peak));
+   return std::string(note);
 }
 
 void OutputNode::PollFinalize()
@@ -302,6 +319,7 @@ bool OutputNode::StartOfflineRender(const std::string& path, double audioSampleR
    mOfflineAudioSampleRate = 0.0;
    mOfflineAudioFramesGenerated = 0;
    mOfflineAudioFramesAppended = 0;
+   mTakeAudioPeak = 0.0f;
    mOfflineLatencySkip = 0;
    mOfflineLatencyTotal = 0;
 
@@ -399,6 +417,7 @@ void OutputNode::DrainOfflineAudioCapture()
             }
          }
       }
+      NoteAudioPeak(data, frames * 2, mTakeAudioPeak);
       Platform::RecorderAppendAudio(mOfflineRecorder, data, frames);
       mOfflineAudioFramesAppended += frames;
    }
@@ -561,7 +580,7 @@ void OutputNode::PollOfflineFinalize()
    if (r.error == "cancelled")
       mRecordStatus = "cancelled - partial file discarded";
    else if (r.ok)
-      mRecordStatus = "rendered " + std::to_string(r.frames) + " frames";
+      mRecordStatus = "rendered " + std::to_string(r.frames) + " frames" + ClipSuffix(mTakeAudioPeak);
    else
       mRecordStatus = r.error;
    mOfflineCancelled = false;
@@ -587,6 +606,7 @@ void OutputNode::DrainAudioCapture()
    while ((n = mCaptureRing.Read(scratch, 4096)) > 0)
    {
       const int frames = n / 2;
+      NoteAudioPeak(scratch, frames * 2, mTakeAudioPeak);
       if (Platform::RecorderAppendAudio(mRecorder, scratch, frames))
          mAudioFramesAppended += frames;
    }

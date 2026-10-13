@@ -136,6 +136,25 @@ void RunRecSyncTest()
    printf("  [%s] a 10s stall caps at %d frames per call instead of bursting 300\n",
           capped ? "pass" : "FAIL", burst);
 
+   // A take whose audio went over full scale is written clipped, so the
+   // Output node's "saved"/"rendered" line has to say so. The peak is the
+   // largest sample handed to the recorder, kept across quieter blocks.
+   {
+      const float hot[4] = { 0.2f, -1.5f, 0.9f, 0.1f };
+      const float quiet[4] = { 0.1f, -0.3f, 0.2f, 0.0f };
+      float peak = 0.0f;
+      OutputNode::NoteAudioPeak(quiet, 4, peak);
+      const bool cleanOk = OutputNode::ClipSuffix(peak).empty() && OutputNode::ClipSuffix(1.0f).empty();
+      OutputNode::NoteAudioPeak(hot, 4, peak);
+      OutputNode::NoteAudioPeak(quiet, 4, peak);
+      const std::string note = OutputNode::ClipSuffix(peak);
+      const bool clipOk = cleanOk && std::abs(peak - 1.5f) < 1e-6f && note == " (audio clipped, +3.5 dB over)";
+      if (!clipOk)
+         failures++;
+      printf("  [%s] a take peaking at %.2f reports \"%s\"; a clean take reports nothing\n",
+             clipOk ? "pass" : "FAIL", peak, note.c_str());
+   }
+
    printf("REC SYNC %s\n", failures == 0 ? "OK" : "FAIL");
 }
 
