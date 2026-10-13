@@ -76,6 +76,7 @@ public:
    void LoadPreset(int index);
    bool CompileEquation();
    const std::string& LastError() const { return mLastError; }
+   std::string CodeError() const override { return mLastError; }
    const std::vector<float>& PreviewCurve() const { return mPreviewCurve; }
 
    // ------------------------------------------------ Parameters

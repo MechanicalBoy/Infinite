@@ -1,5 +1,6 @@
 // Headless jobs: ExplainLive, ParamKeyJoiner, HeadlessTick (moved verbatim from main.cpp).
 #include "app/AppShared.h"
+#include <functional>
 
 namespace app
 {
@@ -588,22 +589,36 @@ static void PrimeOfflineStart(int& frameId, double startSeconds)
    RebuildAudioTopology();
 }
 
-// A Field node whose code does not compile produces nothing, so without this check --validate said ok
-// and --frame blamed the Output's cable (re-survey D.md, P4). One error per node, citing the node's
-// `s code` line in the file (or its `node` line when the code is a default).
-static Headless::Issue FieldCompileIssue(const Patch::NodeRecord* rec, int node, const std::string& type,
-                                         const std::string& error)
+// A node whose code does not compile produces nothing (Field) or keeps playing a fallback (Formula keeps
+// its last program, Equation its last formula), so without this check --validate said ok and --frame
+// blamed the Output's cable (re-survey D.md, P4). One error per node, citing the node's code line
+// (`s code` for Field nodes, `s formula` for Formula and Equation) or its `node` line when the code is a
+// default. E_FIELD_COMPILE for Field code, E_FORMULA_COMPILE for a formula.
+static const char* CodeKeyOf(const Patch::NodeRecord& rec)
 {
+   for (const auto& kv : rec.params)
+      if (kv.first == "s code" || kv.first == "s formula")
+         return kv.first == "s code" ? "s code" : "s formula";
+   return nullptr;
+}
+
+static Headless::Issue CodeCompileIssue(const Patch::NodeRecord* rec, int node, const std::string& type,
+                                        const std::string& error)
+{
+   const char* key = rec != nullptr ? CodeKeyOf(*rec) : nullptr;
+   const bool formula = key != nullptr ? std::string(key) == "s formula" : (type == "Formula" || type == "Equation");
    Headless::Issue is;
-   is.code = "E_FIELD_COMPILE";
+   is.code = formula ? "E_FORMULA_COMPILE" : "E_FIELD_COMPILE";
    is.node = node;
-   is.message = type + " node " + std::to_string(node) + ": its Field code does not compile: " + NodeIssues::FirstLine(error);
-   is.hint = "fix the kernel on the node's `s code` line; a Field node whose code does not compile produces nothing";
+   is.message = type + " node " + std::to_string(node) + (formula ? ": its formula does not compile: " : ": its Field code does not compile: ") +
+                NodeIssues::FirstLine(error);
+   is.hint = formula ? "fix the node's `s formula` line; a formula that does not compile never reaches the output"
+                     : "fix the kernel on the node's `s code` line; a Field node whose code does not compile produces nothing";
    if (rec != nullptr)
    {
       is.line = rec->line;
       for (size_t i = 0; i < rec->params.size(); i++)
-         if (rec->params[i].first == "s code" && i < rec->paramLines.size())
+         if (key != nullptr && rec->params[i].first == key && i < rec->paramLines.size())
             is.line = rec->paramLines[i];
    }
    return is;
@@ -616,10 +631,7 @@ static void CheckFieldCode(const Patch::Data& data, std::vector<Headless::Issue>
 {
    for (const Patch::NodeRecord& rec : data.nodes)
    {
-      bool hasCode = false;
-      for (const auto& kv : rec.params)
-         hasCode = hasCode || kv.first == "s code";
-      if (!hasCode)
+      if (CodeKeyOf(rec) == nullptr)
          continue;
       std::unique_ptr<INode> node { NodeFactory::Instance().MakeNode(rec.typeName) };
       if (!node)
@@ -628,7 +640,7 @@ static void CheckFieldCode(const Patch::Data& data, std::vector<Headless::Issue>
       ReloadDerivedState(node.get());
       const std::string err = node->CodeError();
       if (!err.empty())
-         errors.push_back(FieldCompileIssue(&rec, rec.index, rec.typeName, err));
+         errors.push_back(CodeCompileIssue(&rec, rec.index, rec.typeName, err));
    }
 }
 
@@ -644,8 +656,48 @@ static void CheckLiveFieldCode(const Patch::Data& file, std::vector<Headless::Is
       for (const Patch::NodeRecord& r : file.nodes)
          if (r.index == g.index && r.typeName == g.typeName)
             rec = &r;
-      errors.push_back(FieldCompileIssue(rec, g.index, g.typeName, err));
+      errors.push_back(CodeCompileIssue(rec, g.index, g.typeName, err));
    }
+}
+
+// `expr` and `glob` lines are evaluated every frame and a bad one silently keeps the parameter where it
+// was, so --validate compiles each one against exactly the names the frame loop binds: the target node's
+// own parameter names plus `lo`/`hi` (CookFrame.cpp), every `glob` for an `expr`, only the globs above it
+// for a `glob` (ExprGlobals::EvaluateAll). `siblingsOf(nodeIndex, names)` fills the node's parameter
+// names, false when the node is unknown (already reported as a dangling reference, so skipped here).
+static void CheckExpressions(const Patch::Data& data,
+                             const std::function<bool(int, std::map<std::string, float>&)>& siblingsOf,
+                             std::vector<Headless::Issue>& errors)
+{
+   std::map<std::string, float> globals;
+   for (const Patch::GlobalRecord& g : data.globals)
+   {
+      std::string err;
+      if (!g.expr.empty() && !Expression::Check(g.expr, &globals, nullptr, err))
+         errors.push_back({ "E_EXPR_COMPILE", "glob " + g.name + " does not compile: " + NodeIssues::FirstLine(err), g.line, -1,
+                            "a glob can use t, builtins and the globs declared above it" });
+      globals[g.name] = 0.0f;
+   }
+   for (const Patch::ExprRecord& e : data.expressions)
+   {
+      std::map<std::string, float> siblings;
+      if (!siblingsOf(e.dstIndex, siblings))
+         continue;
+      siblings["lo"] = 0.0f;
+      siblings["hi"] = 0.0f;
+      std::string err;
+      if (!Expression::Check(e.text, &siblings, &globals, err))
+         errors.push_back({ "E_EXPR_COMPILE", "expr on node " + std::to_string(e.dstIndex) + " does not compile: " + NodeIssues::FirstLine(err),
+                            e.line, e.dstIndex, "an expr can use t, lo, hi, builtins, the node's own parameter names and any glob" });
+   }
+}
+
+// Parameter names of a node index, from the ParamRefs the draw pass registered (what CookFrame binds).
+static void ParamNamesOfNode(int nodeIndex, std::map<std::string, float>& names)
+{
+   for (const ParamRef& r : Modulation::Instance().FrameParams())
+      if (r.nodeIndex == nodeIndex)
+         names[r.name] = 0.0f;
 }
 
 void HeadlessTick(int& frameId, GLFWwindow* window)
@@ -904,6 +956,19 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       if (sStatus.errors.empty())
          PatchSchema::Validate(sData, env, sStatus.errors, sStatus.warnings);
       CheckFieldCode(sData, sStatus.errors);
+      // An expr's names are its target type's parameters, read off that type's probe instance.
+      CheckExpressions(sData, [&](int dst, std::map<std::string, float>& names)
+      {
+         for (const Patch::NodeRecord& n : sData.nodes)
+            if (n.index == dst)
+            {
+               for (const auto& pr : sProbed)
+                  if (pr.first == n.typeName)
+                     ParamNamesOfNode(pr.second, names);
+               return true;
+            }
+         return false;
+      }, sStatus.errors);
       if (!job.lenient)
          Headless::PromoteWarnings(sStatus.warnings, sStatus.errors);
       sStatus.extraJson.push_back("\"nodes\":" + std::to_string(sData.nodes.size()));
@@ -1087,6 +1152,13 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
          std::vector<Headless::Issue> bad;
          PatchSchema::CheckParamIndices(gHeadlessPatch, MakeSchemaEnv(true), bad);
          CheckLiveFieldCode(gHeadlessPatch, bad);
+         CheckExpressions(gHeadlessPatch, [](int dst, std::map<std::string, float>& names)
+         {
+            if (FindNodeByIndex(dst) == nullptr)
+               return false;
+            ParamNamesOfNode(dst, names);
+            return true;
+         }, bad);
          if (!bad.empty() || !gHeadlessPromoted.empty())
          {
             // Everything strict mode found, in file order, so one fix round clears it.

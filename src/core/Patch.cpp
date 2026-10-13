@@ -788,6 +788,7 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
       else if (tag == "glob")
       {
          GlobalRecord g;
+         g.line = lineNo;
          in >> g.name;
          std::string raw;
          std::getline(in, raw);

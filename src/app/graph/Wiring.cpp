@@ -1566,6 +1566,9 @@ namespace app
          palette->ReloadFromPath();
       if (auto* formula = dynamic_cast<FormulaNode*>(node))
          formula->Apply();
+      // Parse only (the bank rebuilds on the first cook), so CodeError() is current right after a load.
+      if (auto* eq = dynamic_cast<EquationNode*>(node))
+         eq->CompileEquation();
       if (auto* fe = dynamic_cast<FieldElementNode*>(node))
          fe->Apply();
       if (auto* fpn = dynamic_cast<FieldPrimitiveNode*>(node))

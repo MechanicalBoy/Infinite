@@ -37,6 +37,7 @@ public:
    static const std::vector<std::string>& PresetNames();
    void LoadPreset(int index);
    const std::string& LastError() const { return mLastError; }
+   std::string CodeError() const override { return mLastError; }
 
    // Field build step 17 (.infdev device files). FormulaNode predates Field
    // and is not itself a Field node (field-integration skill §1) - its

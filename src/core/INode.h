@@ -187,9 +187,10 @@ public:
    // The node's current problem, if any (missing file, plugin that would not load, compile error, no input
    // device). Polled while the node is drawn, so it must be cheap and must not touch the disk or the GPU.
    virtual NodeIssue Issue() const { return {}; }
-   // The raw compile error of a node that runs code written in the patch (every Field node), or empty when
-   // that code compiles. The headless CLI reports it as E_FIELD_COMPILE (--validate, --explain, --frame,
-   // --render), so the check and the render name the same cause. Cheap: a stored string, no compile.
+   // The raw compile error of a node that runs code written in the patch (every Field node, Formula's GLSL,
+   // Equation's formula), or empty when that code compiles. The headless CLI reports it as E_FIELD_COMPILE
+   // (`s code`) or E_FORMULA_COMPILE (`s formula`) in --validate, --explain, --frame and --render, so the
+   // check and the render name the same cause. Cheap: a stored string, no compile.
    virtual std::string CodeError() const { return {}; }
    // What the badge's click does for Fix::Relink: ask for a replacement file. Returns true if the node changed.
    virtual bool Relink() { return false; }
