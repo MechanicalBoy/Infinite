@@ -10,7 +10,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 |---|---|
 | Next release | v0.6 |
 | Makes right | Quality lead over the re-survey peers: audio correctness, first run, DSP lead (plan: `docs/plans/v0.6-quality/README.md`); every escaped v0.5.0 fix lands with a regression test |
-| Done when | Plan blocks 1-3 merged (62 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
+| Done when | Plan blocks 1-3 merged (61 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
 
 ## Claims (add a row before touching anything; remove it when done)
 
@@ -53,20 +53,22 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-13 11:53 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-13 12:13 UTC. Do not edit inside this block; rerun the tool._
 
-### Open quests (4)
+### Open quests (6) **over the cap of 5: park or close before adding**
 
 - R709 [later] Plan: re-survey: deconstruct competitors, one by one
 - R711 [later] Plan: Modulators to industry grade
 - R717 [later] Plan: Node audits: beyond effects and modulators
-- R754 [next] Perf: motion blur and radial blur cost
+- R757 [later] Plan: Metal compute for particles and simulations (R556): design, scope and gates
+- R767 [later] Plan: Image effects to industry grade
+- R779 [later] Plan: v0.6 plan: quality lead
 
 ### Releases
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| v0.5.0 | 2026-10-10 | 165 |
+| v0.5.0 | 2026-10-10 | 166 |
 | v0.4.7 | 2026-10-07 | 74 |
 | v0.4.6 | 2026-10-01 | 165 |
 | v0.4.5 | 2026-09-26 | 203 |
@@ -85,14 +87,14 @@ _Generated 2026-10-13 11:53 UTC. Do not edit inside this block; rerun the tool._
 ### Reach (context only: moves with outreach, not with release quality)
 
 - GitHub (2026-10-13): 276 stars, 21 forks, 1866 downloads all-time
-- Website (2026-10-13, last 30 days): 1029 sessions, 669 users
+- Website (2026-10-13, last 30 days): 1113 sessions, 740 users
 
 ### Last merges to main
 
+- 2026-10-13 Merge docs/v06-full-scope
+- 2026-10-13 Merge docs/v06-carryover
+- 2026-10-13 Merge docs/re-survey-data-fix
 - 2026-10-13 Merge bugfix/step4-offline-audio
 - 2026-10-13 Merge bugfix/render3d-stats-width: fold label fix
-- 2026-10-13 Merge bugfix/render3d-stats-width: fixed-width Render 3D stats, color adjustments show more
-- 2026-10-13 Merge bugfix/patch1-canonical
-- 2026-10-13 Merge feature/re-survey-finish: resume note and NOW decisions
 
 <!-- FACTS:END -->
