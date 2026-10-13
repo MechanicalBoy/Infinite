@@ -42,7 +42,7 @@ Paused because the owner ran out of budget. Nothing has been merged or pushed. T
      - Update L9/F2 in README.md to record the reversal. No compat flag.
      - Ingest, run board, and promote the nonharm rows to release if they are met.
      - Re-check that AliasTests still pass.
-2. **F15 Resonator Bank** (2.4 dB rate spread).
+2. ~~**F15 Resonator Bank** (2.4 dB rate spread).~~ Done on bugfix/quality-node-findings: metric bug; FXAUDIT rate check now uses flat periodic noise, 2.43 -> 0.41 dB, exception removed.
    - Likely estimator variance: about 0.88 Hz pole bandwidth over a 3 s window, roughly 2.6 degrees of freedom per seed.
    - Test with more seeds or longer renders in FxAudit's rate check (lines 385-472). If the spread collapses, fix the metric.
 3. **F7 Wavetable** (note-on +8.2 dB). Not investigated yet. Look at the envelope start, the initial phase, and the decay-to-sustain overshoot.

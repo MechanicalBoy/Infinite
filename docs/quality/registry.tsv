@@ -26,7 +26,7 @@ probe.cpu_voice_ms_s	P8	Built-in instruments	ms/s	lower		report	synth_probe		Ren
 fx.dc_dbfs	P5	Effects	dBFS	lower	-50	release	FXAUDIT		Mean DC left by an effect under noise, at defaults
 fx.tail_dbfs	P5	Effects	dBFS	lower	-100	release	FXAUDIT		Level 10 s after the input goes silent
 fx.click_db	P5	Effects	dB	lower	12	release	FXAUDIT	node:Audio Filter=F13	Worst step transient when a parameter jumps
-fx.rate_spread_db	P5	Effects	dB	lower	1.0	release	FXAUDIT	node:Bitcrush=F14,node:Resonator Bank=F15	Tone level difference across 44.1/48/96 kHz
+fx.rate_spread_db	P5	Effects	dB	lower	1.0	release	FXAUDIT	node:Bitcrush=F14	Tone level difference across 44.1/48/96 kHz
 note.pair_unpaired	P1	Note nodes	count	lower	0	release	NOTEAUDIT		Stuck, orphan-off, duplicate-on and off-before-on events
 note.grid_samples	P1	Note nodes	samples	lower	1.0	release	NOTEAUDIT		Worst note-on error against the grid across block sizes and tempi
 note.jitter_samples	P1	Note nodes	samples	lower	0	release	NOTEAUDIT		Note-on error through the node, plus missing notes
