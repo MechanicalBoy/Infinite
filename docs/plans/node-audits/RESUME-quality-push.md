@@ -6,7 +6,7 @@ Paused because the owner ran out of budget. Nothing has been merged or pushed. T
 |---|---|---|
 | feature/quality-measure-unmeasured | fbed531b | done |
 | bugfix/quality-analog-pitch | b57cf3c0 | done |
-| bugfix/quality-analog-aliasing | WIP commit on top of b57cf3c0 | in progress |
+| bugfix/quality-analog-aliasing | 78294e52 (WIP hiss) + 71643a34 (fix) + docs commit | done |
 
 ## Done
 
@@ -20,37 +20,16 @@ Paused because the owner ran out of budget. Nothing has been merged or pushed. T
   - probe.pitch_worst_c: 3.52 -> 0.17 c, now a release row.
   - SYNTHAUDIT NOTE now also measures at true defaults.
 
-## In progress: Analog aliasing to <= -80 dB (owner's L9 reversal)
+## Done: Analog aliasing to <= -80 dB (owner's L9 reversal, F2)
 
-Before (probe nonharm 60 / 96 / 108): -67.8 / -63.3 / -60.9 dB.
-
-WIP commit: the analog hiss went from 0.001 to 0.0001 in both the voice and free paths.
-- nonharm60 went from -68 to -77 dB.
-- 96 and 108 did not move. This change alone does not meet the target.
-
-Root cause, found with a standalone rig. The rig lives in the scratchpad (`lad/t.cpp`) and reproduces the app's numbers. There are two parts, and both must be fixed:
-
-1. **BLEP content from 20 to 24 kHz.**
-   - The kernel is cut at 0.9 Nyquist with a wide transition.
-   - The tanh drive and the ladder intermodulate this content (and the upsampler images it makes) down to k+0.47 harmonics in the audible band.
-   - Oversampling after the oscillator cannot remove it.
-2. **The nonlinear ladder aliases at 2x.**
-   - With an input clean to 19 kHz, the ladder alone reads -73 dB at 2x and -89 dB at 4x.
-
-Standalone results at 261 / 2093 / 4186 Hz, full chain:
-
-| Configuration | Result (dB) |
-|---|---|
-| Current: BLEP 12 taps, cut 0.90, 2x | -77 / -66 / -64 |
-| 4x only | -77 / -67 / -64 |
-| BLEP cut 0.80 with 32 taps, 2x | not tested |
-| BLEP cut 0.80 with 32 taps, 4x | -87.6 / -91.1 / -89.2 |
-| BLEP cut 0.75 with 12 taps, 4x | -87.6 / -91.0 / -88.7 |
-| Linear ladder reference | -87.8 / -91.0 / -89.4 |
+- Hiss 0.001 -> 0.0001 (78294e52), then 71643a34: Analog oscillators use a 0.80-cut BLEP table (`BlepOsc::NarrowOscillator`, same kernel length and latency; Wavetable keeps 0.90) and drive + filter run at 4x.
+- probe nonharm 60 / 96 / 108: -67.8 / -63.3 / -60.9 -> -84.5 / -83.3 / -81.2 dB. SYNTHAUDIT ALIAS: -66 / -62 -> -84.9 / -87.5 dB. (A 0.75 cut only gained 0.8 dB more at 108, so 0.80 was kept for less top-end loss.)
+- Cost: SYNTHAUDIT cpu_ns_frame about 210 -> 640-870 ns; probe 14 -> 30 ms/s per voice (shared machine).
+- Gates: synth.alias_db -60 -> -80; probe.nonharm rows now release; ALIASTEST Analog gates tightened.
 
 ## Next steps
 
-1. **Analog aliasing.**
+1. ~~**Analog aliasing.**~~ Done, see above.
    - Set kFilterOversample = 4 in AnalogSynthCore.h.
    - Lower the oscillator band edge for Analog only. Two options:
      - A per-Oscillator BLEP cutoff of about 0.75-0.80, either as a second table set or by templating BlepOscillator.h.
