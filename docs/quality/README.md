@@ -57,6 +57,22 @@ QUALITY id=synth.alias_db subject="node:Analog" value=-66.2000
 |---|---|
 | SYNTHAUDIT (`src/app/selftest/SynthAudit.cpp`) | `Quality(id, node, value)` next to each measurement, on stdout |
 | `tools/re-survey/synth_probe.py` | `quality.txt` beside `results.json` (helper `common.quality_line`) |
+| Benchmark suite (`tools/bench.py quality <results.jsonl>`) | Reads `BENCH_JSON` lines; `run_all.sh` writes `<run>.quality.txt` beside each run; `bench.py b9` prints rows after its report |
+
+### Benchmark rows and the trust rule
+
+Bench subjects are `bench:<B>:<variant>` (`bench:B3:s`, `bench:B1:buf256`, `bench:B8:2x1080+3w:w0`); the
+board counts them as Infinite's own, like `node:`. The perf README's trust rule says an untrusted run
+(unfocused, unpaced, overlapping windows) can only look better than the real thing, so its value inside a
+limit is "unproven", never a pass. `bench.py quality` therefore **prints trusted rows only**: a row whose
+variant carries `unfocused=1`, `unpaced=1` or `overlap=1` (the marks `scripts/bench/compare.py` owns), or a
+B6 `vsync=0` row (pure work time, a lower bound), is skipped with a note on stderr. A metric whose only runs
+are untrusted stays **unmeasured** on the board (B7 today). An untrusted miss is not lost: `compare.py`
+still prints it. `--untrusted` adds those rows under a `:untrusted` subject suffix for reading; never ingest
+that output.
+
+Bench metrics are not run by `driver.sh`. Check a whole-suite run with `check --source bench`; a partial run
+(`run_all.sh --only ...`) is checked without `--source`, since the benches it skipped emit nothing.
 
 ## Gates
 

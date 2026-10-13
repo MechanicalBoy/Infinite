@@ -337,5 +337,10 @@ FIXTURE_TIMEOUT=240 run_fixture "B10_offline_av_sync seconds=$B10_SECONDS,anim=0
 
 fi
 
+# Quality rows for docs/quality (trusted rows only; tools/bench.py quality).
+QUALITY_FILE="${OUT_FILE%.jsonl}.quality.txt"
+python3 "$REPO_ROOT/tools/bench.py" quality "$OUT_FILE" > "$QUALITY_FILE" || true
+echo "Quality rows: $QUALITY_FILE ($(grep -c '^QUALITY ' "$QUALITY_FILE" || true) rows; record with tools/quality/quality.py ingest)"
+
 echo "Done. Results: $OUT_FILE"
 echo "Compare against a baseline with: scripts/bench/compare.py <baseline.jsonl> $OUT_FILE"
