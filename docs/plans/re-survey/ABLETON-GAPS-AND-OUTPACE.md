@@ -44,7 +44,7 @@ To beat Ableton Live 12 on sound design, production speed, and audio processing:
 ### Gap 2: Transient-Preserving Audio Time-Stretching (Warp Beats Mode)
 * **Live 12 Benchmark**: Live's *Beats* warp mode slices audio at transient onsets and loops the decay tail, preserving drum transients with **0 flams** and **0 cents pitch drift**.
 * **Infinite Today**: Measured in dossier C: the phase vocoder keeps pitch (0.0 cents) but smears drum transients: 10-14 extra onsets and 3 dB of crest factor lost.
-* **Action for Infinite**: transient-aware stretch in `src/audio/dsp/ClipTimeStretch.h`: phase-locked vocoder (Laroche-Dolson 1999) with phase reset at detected onsets (Robel 2003). v0.6 Tier 1.
+* **Action for Infinite**: transient-aware stretch in `src/audio/dsp/ClipTimeStretch.h`: phase-locked vocoder (Laroche-Dolson 1999) with phase reset at detected onsets (Robel 2003). v0.6.
 
 ### Gap 3: Character Drum Bus Processor (`DrumBuss` Architecture)
 * **Live 12**: **Drum Buss** is an essential electronic music tool combining a character compressor, low-end resonant sub synth ("Boom" tuned to note frequency), transient shaper, and soft/medium/hard saturation.
