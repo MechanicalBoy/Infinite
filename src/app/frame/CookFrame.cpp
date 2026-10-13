@@ -326,6 +326,19 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
       return std::clamp(st.y, 0.0f, 1.0f);
    };
 
+   // Audio analysis first: a binding below reads these nodes' Value() before
+   // the cook loop runs, so without this the picture follows the previous
+   // frame's audio - one frame late on every onset (v0.6 1.5).
+   for (GraphNode& gn : gNodes)
+   {
+      if (gn.node == nullptr || gn.node->bypassed)
+         continue;
+      if (auto* analyze = dynamic_cast<AudioAnalyzeNode*>(gn.node.get()))
+         analyze->RefreshAnalysis(frameId);
+      else if (auto* file = dynamic_cast<AudioFileNode*>(gn.node.get()))
+         file->RefreshAnalysis(frameId);
+   }
+
    const double t = Transport::Instance().Seconds();
    // Patch-wide named values, evaluated once before any parameter reads
    // them so every expression in the frame sees the same globals - see

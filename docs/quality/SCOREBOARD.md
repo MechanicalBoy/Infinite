@@ -6,7 +6,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Pillar | Metrics | Met | Behind / miss | Info | Unmeasured |
 |---|---|---|---|---|---|
-| P1 Live AV workstation | 8 | 6 | 1 | 1 | 0 |
+| P1 Live AV workstation | 8 | 7 | 0 | 1 | 0 |
 | P5 Audio quality and hosting | 25 | 22 | 0 | 3 | 0 |
 | P7 3D, compositing, output | 10 | 8 | 2 | 0 | 0 |
 | P8 Performance | 30 | 18 | 2 | 1 | 9 |
@@ -15,7 +15,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `av.react_latency_ms` | Click in the movie audio to the audio-reactive flash in its picture, 30 fps offline render; 45 ms = picture-late sync bound | <= 45.00 ms | report | behind | 49.96 (Infinite) | - |
+| `av.react_latency_ms` | Click in the movie audio to the audio-reactive flash in its picture, 30 fps offline render; 45 ms = picture-late sync bound | <= 45.00 ms | report | met | 16.63 (Infinite) | - |
 | `av.react_jitter_ms` | Std dev of that latency over 31 beats at 128 BPM (frame quantisation alone gives ~9.6 ms at 30 fps) |  | report | info | 9.33 (Infinite) | - |
 | `av.beat_lock_pct` | Beats whose reactive flash lands 0-1 frames after the first possible frame, never early | >= 100 % | report | met | 100 (Infinite) | - |
 | `av.drift_ms_min` | Absolute trend of reactive frame error over the take | <= 1.00 ms/min | report | met | 0 (Infinite) | - |
@@ -178,7 +178,6 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 Every subject for metrics that miss, carry exceptions, have no direction, or compare against other apps.
 
-- `av.react_latency_ms` (ms): Infinite 49.96 (miss)
 - `av.react_jitter_ms` (ms): Infinite 9.33
 - `probe.pitch_worst_c` (cents): node:Analog 0.173 · node:Wavetable 0.174 · Vital Audio: Vital 0.174 · Xfer Records: Serum 2 0.174 · u-he: Diva 7.73
 - `probe.nonharm60_db` (dB): node:Analog -84.51 · node:Wavetable -84.16 · Vital Audio: Vital -84.34 · Xfer Records: Serum 2 -82.96 · u-he: Diva -40.80
@@ -195,4 +194,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 c5fd65c0; 2026-10-13 d6020b77; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 ab741380; 2026-10-13 c5fd65c0; 2026-10-13 d6020b77; 2026-10-13 e182230c.

@@ -1232,8 +1232,6 @@ void AudioAnalyzeNode::CookIfNeeded(int frameId)
    Platform::AudioSetSmoothing(attack, release);
    Platform::AudioSetGain(1.0f);
 
-   Platform::AudioLevels levels;
-   bool running = false;
    if (input.IsConnected())
    {
       // The cable's own upstream node is cooked by the normal graph walk;
@@ -1241,6 +1239,21 @@ void AudioAnalyzeNode::CookIfNeeded(int frameId)
       // snapshot the audio thread published.
       EnsureAudioNode();
       mAudioNode->PushParams(attack, release);
+   }
+   RefreshAnalysis(frameId);
+}
+
+void AudioAnalyzeNode::RefreshAnalysis(int frameId)
+{
+   if (mLastAnalysisFrame == frameId)
+      return;
+   mLastAnalysisFrame = frameId;
+
+   Platform::AudioLevels levels;
+   bool running = false;
+   if (input.IsConnected())
+   {
+      EnsureAudioNode();
       levels = mAudioNode->ReadLevels();
       running = true;
    }
@@ -1409,5 +1422,13 @@ void AudioFileNode::CookIfNeeded(int frameId)
       }
    }
 
+   RefreshAnalysis(frameId);
+}
+
+void AudioFileNode::RefreshAnalysis(int frameId)
+{
+   if (mLastAnalysisFrame == frameId || !mAudioNode)
+      return;
+   mLastAnalysisFrame = frameId;
    mLevels = mAudioNode->ReadLevels();
 }

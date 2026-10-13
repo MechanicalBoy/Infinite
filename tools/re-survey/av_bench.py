@@ -333,6 +333,11 @@ def self_test():
             s = analyse_movie(mv) if os.path.exists(mv) else {}
             t.check(r["frames"] == 90 and s.get("matched", 0) >= 6, "Infinite reactive 3 s: %s frames, %s of %s clicks flashed, latency %s ms"
                     % (r["frames"], s.get("matched"), s.get("clicks"), round(s.get("latency_ms", -1), 1)))
+            # v0.6 1.5: the modulation pass reads Audio Analyze before the cook loop, so it must refresh the
+            # analysis first; when it did not, every flash landed one frame late (49.96 ms at 30 fps).
+            t.check(set(s.get("frame_error", {"?": 0})) == {"0"} and s.get("latency_ms", 99) <= 45,
+                    "reactive flash on the click's own frame: frame error %s, latency %s ms (<= 45)"
+                    % (s.get("frame_error"), round(s.get("latency_ms", -1), 1)))
     finally:
         shutil.rmtree(d, ignore_errors=True)
     return t.done()
