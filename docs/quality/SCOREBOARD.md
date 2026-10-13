@@ -9,7 +9,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | P1 Live AV workstation | 3 | 3 | 0 | 0 | 0 |
 | P5 Audio quality and hosting | 25 | 18 | 4 | 3 | 0 |
 | P7 3D, compositing, output | 7 | 6 | 0 | 0 | 1 |
-| P8 Performance | 2 | 1 | 0 | 0 | 1 |
+| P8 Performance | 28 | 18 | 2 | 0 | 8 |
 
 ## P1 Live AV workstation: Note nodes
 
@@ -76,6 +76,72 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `geo.decimate_bbox_pct` | Decimate: worst vertex distance to the original surface | <= 5.00 % bbox | release | met | 0.851 (node:Decimate) | - |
 | `geo.disp_offset` | Displacement: worst vertex off the formula (run with INFINITE_GEOAUDIT_ONLY=DISP) | <= 0.02 units | report | unmeasured | - | - |
 
+## P8 Performance: Bench: audio
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.b1_cb_load_p99` | B1 audio callback load p99, 24 voices, per buffer size (suite §6) | <= 50.00 % | release | met | 44.75 (bench:B1:buf256) | - |
+| `bench.b1_xruns` | B1 xruns at 256 frames, the §6 buffer (64 is not a target: Found in Block 1) | <= 0 count | release | met | 0 (bench:B1:buf256) | - |
+
+## P8 Performance: Bench: canvas
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.b6_pan_p50_ms` | B6 canvas frame p50 while panning a 200-400 node patch (>= 60 fps) | <= 17.20 ms | release | met | 16.67 (bench:B6:n300-all) | - |
+| `bench.b6_pan_p95_ms` | B6 canvas frame p95 while panning a 200-400 node patch (>= 45 fps) | <= 22.80 ms | release | met | 16.69 (bench:B6:n200-pan) | - |
+| `bench.r5_pan_p95_ms` | R5 canvas frame p95 while panning a 4000-node patch (>= 30 fps; proposed, ROBUSTNESS.md R5) | <= 33.30 ms | report | unmeasured | - | - |
+| `bench.r5_select_p95_ms` | R5 canvas frame p95 while select-all and clear alternate on 4000 nodes (proposed) | <= 33.30 ms | report | unmeasured | - | - |
+| `bench.r5_delete_all_ms` | R5 worst frame around deleting all 4000 nodes through the Delete-key path (proposed) | <= 500 ms | report | unmeasured | - | - |
+| `bench.r5_nodes_after_delete` | R5 nodes left after the delete-all (0 = every node went) | <= 0 count | report | unmeasured | - | - |
+
+## P8 Performance: Bench: fundamentals
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.b5_startup_ms` | B5 launch to first frame swapped (proposed: under one second) | <= 1000 ms | release | met | 342 (bench:B5:startup) | - |
+| `bench.b5_load_ms` | B5 patch load (real LoadPatchFrom), 50-400 nodes; proposed: inside one 60 Hz frame | <= 16.70 ms | release | met | 6.04 (bench:B5:loadsave:400) | - |
+| `bench.b5_save_ms` | B5 patch save (real SavePatchTo), 50-400 nodes; proposed: inside one 60 Hz frame | <= 16.70 ms | release | met | 2.86 (bench:B5:loadsave:50) | - |
+
+## P8 Performance: Bench: media I/O
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.b8_decode_rate_ratio` | B8 decoded fps over the clip's own fps, per clip | >= 1.00 x clip fps | release | met | 1.01 (bench:B8:4x2160:clip3) | - |
+| `bench.b8_dropped_frames` | B8 decoded frames dropped, per clip | <= 0 frames | release | met | 0 (bench:B8:2x1080+2w:clip0) | - |
+| `bench.b8_window_p99_ms` | B8 projector window interval p99 (locked 60 fps), per window | <= 18.30 ms | report | behind | 33.21 (bench:B8:4x2160+3w+cam+syphon:w2) | - |
+| `bench.b8_window_missed_vsync_pct` | B8 projector window intervals over 1.5 refresh periods, per window | <= 0.5 % | report | behind | 9.36 (bench:B8:4x2160+3w+cam+syphon:w0) | - |
+
+## P8 Performance: Bench: memory
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.fbo_allocs_steady` | Render targets reallocated in steady state (B2/B4 scenes, also the B9 scenes) | <= 0 count | release | met | 0 (bench:B2:scale=l,anim=0) | - |
+| `bench.b9_footprint_peak_mb` | B9 peak OS footprint, B2/B4 at scale l; budget = b2 baseline 760 MB + 20 % (compare.py change gate) | <= 912 MB | release | met | 760 (bench:B9:b2) | - |
+
+## P8 Performance: Bench: offline render
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.b10_realtime_factor` | B10 arrangement render of the B3 scene: seconds of take per wall second | >= 1.00 x realtime | release | met | 2.25 (bench:B10:30s-anim0) | - |
+| `bench.b10_av_drift_worst_frames` | B10 worst A/V marker drift in the rendered movie (av-sync-sweep: 2 frames anywhere) | <= 2.00 frames | release | met | 0 (bench:B10:30s-anim0) | - |
+| `bench.b10_av_drift_end_frames` | B10 A/V drift at the end of the take (av-sync-sweep: 1 frame at the end) | <= 1.00 frames | release | met | 0 (bench:B10:30s-anim0) | - |
+
+## P8 Performance: Bench: projector
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.b3_projector_p99_ms` | B3 projector present interval p99 under live load; locked 60 fps = 1.1 x 16.7 ms | <= 18.30 ms | release | met | 17.64 (bench:B3:s) | - |
+| `bench.b3_missed_vsync_pct` | B3 projector intervals over 1.5 refresh periods (§6: under 0.5 %) | <= 0.5 % | release | met | 0 (bench:B3:s) | - |
+| `bench.b3_input_to_photon_frames` | B3 injected param change to Output revision, worst sample | <= 2.00 frames | release | met | 1.00 (bench:B3:s) | - |
+
+## P8 Performance: Bench: soak
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.b7_rss_growth_pct` | B7 soak RSS growth, last 5 min vs first 5 min after warm-up | <= 2.00 % | report | unmeasured | - | - |
+| `bench.b7_xruns` | B7 soak xruns over the whole run | <= 0 count | report | unmeasured | - | - |
+| `bench.b7_thermal_fps_drop_pct` | B7 soak fps drop first to last sample (reported, not hidden: no target) |  | report | unmeasured | - | - |
+
 ## P8 Performance: Built-in instruments
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
@@ -100,5 +166,7 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `fx.rate_spread_db` (dB): node:Audio Filter 0 · node:Limiter 0 · node:Stereo 0 · node:Transient Shaper 0 · node:Tremolo 0 · node:Pitch Shifter 0.0001 · node:EQ 0.0005 · node:Frequency Shifter 0.0013 · node:Wavetable Shaper 0.0034 · node:Drive 0.0062 · node:Cycle Shaper 0.0078 · node:Spectrum Slide 0.0379 · node:Dynamics 0.0978 · node:Chorus 0.127 · node:Delay 0.133 · node:Spec Blur 0.136 · node:Flanger 0.144 · node:Ring Mod 0.18 · node:Phaser 0.243 · node:Formant Filter 0.268 · node:Stutter 0.72 · node:Shape Resonator 0.786 · node:Reverb 0.816 · node:Key-Snap 0.994 · node:Resonator Bank 2.43 (exc F15) · node:Bitcrush 5.38 (exc F14)
 - `geo.winding_mismatch` (triangles): node:8 balls r96 0 · node:Array on cube 0 · node:Array on sphere 0 · node:Arrow 3D 0 · node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Curve Ops hostile 0 · node:Curve Ops no input 0 · node:Curve source tube 0 · node:Cylinder 0 · node:Decimate Icosphere 0 · node:Decimate Torus 0 · node:Decimate on cube 0 · node:Decimate on sphere 0 · node:Delaunay 0 · node:Delete on cube 0 · node:Delete on sphere 0 · node:Disc 0 · node:Dodecahedron 0 · node:Explode on cube 0 · node:Explode on sphere 0 · node:Extrude on cube 0 · node:Extrude on sphere 0 · node:Gear 3D 0 · node:Helix 0 · node:Icosphere 0 · node:Join merge 0 · node:Merge by Distance 0 · node:Metaballs 0 · node:Metaballs extreme 0 · node:Mirror on cube 0 · node:Mirror on sphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Ocean 0 · node:Octahedron 0 · node:Plane 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Select on cube 0 · node:Select on sphere 0 · node:Smooth on cube 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Sphere 0 · node:Star 3D 0 · node:Subdivide on cube 0 · node:Supershape 0 · node:Tetrahedron 0 · node:Torus 0 · node:Torus Knot 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Triangulate on cube 0 · node:Triangulate on sphere 0 · node:Tube 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:Voronoi 0 · node:Wireframe on cube 0 · node:Wireframe on sphere 0 · node:default 0 · node:node Offset 0 · node:node Resample 0 · node:node Simplify 0 · node:node Smooth 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:pinned 0 · node:realised 0 · node:Solidify on a plane 0 · node:Mobius Strip 2.00 (exc F16) · node:Klein Bottle 7.00 (exc F16) · node:Smooth on sphere 64.00 (exc F17) · node:Subdivide on sphere 64.00 (exc F17) · node:Screw on cube 1456 (exc F18) · node:Screw on sphere 14608 (exc F18)
 - `geo.nonmanifold` (edges): node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Cylinder 0 · node:Dodecahedron 0 · node:Icosphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Octahedron 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Smooth on cube 0 · node:Sphere 0 · node:Subdivide on cube 0 · node:Tetrahedron 0 · node:Torus 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:Solidify on a plane 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Smooth on sphere 198 (exc F17) · node:Subdivide on sphere 198 (exc F17)
+- `bench.b8_window_p99_ms` (ms): bench:B8:2x1080+2w:w1 17.69 · bench:B8:2x1080+3w:w2 17.69 · bench:B8:2x1080+3w:w1 17.70 · bench:B8:2x1080+2w:w0 17.72 · bench:B8:2x1080+3w:w0 17.78 · bench:B8:4x2160+3w+cam+syphon:w0 33.04 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 33.09 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 33.21 (miss)
+- `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 6136354a.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 6136354a; 2026-10-13 e182230c.

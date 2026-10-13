@@ -2,7 +2,12 @@
 # Runs the INFINITE_BENCH suite (docs/plans/perf/benchmark-suite.md) and
 # collects every BENCH_JSON line into bench/results/<machine>/<date>-<sha>.jsonl.
 #
-# Usage: scripts/bench/run_all.sh [--soak] [--quiet] [--only B3,B6,...] [--app <path-to-Infinite.app>]
+# Usage: scripts/bench/run_all.sh [--soak] [--soak-long] [--r5] [--quiet] [--only B3,B6,...] [--app <path-to-Infinite.app>]
+#
+# --r5 adds the ROBUSTNESS.md R5 rows to B6: a 4000-node patch (mode=all, and
+# mode=select with one delete-all after the window). Off by default: building
+# the patch alone takes minutes. --soak-long is --soak with B7_MINUTES=480
+# (R8, 8 h) unless B7_MINUTES is set. Neither is part of a default run.
 #
 # --only runs just the listed benchmarks, e.g. to re-run fixtures that came
 # out unfocused/unpaced without repeating the whole suite.
@@ -22,12 +27,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 APP="$REPO_ROOT/build/Infinite.app/Contents/MacOS/Infinite"
 SOAK=0
+R5=0
 QUIET=0
 ONLY=""
 
 while [[ $# -gt 0 ]]; do
    case "$1" in
       --soak) SOAK=1; shift ;;
+      --soak-long) SOAK=1; B7_MINUTES="${B7_MINUTES:-480}"; shift ;;
+      --r5) R5=1; shift ;;
       --quiet) QUIET=1; shift ;;
       --only) ONLY=",$2,"; shift 2 ;;
       --app) APP="$2"; shift 2 ;;
@@ -254,6 +262,16 @@ run_fixture "B6_canvas_nav n=400,mode=pan,zoom=0.15" "$B6_EXIT" \
 # Unpaced ceiling: vsync off, so frame_ms is pure work. Targets report null.
 run_fixture "B6_canvas_nav n=300,mode=pan,vsync=0" "$B6_EXIT" \
    INFINITE_BENCH_B6NODES=300 INFINITE_BENCH_B6MODE=pan INFINITE_BENCH_B6VSYNC=0 INFINITE_BENCH_B6FRAMES="$B6_FRAMES" INFINITE_BENCH_GPUTIMERS=0
+if [[ "$R5" -eq 1 ]]; then
+   # R5 (docs/plans/re-survey/ROBUSTNESS.md): 4000 nodes. mode=all is the
+   # same pan/zoom/drag/dropdown script; mode=select alternates select-all and
+   # clear, then deletes every node once through the Delete-key path
+   # (delete_all_frame_ms, nodes_after_delete in canvas_nav).
+   FIXTURE_TIMEOUT=1800 run_fixture "B6_canvas_nav n=4000,mode=all" "$B6_EXIT" \
+      INFINITE_BENCH_B6NODES=4000 INFINITE_BENCH_B6MODE=all INFINITE_BENCH_B6FRAMES="$B6_FRAMES" INFINITE_BENCH_GPUTIMERS=0
+   FIXTURE_TIMEOUT=1800 run_fixture "B6_canvas_nav n=4000,mode=select,delete=1" "$B6_EXIT" \
+      INFINITE_BENCH_B6NODES=4000 INFINITE_BENCH_B6MODE=select INFINITE_BENCH_B6DELETE=1 INFINITE_BENCH_B6FRAMES="$B6_FRAMES" INFINITE_BENCH_GPUTIMERS=0
+fi
 
 fi
 
@@ -336,6 +354,11 @@ FIXTURE_TIMEOUT=240 run_fixture "B10_offline_av_sync seconds=$B10_SECONDS,anim=0
    INFINITE_BENCH_B10=1 INFINITE_BENCH_B10SECONDS="$B10_SECONDS" INFINITE_BENCH_B10ANIM=0
 
 fi
+
+# Quality rows for docs/quality (trusted rows only; tools/bench.py quality).
+QUALITY_FILE="${OUT_FILE%.jsonl}.quality.txt"
+python3 "$REPO_ROOT/tools/bench.py" quality "$OUT_FILE" > "$QUALITY_FILE" || true
+echo "Quality rows: $QUALITY_FILE ($(grep -c '^QUALITY ' "$QUALITY_FILE" || true) rows; record with tools/quality/quality.py ingest)"
 
 echo "Done. Results: $OUT_FILE"
 echo "Compare against a baseline with: scripts/bench/compare.py <baseline.jsonl> $OUT_FILE"

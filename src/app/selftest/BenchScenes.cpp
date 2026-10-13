@@ -451,7 +451,8 @@ void BuildBenchB6Scene(int n, bool collapsed, float& outMaxX, float& outMaxY, in
    const int kTypeCount = (int)(sizeof(kTypes) / sizeof(kTypes[0]));
 
    int cols = 16;
-   if (n >= 400) cols = 24;
+   if (n > 1000) cols = (int)std::ceil(std::sqrt((double)n * 1.33)); // R5 4000-node variant: keep the grid near square
+   else if (n >= 400) cols = 24;
    else if (n >= 300) cols = 20;
    else if (n >= 200) cols = 16;
    else cols = std::max(4, (int)std::ceil(std::sqrt((double)n * 1.33)));

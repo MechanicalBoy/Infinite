@@ -3781,6 +3781,12 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
             sBenchB6Variant += std::string(",zoom=") + z;
          if (!sBenchB6Vsync)
             sBenchB6Variant += ",vsync=0";
+         // R5 (docs/plans/re-survey/ROBUSTNESS.md): after the sampled window,
+         // select every node and delete through the Delete-key path once.
+         sBenchB6Delete = (getenv("INFINITE_BENCH_B6DELETE") != nullptr &&
+                           strcmp(getenv("INFINITE_BENCH_B6DELETE"), "0") != 0);
+         if (sBenchB6Delete)
+            sBenchB6Variant += ",delete=1";
          if (const char* t = getenv("INFINITE_BENCH_GPUTIMERS"); t && strcmp(t, "0") == 0)
             sBenchB6Variant += ",gputimers=0";
 

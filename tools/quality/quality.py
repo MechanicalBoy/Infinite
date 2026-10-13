@@ -6,8 +6,8 @@ Node audits, the benchmark suite, re-survey probes and driver checks each print 
 docs/quality/registry.tsv owns what each id means, its target, whether a miss blocks a release,
 and the accepted exceptions. This tool reads the rows; it never measures anything itself.
 
-Subjects: Infinite's own nodes are "node:<Name>"; anything else (a competitor plugin or app) is
-named as its tool labels it. A metric can be measured on both, which is what makes rows compare.
+Subjects: Infinite's own nodes are "node:<Name>", its benchmark runs "bench:<B>:<variant>"
+(tools/bench.py quality); anything else (a competitor plugin or app) is named as its tool labels it. A metric can be measured on both, which is what makes rows compare.
 
 Usage:
   quality.py check LOG... [--source SYNTHAUDIT]   release gate: misses, unknown ids, missing metrics -> exit 1
@@ -90,6 +90,14 @@ def meets(m, v):
     if m["target"] is None or m["better"] == "none":
         return None
     return v <= m["target"] if m["better"] == "lower" else v >= m["target"]
+
+
+OURS = ("node:", "bench:", "Infinite")
+
+
+def is_ours(subject):
+    """Infinite's own subjects: nodes, benchmark runs, and tools that label it Infinite."""
+    return subject.startswith(OURS)
 
 
 def fmt(v):
@@ -191,7 +199,7 @@ def board(reg, results=RESULTS):
                 s = summary.setdefault(pk, [0, 0, 0, 0, 0])
                 s[0] += 1
                 rs = by_id.get(mid, [])
-                ours = [r for r in rs if r["subject"].startswith("node:") or r["subject"].startswith("Infinite")]
+                ours = [r for r in rs if is_ours(r["subject"])]
                 theirs = [r for r in rs if r not in ours]
                 if not rs:
                     status = "unmeasured"
@@ -213,7 +221,7 @@ def board(reg, results=RESULTS):
                     "%s (%s)" % (fmt(w["value"]), w["subject"]) if w else "-",
                     "%s (%s)" % (fmt(b["value"]), b["subject"]) if b else "-"))
                 if rs and (status in ("MISS", "behind", "exc", "info") or theirs):
-                    detail.append((mid, m, sorted(rs, key=lambda r: (not r["subject"].startswith("node:"), key(r)))))
+                    detail.append((mid, m, sorted(rs, key=lambda r: (not is_ours(r["subject"]), key(r)))))
             detail_area = "%s · %s" % (pk, area)
             rows = ["", "## %s %s: %s" % (pk, PILLARS.get(pk, ""), area), "",
                     "| Metric | What | Target | Gate | Status | Infinite worst | Best other |", "|---|---|---|---|---|---|---|"] + rows
@@ -231,7 +239,7 @@ def board(reg, results=RESULTS):
                 tag = ""
                 if r["subject"] in m["exceptions"]:
                     tag = " (exc %s)" % m["exceptions"][r["subject"]]
-                elif r["subject"].startswith("node:") and meets(m, r["value"]) is False:
+                elif is_ours(r["subject"]) and meets(m, r["value"]) is False:
                     tag = " (miss)"
                 cells.append("%s %s%s" % (r["subject"], fmt(r["value"]), tag))
             L.append("- `%s` (%s): %s" % (mid, m["unit"], " · ".join(cells)))
@@ -286,6 +294,13 @@ def self_test():
         md = board(reg, results=res)
         ok("| `a.low` |" in md and "| met |" in md and "-90.00 (Rival)" in md, "board: met status and best other subject")
         ok("| behind |" in md and "| unmeasured |" in md, "board: report-only miss is behind, no rows is unmeasured")
+        res2 = os.path.join(d, "res2.jsonl")
+        with open(logp, "w") as f:
+            f.write('QUALITY id=a.high subject="bench:B1:buf256" value=0.5\nQUALITY id=a.high subject="Rival" value=5\n')
+        ingest([logp], reg, results=res2)
+        md2 = board(reg, results=res2)
+        ok("| `a.high` |" in md2 and "| behind |" in md2 and "0.5 (bench:B1:buf256)" in md2,
+           "board: a bench: subject is Infinite's own (judged, not 'best other')")
         with open(regp, "a") as f:
             f.write("bad\tP5\tX\n")
         try:
