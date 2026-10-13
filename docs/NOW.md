@@ -16,7 +16,8 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 | Session | Branch / worktree | Quest | Uses | Since |
 |---|---|---|---|---|
-| re-survey-finish | `feature/re-survey-finish` at `infinte` (+ agent worktrees) | re-survey leftovers, quality misses, B1-B10 into scoreboard | main build, bench (later, serial), DAW/TD GUI scripting | 2026-10-13 |
+| re-survey-finish | `feature/re-survey-finish` (+ agent worktrees) | re-survey leftovers, quality misses, B1-B10 into scoreboard | main build, bench (later, serial), DAW/TD GUI scripting | 2026-10-13 |
+| v06-block1 | `bugfix/v06-audio-correctness` at `infinte` | v0.6 Block 1 (audio correctness) | main build, bench (serial with re-survey-finish) | 2026-10-13 |
 
 ## Waiting on owner (one at a time, recommended answer first)
 
