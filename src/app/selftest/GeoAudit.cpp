@@ -177,7 +177,12 @@ namespace
          const double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
          const double area2 = std::sqrt(nx * nx + ny * ny + nz * nz);
          if (!(area2 > 1e-10))
+         {
+            // A zero-area triangle (a UV pole fan) is its own flag; it is not surface, so it does not
+            // count towards edges or the winding check.
             s.degenerate++;
+            continue;
+         }
          else
          {
             const double sx = (double)A.nx + B.nx + C.nx, sy = (double)A.ny + B.ny + C.ny,
@@ -450,12 +455,23 @@ namespace
    bool OpKeepsClosed(int op)
    {
       return op == GeometryOpNode::kTransform || op == GeometryOpNode::kSubdivide ||
-             op == GeometryOpNode::kNormals ||
+             op == GeometryOpNode::kNormals || op == GeometryOpNode::kSolidify ||
              op == GeometryOpNode::kTwist || op == GeometryOpNode::kSmooth;
+   }
+
+   // Solidify on an open input: the rim must be closed by a wall, so the result has no boundary at all.
+   void AuditSolidifyRim(Flags& f, bool& ok)
+   {
+      const Mesh plane = Primitives::Plane(4);
+      const Mesh solid = MeshOps::Solidify(plane, 0.1f, true);
+      const Stats s = Measure(solid);
+      printf("GEOAUDIT OP     Solidify on a plane        %zu tris | boundary %d non-manifold %d volume %.3f\n", s.tris, s.boundary, s.nonManifold, s.volume);
+      Report(f, "VALID", "Solidify on a plane", s, true, ok);
    }
 
    void AuditOps(Flags& f, bool& ok)
    {
+      AuditSolidifyRim(f, ok);
       const auto& opNames = GeometryOpNode::OpNames();
       for (int op = 0; op < GeometryOpNode::kOpCount; op++)
       {
