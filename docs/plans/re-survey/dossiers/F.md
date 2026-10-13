@@ -1,6 +1,6 @@
 # F Timeline, workflow cost and visual design (Final Cut, Live, Logic, Bitwig): dossier
 
-Status: draft 2026-10-13. Lint: `python3 tools/re-survey/diff.py lint docs/plans/re-survey/dossiers/F.md`
+Status: done 2026-10-13 (Final Cut timeline measured by menu map; DAW workflow columns manual-derived until the timed sitting). Lint: `python3 tools/re-survey/diff.py lint docs/plans/re-survey/dossiers/F.md`
 
 ## 1. What it is
 
@@ -16,16 +16,23 @@ Status: draft 2026-10-13. Lint: `python3 tools/re-survey/diff.py lint docs/plans
 
 ## 3. Pillar map
 
-- P3: Making the first sound takes 12 steps in Infinite and 3–4 in each DAW.
+- P1: Making the first sound takes 12 steps in Infinite and 3–4 in each DAW.
   - Audio is off at launch. Only the top-bar Start Audio chip or Shift+K starts it (`src/app/frame/StageMenuBar.cpp::Start Audio`). Every DAW plays on launch.
   - A new patch is empty: Keyboard, synth and Audio Out each come from the node picker. A DAW's new set already has a track that plays.
   - KLM: 24.8 s against 8.0–8.8 s. Task 6 (four notes, 8 steps) and task 8 (import a sample, 3 steps against 1) lose for the same reason: each new part has to be created and wired.
-- P3: Infinite wins where the patch already exists.
+- P6: Infinite wins where the patch already exists.
   - Automate: Shift+drag a knob while playing records the move (2 steps, 5.4 s, against 4–5 steps and 11–13 s).
   - Modulate: LFO from the picker, one drag onto the param pin (6.8 s against 10.8–11.7 s).
   - Export: one Render click on the Output node, no dialog (2.7 s against about 6 s).
   - Over all ten tasks Infinite is last (94 s against 78–84 s), and task 1 alone accounts for the gap.
-- P3: Hint text on the field well was below 4.5:1 in 7 of 10 themes.
+- P6: Final Cut's whole timeline is a menu of 226 shortcuts, and Infinite's covers the cutting half of it.
+  - `ui_map` read 10 menus, 529 items and 226 shortcuts, but no window tree (0 AX nodes, like TouchDesigner): the timeline itself is custom-drawn, so only commands are mapped, not layout or scrub speed.
+  - Parity: blade (Cmd+B there, B or Cmd+E here), delete, copy/paste, duplicate, group (Create Storyline, Cmd+G, is the nearest), enable/disable (Final Cut V, here 0), markers (M) with next/previous jump, nudge by one step, Home/End, snapping toggle (N there, the magnet button here), zoom, trim by edge drag.
+  - Gaps a Final Cut user feels first: no ripple or gap close (Final Cut's magnetic storyline: Insert W, Append E, Overwrite D, Connect Q, Lift), no keyboard trim (Opt+[ , Opt+] , Extend Edit, Join Clips), no zoom-to-fit (Shift+Z), no skimming (S), no per-clip speed (Retime, Shift+N/H/B).
+  - Evidence: `~/re-output/ui-map/finalcut.md`, Infinite shortcuts from `src/app/panels/HelpWindows.cpp` (Arrangement Timeline rows).
+- P6: Timeline speed against Final Cut is not measured.
+  - Scrub, zoom and many-clip drawing are GUI timings; the canvas is not scripted (owner rule) and Final Cut hides its window from accessibility. Infinite's arrangement has `ARRANGETEST` and `ARRANGEAUDIOTEST` for correctness only, nothing times a 1000-clip redraw.
+- P1: Hint text on the field well was below 4.5:1 in 7 of 10 themes.
   - `contrast.py` passes all 42 token pairs, but it does not measure the field well. Text boxes and the library search draw `Text` at 6–7% over the panel, and `THEMECONTRASTTEST` asserted text against the window and panel only.
   - Measured hint (TextDisabled) on the resting well: Nord 3.72, Dracula 3.66, Mocha 3.78, Tokyo Night 3.84, Latte 4.08, GitHub Light 4.03, Solarized Light 4.14. Solarized Light's typed text read 4.1–4.2:1.
   - Shipped since v0.4.7 (79ac4f7d lifted text against the window and panel only). No saved state is affected; portable code, so all three platforms.
@@ -35,13 +42,17 @@ Status: draft 2026-10-13. Lint: `python3 tools/re-survey/diff.py lint docs/plans
 
 | Pillar | Their feature | Infinite equivalent | Status | Outcome | Evidence |
 |---|---|---|---|---|---|
-| P3 | New project plays a note with no setup (all three DAWs) | `src/app/frame/StageMenuBar.cpp` | gap | quest: first sound in 4 steps - start audio on launch and open new patches with Keyboard → synth → Audio Out | `workflow_cost.py` task 1 |
-| P3 | Sample drop lands on a playing track (all three) | `src/app/frame/StageDropHandling.cpp` | gap | quality-gap: a dropped sample's new node wires itself to Audio Out when it is the only sink | `workflow_cost.py` task 8 |
-| P3 | Note entry in a clip (all three) | `src/app/panels/HelpWindows.cpp` | gap | ignore: the sequencer must be made and wired once per patch; after that entry is clicks, like a piano roll | `workflow_cost.py` task 6 |
-| P3 | Automation lanes (all three) | `src/core/GestureRecorder.h` | lead | ignore: Shift+drag records in 2 steps against 4–5 | `workflow_cost.py` task 4 |
-| P3 | Modulators (Bitwig, Live M4L, Logic Modulator) | `src/app/ui/design/components/PinDot.h` | lead | ignore: one drag onto the param pin | `workflow_cost.py` task 5 |
-| P3 | Export dialog (all three) | `src/app/frame/StageNodeBodies.cpp` | lead | ignore: one click, no dialog | `workflow_cost.py` task 10 |
-| P3 | Readable text on every surface in every theme | `src/core/CategoryColors.cpp` | parity | ignore: fixed in this block, needs a release-notes line | `THEMECONTRASTTEST` |
+| P1 | New project plays a note with no setup (all three DAWs) | `src/app/frame/StageMenuBar.cpp` | gap | quest: first sound in 4 steps - start audio on launch and open new patches with Keyboard → synth → Audio Out | `workflow_cost.py` task 1 |
+| P6 | Sample drop lands on a playing track (all three) | `src/app/frame/StageDropHandling.cpp` | gap | quality-gap: a dropped sample's new node wires itself to Audio Out when it is the only sink | `workflow_cost.py` task 8 |
+| P6 | Note entry in a clip (all three) | `src/app/panels/HelpWindows.cpp` | gap | ignore: the sequencer must be made and wired once per patch; after that entry is clicks, like a piano roll | `workflow_cost.py` task 6 |
+| P6 | Automation lanes (all three) | `src/core/GestureRecorder.h` | lead | ignore: Shift+drag records in 2 steps against 4–5 | `workflow_cost.py` task 4 |
+| P2 | Modulators (Bitwig, Live M4L, Logic Modulator) | `src/app/ui/design/components/PinDot.h` | lead | ignore: one drag onto the param pin | `workflow_cost.py` task 5 |
+| P6 | Export dialog (all three) | `src/app/frame/StageNodeBodies.cpp` | lead | ignore: one click, no dialog | `workflow_cost.py` task 10 |
+| P6 | Zoom to fit (Shift+Z) and zoom keys (Cmd+= / Cmd+-) | `src/app/panels/ArrangePanel.cpp` | gap | quality-gap: Home/End exist, but zoom is wheel-only; add Zoom to Fit as one key | `ui_map` Final Cut View menu |
+| P6 | Magnetic storyline: Insert, Append, Overwrite, ripple delete (W, E, D, Delete) | `src/arrange/ArrangeModel.h` | gap | ignore: an arrangement schedules nodes at bar positions, so closing gaps would move music; the gap-close case is a video-edit habit | `ui_map` Final Cut Edit menu |
+| P6 | Retime: per-clip speed, hold, blade speed | `src/nodes/VideoSourceNode.h` | gap | ignore: speed lives on the Video node and is reachable by one click on the canvas; revisit if users ask | `ui_map` Final Cut Modify > Retime |
+| P6 | Blade, markers, nudge, snapping, group, duplicate, enable/disable | `src/app/panels/HelpWindows.cpp` | parity | ignore: every cutting command has an Infinite key | `ui_map` Final Cut Trim/Mark menus |
+| P1 | Readable text on every surface in every theme | `src/core/CategoryColors.cpp` | parity | ignore: fixed in this block, needs a release-notes line | `THEMECONTRASTTEST` |
 
 ## 5. Measurements
 
@@ -78,11 +89,13 @@ Contrast, dim text on the resting field well (target 4.5:1):
 
 - Quests: first sound in 4 steps. Audio starts on launch, and File > New opens Keyboard → synth → Audio Out wired, so task 1 is "hover, press A". Bar: task 1 at 4 steps or fewer in `workflow_cost.py`.
 - Quality gaps: a sample dropped on the canvas wires its new node to Audio Out when that is the only sink. Bar: task 8 at 2 steps.
+- Quality gaps (cont.): Zoom to Fit as one key in the arrangement. Bar: the whole arrangement fits the panel from a key press.
 - Bug fixed with a regression check: field-well contrast (`THEMECONTRASTTEST` now checks the well). Needs a release-notes line: hint and typed text are easier to read in seven themes.
-- Ignored, with reason: note entry (one-time sequencer setup, then parity); the lead tasks need nothing.
+- Ignored, with reason: ripple/magnetic editing and retime (see rows above); note entry (one-time sequencer setup, then parity); the lead tasks need nothing.
+- Not measured, protocol pending: timeline scrub/zoom/many-clip speed against Final Cut (GUI timing; needs a frame-time probe inside Infinite or the owner's screen recording).
 - Owner sittings needed: the timed workflow sitting (`PROTOCOL-workflow.md`) confirms the DAW step lists and the KLM ranking.
 
 ## 7. Storage
 
-- Written to ~/re-output: `workflow-cost/workflow.md`, `ui-map/` (Final Cut).
-- Deleted: the theme model and contrast scratch.
+- Written to ~/re-output: `workflow-cost/workflow.md`, `ui-map/finalcut.md` and the raw tree under `ui-map/20261013-075926/`.
+- Deleted: the theme model and contrast scratch, and `~/re-output/tmp` (`storage.py clean-tmp`).
