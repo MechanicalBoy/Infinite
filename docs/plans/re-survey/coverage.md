@@ -139,8 +139,8 @@ paste) · ❌ not measured · — not applicable. Infinite is the measured subje
 | Dimension | Live | Logic | Bitwig | TouchDesigner | Blender | Final Cut | Infinite |
 |---|---|---|---|---|---|---|---|
 | Audio engine (summing, pan, PDC, latency) | ⏳ bounce, loopback | ⏳ bounce, loopback | ⏳ bounce, loopback | ❌ | — | — | ✅ |
-| Visual / 3D engine (fps, frame times, ceiling) | — | — | — | ⏳ Textport paste | ✅ render speed; ❌ viewport, geometry nodes, simulation | ❌ | ✅ (GPU memory ❌) |
-| AV integration (export sync, audio→picture latency, beat-to-frame lock) | ❌ | ❌ | ❌ | ⏳ export sync; ❌ live latency | ✅ export sync | ❌ | ✅ export sync; ❌ live latency |
+| Visual / 3D engine (fps, frame times, ceiling) | — | — | — | ⏳ Textport paste (render speed; audio-reactive scene frame times, `av_bench_td.py`) | ✅ render speed; ✅ geometry nodes, cloth, depsgraph fps (headless proxy); ⏳ true viewport fps (GUI) | ❌ | ✅ (GPU memory ❌; live frame times need the GUI) |
+| AV integration (export sync, audio→picture latency, beat-to-frame lock) | ❌ | ❌ | ❌ | ⏳ export sync; ⏳ reactive latency + beat lock (Textport paste); ⏳ live latency (camera) | ✅ export sync | ❌ | ✅ export sync, reactive latency, beat lock; ⏳ live latency (camera, `PROTOCOL-av.md`) |
 | Built-in modules (synths, effects, stretch) | ⏳ bounce | ⏳ bounce | ⏳ bounce | ❌ | ❌ | ❌ | ✅ |
 | UX: workflow cost and design | ⏳ KLM from manual; ✅ command map | ⏳ KLM; ✅ command map | ⏳ KLM; ❌ command map (exposes nothing) | ✅ command map | ❌ | ✅ command map | ✅ |
 | Efficiency (startup, idle, load ceiling) | ✅ idle; ⏳ load | ✅ idle; ⏳ load | ✅ idle (window time ⏳); ⏳ load | ✅ idle | ❌ | ❌ | ✅ |
@@ -154,8 +154,8 @@ Biggest holes, in the owner's order:
 | Hole | What fills it |
 |---|---|
 | Robustness for every app | a stress kit: a 4000-module project, device unplug, kill mid-save then reopen, a crashing plugin, a long run; run through `app_bench` |
-| Blender beyond render | geometry nodes, simulation and viewport fps from its public Python API and CLI |
-| TouchDesigner as the bar for audio-reactive visuals and live frame timing | the Textport paste for render speed, then an audio-reactive scene with frame times from its own Python |
-| AV integration bench | audio→picture latency and beat-to-frame lock, measured on a looped click-and-flash patch in each app that can play one |
+| Blender beyond render | 🟡 `blender_bench.py` 2026-10-13: geometry nodes, cloth, depsgraph fps measured headless (Infinite vs Blender ms/frame: 10k instances 2.7 vs 1.3, subdivide+displace 12.0 vs 8.1, cloth 0.9 vs 18.4; shared machine, solvers differ); true viewport fps needs a GUI sitting |
+| TouchDesigner as the bar for audio-reactive visuals and live frame timing | ⏳ scripts ready: `render_bench.py td-prep`, `av_bench.py td-prep --mode av` and `--mode scene`; each is one Textport paste |
+| AV integration bench | 🟡 `av_bench.py` 2026-10-13: Infinite offline measured (50 ms at 30 fps, 100% lock); TD paste and the live camera sitting pending |
 
 Tools are reused across apps wherever possible; each hole above adds a stimulus and an analyser to the same harness.
