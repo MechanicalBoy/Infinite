@@ -345,6 +345,13 @@ void DrawFramePump(FrameCtx& fc)
       if (getenv("INFINITE_EXITAFTER") == nullptr && !HeadlessJobActive())
          PollAutosave();
 
+      // Effect shaders compile ahead, one stage a frame. Off under the dev
+      // harness (it would sit inside every fixture's sample window) except
+      // for the edit bench, which measures exactly this.
+      static bool sWarmShaders = !HeadlessJobActive() && (getenv("INFINITE_EXITAFTER") == nullptr || getenv("INFINITE_BENCH_B3EDITS") != nullptr);
+      if (sWarmShaders && frameId >= 30)
+         sWarmShaders = FilterNode::WarmNextShader();
+
       // Apply any RemoteControl RPC requests queued by the network thread
       // since last frame, before any ed:: drawing reads the graph this frame.
       RemoteControl::DrainPending(HandleRpcCommand);

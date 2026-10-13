@@ -97,6 +97,11 @@ namespace GLUtil
    // show the user their own typo inline).
    unsigned int CompileProgram(const char* fragSrc, std::string* outError = nullptr);
 
+   // Compiles fragSrc's fragment stage into CompileProgram's stage cache
+   // without building a program, so a later CompileProgram of the same source
+   // only links. A source that doesn't compile is ignored here.
+   void WarmFragmentStage(const char* fragSrc);
+
    // Binds out's FBO, sets viewport, runs `setup` to bind uniforms, then draws
    // the shared fullscreen quad. Restores previously-bound FBO/viewport after.
    void RunShaderPass(const Fbo& out, unsigned int program, const std::function<void()>& setup);

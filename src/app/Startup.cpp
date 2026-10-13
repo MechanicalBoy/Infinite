@@ -3618,6 +3618,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
          if (!b3EnablePred) sBenchB3Variant += ",pred=0";
          if (!b3EnableGesture) sBenchB3Variant += ",gesture=0";
          if (sBenchB3I2PDryRun) sBenchB3Variant += ",i2pdryrun=1";
+         if (getenv("INFINITE_BENCH_B3EDITS") && strcmp(getenv("INFINITE_BENCH_B3EDITS"), "0") != 0) sBenchB3Variant += ",edits=1";
          if (const char* t = getenv("INFINITE_BENCH_GPUTIMERS"); t && strcmp(t, "0") == 0)
             sBenchB3Variant += ",gputimers=0";
 

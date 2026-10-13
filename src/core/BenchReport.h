@@ -458,6 +458,9 @@ namespace Bench
 
       // Slow-frame attribution (B3, B8): Bench::FrameTail::Report(). null = not measured.
       nlohmann::json slowFrames = nullptr;
+      // B3 edit storm (INFINITE_BENCH_B3EDITS): frame time of the frames that
+      // carried a graph edit. Null when no storm ran.
+      nlohmann::json edits = nullptr;
 
       nlohmann::json stagesCpuMs = nlohmann::json::object();
       nlohmann::json stagesGpuMs = nlohmann::json::object();

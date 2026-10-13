@@ -48,6 +48,9 @@ bench.b1_xruns	P8	Bench: audio	count	lower	0	release	bench		B1 xruns at 256 fram
 bench.b3_projector_p99_ms	P8	Bench: projector	ms	lower	18.3	release	bench		B3 projector present interval p99 under live load; locked 60 fps = 1.1 x 16.7 ms
 bench.b3_missed_vsync_pct	P8	Bench: projector	%	lower	0.5	release	bench		B3 projector intervals over 1.5 refresh periods (§6: under 0.5 %)
 bench.b3_input_to_photon_frames	P8	Bench: projector	frames	lower	2	release	bench		B3 injected param change to Output revision, worst sample
+bench.b3_edit_late_frames	P8	Bench: live edit	frames	lower	0	release	bench		B3 edit storm: edits (add, connect, delete, Field preset load) whose frame did over one refresh period of work or ran over 1.5 periods
+bench.b3_edit_work_ms_max	P8	Bench: live edit	ms	lower	16.7	release	bench		B3 edit storm: most frame work any single edit cost (one 60 Hz period)
+bench.b3_edit_xruns	P8	Bench: live edit	count	lower	0	release	bench		B3 edit storm: audio dropouts while the graph is edited under live load
 bench.b6_pan_p50_ms	P8	Bench: canvas	ms	lower	17.2	release	bench		B6 canvas frame p50 while panning a 200-400 node patch (>= 60 fps)
 bench.b6_pan_p95_ms	P8	Bench: canvas	ms	lower	22.8	release	bench		B6 canvas frame p95 while panning a 200-400 node patch (>= 45 fps)
 bench.r5_pan_p95_ms	P8	Bench: canvas	ms	lower	33.3	report	bench		R5 canvas frame p95 while panning a 4000-node patch (>= 30 fps; proposed, ROBUSTNESS.md R5)

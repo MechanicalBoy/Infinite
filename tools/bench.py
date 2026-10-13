@@ -87,6 +87,14 @@ def quality_rows(r):
             add("bench.b1_cb_load_p99", audio["cb_load_p99"] * 100.0)
         if audio.get("buffer") == 256:
             add("bench.b1_xruns", audio.get("xruns"))
+    elif b.startswith("B3_") and r.get("edits"):
+        # Edit storm variant (INFINITE_BENCH_B3EDITS): its own rows, so it never
+        # overwrites the plain B3 projector numbers.
+        e = r["edits"]
+        if not e.get("failed"):
+            add("bench.b3_edit_late_frames", max(_num(e.get("over_budget")) or 0, _num(e.get("late_work")) or 0))
+            add("bench.b3_edit_work_ms_max", e.get("work_ms_max"))
+            add("bench.b3_edit_xruns", audio.get("xruns"))
     elif b.startswith("B3_"):
         proj = r.get("projector") or {}
         add("bench.b3_projector_p99_ms", (proj.get("present_interval_ms") or {}).get("p99"))

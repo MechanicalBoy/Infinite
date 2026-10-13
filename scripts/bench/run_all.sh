@@ -184,6 +184,10 @@ B3_FRAMES="${B3_FRAMES:-600}"
 B3_EXIT=$((B3_FRAMES + 50))
 run_fixture "B3_live_performance scale=s,buf=256" "$B3_EXIT" \
    INFINITE_BENCH_B3SCALE=s INFINITE_BENCH_B3BUFFER=256 INFINITE_BENCH_B3FRAMES="$B3_FRAMES"
+# Edit storm: the same scene while nodes are added, wired, deleted and Field
+# presets reload (v0.6 1.14). Its verdict is the "edits" section.
+run_fixture "B3_live_performance scale=s,buf=256,edits=1" "$B3_EXIT" \
+   INFINITE_BENCH_B3SCALE=s INFINITE_BENCH_B3BUFFER=256 INFINITE_BENCH_B3FRAMES="$B3_FRAMES" INFINITE_BENCH_B3EDITS=1
 
 fi
 
