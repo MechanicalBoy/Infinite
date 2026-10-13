@@ -1660,6 +1660,16 @@ namespace app
       ImGui::TextDisabled("%d geometry, %s camera", connected, n->camera ? "patched" : "built-in");
       ImGui::SameLine(0.0f, 16.0f);
       ImGui::TextDisabled("%zu triangles in %zu draw calls", n->LastTriangleCount(), n->LastDrawCalls());
+      {
+         // The count changes every frame; pad to a fixed worst-case width so the node body doesn't resize with the digits.
+         const float usedW = ImGui::GetItemRectSize().x;
+         const float fixedW = ImGui::CalcTextSize("00000000 triangles in 000 draw calls").x;
+         if (usedW < fixedW)
+         {
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::Dummy(ImVec2(fixedW - usedW, 0.0f));
+         }
+      }
 
       gParamWidthLive = kParamWidthBase;   // two-column body keeps its column width; only single-column bodies stretch to the header (R3)
       const float colW = kParamWidth;
