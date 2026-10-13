@@ -244,6 +244,13 @@ namespace
       return std::sqrt(re * re + im * im);
    }
 
+   // One measured value for the quality system (docs/quality/README.md): tools/quality/quality.py keeps
+   // the worst per metric and subject and owns the target and the release gate.
+   void Quality(const char* id, const std::string& node, double v)
+   {
+      printf("QUALITY id=%s subject=\"node:%s\" value=%.4f\n", id, node.c_str(), v);
+   }
+
    struct Flagger
    {
       int count = 0;
@@ -459,6 +466,10 @@ namespace
          flag(fx, "gain", "1 kHz tone %+.1f dB at defaults", gTone);
       if (std::fabs(bal) > 1.0)
          flag(fx, "stereo", "mono in -> L/R balance %+.1f dB", bal);
+      Quality("fx.dc_dbfs", fx, dcDb);
+      Quality("fx.tail_dbfs", fx, tailDb);
+      Quality("fx.click_db", fx, worstClick);
+      Quality("fx.rate_spread_db", fx, toneSpread);
       if (dcDb > kFlagDcDbfs)
          flag(fx, "dc", "%.0f dBFS mean under noise", dcDb);
       if (tailDb > kFlagTailDbfs)

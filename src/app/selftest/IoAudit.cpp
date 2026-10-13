@@ -47,6 +47,13 @@ namespace
    constexpr double kRate = 48000.0;
    constexpr int kBlock = 512;
 
+   // One measured value for the quality system (docs/quality/README.md): tools/quality/quality.py keeps
+   // the worst per metric and subject and owns the target and the release gate.
+   void Quality(const char* id, const std::string& node, double v)
+   {
+      printf("QUALITY id=%s subject=\"node:%s\" value=%.4f\n", id, node.c_str(), v);
+   }
+
    struct Flags
    {
       int n = 0;
@@ -165,6 +172,7 @@ namespace
          worst = std::max(worst, std::fabs(got - db));
       }
       printf("IOAUDIT LAW   Gain           worst error over -48..+24 dB: %.4f dB\n", worst);
+      Quality("io.gain_knob_db", "Gain", worst);
       if (worst > 0.01)
          flags.Flag("LAW", "Gain", "knob error dB", worst);
    }
@@ -316,6 +324,7 @@ namespace
          ord = std::max(ord, (double)std::fabs(o1.l[i] - o2.l[i]));
       }
       printf("IOAUDIT SUM   Mixer          12 slots: max error vs double reference %.2e | slot order reversed: max difference %.2e\n", err, ord);
+      Quality("io.sum_error", "Mixer", err);
       if (err > 1e-6)
          flags.Flag("SUM", "Mixer", "sum error", err);
       if (ord > 1e-6)
