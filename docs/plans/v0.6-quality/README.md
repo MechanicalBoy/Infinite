@@ -23,6 +23,21 @@ Rules for every block: one branch, commit per step, each fix gets a regression r
 or scoreboard metric), `bug-blast-radius` before each bug fix, `verify-gate` before merge, no push
 without ask. Bench runs are serialized with the `re-survey-finish` session (check NOW.md claims).
 
+## Carry-over (unfinished work from before this plan, checked 2026-10-13)
+
+| Item | Where it stands | In v0.6 as |
+|---|---|---|
+| re-survey-finish steps 5-6: DAW/TD sittings (builtins_kit, stretch_kit, load/workflow/projects), then R5, B8 heavy, R8 overnight soak | not started; owned by the `re-survey-finish` claim | Block 1 item 1.7 and the 1.6 bar depend on it; if that session closes first, Block 1 runs it |
+| re-survey-finish step 7: R7 device unplug, recovery prompt | not started | Block 1, last; hardware latency loopback stays the owner's |
+| `bugfix/step4-offline-audio`: 3 tool commits (loopback_rec via BlackHole, TD render bench note) | not merged | merge at Block 1 start (needed for the step 5 sittings) |
+| Community patches: 5 of 24 fail strict `--validate` (stale keys in fairy-type, pad-wash; empty Output in glitch-feedback; half-wired Blend Audio in limited-stretch, spectrum-slide) | open | Block 2 item 2.7: fix the patches, add them to the validate smoke set |
+| Node audits not yet covered: Reaction Diffusion, Remove Background, image sources, blur accuracy, RES/BYPASS sweeps, Metaballs, Cloth, Curve Ops, Instances, Displacement | next in `docs/plans/node-audits` | Block 1 item 1.8: run the sweeps; fix what they find only if it is a correctness bug (perf findings go to the perf lane) |
+| Escaped fixes since v0.5.0 (8) | each already has its fix | nothing new; the release gate counts escapes after v0.6 |
+| Motion and radial blur GPU cost (image-fx G9, about 0.16 ms/node over) | perf quest in the re-survey-finish ledger | parked: perf lane |
+| Metal compute for particles (R757) | parked, gates G1/G2 unmeasured | parked |
+| Modulation smaller gaps: Envelope hold stage and per-stage curves, MPE | open in `docs/plans/modulation`, `docs/plans/mpe` | parked to v0.7 with the per-voice lane (same consumers) |
+| `feature/ui-engine` (1 commit), `feature/node-audits-plan` (1 docs commit) | the fix is already on main; the docs are superseded | delete both branches at Block 1 start, no merge |
+
 ## Block 1: audio correctness (`bugfix/v06-audio-correctness`)
 
 | # | Item | Today | Bar | Target files | Done check |
@@ -34,6 +49,7 @@ without ask. Bench runs are serialized with the `re-survey-finish` session (chec
 | 1.5 | AV react latency | av.react_latency_ms 49.96 | ≤ 45 ms | ParamMailbox / Audio to CV hop (1 frame + 1 block today) | row met |
 | 1.6 | Transient-aware stretch | drums: 10–14 extra onsets, -3 dB crest | 0 extra onsets in `stretch_kit`, crest within 0.5 dB | `src/audio/dsp/ClipTimeStretch.h` | `tools/re-survey/stretch_kit.py` passes; tonal cases do not regress |
 | 1.7 | 9 unmeasured P8 metrics | R5 ×4, B7 soak ×3, live.frame_p95, live.drop_pct | all measured (met or a dated exception) | bench scripts | scoreboard Unmeasured = 0 |
+| 1.8 | Node audit coverage | 10 node families not swept | every family swept; correctness bugs fixed with a regression row | `tools/` audit drivers, `docs/plans/node-audits/README.md` | node-audits "not yet covered" row empty |
 
 Settled:
 - **1.1** is one general fix: offline render shifts the master by the graph's total reported
@@ -55,6 +71,7 @@ Settled:
 | 2.4 | Factory presets | no preset store for audio nodes (only Field presets and Metallic materials) | ≥ 8 each on 3 synths (Analog, Wavetable, FM-capable Oscillator path) + 4 effects (Delay, Reverb, Drive, Compressor) | new factory preset table keyed by node type, applied through the save/load param path | count check in a selftest; each preset loads and is audible |
 | 2.5 | Plugin sidechain input | no sidechain bus in `AudioPluginNode.h` | VST3 + AU sidechain bus as a second audio input | `src/nodes/AudioPluginNode.h`, VST3/AU host files | a sidechain compressor ducks in a smoke patch on macOS; Windows/Linux VST3 compile |
 | 2.6 | Crash-only plugin fallback | a plugin crash takes the app down | crash in a plugin = node goes silent + badge, app lives | `src/platform/Platform.mm` (+ Windows/Linux sides), au_oop table | crash-test plugin in selftest; `plugin-host-hardening` |
+| 2.7 | Community patches validate | 5 of 24 fail strict `--validate` | 24 of 24 pass | the 5 patch files | validate smoke row over all community patches |
 
 Settled:
 - **2.6** is crash-only out of process: plugins run in-process as today; after a crash the plugin
@@ -90,6 +107,8 @@ Settled:
 | geo.instance_ms 2.73 (Blender 1.26), geo.subdiv_ms 12.01 (8.1) | perf lane, not quality | perf initiative |
 | B8 heavy windows (p99 33.2 ms, 9.36% missed vsync at 4×2160) | perf lane | perf initiative |
 | Roar-style multi-stage template | patch, not engine | optional, any time |
+| Metal compute (R757), motion/radial blur GPU cost | perf lane; gates unmeasured | perf initiative |
+| Envelope hold/curves, MPE | same consumers as per-voice | v0.7 with mod-poly |
 
 ## Release gate (v0.6)
 
