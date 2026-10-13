@@ -222,3 +222,27 @@ Skills: `timeline-arrangement-architecture`, `infinite-design-system`, `node-ui-
 - Each new tool has a self-test, a line in the `tools/re-survey/README.md` table and in the `tool-first`
   inventory.
 - `~/re-output` is listed and temporary files are removed.
+
+## Resume point (2026-10-13, resume list finished)
+
+All seven items done: Blender bench, both fixes merged (6f27804e, 3bac05c2), `project_bench` scaling run, Final Cut `ui_map`
+(menus only; its window is not exposed), `dossiers/D.md`, `E.md` and the Final Cut section of `F.md`, coverage rows 9, 10, 12, 18,
+19, 20, 22, capability diff regenerated, all six dossiers lint clean, storage cleaned.
+
+Left, all of it needing the owner's hands or a new probe:
+1. Owner sittings, one batch per app: DAW bounces (`builtins_kit`, `stretch_kit`), load template (`PROTOCOL-load.md`), latency
+   loopback (`PROTOCOL-latency.md`), timed workflow (`PROTOCOL-workflow.md`), GUI save/open and search (`PROTOCOL-projects.md`),
+   crash recovery (`dossiers/A.md`), one TouchDesigner Textport paste (`render_bench.py td-prep`).
+2. Found, not fixed: `--validate` and `--explain` accept a Field kernel calling an unknown function (`dossiers/D.md`, quality-gap).
+3. Quest proposed: first sound in 4 steps (`dossiers/F.md`).
+
+## After the resume list: coverage becomes an app × dimension grid (owner, 2026-10-13)
+
+Owner: every app is judged on every dimension it has, not one app per block. Rebuild `coverage.md` as a grid:
+rows = audio engine, visual/3D engine, AV integration, built-in modules, UX (workflow + design), efficiency,
+robustness, export, projects/library, extensibility; columns = Live, Logic, Bitwig, TouchDesigner, Blender, Final Cut
+(+ Infinite as the measured subject). Cell = measured / protocol pending / not measured / n/a. Slot existing results in.
+Biggest holes: robustness for every app (stress kit: 4000-module project, device unplug, kill mid-save + reopen,
+crashing plugin, long run), Blender beyond render (geometry nodes, sim, viewport fps), TouchDesigner as the bar for
+audio-reactive visuals and live frame timing, and an AV-integration bench (audio→picture latency, beat-to-frame lock).
+Tools reused across apps wherever possible.

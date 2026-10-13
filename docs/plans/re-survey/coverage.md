@@ -38,20 +38,20 @@ Each block now ends in registered metrics as well as its dossier: competitor num
 | 6 | Performance under load | Track and voice ceiling, multicore scaling, dropouts | Live, Logic, Bitwig | 🟡 Infinite side done 2026-10-12, DAW sitting pending (`PROTOCOL-load.md`), dossier `dossiers/B.md` | **needed** |
 | 7 | Real-time latency | Audio in→out round trip, buffer sizes, jitter | Live, Logic, Bitwig | 🟡 tool ready and PDC fixed 2026-10-12; loopback sitting pending (`PROTOCOL-latency.md`), dossier `dossiers/B.md` | **important: makes it professional** |
 | 8 | Startup and footprint | Launch time, idle CPU, memory, bundle size | all | ⏳ `app_bench` | — |
-| 9 | Video and visual engine | FPS, frame-time spread, GPU memory, resolution ceiling | **TouchDesigner, Blender** (behaviour only) | ❌ | **use TD + Blender as the bar** |
-| 10 | Export and render | Offline speed, formats/codecs, AV sync, quality | TouchDesigner, Blender, Final Cut, DAWs | ❌ (Infinite only) | **important: users need good export** |
+| 9 | Video and visual engine | FPS, frame-time spread, GPU memory, resolution ceiling | **TouchDesigner, Blender** (behaviour only) | 🟡 Infinite and Blender done 2026-10-13; TouchDesigner row waits on one Textport paste; GPU memory, 8K and a feedback scene not measured, dossier `dossiers/D.md` | **use TD + Blender as the bar** |
+| 10 | Export and render | Offline speed, formats/codecs, AV sync, quality | TouchDesigner, Blender, Final Cut, DAWs | 🟡 Infinite and Blender done 2026-10-13 (speed, H264 quality, 10-min sync); TouchDesigner pending; Final Cut and DAW export not measured, dossier `dossiers/D.md` | **important: users need good export** |
 | 11 | Modulation | Sources, destinations, per-voice, rate | Bitwig | 🟡 API docs only | — |
-| 12 | Sequencing and arrangement | Clips, MIDI edit, automation, quantize | **Final Cut** (UI/UX map + match its timeline performance) | ❌ | light: Final Cut UX + perf |
+| 12 | Sequencing and arrangement | Clips, MIDI edit, automation, quantize | **Final Cut** (UI/UX map + match its timeline performance) | 🟡 Final Cut's command map done 2026-10-13 (menus only: its window is not exposed); timeline scrub/zoom speed not measured, dossier `dossiers/F.md` | light: Final Cut UX + perf |
 | 13 | Sampling and audio editing | Time-stretch / pitch-shift quality, slicing, pitch detection | Live warp, Logic Flex, Bitwig | 🟡 Infinite side done 2026-10-12 (`stretch_kit.py`); DAW bounce sitting pending, dossier `dossiers/C.md` | **important** |
 | 14 | Mixing and routing | Sends, sidechain, buses, channel limits | Live, Logic, Bitwig | ✅ done 2026-10-12, dossier `dossiers/B.md` | **important** |
 | 15 | MIDI, hardware, sync | MPE, MIDI out, controller scripts, OSC, Link | Bitwig, Live | 🟡 API docs only | — |
 | 16 | Scripting / extensibility | Public API size by domain | Bitwig, Live, TD, Logic | ✅ `capability_map` | — |
 | 17 | UI structure | Menus, shortcuts, AX tree | all | 🟡 `ui_map` (Bitwig exposes nothing) | — |
-| 18 | Workflow cost | Steps and time for common tasks | all | ❌ | **important: common tasks must be fast** |
-| 19 | Visual design | Density, contrast, zoom/HiDPI, themes | all | ❌ | **important** |
-| 20 | Projects and files | Save/load time, size, open format, old-version compat, autosave/recovery | all | ❌ | **important** |
+| 18 | Workflow cost | Steps and time for common tasks | all | 🟡 ten tasks traced and timed by KLM 2026-10-13; DAW steps manual-derived until the timed sitting (`PROTOCOL-workflow.md`), dossier `dossiers/F.md` | **important: common tasks must be fast** |
+| 19 | Visual design | Density, contrast, zoom/HiDPI, themes | all | 🟡 contrast measured and fixed in seven themes 2026-10-13; density and HiDPI not measured, dossier `dossiers/F.md` | **important** |
+| 20 | Projects and files | Save/load time, size, open format, old-version compat, autosave/recovery | all | 🟡 headless scaling, old-file compatibility and formats done 2026-10-13; GUI save/open time pending (`PROTOCOL-projects.md`), dossier `dossiers/E.md` | **important** |
 | 21 | Stability | Crash recovery, plugin-crash handling, undo depth | all | ✅ done 2026-10-12 (DAW side: owner sitting below), dossier `dossiers/A.md` | **important** |
-| 22 | Content and library | Presets, samples, templates, browser search speed | all | ❌ | **check against Infinite's existing library** |
+| 22 | Content and library | Presets, samples, templates, browser search speed | all | 🟡 library counted per app 2026-10-13; browser search time pending (`PROTOCOL-projects.md`), dossier `dossiers/E.md` | **check against Infinite's existing library** |
 | 24 | Accessibility | Screen-reader exposure | all | 🟡 seen in `ui_map` | — |
 | 25 | Collaboration and cloud | Sharing, sync, co-editing | — | ⏸ | not important now |
 
@@ -115,3 +115,47 @@ Out of scope (owner, 2026-10-12): web research on business, onboarding and distr
   with four dead preset dampers. Headless `--timeline` added for arrangement renders. Stretch keeps pitch exactly but
   flams drums (10–14 extra onsets). Default oscillators are clean to C8. Export does not shift back an effect's
   latency (Drive 1.5 ms). DAW bounce sittings pending.
+- Block D 2026-10-13 (`dossiers/D.md`): Infinite renders 44.5–263 fps against Blender EEVEE's 0.2–1.6 on matched scenes
+  (about 70–300×; a real-time engine against an offline renderer). H264 at each app's default bitrate scores 35.5–51.8 dB
+  in Infinite and 28.8–46.1 dB in Blender against their own lossless frames. A 10-minute export keeps sound and picture
+  within 0.04 ms in both, no drift. Fixed and merged: macOS Audio File export hung on long files and crashed on 88.2 kHz+
+  (01059f67, shipped since v0.3.3). Found, not fixed: `--validate` and `--explain` accept a Field kernel that calls an
+  unknown function and `--frame` blames the cable (quality-gap). TouchDesigner row, GPU memory and a feedback scene pending.
+- Block E 2026-10-13 (`dossiers/E.md`): load time is flat at 0.76 s from 10 to 4000 nodes (headless); every `.inf` shipped in
+  27 release tags still opens, and 102 of 109 ever-committed files load (the 7 failures are 6 negative fixtures and 1 never
+  released). `.inf` is plain text; Live is the only other open format. Fixed and merged: Save truncated the file in place
+  since v0.1 (fc683464, now write-then-rename). Gap: no factory presets for the audio nodes (263 in-code presets, all visual
+  and Field) and 8 samples against thousands. GUI save/open and browser search timing pending.
+- Block F 2026-10-13 (`dossiers/F.md`): first sound takes 12 steps in Infinite against 3–4 in the DAWs (quest); Infinite is
+  fastest at automate, modulate, tempo, save and export. Final Cut's 226 shortcuts map to Infinite's cutting commands; gaps
+  are ripple/magnetic edit, keyboard trim, zoom-to-fit and retime. Fixed and merged: hint and typed text on the field well
+  was under 4.5:1 in 7 of 10 themes (e90f84fe).
+
+## App × dimension grid (owner, 2026-10-13)
+
+Every app is judged on every dimension it has, not one app per block. ✅ measured · ⏳ protocol pending (owner sitting or
+paste) · ❌ not measured · — not applicable. Infinite is the measured subject in the last column.
+
+| Dimension | Live | Logic | Bitwig | TouchDesigner | Blender | Final Cut | Infinite |
+|---|---|---|---|---|---|---|---|
+| Audio engine (summing, pan, PDC, latency) | ⏳ bounce, loopback | ⏳ bounce, loopback | ⏳ bounce, loopback | ❌ | — | — | ✅ |
+| Visual / 3D engine (fps, frame times, ceiling) | — | — | — | ⏳ Textport paste | ✅ render speed; ❌ viewport, geometry nodes, simulation | ❌ | ✅ (GPU memory ❌) |
+| AV integration (export sync, audio→picture latency, beat-to-frame lock) | ❌ | ❌ | ❌ | ⏳ export sync; ❌ live latency | ✅ export sync | ❌ | ✅ export sync; ❌ live latency |
+| Built-in modules (synths, effects, stretch) | ⏳ bounce | ⏳ bounce | ⏳ bounce | ❌ | ❌ | ❌ | ✅ |
+| UX: workflow cost and design | ⏳ KLM from manual; ✅ command map | ⏳ KLM; ✅ command map | ⏳ KLM; ❌ command map (exposes nothing) | ✅ command map | ❌ | ✅ command map | ✅ |
+| Efficiency (startup, idle, load ceiling) | ✅ idle; ⏳ load | ✅ idle; ⏳ load | ✅ idle (window time ⏳); ⏳ load | ✅ idle | ❌ | ❌ | ✅ |
+| Robustness (crash, kill mid-save, plugin crash, long run) | ⏳ recovery sitting | ⏳ recovery sitting | ⏳ recovery sitting | ❌ | ❌ | ❌ | 🟡 host audit, autosave, undo; ❌ stress kit |
+| Export (speed, codecs, quality) | ❌ | ❌ | ❌ | ⏳ | ✅ | ❌ | ✅ |
+| Projects and library | ✅ formats, library; ⏳ GUI timing | ✅ formats, library; ⏳ GUI timing | ✅ formats, library; ⏳ GUI timing | ✅ formats | ✅ formats | ❌ | ✅ |
+| Extensibility (public API by domain) | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+
+Biggest holes, in the owner's order:
+
+| Hole | What fills it |
+|---|---|
+| Robustness for every app | a stress kit: a 4000-module project, device unplug, kill mid-save then reopen, a crashing plugin, a long run; run through `app_bench` |
+| Blender beyond render | geometry nodes, simulation and viewport fps from its public Python API and CLI |
+| TouchDesigner as the bar for audio-reactive visuals and live frame timing | the Textport paste for render speed, then an audio-reactive scene with frame times from its own Python |
+| AV integration bench | audio→picture latency and beat-to-frame lock, measured on a looped click-and-flash patch in each app that can play one |
+
+Tools are reused across apps wherever possible; each hole above adds a stimulus and an analyser to the same harness.
