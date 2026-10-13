@@ -33,8 +33,8 @@ note.jitter_samples	P1	Note nodes	samples	lower	0	release	NOTEAUDIT		Note-on err
 io.gain_knob_db	P5	Audio I/O	dB	lower	0.01	release	IOAUDIT		Gain knob error over -48..+24 dB
 io.sum_error	P5	Audio I/O	abs	lower	1e-6	release	IOAUDIT		Mixer sum error against a double-precision reference
 comp.blend_x255	P7	Compositing	x/255	lower	1.0	release	COMPAUDIT		Blend modes against the W3C formulas, worst over modes
-geo.winding_mismatch	P7	Geometry	triangles	lower	0	release	GEOAUDIT	node:Mobius Strip=F16,node:Klein Bottle=F16,node:Subdivide on sphere=F17,node:Smooth on sphere=F17,node:Screw on cube=F18,node:Screw on sphere=F18	Triangles whose winding disagrees with their vertex normals
-geo.nonmanifold	P7	Geometry	edges	lower	0	release	GEOAUDIT	node:Subdivide on sphere=F17,node:Smooth on sphere=F17	Non-manifold or one-direction edges on shapes that promise a closed mesh
+geo.winding_mismatch	P7	Geometry	triangles	lower	0	release	GEOAUDIT	node:Mobius Strip=F16,node:Klein Bottle=F16,node:Screw on cube=F18,node:Screw on sphere=F18	Triangles whose winding disagrees with their vertex normals
+geo.nonmanifold	P7	Geometry	edges	lower	0	release	GEOAUDIT		Non-manifold or one-direction edges on shapes that promise a closed mesh
 geo.cloth_stretch_pct	P7	Geometry	%	lower	50	release	GEOAUDIT		Worst edge stretch of a pinned cloth after 12 s
 geo.inst_mirrored	P7	Geometry	count	lower	0	release	GEOAUDIT		Instance transforms with a negative determinant
 geo.decimate_bbox_pct	P7	Geometry	% bbox	lower	5	release	GEOAUDIT		Decimate: worst vertex distance to the original surface
