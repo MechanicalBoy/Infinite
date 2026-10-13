@@ -116,7 +116,7 @@ def main():
         s = s.replace("  </main>", "  </main>\n\n  " + blk, 1)
     open(p, "w").write(s)
     today = datetime.date.today().isoformat()
-    pages = [("", 1.0), ("library.html", 0.8), ("artworks.html", 0.6), ("assets/library/catalog.json", 0.3)]
+    pages = [("", 1.0), ("library.html", 0.8), ("extensions.html", 0.6), ("artworks.html", 0.6), ("assets/library/catalog.json", 0.3)]
     open(os.path.join(W, "sitemap.xml"), "w").write('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
         "".join(f"  <url><loc>{BASE}{u}</loc><lastmod>{today}</lastmod><priority>{pr}</priority></url>\n" for u, pr in pages + [(f"library/{i['id']}.html", 0.5) for i in its]) + "</urlset>\n")
     open(os.path.join(W, "robots.txt"), "w").write(
@@ -132,6 +132,7 @@ def main():
          "## Start here", "",
          f"- [Home]({BASE}): what Infinite is, the node canvas, how to set it up",
          f"- [Library]({BASE}library.html): free templates, community patches and Field devices to download",
+         f"- [Extensions]({BASE}extensions.html): optional packs (hand, face and pose tracking), installed live from Settings, Extensions",
          f"- [Library catalog (JSON)]({BASE}assets/library/catalog.json): every library item with description, category and file URL",
          f"- [Art Gallery]({BASE}artworks.html): visuals and motion made with Infinite",
          "- [Download](https://github.com/n1m21n/Infinite/releases/latest): installers for macOS, Windows and Linux",

@@ -1,0 +1,38 @@
+{
+ "name": "Infinite Extensions",
+ "source": "https://github.com/n1m21n/Infinite/releases/latest/download/extensions.json",
+ "packs": [
+  {
+   "id": "tracking",
+   "name": "Tracking",
+   "purpose": "Hand, face and pose tracking from camera or image input",
+   "version": "0.1.0",
+   "size": 25543800,
+   "files": {
+    "macos": {
+     "url": "https://github.com/n1m21n/Infinite/releases/download/v0.5.0/tracking-macos.zip",
+     "sha256": "da5cdff724c2d2dcb67f14e595bb72fd26b36f8da18fe9358a8247150cf80ac6"
+    },
+    "windows-x64": {
+     "url": "https://github.com/n1m21n/Infinite/releases/download/v0.5.0/tracking-windows-x64.zip",
+     "sha256": "b0227f983d272c92206f1739af8e8a0b2827566a101b118882acc3e1f71f9902"
+    },
+    "windows-arm64": {
+     "url": "https://github.com/n1m21n/Infinite/releases/download/v0.5.0/tracking-windows-arm64.zip",
+     "sha256": "f5585d883b7d4a280d33048983f81a1c3e538ef372ef253d18a22f0631eb3afd"
+    },
+    "linux-x64": {
+     "url": "https://github.com/n1m21n/Infinite/releases/download/v0.5.0/tracking-linux-x64.zip",
+     "sha256": "5ee5e8ab5745bc6e765f23caf36643a6a2b1a3f0273c399bc2c1be60f90e343c"
+    }
+   },
+   "nodes": [
+    "Hand Track",
+    "Face Track",
+    "Pose Track"
+   ],
+   "blurb": "Turn a camera or a picture into controls: hands, face and body landmarks become modulators.",
+   "requires": "0.5.0"
+  }
+ ]
+}
