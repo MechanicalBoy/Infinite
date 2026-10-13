@@ -93,8 +93,20 @@ def quality_rows(r):
         add("bench.b3_missed_vsync_pct", proj.get("missed_vsync_pct"))
         add("bench.b3_input_to_photon_frames", (r.get("input_to_photon_frames") or {}).get("max"))
     elif b.startswith("B6_"):
-        pan = (r.get("canvas_nav") or {}).get("pan_frame_ms") or {}
-        if _num(pan.get("p50")):  # 0 = no pan phase in this mode
+        nav = r.get("canvas_nav") or {}
+        pan = nav.get("pan_frame_ms") or {}
+        if (_num(r.get("nodes")) or 0) > 1000:
+            # R5 (4000 nodes, run_all.sh --r5): its own report rows; the B6 pan
+            # targets are for a 200-400 node patch.
+            if _num(pan.get("p50")):
+                add("bench.r5_pan_p95_ms", pan.get("p95"))
+            sel = nav.get("select_frame_ms") or {}
+            if _num(sel.get("p50")):
+                add("bench.r5_select_p95_ms", sel.get("p95"))
+            if _num(nav.get("delete_all_frame_ms")) is not None:
+                add("bench.r5_delete_all_ms", nav["delete_all_frame_ms"])
+                add("bench.r5_nodes_after_delete", nav.get("nodes_after_delete"))
+        elif _num(pan.get("p50")):  # 0 = no pan phase in this mode
             add("bench.b6_pan_p50_ms", pan.get("p50"))
             add("bench.b6_pan_p95_ms", pan.get("p95"))
     elif b.startswith("B7_"):

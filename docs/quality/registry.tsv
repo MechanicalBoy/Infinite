@@ -46,6 +46,10 @@ bench.b3_missed_vsync_pct	P8	Bench: projector	%	lower	0.5	release	bench		B3 proj
 bench.b3_input_to_photon_frames	P8	Bench: projector	frames	lower	2	release	bench		B3 injected param change to Output revision, worst sample
 bench.b6_pan_p50_ms	P8	Bench: canvas	ms	lower	17.2	release	bench		B6 canvas frame p50 while panning a 200-400 node patch (>= 60 fps)
 bench.b6_pan_p95_ms	P8	Bench: canvas	ms	lower	22.8	release	bench		B6 canvas frame p95 while panning a 200-400 node patch (>= 45 fps)
+bench.r5_pan_p95_ms	P8	Bench: canvas	ms	lower	33.3	report	bench		R5 canvas frame p95 while panning a 4000-node patch (>= 30 fps; proposed, ROBUSTNESS.md R5)
+bench.r5_select_p95_ms	P8	Bench: canvas	ms	lower	33.3	report	bench		R5 canvas frame p95 while select-all and clear alternate on 4000 nodes (proposed)
+bench.r5_delete_all_ms	P8	Bench: canvas	ms	lower	500	report	bench		R5 worst frame around deleting all 4000 nodes through the Delete-key path (proposed)
+bench.r5_nodes_after_delete	P8	Bench: canvas	count	lower	0	report	bench		R5 nodes left after the delete-all (0 = every node went)
 bench.b7_rss_growth_pct	P8	Bench: soak	%	lower	2	report	bench		B7 soak RSS growth, last 5 min vs first 5 min after warm-up
 bench.b7_xruns	P8	Bench: soak	count	lower	0	report	bench		B7 soak xruns over the whole run
 bench.b7_thermal_fps_drop_pct	P8	Bench: soak	%	lower		report	bench		B7 soak fps drop first to last sample (reported, not hidden: no target)

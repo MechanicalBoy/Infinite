@@ -9,7 +9,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | P1 Live AV workstation | 3 | 3 | 0 | 0 | 0 |
 | P5 Audio quality and hosting | 25 | 18 | 4 | 3 | 0 |
 | P7 3D, compositing, output | 7 | 6 | 0 | 0 | 1 |
-| P8 Performance | 24 | 18 | 2 | 0 | 4 |
+| P8 Performance | 28 | 18 | 2 | 0 | 8 |
 
 ## P1 Live AV workstation: Note nodes
 
@@ -89,6 +89,10 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 |---|---|---|---|---|---|---|
 | `bench.b6_pan_p50_ms` | B6 canvas frame p50 while panning a 200-400 node patch (>= 60 fps) | <= 17.20 ms | release | met | 16.67 (bench:B6:n300-all) | - |
 | `bench.b6_pan_p95_ms` | B6 canvas frame p95 while panning a 200-400 node patch (>= 45 fps) | <= 22.80 ms | release | met | 16.69 (bench:B6:n200-pan) | - |
+| `bench.r5_pan_p95_ms` | R5 canvas frame p95 while panning a 4000-node patch (>= 30 fps; proposed, ROBUSTNESS.md R5) | <= 33.30 ms | report | unmeasured | - | - |
+| `bench.r5_select_p95_ms` | R5 canvas frame p95 while select-all and clear alternate on 4000 nodes (proposed) | <= 33.30 ms | report | unmeasured | - | - |
+| `bench.r5_delete_all_ms` | R5 worst frame around deleting all 4000 nodes through the Delete-key path (proposed) | <= 500 ms | report | unmeasured | - | - |
+| `bench.r5_nodes_after_delete` | R5 nodes left after the delete-all (0 = every node went) | <= 0 count | report | unmeasured | - | - |
 
 ## P8 Performance: Bench: fundamentals
 

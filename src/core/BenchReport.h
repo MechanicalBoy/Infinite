@@ -446,6 +446,10 @@ namespace Bench
       PercentileRing dropdownFrameMs;
       double dragNodeMovedPx = 0.0;   // proves the synthetic drag moved a node
       int dropdownOpenFrames = 0;     // proves the popup actually opened
+      PercentileRing selectFrameMs;   // mode=select: frames while select-all / clear alternate
+      int selectedMax = 0;            // proves select-all selected every node
+      double deleteAllFrameMs = -1.0; // B6DELETE: worst frame around the delete-all; < 0 = not run
+      int nodesAfterDelete = -1;      // B6DELETE: nodes left after it (0 = every node went)
       double onVsyncFrac = 0.0;       // share of frame intervals on a refresh boundary
 
       // Media I/O (B8): per-clip decode/upload, per-window present, Syphon/

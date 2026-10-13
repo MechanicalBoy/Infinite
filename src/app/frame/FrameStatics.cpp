@@ -88,6 +88,11 @@ namespace app
    Bench::PercentileRing sBenchB6ZoomFrameMs;
    Bench::PercentileRing sBenchB6DragFrameMs;
    Bench::PercentileRing sBenchB6DropdownFrameMs;
+   Bench::PercentileRing sBenchB6SelectFrameMs;
+   int sBenchB6SelectedMax = 0;
+   bool sBenchB6Delete = false;
+   int sBenchB6NodesBeforeDelete = -1;
+   double sBenchB6DeleteFrameMs = -1.0;
    double sBenchB6VisibleNodesSum = 0.0;
    double sBenchB6BodiesDrawnSum = 0.0;
    double sBenchB6OffscreenBodyMsSum = 0.0;

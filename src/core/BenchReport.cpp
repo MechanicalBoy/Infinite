@@ -573,6 +573,16 @@ namespace Bench
             { "dropdown_open_frames", dropdownOpenFrames },
             { "on_vsync_frac", onVsyncFrac }
          };
+         if (!selectFrameMs.Empty())
+         {
+            j["canvas_nav"]["select_frame_ms"] = selectFrameMs.ToJsonP5099Max();
+            j["canvas_nav"]["selected_max"] = selectedMax;
+         }
+         if (deleteAllFrameMs >= 0.0)
+         {
+            j["canvas_nav"]["delete_all_frame_ms"] = deleteAllFrameMs;
+            j["canvas_nav"]["nodes_after_delete"] = nodesAfterDelete;
+         }
       }
 
       if (!mediaIo.is_null())
