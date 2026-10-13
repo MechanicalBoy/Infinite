@@ -7,7 +7,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | Pillar | Metrics | Met | Behind / miss | Info | Unmeasured |
 |---|---|---|---|---|---|
 | P1 Live AV workstation | 8 | 7 | 0 | 1 | 0 |
-| P5 Audio quality and hosting | 25 | 22 | 0 | 3 | 0 |
+| P5 Audio quality and hosting | 28 | 25 | 0 | 3 | 0 |
 | P7 3D, compositing, output | 10 | 8 | 2 | 0 | 0 |
 | P8 Performance | 30 | 18 | 2 | 1 | 9 |
 
@@ -68,6 +68,14 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `fx.tail_dbfs` | Level 10 s after the input goes silent | <= -100 dBFS | release | met | -240 (node:Audio Filter) | - |
 | `fx.click_db` | Worst step transient when a parameter jumps | <= 12.00 dB | release | met | 9.04 (node:Dynamics) | - |
 | `fx.rate_spread_db` | Tone level difference across 44.1/48/96 kHz | <= 1.00 dB | release | met | 0.996 (node:Key-Snap) | - |
+
+## P5 Audio quality and hosting: Timeline audio
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `stretch.extra_onsets` | Worst count of drum hits heard twice (flams, pre-echo) over 0.5/0.8/1.25/2x Timeline Sample stretch | <= 0 onsets | report | met | 0 (Infinite) | - |
+| `stretch.timing_ms` | Worst drum hit against the median hit over the four stretch ratios | <= 5.00 ms | report | met | 3.25 (Infinite) | - |
+| `stretch.crest_err_db` | Worst drum crest against the ideal stretch (hits at their own length, clipped to full scale) over the four ratios | <= 0.5 dB | report | exc | 2.50 (Infinite) | - |
 
 ## P7 3D, compositing, output: 3D engine
 
@@ -186,6 +194,7 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `probe.attack_ms` (ms): node:Analog 3.00 · node:Wavetable 4.00 · Vital Audio: Vital 1.00 · Xfer Records: Serum 2 2.00 · u-he: Diva 44.00
 - `probe.release_s` (s): node:Analog 0.252 · node:Wavetable 0.263 · Xfer Records: Serum 2 0.018 · Vital Audio: Vital 0.084 · u-he: Diva 1.61
 - `probe.vel_span_db` (dB): node:Analog 24.08 · node:Wavetable 24.08 · Vital Audio: Vital -0.0023 · Xfer Records: Serum 2 -0.0021 · u-he: Diva 12.92
+- `stretch.crest_err_db` (dB): Infinite 2.50 (exc F20)
 - `geo.instance_ms` (ms): Infinite 2.73 (miss) · Blender 1.26
 - `geo.subdiv_ms` (ms): Infinite 12.01 (miss) · Blender 8.14
 - `sim.cloth_ms` (ms): Infinite 0.944 · Blender 18.40
@@ -194,4 +203,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 ab741380; 2026-10-13 c5fd65c0; 2026-10-13 d6020b77; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8101f4b8; 2026-10-13 aa7da27f; 2026-10-13 ab741380; 2026-10-13 c5fd65c0; 2026-10-13 d6020b77; 2026-10-13 e182230c.

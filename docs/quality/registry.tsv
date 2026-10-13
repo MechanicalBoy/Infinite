@@ -74,5 +74,8 @@ av.react_jitter_ms	P1	AV integration	ms	lower		report	av_bench		Std dev of that 
 av.beat_lock_pct	P1	AV integration	%	higher	100	report	av_bench		Beats whose reactive flash lands 0-1 frames after the first possible frame, never early
 av.drift_ms_min	P1	AV integration	ms/min	lower	1	report	av_bench		Absolute trend of reactive frame error over the take
 av.clock_lock_pct	P1	AV integration	%	higher	100	report	av_bench		Beat-clock flash (no analysis) within 0-1 frames of the click in the same movie
+stretch.extra_onsets	P5	Timeline audio	onsets	lower	0	report	stretch_kit		Worst count of drum hits heard twice (flams, pre-echo) over 0.5/0.8/1.25/2x Timeline Sample stretch
+stretch.timing_ms	P5	Timeline audio	ms	lower	5	report	stretch_kit		Worst drum hit against the median hit over the four stretch ratios
+stretch.crest_err_db	P5	Timeline audio	dB	lower	0.5	report	stretch_kit	Infinite=F20	Worst drum crest against the ideal stretch (hits at their own length, clipped to full scale) over the four ratios
 live.frame_p95_ms	P8	Live scene	ms	lower	16.7	report	av_bench		p95 frame time of a real-time audio-reactive 10,000-instance scene at 1280x720 (TD logs its own; Infinite needs the GUI)
 live.drop_pct	P8	Live scene	%	lower	1	report	av_bench		Frames over 1.5x the 60 fps budget in that scene

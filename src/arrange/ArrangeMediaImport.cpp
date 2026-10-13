@@ -1,5 +1,7 @@
 #include "ArrangeMediaImport.h"
 
+#include "audio/dsp/TransientDetect.h"
+
 #include <thread>
 #include <utility>
 
@@ -33,6 +35,7 @@ void MediaImportManager::ThreadMain(uint64_t jobId, std::string path, ImportMedi
       // worker thread here is safe.
       if (Platform::DecodeAudioFileToBuffer(path, *buffer, error))
       {
+         DetectTransients(*buffer);
          result.success = true;
          result.audioBuffer = buffer;
          result.durationSeconds = buffer->sampleRate > 0.0

@@ -1623,3 +1623,6 @@
 {"ts": "2026-10-13T13:48:36+00:00", "commit": "ab741380", "host": "Mac14,7", "note": "v0.6 1.5: analysis refreshed before modulation bindings", "id": "av.drift_ms_min", "subject": "Infinite", "value": 0.0}
 {"ts": "2026-10-13T13:48:36+00:00", "commit": "ab741380", "host": "Mac14,7", "note": "v0.6 1.5: analysis refreshed before modulation bindings", "id": "av.react_jitter_ms", "subject": "Infinite", "value": 9.3315}
 {"ts": "2026-10-13T13:48:36+00:00", "commit": "ab741380", "host": "Mac14,7", "note": "v0.6 1.5: analysis refreshed before modulation bindings", "id": "av.react_latency_ms", "subject": "Infinite", "value": 16.6253}
+{"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.crest_err_db", "subject": "Infinite", "value": 2.4993}
+{"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.extra_onsets", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.timing_ms", "subject": "Infinite", "value": 3.25}

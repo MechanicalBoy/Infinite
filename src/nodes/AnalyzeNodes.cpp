@@ -1321,6 +1321,8 @@ bool AudioFileNode::OpenFromDecoded(const std::string& path, Platform::SampleBuf
    // ArrangePollMediaImports, immediately after this call returns) - never
    // stashed and dereferenced later.
    mBuffer = decoded;
+   if (decoded->envelopeHop == 0)
+      DetectTransients(*decoded); // a caller that decoded without detecting
    mAudioNode->PushBuffer(decoded);
    mAudioNode->PushParams(volume, gain, attack, release, loop, monitor, pitch);
    mAudioNode->RequestRestart();
