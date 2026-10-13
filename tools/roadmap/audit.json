@@ -1,16 +1,16 @@
 {
  "merges": [
-  353,
-  388
+  371,
+  406
  ],
  "direct": [
   500,
-  579
+  591
  ],
  "notes_total": 389,
  "evidence": [
-  561,
-  653
+  580,
+  672
  ],
  "per_release": {
   "v0.1": {
@@ -113,30 +113,6 @@
    "quests": 72,
    "notes": 16
   },
-  "v0.46.0": {
-   "quests": 1,
-   "notes": 0
-  },
-  "v0.47.0": {
-   "quests": 0,
-   "notes": 0
-  },
-  "v0.47.0_fixed": {
-   "quests": 1,
-   "notes": 0
-  },
-  "v0.49.0": {
-   "quests": 1,
-   "notes": 0
-  },
-  "v0.48.0": {
-   "quests": 0,
-   "notes": 0
-  },
-  "v0.50.0": {
-   "quests": 1,
-   "notes": 0
-  },
   "v0.4.7": {
    "quests": 77,
    "notes": 18
@@ -147,6 +123,18 @@
   }
  },
  "loose": [
+  "2026-10-13 980d07e Driver: hold QUALITY rows to docs/quality/registry.tsv; a release-gated miss fails the che",
+  "2026-10-13 0d65bf5 quality-system skill; AGENTS, tool-first, node-audits and re-survey point at it",
+  "2026-10-13 71af380 Quality scoreboard: first recorded run, Synths (SYNTHAUDIT + Diva/Serum 2/Vital probe)",
+  "2026-10-13 d82bf78 SYNTHAUDIT and synth_probe print QUALITY rows: 13 audit metrics, 8 cross-app metrics",
+  "2026-10-13 2eba2d7 Quality system: registry of metrics with targets and gates, quality.py check/ingest/board ",
+  "2026-10-13 49f240d Node audits: metric 4 states what was checked",
+  "2026-10-13 810d946 Node audits: audio work complete - F11 sample-rate finding, sample-synth coverage, metrics",
+  "2026-10-13 d2eb488 Patch skill: regenerate node facts",
+  "2026-10-13 2d2a49a SYNTHAUDIT: cover the nine sample synths with a fixture WAV; SAMPLE checks pitch and lengt",
+  "2026-10-13 b258d02 Sampler, Grain Molder, Molder, PaulStretch, Drum Sequencer: play a file at its own sample ",
+  "2026-10-13 7d6cb97 Driver: read the audits' 'PASS (n flags)' verdict as a pass, so SYNTHAUDIT/NOTEAUDIT/IOAUD",
+  "2026-10-13 bd52b97 Arp, Note Sequencer, Random Note Gen, Chorder: steps land on their own sample (stepTiming;",
   "2026-10-12 0ca861f Worktree cleanup: save old-release FPS probes; NOW.md queues imgfx and the Codex v0.5.0 le",
   "2026-10-12 460337d Roadmap board data refresh",
   "2026-10-12 db0ffc7 NOW.md: facts from main's ledger",

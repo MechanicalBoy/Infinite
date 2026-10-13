@@ -19,13 +19,14 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 ## Waiting on owner (one at a time, recommended answer first)
 
-1. Stray non-release tags (v0.4.25, v0.46.0 to v0.50.0, v0.47.0_fixed). Recommend: delete them locally and on the remote; they confuse `gh release` and version sorting.
 
 2. `feature/image-fx-maths` (21 commits, plan says "done, not merged"): fails G9 on GPU: Bloom +16%, Diffuse Glow +13%, motion blur +94%, radial blur +124% vs legacy. Recommend: accept and merge, since old patches keep the old look and the misses are about 0.16 ms per node, then open a perf quest for the two line blurs. Worktree `../infinte-imgfx` kept until then.
 3. Codex worktree `~/.codex/worktrees/release-v050` holds unpublished work: a shorter rewrite of the v0.5.0 release notes and a website Extensions page (69 MB of assets, not brand-linted). Recommend: drop the notes rewrite (v0.5.0 is shipped with main's notes), move the Extensions page to its own `feature/site-extensions` branch, run brand_lint, then remove the worktree.
 
 ## Decisions (newest first, keep the last 10)
 
+- 2026-10-13 Owner: deleted local-only tags v0.46.0 (963c822e), v0.47.0 (b9785bbb), v0.47.0_fixed (a3ab7319), v0.48.0 (e17c63a4), v0.49.0 (ac3bce40), v0.50.0 (5e5187eb); kept v0.4.25 (a real release).
+- 2026-10-13 Agent: node audio audits closed (F11 Sampler-family sample-rate bug fixed via rateFix, regression in SYNTHAUDIT); quality system pilot merged (docs/quality, quality-system skill, driver gate). Shipped templates/examples now write rateFix/stepTiming (f63a0cf1); the systemic legacy-flag vs defaults-rule issue is a separate task.
 - 2026-10-12 Agent: worktree cleanup. Merged leftovers (re-survey capability rows, site-publish). Removed 12 finished worktrees (about 8 GB) and their branches; kept infinte-base (shared bench baseline), imgfx and Codex v0.5.0 (items 2 and 3 above). Old-release FPS probes saved in scripts/bench/old-release-probes/.
 - 2026-10-12 Owner: the release measure is quality (escaped fixes, reverts, known failures, crashes, bug issues), not downloads; reach is context only. Follow the lifecycle in every decision, including when the owner is away.
 - 2026-10-12 Agent: lifecycle v1 adopted (quality, build and rule loops; lanes with done checks; claims; decision rights).
@@ -44,11 +45,10 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-12 15:27 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-13 02:38 UTC. Do not edit inside this block; rerun the tool._
 
-### Open quests (4)
+### Open quests (3)
 
-- R708 [now] Review PR #28: Audio effects: DSP correctness pass (aliasing, EQ, limiter, pitch, Molder) + measurement audits
 - R709 [later] Plan: re-survey: deconstruct competitors, one by one
 - R711 [later] Plan: Modulators to industry grade
 - R717 [later] Plan: Node audits: beyond effects and modulators
@@ -57,33 +57,33 @@ _Generated 2026-10-12 15:27 UTC. Do not edit inside this block; rerun the tool._
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| v0.5.0 | 2026-10-10 | 137 |
+| v0.5.0 | 2026-10-10 | 149 |
 | v0.4.7 | 2026-10-07 | 74 |
-| v0.4.6 | 2026-10-01 | 163 |
+| v0.4.6 | 2026-10-01 | 164 |
 | v0.4.5 | 2026-09-26 | 203 |
 
 ### Quality of v0.5.0 (since v0.4.7; the release measure)
 
 | Measure | Value | Want |
 |---|---|---|
-| Escaped fixes: fixes after v0.5.0 touching src it changed | 3 d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
+| Escaped fixes: fixes after v0.5.0 touching src it changed | 7 fc683464 e90f84fe 01059f67 2846a30a d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
 | Reverts after v0.5.0 | 0 | 0 |
-| Fix-shaped commits after v0.5.0 (all) | 13 | context |
+| Fix-shaped commits after v0.5.0 (all) | 17 | context |
 | Known test failures (macOS / Linux) | 3 / 6 | never grows |
 | Open GitHub issues labelled bug | 0 | 0 |
 | Crash reports filed since v0.5.0 | 0 | 0 |
 
 ### Reach (context only: moves with outreach, not with release quality)
 
-- GitHub (2026-10-12): 275 stars, 21 forks, 1816 downloads all-time
-- Website (2026-10-12, last 30 days): 1008 sessions, 657 users
+- GitHub (2026-10-13): 276 stars, 21 forks, 1866 downloads all-time
+- Website (2026-10-13, last 30 days): 1029 sessions, 669 users
 
 ### Last merges to main
 
-- 2026-10-12 Merge bugfix/selfupdate-cleanup
-- 2026-10-12 Merge feature/single-opener
-- 2026-10-12 Merge bugfix/cooktimes-fixed-text
-- 2026-10-12 Merge bugfix/history-forward-positions
-- 2026-10-12 Merge bugfix/cooktimes-number-only
+- 2026-10-13 Merge feature/re-survey-render-bench
+- 2026-10-13 Merge docs/node-audits-left
+- 2026-10-13 Merge bugfix/atomic-save
+- 2026-10-13 Merge bugfix/field-text-contrast
+- 2026-10-13 Merge bugfix/legacy-flag-defaults
 
 <!-- FACTS:END -->

@@ -50,7 +50,7 @@ If G1 fails, close R556 as "not needed" and say so in the tracker.
 ## What this plan does not claim
 
 - No measurement of CPU particle cost has been made for this doc; G1 is that measurement.
-- No Metal code exists in the repository today; `grep -rli metal src` returns nothing.
+- No Metal API code exists in the repository today (the only `metal` matches in `src/` are material terms such as metallic and a glTF field).
 
 ## Order if un-parked
 
