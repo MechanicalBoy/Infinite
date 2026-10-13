@@ -1,0 +1,16 @@
+infinite-patch 1
+# Audio File straight into Output: the rendered movie must follow the file's volume.
+node 1 Modulators Audio File
+  id file
+  s path @ROOT@/assets/drumkits/infinite-basic/05-clap.wav
+  f volume 0.2
+end
+node 2 Source Shape
+  id picture
+end
+node 3 Utility Output
+  id out
+  b includeAudio 1
+end
+cable out 0 picture
+aud out 1 file

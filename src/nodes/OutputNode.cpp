@@ -310,15 +310,10 @@ bool OutputNode::StartOfflineRender(const std::string& path, double audioSampleR
 
    if (mOfflineIncludeAudio)
    {
-      AudioFileNode* file = !forceGraphAudio ? dynamic_cast<AudioFileNode*>(mAudioInput.GetSource()) : nullptr;
-      if (file != nullptr && !file->bypassed && file->IsLoaded())
+      // A take always renders the graph's audio, a lone Audio File included: muxing the file straight into the
+      // movie skipped its volume, gain, pitch and envelope.
       {
-         audioPath = file->FilePath();
-         audioLoop = file->loop;
-      }
-      else
-      {
-         // Non-file audio (synthesized in the graph) is rendered block by
+         // The graph's audio is rendered block by
          // block via AudioEngine::ProcessOffline, one block per video frame -
          // see main.cpp's RunOfflineRenderStep. That makes the mCaptureRing
          // the audio path for this whole take, same as a live take's, just
