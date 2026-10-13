@@ -78,6 +78,10 @@ One project per DAW: 48 kHz, 120 BPM, 4/4, master with no effects, fader at 0 dB
 | Bitwig | Polymer, Phase-4, FM-4, Polysynth | Reverb, Delay-2, Chorus+, Phaser+, EQ+, Distortion, Compressor+, Peak Limiter, Filter+ |
 
 Write down any default that is not neutral (an effect that opens 50 % wet, an instrument that opens a fifth up).
+No Bounce dialog? Send the DAW to BlackHole 2ch (unity gain, buffer 256-512) and run
+`python3 tools/re-survey/loopback_rec.py rec <App> <Name> synth|fx`, then press Play: it records, trims the
+first sound to where a bounce puts it and writes the same file name.
+
 Then: `python3 tools/re-survey/builtins_kit.py analyse <folder> [<folder> ...]`.
 """
 
