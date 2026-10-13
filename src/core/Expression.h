@@ -44,4 +44,12 @@ namespace Expression
                  const std::map<std::string, float>* siblings,
                  const std::map<std::string, float>* globals,
                  float& outValue, std::string& outError);
+
+   // Compile only, no evaluation: false and outError on a parse error or a
+   // name that is neither a sibling, a global, `t` nor a builtin. Only the
+   // maps' keys matter. Used by headless --validate, which has no live values.
+   bool Check(const std::string& text,
+              const std::map<std::string, float>* siblings,
+              const std::map<std::string, float>* globals,
+              std::string& outError);
 }

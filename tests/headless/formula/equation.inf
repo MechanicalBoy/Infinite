@@ -1,0 +1,10 @@
+infinite-patch 1
+# E_FORMULA_COMPILE: an Equation Synth wave formula that calls a function that does not exist.
+node 1 Synths Equation Synth
+  id eq
+  s formula bogusfn(2*pi*x) + a*sin(4*pi*x)
+end
+node 2 Utility Audio Out
+  id speaker
+end
+aud speaker 0 eq

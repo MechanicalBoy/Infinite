@@ -275,6 +275,21 @@ namespace EquationDsp
       }
    };
 
+   // Every name AstNode::Evaluate's FunctionCall case handles. Keep the two lists together:
+   // the parser rejects any other name, so a typo is an error instead of silently returning
+   // its first argument.
+   inline bool IsKnownFunction(const std::string& name)
+   {
+      static const char* const kNames[] = {
+         "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh",
+         "abs", "sign", "sgn", "sqrt", "cbrt", "exp", "log", "ln", "log2", "log10", "pow",
+         "floor", "ceil", "round", "trunc", "min", "max", "clamp", "lerp", "step",
+         "smoothstep", "sinc", "mod", "tri", "saw", "sqr", "if"};
+      for (const char* n : kNames)
+         if (name == n) return true;
+      return false;
+   }
+
    class Parser
    {
    public:
@@ -555,6 +570,11 @@ namespace EquationDsp
             // Check if it's a function call (followed by '(')
             if (mCurToken.type == TokenType::LParen)
             {
+               if (!IsKnownFunction(id))
+               {
+                  if (mError.empty()) mError = "unknown function '" + id + "'";
+                  return nullptr;
+               }
                NextToken();
                auto node = std::make_shared<AstNode>();
                node->type = AstType::FunctionCall;

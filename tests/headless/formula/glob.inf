@@ -1,0 +1,11 @@
+infinite-patch 1
+# E_EXPR_COMPILE: a global expression that calls a function that does not exist.
+node 1 Source Shape
+  id shape
+end
+node 2 Utility Output
+  id out
+end
+cable out 0 shape
+glob wob bogusfn(t) * 2
+expr shape rotation wob * 90

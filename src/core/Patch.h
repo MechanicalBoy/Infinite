@@ -239,6 +239,7 @@ namespace Patch
    {
       std::string name;
       std::string expr;
+      int line = 0; // 1-based source line in the file, 0 when not from a file
    };
 
    // One control on the performance matrix. `kind` is 0=Knob, 1=VFader, 2=HSlider,

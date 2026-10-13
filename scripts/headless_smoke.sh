@@ -186,6 +186,29 @@ for f in "$FLD"/*.inf; do
   check "field $name: $what exit 3 with E_FIELD_COMPILE, not a cable error" $?
 done
 
+# Formula / expr compile errors: --validate never compiled a Formula or Equation Synth
+# `s formula`, an `expr` or a `glob`, so a typo passed validation and only failed (or silently
+# misbehaved) in the app. Each file calls bogusfn once; the error names the line that holds it.
+FML="$ROOT/tests/headless/formula"
+for f in "$FML"/*.inf; do
+  name=$(basename "$f" .inf)
+  case "$name" in
+    formula|equation) code=E_FORMULA_COMPILE; line=$(grep -n '^  s formula ' "$f" | cut -d: -f1) ;;
+    *) code=E_EXPR_COMPILE; line=$(grep -n 'bogusfn' "$f" | grep -v ':#' | head -1 | cut -d: -f1) ;;
+  esac
+  r=$("$BIN" --validate "$f" 2>/dev/null); rc=$?
+  [ "$rc" = 3 ] && [ "$(echo "$r" | json "[(e['code'], e['line'], 'bogusfn' in e['message']) for e in d['errors']]")" = "[('$code', $line, True)]" ]
+  check "formula $name: validate exit 3, $code at line $line names bogusfn" $?
+  sed 's/bogusfn(/sin(/' "$f" > "$OUT/formula_ok_$name.inf"
+  "$BIN" --validate "$OUT/formula_ok_$name.inf" >/dev/null 2>&1; check "formula $name: same patch with sin( validates" $?
+  case "$name" in
+    equation) r=$("$BIN" --audio-summary "$f" "$OUT/formula_$name.json" --duration 0.2 2>/dev/null); rc=$?; what=audio-summary ;;
+    *) r=$("$BIN" --frame "$f" 0 "$OUT/formula_$name.png" 2>/dev/null); rc=$?; what=frame ;;
+  esac
+  [ "$rc" = 3 ] && [ "$(echo "$r" | json "[e['code'] for e in d['errors']]")" = "['$code']" ]
+  check "formula $name: $what exit 3 with $code" $?
+done
+
 # C0: the probe waits for every node to draw, not a fixed 8 ticks. patch_1 has a
 # Wavetable that used to give a false E_BAD_PARAM; run it several times.
 ok=0
