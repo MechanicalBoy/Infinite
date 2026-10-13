@@ -155,8 +155,11 @@ namespace AnalogSynthCore
    // harmonics, and at the base rate they folded back (-48 dB on a 1.75 kHz
    // saw at 0% drive even with ADAA - the drive stage is always in the
    // path). A lighter first half-band than an effect's (see Oversampler.h):
-   // up to 16 of these run at once.
-   constexpr int kFilterOversample = 2;
+   // up to 16 of these run at once. 4x, not 2x: the ladder's tanh stages
+   // still folded at 2x (-73 dB non-harmonic on an input clean to 19 kHz,
+   // -89 dB at 4x). Together with the narrow-band oscillators below this
+   // takes a C4/C7/C8 saw from -68/-63/-61 to under -80 dB.
+   constexpr int kFilterOversample = 4;
    constexpr int kFilterOversampleGroupDelay = 32;
 
    // AnalogWaveToDsp's DspMath ids are also BlepOsc's waveform ids.
@@ -194,16 +197,18 @@ public:
 
       // Band-limited (BLEP/BLAMP) oscillators - see BlepOscillator.h. Every
       // oscillator output is BlepOsc::kLatency samples late, all equally.
-      BlepOsc::Oscillator osc1[AnalogSynthCore::kMaxUnison];
-      BlepOsc::Oscillator osc2;
+      // Narrow band (edge 0.8 Nyquist): their output feeds the drive and the
+      // ladder, which fold any 20-24 kHz content into the audible band.
+      BlepOsc::NarrowOscillator osc1[AnalogSynthCore::kMaxUnison];
+      BlepOsc::NarrowOscillator osc2;
       // Sub osc: its own accumulator, run at half osc1's frequency. It cannot
       // read osc1's phase scaled by 0.5 - scaling a phase compresses its
       // range, it does not halve its rate, so such a "sub" never crosses its
       // own comparison threshold and emits constant DC instead of a tone.
-      BlepOsc::Oscillator sub;
+      BlepOsc::NarrowOscillator sub;
       DspMath::WhiteNoise noise;
       DspMath::OnePole glide;
-      // Anti-aliased pre-filter drive, one per signal path, and the 2x
+      // Anti-aliased pre-filter drive, one per signal path, and the 4x
       // oversampler both it and the filter run inside (see ProcessBlock).
       DspMath::FastTanhAdaa driveL, driveR;
       // AC coupling on the oscillator mix, ahead of the drive: a hard-synced
@@ -259,7 +264,7 @@ public:
 
    AudioAnalogNode()
    {
-      BlepOsc::EnsureTables(); // main thread, before the audio thread can touch them
+      BlepOsc::EnsureTables(BlepOsc::kBandNarrow); // main thread, before the audio thread can touch them
       for (int i = 0; i < AnalogSynthCore::kMaxVoices; ++i)
       {
          mVoices[i].driftPitchOffset = AnalogSynthCore::kVoiceDriftPitch[i];
@@ -322,8 +327,8 @@ public:
    }
 
    // Filter coefficients, resolved once per base-rate sample (the cutoff is
-   // smoothed at that rate) and reused for both oversampled samples, so the
-   // oversampled filter does not pay for tan() twice.
+   // smoothed at that rate) and reused for every oversampled sample, so the
+   // oversampled filter does not pay for tan() per sample.
    struct FilterCoeffs
    {
       int type = kAFilterOff;
@@ -613,8 +618,8 @@ public:
             // Drive and filter at the oversampled rate (DriveAndFilter). The
             // analog hiss is drawn separately per side - two circuits, two
             // noise floors - which decorrelates the pair a little further.
-            const float hissL = analog ? mFreeNoise.Next() * 0.001f : 0.0f;
-            const float hissR = analog ? mFreeNoise.Next() * 0.001f : 0.0f;
+            const float hissL = analog ? mFreeNoise.Next() * 0.0001f : 0.0f;
+            const float hissR = analog ? mFreeNoise.Next() * 0.0001f : 0.0f;
 
             // The right-hand chain starts from silence rather than from
             // whatever it held the last time the stack was wide, so turning
@@ -745,8 +750,8 @@ public:
                v.stereoPath = wantStereo;
 
                // Drive (one noise draw per side) and filter, oversampled.
-               const float hissL = analog ? v.noise.Next() * 0.001f : 0.0f;
-               const float hissR = analog ? v.noise.Next() * 0.001f : 0.0f;
+               const float hissL = analog ? v.noise.Next() * 0.0001f : 0.0f;
+               const float hissR = analog ? v.noise.Next() * 0.0001f : 0.0f;
                const FilterCoeffs fc = MakeFilterCoeffs(filterType, effectiveCutoff, resonance,
                                                         mSampleRate * AnalogSynthCore::kFilterOversample);
                const float filteredL = DriveAndFilter(v.os, 0, v.acL, v.driveL, v.ladder, v.svf, mixedL, driveGain, hissL, fc);
@@ -932,9 +937,9 @@ private:
 
    // Free-running fallback state
    DspMath::OnePole mFreeGlide;
-   BlepOsc::Oscillator mFreeOsc1[AnalogSynthCore::kMaxUnison];
-   BlepOsc::Oscillator mFreeOsc2;
-   BlepOsc::Oscillator mFreeSub;
+   BlepOsc::NarrowOscillator mFreeOsc1[AnalogSynthCore::kMaxUnison];
+   BlepOsc::NarrowOscillator mFreeOsc2;
+   BlepOsc::NarrowOscillator mFreeSub;
    DspMath::WhiteNoise mFreeNoise;
    ZdfLadderFilter::State mFreeLadder;
    ZdfLadderFilter::State mFreeLadderR;

@@ -4,7 +4,7 @@
 # exceptions: subject=finding,... (finding ids live in the source's README, e.g. docs/plans/node-audits F1).
 synth.pitch_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error per note at 44.1/48/96 kHz (spectrum peak, sustained render)
 synth.note_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error of note 69 played through the note cable
-synth.alias_db	P5	Built-in instruments	dB	lower	-60	release	SYNTHAUDIT		Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz
+synth.alias_db	P5	Built-in instruments	dB	lower	-80	release	SYNTHAUDIT		Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz
 synth.rate_spread_db	P5	Built-in instruments	dB	lower	1.0	release	SYNTHAUDIT	node:Metallic=F1	Level spread of the same 3 s render over 44.1/48/96 kHz
 synth.click_on_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT	node:Metallic=F7	Note-on second difference re steady state
 synth.click_off_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT		Note-off second difference re steady state
@@ -16,9 +16,9 @@ synth.sample_length_ratio	P5	Built-in instruments	ratio	lower	1.02	release	SYNTH
 synth.det_differs	P5	Built-in instruments	bool	lower	0	release	SYNTHAUDIT		1 when the same render twice is not bit-identical
 synth.cpu_ns_frame	P8	Built-in instruments	ns/frame	lower	4000	report	SYNTHAUDIT		Render cost per frame, one voice (noisy: report only)
 probe.pitch_worst_c	P5	Built-in instruments	cents	lower	1.0	release	synth_probe		Worst pitch error over MIDI 24-108, black box through the host
-probe.nonharm60_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 60 (clean reference); best competitor about -84
-probe.nonharm96_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 96 (aliasing)
-probe.nonharm108_db	P5	Built-in instruments	dB	lower	-80	report	synth_probe		Non-harmonic energy at MIDI 108 (aliasing)
+probe.nonharm60_db	P5	Built-in instruments	dB	lower	-80	release	synth_probe		Non-harmonic energy at MIDI 60 (clean reference); best competitor about -84
+probe.nonharm96_db	P5	Built-in instruments	dB	lower	-80	release	synth_probe		Non-harmonic energy at MIDI 96 (aliasing)
+probe.nonharm108_db	P5	Built-in instruments	dB	lower	-80	release	synth_probe		Non-harmonic energy at MIDI 108 (aliasing)
 probe.attack_ms	P5	Built-in instruments	ms	none		report	synth_probe		Default-patch attack 10-90 % (a design choice, compared not judged)
 probe.release_s	P5	Built-in instruments	s	none		report	synth_probe		Default-patch release to -60 dB
 probe.vel_span_db	P5	Built-in instruments	dB	none		report	synth_probe		Level change velocity 0.25 -> 1.0
