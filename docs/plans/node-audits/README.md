@@ -1,6 +1,6 @@
 # Node audits: beyond effects and modulators
 
-Branch per block. Tracker: this file. Written 2026-10-12. Status: plan, nothing built yet.
+Branch per block. Tracker: this file. Written 2026-10-12. Status: all five audits built and gating; audio side complete; what is left is in section 10.
 
 FXAUDIT (`src/app/selftest/FxAudit.cpp`) measures every audio effect and MODAUDIT
 (`src/app/selftest/ModAudit.cpp`, plan in `docs/plans/modulation/README.md`) measures every
@@ -41,7 +41,7 @@ Node counts from `docs/node_param_audit.md` (176 registered types).
   reported, with FLAG lines past thresholds for a person to triage.
 - `INFINITE_<NAME>AUDIT_ONLY=A,B` selects sections.
 - Raw runs saved as `baseline-<date>.txt` and `after-blockN-<date>.txt` next to this file.
-- Fixes sit behind a per-node legacy flag (`BeforeLoadParams`) so saved patches sound and look the same.
+- Fixes made before 2026-10-13 sit behind a per-node legacy flag (`BeforeLoadParams`). From 2026-10-13 the owner's rule is smallest fix, no new legacy flags for old patches (few users); a fix that changes saved output gets a release-notes line instead.
 
 ## 4. Scope
 
@@ -242,3 +242,23 @@ Block 1, harness v1 (Analog, Wavetable, Oscillator, Equation Synth, Metallic; ba
 | F3 | Pitch is within 0.03 cents everywhere measured, and every synth is bit-identical on re-render. No action. | PITCH, DET rows | 1 |
 
 Note path covered (NOTE, ENV, CLICK, VEL, POLY incl. stuck voices: none, tail -240 dBFS on all). All 17 synths run. Full battery on Analog, Wavetable, Oscillator, Equation Synth; Metallic, Wave Terrain, Spectral Synth, Field Synth where applicable (UNISON: Analog and Wavetable, 4 peaks at 100.0 cents; PARAM: volume step is click-free). The nine sample synths load a 2 s, 48 kHz fixture WAV (440 Hz, six harmonics) written by the audit: Sampler, Grain Molder, Molder, Granular, PaulStretch, Slicer and MPC take notes (Slicer and MPC on note 36, their first slice/pad); Drum Sequencer plays one step from the transport; Looper records live input, so only its own tests cover it. New SAMPLE row: the fixture's pitch and length at 44.1 / 48 / 96 kHz, for new nodes and as loaded from an old patch (F11). Granular, Molder and PaulStretch free-run, so their POLY tail is read against their idle level, not -100 dBFS. Verdict: PASS, 2 flags (Metallic, F1 and F7). The driver now reads `PASS (n flags)` as a pass, so all five audits gate releases instead of reading as no verdict.
+
+## 10. Left (reviewed 2026-10-13)
+
+Checked against the section names each audit file actually prints, not this plan.
+
+| # | Audit | Left | Why it matters |
+|---|---|---|---|
+| L1 | COMPAUDIT | BLUR section: Gaussian/box blur radius vs analytic, cost vs radius | blur is in most visual patches; never measured |
+| L2 | COMPAUDIT | COLOUR section: sRGB vs linear on blur, blend and ramps, documented and consistent | wrong space shows as dark fringes and muddy gradients |
+| L3 | COMPAUDIT | RES section: time and GPU memory at 1 / 4 / 16 Mpx | the re-survey resolution ceiling and GPU memory are unmeasured too (block D) |
+| L4 | COMPAUDIT | BYPASS section: bypassed and cooked-twice nodes give the same pixels | bypass rule is an invariant; only GEOAUDIT checks it |
+| L5 | COMPAUDIT | Nodes not covered: Reaction Diffusion, Remove Background, the 14 image Sources (section 2 says "no battery") | a whole category with no audit |
+| L6 | GEOAUDIT | Nodes not covered: Metaballs, Cloth, Curve Ops, Instances, Displacement | the plan promised all 37 geometry nodes |
+| L7 | GEOAUDIT | REF section: Voronoi, Delaunay, decimation error vs published references | only validity is checked, not accuracy |
+| L8 | NOTEAUDIT | JITTER (note-on vs ideal at 24 / 60 / 144 fps) and BYPASS (bypass/delete while notes sound: all-off, no stuck note) not built; confirm ORDER is fully covered by PAIR | timing at low frame rates is what a live player feels |
+| L9 | SYNTHAUDIT | F2 (Analog alias -62 to -66 dB) and F7 (Wavetable note-on +8.2 dB) have no decision | decide fix or accept, so the findings table has no open rows |
+| L10 | GEOAUDIT | Solidify gaps (parked): stays parked until asked | recorded so it is not re-found |
+| L11 | Quality system | Only SYNTHAUDIT emits `Quality(...)` rows; NOTE, IO, GEO, COMP and FX audits are not in the registry (rollout step 4 in `docs/quality/README.md`) | without it the release gate does not see these numbers |
+
+Order: L8 and L9 first (audio and live play come first), then L1-L5 (one COMPAUDIT block), then L6-L7, then L11 as each audit is touched. One branch per block; run in its own session, separate from the re-survey.
