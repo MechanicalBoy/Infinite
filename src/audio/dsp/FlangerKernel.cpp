@@ -27,8 +27,16 @@ void FlangerKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sid
 
    for (int i = 0; i < out.numFrames; i++)
    {
-      const float delayMs = mMailbox.SmoothedValue(kDelayMs);
-      const float depthMs = mMailbox.SmoothedValue(kDepthMs);
+      float delayMs = mMailbox.SmoothedValue(kDelayMs);
+      float depthMs = mMailbox.SmoothedValue(kDepthMs);
+      if (!mDelaySlewInit)
+      {
+         mDelaySlew.SetImmediate(delayMs);
+         mDepthSlew.SetImmediate(depthMs);
+         mDelaySlewInit = true;
+      }
+      delayMs = mDelaySlew.Process(delayMs);
+      depthMs = mDepthSlew.Process(depthMs);
       float rateHz;
       if (sync)
       {
