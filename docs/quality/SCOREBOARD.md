@@ -6,10 +6,20 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Pillar | Metrics | Met | Behind / miss | Info | Unmeasured |
 |---|---|---|---|---|---|
-| P1 Live AV workstation | 3 | 3 | 0 | 0 | 0 |
+| P1 Live AV workstation | 8 | 6 | 1 | 1 | 0 |
 | P5 Audio quality and hosting | 25 | 18 | 4 | 3 | 0 |
-| P7 3D, compositing, output | 7 | 6 | 0 | 0 | 1 |
-| P8 Performance | 2 | 1 | 0 | 0 | 1 |
+| P7 3D, compositing, output | 10 | 7 | 2 | 0 | 1 |
+| P8 Performance | 4 | 1 | 0 | 0 | 3 |
+
+## P1 Live AV workstation: AV integration
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `av.react_latency_ms` | Click in the movie audio to the audio-reactive flash in its picture, 30 fps offline render; 45 ms = picture-late sync bound | <= 45.00 ms | report | behind | 49.96 (Infinite) | - |
+| `av.react_jitter_ms` | Std dev of that latency over 31 beats at 128 BPM (frame quantisation alone gives ~9.6 ms at 30 fps) |  | report | info | 9.33 (Infinite) | - |
+| `av.beat_lock_pct` | Beats whose reactive flash lands 0-1 frames after the first possible frame, never early | >= 100 % | report | met | 100 (Infinite) | - |
+| `av.drift_ms_min` | Absolute trend of reactive frame error over the take | <= 1.00 ms/min | report | met | 0 (Infinite) | - |
+| `av.clock_lock_pct` | Beat-clock flash (no analysis) within 0-1 frames of the click in the same movie | >= 100 % | report | met | 100 (Infinite) | - |
 
 ## P1 Live AV workstation: Note nodes
 
@@ -59,6 +69,14 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `fx.click_db` | Worst step transient when a parameter jumps | <= 12.00 dB | release | exc | 17.30 (node:Audio Filter) | - |
 | `fx.rate_spread_db` | Tone level difference across 44.1/48/96 kHz | <= 1.00 dB | release | exc | 5.38 (node:Bitcrush) | - |
 
+## P7 3D, compositing, output: 3D engine
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `geo.instance_ms` | Per-frame cost of 10,000 instances on a 100x100 grid, scale animated (Infinite: render slope net of baseline; Blender: depsgraph eval, 2026-10-13) | <= 1.30 ms | report | behind | 2.73 (Infinite) | 1.26 (Blender) |
+| `geo.subdiv_ms` | 32x32 grid, subdivide x2 smooth, animated noise displacement, per frame (Blender 2026-10-13 sets the target) | <= 8.10 ms | report | behind | 12.01 (Infinite) | 8.14 (Blender) |
+| `sim.cloth_ms` | 32x32 cloth sheet pinned on one edge, one simulation step per frame (solvers differ: Blender 5 quality steps, Infinite 6 iterations) | <= 18.40 ms | report | met | 0.944 (Infinite) | 18.40 (Blender) |
+
 ## P7 3D, compositing, output: Compositing
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
@@ -83,10 +101,19 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 346 (node:Spectral Synth) | - |
 | `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | unmeasured | - | - |
 
+## P8 Performance: Live scene
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `live.frame_p95_ms` | p95 frame time of a real-time audio-reactive 10,000-instance scene at 1280x720 (TD logs its own; Infinite needs the GUI) | <= 16.70 ms | report | unmeasured | - | - |
+| `live.drop_pct` | Frames over 1.5x the 60 fps budget in that scene | <= 1.00 % | report | unmeasured | - | - |
+
 ## Per subject
 
 Every subject for metrics that miss, carry exceptions, have no direction, or compare against other apps.
 
+- `av.react_latency_ms` (ms): Infinite 49.96
+- `av.react_jitter_ms` (ms): Infinite 9.33
 - `synth.rate_spread_db` (dB): node:Wavetable 0 · node:Granular 0.0013 · node:Grain Molder 0.0042 · node:Molder 0.0042 · node:Sampler 0.0042 · node:Equation Synth 0.0079 · node:Analog 0.0407 · node:Wave Terrain 0.051 · node:Spectral Synth 0.0543 · node:Oscillator 0.0573 · node:PaulStretch 0.824 · node:Metallic 2.93 (exc F1)
 - `synth.click_on_db` (dB): node:PaulStretch -240 · node:Spectral Synth -43.17 · node:Field Synth -20.98 · node:Granular -11.74 · node:Analog -3.54 · node:MPC -0.781 · node:Slicer -0.781 · node:Molder -0.746 · node:Wave Terrain 0.0278 · node:Grain Molder 0.0556 · node:Equation Synth 1.78 · node:Oscillator 2.49 · node:Sampler 4.59 · node:Wavetable 8.18 · node:Metallic 32.28 (exc F7)
 - `probe.pitch_worst_c` (cents): node:Wavetable 0.174 · node:Analog 3.52 (miss) · Vital Audio: Vital 0.174 · Xfer Records: Serum 2 0.174 · u-he: Diva 7.73
@@ -98,7 +125,10 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `probe.vel_span_db` (dB): node:Analog 24.08 · node:Wavetable 24.08 · Vital Audio: Vital -0.0023 · Xfer Records: Serum 2 -0.0021 · u-he: Diva 12.92
 - `fx.click_db` (dB): node:Stutter -30.82 · node:Reverb -0.579 · node:Shape Resonator -0.156 · node:Delay -0.0898 · node:Tremolo -0.0129 · node:Cycle Shaper -0.0012 · node:Spectrum Slide -0.0009 · node:Ring Mod -0.0001 · node:Bitcrush 0 · node:Chorus 0.0003 · node:Pitch Shifter 0.0107 · node:Key-Snap 0.0703 · node:Stereo 0.218 · node:Frequency Shifter 0.407 · node:Phaser 0.723 · node:Drive 0.772 · node:Spec Blur 1.54 · node:EQ 3.94 · node:Flanger 3.99 · node:Resonator Bank 4.05 · node:Formant Filter 4.63 · node:Limiter 8.76 · node:Wavetable Shaper 8.80 · node:Transient Shaper 8.82 · node:Dynamics 9.04 · node:Audio Filter 17.30 (exc F13)
 - `fx.rate_spread_db` (dB): node:Audio Filter 0 · node:Limiter 0 · node:Stereo 0 · node:Transient Shaper 0 · node:Tremolo 0 · node:Pitch Shifter 0.0001 · node:EQ 0.0005 · node:Frequency Shifter 0.0013 · node:Wavetable Shaper 0.0034 · node:Drive 0.0062 · node:Cycle Shaper 0.0078 · node:Spectrum Slide 0.0379 · node:Dynamics 0.0978 · node:Chorus 0.127 · node:Delay 0.133 · node:Spec Blur 0.136 · node:Flanger 0.144 · node:Ring Mod 0.18 · node:Phaser 0.243 · node:Formant Filter 0.268 · node:Stutter 0.72 · node:Shape Resonator 0.786 · node:Reverb 0.816 · node:Key-Snap 0.994 · node:Resonator Bank 2.43 (exc F15) · node:Bitcrush 5.38 (exc F14)
+- `geo.instance_ms` (ms): Blender 1.26 · Infinite 2.73
+- `geo.subdiv_ms` (ms): Blender 8.14 · Infinite 12.01
+- `sim.cloth_ms` (ms): Infinite 0.944 · Blender 18.40
 - `geo.winding_mismatch` (triangles): node:8 balls r96 0 · node:Array on cube 0 · node:Array on sphere 0 · node:Arrow 3D 0 · node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Curve Ops hostile 0 · node:Curve Ops no input 0 · node:Curve source tube 0 · node:Cylinder 0 · node:Decimate Icosphere 0 · node:Decimate Torus 0 · node:Decimate on cube 0 · node:Decimate on sphere 0 · node:Delaunay 0 · node:Delete on cube 0 · node:Delete on sphere 0 · node:Disc 0 · node:Dodecahedron 0 · node:Explode on cube 0 · node:Explode on sphere 0 · node:Extrude on cube 0 · node:Extrude on sphere 0 · node:Gear 3D 0 · node:Helix 0 · node:Icosphere 0 · node:Join merge 0 · node:Merge by Distance 0 · node:Metaballs 0 · node:Metaballs extreme 0 · node:Mirror on cube 0 · node:Mirror on sphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Ocean 0 · node:Octahedron 0 · node:Plane 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Select on cube 0 · node:Select on sphere 0 · node:Smooth on cube 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Sphere 0 · node:Star 3D 0 · node:Subdivide on cube 0 · node:Supershape 0 · node:Tetrahedron 0 · node:Torus 0 · node:Torus Knot 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Triangulate on cube 0 · node:Triangulate on sphere 0 · node:Tube 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:Voronoi 0 · node:Wireframe on cube 0 · node:Wireframe on sphere 0 · node:default 0 · node:node Offset 0 · node:node Resample 0 · node:node Simplify 0 · node:node Smooth 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:pinned 0 · node:realised 0 · node:Solidify on a plane 0 · node:Mobius Strip 2.00 (exc F16) · node:Klein Bottle 7.00 (exc F16) · node:Smooth on sphere 64.00 (exc F17) · node:Subdivide on sphere 64.00 (exc F17) · node:Screw on cube 1456 (exc F18) · node:Screw on sphere 14608 (exc F18)
 - `geo.nonmanifold` (edges): node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Cylinder 0 · node:Dodecahedron 0 · node:Icosphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Octahedron 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Smooth on cube 0 · node:Sphere 0 · node:Subdivide on cube 0 · node:Tetrahedron 0 · node:Torus 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:Solidify on a plane 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Smooth on sphere 198 (exc F17) · node:Subdivide on sphere 198 (exc F17)
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 6136354a.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 41322848; 2026-10-13 4466dd20; 2026-10-13 6136354a.

@@ -39,3 +39,13 @@ geo.cloth_stretch_pct	P7	Geometry	%	lower	50	release	GEOAUDIT		Worst edge stretc
 geo.inst_mirrored	P7	Geometry	count	lower	0	release	GEOAUDIT		Instance transforms with a negative determinant
 geo.decimate_bbox_pct	P7	Geometry	% bbox	lower	5	release	GEOAUDIT		Decimate: worst vertex distance to the original surface
 geo.disp_offset	P7	Geometry	units	lower	0.02	report	GEOAUDIT		Displacement: worst vertex off the formula (run with INFINITE_GEOAUDIT_ONLY=DISP)
+geo.instance_ms	P7	3D engine	ms	lower	1.3	report	blender_bench		Per-frame cost of 10,000 instances on a 100x100 grid, scale animated (Infinite: render slope net of baseline; Blender: depsgraph eval, 2026-10-13)
+geo.subdiv_ms	P7	3D engine	ms	lower	8.1	report	blender_bench		32x32 grid, subdivide x2 smooth, animated noise displacement, per frame (Blender 2026-10-13 sets the target)
+sim.cloth_ms	P7	3D engine	ms	lower	18.4	report	blender_bench		32x32 cloth sheet pinned on one edge, one simulation step per frame (solvers differ: Blender 5 quality steps, Infinite 6 iterations)
+av.react_latency_ms	P1	AV integration	ms	lower	45	report	av_bench		Click in the movie audio to the audio-reactive flash in its picture, 30 fps offline render; 45 ms = picture-late sync bound
+av.react_jitter_ms	P1	AV integration	ms	lower		report	av_bench		Std dev of that latency over 31 beats at 128 BPM (frame quantisation alone gives ~9.6 ms at 30 fps)
+av.beat_lock_pct	P1	AV integration	%	higher	100	report	av_bench		Beats whose reactive flash lands 0-1 frames after the first possible frame, never early
+av.drift_ms_min	P1	AV integration	ms/min	lower	1	report	av_bench		Absolute trend of reactive frame error over the take
+av.clock_lock_pct	P1	AV integration	%	higher	100	report	av_bench		Beat-clock flash (no analysis) within 0-1 frames of the click in the same movie
+live.frame_p95_ms	P8	Live scene	ms	lower	16.7	report	av_bench		p95 frame time of a real-time audio-reactive 10,000-instance scene at 1280x720 (TD logs its own; Infinite needs the GUI)
+live.drop_pct	P8	Live scene	%	lower	1	report	av_bench		Frames over 1.5x the 60 fps budget in that scene

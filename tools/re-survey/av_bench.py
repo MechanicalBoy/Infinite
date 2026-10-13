@@ -247,7 +247,7 @@ def quality_rows(res):
     r = res.get("variants", {}).get("reactive")
     if r and r.get("matched"):
         rows += [quality_line("av.react_latency_ms", app, r["latency_ms"]), quality_line("av.react_jitter_ms", app, r["jitter_ms"]),
-                 quality_line("av.beat_lock_pct", app, r["lock_pct"]), quality_line("av.drift_ms_min", app, r["drift_ms_min"])]
+                 quality_line("av.beat_lock_pct", app, r["lock_pct"]), quality_line("av.drift_ms_min", app, abs(r["drift_ms_min"]))]
     c = res.get("variants", {}).get("clock")
     if c and c.get("matched"):
         rows.append(quality_line("av.clock_lock_pct", app, c["lock_pct"]))
