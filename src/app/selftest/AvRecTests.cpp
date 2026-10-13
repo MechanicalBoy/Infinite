@@ -1022,19 +1022,28 @@ bool RunAudioPdcTest()
    // device once. Same topology as zeroLatency, run with the dedupe the build
    // applies, then without it to prove the check can see a double count.
    AudioEngine::Instance().SetTopology(zeroLatency);
+   const uint64_t oversBefore = AudioEngine::Instance().MasterOverSamples();
    AudioEngine::Instance().ProcessOffline(buffer);
+   const uint64_t oversDoubled = AudioEngine::Instance().MasterOverSamples() - oversBefore;
+   const float overPeak = AudioEngine::Instance().MasterOverPeak();
    const Peak doubled = FindPeak(chan0.data(), kNumFrames);
    MarkDuplicateDeviceTerminals(zeroLatency.terminalBufferIndices);
    const bool markOk = zeroLatency.terminalBufferIndices[0].mixToDevice && !zeroLatency.terminalBufferIndices[1].mixToDevice;
    AudioEngine::Instance().SetTopology(zeroLatency);
    AudioEngine::Instance().ProcessOffline(buffer);
    const Peak deduped = FindPeak(chan0.data(), kNumFrames);
+   // v0.6 1.13: a master sum over full scale is counted (the 2.0 impulse, once
+   // per channel), and a sample at exactly full scale is not.
+   const uint64_t oversDeduped = AudioEngine::Instance().MasterOverSamples() - oversBefore - oversDoubled;
+   const bool oversOk = oversDoubled == (uint64_t)buffer.numChannels && std::abs(overPeak - doubled.value) < 1e-4f && oversDeduped == 0;
+   printf("AUDIOPDCTEST master overs: 2.0 impulse counted %llu (want %d, peak %.4f), 1.0 impulse counted %llu (want 0)  %s\n",
+          (unsigned long long)oversDoubled, buffer.numChannels, overPeak, (unsigned long long)oversDeduped, oversOk ? "OK" : "FAIL");
    const bool dedupeOk = markOk && doubled.value > dryAlone.value * 1.9f &&
                          std::abs(deduped.value - dryAlone.value) <= dryAlone.value * 0.001f;
    printf("AUDIOPDCTEST same source on two terminals mixes once: alone %.4f  doubled %.4f  deduped %.4f  %s\n",
           dryAlone.value, doubled.value, deduped.value, dedupeOk ? "OK" : "FAIL");
 
-   const bool ok = hasLatency && dryOffsetOk && wetOffsetOk && alignedOk && amplitudeOk && zeroAllocOk && dedupeOk;
+   const bool ok = hasLatency && dryOffsetOk && wetOffsetOk && alignedOk && amplitudeOk && zeroAllocOk && dedupeOk && oversOk;
    printf("%s\n", ok ? "AUDIOPDCTEST OK" : "AUDIOPDCTEST FAIL");
    return ok;
 }

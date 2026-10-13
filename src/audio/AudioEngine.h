@@ -395,6 +395,13 @@ public:
    uint64_t CallbackGapCount() const;
    XrunCounts Xruns() const;
 
+   // Master output over full scale (|sample| > 1.0), which the device and every
+   // integer file format hard-clip. Counted on each finished block, live
+   // (after the preview and metronome) and offline. MasterOverPeak() is the
+   // largest sample of the most recent block that went over.
+   uint64_t MasterOverSamples() const;
+   float MasterOverPeak() const;
+
    // Called by the platform audio backend when the device itself reports an
    // overload/underrun (macOS kAudioDeviceProcessorOverload listener, Windows
    // render loop). Bumps the "os" counter only. May land on an arbitrary
@@ -647,6 +654,9 @@ private:
    std::atomic<uint64_t> mXrunDeadline { 0 };
    std::atomic<uint64_t> mXrunOs { 0 };
    std::atomic<uint64_t> mCallbackGaps { 0 };
+   std::atomic<uint64_t> mMasterOvers { 0 };
+   std::atomic<float> mMasterOverPeak { 0.0f };
+   void NoteMasterOvers(const AudioBuffer& buffer);
    std::atomic<double> mLastCallbackMs { -1.0 };
    std::atomic<double> mLastBlockLoad { 0.0 };
    std::atomic<bool> mNodeCostOn { false };

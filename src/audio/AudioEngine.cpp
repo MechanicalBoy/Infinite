@@ -179,6 +179,37 @@ uint64_t AudioEngine::CallbackGapCount() const
    return mCallbackGaps.load(std::memory_order_relaxed);
 }
 
+uint64_t AudioEngine::MasterOverSamples() const
+{
+   return mMasterOvers.load(std::memory_order_relaxed);
+}
+
+float AudioEngine::MasterOverPeak() const
+{
+   return mMasterOverPeak.load(std::memory_order_relaxed);
+}
+
+void AudioEngine::NoteMasterOvers(const AudioBuffer& buffer)
+{
+   uint64_t overs = 0;
+   float peak = 0.0f;
+   for (int ch = 0; ch < buffer.numChannels; ch++)
+   {
+      const float* x = buffer.channels[ch];
+      for (int i = 0; i < buffer.numFrames; i++)
+      {
+         const float a = std::fabs(x[i]);
+         peak = std::max(peak, a);
+         overs += a > 1.0f ? 1 : 0;
+      }
+   }
+   if (overs > 0)
+   {
+      mMasterOvers.fetch_add(overs, std::memory_order_relaxed);
+      mMasterOverPeak.store(peak, std::memory_order_relaxed);
+   }
+}
+
 AudioEngine::XrunCounts AudioEngine::Xruns() const
 {
    XrunCounts c;
@@ -392,6 +423,7 @@ void AudioEngine::ProcessOffline(AudioBuffer& buffer)
    Transport::Instance().BeginOfflineAudioBlock(buffer.numFrames);
    ProcessList* list = mCurrent.load(std::memory_order_acquire);
    RunTopology(list, buffer);
+   NoteMasterOvers(buffer);
    Transport::Instance().EndOfflineAudioBlock();
 }
 
@@ -967,6 +999,7 @@ void AudioEngine::Process(float** buffers, int numChannels, int numFrames)
          mMetronome.Reset();
    }
    const double topologyMs = NowMs() - topologyStartMs;
+   NoteMasterOvers(buffer);
 
    if (sampleRate > 0.0)
    {

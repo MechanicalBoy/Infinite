@@ -335,6 +335,23 @@ namespace app
       if (n->DroppedSampleCount() > 0)
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_350_1000), "dropped samples - device can't keep up");
 
+      // The summed output of every Audio Out went over full scale: the device
+      // and a recorded file both hard-clip there. Held for 3 s after the last
+      // over so a single peak is readable.
+      {
+         static uint64_t sSeenOvers = AudioEngine::Instance().MasterOverSamples();
+         static double sLastOverTime = -1.0e9;
+         const uint64_t overs = AudioEngine::Instance().MasterOverSamples();
+         if (overs != sSeenOvers)
+         {
+            sSeenOvers = overs;
+            sLastOverTime = ImGui::GetTime();
+         }
+         if (ImGui::GetTime() - sLastOverTime < 3.0)
+            ImGui::TextColored(tok::V4(tok::palf::v_1000_600_350_1000), "clipping +%.1f dB - lower the level",
+                               20.0f * std::log10(std::max(1.0f, AudioEngine::Instance().MasterOverPeak())));
+      }
+
       EndAudioBody();
    }
 

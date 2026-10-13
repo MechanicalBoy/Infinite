@@ -1230,8 +1230,30 @@ namespace app
    }
 
 
+   // The open notice is about a finished take whose audio clipped, not a failure.
+   static bool sRenderNoticeClipped = false;
+
+   // A take whose master went over full scale is written clipped (the audio
+   // encoders and the integer WAV both clamp at 0 dBFS), so the job says so.
+   static void ArrangeRenderNoteClipping(ArrangeRenderJob& job)
+   {
+      const uint64_t overs = AudioEngine::Instance().MasterOverSamples() - job.oversAtStart;
+      if (overs == 0)
+         return;
+      char note[96];
+      snprintf(note, sizeof(note), "The loudest peak was %.1f dB over. Lower the level and render again.",
+               20.0f * std::log10(std::max(1.0f, AudioEngine::Instance().MasterOverPeak())));
+      job.message = job.message.empty() ? std::string(note) : job.message + "; " + note;
+      sRenderNoticeClipped = true;
+      gArrangeRenderFailNotice = "\"" + job.path + "\"\n\n" + note;
+      gArrangeRenderFailNoticeOpen = true;
+      fprintf(stderr, "timeline render clipped: %s (%s)\n", note, job.path.c_str());
+   }
+
+
    void ArrangeRenderFailJob(ArrangeRenderJob& job, const std::string& why)
    {
+      sRenderNoticeClipped = false;
       job.status = kArrangeJobFailed;
       job.message = why;
       gArrangeRenderActiveJobId = 0;
@@ -1251,15 +1273,17 @@ namespace app
 
    void DrawArrangeRenderFailNotice()
    {
+      const char* popupId = sRenderNoticeClipped ? L("Audio clipped##arrangeRenderFail") : L("Render failed##arrangeRenderFail");
       if (gArrangeRenderFailNoticeOpen)
       {
-         ImGui::OpenPopup(L("Render failed##arrangeRenderFail"));
+         ImGui::OpenPopup(popupId);
          gArrangeRenderFailNoticeOpen = false;
       }
-      if (DialogParts::Begin(L("Render failed##arrangeRenderFail")))
+      if (DialogParts::Begin(popupId))
       {
-         DialogParts::Title(T("Render failed"));
-         DialogParts::Message(T("The render stopped before it finished. Your patch was not changed."));
+         DialogParts::Title(sRenderNoticeClipped ? T("Audio clipped") : T("Render failed"));
+         DialogParts::Message(sRenderNoticeClipped ? T("The file was written, but its audio went over full scale and is clipped.")
+                                                   : T("The render stopped before it finished. Your patch was not changed."));
          ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 400.0f);
          DialogParts::Message(gArrangeRenderFailNotice.c_str());
          ImGui::PopTextWrapPos();
@@ -1430,6 +1454,8 @@ namespace app
          job->status = cancelled ? kArrangeJobCancelled : kArrangeJobDone;
          if (cancelled)
             job->message = "cancelled";
+         else
+            ArrangeRenderNoteClipping(*job);
       }
       gArrangeRenderActiveJobId = 0;
    }
@@ -1439,6 +1465,7 @@ namespace app
    {
       if (ArrangeRenderBusy())
          return false;
+      job.oversAtStart = AudioEngine::Instance().MasterOverSamples();
 
       const double startSec = ArrangeRenderTickSeconds(job.startTick);
       const double endSec = ArrangeRenderTickSeconds(job.endTick);
@@ -1586,6 +1613,8 @@ namespace app
                                      std::filesystem::file_size(outPath, sizeEc) > 0;
                   if (!wrote)
                      ArrangeRenderFailJob(*job, "the encoder finished but no file was written");
+                  else
+                     ArrangeRenderNoteClipping(*job);
                }
             }
          }
