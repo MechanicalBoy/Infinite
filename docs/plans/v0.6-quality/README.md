@@ -33,7 +33,7 @@ without ask. Bench runs are serialized with any other benching session (check NO
 | Node audits not yet covered: Reaction Diffusion, Remove Background, image sources, blur accuracy, RES/BYPASS sweeps, Metaballs, Cloth, Curve Ops, Instances, Displacement | next in `docs/plans/node-audits` | Block 1 item 1.8: run the sweeps; fix what they find only if it is a correctness bug (perf findings go to the perf lane) |
 | Escaped fixes since v0.5.0 (8) | each already has its fix | nothing new; the release gate counts escapes after v0.6 |
 | Motion and radial blur GPU cost (image-fx G9, about 0.16 ms/node over) | perf quest in the re-survey-finish ledger | Block 3 item 3.12 |
-| Metal compute for particles (R757) | parked, gates G1/G2 unmeasured | Block 3 item 3.16 (gate, then build) |
+| Metal compute for particles (R757) | parked, gates G1/G2 unmeasured | Block 3 item 3.15 (gate, then build) |
 | Modulation smaller gaps: Envelope hold stage and per-stage curves, MPE | open in `docs/plans/modulation`, `docs/plans/mpe` | Block 2 items 2.14, 2.15 |
 | `feature/ui-engine` (1 commit), `feature/node-audits-plan` (1 docs commit) | the fix is already on main; the docs are superseded | delete both branches at Block 1 start, no merge |
 
@@ -144,12 +144,12 @@ Settled:
 | 3.10 | Defocus (bokeh) blur | none (Pixelmator) | depth-driven bokeh | new FilterDef | `compositing-pipeline-sweep` |
 | 3.11 | Cables image-op gaps | 108 Cables ImageCompose ops not compared op by op | gaps from the 1.0 tool that pass the spec rule become FilterDefs | `src/core/FilterDefs.cpp` | each new filter in the image-fx audit |
 | 3.12 | Visual perf | geo.instance 2.73 ms (Blender 1.26); geo.subdiv 12.01 ms (8.1); B8 heavy p99 33.2 ms, 9.36% missed; motion/radial blur 0.16 ms/node over | instance ≤ 1.3 ms, subdiv ≤ 8.1 ms, B8 heavy p99 ≤ 18.3 ms and < 0.5% missed, blur within G9 | perf tracker `docs/plans/perf/README.md` | scoreboard rows met |
-| 3.14 | 2D fluid | none (TouchDesigner, Cables staple) | GPU stable fluids (Stam 1999): velocity, dye, vorticity, obstacles from an image; 1080p ≤ 3 ms | new compositing node | divergence below 1e-3 after projection |
-| 3.15 | Clip speed in the arrangement | Video Source has speed; arrangement clips do not | per-clip speed and reverse, audio follows with 1.6's stretch | `src/arrange/` (`timeline-arrangement-architecture`) | export of a 2× clip has the right length and pitch |
-| 3.16 | GPU particles (Metal compute) | CPU, capped 200k | run gate G1 of `docs/plans/metal-compute.md`; if it passes, build to its G2 bar (1M in < 2 ms); else record the number | `SimulationNodes.h` | G1 row either way |
+| 3.13 | 2D fluid | none (TouchDesigner, Cables staple) | GPU stable fluids (Stam 1999): velocity, dye, vorticity, obstacles from an image; 1080p ≤ 3 ms | new compositing node | divergence below 1e-3 after projection |
+| 3.14 | Clip speed in the arrangement | Video Source has speed; arrangement clips do not | per-clip speed and reverse, audio follows with 1.6's stretch | `src/arrange/` (`timeline-arrangement-architecture`) | export of a 2× clip has the right length and pitch |
+| 3.15 | GPU particles (Metal compute) | CPU, capped 200k | run gate G1 of `docs/plans/metal-compute.md`; if it passes, build to its G2 bar (1M in < 2 ms); else record the number | `SimulationNodes.h` | G1 row either way |
 
 Settled:
-- Re-evaluated 2026-10-13 and now taken: 2D fluid (3.14), clip speed (3.15).
+- Re-evaluated 2026-10-13 and now taken: 2D fluid (3.13), clip speed (3.14).
 - Still not taken: sculpting and retopology (modelling, not live); 3D volumes (cost per frame); depth cameras (vendor SDKs on three platforms; Apple Vision body tracking covers the live use); export to web (a second renderer); magnetic storyline (an editing model, not a live one); light linking and IES.
 
 ## What each source taught (2026-10-13)
