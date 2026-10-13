@@ -32,7 +32,7 @@ Status: done 2026-10-13 from application bundle manifests in `/Applications/Bitw
 | P5 | 31 Analog Drum Models (TR-808 v8 and TR-909 v9 series) | none | gap | ignore: Drum Sequencer (sample lanes); no synthesized drum voices | `~/re-output/bitwig/bitwig_all_assets.json` |
 | P5 | Phase Engine: 20 phase-shaping synthesis modules | none | gap | ignore: Oscillator PM input, Cycle Shaper; no phase-distortion module set | `~/re-output/bitwig/bitwig_all_assets.json` |
 | P5 | Multi-Band Split Routers (Freq, Loud, Transient Split) | `src/nodes/AudioNodes.h` | gap | ignore: Splitter is a fan-out, not a crossover; no band, loudness or transient split | `src/nodes/AudioNodes.h` |
-| P5 | VST3 and CLAP plugin hosting with sandboxing | `src/nodes/AudioPluginNode.h` | gap | quality-gap: Plugin (VST3 + AU, in-process); no CLAP, no sandbox (a plugin crash takes the app down); crash-only fallback is v0.6 Tier 2 | `src/nodes/AudioPluginNode.h` |
+| P5 | VST3 and CLAP plugin hosting with sandboxing | `src/nodes/AudioPluginNode.h` | gap | quality-gap: Plugin (VST3 + AU, in-process); no CLAP, no sandbox (a plugin crash takes the app down); crash-only fallback is v0.6 | `src/nodes/AudioPluginNode.h` |
 | P1 | Live AV synthesis crossing audio and visual boundary | `src/nodes/FieldPixelNode.h` | lead | ignore: Field Synth, FieldPixel, Field Modifier; Bitwig is audio-only; one Field language runs in audio, pixels and geometry | `src/nodes/FieldPixelNode.h` |
 
 ## 5. Measurements
@@ -45,9 +45,9 @@ Status: done 2026-10-13 from application bundle manifests in `/Applications/Bitw
 
 ## 6. Outcomes
 
-- Quests: none (per-voice and audio-rate modulation are the v0.7 lane, docs/plans/v0.6-quality/README.md).
+- Quests: none (per-voice and audio-rate modulation are in v0.6 Block 2, docs/plans/v0.6-quality/README.md).
 - Perf targets: none (Bitwig CPU measured in dossier B).
-- Quality gaps: plugin crash isolation (v0.6 Tier 2). Phase-4 style modules and 808/909 voices are ignored until a user asks.
+- Quality gaps: plugin crash isolation (v0.6). Phase-4 style modules and 808/909 voices are ignored until a user asks.
 
 ## 7. Storage
 

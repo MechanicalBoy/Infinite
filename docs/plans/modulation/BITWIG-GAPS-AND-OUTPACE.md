@@ -78,4 +78,4 @@ src/ and the node census; run `python3 tools/re-survey/diff.py claims` after edi
 |---|---|---|---|
 | 2 | `feature/mod-clock` | per-sample ramps, fps-independent smoothing | done 2026-10-12 |
 | MSEG | `feature/mod-mseg` | time-based MSEG (new node or clocked Mod Curve) | v0.6 plan, Tier 3 |
-| Poly | `feature/mod-poly` | per-voice + audio-rate modulation | v0.7 architecture lane (design doc first) |
+| Poly | `feature/mod-poly` | per-voice + audio-rate modulation | v0.6 Block 2 item 2.12 (design doc first) |

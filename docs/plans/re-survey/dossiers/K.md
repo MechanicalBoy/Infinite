@@ -31,7 +31,7 @@ Status: done 2026-10-13 from framework resource manifests in `/Applications/Logi
 |---|---|---|---|---|---|
 | P5 | Alchemy: Quad spectral, additive, granular & VA morph synth | none | gap | ignore: Spectral Synth, Granular, Analog, Field Synth; the engines exist as separate nodes; no 4-way morph | `~/re-output/logic/logic_all_models.json` |
 | P5 | Sculpture: Component-level string physical modeling (368 params) | none | gap | ignore: Metallic, Resonator Bank; struck/modal sounds covered; no string model | `~/re-output/logic/logic_all_models.json` |
-| P5 | Space Designer: True-stereo zero-latency IR convolution | none | gap | quality-gap: convolve is an image filter; IR convolution reverb is v0.6 Tier 3 (docs/plans/v0.6-quality/README.md) | `src/core/FilterDefs.cpp` |
+| P5 | Space Designer: True-stereo zero-latency IR convolution | none | gap | quality-gap: convolve is an image filter; IR convolution reverb is v0.6 (docs/plans/v0.6-quality/README.md) | `src/core/FilterDefs.cpp` |
 | P5 | Compressor: 7 analog circuit models (Opto, FET, VCA) | `src/audio/EffectDefs.cpp` | gap | ignore: Dynamics: peak/RMS plus an opto-like Analog mode; one clean model and one opto-like; no FET/VCA character | `src/audio/EffectDefs.cpp` |
 | P5 | Vintage EQ Collection: Pultec, Neve 1073, API 560 models | none | gap | ignore: EQ (5 matched biquad bands); clean curves only; no analog models | `~/re-output/logic/logic_all_models.json` |
 | P5 | ChromaVerb: 14 acoustic spaces with decay EQ spectrum | `src/audio/EffectDefs.cpp` | gap | ignore: Reverb (16-line Hadamard FDN, one damping filter); no multi-band decay EQ or room models | `src/audio/EffectDefs.cpp` |
@@ -50,7 +50,7 @@ Status: done 2026-10-13 from framework resource manifests in `/Applications/Logi
 
 - Quests: none (within 5-quest cap).
 - Perf targets: none (Logic CPU not measured here; see dossier B).
-- Quality gaps: IR convolution reverb (v0.6 Tier 3, docs/plans/v0.6-quality/README.md). Alchemy morphing and Sculpture are ignored until a user asks.
+- Quality gaps: IR convolution reverb (v0.6, docs/plans/v0.6-quality/README.md). Alchemy morphing and Sculpture are ignored until a user asks.
 
 ## 7. Storage
 
