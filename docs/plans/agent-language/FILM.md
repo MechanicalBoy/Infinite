@@ -1,6 +1,13 @@
 # Tongue for films and motion design (dialects)
 
-Status: plan, 2026-10-14. Nothing built. Gate decides whether any of it is built (below).
+Status: 2026-10-14. Step 2 (`film_check`) is built and live in the `motion-film` skill. Steps 1, 3, 4
+(film language and its benchmark) wait on the core verdict, as planned below.
+
+Built: `tools/agentlang/film/film_check.py` + `FILM-SPEC.md` (copied into `~/.claude/skills/motion-film/`
+as `scripts/film_check.py` and `references/film-check.md`, with a pointer at the top of its SKILL.md).
+Tested on act7 (landscape and 9:16) and a missing scene. Not yet measured: the saving. Measure it by
+re-running `mine_tokens.py` on film sessions after a few new films and comparing shell-output share and
+renders per session with the 162-session baseline above.
 
 ## Why (measured, not guessed)
 
