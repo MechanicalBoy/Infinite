@@ -274,7 +274,8 @@ public:
    // Opens a WAV file at `path` and starts draining the capture ring into it.
    // Returns false (nothing opened) if the engine isn't running yet or the
    // file couldn't be created.
-   bool StartRecording(const std::string& path);
+   // `sampleRate` 0 means the engine's (a headless test has no device and passes its own).
+   bool StartRecording(const std::string& path, double sampleRate = 0.0);
    // Stops draining and finalizes the file's RIFF/data chunk sizes. Safe to
    // call when not recording.
    void StopRecording();
@@ -283,6 +284,10 @@ public:
    int64_t FileSizeBytes() const { return mWriter.BytesWritten(); }
    const std::string& RecordingPath() const { return mWriter.Path(); }
    uint64_t DroppedSampleCount() const { return mCaptureRing.overflowCount.load(std::memory_order_relaxed); }
+   // Largest |sample| written to the current take, or to the last one once
+   // it has stopped. The file formats clamp at full scale, so above 1.0 the
+   // take was written clipped.
+   float TakePeak() const { return mTakePeak; }
 
    AudioCable input;
 
@@ -304,4 +309,5 @@ private:
    AudioCaptureRing mCaptureRing;
    AudioFileWriter mWriter;
    double mOpenSampleRate = 0.0;
+   float mTakePeak = 0.0f;
 };

@@ -335,6 +335,12 @@ namespace app
       if (n->DroppedSampleCount() > 0)
          ImGui::TextColored(tok::V4(tok::palf::v_1000_600_350_1000), "dropped samples - device can't keep up");
 
+      // A finished take that went over full scale was written clipped; the
+      // line stays until the next take starts.
+      if (!recording && n->TakePeak() > 1.0f)
+         ImGui::TextColored(tok::V4(tok::palf::v_1000_600_350_1000), "last take clipped, +%.1f dB over",
+                            20.0f * std::log10(n->TakePeak()));
+
       // The summed output of every Audio Out went over full scale: the device
       // and a recorded file both hard-clip there. Held for 3 s after the last
       // over so a single peak is readable.

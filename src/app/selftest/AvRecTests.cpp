@@ -1070,7 +1070,31 @@ bool RunAudioPdcTest()
    printf("AUDIOPDCTEST same source on two terminals mixes once: alone %.4f  doubled %.4f  deduped %.4f  %s\n",
           dryAlone.value, doubled.value, deduped.value, dedupeOk ? "OK" : "FAIL");
 
-   const bool ok = hasLatency && dryOffsetOk && wetOffsetOk && alignedOk && amplitudeOk && zeroAllocOk && dedupeOk && oversOk && holdOk;
+   // An Audio Out's own Record keeps the largest sample it wrote, through
+   // quieter audio and after Stop (its body says "last take clipped"), and a
+   // new take starts from zero.
+   bool takePeakOk = false;
+   {
+      AudioOutputNode rec;
+      const std::string path = TmpPath("infinite_takepeak.wav");
+      const float hot[4] = { 0.5f, -1.5f, 0.25f, 0.25f };
+      const float quiet[4] = { 0.1f, -0.1f, 0.1f, -0.1f };
+      const bool started = rec.StartRecording(path, 48000.0);
+      rec.CaptureRing().Write(hot, 4);
+      rec.CookIfNeeded(1);
+      rec.CaptureRing().Write(quiet, 4);
+      rec.StopRecording();
+      const float after = rec.TakePeak();
+      const bool restarted = rec.StartRecording(path, 48000.0);
+      const float fresh = rec.TakePeak();
+      rec.StopRecording();
+      remove(path.c_str());
+      takePeakOk = started && restarted && std::abs(after - 1.5f) < 1e-6f && fresh == 0.0f;
+      printf("AUDIOPDCTEST Audio Out take peak: %.2f after a 1.5 sample (want 1.50), %.2f on a new take (want 0)  %s\n",
+             after, fresh, takePeakOk ? "OK" : "FAIL");
+   }
+
+   const bool ok = hasLatency && dryOffsetOk && wetOffsetOk && alignedOk && amplitudeOk && zeroAllocOk && dedupeOk && oversOk && holdOk && takePeakOk;
    printf("%s\n", ok ? "AUDIOPDCTEST OK" : "AUDIOPDCTEST FAIL");
    return ok;
 }
