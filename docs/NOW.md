@@ -10,21 +10,25 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 |---|---|
 | Next release | v0.6 |
 | Makes right | Quality lead over the re-survey peers: audio correctness, first run, DSP lead (plan: `docs/plans/v0.6-quality/README.md`); every escaped v0.5.0 fix lands with a regression test |
-| Done when | Plan blocks 1-3 merged (60 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
+| Done when | Plan blocks 1-3 merged (63 items, nothing planned past v0.6); scoreboard 0 unmeasured, F1/F13/F14 gone; fewer escaped fixes than v0.5.0; known failures don't grow; 0 reverts |
 
 ## Claims (add a row before touching anything; remove it when done)
 
 | Session | Branch / worktree | Quest | Uses | Since |
 |---|---|---|---|---|
+| v06-block2 | `feature/v06-sound` (on top of `bugfix/v06-audio-correctness`, not yet on main) | v0.6 Block 2: sound | main build; no bench | 2026-10-14 |
 | re-survey-finish | `feature/re-survey-finish` (+ agent worktrees) | re-survey leftovers, quality misses, B1-B10 into scoreboard | main build, bench (later, serial), DAW/TD GUI scripting | 2026-10-13 |
-| v06-block1 | `bugfix/v06-audio-correctness` at `infinte` | v0.6 Block 1 (audio correctness) | main build, bench (serial with re-survey-finish) | 2026-10-13 |
 
 ## Waiting on owner (one at a time, recommended answer first)
 
+- Merge `bugfix/v06-audio-correctness` (v0.6 Block 1, items 1.0-1.14 except 1.7) to main? Recommended: yes. Code review 2026-10-14: no blockers. New wording since: the Output node's status line ends `(audio clipped, +x dB over)` when a take clipped, and Audio Out shows `last take clipped, +x dB over`. Sweeps: av-sync 19/19, modulation 9/9; the two other sweeps each fail one check that fails the same on main. verify-gate: driver audio+video 25 passed, ui+compositing 51 passed, community smoke 27/27, ledger lint 0 stale. Two things you will see: Audio Out shows `clipping +x dB` for 3 s and Timeline renders end with an "Audio clipped" notice (1.13); effect shaders now warm up one a frame after startup (1.14). Still open on the branch: 1.7 (waits for re-survey-finish) and one 1.14 bench run with the screen unlocked and the window focused.
 
 
 ## Decisions (newest first, keep the last 10)
 
+- 2026-10-14 Agent: v0.6 Block 2 items 2.1-2.4 and 2.7 done on `feature/v06-sound`. New things a user sees: File > New Synth (Cmd+Shift+N); a Keyboard node that is the only selection plays from the letter keys; a single dropped audio file plays at once ("Playing x. Load into instead:"); timeline keys `F`, `=` / `-`, `Cmd+L`, `I` / `O` (no J/K/L shuttle: the transport only runs forward at 1x); right-click an audio node > Presets (79 factory presets on Analog, Oscillator, Wavetable, Metallic, Delay, Reverb, Drive, Dynamics, EQ).
+- 2026-10-14 Agent: reviewed PR #24 and the fork commits after 2026-10-04 (0.49-0.55). Owner: Infinite is a design instrument and also a live instrument, balanced, never one-sided. Taken: 2.37 Auto-Tune GL editor freeze (R282), 2.38 bar-quantized launch, 3.18 HAP video; plugin-handle crash check in 2.6, quit-never-hangs in 2.36, bar-landing switch in 2.35. Not taken: TD Common page, Send/Receive, fader law, Super Mixer master chain (1.13 covers clipping), Punch FX (GPL edition, never read). Open for owner: Clip Matrix launcher grid. 63 items.
+- 2026-10-13 Agent: v0.6 Block 1 done on `bugfix/v06-audio-correctness` except 1.7 (not merged, not pushed). 1.0b: `data_ledger.py lint` and `community_patches.py --smoke` are part of verify-gate; a kit result is stale when its sources change after it, counted from the edit, not the commit. Community patches are only checked to open, play and show a picture or sound.
 - 2026-10-13 Owner asked for a professional, industry-standard verdict on every item; final v0.6 = 60 items. Back in: 1.0 competitor specs and 1.0b data ledger (owner's use-all-data decision), 2.5 plugin sidechain, 2.24 multicore audio (null-identical gate, audio workgroups, fallback), 2.31 OSC control, 3.14 clip speed, 3.15 GPU particles (gate then build). Out: CLAP, dynamic EQ, drum synth, note entry, .als import, starter content, linear-phase EQ, bokeh (in 3.5), Cables comparison. Supersedes the 54-item line below.
 - 2026-10-13 Owner vetted the v0.6 list and asked the agent to decide the rest; this is final. 54 items. In: Block 1 1.1-1.14; sound incl. designed-space convolution reverb, per-voice/audio-rate modulation, unison, crossover, tape delay, compressor styles + sidechain, filters, warps, strings, MPE, SIMD voices, Field phase shaping; picture incl. sweep/revolve, render quality, area light, bevel, rigid bodies, plexus, L-system, volumes, share. Out (plan section "Not in v0.6"): 1.0, 1.0b, CLAP, dynamic EQ, multicore, drum synth, note entry, .als import, starter content, full OSC API, linear-phase EQ, bokeh (in 3.5), Cables comparison, clip speed, GPU particles.
 - 2026-10-13 Owner: reopening a patch need not be identical; the software evolves with the user and a show is a holistic art experience, not a replay. Agent: dropped 1.15; user patches only need to open, play and show a picture; show set and show safety stay. 69 items.
@@ -60,48 +64,49 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-13 12:13 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-13 16:49 UTC. Do not edit inside this block; rerun the tool._
 
-### Open quests (6) **over the cap of 5: park or close before adding**
+### Open quests (7) **over the cap of 5: park or close before adding**
 
 - R709 [later] Plan: re-survey: deconstruct competitors, one by one
 - R711 [later] Plan: Modulators to industry grade
 - R717 [later] Plan: Node audits: beyond effects and modulators
-- R757 [later] Plan: Metal compute for particles and simulations (R556): design, scope and gates
-- R767 [later] Plan: Image effects to industry grade
-- R779 [later] Plan: v0.6 plan: quality lead
+- R754 [next] Perf: motion blur and radial blur cost
+- R779 [later] Plan: Image effects to industry grade
+- R780 [later] Plan: Metal compute for particles and simulations (R556): design, scope and gates
+- R781 [later] Plan: v0.6 plan: quality lead
 
 ### Releases
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| v0.5.0 | 2026-10-10 | 166 |
+| extensions | 2026-10-13 | 5 |
+| v0.5.0 | 2026-10-10 | 177 |
 | v0.4.7 | 2026-10-07 | 74 |
 | v0.4.6 | 2026-10-01 | 165 |
-| v0.4.5 | 2026-09-26 | 203 |
 
-### Quality of v0.5.0 (since v0.4.7; the release measure)
+### Quality of extensions (since v0.5.0; the release measure)
 
 | Measure | Value | Want |
 |---|---|---|
-| Escaped fixes: fixes after v0.5.0 touching src it changed | 8 b40f8c8e fc683464 e90f84fe 01059f67 2846a30a d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
-| Reverts after v0.5.0 | 0 | 0 |
-| Fix-shaped commits after v0.5.0 (all) | 24 | context |
+| Escaped fixes: fixes after extensions touching src it changed | 4 e90f84fe d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
+| Reverts after extensions | 0 | 0 |
+| Fix-shaped commits after extensions (all) | 24 | context |
 | Known test failures (macOS / Linux) | 3 / 6 | never grows |
 | Open GitHub issues labelled bug | 0 | 0 |
-| Crash reports filed since v0.5.0 | 0 | 0 |
+| Crash reports filed since extensions | 0 | 0 |
 
 ### Reach (context only: moves with outreach, not with release quality)
 
 - GitHub (2026-10-13): 276 stars, 21 forks, 1866 downloads all-time
-- Website (2026-10-13, last 30 days): 1113 sessions, 740 users
+- Website (2026-10-13, last 30 days): 1114 sessions, 741 users
 
 ### Last merges to main
 
-- 2026-10-13 Merge docs/v06-full-scope
-- 2026-10-13 Merge docs/v06-carryover
-- 2026-10-13 Merge docs/re-survey-data-fix
-- 2026-10-13 Merge bugfix/step4-offline-audio
-- 2026-10-13 Merge bugfix/render3d-stats-width: fold label fix
+- 2026-10-13 Merge feature/extensions-seamless: pack store on its own release tag, Extensions tab status and app update row, Library category
+- 2026-10-13 Merge docs/v06-pro-verdict
+- 2026-10-13 Merge docs/v06-final-list
+- 2026-10-13 Merge docs/v06-evolving-patches
+- 2026-10-13 Merge docs/v06-take-it-live
 
 <!-- FACTS:END -->

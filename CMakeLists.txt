@@ -493,6 +493,7 @@ set(COMMON_SOURCES
     src/app/selftest/AliasTests.cpp
     src/app/selftest/FxAudit.cpp
     src/app/selftest/ModAudit.cpp
+    src/app/selftest/PresetTests.cpp
     src/app/selftest/SynthAudit.cpp
     src/app/selftest/NoteAudit.cpp
     src/app/selftest/IoAudit.cpp
@@ -568,6 +569,7 @@ set(COMMON_SOURCES
     src/core/field/FieldGraphReconciler.cpp
     src/core/field/FieldGraphOwnership.cpp
     src/core/ExprGlobals.cpp
+    src/core/FactoryPresets.cpp
     src/core/Palette.cpp
     src/core/Patch.cpp
     src/core/PatchLayout.cpp

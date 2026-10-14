@@ -2,6 +2,7 @@
 #include "app/ui/design/components/MenuParts.h"
 #include "app/ui/design/TokenColors.h"
 #include "app/frame/FrameCtx.h"
+#include "core/FactoryPresets.h"
 
 namespace app
 {
@@ -153,6 +154,20 @@ void DrawPopupsA(FrameCtx& fc)
                   ed::SelectNode(gn->NodeId());
                }
                gRequestDuplicate = true;
+            }
+            if (const std::vector<FactoryPresets::Preset>* presets = FactoryPresets::For(gn->typeName))
+            {
+               if (MenuParts::SubMenu(L("Presets")))
+               {
+                  for (int pi = 0; pi < (int)presets->size(); pi++)
+                     if (MenuParts::Item((*presets)[(size_t)pi].name.c_str()))
+                     {
+                        PushUndoCheckpoint("Preset");
+                        FactoryPresets::Apply(gn->node.get(), gn->typeName, pi);
+                        gPatchDirty = true;
+                     }
+                  ImGui::EndMenu();
+               }
             }
 
             // View & Panel Actions

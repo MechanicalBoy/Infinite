@@ -11,6 +11,7 @@ bool RunPitchTest(); // selftest/PitchTests.cpp
 bool RunFxAudit(); // selftest/FxAudit.cpp
 bool RunModAudit(); // selftest/ModAudit.cpp
 bool RunSynthAudit(); // selftest/SynthAudit.cpp
+bool RunFactoryPresetTest(); // selftest/PresetTests.cpp
 bool RunNoteAudit(); // selftest/NoteAudit.cpp
 bool RunIoAudit(); // selftest/IoAudit.cpp
 bool RunGeoAudit(); // selftest/GeoAudit.cpp
@@ -570,6 +571,11 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // Synth audit: pitch, aliasing, level, rate, determinism, CPU (selftest/SynthAudit.cpp).
    if (getenv("INFINITE_SYNTHAUDIT") != nullptr)
       return RunSynthAudit() ? 0 : 1;
+   if (getenv("INFINITE_FACTORYPRESETTEST") != nullptr)
+   {
+      RegisterNodes(); // presets are applied to real nodes by type name; no GL involved
+      return RunFactoryPresetTest() ? 0 : 1;
+   }
    // Note audit: pair integrity, grid timing, swing, humanize, loop, CPU (selftest/NoteAudit.cpp).
    if (getenv("INFINITE_NOTEAUDIT") != nullptr)
       return RunNoteAudit() ? 0 : 1;
