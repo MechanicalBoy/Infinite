@@ -1335,6 +1335,9 @@ void DrawFrameTestsA(FrameCtx& fc)
       // Drives the same functions the panel's keys and gestures call.
       FrameTest_ARRANGEMARKERTEST(frameId, window);
 
+      // v0.6 2.3: timeline fit, zoom step and loop in/out.
+      FrameTest_ARRANGEKEYSTEST(frameId, window);
+
       // Overhaul WP7 (docs/plans/arrangement/overhaul-prompt.md): the export
       // queue. Checks the parts of a take that are decided before a single
       // frame or sample is written - the range a kind resolves to, the exact

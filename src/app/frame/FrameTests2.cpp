@@ -1595,6 +1595,97 @@ void FrameTest_NAVTEST(int frameId, GLFWwindow* window)
 // v0.6 2.1: File > New Synth leaves a patch you can play at once. Keyboard -> Analog -> Audio Out are
 // cabled, and the letter keys play the Keyboard with the mouse nowhere near it, because New Synth
 // selects it and a selected Keyboard owns the letter keys.
+// v0.6 2.3: the timeline's shared keys (fit, zoom in/out, loop in/out). The
+// key block calls these same functions; the key-to-row contract is the
+// shortcuts-sweep check.
+void FrameTest_ARRANGEKEYSTEST(int frameId, GLFWwindow* window)
+{
+   if (getenv("INFINITE_ARRANGEKEYSTEST") == nullptr || frameId != 4)
+      return;
+   bool ok = true;
+   auto check = [&](bool good, const char* what) {
+      ok = ok && good;
+      printf("arrangekeys %-48s %s\n", what, good ? "ok" : "FAIL");
+   };
+   NewPatch();
+   Transport& tr = Transport::Instance();
+   tr.SetPlaying(false);
+   tr.SetTempo(120.0f);
+   tr.SeekBeats(0.0);
+   ArrangeEdit([&]() {
+      while (!gArrange.lanes.empty())
+         Arrange::RemoveLane(gArrange, gArrange.lanes.front().id);
+      Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+      Arrange::Clip c;
+      c.start = Arrange::kTicksPerBar * 4;
+      c.length = Arrange::kTicksPerBar * 28; // ends at bar 32 = 128 beats
+      Arrange::PlaceOverwrite(gArrange, gArrange.lanes[0].id, c, nullptr);
+   });
+   ArrangeSetLoop(false, 0, 0);
+   const float w = 1000.0f;
+
+   // Fit: the whole 128 beats inside the ruler, starting at 0.
+   gArrangePixelsPerBeat = 200.0f;
+   gArrangeScrollBeats = 50.0;
+   ArrangeZoomToFit(w);
+   check(gArrangeScrollBeats == 0.0 && 128.0 * gArrangePixelsPerBeat <= w && 128.0 * gArrangePixelsPerBeat > w * 0.9f,
+         "fit shows the whole arrangement");
+   // An empty timeline leaves the view alone.
+   {
+      ArrangeEdit([&]() { Arrange::RemoveLane(gArrange, gArrange.lanes.front().id); });
+      const float ppb = gArrangePixelsPerBeat;
+      ArrangeZoomToFit(w);
+      check(gArrangePixelsPerBeat == ppb, "fit on an empty timeline does nothing");
+      Undo();
+   }
+
+   // Zoom step: the playhead stays on the same pixel while it is on screen.
+   gArrangePixelsPerBeat = 20.0f;
+   gArrangeScrollBeats = 10.0;
+   tr.SeekBeats(30.0);
+   const double px0 = (30.0 - gArrangeScrollBeats) * gArrangePixelsPerBeat;
+   ArrangeZoomStep(1.25f, w);
+   const double px1 = (30.0 - gArrangeScrollBeats) * gArrangePixelsPerBeat;
+   check(gArrangePixelsPerBeat == 25.0f && std::abs(px1 - px0) < 0.01, "zoom in keeps the playhead in place");
+   ArrangeZoomStep(0.8f, w);
+   check(std::abs(gArrangePixelsPerBeat - 20.0f) < 0.001f && std::abs(gArrangeScrollBeats - 10.0) < 0.001, "zoom out undoes zoom in");
+   // Playhead off screen: the view's centre stays put instead.
+   tr.SeekBeats(500.0);
+   const double mid0 = gArrangeScrollBeats + (w * 0.5) / gArrangePixelsPerBeat;
+   ArrangeZoomStep(1.25f, w);
+   const double mid1 = gArrangeScrollBeats + (w * 0.5) / gArrangePixelsPerBeat;
+   check(std::abs(mid1 - mid0) < 0.001, "zoom with the playhead off screen keeps the centre");
+   for (int i = 0; i < 60; i++) ArrangeZoomStep(1.25f, w);
+   check(gArrangePixelsPerBeat == kArrangeMaxPixelsPerBeat, "zoom in stops at the limit");
+   for (int i = 0; i < 60; i++) ArrangeZoomStep(0.8f, w);
+   check(gArrangePixelsPerBeat == kArrangeMinPixelsPerBeat && gArrangeScrollBeats >= 0.0, "zoom out stops at the limit");
+
+   // Loop in / out at the playhead.
+   const Arrange::Tick q = Arrange::kPPQ;
+   tr.SeekBeats(8.0);
+   ArrangeSetLoopEdgeAtPlayhead(true);
+   check(!gArrange.settings.loop.enabled && gArrange.settings.loop.start == q * 8, "in alone sets the start, loop stays off");
+   tr.SeekBeats(16.0);
+   ArrangeSetLoopEdgeAtPlayhead(false);
+   check(gArrange.settings.loop.enabled && gArrange.settings.loop.start == q * 8 && gArrange.settings.loop.end == q * 16 &&
+         tr.LoopEnabled() && std::abs(tr.LoopStartBeats() - 8.0) < 1e-6 && std::abs(tr.LoopEndBeats() - 16.0) < 1e-6,
+         "out closes the range and the transport loops it");
+   tr.SeekBeats(4.0);
+   ArrangeSetLoopEdgeAtPlayhead(false);
+   check(gArrange.settings.loop.enabled && gArrange.settings.loop.start == 0 && gArrange.settings.loop.end == q * 4,
+         "out before in restarts the range from 0");
+   tr.SeekBeats(2.0);
+   ArrangeSetLoopEdgeAtPlayhead(true);
+   check(gArrange.settings.loop.start == q * 2 && gArrange.settings.loop.end == q * 4, "in moves the start");
+   // Fit includes an enabled loop that runs past the last clip.
+   ArrangeSetLoop(true, 0, q * 160);
+   ArrangeZoomToFit(w);
+   check(160.0 * gArrangePixelsPerBeat <= w && gArrangePixelsPerBeat > kArrangeMinPixelsPerBeat, "fit includes the loop region");
+   ArrangeSetLoop(false, 0, 0);
+   tr.SeekBeats(0.0);
+   printf(ok ? "ARRANGEKEYS TEST OK\n" : "ARRANGEKEYS TEST FAIL\n");
+}
+
 void FrameTest_NEWSYNTHTEST(int frameId, GLFWwindow* window)
 {
    if (getenv("INFINITE_NEWSYNTHTEST") == nullptr)

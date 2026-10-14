@@ -624,6 +624,10 @@ namespace app
          { I18N_KEY("Arrangement Timeline"), I18N_KEY("Playhead to Start"), "Home", I18N_KEY("Move the playhead to the start of the timeline") },
          { I18N_KEY("Arrangement Timeline"), I18N_KEY("Playhead to End"), "End", I18N_KEY("Move the playhead to the end of the last clip") },
          { I18N_KEY("Arrangement Timeline"), I18N_KEY("Zoom Timeline"), MODKEY " + Scroll Wheel", I18N_KEY("Zoom around the mouse (trackpad pinch works too)") },
+         { I18N_KEY("Arrangement Timeline"), I18N_KEY("Zoom Timeline In / Out"), "= / -", I18N_KEY("Zoom around the playhead (the view's centre when the playhead is off screen)") },
+         { I18N_KEY("Arrangement Timeline"), I18N_KEY("Zoom Timeline to Fit"), "F", I18N_KEY("Show the whole arrangement, from the start to the end of the last clip") },
+         { I18N_KEY("Arrangement Timeline"), I18N_KEY("Loop On / Off"), MODKEY "+L", I18N_KEY("Toggle the loop region") },
+         { I18N_KEY("Arrangement Timeline"), I18N_KEY("Loop In / Out"), "I / O", I18N_KEY("Set the loop region's start or end at the playhead") },
       };
 
       const char* lastCat = nullptr;

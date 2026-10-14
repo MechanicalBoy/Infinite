@@ -2343,6 +2343,9 @@ bool ArrangeGestureEnd();
 void PublishArrangeLoop();
 
 void ArrangeSetLoop(bool enabled, Arrange::Tick start, Arrange::Tick end);
+void ArrangeZoomToFit(float rulerWidth);
+void ArrangeZoomStep(float factor, float rulerWidth);
+void ArrangeSetLoopEdgeAtPlayhead(bool isStart);
 
 
 

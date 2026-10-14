@@ -130,6 +130,7 @@ namespace app
       // alike). The ruler's left edge is only known further down, so the
       // previous frame's is used - it moves only when the panel does.
       static float sArrangeLastRulerStartX = 0.0f;
+      static float sArrangeLastRulerW = 0.0f;
       const bool arrangeWheelZoomMod = overPanel && (ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper);
       auto zoomAroundMouse = [&](float factor)
       {
@@ -358,6 +359,20 @@ namespace app
             gArrangeTool = (gArrangeTool == ArrangeTool::Pencil) ? ArrangeTool::Select : ArrangeTool::Pencil;
             gArrangeBladeOn = false;
          }
+         // Keys the DAWs and editors share (v0.6 2.3). F matches the canvas's
+         // Fit View; Cmd+= / Cmd+- are the UI scale, so zoom is the bare key.
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_F, false))
+            ArrangeZoomToFit(sArrangeLastRulerW);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_Equal, true))
+            ArrangeZoomStep(1.25f, sArrangeLastRulerW);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_Minus, true))
+            ArrangeZoomStep(0.8f, sArrangeLastRulerW);
+         else if (cmd && !kio.KeyShift && !kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_L, false))
+            ArrangeSetLoop(!gArrange.settings.loop.enabled, gArrange.settings.loop.start, gArrange.settings.loop.end);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_I, false))
+            ArrangeSetLoopEdgeAtPlayhead(true);
+         else if (noMods && ImGui::IsKeyPressed(ImGuiKey_O, false))
+            ArrangeSetLoopEdgeAtPlayhead(false);
          else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
             ArrangeJumpToMarker(-1);
          else if (kio.KeyAlt && !cmd && ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
@@ -1397,6 +1412,7 @@ namespace app
       const float rulerStartX = headerStartX + kHeaderWidth;
       sArrangeLastRulerStartX = rulerStartX;
       const float rulerWidth = std::max(10.0f, avail.x + ImGui::GetScrollX() - kHeaderWidth);
+      sArrangeLastRulerW = rulerWidth;
       // scrollTL.y already has the child's current vertical scroll baked in
       // (it moves up off-screen as the user scrolls down through many
       // tracks), which is exactly right for the lanes below but was also
