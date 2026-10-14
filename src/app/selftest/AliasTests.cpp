@@ -251,6 +251,28 @@ bool RunAliasTest()
       { "Drive atan, drive 50%", "Drive", { { "drive", 0.5f }, { "color", 1.0f } }, -115.0 },
       { "Drive tanh, drive 100%", "Drive", { { "drive", 1.0f }, { "color", 0.0f } }, -64.0 },
       { "Drive asymmetric, drive 50%", "Drive", { { "drive", 0.5f }, { "bias", 0.75f } }, -114.0 },
+      // Saturator (2.17): Drive's 8x min-phase + ADAA, per stage. Model and
+      // routing are fractions too: model k is k/6, routing k/4. Gates about
+      // 5 dB under what it measures (2026-10-14). Three stages in series
+      // stack 54 dB of drive inside one 8x domain, so the third stage's
+      // harmonics fold there: -46 dB, a measured miss against Drive.
+      { "Saturator tube, 50%", "Saturator", { { "model1", 1.0f / 6.0f }, { "amount1", 0.5f } }, -118.0 },
+      { "Saturator tape, 50%", "Saturator", { { "model1", 2.0f / 6.0f }, { "amount1", 0.5f } }, -121.0 },
+      { "Saturator diode, 50%", "Saturator", { { "model1", 3.0f / 6.0f }, { "amount1", 0.5f } }, -100.0 },
+      { "Saturator fold, 50%", "Saturator", { { "model1", 4.0f / 6.0f }, { "amount1", 0.5f } }, -100.0 },
+      // Rectify is report-only: it removes the fundamental the probe
+      // measures against (|x| of a sine is all even harmonics), so its
+      // ratio reads +80 dB whatever the aliasing is.
+      { "Saturator rectify, 50%", "Saturator", { { "model1", 5.0f / 6.0f }, { "amount1", 0.5f } }, 0.0 },
+      { "Saturator crush, 50%", "Saturator", { { "model1", 1.0f }, { "amount1", 0.5f } }, -81.0 },
+      { "Saturator tube>tape>diode, 50%", "Saturator",
+        { { "model1", 1.0f / 6.0f }, { "model2", 2.0f / 6.0f }, { "model3", 3.0f / 6.0f },
+          { "amount1", 0.5f }, { "amount2", 0.5f }, { "amount3", 0.5f } }, -41.0 },
+      { "Saturator 3-band, 50%", "Saturator",
+        { { "routing", 0.75f }, { "model1", 1.0f / 6.0f }, { "model2", 2.0f / 6.0f }, { "model3", 3.0f / 6.0f },
+          { "amount1", 0.5f }, { "amount2", 0.5f }, { "amount3", 0.5f } }, -103.0 },
+      { "Saturator feedback 0.5, 50%", "Saturator",
+        { { "routing", 1.0f }, { "feedback", 0.5f / 0.95f }, { "amount1", 0.5f } }, -69.0 },
       // Wavetable Shaper: 8x oversampling + slew-tracking mip (WavetableShaperKernel.h).
       // Before (same metric): -2.9 dB at 50% drive, +10.3 dB at 100%.
       { "Wavetable Shaper, drive 50%", "Wavetable Shaper", { { "drive", 0.5f } }, -112.0 },
@@ -601,7 +623,7 @@ bool RunOversampleTest()
    for (double rate : { 44100.0, 48000.0, 96000.0 })
       all &= OversamplerAtRate(rate);
 
-   for (const char* effect : { "Drive", "Wavetable Shaper" })
+   for (const char* effect : { "Drive", "Wavetable Shaper", "Saturator" })
    {
       const EffectDef* def = nullptr;
       for (const EffectDef& d : GetEffectDefs())

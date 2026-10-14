@@ -1619,6 +1619,129 @@ namespace app
    }
 
 
+   // ---- Saturator ----------------------------------------------------------
+   // One transfer curve per stage, side by side, at the stage's amount - the
+   // same main-thread-from-params rule as Drive's curve. A stage that is off
+   // shows the dim 1:1 line alone.
+   void DrawSaturatorVisualizer(AudioEffectNode* n)
+   {
+      const float w = gAudioBodyW;
+      const float h = kAudioTimeVizH;
+      const ImVec2 origin = ImGui::GetCursorScreenPos();
+      const ImVec2 br(origin.x + w, origin.y + h);
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const bool isLight = IsThemeLight();
+      const AudioViz::Frame vizFrame = AudioViz::Begin(origin, w, h);
+
+      static const char* kModel[3] = { "model1", "model2", "model3" };
+      static const char* kAmount[3] = { "amount1", "amount2", "amount3" };
+      const float gap = 8.0f;
+      const float panelW = (w - 4.0f * gap) / 3.0f;
+      const float panelH = h - 2.0f * gap;
+      const ImU32 curveCol = isLight ? tok::U32(tok::pal::c_1E6EE6FF) : tok::U32(tok::pal::c_96D6FFF5);
+      for (int s = 0; s < 3; s++)
+      {
+         const int model = std::clamp((int)(n->Param(kModel[s]) + 0.5f), 0, SaturatorDsp::kNumModels - 1);
+         const float amount = n->Param(kAmount[s]);
+         const ImVec2 p0(origin.x + gap + (float)s * (panelW + gap), origin.y + gap);
+         const ImVec2 p1(p0.x + panelW, p0.y + panelH);
+         dl->AddLine(ImVec2(0.5f * (p0.x + p1.x), p0.y), ImVec2(0.5f * (p0.x + p1.x), p1.y), ScopeGridCol(), 1.0f);
+         dl->AddLine(ImVec2(p0.x, 0.5f * (p0.y + p1.y)), ImVec2(p1.x, 0.5f * (p0.y + p1.y)), ScopeGridCol(), 1.0f);
+         dl->AddLine(ImVec2(p0.x, p1.y), ImVec2(p1.x, p0.y), ScopeMidLineCol(), 1.0f);
+         if (model != SaturatorDsp::kOff)
+         {
+            dl->PathClear();
+            const int kNumPoints = 64;
+            for (int i = 0; i < kNumPoints; i++)
+            {
+               const float xIn = -1.0f + 2.0f * (float)i / (float)(kNumPoints - 1);
+               const float yOut = std::clamp(SaturatorDsp::Transfer(model, amount, xIn), -1.0f, 1.0f);
+               dl->PathLineTo(ImVec2(p0.x + (0.5f + 0.5f * xIn) * panelW, p0.y + (0.5f - 0.5f * yOut) * panelH));
+            }
+            dl->PathStroke(curveCol, 0, 1.6f);
+         }
+         char cap[24];
+         snprintf(cap, sizeof(cap), "%d %s", s + 1, SaturatorDsp::ModelList()[(size_t)model].c_str());
+         dl->AddText(ImVec2(p0.x + 3.0f, p0.y + 2.0f), ScopeTextCol(), cap);
+      }
+
+      AudioViz::End(vizFrame);
+
+      if (ImGui::IsMouseHoveringRect(origin, br))
+      {
+         const int routing = std::clamp((int)(n->Param("routing") + 0.5f), 0, SaturatorDsp::kNumRoutings - 1);
+         SetAudioReadout("routing", SaturatorDsp::RoutingList()[(size_t)routing].c_str());
+      }
+
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+   void DrawSaturatorBody(GraphNode& gn, AudioEffectNode* n)
+   {
+      const int routing = std::clamp((int)(n->Param("routing") + 0.5f), 0, SaturatorDsp::kNumRoutings - 1);
+      char stat[80];
+      snprintf(stat, sizeof(stat), "%s - %.0f%% wet", SaturatorDsp::RoutingList()[(size_t)routing].c_str(),
+               n->mix * 100.0f);
+
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      DrawSaturatorVisualizer(n);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+      // One column per stage: its curve over its amount.
+      static const char* kModel[3] = { "model1", "model2", "model3" };
+      static const char* kAmount[3] = { "amount1", "amount2", "amount3" };
+      static const char* kStageLabel[3] = { "stage 1", "stage 2", "stage 3" };
+      static const char* kAmountLabel[3] = { "amount 1", "amount 2", "amount 3" };
+      {
+         AudioKnobRow row(3);
+         for (int s = 0; s < 3; s++)
+         {
+            const char* key = kModel[s];
+            const int model = std::clamp((int)(n->Param(key) + 0.5f), 0, SaturatorDsp::kNumModels - 1);
+            row.Dropdown(kStageLabel[s], SaturatorDsp::ModelList(), model, [n, key](int i) {
+               PushUndoCheckpoint();
+               *n->ParamPtr(key) = (float)i;
+            });
+         }
+         row.End();
+      }
+      {
+         AudioKnobRow row(3);
+         for (int s = 0; s < 3; s++)
+         {
+            const bool on = n->Param(kModel[s]) > 0.5f;
+            if (!on)
+               ImGui::BeginDisabled();
+            row.Knob(kAmountLabel[s], n->ParamPtr(kAmount[s]), 0.0f, 1.0f, "%.2f", kKnobLarge);
+            if (!on)
+               ImGui::EndDisabled();
+         }
+         row.End();
+      }
+
+      BeginAudioSection("routing");
+      {
+         AudioKnobRow row(4);
+         row.Dropdown("routing", SaturatorDsp::RoutingList(), routing, [n](int i) {
+            PushUndoCheckpoint();
+            *n->ParamPtr("routing") = (float)i;
+         });
+         const bool fbLive = routing == SaturatorDsp::kFeedback;
+         if (!fbLive)
+            ImGui::BeginDisabled();
+         row.Knob("feedback", n->ParamPtr("feedback"), 0.0f, 0.95f, "%.2f");
+         if (!fbLive)
+            ImGui::EndDisabled();
+         row.Knob("output", n->ParamPtr("output"), -24.0f, 12.0f, "%.1f dB");
+         row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f");
+         row.End();
+      }
+      EndAudioSection();
+
+      EndAudioBody();
+   }
+
+
    // ---- Wavetable Shaper ---------------------------------------------------
    // The transfer curve itself, input -1..+1 -> output -1..+1, exactly like
    // Drive's - main-thread from params alone via WavetableShaperDsp::Shape,

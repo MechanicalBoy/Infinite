@@ -757,6 +757,9 @@ namespace app
          case EffectVisualizerId::kDriveCurve:
             DrawDriveBody(gn, n);
             break;
+         case EffectVisualizerId::kSaturatorCurves:
+            DrawSaturatorBody(gn, n);
+            break;
          case EffectVisualizerId::kStereoGoniometer:
             DrawStereoBody(gn, n);
             break;

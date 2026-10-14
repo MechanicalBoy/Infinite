@@ -286,6 +286,7 @@ inline std::string TmpPath(const std::string& name)
 #include "audio/dsp/DynamicsKernel.h"
 #include "audio/dsp/DelayKernel.h"
 #include "audio/dsp/DriveKernel.h"
+#include "audio/dsp/SaturatorKernel.h"
 #include "audio/dsp/StereoKernel.h"
 #include "audio/dsp/PitchShiftKernel.h"
 #include "audio/dsp/ChorusKernel.h"

@@ -79,7 +79,7 @@ namespace app
             {
                const std::string& name = aen->Def().name;
                if (name == "Audio Filter") entry.stageId = kAudioStageFilter;
-               else if (name == "Wavetable Shaper" || name == "Drive" || name == "Bitcrush" || name == "Cycle Shaper" || name == "Transient Shaper") entry.stageId = kAudioStageShaper;
+               else if (name == "Wavetable Shaper" || name == "Drive" || name == "Saturator" || name == "Bitcrush" || name == "Cycle Shaper" || name == "Transient Shaper") entry.stageId = kAudioStageShaper;
                else if (name == "Delay") entry.stageId = kAudioStageDelay;
                else if (name == "Reverb") entry.stageId = kAudioStageReverb;
                else if (name == "Dynamics") entry.stageId = kAudioStageDynamics;

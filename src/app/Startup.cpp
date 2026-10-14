@@ -563,6 +563,9 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_SYNTHSIMDTEST") != nullptr)
       return RunSynthSimdFixture() ? 0 : 1;
 
+   if (getenv("INFINITE_SATURATORTEST") != nullptr)
+      return RunSaturatorFixture() ? 0 : 1;
+
    if (getenv("INFINITE_SPATIALTEST") != nullptr)
       return RunSpatialFixture() ? 0 : 1;
 
@@ -1490,7 +1493,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
                                       "Transient Shaper", "Stutter", "Ring Mod", "Frequency Shifter", "Tremolo",
                                       "Formant Filter", "Wavetable Shaper", "Resonator Bank", "Cycle Shaper",
                                       "Spec Blur", "Key-Snap", "Spectrum Slide", "Shape Resonator",
-                                      "Convolution Reverb" };
+                                      "Convolution Reverb", "Saturator" };
          const int kCount = (int)(sizeof(kFx) / sizeof(kFx[0]));
          const int page = atoi(gallery) == 2 ? 1 : 0;
          for (int i = 0; i < 14 && page * 14 + i < kCount; i++)

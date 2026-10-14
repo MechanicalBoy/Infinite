@@ -93,6 +93,7 @@ enum class EffectVisualizerId
    kSpectrumSlide,
    kShapeResonator,
    kConvolutionSpace,
+   kSaturatorCurves,
 };
 
 struct EffectDef

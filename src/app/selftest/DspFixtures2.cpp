@@ -4624,4 +4624,215 @@ bool RunSynthSimdFixture()
    printf("SYNTHSIMDTEST %s\n", ok ? "OK" : "FAIL");
    return ok;
 }
+
+// ============================================== INFINITE_SATURATORTEST
+// 2.17: Saturator's routing graph, against facts that follow from it:
+//   - every stage off is the dry path plus the wet DC blocker (the null
+//     test), in each routing but
+//     feedback - 3-band included, whose bands sum back to the same allpass
+//     the dry path runs;
+//   - the 3-band split is flat (it is an allpass) from 40 Hz to 16 kHz,
+//     measured against serial so the shared DC blocker (-0.17 dB at 40 Hz)
+//     and oversampler drop out;
+//   - mid-side keeps a mono input mono, curves on;
+//   - feedback changes the sound and stays bounded at its maximum with every
+//     stage at full amount;
+//   - at amount 0 and -40 dBFS each shaping curve is close to linear
+//     (rectify is excluded: it is not linear at any level).
+namespace
+{
+   const EffectDef* SaturatorDef()
+   {
+      for (const EffectDef& d : GetEffectDefs())
+         if (d.name == "Saturator")
+            return &d;
+      return nullptr;
+   }
+
+   std::unique_ptr<AudioEffectNode> MakeSaturator(const std::vector<std::pair<const char*, float>>& params, float mix,
+                                                  double sampleRate)
+   {
+      auto node = std::make_unique<AudioEffectNode>(*SaturatorDef());
+      node->mix = mix;
+      for (const auto& [name, v] : params)
+         *node->ParamPtr(name) = v;
+      node->GetAudioNode()->PrepareToPlay(sampleRate, 512);
+      node->CookIfNeeded(1);
+      return node;
+   }
+
+   std::vector<std::vector<float>> RenderSaturator(AudioEffectNode& node, int frames, int channels,
+                                                    const std::function<float(int, int)>& in)
+   {
+      std::vector<std::vector<float>> out;
+      DelayTest::RunSamples(node, frames, channels, in, &out);
+      return out;
+   }
+
+   // Energy of a - b over energy of b, from `from` on, in dB.
+   double DiffDb(const std::vector<float>& a, const std::vector<float>& b, int from)
+   {
+      double e = 0.0, r = 0.0;
+      for (size_t i = (size_t)from; i < a.size() && i < b.size(); i++)
+      {
+         e += (double)(a[i] - b[i]) * (a[i] - b[i]);
+         r += (double)b[i] * b[i];
+      }
+      return 10.0 * std::log10(std::max(e, 1e-30) / std::max(r, 1e-30));
+   }
+
+   // Level of a sine of `hz` in x (from `from` on), by projection.
+   double ToneAmp(const std::vector<float>& x, double hz, double sampleRate, int from)
+   {
+      double c = 0.0, s = 0.0;
+      int n = 0;
+      for (size_t i = (size_t)from; i < x.size(); i++, n++)
+      {
+         const double ph = 2.0 * M_PI * hz * (double)i / sampleRate;
+         c += x[i] * std::cos(ph);
+         s += x[i] * std::sin(ph);
+      }
+      return 2.0 * std::sqrt(c * c + s * s) / (double)std::max(1, n);
+   }
+}
+
+bool RunSaturatorFixture()
+{
+   using namespace SaturatorDsp;
+   const double sr = 48000.0;
+   bool ok = true;
+   if (SaturatorDef() == nullptr)
+   {
+      printf("SATURATORTEST no Saturator effect  FAIL\n");
+      return false;
+   }
+   const int frames = 24000, warm = 4800;
+   auto noise = [](int i, int ch) {
+      uint32_t h = (uint32_t)i * 2654435761u + (uint32_t)ch * 40503u;
+      h ^= h >> 13;
+      h *= 0x5bd1e995u;
+      h ^= h >> 15;
+      return 0.5f * ((float)(h & 0xffff) / 32768.0f - 1.0f);
+   };
+
+   // 1. Null: stages off, wet (mix 1) against the kernel's own dry (mix 0).
+   for (int routing : { (int)kSerial, (int)kParallel, (int)kMidSide, (int)kBands })
+   {
+      const std::vector<std::pair<const char*, float>> p = { { "model1", 0.0f }, { "routing", (float)routing } };
+      auto wet = MakeSaturator(p, 1.0f, sr);
+      auto dry = MakeSaturator(p, 0.0f, sr);
+      const auto w = RenderSaturator(*wet, frames, 2, noise);
+      auto d = RenderSaturator(*dry, frames, 2, noise);
+      // The wet path ends in a DC blocker and the dry does not (mix 0 gives
+      // the input back whole), so the reference gets the same blocker.
+      for (auto& ch : d)
+      {
+         DspMath::DcBlocker blocker;
+         blocker.SetSampleRate(sr);
+         for (float& v : ch)
+            v = blocker.Process(v);
+      }
+      const double db = std::max(DiffDb(w[0], d[0], warm), DiffDb(w[1], d[1], warm));
+      const bool pass = db <= -100.0;
+      ok &= pass;
+      printf("SATURATORTEST null, stages off, %-9s wet vs dry %7.1f dB (<= -100)  %s\n",
+             RoutingList()[(size_t)routing].c_str(), db, pass ? "OK" : "FAIL");
+   }
+
+   // 2. 3-band split flat.
+   {
+      double worst = 0.0;
+      for (double hz : { 40.0, 150.0, 250.0, 600.0, 1500.0, 2500.0, 6000.0, 16000.0 })
+      {
+         auto tone = [hz, sr](int i, int) { return 0.25f * (float)std::sin(2.0 * M_PI * hz * (double)i / sr); };
+         auto node = MakeSaturator({ { "model1", 0.0f }, { "routing", (float)kBands } }, 1.0f, sr);
+         auto serial = MakeSaturator({ { "model1", 0.0f } }, 1.0f, sr);
+         const auto y = RenderSaturator(*node, frames, 1, tone);
+         const auto ref = RenderSaturator(*serial, frames, 1, tone);
+         const double bandsDb = 20.0 * std::log10(ToneAmp(y[0], hz, sr, warm) / 0.25);
+         const double serialDb = 20.0 * std::log10(ToneAmp(ref[0], hz, sr, warm) / 0.25);
+         worst = std::max(worst, std::fabs(bandsDb - serialDb));
+      }
+      const bool pass = worst <= 0.05;
+      ok &= pass;
+      printf("SATURATORTEST 3-band, stages off, 40 Hz-16 kHz within %.4f dB (<= 0.05)  %s\n", worst, pass ? "OK" : "FAIL");
+   }
+
+   // 3. Mid-side keeps mono mono.
+   {
+      auto node = MakeSaturator({ { "routing", (float)kMidSide },
+                                  { "model1", (float)kTube }, { "amount1", 0.7f },
+                                  { "model2", (float)kFold }, { "amount2", 0.7f },
+                                  { "model3", (float)kDiode }, { "amount3", 0.5f } },
+                                1.0f, sr);
+      const auto y = RenderSaturator(*node, frames, 2, [&](int i, int) { return noise(i, 0); });
+      const double db = DiffDb(y[1], y[0], warm);
+      const bool pass = db <= -120.0;
+      ok &= pass;
+      printf("SATURATORTEST mid-side, mono in, left vs right %7.1f dB (<= -120)  %s\n", db, pass ? "OK" : "FAIL");
+   }
+
+   // 4. Feedback: changes the sound; bounded at the top of its range.
+   {
+      const std::vector<std::pair<const char*, float>> base = { { "model1", (float)kTube }, { "amount1", 0.3f } };
+      auto serial = MakeSaturator(base, 1.0f, sr);
+      auto fbBase = base;
+      fbBase.push_back({ "routing", (float)kFeedback });
+      fbBase.push_back({ "feedback", 0.5f });
+      auto fb = MakeSaturator(fbBase, 1.0f, sr);
+      const auto a = RenderSaturator(*serial, frames, 1, noise);
+      const auto b = RenderSaturator(*fb, frames, 1, noise);
+      const double db = DiffDb(b[0], a[0], warm);
+      const bool pass = db >= -20.0;
+      ok &= pass;
+      printf("SATURATORTEST feedback 0.5 vs serial %7.1f dB apart (>= -20)  %s\n", db, pass ? "OK" : "FAIL");
+
+      std::vector<std::pair<const char*, float>> hot = { { "routing", (float)kFeedback }, { "feedback", 0.95f } };
+      const int models[3] = { kTube, kFold, kTape };
+      static const char* kM[3] = { "model1", "model2", "model3" };
+      static const char* kA[3] = { "amount1", "amount2", "amount3" };
+      for (int s = 0; s < 3; s++)
+      {
+         hot.push_back({ kM[s], (float)models[s] });
+         hot.push_back({ kA[s], 1.0f });
+      }
+      auto node = MakeSaturator(hot, 1.0f, sr);
+      const auto y = RenderSaturator(*node, 4 * frames, 1, [](int i, int) {
+         return (float)std::sin(2.0 * M_PI * 110.0 * (double)i / 48000.0);
+      });
+      float peak = 0.0f;
+      bool finite = true;
+      for (float v : y[0])
+      {
+         finite &= std::isfinite(v);
+         peak = std::max(peak, std::fabs(v));
+      }
+      const bool stable = finite && peak < 8.0f;
+      ok &= stable;
+      printf("SATURATORTEST feedback 0.95, three stages at full: peak %.2f, %s (< 8)  %s\n", peak,
+             finite ? "finite" : "NOT finite", stable ? "OK" : "FAIL");
+   }
+
+   // 5. Amount 0 at -40 dBFS: near linear.
+   for (int model : { (int)kTube, (int)kTape, (int)kDiode, (int)kFold, (int)kCrush })
+   {
+      auto shaped = MakeSaturator({ { "model1", (float)model }, { "amount1", 0.0f } }, 1.0f, sr);
+      auto off = MakeSaturator({ { "model1", 0.0f } }, 1.0f, sr);
+      auto in = [](int i, int) { return 0.01f * (float)std::sin(2.0 * M_PI * 1000.0 * (double)i / 48000.0); };
+      const auto a = RenderSaturator(*shaped, frames, 1, in);
+      const auto b = RenderSaturator(*off, frames, 1, in);
+      const double db = DiffDb(a[0], b[0], warm);
+      // Diode's two sides have different knees (1 and 0.5), so its second
+      // order term is the largest at small levels: about 2 dB more
+      // distortion than the symmetric curves. Its gate is -35, not -40.
+      const double gate = model == kDiode ? -35.0 : -40.0;
+      const bool pass = db <= gate;
+      ok &= pass;
+      printf("SATURATORTEST %-7s amount 0, -40 dBFS: off by %7.1f dB (<= %.0f)  %s\n", ModelList()[(size_t)model].c_str(),
+             db, gate, pass ? "OK" : "FAIL");
+   }
+
+   printf("SATURATORTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
 }

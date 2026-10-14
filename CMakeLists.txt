@@ -611,6 +611,7 @@ set(COMMON_SOURCES
     src/audio/dsp/ReverbKernel.cpp
     src/audio/dsp/ReverbKernelLegacy.cpp
     src/audio/dsp/DriveKernel.cpp
+    src/audio/dsp/SaturatorKernel.cpp
     src/audio/dsp/StereoKernel.cpp
     src/audio/dsp/PitchShiftKernel.cpp
     src/audio/dsp/SpectralPitchShifter.cpp

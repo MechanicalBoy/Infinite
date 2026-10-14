@@ -3884,6 +3884,7 @@ void DrawDelayBody(GraphNode& gn, AudioEffectNode* n);
 void DrawReverbBody(GraphNode& gn, AudioEffectNode* n);
 
 void DrawDriveBody(GraphNode& gn, AudioEffectNode* n);
+void DrawSaturatorBody(GraphNode& gn, AudioEffectNode* n);
 
 void DrawWavetableShaperBody(GraphNode& gn, AudioEffectNode* n);
 
@@ -5920,6 +5921,7 @@ bool RunConvolutionFixture();
 bool RunMSEGFixture();
 bool RunVoiceModFixture();
 bool RunSynthSimdFixture();
+bool RunSaturatorFixture();
 bool RunSpatialFixture();
 
 bool RunSpectrumSlideFixture();

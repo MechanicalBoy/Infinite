@@ -9,6 +9,7 @@
 #include "dsp/DelayKernel.h"
 #include "dsp/ReverbKernel.h"
 #include "dsp/DriveKernel.h"
+#include "dsp/SaturatorKernel.h"
 #include "dsp/StereoKernel.h"
 #include "dsp/PitchShiftKernel.h"
 #include "dsp/ChorusKernel.h"
@@ -430,6 +431,38 @@ namespace
          // mix is AudioEffectNode's universal field, not a table row.
 
          def.makeKernel = []() { return std::make_unique<DriveKernel>(); };
+         defs.push_back(std::move(def));
+      }
+
+      // ------------------------------------------------------------ Saturator
+      // v0.6 2.17: three stages, a curve and an amount each, and a routing
+      // (serial / parallel / mid-side / 3-band / feedback). Drive stays the
+      // one-knob unit. See SaturatorKernel.h.
+      {
+         EffectDef def;
+         def.name = "Saturator";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
+         def.category = "AudioEffects";
+         def.bodyWidth = 440.0f;
+         def.visualizerId = EffectVisualizerId::kSaturatorCurves;
+
+         const float lastModel = (float)(SaturatorDsp::kNumModels - 1);
+         def.params.push_back({ "model1", 0.0f, lastModel, (float)SaturatorDsp::kTube });
+         def.params.push_back({ "amount1", 0.0f, 1.0f, 0.3f, false, { { "model1", (float)SaturatorDsp::kTube } } });
+         def.params.push_back({ "model2", 0.0f, lastModel, (float)SaturatorDsp::kOff });
+         def.params.push_back({ "amount2", 0.0f, 1.0f, 0.3f, false, { { "model2", (float)SaturatorDsp::kTube } } });
+         def.params.push_back({ "model3", 0.0f, lastModel, (float)SaturatorDsp::kOff });
+         def.params.push_back({ "amount3", 0.0f, 1.0f, 0.3f, false, { { "model3", (float)SaturatorDsp::kTube } } });
+         // With only stage 1 on (the default), serial and parallel sound
+         // the same, so the sweep tries 3-band, where stage 1 sees only the
+         // low band.
+         def.params.push_back({ "routing", 0.0f, (float)(SaturatorDsp::kNumRoutings - 1), (float)SaturatorDsp::kSerial,
+                                false, {}, { (float)SaturatorDsp::kBands } });
+         def.params.push_back({ "feedback", 0.0f, 0.95f, 0.5f, false, { { "routing", (float)SaturatorDsp::kFeedback } } });
+         def.params.push_back({ "output", -24.0f, 12.0f, 0.0f });
+         // mix is AudioEffectNode's universal field, not a table row.
+
+         def.makeKernel = []() { return std::make_unique<SaturatorKernel>(); };
          defs.push_back(std::move(def));
       }
 
