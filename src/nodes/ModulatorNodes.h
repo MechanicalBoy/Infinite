@@ -733,6 +733,92 @@ public:
    }
 };
 
+// A drawn shape played over time: breakpoints, each segment with its own
+// bend, run once through per `rate` (beats, a synced division, or Hz).
+//
+// Nothing patched to trig: the shape follows the transport, so it sits at the
+// same place after a seek or a loop. Loop off repeats the whole shape; loop on
+// plays in from the start, then repeats the part between loop start and end.
+//
+// trig patched: a rising edge through 0.5 starts the shape from its
+// beginning (retrigger). Loop off plays it once and holds the last value.
+// Loop on repeats start..end while trig stays high and, when it drops, plays
+// on from there to the end of the shape (the release). Loop start = loop end
+// is a sustain point.
+class MSEGNode : public INode, public IModulator
+{
+public:
+   static INode* Create() { return new MSEGNode(); }
+   static constexpr int kMaxPoints = 32;
+
+   struct Point
+   {
+      float x = 0.0f;     // 0..1 along the shape
+      float y = 0.0f;     // 0..1
+      float curve = 0.0f; // bend of the segment that leaves this point: -1..1, 0 = straight
+   };
+
+   MSEGNode() { Reset(); }
+
+   unsigned int GetOutputTexture() override { return 0; }
+   int GetOutputWidth() const override { return 0; }
+   int GetOutputHeight() const override { return 0; }
+   void CookIfNeeded(int) override {}
+   const char* InputLabel(int) const override { return "trig"; }
+
+   float Value01() override;
+
+   IModulator* trigger = nullptr;
+   IModulator** ModulatorInputSlot(int slot) override { return slot == 0 ? &trigger : nullptr; }
+   int ModulatorInputCount() const override { return 1; }
+
+   // Sorted by x; the first point is pinned to x = 0 and the last to x = 1.
+   std::vector<Point> points;
+   int rateMode = LFONode::kRateSynced;
+   float rateBeats = 4.0f; // the whole shape takes this many beats (Beats, Synced)
+   float rateHz = 1.0f;    // times through per second (Hz)
+   bool loop = false;
+   float loopStart = 0.25f; // 0..1 along the shape
+   float loopEnd = 0.75f;
+
+   void Reset();
+   int AddPoint(float x, float y); // index of the new point, or -1 at kMaxPoints
+   void MovePoint(int index, float x, float y);
+   void RemovePoint(int index); // the two end points stay
+   // Shape value at x (0..1).
+   float Evaluate(float x) const;
+   // Value of one segment at t (0..1) between y0 and y1 for a bend of curve.
+   static float Segment(float y0, float y1, float curve, float t);
+   // Where along the shape (0..1) a run that started `elapsed` shape-lengths
+   // ago is, while trig is held (or nothing is patched).
+   float PositionHeld(double elapsed, bool patched) const;
+   // Position (0..1) at the last Value01(), for the playhead.
+   float Position() const { return mShownX; }
+
+   // Round-tripped as one "x,y,curve;..." string.
+   std::string Encode() const;
+   void Decode(const std::string& s);
+
+   void VisitParams(ParamVisitor& v) override
+   {
+      v.Int("rateMode", rateMode); v.Float("rateBeats", rateBeats); v.Float("rateHz", rateHz);
+      v.Bool("loop", loop); v.Float("loopStart", loopStart); v.Float("loopEnd", loopEnd);
+      std::string encoded = Encode();
+      v.Text("points", encoded);
+      Decode(encoded);
+   }
+
+private:
+   float Advance();
+   mutable SyncedPeriodCache mPeriodCache;
+   // trig patched: the run, advanced once per clock value.
+   double mClockLast = -1.0;
+   double mX = 1.0;        // position along the shape; starts at rest on the last value
+   bool mReleased = true;  // the run has left the loop
+   float mTrigLast = 0.0f;
+   float mShownX = 0.0f;
+};
+
 // Converts an incoming audio signal to a normalized 0..1 modulation signal
 // using an envelope/amplitude follower with Peak or RMS detection and
 // configurable attack and release smoothing.

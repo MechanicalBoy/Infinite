@@ -553,6 +553,9 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_CONVOLUTIONTEST") != nullptr)
       return RunConvolutionFixture() ? 0 : 1;
 
+   if (getenv("INFINITE_MSEGTEST") != nullptr)
+      return RunMSEGFixture() ? 0 : 1;
+
    if (getenv("INFINITE_SPATIALTEST") != nullptr)
       return RunSpatialFixture() ? 0 : 1;
 

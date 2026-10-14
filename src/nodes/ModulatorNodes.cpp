@@ -949,6 +949,196 @@ float ModCurveNode::Value01()
    return in + (y - in) * mix;
 }
 
+// ---------------------------------------------------------------- MSEG
+
+void MSEGNode::Reset()
+{
+   points = { { 0.0f, 0.0f, 0.0f }, { 0.1f, 1.0f, 0.6f }, { 0.5f, 0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f } };
+}
+
+int MSEGNode::AddPoint(float x, float y)
+{
+   if ((int)points.size() >= kMaxPoints)
+      return -1;
+   x = std::clamp(x, 0.0f, 1.0f);
+   y = std::clamp(y, 0.0f, 1.0f);
+   int at = 1;
+   while (at < (int)points.size() - 1 && points[at].x < x)
+      at++;
+   points.insert(points.begin() + at, Point { x, y, 0.0f });
+   return at;
+}
+
+void MSEGNode::MovePoint(int index, float x, float y)
+{
+   const int last = (int)points.size() - 1;
+   if (index < 0 || index > last)
+      return;
+   Point& p = points[index];
+   p.y = std::clamp(y, 0.0f, 1.0f);
+   if (index == 0)
+      p.x = 0.0f;
+   else if (index == last)
+      p.x = 1.0f;
+   else
+      p.x = std::clamp(x, points[index - 1].x, points[index + 1].x); // a point never passes its neighbours
+}
+
+void MSEGNode::RemovePoint(int index)
+{
+   if (index <= 0 || index >= (int)points.size() - 1)
+      return;
+   points.erase(points.begin() + index);
+}
+
+// Exponential bend: (e^(k t) - 1) / (e^k - 1), k = -6 * curve. Positive curve
+// moves fast first and settles (the usual attack and decay shape).
+float MSEGNode::Segment(float y0, float y1, float curve, float t)
+{
+   t = std::clamp(t, 0.0f, 1.0f);
+   const float k = -6.0f * std::clamp(curve, -1.0f, 1.0f);
+   const float shaped = std::fabs(k) < 1.0e-3f ? t : std::expm1(k * t) / std::expm1(k);
+   return y0 + (y1 - y0) * shaped;
+}
+
+float MSEGNode::Evaluate(float x) const
+{
+   if (points.size() < 2)
+      return points.empty() ? 0.0f : points[0].y;
+   x = std::clamp(x, 0.0f, 1.0f);
+   int i = 0;
+   while (i < (int)points.size() - 2 && x >= points[i + 1].x)
+      i++;
+   const Point& a = points[i];
+   const Point& b = points[i + 1];
+   const float span = b.x - a.x;
+   if (span <= 1.0e-6f)
+      return x >= b.x ? b.y : a.y; // two points on one x: a step
+   return Segment(a.y, b.y, a.curve, (x - a.x) / span);
+}
+
+std::string MSEGNode::Encode() const
+{
+   std::string out;
+   for (size_t i = 0; i < points.size(); i++)
+   {
+      if (i > 0)
+         out += ";";
+      char buf[64];
+      snprintf(buf, sizeof(buf), "%.6g,%.6g,%.6g", (double)points[i].x, (double)points[i].y, (double)points[i].curve);
+      out += buf;
+   }
+   return out;
+}
+
+void MSEGNode::Decode(const std::string& s)
+{
+   std::vector<Point> decoded;
+   size_t start = 0;
+   while (start < s.size() && (int)decoded.size() < kMaxPoints)
+   {
+      const size_t sep = s.find(';', start);
+      const std::string term = s.substr(start, sep == std::string::npos ? std::string::npos : sep - start);
+      const size_t c1 = term.find(',');
+      const size_t c2 = c1 == std::string::npos ? std::string::npos : term.find(',', c1 + 1);
+      if (c1 != std::string::npos)
+      {
+         Point p;
+         p.x = std::clamp((float)atof(term.substr(0, c1).c_str()), 0.0f, 1.0f);
+         p.y = std::clamp((float)atof(term.substr(c1 + 1, c2 == std::string::npos ? std::string::npos : c2 - c1 - 1).c_str()), 0.0f, 1.0f);
+         p.curve = c2 == std::string::npos ? 0.0f : std::clamp((float)atof(term.substr(c2 + 1).c_str()), -1.0f, 1.0f);
+         decoded.push_back(p);
+      }
+      if (sep == std::string::npos)
+         break;
+      start = sep + 1;
+   }
+   if (decoded.size() < 2)
+      return;
+   std::stable_sort(decoded.begin(), decoded.end(), [](const Point& a, const Point& b) { return a.x < b.x; });
+   decoded.front().x = 0.0f;
+   decoded.back().x = 1.0f;
+   points = decoded;
+}
+
+float MSEGNode::PositionHeld(double elapsed, bool patched) const
+{
+   if (elapsed <= 0.0)
+      return 0.0f;
+   if (!loop)
+      return patched ? (float)std::min(1.0, elapsed) : Frac(elapsed);
+   const double a = std::clamp((double)std::min(loopStart, loopEnd), 0.0, 1.0);
+   const double b = std::clamp((double)std::max(loopStart, loopEnd), 0.0, 1.0);
+   if (elapsed < b)
+      return (float)elapsed;
+   if (b - a < 1.0e-4)
+      return (float)b; // sustain point
+   return (float)(a + std::fmod(elapsed - a, b - a));
+}
+
+// trig patched: the run moves by the clock's step since the last call, at
+// the current rate, so a tempo or rate change bends the speed without a jump
+// and a paused transport holds it. The trig edge sits where the input, as a
+// straight line from the previous call, crosses 0.5.
+float MSEGNode::Advance()
+{
+   Transport& tr = Transport::Instance();
+   const bool hz = rateMode == LFONode::kRateHz;
+   const double clock = hz ? tr.Seconds() : tr.Beats();
+   if (clock == mClockLast)
+      return (float)mX;
+   double step = mClockLast < 0.0 ? 0.0 : clock - mClockLast;
+   if (step < 0.0)
+      step = 0.0; // seek or loop wrap: hold, don't run backwards
+   mClockLast = clock;
+   const double dx = hz ? step * (double)std::max(0.001f, rateHz) : step / PeriodBeatsFor(rateMode, rateBeats, mPeriodCache);
+
+   const float trig = trigger->Value01();
+   const bool held = trig >= 0.5f;
+   if (held && mTrigLast < 0.5f)
+   {
+      const float f = trig > mTrigLast ? std::clamp((0.5f - mTrigLast) / (trig - mTrigLast), 0.0f, 1.0f) : 1.0f;
+      mX = PositionHeld((1.0 - (double)f) * dx, true);
+      mReleased = false;
+   }
+   else if (!mReleased && held)
+   {
+      // Still in the held part: step, wrapping inside the loop.
+      const double a = std::clamp((double)std::min(loopStart, loopEnd), 0.0, 1.0);
+      const double b = std::clamp((double)std::max(loopStart, loopEnd), 0.0, 1.0);
+      double x = mX + dx;
+      if (!loop)
+         x = std::min(1.0, x);
+      else if (x >= b)
+         x = b - a < 1.0e-4 ? b : a + std::fmod(x - a, b - a);
+      mX = x;
+   }
+   else
+   {
+      mReleased = true;
+      mX = std::min(1.0, mX + dx);
+   }
+   mTrigLast = trig;
+   return (float)mX;
+}
+
+float MSEGNode::Value01()
+{
+   float x;
+   if (trigger != nullptr)
+      x = Advance();
+   else
+   {
+      mClockLast = -1.0; // a cable patched later starts from rest
+      mX = 1.0;
+      mReleased = true;
+      mTrigLast = 0.0f;
+      x = PositionHeld(RatePosition(rateMode, rateBeats, rateHz, mPeriodCache), false);
+   }
+   mShownX = x;
+   return std::clamp(Evaluate(x), 0.0f, 1.0f);
+}
+
 // ---------------------------------------------------------------- Audio to CV
 class AudioAudioToCVNode : public AudioNode
 {

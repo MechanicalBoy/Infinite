@@ -3540,4 +3540,224 @@ bool RunConvolutionFixture()
    printf("CONVOLUTIONTEST %s\n", ok ? "OK" : "FAIL");
    return ok;
 }
+
+// MSEG (v0.6 2.10): the shape maths, the save string, and the run over time
+// with and without a trig cable. A straight 0 -> 1 ramp is the probe shape,
+// so the value read back is the position along the shape.
+bool RunMSEGFixture()
+{
+   bool all = true;
+   auto check = [&](const char* what, double got, double want, double tol) {
+      const bool ok = std::fabs(got - want) <= tol;
+      printf("MSEGTEST %-58s got %.4f want %.4f  %s\n", what, got, want, ok ? "OK" : "FAIL");
+      all &= ok;
+   };
+   struct Stub : IModulator
+   {
+      float level = 0.0f;
+      float Value01() override { return level; }
+   };
+
+   Transport& tr = Transport::Instance();
+   const float tempoBefore = (float)tr.Tempo();
+   tr.SetPlaying(false);
+   tr.Rewind();
+   tr.SetTempo(120.0f); // 2 beats a second: a 4-beat shape takes 2 s
+   tr.SetPlaying(true);
+   // The node under test is read every tick, as the app reads it every frame.
+   MSEGNode* live = nullptr;
+   auto advance = [&](double seconds) {
+      while (seconds > 1.0e-9)
+      {
+         const float step = (float)std::min(seconds, 0.005);
+         tr.Tick(step);
+         seconds -= step;
+         if (live != nullptr)
+            live->Value01();
+      }
+   };
+   auto ramp = [](MSEGNode& n) { n.points = { { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } }; };
+
+   // --- shape maths
+   check("segment straight, halfway", MSEGNode::Segment(0.0f, 1.0f, 0.0f, 0.5f), 0.5, 1e-6);
+   check("segment ends are exact (bend 1)", MSEGNode::Segment(0.2f, 0.9f, 1.0f, 1.0f), 0.9, 1e-6);
+   check("segment bend +1 halfway = 1/(1+e^-3)", MSEGNode::Segment(0.0f, 1.0f, 1.0f, 0.5f), 1.0 / (1.0 + std::exp(-3.0)), 1e-5);
+   check("segment bend -1 halfway = 1/(1+e^3)", MSEGNode::Segment(0.0f, 1.0f, -1.0f, 0.5f), 1.0 / (1.0 + std::exp(3.0)), 1e-5);
+   {
+      MSEGNode n;
+      n.points = { { 0.0f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } };
+      check("triangle at 0.25", n.Evaluate(0.25f), 0.5, 1e-6);
+      check("triangle at 0.5", n.Evaluate(0.5f), 1.0, 1e-6);
+      check("triangle at 0.75", n.Evaluate(0.75f), 0.5, 1e-6);
+      const int at = n.AddPoint(0.25f, 0.9f);
+      check("added point lands in order (index)", at, 1, 0);
+      n.MovePoint(1, 0.8f, 0.9f); // tries to pass the point at 0.5
+      check("a moved point stops at its neighbour", n.points[1].x, 0.5, 1e-6);
+      n.RemovePoint(0);
+      n.RemovePoint((int)n.points.size() - 1);
+      check("end points cannot be removed (count)", (double)n.points.size(), 4, 0);
+      n.points[1].curve = -0.35f;
+      MSEGNode back;
+      back.Decode(n.Encode());
+      bool same = back.points.size() == n.points.size();
+      for (size_t i = 0; same && i < n.points.size(); i++)
+         same = std::fabs(back.points[i].x - n.points[i].x) < 1e-5f && std::fabs(back.points[i].y - n.points[i].y) < 1e-5f &&
+                std::fabs(back.points[i].curve - n.points[i].curve) < 1e-5f;
+      check("save string round trip (points and bends)", same ? 1 : 0, 1, 0);
+      back.Decode("garbage");
+      check("a bad save string leaves the shape alone (count)", (double)back.points.size(), 4, 0);
+   }
+
+   // --- nothing patched: follows the transport
+   {
+      MSEGNode n;
+      ramp(n);
+      n.rateMode = LFONode::kRateSynced;
+      n.rateBeats = 4.0f;
+      advance(1.0);
+      check("unpatched, 4 beats at 120: 1 s in", n.Value01(), 0.5, 0.01);
+      float first = n.Value01();
+      bool steady = true;
+      for (int i = 0; i < 8; i++)
+         steady &= n.Value01() == first;
+      check("eight reads in one tick agree", steady ? 1 : 0, 1, 0);
+      advance(1.5);
+      check("unpatched, loop off repeats: 2.5 s in", n.Value01(), 0.25, 0.01);
+      n.loop = true;
+      n.loopStart = 0.25f;
+      n.loopEnd = 0.75f;
+      // 2.5 s = 1.25 lengths: 0.25 + fmod(1.25 - 0.25, 0.5) = 0.25
+      advance(0.5); // 3.0 s = 1.5 lengths -> 0.25 + fmod(1.25, 0.5) = 0.5
+      check("unpatched, loop 0.25-0.75: 3 s in", n.Value01(), 0.5, 0.01);
+      tr.SetPlaying(false);
+      const float held = n.Value01();
+      advance(0.5);
+      check("paused transport holds it", n.Value01(), held, 1e-6);
+      tr.SetPlaying(true);
+   }
+
+   // --- trig patched, loop off: one run, then the last value
+   {
+      MSEGNode n, twin;
+      Stub trig;
+      ramp(n);
+      ramp(twin);
+      n.trigger = twin.trigger = &trig;
+      live = &n;
+      n.rateBeats = twin.rateBeats = 4.0f;
+      check("at rest before any trig: last value", n.Value01(), 1.0, 1e-6);
+      twin.Value01();
+      trig.level = 1.0f;
+      double worst = 0.0;
+      for (int i = 0; i < 200; i++) // 1 s
+      {
+         tr.Tick(0.005f);
+         const float one = twin.Value01();
+         float many = 0.0f;
+         for (int k = 0; k < 8; k++)
+            many = n.Value01();
+         worst = std::max(worst, (double)std::fabs(one - many));
+      }
+      check("run read 8 times a tick = read once (max diff)", worst, 0.0, 1e-7);
+      check("trig, 1 s in", n.Value01(), 0.5, 0.01);
+      trig.level = 0.0f; // loop off: letting go changes nothing
+      advance(0.5);
+      check("loop off ignores trig dropping: 1.5 s in", n.Value01(), 0.75, 0.01);
+      advance(1.0);
+      check("loop off holds the last value after the run", n.Value01(), 1.0, 1e-6);
+      trig.level = 1.0f;
+      advance(0.25);
+      check("retrigger starts over: 0.25 s after the edge", n.Value01(), 0.125, 0.01);
+      advance(0.25);
+      trig.level = 0.0f;
+      advance(0.01);
+      trig.level = 1.0f;
+      advance(0.1);
+      check("retrigger in the middle of a run", n.Value01(), 0.05, 0.01);
+      live = nullptr;
+   }
+
+   // --- trig patched, loop on: loop while held, release to the end
+   {
+      MSEGNode n;
+      Stub trig;
+      ramp(n);
+      n.trigger = &trig;
+      live = &n;
+      n.rateBeats = 4.0f;
+      n.loop = true;
+      n.loopStart = 0.25f;
+      n.loopEnd = 0.75f;
+      n.Value01();
+      trig.level = 1.0f;
+      advance(3.0); // 1.5 lengths -> 0.5 inside the loop
+      check("held, loop 0.25-0.75: 3 s in", n.Value01(), 0.5, 0.012);
+      float lo = 1.0f, hi = 0.0f;
+      for (int i = 0; i < 400; i++)
+      {
+         tr.Tick(0.005f);
+         const float v = n.Value01();
+         lo = std::min(lo, v);
+         hi = std::max(hi, v);
+      }
+      check("held loop never leaves 0.25-0.75 (low)", lo, 0.25, 0.01);
+      check("held loop never leaves 0.25-0.75 (high)", hi, 0.75, 0.01);
+      const float atRelease = n.Value01();
+      trig.level = 0.0f;
+      advance(0.2); // 0.1 lengths on
+      check("release plays on from where it was", n.Value01(), atRelease + 0.1, 0.012);
+      advance(2.0);
+      check("release ends on the last value", n.Value01(), 1.0, 1e-6);
+
+      // Sustain point: loop start = loop end.
+      n.loopStart = n.loopEnd = 0.4f;
+      trig.level = 1.0f;
+      advance(3.0);
+      check("sustain point holds while trig is high", n.Value01(), 0.4, 0.005);
+      trig.level = 0.0f;
+      advance(0.4);
+      check("sustain point, 0.4 s after release", n.Value01(), 0.6, 0.012);
+      live = nullptr;
+   }
+
+   // --- rate: tempo and Hz
+   {
+      MSEGNode n;
+      Stub trig;
+      ramp(n);
+      n.trigger = &trig;
+      live = &n;
+      n.rateBeats = 4.0f;
+      n.Value01();
+      tr.SetTempo(240.0f);
+      trig.level = 1.0f;
+      advance(0.5);
+      check("tempo sync: 4 beats at 240, 0.5 s in", n.Value01(), 0.5, 0.012);
+      trig.level = 0.0f;
+      advance(0.01);
+      n.rateMode = LFONode::kRateHz;
+      n.rateHz = 2.0f;
+      n.Value01();
+      trig.level = 1.0f;
+      advance(0.25);
+      check("Hz: 2 Hz, 0.25 s in", n.Value01(), 0.5, 0.012);
+      n.points = { { 0.0f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } };
+      float lo = 1.0f, hi = 0.0f;
+      for (float x = 0.0f; x <= 1.0f; x += 0.01f)
+      {
+         lo = std::min(lo, n.Evaluate(x));
+         hi = std::max(hi, n.Evaluate(x));
+      }
+      check("output stays in 0..1 (low)", lo, 0.0, 1e-6);
+      check("output stays in 0..1 (high)", hi, 1.0, 0.02);
+      live = nullptr;
+   }
+
+   live = nullptr;
+   tr.SetPlaying(false);
+   tr.Rewind();
+   tr.SetTempo(tempoBefore);
+   printf("MSEGTEST %s\n", all ? "OK" : "FAIL");
+   return all;
+}
 }

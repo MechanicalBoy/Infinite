@@ -831,6 +831,8 @@ void DrawNodeBodies(FrameCtx& fc)
                DrawModDepthParams(n);
             else if (auto* n = dynamic_cast<ModCurveNode*>(gn.node.get()))
                DrawModCurveParams(n);
+            else if (auto* n = dynamic_cast<MSEGNode*>(gn.node.get()))
+               DrawMSEGParams(n);
             else if (auto* n = dynamic_cast<CVToPitchNode*>(gn.node.get()))
                DrawCVToPitchParams(n);
             else if (auto* n = dynamic_cast<NoteToCVNode*>(gn.node.get()))
