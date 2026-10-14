@@ -263,4 +263,4 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `render.sync_drift_ms_min` (ms/min): Infinite 0 · Blender 0
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 0531853e; 2026-10-13 38e754be; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 c2f7d0d1; 2026-10-13 c64eb6fe; 2026-10-13 d6020b77; 2026-10-13 db820427; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 0531853e; 2026-10-13 38e754be; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 c2f7d0d1; 2026-10-13 c64eb6fe; 2026-10-13 d6020b77; 2026-10-13 db820427; 2026-10-13 e182230c; 2026-10-14 7f002bee.
