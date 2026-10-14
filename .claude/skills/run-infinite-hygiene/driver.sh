@@ -81,7 +81,7 @@ PASS_MARK=' OK$|OK$|PASS$|SKIP$|CLEAN$|PASS \([0-9]+ flags?\)$'
 PASS=0
 FAIL=0
 FAILED_NAMES=()
-EXPECTED_FILE="$(dirname "${BASH_SOURCE[0]}")/audio-param-sweep-expected.txt"
+source "$ROOT/scripts/audio_param_sweep_check.sh"
 KNOWN_FAILURES_FILE="${KNOWN_FAILURES_FILE:-$DEFAULT_KNOWN_FAILURES}"
 XFAIL_NAMES=()
 STALE_NAMES=()
@@ -238,6 +238,8 @@ GROUP_UI=(
   "DRAGTEST:35"
   "KBCURSORTEST:260"
   "NAVTEST:30"
+  "NEWSYNTHTEST:20"
+  "DROPSOUNDTEST:14"
   "FINDTEST:190"
   "UXLEFTOVERSTEST:25"
   "TEXTFOCUSTEST:12"
@@ -413,6 +415,8 @@ FULL_TESTS=(
   "DRAGTEST:35"
   "KBCURSORTEST:260"
   "NAVTEST:30"
+  "NEWSYNTHTEST:20"
+  "DROPSOUNDTEST:14"
   "FINDTEST:190"
   "THEMECONTRASTTEST:10"
   "KBDISCRETETEST:420"
@@ -632,47 +636,16 @@ for spec in "${SELECTED_TESTS[@]}"; do
     continue
   fi
   if [ "$name" = "AUDIOPARAMSWEEPTEST" ]; then
-    # Per-line verdict, not one summary line — the final "AUDIO PARAM SWEEP
-    # FAIL"/"OK" src/main.cpp:25391 prints is intentionally ignored here;
-    # each param's own [FAIL]/[pass] line is checked against
-    # audio-param-sweep-expected.txt in both directions. See that file's
-    # header for what counts as a baselined blind spot vs a real failure.
-    xfail=0; newfail=0; nowpass=0
-    xfail_out="/tmp/infinite_test_AUDIOPARAMSWEEPTEST_xfail.log"
-    : > "$xfail_out"
-    detail_lines=()
-    while IFS= read -r line; do
-      if [[ "$line" =~ \[FAIL\][[:space:]]+(.+[^[:space:]])[[:space:]]+param\ \'([^\']+)\' ]]; then
-        node="${BASH_REMATCH[1]}"; param="${BASH_REMATCH[2]}"
-        if awk -F'|' -v n="$node" -v p="$param" '$1==n && $2==p {f=1} END {exit !f}' "$EXPECTED_FILE"; then
-          xfail=$((xfail+1))
-          echo "  [xfail] ${node}  param '${param}' — baselined, see audio-param-sweep-expected.txt" >> "$xfail_out"
-        else
-          newfail=$((newfail+1))
-          detail_lines+=("new failure: '${node}|${param}' — add a line to audio-param-sweep-expected.txt if this is another rig blind spot, otherwise fix the dropped mailbox push")
-        fi
-      elif [[ "$line" =~ \[pass\][[:space:]]+(.+[^[:space:]])[[:space:]]+param\ \'([^\']+)\'\ reaches\ audio\ thread ]]; then
-        node="${BASH_REMATCH[1]}"; param="${BASH_REMATCH[2]}"
-        if awk -F'|' -v n="$node" -v p="$param" '$1==n && $2==p {f=1} END {exit !f}' "$EXPECTED_FILE"; then
-          nowpass=$((nowpass+1))
-          detail_lines+=("now passes: '${node}|${param}' — delete its line from audio-param-sweep-expected.txt")
-        fi
-      elif [[ "$line" =~ ^[[:space:]]*\[FAIL\] ]]; then
-        # A [FAIL] line that isn't the per-param "reaches audio thread"
-        # shape (e.g. a save/load round-trip failure) — the expectations
-        # file only covers that one shape, so this is always a real failure.
-        newfail=$((newfail+1))
-        detail_lines+=("new failure (non-param-reach shape): $line")
-      fi
-    done < "$out"
-
-    cat "$xfail_out"
+    # Per-param verdict, not the summary line; see scripts/audio_param_sweep_check.sh.
+    audio_param_sweep_grade "$out"
+    xfail=$APS_XFAIL; newfail=$APS_NEWFAIL; nowpass=$APS_NOWPASS
+    cat "$APS_XFAIL_LOG"
     if [ $newfail -gt 0 ] || [ $nowpass -gt 0 ]; then
       echo "  [FAIL]  $name — $xfail xfail, $newfail new failure(s), $nowpass now-passing baselined param(s) — see $out"
-      for l in "${detail_lines[@]}"; do echo "          $l"; done
+      for l in "${APS_DETAIL[@]}"; do echo "          $l"; done
       FAIL=$((FAIL+1)); FAILED_NAMES+=("$name")
     else
-      echo "  [pass]  $name  — $xfail xfail (baselined blind spots, see $xfail_out), 0 new"
+      echo "  [pass]  $name  — $xfail xfail (baselined blind spots, see $APS_XFAIL_LOG), 0 new"
       PASS=$((PASS+1))
     fi
     continue

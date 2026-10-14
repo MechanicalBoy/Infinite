@@ -1592,6 +1592,138 @@ void FrameTest_NAVTEST(int frameId, GLFWwindow* window)
       }
 }
 
+// v0.6 2.1: File > New Synth leaves a patch you can play at once. Keyboard -> Analog -> Audio Out are
+// cabled, and the letter keys play the Keyboard with the mouse nowhere near it, because New Synth
+// selects it and a selected Keyboard owns the letter keys.
+void FrameTest_NEWSYNTHTEST(int frameId, GLFWwindow* window)
+{
+   if (getenv("INFINITE_NEWSYNTHTEST") == nullptr)
+      return;
+   ImGuiIO& tio = ImGui::GetIO();
+   tio.ConfigInputTrickleEventQueue = false;
+   static bool ok = true;
+   static int kbIndex = -1;
+   auto check = [&](bool good, const char* what) {
+      ok = ok && good;
+      printf("newsynth %-52s %s\n", what, good ? "ok" : "FAIL");
+   };
+   auto held = [&]() {
+      GraphNode* kb = FindNodeByIndex(kbIndex);
+      auto* n = kb != nullptr ? dynamic_cast<KeyboardNode*>(kb->node.get()) : nullptr;
+      bool keys[128] = {};
+      if (n != nullptr)
+         n->HeldKeys(keys);
+      int count = 0;
+      for (bool k : keys)
+         count += k ? 1 : 0;
+      return count;
+   };
+   if (frameId == 3)
+   {
+      NewPatch();
+      tio.AddFocusEvent(true);
+      tio.AddMousePosEvent(-FLT_MAX, -FLT_MAX); // over nothing: only the selection can arm the keys
+      kbIndex = SpawnPlayableSynth();
+      // The engine start is the action's job on a machine with a device; the test must stay silent.
+      AudioEngine::Instance().Stop();
+      GraphNode* synth = nullptr;
+      GraphNode* out = nullptr;
+      for (GraphNode& gn : gNodes)
+      {
+         if (gn.typeName == "Analog") synth = &gn;
+         if (gn.typeName == "Audio Out") out = &gn;
+      }
+      GraphNode* kb = FindNodeByIndex(kbIndex);
+      check(gNodes.size() == 3 && kb != nullptr && synth != nullptr && out != nullptr, "Keyboard, Analog and Audio Out are on the canvas");
+      bool notesWired = false, audioWired = false;
+      for (int slot = 0; slot < 8 && synth != nullptr && out != nullptr && kb != nullptr; slot++)
+      {
+         if (NoteCable* c = synth->node->NoteInputSlot(slot))
+            notesWired = notesWired || c->GetSource() == kb->node.get();
+         if (AudioCable* c = out->node->AudioInputSlot(slot))
+            audioWired = audioWired || c->GetSource() == synth->node.get();
+      }
+      check(notesWired, "the Keyboard's notes reach the synth");
+      check(audioWired, "the synth's audio reaches Audio Out");
+   }
+   if (frameId == 10)
+   {
+      check(held() == 0, "no key is down before typing");
+      tio.AddKeyEvent(ImGuiKey_Z, true);
+   }
+   if (frameId == 13)
+   {
+      check(held() == 1, "the Z key plays the selected Keyboard with no hover");
+      tio.AddKeyEvent(ImGuiKey_Z, false);
+   }
+   if (frameId == 16)
+   {
+      check(held() == 0, "releasing the key releases the note");
+      printf("%s\n", ok ? "NEWSYNTH TEST OK" : "NEWSYNTH TEST FAIL");
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+   }
+}
+
+// v0.6 2.2: one audio file dropped on the canvas plays through an Audio Out with nothing else to do,
+// and a pick from the "load into instead" list replaces that pair instead of adding to it.
+void FrameTest_DROPSOUNDTEST(int frameId, GLFWwindow* window)
+{
+   if (getenv("INFINITE_DROPSOUNDTEST") == nullptr)
+      return;
+   static bool ok = true;
+   static std::string wav;
+   auto check = [&](bool good, const char* what) {
+      ok = ok && good;
+      printf("dropsound %-56s %s\n", what, good ? "ok" : "FAIL");
+   };
+   // (source type, wired into an Audio Out) for a two-node patch.
+   auto wired = [&](const char* type) {
+      GraphNode* src = nullptr;
+      GraphNode* out = nullptr;
+      for (GraphNode& gn : gNodes)
+      {
+         if (gn.typeName == type) src = &gn;
+         if (gn.typeName == "Audio Out") out = &gn;
+      }
+      if (gNodes.size() != 2 || src == nullptr || out == nullptr)
+         return false;
+      AudioCable* c = out->node->AudioInputSlot(0);
+      return c != nullptr && c->GetSource() == src->node.get();
+   };
+   if (frameId == 3)
+   {
+      NewPatch();
+      // Silence, so the test makes no sound while the engine is briefly on.
+      std::error_code ec;
+      wav = (std::filesystem::temp_directory_path(ec) / "infinite_dropsound_test.wav").string();
+      std::vector<float> zeros(4800, 0.0f);
+      check(AudioRecordings::WriteWav(wav, zeros.data(), (int)zeros.size(), 48000.0), "a test WAV is written");
+      gDropPos = ImVec2(gGraphScreenTL.x + gGraphScreenSize.x * 0.5f, gGraphScreenTL.y + gGraphScreenSize.y * 0.5f);
+      gDroppedFiles.push_back(wav);
+   }
+   if (frameId == 6)
+   {
+      AudioEngine::Instance().Stop();
+      check(wired("Audio File"), "the dropped file is an Audio File cabled into an Audio Out");
+      check(gAudioDropPicker.autoNodes.size() == 2 && !gAudioDropPicker.paths.empty(), "the list is open and knows both nodes");
+      // What a click on "Sampler" in that list does.
+      for (int idx : gAudioDropPicker.autoNodes)
+         RemoveNodeByIndex(idx);
+      gAudioDropPicker.autoNodes.clear();
+      SpawnAudioDropNodes("Sampler", "Synths", gAudioDropPicker.paths, gAudioDropPicker.canvasPos);
+      gAudioDropPicker.paths.clear();
+      AudioEngine::Instance().Stop();
+      check(wired("Sampler"), "picking Sampler replaces the pair: Sampler cabled into an Audio Out");
+   }
+   if (frameId == 9)
+   {
+      std::error_code ec;
+      std::filesystem::remove(wav, ec);
+      printf("%s\n", ok ? "DROPSOUND TEST OK" : "DROPSOUND TEST FAIL");
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+   }
+}
+
 void FrameTest_THEMECONTRASTTEST(int frameId, GLFWwindow* window)
 {
    if (getenv("INFINITE_THEMECONTRASTTEST") != nullptr && frameId == 3)

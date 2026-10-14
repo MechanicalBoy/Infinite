@@ -316,6 +316,7 @@ bool gHeadlessNeedProbe = false;
    // canvas, so a feeder spawned off-screen for auto_wire_inputs never pulls
    // the view out to include it. -1 = no request pending.
    int gRequestFitViewNodeIndex = -1;
+   int gRequestSelectNodeIndex = -1;
 
    // Set by the Edit menu, consumed next to the matching keyboard shortcuts.
    // The menu bar draws outside ed::Begin/End, and grouping needs the live

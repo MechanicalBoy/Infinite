@@ -1884,6 +1884,12 @@ void DrawFrameTestsA(FrameCtx& fc)
       // R571 slice 4: with the Shortcuts window open, Tab drives ImGui nav and Space must not reach the transport.
       FrameTest_NAVTEST(frameId, window);
 
+      // v0.6 2.1: New Synth is wired and plays from the letter keys at once.
+      FrameTest_NEWSYNTHTEST(frameId, window);
+
+      // v0.6 2.2: a dropped audio file is wired to an Audio Out at once.
+      FrameTest_DROPSOUNDTEST(frameId, window);
+
       // Cmd/Ctrl+F find on a 400-node patch.
       FrameTest_FINDTEST(frameId, window);
 

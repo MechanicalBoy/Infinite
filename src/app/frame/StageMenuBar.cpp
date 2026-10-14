@@ -164,6 +164,8 @@ void DrawMenuBar(FrameCtx& fc)
             MenuParts::BeginContent();
             if (MenuParts::Item(L("New"), MODKEY "+N"))
                GuardUnsavedChanges([]() { NewPatch(); });
+            if (MenuParts::Item(L("New Synth"), MODKEY "+Shift+N"))
+               SpawnPlayableSynth();
             if (MenuParts::Item(L("Template library...")))
                gTemplatesOpen = true;
             if (MenuParts::Item(L("Open..."), MODKEY "+O"))

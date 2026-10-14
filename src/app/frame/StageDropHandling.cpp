@@ -505,6 +505,11 @@ void DrawDropHandling(FrameCtx& fc)
             gAudioDropPicker.canvasPos = canvasPos;
             gAudioDropPicker.screenPos = gDropPos;
             gAudioDropPicker.paths = std::move(pendingAudioDropPaths);
+            // One file plays straight away (v0.6 2.2: drop = sound in one step). The list still opens,
+            // now as "load into ... instead". Several files wait for the pick, as before.
+            gAudioDropPicker.autoNodes.clear();
+            if (gAudioDropPicker.paths.size() == 1)
+               gAudioDropPicker.autoNodes = SpawnAudioDropNodes("Audio File", "Modulators", gAudioDropPicker.paths, canvasPos);
          }
          gDroppedFiles.clear();
       }}

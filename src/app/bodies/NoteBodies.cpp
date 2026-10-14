@@ -527,7 +527,10 @@ namespace app
          n->mMouseNote = hit;
       }
 
-      const bool isHovered = ed::GetHoveredNode() == ed::NodeId(gn.NodeId());
+      // The letter keys play the Keyboard under the mouse, or the one Keyboard that is the whole
+      // selection (the armed-track rule: New Synth selects its Keyboard, so it plays with no hover).
+      const bool isHovered = ed::GetHoveredNode() == ed::NodeId(gn.NodeId()) ||
+                             (ed::GetSelectedObjectCount() == 1 && ed::IsNodeSelected(gn.NodeId()));
       if (n->computerKeyboardEnabled && isHovered)
          gComputerKeyboardHot = true; // letter keys belong to this node; canvas WASD/F/H/U stand down
       for (const TypingKey& tk : kTypingKeys)
@@ -541,7 +544,9 @@ namespace app
             n->SetKeyState(note, false);
          // !gArrangeFocused: the timeline owns the keyboard (its M marker
          // key would otherwise also play a note here).
+         // No Cmd/Ctrl/Alt: Cmd+Z, Cmd+S, Cmd+C... are shortcuts, not notes (Z, S and C are piano keys).
          else if (n->computerKeyboardEnabled && isHovered && !TextFocusClaimed() && !gArrangeFocused
+                  && !ImGui::GetIO().KeyCtrl && !ImGui::GetIO().KeySuper && !ImGui::GetIO().KeyAlt
                   && ImGui::IsKeyPressed(tk.key, false))
             n->SetKeyState(note, true);
       }

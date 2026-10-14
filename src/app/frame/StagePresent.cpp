@@ -50,7 +50,12 @@ void DrawPresent(FrameCtx& fc)
                GuardUnsavedChanges([path]() { LoadPatchFrom(path); });
          }
          else if (ImGui::IsKeyPressed(ImGuiKey_N, false))
-            GuardUnsavedChanges([]() { NewPatch(); });
+         {
+            if (ImGui::GetIO().KeyShift)
+               SpawnPlayableSynth(); // adds to the patch, so nothing unsaved is at risk
+            else
+               GuardUnsavedChanges([]() { NewPatch(); });
+         }
       }
 
       // Frame limiter. Sleeping most of the way there and spinning the last

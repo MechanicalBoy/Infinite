@@ -386,6 +386,9 @@ extern std::vector<std::pair<std::string, std::string>> gLinkDragSuggestions;
       ImVec2 canvasPos{ 0.0f, 0.0f };
       ImVec2 screenPos{ 0.0f, 0.0f };
       std::vector<std::string> paths;
+      // One dropped file plays at once through an Audio File and an Audio Out; these are those nodes,
+      // kept while the list is open so a pick can replace them.
+      std::vector<int> autoNodes;
    };
 
 extern AudioDropPickerState gAudioDropPicker;
@@ -658,6 +661,7 @@ extern bool gVsync;
 extern bool gRequestFitView;
 
 extern int gRequestFitViewNodeIndex;
+extern int gRequestSelectNodeIndex; // select this node alone on the next canvas frame (-1 = none)
 
 extern bool gRequestGroup;
 
@@ -2604,6 +2608,11 @@ std::vector<std::pair<std::string, std::string>> RecommendedNodeTypesForOutput(G
                                                                                     int srcOutputIndex = 0);
 
 ImVec2 FindFreeSpawnPosition(const ImVec2& center);
+
+int HearNode(int srcIndex);
+std::vector<int> SpawnAudioDropNodes(const std::string& name, const std::string& category,
+                                     const std::vector<std::string>& paths, const ImVec2& canvasPos);
+int SpawnPlayableSynth();
 
 GraphNode* SpawnNode(const std::string& typeName, const std::string& category,
                         float x = 0.0f, float y = 0.0f);

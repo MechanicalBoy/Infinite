@@ -137,7 +137,7 @@ namespace app
 #else
          { "MIDI Out", I18N_KEY("Plays a hardware MIDI synth from a note cable. Pick the device and the channel (1-16); notes sent here do not reach Audio Out, so the synth makes its own sound. Four CC rows send a controller number and a modulatable value, only when it changes, so any LFO or macro can turn a knob on the synth. 'clock' makes Infinite the master clock (24 pulses per beat, with Start, Stop, Continue and song position) and switches itself off while Infinite follows an incoming clock. 'offset' shifts everything by -50 to +50 ms to line up with the synth's latency. Every note still held is released when you delete or bypass the node, change device, stop the transport or press panic. Pick \"Infinite (virtual)\" to publish a source called Infinite that DAWs and other apps list as a MIDI input.") },
 #endif
-         { "Keyboard", I18N_KEY("A hardware-free note source: click-and-drag the on-screen piano, or hover the node and type on your laptop keyboard (Logic/GarageBand's Musical Typing layout - ZXCVBNM... is one octave, QWERTY... the octave above) to test a patch with no MIDI controller at all.") },
+         { "Keyboard", I18N_KEY("A hardware-free note source: click-and-drag the on-screen piano, or hover the node (or select it alone) and type on your laptop keyboard (Logic/GarageBand's Musical Typing layout - ZXCVBNM... is one octave, QWERTY... the octave above) to test a patch with no MIDI controller at all.") },
          { "Note Transpose", I18N_KEY("Shifts every incoming note's pitch by a fixed number of semitones.") },
          { "Pitch Bend", I18N_KEY("A hand-driven bend wheel, patched inline in the note chain like Note Transpose. Unlike a transpose (which can only re-pitch a note as it attacks), moving this knob slides every note currently held through it in real time - drag it while a chord rings and the chord bends, no need to route it onto a synth's own bend knob. Default range is +/-2 semitones, the standard wheel range.") },
          { "Velocity Curve", I18N_KEY("Reshapes incoming note velocity through a response curve (soft/linear/hard, or a custom curve) - the note-chain equivalent of a keybed velocity curve setting.") },
@@ -560,6 +560,7 @@ namespace app
          // Patch & File
          { I18N_KEY("File & Patch"), I18N_KEY("Settings..."), MODKEY "+0", I18N_KEY("Open appearance, canvas, audio, and performance settings") },
          { I18N_KEY("File & Patch"), I18N_KEY("New Patch"), MODKEY "+N", I18N_KEY("Create a new empty patch") },
+         { I18N_KEY("File & Patch"), I18N_KEY("New Synth"), MODKEY "+Shift+N", I18N_KEY("Add a Keyboard, a synth and an Audio Out, wired and ready to play") },
          { I18N_KEY("File & Patch"), I18N_KEY("Open Patch"), MODKEY "+O", I18N_KEY("Open an existing .inf patch file") },
          { I18N_KEY("File & Patch"), I18N_KEY("Save"), MODKEY "+S", I18N_KEY("Save current patch") },
          { I18N_KEY("File & Patch"), I18N_KEY("Save As..."), MODKEY "+Shift+S", I18N_KEY("Save patch to a new file") },
