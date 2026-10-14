@@ -1,11 +1,11 @@
 {
- "version": 1,
+ "version": 2,
  "tasks": [
   {
    "id": "b01",
    "split": "dev",
    "kind": "build",
-   "goal_text": "Make a picture: a star shape shown on the output.",
+   "goal_text": "Make a picture: a star shape shown on the output. Use a Shape node with its shape type set to Star.",
    "start_patch": null,
    "oracle": [
     {
@@ -143,7 +143,7 @@
    "id": "b04",
    "split": "dev",
    "kind": "build",
-   "goal_text": "Blend two different shapes together at 50 percent and show the result on the output.",
+   "goal_text": "Blend two different shapes together at 50 percent and show the result on the output. Use two Shape nodes with different shape types and a Blend node.",
    "start_patch": null,
    "oracle": [
     {
@@ -344,7 +344,7 @@
    "id": "b08",
    "split": "held-out",
    "kind": "build",
-   "goal_text": "Make a circle, run it through a kaleidoscope with 8 segments, and show it on the output.",
+   "goal_text": "Make a circle, run it through a kaleidoscope with 8 segments, and show it on the output. Use a Circle node.",
    "start_patch": null,
    "oracle": [
     {
@@ -735,7 +735,7 @@
    "id": "t06",
    "split": "dev",
    "kind": "tweak",
-   "goal_text": "Replace the shape named right with a circle, and set the blend mix to 0.8.",
+   "goal_text": "Replace the shape named right with a circle, and set the blend mix to 0.8. The replacement is a Circle node.",
    "start_patch": "tools/agentlang/tasks/t06.inf",
    "oracle": [
     {
@@ -973,7 +973,7 @@
    "id": "f01",
    "split": "dev",
    "kind": "field",
-   "goal_text": "Fill the picture with a horizontal gradient: black on the left, white on the right.",
+   "goal_text": "Fill the picture with a horizontal gradient: black on the left, white on the right. Use a Field Pixel node that reads uv.x.",
    "start_patch": null,
    "oracle": [
     {
@@ -1025,7 +1025,7 @@
    "id": "f02",
    "split": "dev",
    "kind": "field",
-   "goal_text": "Fill the picture with a black and white checkerboard of 8 by 8 squares.",
+   "goal_text": "Fill the picture with a black and white checkerboard of 8 by 8 squares. Use a Field Pixel node, with floor and 8.",
    "start_patch": null,
    "oracle": [
     {
@@ -1078,7 +1078,7 @@
    "id": "f03",
    "split": "dev",
    "kind": "field",
-   "goal_text": "Make a sound that plays a sine wave at the pitch of each note, silent when the key is released.",
+   "goal_text": "Make a sound that plays a sine wave at the pitch of each note, silent when the key is released. Use a Field Synth whose code uses sin, freq and gate.",
    "start_patch": null,
    "oracle": [
     {
@@ -1118,7 +1118,7 @@
    "id": "f04",
    "split": "dev",
    "kind": "field",
-   "goal_text": "Play a Field Synth through a Field Effect that halves the level, to the speakers.",
+   "goal_text": "Play a Field Synth through a Field Effect that halves the level, to the speakers. Use a Field Effect node whose code reads in.",
    "start_patch": null,
    "oracle": [
     {
@@ -1164,7 +1164,7 @@
    "id": "f05",
    "split": "dev",
    "kind": "field",
-   "goal_text": "Wave a sphere: move each point up and down along a sine of its x position plus time, with height 0.2. Render it to the output.",
+   "goal_text": "Wave a sphere: move each point up and down along a sine of its x position plus time, with height 0.2. Render it to the output. Use a Field Modifier node that writes P.y with sin and t.",
    "start_patch": null,
    "oracle": [
     {
@@ -1218,7 +1218,7 @@
    "id": "f06",
    "split": "dev",
    "kind": "field",
-   "goal_text": "Every quarter step play note 60 at velocity 0.8 for a quarter step, into a Field Synth, to the speakers.",
+   "goal_text": "Every quarter step play note 60 at velocity 0.8 for a quarter step, into a Field Synth, to the speakers. Use a Field Notes node that calls note(...).",
    "start_patch": null,
    "oracle": [
     {
@@ -1264,7 +1264,7 @@
    "id": "f07",
    "split": "held-out",
    "kind": "field",
-   "goal_text": "Fill the picture with a vertical gradient: black at the bottom, white at the top.",
+   "goal_text": "Fill the picture with a vertical gradient: black at the bottom, white at the top. Use a Field Pixel node that reads uv.y.",
    "start_patch": null,
    "oracle": [
     {
@@ -1316,7 +1316,7 @@
    "id": "f08",
    "split": "held-out",
    "kind": "field",
-   "goal_text": "Make a sine voice at half volume that is silent when the key is released.",
+   "goal_text": "Make a sine voice at half volume that is silent when the key is released. Use a Field Synth whose code uses sin and gate.",
    "start_patch": null,
    "oracle": [
     {
@@ -1356,7 +1356,7 @@
    "id": "f09",
    "split": "held-out",
    "kind": "field",
-   "goal_text": "Play a Field Synth through a Field Effect that flips the sign of the signal, to the speakers.",
+   "goal_text": "Play a Field Synth through a Field Effect that flips the sign of the signal, to the speakers. Use a Field Effect node that sets out = -in.",
    "start_patch": null,
    "oracle": [
     {
@@ -1401,7 +1401,7 @@
    "id": "f10",
    "split": "held-out",
    "kind": "field",
-   "goal_text": "Lift a sphere's points: move each point up by its distance from the vertical axis times 0.3. Render it to the output.",
+   "goal_text": "Lift a sphere's points: move each point up by its distance from the vertical axis times 0.3. Render it to the output. Use a Field Modifier node that writes P.y with length.",
    "start_patch": null,
    "oracle": [
     {

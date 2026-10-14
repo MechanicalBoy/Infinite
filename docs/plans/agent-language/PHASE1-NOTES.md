@@ -33,3 +33,12 @@ The frozen oracles write `black_percent` limits as fractions (for example `max 0
 reports 0-100. The harness divides every `*_percent` stat by 100 before the oracle sees it
 (`harness.stats_for`). With that, all 30 reference solutions pass the real oracle (CLI `--validate`
 plus `--frame`), and no tweak start patch passes. Tasks and `FROZEN.sha256` are unchanged.
+
+## Tasks v2 (2026-10-14): goals name what the oracle requires
+
+Pilot v1 (Sonnet 5.5, 5 dev tasks, three arms) failed B0 and B0p on b01, b04 and f01 with valid patches:
+a `Star` node for "a star", a `Ramp` node for a gradient. The oracles wanted `Shape` and `FieldPixel`, which
+only the B1 spec names. That biased the pass rate toward B1. Fix: `revise_goals.py` appends one sentence naming
+the required node types or code words to 14 goals (dev and held-out alike, one rule); oracles, start patches
+and solutions are unchanged; `FROZEN.sha256` regenerated; version 2. The held-out tasks had not been run.
+Pilot v1 numbers are kept in PILOT.md as the evidence for this change, not as a result.
