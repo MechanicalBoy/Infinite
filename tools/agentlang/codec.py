@@ -190,7 +190,7 @@ def _check_value(F, tf, n, key, value):
             raise Fail("E_SEM", 3, f"{key} needs a number, got {value}")
     elif tag == "i":
         opts = k.get("options") or []
-        if not isnum(value) and opts and value not in opts:
+        if not isnum(value) and opts and value.lower() not in [o.lower() for o in opts]:
             raise Fail("E_SEM", 3, f"{key} options: {', '.join(opts)}")
         if not isnum(value) and not re.fullmatch(r"[A-Za-z][\w ]*", value):
             raise Fail("E_SEM", 3, f"{key} needs a number or an option name, got {value}")

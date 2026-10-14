@@ -1,6 +1,6 @@
 # Tongue v0: write a patch as sentences
 
-SPEC size: 4080 characters (limit 7000).
+SPEC size: 4716 characters (limit 7000).
 
 You edit an Infinite patch with short sentences, one per line. A blank line ends a paragraph.
 A paragraph is all-or-nothing: if any sentence fails, none is applied. Sentences become `.inf` text.
@@ -64,6 +64,9 @@ A kernel only knows the names of its node's domain; any other name is `E_FIELD` 
 | Field Effect | `in sr n` | `out` |
 | Field Modifier | `P N uv Cd i count t` | `P N Cd` |
 
+A Field Notes node plays a note only inside an `if`; `tick(1/4)` is its clock, there is no `every`:
+`field n if (tick(1/4) > 0.5) { note(60, 0.8, 1/4) }`, then `wire n s.notes` into a Field Synth.
+
 `t` is frame time and is not a sample-domain clock. For a sine voice use
 `field v out = sin(6.2831853 * n * freq / sr) * 0.5 * gate`; for a running phase keep it in a cell:
 `field v state float ph = 0; ph = ph + freq / sr; out = sin(6.2831853 * ph) * 0.5 * gate`.
@@ -89,3 +92,8 @@ When `ok` is true the reply also says `checked_by: "--validate"` for what the se
 - Out of scope in v0: modulation, expressions, globals, clips, flags. Use `.inf` for those.
 - Layout and `Comment` nodes are not written; positions are added afterwards.
 - Something must reach an `Output` (picture) or `Audio Out` (sound), or the patch shows nothing.
+- Nothing exists unless the patch already has it or you `add` it: a build task starts empty, so
+  `add Output as out` (or `add Audio Out as out`) before you `wire x out.in`. `Output` has two input
+  slots, `in` and `audio`, so write `out.in`.
+- Keys are exact and often not the word you expect (`vignette` uses `uAmount`, not `amount`). Run `ask <type>`
+  for every type before you `set` one of its keys, and copy the key from the reply.

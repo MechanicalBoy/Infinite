@@ -145,7 +145,13 @@ def t2(n=200):
             nodes[name] = tf
             if seen.get(tf.name) and rnd.random() < 0.7 and tf.name not in facts.FIELD_TYPES:
                 key, tag = rnd.choice(sorted(seen[tf.name].items()))
-                val = {"f": str(round(rnd.uniform(0, 5), 2)), "i": str(rnd.randint(0, 3)),
+                kf = facts.load().type(tf.name).keys.get(key, {}) if hasattr(facts, "load") else {}
+                lo = kf.get("min") if kf.get("min") is not None else 0
+                hi = kf.get("max") if kf.get("max") is not None else 5
+                if hi < lo:
+                    lo, hi = hi, lo
+                nopt = len(kf.get("options") or []) or 4
+                val = {"f": str(round(rnd.uniform(lo, hi), 2)), "i": str(rnd.randint(0, nopt - 1) if kf.get("options") else rnd.randint(int(lo), int(min(hi, lo + 3)))),
                        "b": rnd.choice("01"), "c": "0.5 0.5 0.5", "s": "text"}[tag]
                 lines.append(f"set {name}.{key} {val}")
             if tf.name in facts.FIELD_TYPES:
