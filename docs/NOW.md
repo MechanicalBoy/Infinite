@@ -16,7 +16,6 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 | Session | Branch / worktree | Quest | Uses | Since |
 |---|---|---|---|---|
-| pro-agent-language | `feature/agent-language-p2` (worktree `~/infinte-wt/agent-language-p2`) | Agent language Phase 2: baseline, control and new-language runs | `infinte-main` build (read-only CLI); spends account-1 quota on `claude -p` pilots | 2026-10-14 |
 | re-survey-finish | `feature/re-survey-finish` at `infinte` (+ agent worktrees) | re-survey leftovers, quality misses, B1-B10 into scoreboard | main build, bench (later, serial), DAW/TD GUI scripting | 2026-10-13 |
 
 ## Waiting on owner (one at a time, recommended answer first)

@@ -203,7 +203,20 @@ than B0, so the win comes from the language, not the resident check. **VERDICT: 
 | **T4 cold write (first `al apply` valid, need 90%)** | **FAIL: Haiku 67%, Sonnet 70%, Opus 80%** |
 | Overall `final.json` | `ok: false`, failed: T4 |
 
-T4 failures are concentrated: t08 and f08 account for 18 of 25. Causes in the logs: the model sets a param key it
-never asked for (`vig.uAmount`; the SPEC does not force `ask` first) and writes a Field name that does not exist
-(`age`). Both are SPEC problems, not engine problems. Fix: a SPEC change (ask before set; list the Field
-built-ins), then re-run T4 on held-out only. Not done yet.
+T4 as first run FAILED (above). The first diagnosis here (a wrong `uAmount` key, a bad `age` name) was wrong: `uAmount` is valid;
+`ask` returned no keys because `nodefacts.json` was not shipped. Real causes, from first errors logged by `al.py`: guessed
+param keys (`amount` for `uAmount`), no `add Output as out`, Output slots `in`/`audio`, Field names that do not exist in the
+domain (sample domain has only `freq gate sr n`), and Field Notes without `if (tick(...)) { note(...) }`.
+
+Fix (SPEC and tooling only, engine untouched): ship `nodefacts.json` (319 types) so `ask` shows real keys, ranges, options;
+SPEC rules for Output, exact keys + ask before set, Field domain table, Field Notes idiom; option names case-insensitive.
+
+| T4 after the fix | Haiku | Opus | Sonnet | Note |
+|---|---|---|---|---|
+| Dev set (20 runs each, clean: not used to write the fix) | 0.90 | 0.95 | 0.90 | **gate passes, Haiku and Sonnet exactly on the line** |
+| Held-out (30 runs each) | 0.967 | 1.000 | 0.933 | contaminated: an earlier SPEC fix used held-out failures (f08) |
+| Dev before the last fix | 0.80 | 0.85 | 0.85 | |
+
+Caveats: the T4 re-runs used app builds `a74de02eeb59 .. 50fa5c48ead0`, not the benchmark's `b8533d65daf8` (the app was
+rebuilt between jobs); the benchmark token numbers were measured on the SPEC before this fix, so they are not re-confirmed.
+Solved rate (oracle) is lower than validity: b09, b10 fail on Sonnet in most reps; that is task solving, not T4.
