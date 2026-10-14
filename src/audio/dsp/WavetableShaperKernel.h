@@ -8,7 +8,7 @@
 #include "audio/ParamMailbox.h"
 #include "audio/Wavetable.h"
 #include "audio/dsp/DriveKernel.h" // DcBlocker
-#include "audio/dsp/Oversampler.h"
+#include "audio/dsp/MinPhaseOversampler.h"
 
 class AudioEffectNode;
 
@@ -36,13 +36,16 @@ class AudioEffectNode;
 // Anti-aliasing is built in, with no control. The table read is a
 // phase-modulated oscillator: the input moves the read phase, and harmonic h
 // of the table comes out at h times the phase's instantaneous speed. So the
-// curve runs at 8x the sample rate (Oversampler.h), and every oversampled
+// curve runs at 8x the sample rate (MinPhaseOversampler.h: 5 or 6 samples
+// of delay where the linear-phase one cost 73), and every oversampled
 // sample reads the finest mip level whose harmonics all stay under the
 // oversampled Nyquist at the current phase speed (crossfaded continuously
 // between levels, so there is no zipper). What remains above the base
 // Nyquist the decimator removes. `smooth` sets the floor of that choice -
 // the curve is never brighter than it asks for, and only darker where it
-// would otherwise alias. ALIASTEST gates the result.
+// would otherwise alias. ALIASTEST gates the result. The dry half of the
+// mix runs through a second, identical oversampler (ProcessDry), as in
+// DriveKernel.h.
 //
 // Zero-reference and DC follow DriveKernel.h's construction exactly: Shape()
 // subtracts RawShape(0) so bias warps the curve's symmetry without sliding
@@ -154,7 +157,8 @@ public:
       mMailbox.PrepareToPlay(sampleRate);
       for (int ch = 0; ch < kMaxChannels; ch++)
          mDcBlockers[ch].SetSampleRate(sampleRate);
-      mOversampler.Prepare(kOversample);
+      mOversampler.Prepare(kOversample, sampleRate);
+      mDryOversampler.Prepare(kOversample, sampleRate);
       Reset();
    }
 
@@ -163,6 +167,7 @@ public:
    void Reset() override
    {
       mOversampler.Reset();
+      mDryOversampler.Reset();
       for (int ch = 0; ch < kMaxChannels; ch++)
       {
          mDcBlockers[ch].Reset();
@@ -173,8 +178,10 @@ public:
    void PushParams(const AudioEffectNode& node, double sampleRate) override;
 
    void ProcessBlock(const AudioBuffer& in, const AudioBuffer* sidechain, AudioBuffer& out) override;
+   bool ProcessDry(const AudioBuffer& in, AudioBuffer& dry) override;
 
    int LatencySamples() const override { return mOversampler.Latency(); }
+   int MaxLatencySamples() const override { return DriveKernel::kMaxLatency; }
 
    // The block's last raw input sample (channel 0, pre-shape) - the
    // visualizer's live operating-point dot on the transfer curve, the same
@@ -186,7 +193,8 @@ private:
    ParamMailbox mMailbox;
    double mSampleRate = 44100.0; // written by PrepareToPlay only (audio-thread owned)
 
-   Oversampler mOversampler;
+   MinPhaseOversampler mOversampler;
+   MinPhaseOversampler mDryOversampler; // the dry half of the mix, see ProcessDry
    double mPrevPhase[kMaxChannels] = {};
    DcBlocker mDcBlockers[kMaxChannels];
    MeterRing mLevelMeter;

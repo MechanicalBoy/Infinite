@@ -40,6 +40,16 @@ public:
    // not - see §0.5).
    virtual void ProcessBlock(const AudioBuffer& in, const AudioBuffer* sidechain, AudioBuffer& out) = 0;
 
+   // Audio thread only. The dry half of the mix, for a kernel whose wet path
+   // is not delayed by the same whole number of samples at every frequency
+   // (minimum-phase oversampling: Drive, Wavetable Shaper). Such a kernel
+   // writes `in` as its own signal path passes it with the processing taken
+   // out, and returns true; the runtime then mixes against that instead of
+   // against `in` delayed by LatencySamples(), so wet and dry stay in phase
+   // across the whole spectrum at any mix. Called once per block, after
+   // ProcessBlock, with the same `in`. Default: not handled.
+   virtual bool ProcessDry(const AudioBuffer& /*in*/, AudioBuffer& /*dry*/) { return false; }
+
    // Samples of latency this kernel's processing adds (lookahead, oversample,
    // FFT window, ...). 0 for a kernel with none - Audio Filter's biquad/SVF
    // cascade has none. The engine compensates using whatever a kernel reports

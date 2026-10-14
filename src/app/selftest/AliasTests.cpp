@@ -24,6 +24,7 @@
 // -21 dB at 50% drive, -12 dB at 100%.
 // A linear effect runs as the rig's own control and must read clean.
 #include "app/AppShared.h"
+#include "audio/dsp/MinPhaseOversampler.h"
 #include "audio/dsp/PortableFft.h"
 #include "nodes/AnalogNode.h"
 #include "nodes/WavetableNode.h"
@@ -243,15 +244,17 @@ bool RunAliasTest()
    // EffectDefs.cpp moves the probe with it instead of silently clamping.
    const std::vector<AliasCase> cases = {
       { "Stereo (linear control)", "Stereo", {}, 0.0, true },
-      // Drive: 8x oversampling + first-order ADAA (DriveKernel.h).
-      { "Drive tanh, drive 50%", "Drive", { { "drive", 0.5f }, { "color", 0.0f } }, -100.0 },
-      { "Drive atan, drive 50%", "Drive", { { "drive", 0.5f }, { "color", 1.0f } }, -100.0 },
-      { "Drive tanh, drive 100%", "Drive", { { "drive", 1.0f }, { "color", 0.0f } }, -60.0 },
-      { "Drive asymmetric, drive 50%", "Drive", { { "drive", 0.5f }, { "bias", 0.75f } }, -100.0 },
+      // Drive: 8x minimum-phase oversampling + first-order ADAA (DriveKernel.h).
+      // Gates sit about 5 dB under what it measures (2026-10-14), which is
+      // what the 73-sample linear-phase oversampler measured or better.
+      { "Drive tanh, drive 50%", "Drive", { { "drive", 0.5f }, { "color", 0.0f } }, -118.0 },
+      { "Drive atan, drive 50%", "Drive", { { "drive", 0.5f }, { "color", 1.0f } }, -115.0 },
+      { "Drive tanh, drive 100%", "Drive", { { "drive", 1.0f }, { "color", 0.0f } }, -64.0 },
+      { "Drive asymmetric, drive 50%", "Drive", { { "drive", 0.5f }, { "bias", 0.75f } }, -114.0 },
       // Wavetable Shaper: 8x oversampling + slew-tracking mip (WavetableShaperKernel.h).
       // Before (same metric): -2.9 dB at 50% drive, +10.3 dB at 100%.
-      { "Wavetable Shaper, drive 50%", "Wavetable Shaper", { { "drive", 0.5f } }, -90.0 },
-      { "Wavetable Shaper, drive 100%", "Wavetable Shaper", { { "drive", 1.0f } }, -65.0 },
+      { "Wavetable Shaper, drive 50%", "Wavetable Shaper", { { "drive", 0.5f } }, -112.0 },
+      { "Wavetable Shaper, drive 100%", "Wavetable Shaper", { { "drive", 1.0f } }, -96.0 },
       { "Dynamics analog, -30 dB / 8:1", "Dynamics",
         { { "analog", 1.0f }, { "threshold", 0.5f }, { "ratio", 7.0f / 19.0f } } },
       // Cycle Shaper: phase-locked oscillator on band-limited tables
@@ -439,6 +442,210 @@ bool RunAliasTest()
    }
 
    printf("ALIASTEST %d gated case(s) at their limits  %s\n", gated, all ? "OK" : "FAIL");
+   return all;
+}
+
+// MinPhaseOversampler.h on its own, then the two effects built on it.
+//   - a round trip passes 20 Hz - 20 kHz flat;
+//   - Up() leaves no image above -115 dB, Down() folds nothing back above it;
+//   - Latency() is the round trip's real low-frequency delay;
+//   - Drive and Wavetable Shaper report at most 6 samples of latency;
+//   - at mix 50% each is as flat as at mix 100% (the dry half is phase
+//     matched; mixing against a plainly delayed dry would notch the highs).
+namespace
+{
+   // Power of `x` at `cycles` whole cycles across it, and of everything else.
+   void SplitTone(const std::vector<double>& x, double cycles, double& tone, double& rest, double* phase = nullptr)
+   {
+      const size_t n = x.size();
+      double c = 0.0, s = 0.0, total = 0.0;
+      for (size_t i = 0; i < n; i++)
+      {
+         const double a = 2.0 * M_PI * cycles * (double)i / (double)n;
+         c += x[i] * std::cos(a);
+         s += x[i] * std::sin(a);
+         total += x[i] * x[i];
+      }
+      c *= 2.0 / (double)n;
+      s *= 2.0 / (double)n;
+      tone = 0.5 * (c * c + s * s);
+      rest = std::max(0.0, total / (double)n - tone);
+      if (phase != nullptr)
+         *phase = std::atan2(c, s); // of A sin(a + phase)
+   }
+
+   double Db(double ratio) { return 10.0 * std::log10(std::max(ratio, 1.0e-30)); }
+
+   bool OversamplerAtRate(double rate)
+   {
+      constexpr int kLen = 4096;
+      constexpr int kWarm = 4096;
+      constexpr int kF = 8;
+      bool ok = true;
+      MinPhaseOversampler os;
+      os.Prepare(kF, rate);
+
+      // Up(): a 15 kHz sine, everything but the sine itself is image.
+      {
+         os.Reset();
+         const double cycles = std::round(15000.0 * kLen / rate);
+         std::vector<double> y;
+         for (int i = 0; i < kWarm + kLen; i++)
+         {
+            float o[kF];
+            os.Up(0, (float)(0.5 * std::sin(2.0 * M_PI * cycles * (double)i / (double)kLen)), o);
+            if (i >= kWarm)
+               y.insert(y.end(), o, o + kF);
+         }
+         double tone, rest;
+         SplitTone(y, cycles, tone, rest);
+         const double db = Db(rest / tone);
+         const bool pass = db <= -115.0;
+         ok &= pass;
+         printf("OVERSAMPLETEST %6.0f Hz  up images        %7.1f dB  (<= -115)  %s\n", rate, db, pass ? "OK" : "FAIL");
+      }
+
+      // Down(): tones above the base Nyquist that would land in the audible
+      // band (17, 5, 5 and 3 kHz), across every stage's stopband.
+      for (double hz : { rate - 17000.0, 2.0 * rate - 5000.0, 3.0 * rate + 5000.0, 4.0 * rate - 3000.0 })
+      {
+         os.Reset();
+         const double ratio = hz / rate;
+         const double cycles = std::round(ratio * kLen);
+         double sum = 0.0;
+         for (int i = 0; i < kWarm + kLen; i++)
+         {
+            float in[kF];
+            for (int k = 0; k < kF; k++)
+               in[k] = (float)(0.5 * std::sin(2.0 * M_PI * cycles * (double)(i * kF + k) / (double)(kLen * kF)));
+            const double v = os.Down(0, in);
+            if (i >= kWarm)
+               sum += v * v;
+         }
+         const double db = Db((sum / kLen) / 0.125);
+         const bool pass = db <= -115.0;
+         ok &= pass;
+         printf("OVERSAMPLETEST %6.0f Hz  down, %.2f fs in   %7.1f dB  (<= -115)  %s\n", rate, ratio, db, pass ? "OK" : "FAIL");
+      }
+
+      // Round trip: flat passband, and the delay Latency() claims.
+      double worst = 0.0, lowDelay = 0.0;
+      for (double hz : { 20.0, 200.0, 1000.0, 5000.0, 10000.0, 15000.0, 20000.0 })
+      {
+         os.Reset();
+         const int len = (hz < 100.0) ? 8 * kLen : kLen;
+         const double cycles = std::max(1.0, std::round(hz * len / rate));
+         std::vector<double> y;
+         for (int i = 0; i < kWarm + len; i++)
+         {
+            float o[kF];
+            os.Up(0, (float)(0.5 * std::sin(2.0 * M_PI * cycles * (double)i / (double)len)), o);
+            const double v = os.Down(0, o);
+            if (i >= kWarm)
+               y.push_back(v);
+         }
+         double tone, rest, phase;
+         SplitTone(y, cycles, tone, rest, &phase);
+         worst = std::max(worst, std::fabs(Db(tone / 0.125)));
+         if (hz == 200.0)
+         {
+            // kWarm is a whole number of cycles, so the lag is the phase itself.
+            lowDelay = -phase / (2.0 * M_PI * cycles / (double)len);
+         }
+      }
+      {
+         const bool pass = worst <= 0.01;
+         ok &= pass;
+         printf("OVERSAMPLETEST %6.0f Hz  passband 20-20k   %7.4f dB  (<= 0.01)  %s\n", rate, worst, pass ? "OK" : "FAIL");
+         const bool delayOk = std::fabs(lowDelay - (double)os.Latency()) <= 0.6 && os.Latency() <= 6;
+         ok &= delayOk;
+         printf("OVERSAMPLETEST %6.0f Hz  delay %.2f samples, reports %d (sections %d/%d/%d)  %s\n", rate, lowDelay,
+                os.Latency(), os.Sections(0), os.Sections(1), os.Sections(2), delayOk ? "OK" : "FAIL");
+      }
+      return ok;
+   }
+
+   // Level of `effect` at `hz` with a -60 dBFS sine in (small enough that
+   // the curve is a plain gain), in dB re the input.
+   bool SmallSignalGain(const char* effect, float mix, double hz, double& gainDb)
+   {
+      const EffectDef* def = nullptr;
+      for (const EffectDef& d : GetEffectDefs())
+         if (d.name == effect)
+            def = &d;
+      if (def == nullptr)
+         return false;
+      auto node = std::make_unique<AudioEffectNode>(*def);
+      node->mix = mix;
+      node->GetAudioNode()->PrepareToPlay(kRate, 512);
+      node->CookIfNeeded(1);
+      constexpr int kLen = 4096;
+      const int warm = (int)(0.3 * kRate);
+      const double cycles = std::round(hz * kLen / kRate);
+      std::vector<std::vector<float>> rendered;
+      DelayTest::RunSamples(
+         *node, warm + kLen, 1,
+         [cycles](int i, int) { return 0.001f * (float)std::sin(2.0 * M_PI * cycles * (double)i / (double)kLen); },
+         &rendered);
+      std::vector<double> tail(rendered[0].begin() + warm, rendered[0].end());
+      double tone, rest;
+      SplitTone(tail, cycles, tone, rest);
+      gainDb = Db(tone / (0.5 * 0.001 * 0.001));
+      return true;
+   }
+}
+
+bool RunOversampleTest()
+{
+   bool all = true;
+   for (double rate : { 44100.0, 48000.0, 96000.0 })
+      all &= OversamplerAtRate(rate);
+
+   for (const char* effect : { "Drive", "Wavetable Shaper" })
+   {
+      const EffectDef* def = nullptr;
+      for (const EffectDef& d : GetEffectDefs())
+         if (d.name == effect)
+            def = &d;
+      if (def == nullptr)
+      {
+         printf("OVERSAMPLETEST %s: no such effect  FAIL\n", effect);
+         all = false;
+         continue;
+      }
+      {
+         auto node = std::make_unique<AudioEffectNode>(*def);
+         node->GetAudioNode()->PrepareToPlay(kRate, 512);
+         node->CookIfNeeded(1);
+         const int latency = node->LatencySamples();
+         const bool pass = latency <= 6;
+         all &= pass;
+         printf("OVERSAMPLETEST %-17s latency %d samples at 48 kHz  (<= 6)  %s\n", effect, latency, pass ? "OK" : "FAIL");
+      }
+      // How far the response at mix 50% strays from the response at mix
+      // 100%, 1 kHz as the reference for both.
+      double worst = 0.0;
+      double ref[2] = {};
+      double lastWet = 0.0;
+      bool built = true;
+      for (double hz : { 1000.0, 3000.0, 6000.0, 10000.0, 14000.0, 18000.0 })
+         for (int m = 0; m < 2; m++)
+         {
+            double g = 0.0;
+            built &= SmallSignalGain(effect, m == 0 ? 1.0f : 0.5f, hz, g);
+            if (hz == 1000.0)
+               ref[m] = g;
+            if (m == 1)
+               worst = std::max(worst, std::fabs((g - ref[1]) - lastWet + ref[0]));
+            else
+               lastWet = g;
+         }
+      const bool pass = built && worst <= 0.1;
+      all &= pass;
+      printf("OVERSAMPLETEST %-17s mix 50%% vs 100%%, 1-18 kHz: %.3f dB apart  (<= 0.1)  %s\n", effect, worst,
+             pass ? "OK" : "FAIL");
+   }
+   printf("OVERSAMPLETEST %s\n", all ? "OK" : "FAIL");
    return all;
 }
 }

@@ -95,6 +95,14 @@ public:
 
       mKernel->ProcessBlock(in, sidechainPtr, wet);
 
+      // A kernel that aligns its own dry signal (IEffectKernel::ProcessDry)
+      // replaces the delay ring below.
+      AudioBuffer kernelDry;
+      kernelDry.channels = mDryChannels;
+      kernelDry.numChannels = numChannels;
+      kernelDry.numFrames = output.numFrames;
+      const bool hasKernelDry = mKernel->ProcessDry(in, kernelDry);
+
       float peak = 0.0f;
       float monoBuf[kAudioMaxBlockFrames];
       for (int i = 0; i < output.numFrames; i++)
@@ -121,8 +129,8 @@ public:
          float monoSum = 0.0f;
          for (int ch = 0; ch < numChannels; ch++)
          {
-            float dry = in.channels[ch][i];
-            if (mDryLength > 1)
+            float dry = hasKernelDry ? mDryChannels[ch][i] : in.channels[ch][i];
+            if (!hasKernelDry && mDryLength > 1)
             {
                float* ring = &mDryStorage[(size_t)ch * mDryLength];
                ring[mDryPos] = dry;
@@ -166,8 +174,12 @@ private:
       mMaxBlockSize = std::max(1, maxBlockSize);
       mWetStorage.assign((size_t)mMaxBlockSize * kMaxChannels, 0.0f);
       mSilence.assign((size_t)mMaxBlockSize, 0.0f);
+      mDryBlockStorage.assign((size_t)mMaxBlockSize * kMaxChannels, 0.0f);
       for (int ch = 0; ch < kMaxChannels; ch++)
+      {
          mWetChannels[ch] = mWetStorage.data() + (size_t)ch * mMaxBlockSize;
+         mDryChannels[ch] = mDryBlockStorage.data() + (size_t)ch * mMaxBlockSize;
+      }
       // The kernel has just been prepared, so its latency for this rate is
       // known. Sized here, on the main thread, never in ProcessBlock.
       // One slot more than the longest delay: the ring holds the sample just
@@ -185,6 +197,8 @@ private:
 
    std::vector<float> mWetStorage;
    float* mWetChannels[kMaxChannels] = {};
+   std::vector<float> mDryBlockStorage; // one block of kernel-aligned dry, see IEffectKernel::ProcessDry
+   float* mDryChannels[kMaxChannels] = {};
    std::vector<float> mSilence;
    int mMaxBlockSize = 0;
 

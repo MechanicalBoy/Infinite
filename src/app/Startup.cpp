@@ -8,6 +8,7 @@
 namespace app
 {
 bool RunAliasTest(); // selftest/AliasTests.cpp
+bool RunOversampleTest(); // selftest/AliasTests.cpp
 bool RunPitchTest(); // selftest/PitchTests.cpp
 bool RunFxAudit(); // selftest/FxAudit.cpp
 bool RunModAudit(); // selftest/ModAudit.cpp
@@ -566,6 +567,8 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // have anti-aliasing (src/app/selftest/AliasTests.cpp).
    if (getenv("INFINITE_ALIASTEST") != nullptr)
       return RunAliasTest() ? 0 : 1;
+   if (getenv("INFINITE_OVERSAMPLETEST") != nullptr)
+      return RunOversampleTest() ? 0 : 1;
 
    // Pitch Shifter quality: purity, chord, unity null, transients (selftest/PitchTests.cpp).
    if (getenv("INFINITE_PITCHTEST") != nullptr)

@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "IEffectKernel.h"
-#include "Oversampler.h"
+#include "MinPhaseOversampler.h"
 #include "audio/DspMath.h"
 #include "audio/ParamMailbox.h"
 
@@ -25,15 +25,21 @@
 // codebase's rational approximation of it (see its own comment).
 //
 // Anti-aliasing is built in, with no control: the curve runs at 8x the
-// sample rate through Oversampler.h (half-band cascade, 73 samples of
-// latency, reported to PDC), and each oversampled sample is the first-order
+// sample rate through MinPhaseOversampler.h (minimum-phase half-band
+// cascade: 5 or 6 samples of delay at 44.1/48 kHz, reported to PDC, where
+// the linear-phase one it replaced cost 73), and each oversampled sample is
+// the first-order
 // antiderivative form of the curve (ADAA - Parker, Zavalishin & Le Bivic,
 // "Reducing the Aliasing of Nonlinear Waveshaping Using Continuous-Time
 // Convolution", DAFx-16), which removes most of what oversampling alone
 // would still fold back. ALIASTEST gates the result: audible aliasing went
 // from -21 dB to about -120 dB at 50% drive. ADAA's half-sample delay at 8x
-// (1/16 of a base sample) is not compensated; it is inaudible. The DC blocker
-// also runs // always, hardcoded (bias otherwise leaks a constant offset to the output).
+// (1/16 of a base sample) is not compensated; it is inaudible. Because a
+// minimum-phase filter's delay is not the same at every frequency, the dry
+// half of the mix runs through a second, identical oversampler with nothing
+// in the middle (ProcessDry), so wet and dry stay in phase at any mix. The
+// DC blocker also runs always, hardcoded (bias otherwise leaks a constant
+// offset to the output).
 class AudioEffectNode;
 
 // Pure function so the visualizer (main-thread, params only) and the audio
@@ -200,7 +206,8 @@ public:
    {
       mSampleRate = sampleRate;
       mMailbox.PrepareToPlay(sampleRate);
-      mOversampler.Prepare(kOversample);
+      mOversampler.Prepare(kOversample, sampleRate);
+      mDryOversampler.Prepare(kOversample, sampleRate);
       for (int ch = 0; ch < kMaxChannels; ch++)
          mDcBlockers[ch].SetSampleRate(sampleRate);
       Reset();
@@ -209,6 +216,7 @@ public:
    void Reset() override
    {
       mOversampler.Reset();
+      mDryOversampler.Reset();
       for (int ch = 0; ch < kMaxChannels; ch++)
       {
          mAdaa[ch].Reset();
@@ -220,14 +228,21 @@ public:
    void PushParams(const AudioEffectNode& node, double sampleRate) override;
 
    void ProcessBlock(const AudioBuffer& in, const AudioBuffer* sidechain, AudioBuffer& out) override;
+   bool ProcessDry(const AudioBuffer& in, AudioBuffer& dry) override;
 
    int LatencySamples() const override { return mOversampler.Latency(); }
+   int MaxLatencySamples() const override { return kMaxLatency; }
+
+   // The oversampler's delay depends on the sample rate (6 samples or fewer);
+   // this bounds it for the runtime's buffers.
+   static constexpr int kMaxLatency = 8;
 
 private:
    ParamMailbox mMailbox;
    double mSampleRate = 44100.0; // written by PrepareToPlay only (audio-thread owned)
 
-   Oversampler mOversampler;
+   MinPhaseOversampler mOversampler;
+   MinPhaseOversampler mDryOversampler; // the dry half of the mix, see ProcessDry
    DriveDsp::Adaa mAdaa[kMaxChannels];
    DcBlocker mDcBlockers[kMaxChannels];
    DriveToneFilter mToneFilters[kMaxChannels];
