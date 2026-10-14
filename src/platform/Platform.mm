@@ -6157,6 +6157,35 @@ namespace Platform
             h->pluginInChannels = negotiatedIn;
             h->pluginOutChannels = negotiatedOut;
 
+            // Sidechain bus. Left exactly as the AU has it unless the host
+            // asked for it (or has to turn it back off): its format is only
+            // set, and the bus only enabled, while a cable feeds it.
+            h->sidechainChannels = 0;
+            if (negotiatedIn > 0 && au.inputBusses.count > 1)
+            {
+               AUAudioUnitBus* scBus = [au.inputBusses objectAtIndexedSubscript:1];
+               h->sidechainChannels = std::min(std::max((int)scBus.format.channelCount, 1), 2);
+               bool on = false;
+               if (h->sidechainWanted)
+               {
+                  for (int channels = 2; channels >= 1 && !on; channels--)
+                  {
+                     AVAudioFormat* format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:rate
+                                                                                             channels:(AVAudioChannelCount)channels];
+                     if (format != nil && [scBus setFormat:format error:nil])
+                     {
+                        h->sidechainChannels = channels;
+                        on = true;
+                     }
+                  }
+               }
+               if (on || h->sidechainActive)
+                  scBus.enabled = on ? YES : NO;
+               h->sidechainActive = on;
+            }
+            else
+               h->sidechainActive = false;
+
             au.maximumFramesToRender = (AUAudioFrameCount)frames;
 
             // The host clock, read from h->transport (PluginRender copies it
@@ -6252,6 +6281,7 @@ namespace Platform
             }
             h->inScratch.assign((size_t)kPluginMaxChannels * (size_t)frames, 0.0f);
             h->outScratch.assign((size_t)kPluginMaxChannels * (size_t)frames, 0.0f);
+            h->sidechainScratch.assign(h->sidechainActive ? (size_t)kPluginMaxChannels * (size_t)frames : 0, 0.0f);
             h->renderSampleTime = 0.0;
 
             if (h->learnToken == nullptr && au.parameterTree != nil)
@@ -6361,7 +6391,8 @@ namespace Platform
       const int frames = maxBlockFrames > 0 ? maxBlockFrames : h->maxBlockFrames;
       if (sampleRate <= 0.0)
          return true; // no device yet - keep whatever we configured with
-      if (std::abs(sampleRate - h->sampleRate) < 1e-6 && frames == h->maxBlockFrames && h->resourcesAllocated)
+      if (std::abs(sampleRate - h->sampleRate) < 1e-6 && frames == h->maxBlockFrames && h->resourcesAllocated &&
+          h->sidechainWanted == h->sidechainActive)
          return true;
 
       h->sampleRate = sampleRate;
@@ -6394,6 +6425,31 @@ namespace Platform
       if (h->resourcesAllocated && h->unit != nil && h->sampleRate > 0.0)
          h->latencySamples = (int)std::lround(h->unit.latency * h->sampleRate);
       return h->latencySamples;
+   }
+
+   int PluginSidechainChannels(PluginHandle* h)
+   {
+      if (h == nullptr)
+         return 0;
+#if INFINITE_ENABLE_VST3
+      if (h->desc.format == "vst3")
+         return PluginVST3SidechainChannels(h);
+#endif
+      return h->sidechainChannels;
+   }
+
+   void PluginSetSidechainEnabled(PluginHandle* h, bool enabled)
+   {
+      if (h == nullptr)
+         return;
+#if INFINITE_ENABLE_VST3
+      if (h->desc.format == "vst3")
+      {
+         PluginVST3SetSidechainEnabled(h, enabled);
+         return;
+      }
+#endif
+      h->sidechainWanted = enabled && h->sidechainChannels > 0;
    }
 
    void PluginDestroy(PluginHandle* h)
@@ -6472,7 +6528,8 @@ namespace Platform
 
    void PluginRender(PluginHandle* h, const float* const* in, int inChannels,
                      float* const* out, int outChannels, int numFrames,
-                     const PluginTransport* transport)
+                     const PluginTransport* transport,
+                     const float* const* sidechain, int sidechainChannels)
    {
       if (h == nullptr)
          return;
@@ -6480,9 +6537,11 @@ namespace Platform
       if (h->desc.format == "vst3")
       {
 #if INFINITE_ENABLE_VST3
-         PluginVST3Render(h, in, inChannels, out, outChannels, numFrames, transport);
+         PluginVST3Render(h, in, inChannels, out, outChannels, numFrames, transport, sidechain, sidechainChannels);
 #else
          (void)transport;
+         (void)sidechain;
+         (void)sidechainChannels;
 #endif
          return;
       }
@@ -6535,6 +6594,7 @@ namespace Platform
       }
 
       float* inScratchBase = h->inScratch.empty() ? nullptr : h->inScratch.data();
+      float* sidechainScratchBase = h->sidechainScratch.empty() ? nullptr : h->sidechainScratch.data();
       const int maxFrames = h->maxBlockFrames;
 
       // Stack block, and __unsafe_unretained on purpose: assigning a block
@@ -6548,10 +6608,14 @@ namespace Platform
                                                         AudioBufferList* inputData) {
          (void)flags;
          (void)timestamp;
-         (void)bus;
          if (inputData == nullptr)
             return noErr;
          const int n = (int)frameCount;
+         // Bus 1 is the sidechain; every other bus reads the main input.
+         const bool isSidechain = (bus == 1);
+         const float* const* busIn = isSidechain ? sidechain : in;
+         const int busInChannels = isSidechain ? sidechainChannels : inChannels;
+         float* scratchBase = isSidechain ? sidechainScratchBase : inScratchBase;
          for (UInt32 i = 0; i < inputData->mNumberBuffers; i++)
          {
             float* dst = (float*)inputData->mBuffers[i].mData;
@@ -6559,17 +6623,17 @@ namespace Platform
             {
                // The AU handed us an empty buffer to fill in - point it at our
                // own pre-allocated scratch, as the pull-block contract allows.
-               if (inScratchBase == nullptr || (int)i >= kPluginMaxChannels)
+               if (scratchBase == nullptr || (int)i >= kPluginMaxChannels)
                   return kAudioUnitErr_InvalidParameter;
-               dst = inScratchBase + (size_t)i * (size_t)maxFrames;
+               dst = scratchBase + (size_t)i * (size_t)maxFrames;
                inputData->mBuffers[i].mData = dst;
                inputData->mBuffers[i].mDataByteSize = (UInt32)(n * (int)sizeof(float));
             }
             // Fewer upstream channels than the plugin wants: repeat the last
             // one (mono source into a stereo effect), rather than leaving a
             // silent right channel.
-            const float* src = (in != nullptr && inChannels > 0)
-                                  ? in[(int)i < inChannels ? (int)i : inChannels - 1]
+            const float* src = (busIn != nullptr && busInChannels > 0)
+                                  ? busIn[(int)i < busInChannels ? (int)i : busInChannels - 1]
                                   : nullptr;
             if (src != nullptr)
                std::memcpy(dst, src, (size_t)n * sizeof(float));

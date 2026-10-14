@@ -153,9 +153,23 @@ public:
             inChannels[ch] = in->channels[ch];
       }
 
+      // The sidechain cable's buffer, when the node prepared the plugin with
+      // its sidechain bus on. The platform layer ignores it otherwise.
+      const float* scChannels[kAudioMaxChannels] = {};
+      int scCount = 0;
+      const int scSlot = mSidechainSlot.load(std::memory_order_relaxed);
+      if (scSlot > 0 && scSlot < numInputs && inputs[scSlot] != nullptr && inputs[scSlot]->channels != nullptr &&
+          inputs[scSlot]->numFrames > 0)
+      {
+         scCount = std::min(inputs[scSlot]->numChannels, (int)kAudioMaxChannels);
+         for (int ch = 0; ch < scCount; ch++)
+            scChannels[ch] = inputs[scSlot]->channels[ch];
+      }
+
       const Platform::PluginTransport transport = HostTransport();
       Platform::PluginRender(handle, inCount > 0 ? inChannels : nullptr, inCount, output.channels,
-                             output.numChannels, output.numFrames, &transport);
+                             output.numChannels, output.numFrames, &transport, scCount > 0 ? scChannels : nullptr,
+                             scCount);
    }
 
    // Deliberately no Reset() override: AudioNode::Reset means "clear DSP
@@ -223,6 +237,7 @@ public:
       return true;
    }
    void SetBypass(bool bypass) { mBypass.store(bypass, std::memory_order_relaxed); }
+   void SetSidechainSlot(int slot) { mSidechainSlot.store(slot, std::memory_order_relaxed); }
    double SampleRate() const { return mSampleRate.load(std::memory_order_relaxed); }
    int MaxBlockSize() const { return mMaxBlockSize.load(std::memory_order_relaxed); }
 
@@ -368,6 +383,7 @@ private:
    std::atomic<bool> mFlushRequested { false }; // SetNoteInbox -> next ProcessBlock
    std::atomic<Platform::PluginHandle*> mHandle { nullptr };
    std::atomic<bool> mBypass { false };
+   std::atomic<int> mSidechainSlot { -1 }; // input slot of the sidechain cable, -1 when unpatched
    NoteEventQueue* mNoteInbox = nullptr; // set by SetNoteInbox; see its comment
    int mNoteCursor = -1; // set by SetNoteInbox alongside mNoteInbox
    std::atomic<double> mSampleRate { 0.0 };
@@ -501,6 +517,14 @@ void AudioPluginNode::LoadPlugin(const Platform::PluginDesc& desc)
    mAcceptsNotes = desc.acceptsNotes;
    if (!mAcceptsNotes)
       noteInput.Disconnect();
+   // A different plugin: whether it has a sidechain is unknown until it is
+   // ready (CookIfNeeded). The same plugin reloading keeps the saved answer.
+   if (!mReloading)
+   {
+      mHasSidechain = false;
+      sidechainInput.Disconnect();
+   }
+   mPreparedSidechain = false;
 
    // Unpublish before creating: the previous plugin must stop being reachable
    // from the audio thread the moment the user asks for a different one, not
@@ -556,7 +580,9 @@ void AudioPluginNode::ReloadFromIdentity()
    for (int i = 0; i < kMaxMappedParams; i++)
       saved[i] = mappings[i];
 
+   mReloading = true; // keep the saved sidechain pin and its cable
    LoadPlugin(desc);
+   mReloading = false;
 
    for (int i = 0; i < kMaxMappedParams; i++)
       mappings[i] = saved[i];
@@ -579,6 +605,8 @@ void AudioPluginNode::Unload()
    pluginName.clear();
    mAcceptsNotes = false;
    noteInput.Disconnect();
+   mHasSidechain = false;
+   sidechainInput.Disconnect();
    mPluginState.clear();
    mPendingStateRestore = false;
    mAvailableParams.clear();
@@ -728,6 +756,9 @@ void AudioPluginNode::CookIfNeeded(int frameId)
       }
       mReady = true;
       mStatus = pluginName;
+      mHasSidechain = Platform::PluginSidechainChannels(mHandle) > 0;
+      if (!mHasSidechain)
+         sidechainInput.Disconnect();
       RefreshAvailableParams();
       if (mConfiguring)
          Platform::PluginBeginLearn(mHandle);
@@ -747,7 +778,13 @@ void AudioPluginNode::CookIfNeeded(int frameId)
    double rate = AudioEngine::Instance().SampleRate();
    if (rate <= 0.0)
       rate = mAudioNode->SampleRate();
-   if (rate > 0.0 && (rate != mPreparedRate || mPreparedBlock != kAudioMaxBlockFrames))
+   // The sidechain bus is on only while a cable feeds it (see
+   // Platform::PluginSetSidechainEnabled); patching or unpatching it is a
+   // re-prepare like a rate change.
+   const bool wantSidechain = mHasSidechain && sidechainInput.IsConnected();
+   mAudioNode->SetSidechainSlot(wantSidechain ? SidechainSlot() : -1);
+   if (rate > 0.0 &&
+       (rate != mPreparedRate || mPreparedBlock != kAudioMaxBlockFrames || wantSidechain != mPreparedSidechain))
    {
       // A note held across this unpublish window would otherwise sustain
       // forever - the re-prepare below tears down and rebuilds the plugin's
@@ -762,6 +799,7 @@ void AudioPluginNode::CookIfNeeded(int frameId)
          return;
       FlushPluginNotes(mHandle);
       std::string error;
+      Platform::PluginSetSidechainEnabled(mHandle, wantSidechain);
       if (!Platform::PluginPrepare(mHandle, rate, kAudioMaxBlockFrames, error))
       {
          mLoadFailed = true;
@@ -770,6 +808,7 @@ void AudioPluginNode::CookIfNeeded(int frameId)
       }
       mPreparedRate = rate;
       mPreparedBlock = kAudioMaxBlockFrames;
+      mPreparedSidechain = wantSidechain;
 
       // 3. A restored patch's plugin state is applied here, once, after the
       //    plugin is fully prepared - fullState invalidates render resources,
@@ -857,6 +896,7 @@ void AudioPluginNode::VisitParams(ParamVisitor& v)
    v.Text("plugin_id", pluginId);
    v.Text("plugin_name", pluginName);
    v.Bool("plugin_accepts_notes", mAcceptsNotes);
+   v.Bool("plugin_sidechain", mHasSidechain);
    v.Text("plugin_state", mPluginState);
    v.Bool("bypass", bypass);
 

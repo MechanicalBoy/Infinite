@@ -175,13 +175,17 @@ namespace Platform
       return PluginVST3LatencySamples(handle);
    }
 
+   int PluginSidechainChannels(PluginHandle* handle) { return PluginVST3SidechainChannels(handle); }
+   void PluginSetSidechainEnabled(PluginHandle* handle, bool enabled) { PluginVST3SetSidechainEnabled(handle, enabled); }
+
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
                      float* const* out, int outChannels, int numFrames,
-                     const PluginTransport* transport)
+                     const PluginTransport* transport,
+                     const float* const* sidechain, int sidechainChannels)
    {
       if (handle != nullptr && handle->vst3 != nullptr)
       {
-         PluginVST3Render(handle, in, inChannels, out, outChannels, numFrames, transport);
+         PluginVST3Render(handle, in, inChannels, out, outChannels, numFrames, transport, sidechain, sidechainChannels);
          return;
       }
       (void)in;
@@ -358,10 +362,24 @@ namespace Platform
       return 0;
    }
 
+   int PluginSidechainChannels(PluginHandle* handle)
+   {
+      (void)handle;
+      return 0;
+   }
+   void PluginSetSidechainEnabled(PluginHandle* handle, bool enabled)
+   {
+      (void)handle;
+      (void)enabled;
+   }
+
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
                      float* const* out, int outChannels, int numFrames,
-                     const PluginTransport* transport)
+                     const PluginTransport* transport,
+                     const float* const* sidechain, int sidechainChannels)
    {
+      (void)sidechain;
+      (void)sidechainChannels;
       (void)handle;
       (void)in;
       (void)inChannels;

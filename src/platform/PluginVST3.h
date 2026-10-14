@@ -18,7 +18,10 @@ namespace Platform
    void PluginVST3Destroy(PluginHandle* handle);
    void PluginVST3Render(PluginHandle* handle, const float* const* in, int inChannels,
                          float* const* out, int outChannels, int numFrames,
-                         const PluginTransport* transport);
+                         const PluginTransport* transport,
+                         const float* const* sidechain, int sidechainChannels);
+   int PluginVST3SidechainChannels(PluginHandle* handle);
+   void PluginVST3SetSidechainEnabled(PluginHandle* handle, bool enabled);
    void PluginVST3ScheduleMIDIEvent(PluginHandle* handle, int frameOffset, const unsigned char* bytes, int byteCount);
    bool PluginVST3HostClockSeen(PluginHandle* handle, PluginTransport& out);
    int PluginVST3LatencySamples(PluginHandle* handle);

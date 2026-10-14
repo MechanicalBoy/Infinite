@@ -993,6 +993,114 @@ static void RunPluginLatencyChangeCase(const std::vector<Platform::PluginDesc>& 
           after, wantBefore, wantAfter, ok ? "OK" : "FAIL");
 }
 
+// A plugin's sidechain bus is a second audio input on the node (v0.6 2.5).
+// Fixture: FabFilter Pro-C 2 with "Side Chain Input" set to external. A quiet
+// tone under the threshold passes untouched; the same tone with a loud key on
+// the sidechain pin is turned down. Unpatching the pin gives the first level
+// back and the key buffer is ignored. Pro-C 2 also takes notes, so its
+// sidechain pin sits at slot 2 (after "in" and "notes"). SKIPs where the
+// plugin is not installed (no Apple effect has a sidechain bus).
+static void RunPluginSidechainCase(const std::vector<Platform::PluginDesc>& plugins, const char* label)
+{
+   const std::string name = "Pro-C 2";
+   const Platform::PluginDesc* comp = nullptr;
+   for (const Platform::PluginDesc& d : plugins)
+      if (d.name == name || d.name == "FabFilter " + name)
+         comp = &d;
+   if (comp == nullptr)
+   {
+      printf("PLUGINNODETEST sidechain %s (%s not installed) SKIP\n", label, name.c_str());
+      return;
+   }
+   AudioPluginNode node;
+   AudioPluginNode keySource; // only its address is used, as the cable's source
+   AudioNode* audio = node.GetAudioNode();
+   const double rate = 48000.0;
+   audio->PrepareToPlay(rate, 512);
+   node.LoadPlugin(*comp);
+   int frame = 5000;
+   for (int i = 0; i < 1500 && !node.IsReady(); i++)
+   {
+      Platform::PumpPluginEditorEvents(); // a VST3 loads on the main dispatch queue
+      node.CookIfNeeded(++frame);
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+   }
+   const int sc = node.SidechainSlot();
+   const int wantSlot = node.AcceptsNotes() ? 2 : 1;
+   // Both switches: Pro-C 2 ignores "Side Chain Input" outside its expert
+   // side chain mode and keeps keying off the main input.
+   int extParam = -1, expertParam = -1;
+   for (const Platform::PluginParamInfo& p : node.AvailableParams())
+   {
+      const bool ext = p.displayName == "Side Chain Input", expert = p.displayName == "Side Chain Expert Mode";
+      if (!ext && !expert)
+         continue;
+      const int slot = node.MapParameter(p.address);
+      if (slot >= 0)
+         node.mappings[slot].value = p.maxValue;
+      (ext ? extParam : expertParam) = slot;
+   }
+   if (!node.IsReady() || sc != wantSlot || node.AudioInputSlot(sc) == nullptr || extParam < 0 || expertParam < 0)
+   {
+      printf("PLUGINNODETEST sidechain %s: ready=%d slot=%d (want %d) ext-param=%d  FAIL\n", label,
+             node.IsReady() ? 1 : 0, sc, wantSlot, extParam);
+      return;
+   }
+   node.CookIfNeeded(++frame);
+
+   double phase = 0.0;
+   // RMS (dB) of the last quarter second of one second of the quiet tone.
+   auto level = [&](float keyAmp)
+   {
+      std::vector<float> l(512), r(512), ol(512), orr(512), kl(512), kr(512);
+      float* inCh[2] = { l.data(), r.data() };
+      float* outCh[2] = { ol.data(), orr.data() };
+      float* keyCh[2] = { kl.data(), kr.data() };
+      AudioBuffer in, key, out;
+      in.channels = inCh;
+      key.channels = keyCh;
+      out.channels = outCh;
+      in.numChannels = key.numChannels = out.numChannels = 2;
+      in.numFrames = key.numFrames = out.numFrames = 512;
+      const AudioBuffer* ins[3] = { &in, nullptr, nullptr };
+      ins[sc] = &key;
+      const int blocks = (int)(rate / 512.0);
+      double sum = 0.0;
+      long counted = 0;
+      for (int b = 0; b < blocks; b++)
+      {
+         for (int i = 0; i < 512; i++)
+         {
+            const float s = (float)std::sin(phase);
+            phase += 2.0 * 3.14159265358979 * 1000.0 / rate;
+            l[i] = r[i] = 0.03f * s;
+            kl[i] = kr[i] = keyAmp * s;
+         }
+         std::fill(ol.begin(), ol.end(), 0.0f);
+         std::fill(orr.begin(), orr.end(), 0.0f);
+         audio->ProcessBlock(ins, 3, out);
+         if (b >= blocks * 3 / 4)
+            for (int i = 0; i < 512; i++, counted++)
+               sum += (double)ol[i] * ol[i];
+      }
+      return 10.0 * std::log10(sum / (double)std::max(1L, counted) + 1e-20);
+   };
+
+   const double open = level(0.9f); // pin unpatched: the key buffer must be ignored
+   node.AudioInputSlot(sc)->Connect(&keySource);
+   node.CookIfNeeded(++frame);
+   const double keyed = level(0.9f);
+   const double quietKey = level(0.0f);
+   node.AudioInputSlot(sc)->Disconnect();
+   node.CookIfNeeded(++frame);
+   const double after = level(0.9f);
+   const bool ok = node.IsReady() && open > -60.0 && keyed < open - 3.0 && quietKey > keyed + 3.0
+                   && std::fabs(after - open) < 1.0;
+   printf("PLUGINNODETEST sidechain %s: pin at slot %d; unpatched %.1f dB, loud key %.1f dB, silent key %.1f dB, "
+          "unpatched again %.1f dB  %s\n",
+          label, sc, open, keyed, quietKey, after, ok ? "OK" : "FAIL");
+}
+
 int RunPluginNodeHandleTest()
 {
    setvbuf(stdout, nullptr, _IONBF, 0);
@@ -1077,6 +1185,31 @@ int RunPluginNodeHandleTest()
    printf("PLUGINNODETEST %d re-prepares, %ld blocks rendered, ready at end=%d  %s\n", reprepares, blocks.load(),
           readyAtEnd ? 1 : 0, (ok && readyAtEnd && audioRan) ? "OK" : "FAIL");
    RunPluginLatencyChangeCase(plugins);
+   RunPluginSidechainCase(plugins, "AU");
+#if INFINITE_ENABLE_VST3
+   {
+      // The same plugin through the VST3 host. Scanning every installed
+      // bundle takes a child process each, so only this one is scanned, from
+      // a folder holding a link to it.
+      namespace fs = std::filesystem;
+      std::error_code ec;
+      fs::path bundle;
+      for (const std::string& folder : PluginScanner::DefaultVST3Folders())
+         if (fs::exists(fs::path(folder) / "FabFilter Pro-C 2.vst3", ec))
+            bundle = fs::path(folder) / "FabFilter Pro-C 2.vst3";
+      std::vector<Platform::PluginDesc> vst3;
+      const fs::path dir = fs::temp_directory_path(ec) / "infinite_pluginnodetest_vst3";
+      fs::remove_all(dir, ec);
+      if (!bundle.empty())
+      {
+         fs::create_directories(dir, ec);
+         fs::create_directory_symlink(bundle, dir / bundle.filename(), ec);
+         Platform::EnumerateVST3Plugins({ dir.string() }, vst3);
+      }
+      RunPluginSidechainCase(vst3, "VST3"); // loads through the link, so it goes after
+      fs::remove_all(dir, ec);
+   }
+#endif
    return 0;
 }
 

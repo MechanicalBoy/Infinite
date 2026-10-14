@@ -780,9 +780,24 @@ namespace Platform
       double loopStartBeats = 0.0;
       double loopEndBeats = 0.0;
    };
+   // `sidechain` feeds the plugin's second audio input bus when
+   // PluginSetSidechainEnabled turned it on; ignored otherwise, and null
+   // means silence.
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
                      float* const* out, int outChannels, int numFrames,
-                     const PluginTransport* transport = nullptr);
+                     const PluginTransport* transport = nullptr,
+                     const float* const* sidechain = nullptr, int sidechainChannels = 0);
+
+   // Channel count of the plugin's sidechain input (its second audio input
+   // bus), 0 when it has none. Main thread, once the handle is Ready.
+   int PluginSidechainChannels(PluginHandle* handle);
+
+   // Turns the sidechain bus on or off. Main thread only, on an unpublished
+   // handle; takes effect at the next PluginPrepare (which reconfigures even
+   // at an unchanged rate). Off by default, and the host keeps it off while
+   // nothing is patched in: a plugin whose sidechain bus is active may key off
+   // it instead of its main input.
+   void PluginSetSidechainEnabled(PluginHandle* handle, bool enabled);
 
    // What `handle`'s plugin was last told about the host clock, read back
    // through the same channel the plugin reads: the AU's installed

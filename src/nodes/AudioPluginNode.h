@@ -76,7 +76,18 @@ public:
 
    INode* BypassSource() override { return input.GetSource(); }
    AudioNode* GetAudioNode() override;
-   AudioCable* AudioInputSlot(int slot) override { return slot == 0 ? &input : nullptr; }
+   AudioCable* AudioInputSlot(int slot) override
+   {
+      if (slot == 0)
+         return &input;
+      return (slot == SidechainSlot()) ? &sidechainInput : nullptr;
+   }
+   // The plugin's sidechain input, when it has one (a compressor's key, a
+   // vocoder's modulator). It takes the first slot after "in" and "notes" so
+   // slots stay contiguous: 1 for an effect, 2 for a plugin that also takes
+   // notes. -1 with no sidechain. Fixed for a given plugin, and saved, so a
+   // patch's cables land on the same pins while the plugin is still loading.
+   int SidechainSlot() const { return mHasSidechain ? (AcceptsNotes() ? 2 : 1) : -1; }
    // Slot 1, not a second audio slot - notes and audio share one pin-index
    // space (see main.cpp's pin-count loop), so the note pin lands one past
    // the audio input regardless of which the loaded plugin actually accepts.
@@ -89,6 +100,8 @@ public:
          return "in";
       if (slot == 1 && AcceptsNotes())
          return "notes";
+      if (slot == SidechainSlot())
+         return "sidechain";
       return nullptr;
    }
 
@@ -156,6 +169,7 @@ public:
 
    AudioCable input;
    NoteCable noteInput;
+   AudioCable sidechainInput; // only wired to a pin when the plugin has a sidechain bus
 
    // Saved identity. `pluginFormat` is always "au" today and exists so a
    // second backend needs no patch-format change.
@@ -182,6 +196,11 @@ private:
    // (AcceptsNotes) and never changes without a different plugin being
    // loaded, so it's cheap to cache rather than re-derive every frame.
    bool mAcceptsNotes = false;
+   // True once the loaded plugin reported a second audio input bus. Saved
+   // (plugin_sidechain), like mAcceptsNotes, so the pin exists at patch load.
+   bool mHasSidechain = false;
+   bool mReloading = false;         // ReloadFromIdentity: same plugin coming back, keep its pins
+   bool mPreparedSidechain = false; // whether the live handle was prepared with its sidechain bus on
    int mMapSlotsParam = 0; // VisitParams scratch for map_slots; a member so retaining visitors never hold a dead stack address
 
    Platform::PluginHandle* mHandle = nullptr;  // the one being loaded / live

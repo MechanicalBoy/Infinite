@@ -43,6 +43,14 @@ namespace Platform
       int pluginInChannels = 0;
       int pluginOutChannels = 0;
 
+      // Sidechain: the AU's second input bus. Enabled only while the host has
+      // something patched into it (PluginSetSidechainEnabled, applied at the
+      // next configure); the pull block answers bus 1 from the sidechain
+      // pointers PluginRender was handed.
+      bool sidechainWanted = false;
+      bool sidechainActive = false;
+      int sidechainChannels = 0; // 0 when the AU has no second input bus
+
       // Plugin-reported processing latency in samples at `sampleRate`,
       // refreshed each time render resources are (re)allocated - AU's
       // PluginConfigure reads it from `au.latency` right after
@@ -57,6 +65,7 @@ namespace Platform
       AudioBufferList* outAbl = nullptr;   // allocated once at prepare, sized kPluginMaxChannels
       std::vector<float> inScratch;        // kPluginMaxChannels * maxBlockFrames
       std::vector<float> outScratch;       // ditto, used only when channel counts differ
+      std::vector<float> sidechainScratch; // ditto, for a sidechain pull that hands us empty buffers
       double renderSampleTime = 0.0;
       std::atomic<bool> inRender { false };
 
