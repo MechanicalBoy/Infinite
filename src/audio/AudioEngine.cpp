@@ -1,4 +1,7 @@
 #include "AudioEngine.h"
+#include <cstdlib>
+#include <thread>
+#include <unordered_map>
 
 #include <algorithm>
 #include <chrono>
@@ -122,11 +125,175 @@ void AudioEngine::SetTopology(AudioTopology topology)
    for (PooledBuffer& b : fresh->buffers) // main thread only - never inside Process()
       b.Allocate();
    fresh->generation = mPublishedGeneration.fetch_add(1, std::memory_order_relaxed) + 1;
+   BuildSchedule(*fresh);
+   EnsureWorkers();
 
    ProcessList* old = mCurrent.exchange(fresh, std::memory_order_acq_rel);
    if (old != nullptr)
       mRetiring.push_back(old);
    DrainRetired();
+}
+
+// The parallel schedule for one ProcessList (main thread). Two entries are
+// ordered when they share a resource the serial loop would order them on: an
+// audio buffer one writes and the other reads, or a note queue one fills and
+// the other drains. The edge always points the way `order` already runs, so a
+// parallel block computes exactly what the serial one does. Everything else
+// (Transport reads, each node's own state) is per node.
+void AudioEngine::BuildSchedule(ProcessList& list)
+{
+   std::vector<AudioTopologyEntry>& order = list.topology.order;
+   const int n = (int)order.size();
+   list.runOrder.clear();
+   list.depCount.assign((size_t)n, 0);
+   list.succStart.assign((size_t)n + 1, 0);
+   list.succ.clear();
+   list.pending.reset(n > 0 ? new std::atomic<int>[(size_t)n] : nullptr);
+   list.width = 1;
+   if (n <= 1)
+   {
+      for (int i = 0; i < n; i++)
+         list.runOrder.push_back(i);
+      return;
+   }
+
+   std::unordered_map<int, int> bufferWriter;
+   std::unordered_map<const NoteEventQueue*, int> queueWriter;
+   std::unordered_map<const AudioNode*, int> entryOf;
+   for (int j = 0; j < n; j++)
+   {
+      const AudioTopologyEntry& e = order[j];
+      entryOf.emplace(e.node, j);
+      const int numOuts = std::clamp(e.numOutputs, 1, kAudioMaxNodeOutputs);
+      for (int o = 0; o < numOuts; o++)
+      {
+         int idx = e.outputBufferIndices[o];
+         if (idx < 0 && o == 0)
+            idx = e.outputBufferIndex;
+         if (idx >= 0)
+            bufferWriter.emplace(idx, j);
+      }
+      if (e.node != nullptr)
+         for (int slot = 0; slot < 8; slot++)
+            if (NoteEventQueue* q = e.node->NoteOutbox(slot))
+               queueWriter.emplace(q, j);
+   }
+
+   std::vector<std::vector<int>> deps((size_t)n);
+   auto link = [&](int a, int b) {
+      if (a == b || a < 0 || b < 0)
+         return;
+      const int lo = std::min(a, b), hi = std::max(a, b);
+      deps[(size_t)hi].push_back(lo);
+   };
+   for (int j = 0; j < n; j++)
+   {
+      const AudioTopologyEntry& e = order[j];
+      for (int i = 0; i < e.numInputs; i++)
+      {
+         auto it = bufferWriter.find(e.inputBufferIndices[i]);
+         if (e.inputBufferIndices[i] >= 0 && it != bufferWriter.end())
+            link(it->second, j);
+      }
+   }
+   for (const NoteWire& wire : list.topology.noteWires)
+   {
+      if (wire.inbox == nullptr || wire.consumer == nullptr)
+         continue;
+      auto c = entryOf.find(wire.consumer);
+      auto w = queueWriter.find(wire.inbox);
+      if (c != entryOf.end() && w != queueWriter.end())
+         link(w->second, c->second);
+   }
+
+   // Level = one past the deepest dependency; sorted by level, entries of a
+   // level stay in `order`'s order.
+   std::vector<int> level((size_t)n, 0);
+   int maxLevel = 0;
+   for (int j = 0; j < n; j++)
+   {
+      std::vector<int>& d = deps[(size_t)j];
+      std::sort(d.begin(), d.end());
+      d.erase(std::unique(d.begin(), d.end()), d.end());
+      for (int k : d)
+         level[(size_t)j] = std::max(level[(size_t)j], level[(size_t)k] + 1);
+      maxLevel = std::max(maxLevel, level[(size_t)j]);
+   }
+   std::vector<int> perLevel((size_t)maxLevel + 1, 0);
+   for (int j = 0; j < n; j++)
+      perLevel[(size_t)level[(size_t)j]]++;
+   for (int c : perLevel)
+      list.width = std::max(list.width, c);
+
+   list.runOrder.resize((size_t)n);
+   for (int j = 0; j < n; j++)
+      list.runOrder[(size_t)j] = j;
+   std::stable_sort(list.runOrder.begin(), list.runOrder.end(),
+                    [&](int a, int b) { return level[(size_t)a] < level[(size_t)b]; });
+   std::vector<int> posOf((size_t)n, 0);
+   for (int p = 0; p < n; p++)
+      posOf[(size_t)list.runOrder[(size_t)p]] = p;
+
+   std::vector<std::vector<int>> succ((size_t)n);
+   for (int j = 0; j < n; j++)
+   {
+      list.depCount[(size_t)posOf[(size_t)j]] = (int)deps[(size_t)j].size();
+      for (int k : deps[(size_t)j])
+         succ[(size_t)posOf[(size_t)k]].push_back(posOf[(size_t)j]);
+   }
+   for (int p = 0; p < n; p++)
+   {
+      list.succStart[(size_t)p] = (int)list.succ.size();
+      list.succ.insert(list.succ.end(), succ[(size_t)p].begin(), succ[(size_t)p].end());
+   }
+   list.succStart[(size_t)n] = (int)list.succ.size();
+}
+
+void AudioEngine::SetAudioThreads(int threads)
+{
+   mThreadSetting.store(std::max(0, threads), std::memory_order_relaxed);
+}
+
+int AudioEngine::WantedThreads() const
+{
+   int want = mThreadEnv > 0 ? mThreadEnv : mThreadSetting.load(std::memory_order_relaxed);
+   if (want == 0)
+      want = (int)std::thread::hardware_concurrency();
+   return std::clamp(want, 1, 16);
+}
+
+int AudioEngine::AudioThreadsInUse() const
+{
+   return std::min(WantedThreads(), mPool.NumWorkers() + 1);
+}
+
+// Main thread. The pool is started once, at full size, from the first
+// SetTopology - before any list the audio thread could run in parallel is
+// published - and never resized: fewer threads (or one) is the audio thread
+// waking fewer workers, so no thread is ever torn down under a block.
+void AudioEngine::EnsureWorkers()
+{
+   if (mThreadEnv == -1)
+   {
+      const char* env = std::getenv("INFINITE_AUDIO_THREADS");
+      const int v = env != nullptr ? std::atoi(env) : 0;
+      mThreadEnv = v > 0 ? v : -2; // unset, 0 or junk: the setting decides
+   }
+   if (mPool.NumWorkers() > 0)
+      return;
+   const int hw = std::clamp((int)std::thread::hardware_concurrency(), 1, 16);
+   const int workers = (mThreadEnv > 0 ? std::min(mThreadEnv, 16) : hw) - 1;
+   if (workers <= 0)
+      return;
+   while ((int)mWorkerScratch.size() < workers)
+   {
+      std::unique_ptr<WorkerScratch> ws(new WorkerScratch());
+      for (int i = 0; i < kAudioMaxNodeInputs; i++)
+         for (int ch = 0; ch < kAudioMaxChannels; ch++)
+            ws->compChannels[i][ch] = ws->comp[i][ch];
+      mWorkerScratch.push_back(std::move(ws));
+   }
+   mPool.Start(workers, &AudioEngine::WorkerThunk, this);
 }
 
 // A superseded ProcessList is only freed once the audio thread has COMPLETED a
@@ -612,87 +779,47 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer, doub
    }
 
    // PDC scratch: a delayed-copy landing spot per input pin, reused node to
-   // node (only one node's inputs are ever "in flight" at a time - the
-   // buffer a pin's CompensationDelay writes into is fully consumed by
-   // entry.node->ProcessBlock before the next entry runs). mCompScratch/
-   // mCompScratchChannels are plain AudioEngine members (see AudioEngine.h),
-   // wired up once in the constructor rather than lazily per-thread here.
-   // Only touched for a pin whose CompensationDelay::IsActive() is true; the
-   // common all-zero-latency topology never writes to this at all.
-   for (AudioTopologyEntry& entry : list->topology.order)
+   // node on one thread (a pin's delayed copy is consumed by its node's
+   // ProcessBlock before that thread runs the next entry). The audio thread
+   // uses mCompScratchChannels; each worker has its own (WorkerScratch).
+   // Only touched for a pin whose CompensationDelay::IsActive() is true.
+   //
+   // Serial when one thread is wanted or nothing could run side by side;
+   // otherwise the entries are claimed one at a time, in schedule order, by
+   // the audio thread and every worker - see RunClaims.
+   const int threads = list->width > 1 ? std::min(WantedThreads(), mPool.NumWorkers() + 1) : 1;
+   const int count = (int)list->runOrder.size();
+   if (threads <= 1 || count != (int)list->topology.order.size() || count > 0xFFFF)
    {
-      AudioBuffer inputViews[kAudioMaxNodeInputs];
-      const AudioBuffer* inputPtrs[kAudioMaxNodeInputs];
-      for (int i = 0; i < entry.numInputs; i++)
-      {
-         const int idx = entry.inputBufferIndices[i];
-         if (idx < 0)
-         {
-            inputPtrs[i] = nullptr;
-         }
-         else if (entry.node->inputCompensation[i].IsActive())
-         {
-            AudioBuffer src = list->buffers[idx].View(numFrames, numChannels);
-            AudioBuffer delayed;
-            delayed.channels = mCompScratchChannels[i];
-            delayed.numChannels = numChannels;
-            delayed.numFrames = numFrames;
-            entry.node->inputCompensation[i].ProcessBlock(src, delayed);
-            inputViews[i] = delayed;
-            inputPtrs[i] = &inputViews[i];
-         }
-         else
-         {
-            inputViews[i] = list->buffers[idx].View(numFrames, numChannels);
-            inputPtrs[i] = &inputViews[i];
-         }
-      }
-      const int numOuts = std::clamp(entry.numOutputs, 1, kAudioMaxNodeOutputs);
-      AudioBuffer outputViews[kAudioMaxNodeOutputs];
-      AudioBuffer* outputPtrs[kAudioMaxNodeOutputs];
-      for (int o = 0; o < numOuts; o++)
-      {
-         int outIdx = entry.outputBufferIndices[o];
-         if (outIdx < 0 && o == 0 && entry.outputBufferIndex >= 0)
-            outIdx = entry.outputBufferIndex;
-         if (outIdx >= 0 && outIdx < list->topology.numBuffers)
-         {
-            outputViews[o] = list->buffers[outIdx].View(numFrames, numChannels);
-            outputPtrs[o] = &outputViews[o];
-         }
-         else
-         {
-            outputPtrs[o] = nullptr;
-         }
-      }
+      for (AudioTopologyEntry& entry : list->topology.order)
+         RunEntry(entry, list, numFrames, numChannels, mCompScratchChannels, outStageMs);
+   }
+   else
+   {
+      for (int p = 0; p < count; p++)
+         list->pending[p].store(list->depCount[p], std::memory_order_relaxed);
+      for (int w = 0; w < threads - 1; w++)
+         for (int st = 0; st < kAudioStageCount; st++)
+            mWorkerScratch[w]->stageMs[st] = 0.0;
+      mJob.list = list;
+      mJob.numFrames = numFrames;
+      mJob.numChannels = numChannels;
+      mJob.timed = outStageMs != nullptr;
+      mJob.stageMs = outStageMs;
+      mJob.fpControl = AudioWorkerPool::ReadFpControl();
+      mDone.store(0, std::memory_order_relaxed);
+      const uint32_t seq = ++mBlockSeq;
+      mClaim.store(((uint64_t)seq << 32) | ((uint64_t)count << 16), std::memory_order_release);
+      mPool.Wake(std::min(threads, list->width) - 1);
+      RunClaims(seq, 0);
+      while (mDone.load(std::memory_order_acquire) < count)
+         AudioWorkerPool::Relax();
+      // Close the block: a worker that wakes from here on finds nothing.
+      mClaim.store(((uint64_t)seq << 32) | ((uint64_t)count << 16) | (uint64_t)count, std::memory_order_release);
       if (outStageMs != nullptr)
-      {
-         const double t0 = NowMs();
-         entry.node->ProcessBlockMulti(inputPtrs, entry.numInputs, outputPtrs, numOuts);
-         const double t1 = NowMs();
-         const int sId = (entry.stageId >= 0 && entry.stageId < kAudioStageCount) ? entry.stageId : (int)kAudioStageOther;
-         outStageMs[sId] += (t1 - t0);
-         if (mNodeCostOn.load(std::memory_order_relaxed))
-         {
-            const float prev = entry.node->costMs.load(std::memory_order_relaxed);
-            entry.node->costMs.store(prev + 0.05f * ((float)(t1 - t0) - prev), std::memory_order_relaxed);
-         }
-      }
-      else
-      {
-         entry.node->ProcessBlockMulti(inputPtrs, entry.numInputs, outputPtrs, numOuts);
-      }
-      if (mOfflineTaps != nullptr)
-         for (OfflineTap& tap : *mOfflineTaps)
-         {
-            if (tap.node != entry.node || tap.output < 0 || tap.output >= numOuts || outputPtrs[tap.output] == nullptr)
-               continue;
-            const AudioBuffer& o = *outputPtrs[tap.output];
-            const float* l = o.channels[0];
-            const float* r = o.numChannels > 1 ? o.channels[1] : o.channels[0];
-            tap.left.insert(tap.left.end(), l, l + numFrames);
-            tap.right.insert(tap.right.end(), r, r + numFrames);
-         }
+         for (int w = 0; w < threads - 1; w++)
+            for (int st = 0; st < kAudioStageCount; st++)
+               outStageMs[st] += mWorkerScratch[w]->stageMs[st];
    }
 
    // Scratch interleave buffer for capture rings, and the terminal-summation
@@ -940,6 +1067,127 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer, doub
          terminal.capture->Write(mInterleaveScratch, numFrames * 2);
       }
    }
+}
+
+void AudioEngine::RunEntry(AudioTopologyEntry& entry, ProcessList* list, int numFrames, int numChannels,
+                           float* (*compChannels)[kAudioMaxChannels], double* stageMs)
+{
+   AudioBuffer inputViews[kAudioMaxNodeInputs];
+   const AudioBuffer* inputPtrs[kAudioMaxNodeInputs];
+   for (int i = 0; i < entry.numInputs; i++)
+   {
+      const int idx = entry.inputBufferIndices[i];
+      if (idx < 0)
+      {
+         inputPtrs[i] = nullptr;
+      }
+      else if (entry.node->inputCompensation[i].IsActive())
+      {
+         AudioBuffer src = list->buffers[idx].View(numFrames, numChannels);
+         AudioBuffer delayed;
+         delayed.channels = compChannels[i];
+         delayed.numChannels = numChannels;
+         delayed.numFrames = numFrames;
+         entry.node->inputCompensation[i].ProcessBlock(src, delayed);
+         inputViews[i] = delayed;
+         inputPtrs[i] = &inputViews[i];
+      }
+      else
+      {
+         inputViews[i] = list->buffers[idx].View(numFrames, numChannels);
+         inputPtrs[i] = &inputViews[i];
+      }
+   }
+   const int numOuts = std::clamp(entry.numOutputs, 1, kAudioMaxNodeOutputs);
+   AudioBuffer outputViews[kAudioMaxNodeOutputs];
+   AudioBuffer* outputPtrs[kAudioMaxNodeOutputs];
+   for (int o = 0; o < numOuts; o++)
+   {
+      int outIdx = entry.outputBufferIndices[o];
+      if (outIdx < 0 && o == 0 && entry.outputBufferIndex >= 0)
+         outIdx = entry.outputBufferIndex;
+      if (outIdx >= 0 && outIdx < list->topology.numBuffers)
+      {
+         outputViews[o] = list->buffers[outIdx].View(numFrames, numChannels);
+         outputPtrs[o] = &outputViews[o];
+      }
+      else
+      {
+         outputPtrs[o] = nullptr;
+      }
+   }
+   if (stageMs != nullptr)
+   {
+      const double t0 = NowMs();
+      entry.node->ProcessBlockMulti(inputPtrs, entry.numInputs, outputPtrs, numOuts);
+      const double t1 = NowMs();
+      const int sId = (entry.stageId >= 0 && entry.stageId < kAudioStageCount) ? entry.stageId : (int)kAudioStageOther;
+      stageMs[sId] += (t1 - t0);
+      if (mNodeCostOn.load(std::memory_order_relaxed))
+      {
+         const float prev = entry.node->costMs.load(std::memory_order_relaxed);
+         entry.node->costMs.store(prev + 0.05f * ((float)(t1 - t0) - prev), std::memory_order_relaxed);
+      }
+   }
+   else
+   {
+      entry.node->ProcessBlockMulti(inputPtrs, entry.numInputs, outputPtrs, numOuts);
+   }
+   if (mOfflineTaps != nullptr)
+      for (OfflineTap& tap : *mOfflineTaps)
+      {
+         if (tap.node != entry.node || tap.output < 0 || tap.output >= numOuts || outputPtrs[tap.output] == nullptr)
+            continue;
+         const AudioBuffer& o = *outputPtrs[tap.output];
+         const float* l = o.channels[0];
+         const float* r = o.numChannels > 1 ? o.channels[1] : o.channels[0];
+         tap.left.insert(tap.left.end(), l, l + numFrames);
+         tap.right.insert(tap.right.end(), r, r + numFrames);
+      }
+}
+
+// One thread's share of a parallel block: claim the next schedule position,
+// wait for whatever it depends on (always an earlier position, so already
+// claimed by a running thread - no deadlock, whoever is slow), run it,
+// release its successors. Returns when every position is claimed or the
+// block is over (a worker that wakes late sees another block's seq).
+void AudioEngine::RunClaims(uint32_t seq, int worker)
+{
+   uint64_t c = mClaim.load(std::memory_order_acquire);
+   bool fpSet = worker == 0;
+   for (;;)
+   {
+      if ((uint32_t)(c >> 32) != seq || (c & 0xFFFF) >= ((c >> 16) & 0xFFFF))
+         return;
+      if (!mClaim.compare_exchange_weak(c, c + 1, std::memory_order_acq_rel, std::memory_order_acquire))
+         continue;
+      const int p = (int)(c & 0xFFFF);
+      ProcessList* list = mJob.list;
+      if (!fpSet)
+      {
+         if (AudioWorkerPool::ReadFpControl() != mJob.fpControl)
+            AudioWorkerPool::WriteFpControl(mJob.fpControl);
+         fpSet = true;
+      }
+      while (list->pending[p].load(std::memory_order_acquire) > 0)
+         AudioWorkerPool::Relax();
+      WorkerScratch* ws = worker > 0 ? mWorkerScratch[worker - 1].get() : nullptr;
+      double* stageMs = nullptr;
+      if (mJob.timed)
+         stageMs = ws != nullptr ? ws->stageMs : mJob.stageMs;
+      RunEntry(list->topology.order[list->runOrder[p]], list, mJob.numFrames, mJob.numChannels,
+               ws != nullptr ? ws->compChannels : mCompScratchChannels, stageMs);
+      for (int i = list->succStart[p]; i < list->succStart[p + 1]; i++)
+         list->pending[list->succ[i]].fetch_sub(1, std::memory_order_acq_rel);
+      mDone.fetch_add(1, std::memory_order_release);
+      c = mClaim.load(std::memory_order_acquire);
+   }
+}
+
+void AudioEngine::WorkerThunk(void* ctx, int worker)
+{
+   AudioEngine* self = static_cast<AudioEngine*>(ctx);
+   self->RunClaims((uint32_t)(self->mClaim.load(std::memory_order_acquire) >> 32), worker);
 }
 
 void AudioEngine::RenderThunk(float** buffers, int numChannels, int numFrames, void* userData)

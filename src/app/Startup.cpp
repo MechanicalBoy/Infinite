@@ -1337,6 +1337,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    AudioEngine::Instance().SetRequestedSampleRate(gAudioSampleRate);
    AudioEngine::Instance().SetRequestedBufferFrames(gAudioBufferFrames);
    Platform::AudioSetOutputMode(gAudioOutputMode);
+   AudioEngine::Instance().SetAudioThreads(gAudioThreads);
    // The window was just created with vsync hardcoded on (above); apply the
    // persisted preference now that it's loaded. Headless test windows stay
    // uncapped regardless - they don't want to be paced by the display.

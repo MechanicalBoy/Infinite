@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -9,6 +10,7 @@
 #include "AudioCaptureRing.h"
 #include "ClipPeakRing.h"
 #include "AudioNode.h"
+#include "AudioWorkerPool.h"
 #include "CompensationDelay.h"
 #include "Metronome.h"
 #include "SamplePreviewPlayer.h"
@@ -365,6 +367,15 @@ public:
 
    double SampleRate() const;
 
+   // Audio threads for the graph (v0.6 2.24): 0 = Auto (one per core), 1 =
+   // the audio thread alone, N = exactly N. Independent branches (tracks,
+   // the synths under a Mixer) then run in parallel; the output is
+   // bit-identical to one thread. INFINITE_AUDIO_THREADS=N overrides the
+   // setting. Main thread; applies from the next published topology.
+   void SetAudioThreads(int threads);
+   // Threads the next block will run on (1 = serial).
+   int AudioThreadsInUse() const;
+
    // Per-node ProcessBlock timing for the Cook times overlay. Off: the audio thread does nothing extra.
    void SetNodeCostMeasure(bool on) { mNodeCostOn.store(on, std::memory_order_relaxed); }
    // The time one callback block has to finish in (frames / rate), ms; 0 before the first callback.
@@ -583,7 +594,20 @@ private:
       AudioTopology topology;
       std::vector<PooledBuffer> buffers;
       uint64_t generation = 0;
+
+      // Parallel schedule, built on the main thread by BuildSchedule().
+      // `runOrder` lists `topology.order` indices with every entry after the
+      // entries it depends on (audio buffers and note queues it shares with
+      // an earlier entry, in either direction, so a parallel run touches
+      // nothing the serial order would not). Positions index the rest.
+      std::vector<int> runOrder;
+      std::vector<int> depCount;   // per position: entries it waits for
+      std::vector<int> succStart;  // per position + 1: range into `succ`
+      std::vector<int> succ;       // positions to release when one finishes
+      std::unique_ptr<std::atomic<int>[]> pending; // per position, per block
+      int width = 1;               // most entries any one level can run at once
    };
+   static void BuildSchedule(ProcessList& list);
    std::atomic<ProcessList*> mCurrent { nullptr };
    // Superseded lists awaiting the audio thread's confirmation - see
    // DrainRetired(). Main thread only.
@@ -727,4 +751,42 @@ private:
    // solve the per-thread-lazy-allocation problem these members no longer
    // have).
    std::vector<OfflineTap>* mOfflineTaps = nullptr;
+
+   // ---- multicore graph (v0.6 2.24) ----
+   // One worker's landing spots: what mCompScratch* and the stage timers are
+   // for the audio thread. Worker w uses mWorkerScratch[w - 1].
+   struct WorkerScratch
+   {
+      float comp[kAudioMaxNodeInputs][kAudioMaxChannels][kAudioMaxBlockFrames];
+      float* compChannels[kAudioMaxNodeInputs][kAudioMaxChannels];
+      double stageMs[kAudioStageCount];
+   };
+   // What every thread needs to run one entry of the current block. Written
+   // by the audio thread before it opens the claim counter, read only after
+   // a successful claim, so no thread sees a half-written job.
+   struct GraphJob
+   {
+      ProcessList* list = nullptr;
+      int numFrames = 0;
+      int numChannels = 0;
+      bool timed = false;
+      double* stageMs = nullptr; // the audio thread's own timers
+      uint64_t fpControl = 0;
+   };
+   void EnsureWorkers(); // main thread
+   int WantedThreads() const;
+   static void WorkerThunk(void* ctx, int worker);
+   void RunClaims(uint32_t seq, int worker);
+   void RunEntry(AudioTopologyEntry& entry, ProcessList* list, int numFrames, int numChannels,
+                 float* (*compChannels)[kAudioMaxChannels], double* stageMs);
+
+   AudioWorkerPool mPool;
+   std::vector<std::unique_ptr<WorkerScratch>> mWorkerScratch;
+   std::atomic<int> mThreadSetting { 0 };
+   int mThreadEnv = -1; // INFINITE_AUDIO_THREADS, read once
+   GraphJob mJob;
+   uint32_t mBlockSeq = 0; // audio thread
+   // seq (high 32 bits) | count (bits 16..31) | next position (low 16 bits)
+   std::atomic<uint64_t> mClaim { 0 };
+   std::atomic<int> mDone { 0 };
 };

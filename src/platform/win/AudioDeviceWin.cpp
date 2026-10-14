@@ -1832,3 +1832,28 @@ namespace Platform
       return AudioInputCaptureRead(outChannels, numFrames, maxChannels, sLegacyCursor, 0, false);
    }
 }
+
+namespace Platform
+{
+   // MMCSS is a per-thread registration, independent of which device is open,
+   // so a worker joins once (the epoch never moves) and stays registered.
+   void* AudioWorkerJoin()
+   {
+      DWORD taskIndex = 0;
+      HANDLE task = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
+      if (task == nullptr)
+         task = AvSetMmThreadCharacteristicsW(L"Audio", &taskIndex);
+      return (void*)task;
+   }
+
+   void AudioWorkerLeave(void* token)
+   {
+      if (token != nullptr)
+         AvRevertMmThreadCharacteristics((HANDLE)token);
+   }
+
+   uint32_t AudioWorkerEpoch()
+   {
+      return 1;
+   }
+}

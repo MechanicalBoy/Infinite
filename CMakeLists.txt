@@ -593,6 +593,7 @@ set(COMMON_SOURCES
     src/core/AudioDecodeCache.cpp
     src/core/GltfImport.cpp
     src/audio/AudioEngine.cpp
+    src/audio/AudioWorkerPool.cpp
     src/audio/ParamMailbox.cpp
     src/audio/MeterRing.cpp
     src/audio/MidiFile.cpp

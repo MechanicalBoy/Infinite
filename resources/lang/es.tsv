@@ -1178,3 +1178,7 @@ Sort	ORDENAR
 Filter	FILTRO
 Descending	Descendente
 Ascending	Ascendente
+Audio threads	Hilos de audio
+Auto (all cores)	Auto (todos los núcleos)
+One thread	Un hilo
+Auto: tracks that do not feed each other render in parallel, %d threads on this machine.\nOne thread: everything on the audio thread, as before.\nThe sound is identical either way.	Auto: las pistas que no se alimentan entre sí se procesan en paralelo, %d hilos en este equipo.\nUn hilo: todo en el hilo de audio, como antes.\nEl sonido es idéntico en ambos casos.

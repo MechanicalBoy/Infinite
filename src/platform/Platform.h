@@ -416,6 +416,18 @@ namespace Platform
                         int requestedBufferFrames = 0);
    void AudioDeviceClose();
 
+   // Audio graph worker threads (AudioWorkerPool). Called ON the worker:
+   // puts it in the same realtime class as the device's own IO thread -
+   // macOS joins the open output device's os_workgroup (with a
+   // time-constraint policy), Windows registers MMCSS "Pro Audio", Linux asks
+   // for SCHED_FIFO (best effort; refused without rtprio). Returns a token
+   // for AudioWorkerLeave, nullptr when nothing was joined (no device: an
+   // offline render needs no realtime class). AudioWorkerEpoch() changes on
+   // every device open and close, so a worker re-joins the new device.
+   void* AudioWorkerJoin();
+   void AudioWorkerLeave(void* token);
+   uint32_t AudioWorkerEpoch();
+
    // Actual buffer frame size CoreAudio reports for the given device right
    // now (0 = system default output device). Buffer size is a device-wide
    // property, not something AVAudioEngine hands back per-open, so this

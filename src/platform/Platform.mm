@@ -43,6 +43,9 @@
 #include <cstring>
 #include <mach-o/dyld.h> // _NSGetExecutablePath, for ExecutablePath()
 #include <mach/mach.h> // task_info, for Platform::ProcessRssMb()
+#include <mach/mach_time.h> // mach_timebase_info, for AudioWorkerJoin's time constraint
+#include <mach/thread_policy.h>
+#include <os/workgroup.h> // AudioWorkerJoin
 #include <sys/sysctl.h> // sysctlbyname, for Platform::HwModelString()
 #include <cmath>
 #include <algorithm>
@@ -4080,6 +4083,40 @@ namespace Platform
       AudioRenderCallback gDeviceCallback = nullptr;
       void* gDeviceUserData = nullptr;
 
+      // The open output device's realtime workgroup, for AudioWorkerJoin.
+      // Guarded by gWorkgroupMutex: a worker can join while the main thread
+      // is closing the device. gWorkerEpoch moves on every change.
+      std::mutex gWorkgroupMutex;
+      os_workgroup_t gWorkgroup = nil;
+      AudioObjectID gWorkgroupDevice = 0;
+      std::atomic<uint32_t> gWorkerEpoch { 1 };
+
+      void SetDeviceWorkgroup(AudioObjectID device)
+      {
+         os_workgroup_t wg = nil;
+         if (device != 0)
+         {
+            AudioObjectPropertyAddress addr { kAudioDevicePropertyIOThreadOSWorkgroup, kAudioObjectPropertyScopeGlobal,
+                                              kAudioObjectPropertyElementMain };
+            void* raw = nullptr;
+            UInt32 size = sizeof(raw);
+            if (AudioObjectGetPropertyData(device, &addr, 0, nullptr, &size, &raw) == noErr && raw != nullptr)
+               wg = (__bridge_transfer os_workgroup_t)raw; // the HAL hands back a retained object
+         }
+         {
+            std::lock_guard<std::mutex> lock(gWorkgroupMutex);
+            gWorkgroup = wg;
+            gWorkgroupDevice = wg != nil ? device : 0;
+         }
+         gWorkerEpoch.fetch_add(1, std::memory_order_release);
+      }
+
+      struct WorkerJoin
+      {
+         os_workgroup_t wg = nil;
+         os_workgroup_join_token_s token {};
+      };
+
       // AVAudioSourceNode hands us AudioBufferList, not a float**; cap the
       // channel count so unpacking it into the C-callback shape needs no
       // heap allocation on the audio thread.
@@ -4823,6 +4860,7 @@ namespace Platform
 
          gDeviceHandle = h;
          outSampleRate = sampleRate;
+         SetDeviceWorkgroup(targetDevice);
          // The rate AudioInputCaptureRead will be drained at - see
          // gRenderSampleRate's comment for why the capture tap needs it.
          gRenderSampleRate.store(sampleRate, std::memory_order_relaxed);
@@ -4837,6 +4875,7 @@ namespace Platform
          return;
       AudioDeviceHandle* h = gDeviceHandle;
       gDeviceHandle = nullptr;
+      SetDeviceWorkgroup(0);
       @autoreleasepool
       {
          // Remove before the engine goes away - see AudioDeviceHandle's
@@ -4891,6 +4930,61 @@ namespace Platform
       gDeviceCallback = nullptr;
       gDeviceUserData = nullptr;
       delete h;
+   }
+
+   void* AudioWorkerJoin()
+   {
+      WorkerJoin* j = new WorkerJoin();
+      AudioObjectID device = 0;
+      {
+         std::lock_guard<std::mutex> lock(gWorkgroupMutex);
+         j->wg = gWorkgroup;
+         device = gWorkgroupDevice;
+      }
+      if (j->wg == nil || os_workgroup_join(j->wg, &j->token) != 0)
+      {
+         // No device (an offline render): no realtime class to join, but the
+         // highest QoS keeps the scheduler from parking the worker on an
+         // efficiency core while the render waits on it.
+         delete j;
+         pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+         return nullptr;
+      }
+      // A workgroup member should also be a realtime thread: the same
+      // time-constraint class CoreAudio gives its IO thread, sized to one
+      // device period (Apple's "Adding parallel real-time threads to audio
+      // workgroups").
+      const double rate = gRenderSampleRate.load(std::memory_order_relaxed);
+      const uint32_t frames = AudioDeviceBufferFrames(device);
+      if (rate > 0.0 && frames > 0)
+      {
+         mach_timebase_info_data_t tb;
+         mach_timebase_info(&tb);
+         const double periodNs = 1e9 * (double)frames / rate;
+         const double ticksPerNs = (double)tb.denom / (double)tb.numer;
+         thread_time_constraint_policy_data_t policy;
+         policy.period = (uint32_t)(periodNs * ticksPerNs);
+         policy.computation = (uint32_t)(periodNs * 0.5 * ticksPerNs);
+         policy.constraint = policy.period;
+         policy.preemptible = 1;
+         thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_TIME_CONSTRAINT_POLICY,
+                           (thread_policy_t)&policy, THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+      }
+      return j;
+   }
+
+   void AudioWorkerLeave(void* token)
+   {
+      WorkerJoin* j = static_cast<WorkerJoin*>(token);
+      if (j == nullptr)
+         return;
+      os_workgroup_leave(j->wg, &j->token);
+      delete j;
+   }
+
+   uint32_t AudioWorkerEpoch()
+   {
+      return gWorkerEpoch.load(std::memory_order_acquire);
    }
 
    // ---------------------------------------------------------- file players

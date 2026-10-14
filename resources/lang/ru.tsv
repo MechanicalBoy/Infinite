@@ -1178,3 +1178,7 @@ Sort	СОРТИРОВКА
 Filter	ФИЛЬТР
 Descending	По убыванию
 Ascending	По возрастанию
+Audio threads	Аудиопотоки
+Auto (all cores)	Авто (все ядра)
+One thread	Один поток
+Auto: tracks that do not feed each other render in parallel, %d threads on this machine.\nOne thread: everything on the audio thread, as before.\nThe sound is identical either way.	Авто: дорожки, не связанные друг с другом, обрабатываются параллельно, %d потоков на этом компьютере.\nОдин поток: всё на аудиопотоке, как раньше.\nЗвук в обоих случаях одинаковый.

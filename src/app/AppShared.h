@@ -432,6 +432,7 @@ extern double gAudioSampleRate;
 extern int gAudioBufferFrames;
 
 extern int gAudioOutputMode;
+extern int gAudioThreads;
 
 extern float gAudioOversample;
 

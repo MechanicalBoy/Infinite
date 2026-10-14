@@ -1178,3 +1178,7 @@ Sort	排序
 Filter	筛选
 Descending	降序
 Ascending	升序
+Audio threads	音频线程
+Auto (all cores)	自动（全部核心）
+One thread	单线程
+Auto: tracks that do not feed each other render in parallel, %d threads on this machine.\nOne thread: everything on the audio thread, as before.\nThe sound is identical either way.	自动：互不连接的轨道并行渲染，本机 %d 个线程。\n单线程：全部在音频线程上运行，与以前相同。\n两种方式的声音完全相同。

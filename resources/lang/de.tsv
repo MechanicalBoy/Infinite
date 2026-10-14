@@ -1178,3 +1178,7 @@ Sort	SORTIEREN
 Filter	FILTER
 Descending	Absteigend
 Ascending	Aufsteigend
+Audio threads	Audio-Threads
+Auto (all cores)	Auto (alle Kerne)
+One thread	Ein Thread
+Auto: tracks that do not feed each other render in parallel, %d threads on this machine.\nOne thread: everything on the audio thread, as before.\nThe sound is identical either way.	Auto: Spuren, die einander nicht speisen, werden parallel berechnet, %d Threads auf diesem Rechner.\nEin Thread: alles auf dem Audio-Thread, wie bisher.\nDer Klang ist in beiden Fällen identisch.
