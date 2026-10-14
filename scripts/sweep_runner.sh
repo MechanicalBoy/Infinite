@@ -52,6 +52,8 @@ PASS=0
 FAIL=0
 FAILED_NAMES=()
 
+source "$ROOT/scripts/audio_param_sweep_check.sh"
+
 step() { printf '\n== %s ==\n' "$1"; }
 
 printf '=== %s ===\n' "${SWEEP_NAME:-sweep}"
@@ -107,6 +109,18 @@ run_one() {
   fi
   if [ "$graded" = "observe" ]; then
     echo "  [read]   $name - $out"
+    return
+  fi
+  if [ "$name" = "AUDIOPARAMSWEEPTEST" ]; then
+    # Graded per param against the baseline, not by the raw summary verdict.
+    if audio_param_sweep_grade "$out"; then
+      echo "  [pass]   $name - $APS_XFAIL xfail (baselined blind spots), 0 new"
+      PASS=$((PASS+1))
+    else
+      echo "  [FAIL]   $name - $APS_NEWFAIL new, $APS_NOWPASS now-passing baselined - see $out"
+      for l in "${APS_DETAIL[@]}"; do echo "           $l"; done
+      FAIL=$((FAIL+1)); FAILED_NAMES+=("$name")
+    fi
     return
   fi
   if grep -qE "$FAIL_MARK" "$out"; then
