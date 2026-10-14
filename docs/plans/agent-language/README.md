@@ -181,3 +181,29 @@ turns (15) and dollars per task.
 
 Mismatches and limits: `PHASE1-NOTES.md`. Reproduce: `python3 tools/agentlang/report.py`.
 Not done here: ranges (need `nodefacts.json` from the built app), Field compile, any model run (Phase 2).
+
+### Phase 2 (2026-10-14, Air, app sha b8533d65daf8, 10 held-out tasks x 3 reps per arm per model)
+
+Files: `results/final.json`, `results/full.runs.jsonl`, `results/t7.runs.jsonl`. Sonnet's dev-set arms were skipped
+on purpose (not in the gate). One Opus session stalled 48 min on the API; wall time does not enter any metric.
+
+| Model | B1/B0p fresh tokens (95% CI) | B1/B0p dollars (95% CI) | turns B0 / B0p / B1 | solved of 10 (B0 / B0p / B1) | win |
+|---|---|---|---|---|---|
+| Haiku | 0.49 (0.29, 0.77) | 0.41 (0.25, 0.61) | 10.4 / 9.7 / 6.9 | 9.0 / 9.0 / 8.7 | yes |
+| Opus | 0.33 (0.21, 0.48) | 0.45 (0.23, 0.71) | 8.8 / 8.0 / 5.2 | 9.0 / 9.0 / 10.0 | yes |
+| Sonnet | 0.56 (0.31, 1.09) | 0.63 (0.33, 1.10) | 6.9 / 7.1 / 5.2 | 9.0 / 9.3 / 8.7 | no (CI crosses 1) |
+
+Pooled: B1 uses 0.48x the fresh tokens of B0p (0.26x counting cache reads) at about 2/3 the turns. B0p is no cheaper
+than B0, so the win comes from the language, not the resident check. **VERDICT: KEEP-GOING (2 of 3 models).**
+
+| Gate | Result |
+|---|---|
+| T1, T2, T3, T5, T6 (local) | pass (T1 43 of 81 patches expressible, 38 excluded, mostly `mod`; T5 30 of 30) |
+| T7 decode-back | 30 of 30 |
+| **T4 cold write (first `al apply` valid, need 90%)** | **FAIL: Haiku 67%, Sonnet 70%, Opus 80%** |
+| Overall `final.json` | `ok: false`, failed: T4 |
+
+T4 failures are concentrated: t08 and f08 account for 18 of 25. Causes in the logs: the model sets a param key it
+never asked for (`vig.uAmount`; the SPEC does not force `ask` first) and writes a Field name that does not exist
+(`age`). Both are SPEC problems, not engine problems. Fix: a SPEC change (ask before set; list the Field
+built-ins), then re-run T4 on held-out only. Not done yet.
