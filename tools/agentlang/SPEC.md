@@ -1,6 +1,6 @@
 # Tongue v0: write a patch as sentences
 
-SPEC size: 3439 characters (limit 7000).
+SPEC size: 4080 characters (limit 7000).
 
 You edit an Infinite patch with short sentences, one per line. A blank line ends a paragraph.
 A paragraph is all-or-nothing: if any sentence fails, none is applied. Sentences become `.inf` text.
@@ -54,6 +54,19 @@ field fp col = vec3(uv.x, uv.x, uv.x);
 `field <name> <code>` takes Field source as is. Bare names, no sigils (`P.y += sin(P.x + t) * 0.2`).
 `;` separates statements on one line. Do not write `#` in a `field` sentence (it is rejected).
 Whether the code compiles is checked later by `--validate`, not by the sentence checker.
+
+A kernel only knows the names of its node's domain; any other name is `E_FIELD` ("used before assignment").
+
+| Node | Names you may read | Writes |
+|---|---|---|
+| Field Pixel | `uv xy res aspect t dt frame age` | `col` (and `alpha`) |
+| Field Synth | `freq gate sr n t` | `out` |
+| Field Effect | `in sr n` | `out` |
+| Field Modifier | `P N uv Cd i count t` | `P N Cd` |
+
+`t` is frame time and is not a sample-domain clock. For a sine voice use
+`field v out = sin(6.2831853 * n * freq / sr) * 0.5 * gate`; for a running phase keep it in a cell:
+`field v state float ph = 0; ph = ph + freq / sr; out = sin(6.2831853 * ph) * 0.5 * gate`.
 
 ## Replies
 
