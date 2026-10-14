@@ -1,0 +1,13 @@
+infinite-patch 1
+node 1 Notes Field Notes
+  id seq
+  s code if (tick(1/4) > 0.5) { note(60, 0.8, 1/4) }
+end
+node 2 Synths Field Synth
+  id voice
+end
+node 3 Utility Audio Out
+  id speakers
+end
+note voice notes seq
+aud speakers audio voice

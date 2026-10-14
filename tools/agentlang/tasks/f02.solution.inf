@@ -1,0 +1,9 @@
+infinite-patch 1
+node 1 Source FieldPixel
+  id fp
+  s code c = fmod(floor(uv.x * 8.0) + floor(uv.y * 8.0), 2.0); col = vec3(c, c, c);
+end
+node 2 Utility Output
+  id out
+end
+cable out in fp

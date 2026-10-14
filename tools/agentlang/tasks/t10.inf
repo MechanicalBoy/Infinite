@@ -1,0 +1,12 @@
+infinite-patch 1
+node 1 Source Shape
+  id shape
+end
+node 2 Compositing Fit
+  id fit
+end
+node 3 Utility Output
+  id out
+end
+cable fit input shape
+cable out in fit

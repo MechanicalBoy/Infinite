@@ -1,0 +1,17 @@
+infinite-patch 1
+node 1 Source Shape
+  id left
+end
+node 2 Source Circle
+  id disc
+end
+node 3 Compositing Blend
+  id mix
+  f mix 0.8
+end
+node 4 Utility Output
+  id out
+end
+cable mix input left
+cable mix input_2 disc
+cable out in mix

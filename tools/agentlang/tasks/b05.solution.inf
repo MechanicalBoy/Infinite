@@ -1,0 +1,10 @@
+infinite-patch 1
+node 1 Synths Oscillator
+  id osc
+  f frequency 440.0
+  i waveform Sine
+end
+node 2 Utility Audio Out
+  id speakers
+end
+aud speakers audio osc

@@ -1,0 +1,17 @@
+infinite-patch 1
+node 1 3D Sphere
+  id ball
+end
+node 2 3D Camera
+  id cam
+end
+node 3 3D Render 3D
+  id r3d
+  f fov 50.0
+end
+node 4 Utility Output
+  id out
+end
+geo r3d geo_a ball
+geo r3d camera cam
+cable out in r3d

@@ -1,0 +1,17 @@
+infinite-patch 1
+node 1 Source Shape
+  id shape
+end
+node 2 Effects bloom
+  id glow
+end
+node 3 Effects vignette
+  id vig
+  f uAmount 0.8
+end
+node 4 Utility Output
+  id out
+end
+cable glow input shape
+cable vig input glow
+cable out in vig

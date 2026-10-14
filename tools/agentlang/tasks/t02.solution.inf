@@ -1,0 +1,15 @@
+infinite-patch 1
+node 1 Source Shape
+  id shape
+  f sizeX 0.6
+  i shapeType Star
+end
+node 2 Effects gaussianblur
+  id blur
+  f uRadius 3.0
+end
+node 3 Utility Output
+  id out
+end
+cable blur input shape
+cable out in blur

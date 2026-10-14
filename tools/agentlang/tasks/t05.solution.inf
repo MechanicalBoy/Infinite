@@ -1,0 +1,15 @@
+infinite-patch 1
+node 1 Source Shape
+  id shape
+  i shapeType Star
+end
+node 2 Effects bloom
+  id glow
+  f uIntensity 2.5
+  f uThreshold 0.3
+end
+node 3 Utility Output
+  id out
+end
+cable glow input shape
+cable out in glow

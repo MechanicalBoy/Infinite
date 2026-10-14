@@ -1,0 +1,17 @@
+infinite-patch 1
+node 1 Notes Random Note Generator
+  id notes
+end
+node 2 Synths Wavetable
+  id synth
+end
+node 3 AudioEffects Reverb
+  id verb
+  f mix 0.3
+end
+node 4 Utility Audio Out
+  id speakers
+end
+note synth notes notes
+aud verb audio synth
+aud speakers audio verb

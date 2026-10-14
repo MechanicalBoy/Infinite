@@ -1,0 +1,17 @@
+infinite-patch 1
+node 1 3D Sphere
+  id ball
+end
+node 2 3D Field Modifier
+  id warp
+  s code P.y += sin(P.x * 2.0 + t) * 0.2
+end
+node 3 3D Render 3D
+  id r3d
+end
+node 4 Utility Output
+  id out
+end
+geo warp geo ball
+geo r3d geo_a warp
+cable out in r3d

@@ -1,0 +1,15 @@
+infinite-patch 1
+node 1 Synths Oscillator
+  id osc
+  f frequency 220.0
+end
+node 2 AudioEffects Delay
+  id echo
+  f feedback 0.4
+  f timeMs 250.0
+end
+node 3 Utility Audio Out
+  id speakers
+end
+aud echo audio osc
+aud speakers audio echo

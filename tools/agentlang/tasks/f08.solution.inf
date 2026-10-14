@@ -1,0 +1,9 @@
+infinite-patch 1
+node 1 Synths Field Synth
+  id voice
+  s code out = sin(6.283185 * ((n * freq) / sr)) * gate * 0.5
+end
+node 2 Utility Audio Out
+  id speakers
+end
+aud speakers audio voice

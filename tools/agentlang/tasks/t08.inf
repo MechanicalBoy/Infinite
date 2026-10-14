@@ -1,0 +1,10 @@
+infinite-patch 1
+node 1 Source Shape
+  id shape
+  f sizeX 0.6
+  i shapeType Star
+end
+node 2 Utility Output
+  id out
+end
+cable out in shape

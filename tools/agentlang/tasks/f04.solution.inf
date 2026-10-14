@@ -1,0 +1,13 @@
+infinite-patch 1
+node 1 Synths Field Synth
+  id voice
+end
+node 2 AudioEffects Field Effect
+  id fx
+  s code out = in * 0.5
+end
+node 3 Utility Audio Out
+  id speakers
+end
+aud fx in voice
+aud speakers audio fx

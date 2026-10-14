@@ -1,0 +1,13 @@
+infinite-patch 1
+node 1 Source Shape
+  id shape
+end
+node 2 Effects gaussianblur
+  id blur
+  f uRadius 6.0
+end
+node 3 Utility Output
+  id out
+end
+cable blur input shape
+cable out in blur

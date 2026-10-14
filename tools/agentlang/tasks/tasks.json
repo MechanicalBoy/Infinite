@@ -1,0 +1,1454 @@
+{
+ "version": 1,
+ "tasks": [
+  {
+   "id": "b01",
+   "split": "dev",
+   "kind": "build",
+   "goal_text": "Make a picture: a star shape shown on the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Output",
+       "in",
+       "Shape"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Shape",
+     "key": "shapeType",
+     "text": "Star"
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "frame_stats",
+     "t": 0,
+     "seed": null,
+     "stat": "black_percent",
+     "max": 0.999
+    }
+   ]
+  },
+  {
+   "id": "b02",
+   "split": "dev",
+   "kind": "build",
+   "goal_text": "Make a shape, blur it with a gaussian blur of radius 6, and show it on the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "gaussianblur",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "gaussianblur",
+       "input",
+       "Shape"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "gaussianblur"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "gaussianblur",
+     "key": "uRadius",
+     "value": 6,
+     "tol": 0.5
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "b03",
+   "split": "dev",
+   "kind": "build",
+   "goal_text": "Make a shape, add bloom, then a vignette with amount 0.8, and show it on the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "bloom",
+      "vignette",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "bloom",
+       "input",
+       "Shape"
+      ],
+      [
+       "cable",
+       "vignette",
+       "input",
+       "bloom"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "vignette"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "vignette",
+     "key": "uAmount",
+     "value": 0.8,
+     "tol": 0.05
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "b04",
+   "split": "dev",
+   "kind": "build",
+   "goal_text": "Blend two different shapes together at 50 percent and show the result on the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "Blend",
+      "Output"
+     ]
+    },
+    {
+     "kind": "type_count",
+     "type": "Shape",
+     "op": "==",
+     "n": 2
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Blend",
+       "input",
+       "Shape"
+      ],
+      [
+       "cable",
+       "Blend",
+       "input_2",
+       "Shape"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "Blend"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Blend",
+     "key": "mix",
+     "value": 0.5,
+     "tol": 0.05
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "b05",
+   "split": "dev",
+   "kind": "build",
+   "goal_text": "Play a sine tone at 440 Hz to the speakers.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Oscillator",
+      "Audio Out"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Oscillator"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Oscillator",
+     "key": "frequency",
+     "value": 440,
+     "tol": 1
+    },
+    {
+     "kind": "params",
+     "type": "Oscillator",
+     "key": "waveform",
+     "text": "Sine"
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "b06",
+   "split": "dev",
+   "kind": "build",
+   "goal_text": "Random notes played by a wavetable synth, through a reverb with mix 0.3, to the speakers.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Random Note Generator",
+      "Wavetable",
+      "Reverb",
+      "Audio Out"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "note",
+       "Wavetable",
+       "notes",
+       "Random Note Generator"
+      ],
+      [
+       "aud",
+       "Reverb",
+       "audio",
+       "Wavetable"
+      ],
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Reverb"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Reverb",
+     "key": "mix",
+     "value": 0.3,
+     "tol": 0.03
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "b07",
+   "split": "dev",
+   "kind": "build",
+   "goal_text": "Render a 3D sphere with a camera whose field of view is 50 degrees, and show it on the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Sphere",
+      "Camera",
+      "Render 3D",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "geo",
+       "Render 3D",
+       "geo_a",
+       "Sphere"
+      ],
+      [
+       "geo",
+       "Render 3D",
+       "camera",
+       "Camera"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "Render 3D"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Render 3D",
+     "key": "fov",
+     "value": 50,
+     "tol": 1
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "b08",
+   "split": "held-out",
+   "kind": "build",
+   "goal_text": "Make a circle, run it through a kaleidoscope with 8 segments, and show it on the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Circle",
+      "kaleidoscope",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "kaleidoscope",
+       "input",
+       "Circle"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "kaleidoscope"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "kaleidoscope",
+     "key": "uSegments",
+     "value": 8,
+     "tol": 0.5
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "b09",
+   "split": "held-out",
+   "kind": "build",
+   "goal_text": "Play an oscillator at 220 Hz through a delay with feedback 0.4 and time 250 ms to the speakers.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Oscillator",
+      "Delay",
+      "Audio Out"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Delay",
+       "audio",
+       "Oscillator"
+      ],
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Delay"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Oscillator",
+     "key": "frequency",
+     "value": 220,
+     "tol": 1
+    },
+    {
+     "kind": "params",
+     "type": "Delay",
+     "key": "feedback",
+     "value": 0.4,
+     "tol": 0.03
+    },
+    {
+     "kind": "params",
+     "type": "Delay",
+     "key": "timeMs",
+     "value": 250,
+     "tol": 5
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "b10",
+   "split": "held-out",
+   "kind": "build",
+   "goal_text": "Join a cube and a torus into one 3D scene, render it, and show it on the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Cube",
+      "Torus",
+      "Join Geometry",
+      "Render 3D",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "geo",
+       "Join Geometry",
+       "geo_a",
+       "Cube"
+      ],
+      [
+       "geo",
+       "Join Geometry",
+       "geo_b",
+       "Torus"
+      ],
+      [
+       "geo",
+       "Render 3D",
+       "geo_a",
+       "Join Geometry"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "Render 3D"
+      ]
+     ]
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t01",
+   "split": "dev",
+   "kind": "tweak",
+   "goal_text": "Make the shape bigger: set its sizeX to 0.9.",
+   "start_patch": "tools/agentlang/tasks/t01.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Output",
+       "in",
+       "Shape"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Shape",
+     "key": "sizeX",
+     "value": 0.9,
+     "tol": 0.02
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t02",
+   "split": "dev",
+   "kind": "tweak",
+   "goal_text": "Put a gaussian blur of radius 3 between the shape and the output.",
+   "start_patch": "tools/agentlang/tasks/t02.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "gaussianblur",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "gaussianblur",
+       "input",
+       "Shape"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "gaussianblur"
+      ]
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Output",
+       "in",
+       "Shape"
+      ]
+     ],
+     "absent": true
+    },
+    {
+     "kind": "params",
+     "type": "gaussianblur",
+     "key": "uRadius",
+     "value": 3,
+     "tol": 0.3
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t03",
+   "split": "dev",
+   "kind": "tweak",
+   "goal_text": "Put a reverb with mix 0.4 between the synth and the speakers.",
+   "start_patch": "tools/agentlang/tasks/t03.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Wavetable",
+      "Reverb",
+      "Audio Out"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Reverb",
+       "audio",
+       "Wavetable"
+      ],
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Reverb"
+      ]
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Wavetable"
+      ]
+     ],
+     "absent": true
+    },
+    {
+     "kind": "params",
+     "type": "Reverb",
+     "key": "mix",
+     "value": 0.4,
+     "tol": 0.03
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t04",
+   "split": "dev",
+   "kind": "tweak",
+   "goal_text": "Remove the picture (the shape and the output) so only the sound is left.",
+   "start_patch": "tools/agentlang/tasks/t04.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Random Note Generator",
+      "Wavetable",
+      "Audio Out"
+     ]
+    },
+    {
+     "kind": "types_absent",
+     "types": [
+      "Shape",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Wavetable"
+      ]
+     ]
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t05",
+   "split": "dev",
+   "kind": "tweak",
+   "goal_text": "Make the bloom stronger: set its intensity to 2.5 and its threshold to 0.3.",
+   "start_patch": "tools/agentlang/tasks/t05.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "bloom",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "bloom",
+       "input",
+       "Shape"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "bloom"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "bloom",
+     "key": "uIntensity",
+     "value": 2.5,
+     "tol": 0.1
+    },
+    {
+     "kind": "params",
+     "type": "bloom",
+     "key": "uThreshold",
+     "value": 0.3,
+     "tol": 0.03
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t06",
+   "split": "dev",
+   "kind": "tweak",
+   "goal_text": "Replace the shape named right with a circle, and set the blend mix to 0.8.",
+   "start_patch": "tools/agentlang/tasks/t06.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "Circle",
+      "Blend",
+      "Output"
+     ]
+    },
+    {
+     "kind": "type_count",
+     "type": "Shape",
+     "op": "==",
+     "n": 1
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Blend",
+       "input",
+       "Shape"
+      ],
+      [
+       "cable",
+       "Blend",
+       "input_2",
+       "Circle"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "Blend"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Blend",
+     "key": "mix",
+     "value": 0.8,
+     "tol": 0.05
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t07",
+   "split": "dev",
+   "kind": "tweak",
+   "goal_text": "Lower the oscillator to 220 Hz and set its volume to 0.3.",
+   "start_patch": "tools/agentlang/tasks/t07.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Oscillator",
+      "Audio Out"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Oscillator"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Oscillator",
+     "key": "frequency",
+     "value": 220,
+     "tol": 1
+    },
+    {
+     "kind": "params",
+     "type": "Oscillator",
+     "key": "volume",
+     "value": 0.3,
+     "tol": 0.02
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t08",
+   "split": "held-out",
+   "kind": "tweak",
+   "goal_text": "Add a vignette with amount 0.9 between the shape and the output.",
+   "start_patch": "tools/agentlang/tasks/t08.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "vignette",
+      "Output"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "vignette",
+       "input",
+       "Shape"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "vignette"
+      ]
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Output",
+       "in",
+       "Shape"
+      ]
+     ],
+     "absent": true
+    },
+    {
+     "kind": "params",
+     "type": "vignette",
+     "key": "uAmount",
+     "value": 0.9,
+     "tol": 0.05
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t09",
+   "split": "held-out",
+   "kind": "tweak",
+   "goal_text": "Set the synth volume to 0.5 and the lowest note of the random notes to 60.",
+   "start_patch": "tools/agentlang/tasks/t09.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Random Note Generator",
+      "Wavetable",
+      "Audio Out"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Wavetable"
+      ]
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Wavetable",
+     "key": "volume",
+     "value": 0.5,
+     "tol": 0.03
+    },
+    {
+     "kind": "params",
+     "type": "Random Note Generator",
+     "key": "rangeLow",
+     "value": 60,
+     "tol": 0
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "t10",
+   "split": "held-out",
+   "kind": "tweak",
+   "goal_text": "Remove the fit node and connect the shape straight to the output.",
+   "start_patch": "tools/agentlang/tasks/t10.inf",
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Shape",
+      "Output"
+     ]
+    },
+    {
+     "kind": "types_absent",
+     "types": [
+      "Fit"
+     ]
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Output",
+       "in",
+       "Shape"
+      ]
+     ]
+    },
+    {
+     "kind": "no_errors"
+    }
+   ]
+  },
+  {
+   "id": "f01",
+   "split": "dev",
+   "kind": "field",
+   "goal_text": "Fill the picture with a horizontal gradient: black on the left, white on the right.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "FieldPixel",
+      "Output"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "FieldPixel",
+     "key": "code",
+     "contains": [
+      "uv\\.x"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "frame_stats",
+     "t": 0,
+     "seed": null,
+     "stat": "min_luma",
+     "max": 0.15
+    },
+    {
+     "kind": "frame_stats",
+     "t": 0,
+     "seed": null,
+     "stat": "max_luma",
+     "min": 0.7
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Output",
+       "in",
+       "FieldPixel"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f02",
+   "split": "dev",
+   "kind": "field",
+   "goal_text": "Fill the picture with a black and white checkerboard of 8 by 8 squares.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "FieldPixel",
+      "Output"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "FieldPixel",
+     "key": "code",
+     "contains": [
+      "floor",
+      "\\b8(\\.0)?\\b"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "frame_stats",
+     "t": 0,
+     "seed": null,
+     "stat": "min_luma",
+     "max": 0.15
+    },
+    {
+     "kind": "frame_stats",
+     "t": 0,
+     "seed": null,
+     "stat": "max_luma",
+     "min": 0.7
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Output",
+       "in",
+       "FieldPixel"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f03",
+   "split": "dev",
+   "kind": "field",
+   "goal_text": "Make a sound that plays a sine wave at the pitch of each note, silent when the key is released.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Audio Out",
+      "Field Synth"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Field Synth",
+     "key": "code",
+     "contains": [
+      "\\bsin\\b",
+      "\\bfreq\\b",
+      "\\bgate\\b"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Field Synth"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f04",
+   "split": "dev",
+   "kind": "field",
+   "goal_text": "Play a Field Synth through a Field Effect that halves the level, to the speakers.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Audio Out",
+      "Field Effect",
+      "Field Synth"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Field Effect",
+     "key": "code",
+     "contains": [
+      "\\bin\\b",
+      "0\\.5"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Field Effect",
+       "in",
+       "Field Synth"
+      ],
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Field Effect"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f05",
+   "split": "dev",
+   "kind": "field",
+   "goal_text": "Wave a sphere: move each point up and down along a sine of its x position plus time, with height 0.2. Render it to the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Field Modifier",
+      "Output",
+      "Render 3D",
+      "Sphere"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Field Modifier",
+     "key": "code",
+     "contains": [
+      "P\\.y",
+      "\\bsin\\b",
+      "\\bt\\b"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "geo",
+       "Field Modifier",
+       "geo",
+       "Sphere"
+      ],
+      [
+       "geo",
+       "Render 3D",
+       "geo_a",
+       "Field Modifier"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "Render 3D"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f06",
+   "split": "dev",
+   "kind": "field",
+   "goal_text": "Every quarter step play note 60 at velocity 0.8 for a quarter step, into a Field Synth, to the speakers.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Audio Out",
+      "Field Notes",
+      "Field Synth"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Field Notes",
+     "key": "code",
+     "contains": [
+      "\\bnote\\(",
+      "\\b60\\b"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "note",
+       "Field Synth",
+       "notes",
+       "Field Notes"
+      ],
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Field Synth"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f07",
+   "split": "held-out",
+   "kind": "field",
+   "goal_text": "Fill the picture with a vertical gradient: black at the bottom, white at the top.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "FieldPixel",
+      "Output"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "FieldPixel",
+     "key": "code",
+     "contains": [
+      "uv\\.y"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "frame_stats",
+     "t": 0,
+     "seed": null,
+     "stat": "min_luma",
+     "max": 0.15
+    },
+    {
+     "kind": "frame_stats",
+     "t": 0,
+     "seed": null,
+     "stat": "max_luma",
+     "min": 0.7
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "cable",
+       "Output",
+       "in",
+       "FieldPixel"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f08",
+   "split": "held-out",
+   "kind": "field",
+   "goal_text": "Make a sine voice at half volume that is silent when the key is released.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Audio Out",
+      "Field Synth"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Field Synth",
+     "key": "code",
+     "contains": [
+      "\\bsin\\b",
+      "\\bgate\\b",
+      "0\\.5"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Field Synth"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f09",
+   "split": "held-out",
+   "kind": "field",
+   "goal_text": "Play a Field Synth through a Field Effect that flips the sign of the signal, to the speakers.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Audio Out",
+      "Field Effect",
+      "Field Synth"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Field Effect",
+     "key": "code",
+     "contains": [
+      "out\\s*=\\s*-\\s*in"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "aud",
+       "Field Effect",
+       "in",
+       "Field Synth"
+      ],
+      [
+       "aud",
+       "Audio Out",
+       "audio",
+       "Field Effect"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "f10",
+   "split": "held-out",
+   "kind": "field",
+   "goal_text": "Lift a sphere's points: move each point up by its distance from the vertical axis times 0.3. Render it to the output.",
+   "start_patch": null,
+   "oracle": [
+    {
+     "kind": "types_present",
+     "types": [
+      "Field Modifier",
+      "Output",
+      "Render 3D",
+      "Sphere"
+     ]
+    },
+    {
+     "kind": "params",
+     "type": "Field Modifier",
+     "key": "code",
+     "contains": [
+      "P\\.y",
+      "\\blength\\b"
+     ]
+    },
+    {
+     "kind": "no_errors"
+    },
+    {
+     "kind": "edges",
+     "edges": [
+      [
+       "geo",
+       "Field Modifier",
+       "geo",
+       "Sphere"
+      ],
+      [
+       "geo",
+       "Render 3D",
+       "geo_a",
+       "Field Modifier"
+      ],
+      [
+       "cable",
+       "Output",
+       "in",
+       "Render 3D"
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

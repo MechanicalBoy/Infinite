@@ -1,0 +1,9 @@
+infinite-patch 1
+node 1 Source FieldPixel
+  id fp
+  s code col = vec3(uv.x, uv.x, uv.x);
+end
+node 2 Utility Output
+  id out
+end
+cable out in fp

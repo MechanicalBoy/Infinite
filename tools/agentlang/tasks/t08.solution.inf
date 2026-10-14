@@ -1,0 +1,15 @@
+infinite-patch 1
+node 1 Source Shape
+  id shape
+  f sizeX 0.6
+  i shapeType Star
+end
+node 2 Effects vignette
+  id vig
+  f uAmount 0.9
+end
+node 3 Utility Output
+  id out
+end
+cable vig input shape
+cable out in vig
