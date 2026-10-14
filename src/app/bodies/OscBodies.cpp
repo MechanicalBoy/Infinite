@@ -2157,6 +2157,60 @@ namespace app
    }
 
 
+   // The string from nut (left) to bridge (right) with the exciter's point on it.
+   void DrawStringDiagram(StringNode* n, float h)
+   {
+      const float w = gAudioContentW;
+      const ImVec2 origin = ImGui::GetCursorScreenPos();
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const ImVec2 br(origin.x + w, origin.y + h);
+      AudioViz::Fill(dl, origin, br);
+      const float pad = 10.0f;
+      const float midY = origin.y + h * 0.5f;
+      const float x0 = origin.x + pad, x1 = br.x - pad;
+      const ImU32 line = ScopeMidLineCol();
+      const ImU32 trace = IsThemeLight() ? tok::U32(tok::pal::c_008CD2F0) : tok::U32(tok::pal::c_32F0FFF0);
+      dl->AddLine(ImVec2(x0, origin.y + 4.0f), ImVec2(x0, br.y - 4.0f), line, 2.0f);
+      dl->AddLine(ImVec2(x1, origin.y + 4.0f), ImVec2(x1, br.y - 4.0f), line, 2.0f);
+      dl->AddLine(ImVec2(x0, midY), ImVec2(x1, midY), trace, 1.5f);
+      const float px = x1 - std::clamp(n->position, 0.0f, 1.0f) * (x1 - x0);
+      dl->AddCircleFilled(ImVec2(px, midY), 4.0f, trace);
+      AudioViz::Border(dl, origin, br);
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+   void DrawStringBody(GraphNode& gn, StringNode* n)
+   {
+      const int voices = n->ActiveVoices();
+      char stat[64];
+      snprintf(stat, sizeof(stat), "%d voice%s", voices, voices == 1 ? "" : "s");
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      DrawStringDiagram(n, 28.0f);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      {
+         AudioKnobRow row(4);
+         row.Dropdown("exciter##stringExciter", StringNode::ExciterNames(), n->exciter, [n](int i) {
+            PushUndoCheckpoint();
+            n->exciter = i;
+         });
+         row.Knob("position", &n->position, 0.02f, 0.5f, "%.2f");
+         row.Knob("tone", &n->tone, 0.0f, 1.0f, "%.2f");
+         row.Knob("stiffness", &n->stiffness, 0.0f, 1.0f, "%.2f");
+         row.End();
+      }
+      {
+         AudioKnobRow row(4);
+         row.Knob("decay", &n->decay, 0.05f, 20.0f, "%.2f s");
+         row.Knob("body", &n->body, 0.0f, 1.0f, "%.2f");
+         row.Knob("release", &n->release, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                  AudioWidgetStyle::KnobSkewRelease400);
+         row.Knob("volume", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.End();
+      }
+      EndAudioBody();
+   }
+
+
    void DrawWaveTerrainScope(WaveTerrainNode* n, float h, float width)
    {
       const double now = ImGui::GetTime();

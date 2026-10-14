@@ -190,6 +190,7 @@ namespace app
       REGISTER_NODE(AnalogNode, Analog, "Synths");
       REGISTER_NODE(FMNode, FM, "Synths");
       REGISTER_NODE(PartialsNode, Partials, "Synths");
+      REGISTER_NODE(StringNode, String, "Synths");
       REGISTER_NODE(WaveTerrainNode, Wave Terrain, "Synths");
       REGISTER_NODE(EquationNode, Equation Synth, "Synths");
       REGISTER_NODE(ImageSpectralSynthNode, Spectral Synth, "Synths");

@@ -701,7 +701,7 @@ Do not edit between the markers; run the script. Use the `node` line exactly as 
 first, then the type name), then `--describe "<type>"` for parameters.
 
 <!-- generated:begin -->
-326 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
+327 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
 
 
 ### 3D
@@ -1061,6 +1061,7 @@ R"AISKILL(| `Voice Spread` | none | out:modulator | 4 | bypass |
 | `Sampler` | notes:note, record_in:audio | out:audio | 15 | bypass |
 | `Slicer` | notes:note, record_in:audio | out:audio | 13 | bypass |
 | `Spectral Synth` | image:image, note:note | out:audio | 33 | bypass |
+| `String` | notes:note | out:audio | 8 | bypass |
 | `Wave Terrain` | texture:image, note:note | out:audio | 35 | bypass |
 | `Wavetable` | notes:note, fm_in:audio | out:audio | 73 | bypass |
 

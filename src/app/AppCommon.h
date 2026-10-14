@@ -252,6 +252,7 @@ inline std::string TmpPath(const std::string& name)
 #include "nodes/MetallicNode.h"
 #include "nodes/FMNode.h"
 #include "nodes/PartialsNode.h"
+#include "nodes/StringNode.h"
 #include "audio/Wavetable.h"
 #include "audio/AudioFileWriter.h"
 #include "nodes/NoteNodes.h"

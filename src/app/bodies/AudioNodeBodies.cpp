@@ -633,6 +633,8 @@ namespace app
          DrawFMBody(gn, n);
       else if (auto* n = dynamic_cast<PartialsNode*>(gn.node.get()))
          DrawPartialsBody(gn, n);
+      else if (auto* n = dynamic_cast<StringNode*>(gn.node.get()))
+         DrawStringBody(gn, n);
       else if (auto* n = dynamic_cast<AudioPluginNode*>(gn.node.get()))
          DrawPluginBody(gn, n);
       else if (auto* n = dynamic_cast<SamplerNode*>(gn.node.get()))

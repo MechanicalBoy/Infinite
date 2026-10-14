@@ -5461,4 +5461,286 @@ bool RunPartialsFixture()
    printf("PARTIALSTEST %s\n", ok ? "OK" : "FAIL");
    return ok;
 }
+
+// INFINITE_STRINGTEST: the String synth plays in tune across the keyboard
+// (the tuning allpass is solved at the fundamental), stiffness stretches the
+// partials while the fundamental stays put, the bow sustains, decay and
+// release set the fundamental's T60, position notches the harmonic it sits on.
+bool RunStringFixture()
+{
+   const double sr = 48000.0;
+   const int block = 256;
+   bool ok = true;
+
+   StringNode node;
+   NoteEventQueue inbox;
+   int frame = 0;
+   AudioNode* audio = node.GetAudioNode();
+   audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+
+   auto play = [&](int noteNum, float vel, int frames, int offAt) {
+      node.CookIfNeeded(frame++);
+      audio->PrepareToPlay(sr, block);
+      {
+         // Let the smoothed knobs land first, as they have by the time anyone plays.
+         std::vector<float> l(block), r(block);
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         for (int k = 0; k < 16; k++)
+            audio->ProcessBlock(nullptr, 0, buf);
+      }
+      NoteEvent on;
+      on.note = noteNum;
+      on.velocity = vel;
+      on.isNoteOn = true;
+      on.voiceId = 3;
+      inbox.Push(on);
+      std::vector<float> out((size_t)frames);
+      std::vector<float> l(block), r(block);
+      for (int done = 0; done < frames; done += block)
+      {
+         if (offAt >= 0 && done >= offAt && done - block < offAt)
+         {
+            NoteEvent off = on;
+            off.isNoteOn = false;
+            off.velocity = 0.0f;
+            inbox.Push(off);
+         }
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         audio->ProcessBlock(nullptr, 0, buf);
+         for (int i = 0; i < block && done + i < frames; i++)
+            out[(size_t)(done + i)] = l[(size_t)i];
+      }
+      return out;
+   };
+   auto amp = [&](const std::vector<float>& x, double hz, size_t from, size_t to) {
+      double re = 0.0, im = 0.0, wsum = 0.0;
+      const size_t n = to - from;
+      for (size_t i = 0; i < n; i++)
+      {
+         const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * (double)i / (double)(n - 1));
+         const double ph = 2.0 * M_PI * hz * (double)i / sr;
+         re += w * x[from + i] * std::cos(ph);
+         im += w * x[from + i] * std::sin(ph);
+         wsum += w;
+      }
+      return 2.0 * std::sqrt(re * re + im * im) / wsum;
+   };
+   // The spectral peak near `hz` (within +-60 cents), to a hundredth of a cent.
+   auto peak = [&](const std::vector<float>& x, double hz, size_t from, size_t to) {
+      double best = hz, bestA = -1.0;
+      for (int c = -60; c <= 60; c += 2)
+      {
+         const double f = hz * std::exp2((double)c / 1200.0);
+         const double a = amp(x, f, from, to);
+         if (a > bestA)
+         {
+            bestA = a;
+            best = f;
+         }
+      }
+      double lo = best * std::exp2(-2.0 / 1200.0), hi = best * std::exp2(2.0 / 1200.0);
+      for (int it = 0; it < 40; it++)
+      {
+         const double m1 = lo + (hi - lo) / 3.0, m2 = hi - (hi - lo) / 3.0;
+         if (amp(x, m1, from, to) < amp(x, m2, from, to))
+            lo = m1;
+         else
+            hi = m2;
+      }
+      return 0.5 * (lo + hi);
+   };
+   auto cents = [](double f, double ref) { return 1200.0 * std::log2(f / ref); };
+   auto noteHz = [](int n) { return 440.0 * std::exp2((n - 69) / 12.0); };
+   auto db = [](double a, double b) { return 20.0 * std::log10(std::max(1e-12, a) / std::max(1e-12, b)); };
+   auto rms = [](const std::vector<float>& x, size_t from, size_t to) {
+      double s = 0.0;
+      for (size_t i = from; i < to; i++)
+         s += (double)x[i] * x[i];
+      return std::sqrt(s / (double)std::max<size_t>(1, to - from));
+   };
+   auto reset = [&]() {
+      node.exciter = StringNode::kPluck;
+      node.position = 0.13f;
+      node.tone = 0.5f;
+      node.decay = 3.0f;
+      node.stiffness = 0.0f;
+      node.body = 0.0f;
+      node.release = 150.0f;
+      node.volume = 1.0f;
+   };
+
+   // 1. In tune across the keyboard, for every exciter.
+   for (int ex = 0; ex < StringNode::kExciterCount; ex++)
+   {
+      reset();
+      node.exciter = ex;
+      double worst = 0.0;
+      int worstNote = 0;
+      for (int n = 24; n <= 108; n += 6)
+      {
+         const double f = noteHz(n);
+         // A bowed note is measured once its stick-slip motion has settled.
+         const size_t from = ex == StringNode::kBow ? 48000 : 4800;
+         const size_t len = (size_t)std::max(24000.0, 60.0 * sr / f);
+         const std::vector<float> y = play(n, 0.8f, (int)(from + len), -1);
+         const double c = cents(peak(y, f, from, from + len), f);
+         if (std::fabs(c) > std::fabs(worst))
+         {
+            worst = c;
+            worstNote = n;
+         }
+      }
+      const double gate = 2.0;
+      const bool good = std::fabs(worst) <= gate;
+      printf("STRINGTEST pitch %s: worst %+.3f c at MIDI %d over 24..108 (<= %.0f c)  %s\n",
+             StringNode::ExciterNames()[(size_t)ex].c_str(), worst, worstNote, gate, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 2. Stiffness stretches the upper partials; the fundamental stays in tune.
+   {
+      reset();
+      node.stiffness = 1.0f;
+      node.tone = 1.0f;
+      double worst = 0.0, stretch = 1e9;
+      for (int n : { 36, 48, 60, 72 })
+      {
+         const double f = noteHz(n);
+         const size_t from = 4800, len = 24000;
+         const std::vector<float> y = play(n, 0.8f, (int)(from + len), -1);
+         worst = std::max(worst, std::fabs(cents(peak(y, f, from, from + len), f)));
+         stretch = std::min(stretch, cents(peak(y, 6.0 * f, from, from + len), 6.0 * f));
+      }
+      const bool good = worst <= 2.0 && stretch >= 5.0;
+      printf("STRINGTEST stiffness 1: fundamental worst %.3f c (<= 2), 6th partial at least %+.1f c sharp (>= +5)  %s\n",
+             worst, stretch, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 3. Decay is the fundamental's T60 while held; release is the damper's.
+   {
+      reset();
+      node.decay = 1.0f;
+      const double f = noteHz(45);
+      const std::vector<float> y = play(45, 0.8f, 48000, -1);
+      const double slope = db(amp(y, f, 33600, 43200), amp(y, f, 9600, 19200)) / 0.5; // dB per second
+      const double t60 = -60.0 / slope;
+      const bool good = std::fabs(t60 - 1.0) <= 0.1;
+      printf("STRINGTEST decay 1 s: fundamental T60 %.3f s (within 10%%)  %s\n", t60, good ? "OK" : "FAIL");
+      ok = ok && good;
+
+      reset();
+      node.release = 100.0f;
+      const std::vector<float> z = play(45, 0.8f, 48000, 24000);
+      const double drop = db(rms(z, 31200, 33600), rms(z, 21600, 24000));
+      const bool good2 = drop <= -40.0;
+      printf("STRINGTEST release 100 ms: %.1f dB 150 ms after note-off (<= -40)  %s\n", drop, good2 ? "OK" : "FAIL");
+      ok = ok && good2;
+   }
+   // 4. The bow sustains while held and lets go on release.
+   {
+      reset();
+      node.exciter = StringNode::kBow;
+      const std::vector<float> y = play(50, 0.8f, 96000, 72000);
+      const double early = rms(y, 19200, 38400), late = rms(y, 57600, 72000), after = rms(y, 86400, 96000);
+      // Sustained: a held bow never fades (it may still be swelling in).
+      const bool good = early > 0.01 && db(late, early) >= -3.0 && db(late, early) <= 6.0 && db(after, late) <= -40.0;
+      printf("STRINGTEST bow: held level %+.1f dB from 0.4-0.8 s to 1.2-1.5 s (-3..+6), %.1f dB after release  %s\n",
+             db(late, early), db(after, late), good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 5. Position: plucking a quarter of the way from the bridge notches the 4th harmonic.
+   {
+      reset();
+      node.position = 0.25f;
+      node.tone = 1.0f;
+      const double f = noteHz(40);
+      const std::vector<float> y = play(40, 0.8f, 28800, -1);
+      const double h3 = amp(y, 3 * f, 4800, 28800), h4 = amp(y, 4 * f, 4800, 28800), h5 = amp(y, 5 * f, 4800, 28800);
+      const double depth = db(h4, 0.5 * (h3 + h5));
+      const bool good = depth <= -15.0;
+      printf("STRINGTEST position 1/4: 4th harmonic %.1f dB under its neighbours (<= -15)  %s\n", depth,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 6. Strike is darker than pluck at a soft hit, and the body keeps the level.
+   {
+      reset();
+      const double f = noteHz(48);
+      auto bright = [&](const std::vector<float>& y) {
+         double lo = 0.0, hi = 0.0;
+         for (int h = 1; h <= 3; h++)
+            lo += amp(y, h * f, 2400, 12000);
+         for (int h = 8; h <= 16; h++)
+            hi += amp(y, h * f, 2400, 12000);
+         return db(hi, lo);
+      };
+      const double pluck = bright(play(48, 0.4f, 12000, -1));
+      node.exciter = StringNode::kStrike;
+      const double strike = bright(play(48, 0.4f, 12000, -1));
+      const bool good = strike <= pluck - 6.0;
+      printf("STRINGTEST strike vs pluck: upper partials %.1f dB vs %.1f dB (strike >= 6 dB darker)  %s\n", strike,
+             pluck, good ? "OK" : "FAIL");
+      ok = ok && good;
+
+      reset();
+      const std::vector<float> dryY = play(48, 1.0f, 48000, -1);
+      node.body = 1.0f;
+      const std::vector<float> wetY = play(48, 1.0f, 48000, -1);
+      float pk = 0.0f;
+      for (float s : dryY)
+         pk = std::max(pk, std::fabs(s));
+      const double change = db(rms(wetY, 0, 48000), rms(dryY, 0, 48000));
+      const bool good2 = std::fabs(change) <= 6.0 && pk > 0.1f && pk < 1.0f;
+      printf("STRINGTEST body 1: level %+.1f dB vs dry (within 6); full-velocity pluck peak %.2f (0.1..1)  %s\n", change,
+             pk, good2 ? "OK" : "FAIL");
+      ok = ok && good2;
+   }
+   // 7. Eight bowed voices at once stay finite and bounded.
+   {
+      reset();
+      node.exciter = StringNode::kBow;
+      node.body = 1.0f;
+      node.CookIfNeeded(frame++);
+      audio->PrepareToPlay(sr, block);
+      for (int k = 0; k < 8; k++)
+      {
+         NoteEvent on;
+         on.note = 36 + k * 7;
+         on.velocity = 1.0f;
+         on.isNoteOn = true;
+         on.voiceId = 10 + k;
+         inbox.Push(on);
+      }
+      std::vector<float> l(block), r(block);
+      bool finite = true;
+      float pk = 0.0f;
+      for (int done = 0; done < 96000; done += block)
+      {
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         audio->ProcessBlock(nullptr, 0, buf);
+         for (float s : l)
+         {
+            finite = finite && std::isfinite(s);
+            pk = std::max(pk, std::fabs(s));
+         }
+      }
+      const bool good = finite && pk < 4.0f;
+      printf("STRINGTEST 8 bowed voices: finite %s, peak %.2f  %s\n", finite ? "yes" : "no", pk, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   printf("STRINGTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
 }
