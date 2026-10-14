@@ -18,6 +18,7 @@
 // Every function tolerates a null handle - AudioPluginNode's retire path can
 // hand us one while a topology swap is in flight.
 
+#include "platform/PluginCrashGuard.h"
 #include "../Platform.h"
 
 #include <string>
@@ -114,6 +115,7 @@ namespace Platform
 
    PluginHandle* PluginCreate(const PluginDesc& desc, double sampleRate, int maxBlockFrames)
    {
+      PluginCrashGuard::Scope crashScope(desc.identifier.c_str());
       if (desc.format == "vst3")
          return PluginVST3Create(desc, sampleRate, maxBlockFrames);
 
@@ -127,6 +129,7 @@ namespace Platform
 
    PluginLoadState PluginPoll(PluginHandle* handle, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       outError.clear();
       if (handle == nullptr)
       {
@@ -141,6 +144,7 @@ namespace Platform
 
    bool PluginPrepare(PluginHandle* handle, double sampleRate, int maxBlockFrames, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       outError.clear();
       if (handle == nullptr)
       {
@@ -183,6 +187,7 @@ namespace Platform
                      const PluginTransport* transport,
                      const float* const* sidechain, int sidechainChannels)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       if (handle != nullptr && handle->vst3 != nullptr)
       {
          PluginVST3Render(handle, in, inChannels, out, outChannels, numFrames, transport, sidechain, sidechainChannels);
@@ -262,6 +267,7 @@ namespace Platform
 
    bool PluginOpenEditor(PluginHandle* handle, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       outError.clear();
       if (handle == nullptr || handle->vst3 == nullptr)
       {
@@ -294,12 +300,14 @@ namespace Platform
 
    bool PluginSaveState(PluginHandle* handle, std::string& outBase64)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       outBase64.clear();
       return (handle != nullptr && handle->vst3 != nullptr) && PluginVST3SaveState(handle, outBase64);
    }
 
    bool PluginRestoreState(PluginHandle* handle, const std::string& base64)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       return (handle != nullptr && handle->vst3 != nullptr) && PluginVST3RestoreState(handle, base64);
    }
 

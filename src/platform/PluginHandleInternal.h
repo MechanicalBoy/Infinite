@@ -68,6 +68,10 @@ namespace Platform
       std::vector<float> sidechainScratch; // ditto, for a sidechain pull that hands us empty buffers
       double renderSampleTime = 0.0;
       std::atomic<bool> inRender { false };
+      // Consecutive render calls the AU answered with an error. An AU hosted
+      // out of process answers every call that way once its host process has
+      // died; PluginPoll turns a run of them into Failed.
+      std::atomic<int> renderFailures { 0 };
 
       // Host clock for the block being rendered, copied in by PluginRender
       // just before the render block runs; the AU reads it back through the

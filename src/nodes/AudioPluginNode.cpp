@@ -1,3 +1,4 @@
+#include "platform/PluginCrashGuard.h"
 #include "AudioPluginNode.h"
 
 #include <algorithm>
@@ -554,8 +555,35 @@ void AudioPluginNode::LoadPlugin(const Platform::PluginDesc& desc)
    mPreparedBlock = 0;
    mStatus = "loading " + desc.name + "...";
 
+   // A plugin that took the app down in an earlier run (see PluginCrashGuard).
+   Platform::PluginDesc create = desc;
+   create.outOfProcess = false;
+   mIsolated = false;
+   mDiedIsolated = false;
+   if (PluginCrashGuard::CrashedBefore(desc.identifier))
+   {
+      if (desc.format == "au")
+      {
+         // macOS can host an Audio Unit in its own process.
+         create.outOfProcess = true;
+         mIsolated = true;
+      }
+      else if (mReloading)
+      {
+         // No such service for VST3. A patch must open without crashing
+         // again, so the plugin stays out; its identity, mappings and saved
+         // state stay in the node (ReloadFromIdentity puts them back).
+         mHandle = nullptr;
+         mLoadFailed = true;
+         mStatus = "it crashed Infinite the last time it ran, so it was left unloaded. Pick it again in the plugin list to retry";
+         return;
+      }
+      else
+         PluginCrashGuard::Forget(desc.identifier); // picked by hand: that is the retry
+   }
+
    const double rate = AudioEngine::Instance().SampleRate();
-   mHandle = Platform::PluginCreate(desc, rate, kAudioMaxBlockFrames);
+   mHandle = Platform::PluginCreate(create, rate, kAudioMaxBlockFrames);
 }
 
 void AudioPluginNode::ReloadFromIdentity()
@@ -611,6 +639,8 @@ void AudioPluginNode::Unload()
    mPendingStateRestore = false;
    mAvailableParams.clear();
    mReady = false;
+   mIsolated = false;
+   mDiedIsolated = false;
    mLoadFailed = false;
    mStatus = "no plugin";
    for (int i = 0; i < kMaxMappedParams; i++)
@@ -766,6 +796,23 @@ void AudioPluginNode::CookIfNeeded(int frameId)
 
    if (mLoadFailed)
       return;
+
+   // An isolated plugin that crashed again took only its own process with it.
+   // The platform layer reports that as Failed; the node goes silent and
+   // carries the reason as its issue badge.
+   if (mIsolated && (mCookCounter & 7) == 0)
+   {
+      std::string error;
+      if (Platform::PluginPoll(mHandle, error) == Platform::PluginLoadState::Failed)
+      {
+         mAudioNode->SetHandle(nullptr);
+         mReady = false;
+         mLoadFailed = true;
+         mDiedIsolated = true;
+         mStatus = error.empty() ? std::string("it stopped responding") : error;
+         return;
+      }
+   }
 
    // 2. Prepare at the device's real rate, and re-prepare if it changed
    //    (device swap, sleep/wake). Unpublish across the re-prepare: the

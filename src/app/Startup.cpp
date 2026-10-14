@@ -1,4 +1,5 @@
 // Split out of main(): see docs/plans/main-split/README.md (Block C)
+#include "platform/PluginCrashGuard.h"
 #include "app/ui/design/UiType.h"
 #include "app/ui/design/Glyphs.gen.h"
 #include "app/frame/FrameCtx.h"
@@ -331,6 +332,12 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // Installed before any of the INFINITE_*TEST branches below too, so a
    // crash in a headless CI fixture leaves a dump/log the same as a real run.
    Platform::InstallCrashHandler();
+   {
+      // The plugin the last run died inside, if any (see PluginCrashGuard.h).
+      const std::string crashed = PluginCrashGuard::Init(AppPaths::AppSupportDir());
+      if (!crashed.empty())
+         Platform::AppendLogLine("plugin crash: the last run ended inside " + crashed + "; it will not load in process again");
+   }
 
    if (getenv("INFINITE_CRASHTEST") != nullptr)
    {
@@ -488,6 +495,8 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       return RunPluginScanTest();
    if (getenv("INFINITE_MIDIBENDTEST") != nullptr)
       return RunMidiBendTest();
+   if (getenv("INFINITE_PLUGINCRASHTEST") != nullptr)
+      return RunPluginCrashTest();
    if (getenv("INFINITE_PLUGINNODETEST") != nullptr)
    {
       RegisterNodes(); // its latency-change case spawns real nodes; no GL involved

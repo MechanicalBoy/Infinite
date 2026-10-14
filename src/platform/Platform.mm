@@ -1,3 +1,5 @@
+#include <signal.h>
+#include "platform/PluginCrashGuard.h"
 #include "Platform.h"
 #include "BenchMediaIo.h"
 #include "PluginVST3.h"
@@ -256,11 +258,25 @@ namespace Platform
       return gPendingTrackpadMagnification.exchange(0.0, std::memory_order_relaxed);
    }
 
-   // No-op on macOS: the crashreporter daemon writes a `.ips` report for any
-   // unhandled exception without app-side setup, so there is nothing for
-   // this process to install.
+   // The crashreporter daemon writes the `.ips` report without app-side
+   // setup. The one thing installed here names the plugin the crashing thread
+   // was inside (PluginCrashGuard), then steps aside: SA_RESETHAND puts the
+   // default action back, the faulting instruction runs again on return, and
+   // the process dies exactly as it would have, report included. Nothing is
+   // caught or resumed.
+   static void PluginCrashSignal(int)
+   {
+      PluginCrashGuard::NoteCrash();
+   }
+
    void InstallCrashHandler()
    {
+      struct sigaction sa = {};
+      sa.sa_handler = PluginCrashSignal;
+      sa.sa_flags = SA_RESETHAND;
+      sigemptyset(&sa.sa_mask);
+      for (int sig : { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP })
+         sigaction(sig, &sa, nullptr);
    }
 
    // stderr still reaches a terminal or Console.app; the same line also goes to the app-support log so
@@ -6027,6 +6043,7 @@ namespace Platform
 
    PluginHandle* PluginCreate(const PluginDesc& desc, double sampleRate, int maxBlockFrames)
    {
+      PluginCrashGuard::Scope crashScope(desc.identifier.c_str());
       if (desc.format == "vst3")
       {
 #if INFINITE_ENABLE_VST3
@@ -6079,7 +6096,12 @@ namespace Platform
       // briefly blocks the caller instead of returning Pending immediately -
       // same real tradeoff as every other compliant AU/VST3 host makes.
       NSError* error = nil;
-      AUAudioUnit* au = [[AUAudioUnit alloc] initWithComponentDescription:cd options:0 error:&error];
+      // A plugin that crashed the app before runs in the system's AU hosting
+      // service instead (desc.outOfProcess, see PluginCrashGuard): slower per
+      // block, but its next crash is the service's, not ours.
+      const AudioComponentInstantiationOptions options =
+         desc.outOfProcess ? kAudioComponentInstantiation_LoadOutOfProcess : 0;
+      AUAudioUnit* au = [[AUAudioUnit alloc] initWithComponentDescription:cd options:options error:&error];
       {
          std::lock_guard<std::mutex> lock(h->arrivalMutex);
          h->arrivedUnit = au;
@@ -6302,8 +6324,11 @@ namespace Platform
       }
    }
 
+   static const int kPluginDeadAfterFailedRenders = 24;
+
    PluginLoadState PluginPoll(PluginHandle* h, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr)
       {
          outError = "null plugin handle";
@@ -6320,6 +6345,14 @@ namespace Platform
 #endif
       }
 
+      // An out-of-process AU whose host process died: every render since has
+      // failed (about a quarter second of blocks is not a glitch).
+      if (h->state == PluginLoadState::Ready && h->desc.outOfProcess &&
+          h->renderFailures.load(std::memory_order_relaxed) > kPluginDeadAfterFailedRenders)
+      {
+         h->state = PluginLoadState::Failed;
+         h->loadError = "it crashed again, this time in its own process, so Infinite kept running";
+      }
       if (h->state != PluginLoadState::Pending)
       {
          outError = h->loadError;
@@ -6367,6 +6400,7 @@ namespace Platform
 
    bool PluginPrepare(PluginHandle* h, double sampleRate, int maxBlockFrames, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr)
       {
          outError = "null plugin handle";
@@ -6531,6 +6565,7 @@ namespace Platform
                      const PluginTransport* transport,
                      const float* const* sidechain, int sidechainChannels)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr)
          return;
 
@@ -6664,9 +6699,12 @@ namespace Platform
          for (int ch = 0; ch < outChannels; ch++)
             if (out[ch] != nullptr)
                std::memset(out[ch], 0, (size_t)frames * sizeof(float));
+         if (h->renderFailures.load(std::memory_order_relaxed) < 1000000)
+            h->renderFailures.fetch_add(1, std::memory_order_relaxed);
          h->inRender.store(false, std::memory_order_release);
          return;
       }
+      h->renderFailures.store(0, std::memory_order_relaxed);
 
       if (!direct)
       {
@@ -7039,6 +7077,7 @@ namespace Platform
 
    bool PluginOpenEditor(PluginHandle* h, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr)
       {
          outError = "null plugin handle";
@@ -7161,6 +7200,7 @@ namespace Platform
 
    bool PluginSaveState(PluginHandle* h, std::string& outBase64)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       outBase64.clear();
       if (h == nullptr)
          return false;
@@ -7197,6 +7237,7 @@ namespace Platform
 
    bool PluginRestoreState(PluginHandle* h, const std::string& base64)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr || base64.empty())
          return false;
 

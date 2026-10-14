@@ -27,6 +27,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 ## Decisions (newest first, keep the last 10)
 
 - 2026-10-14 Agent: v0.6 Block 2 items 2.1-2.4 and 2.7 done on `feature/v06-sound`. New things a user sees: File > New Synth (Cmd+Shift+N); a Keyboard node that is the only selection plays from the letter keys; a single dropped audio file plays at once ("Playing x. Load into instead:"); timeline keys `F`, `=` / `-`, `Cmd+L`, `I` / `O` (no J/K/L shuttle: the transport only runs forward at 1x); right-click an audio node > Presets (79 factory presets on Analog, Oscillator, Wavetable, Metallic, Delay, Reverb, Drive, Dynamics, EQ).
+- 2026-10-14 Agent: v0.6 2.6 done. New things a user sees: after a plugin crashes Infinite, the next start remembers which one. An Audio Unit then runs in its own process (a little more latency for that plugin only); if it crashes again the node shows a red badge, sound passes through it, and Infinite keeps running. A VST3 that crashed is left unloaded with a badge when a patch opens; picking it again in the plugin list retries it. Chosen over the plan row's "node goes silent": a dead effect passing sound through keeps a live set going.
 - 2026-10-14 Agent: v0.6 2.5 done. New thing a user sees: a Plugin node whose plugin has a sidechain input (compressors, gates) shows a third pin, "sidechain". The plugin still has to be switched to its external sidechain in its own window (Pro-C 2 only obeys that in its expert side chain mode).
 - 2026-10-14 Agent: reviewed PR #24 and the fork commits after 2026-10-04 (0.49-0.55). Owner: Infinite is a design instrument and also a live instrument, balanced, never one-sided. Taken: 2.37 Auto-Tune GL editor freeze (R282), 2.38 bar-quantized launch, 3.18 HAP video; plugin-handle crash check in 2.6, quit-never-hangs in 2.36, bar-landing switch in 2.35. Not taken: TD Common page, Send/Receive, fader law, Super Mixer master chain (1.13 covers clipping), Punch FX (GPL edition, never read). Open for owner: Clip Matrix launcher grid. 63 items.
 - 2026-10-13 Agent: v0.6 Block 1 done on `bugfix/v06-audio-correctness` except 1.7 (not merged, not pushed). 1.0b: `data_ledger.py lint` and `community_patches.py --smoke` are part of verify-gate; a kit result is stale when its sources change after it, counted from the edit, not the commit. Community patches are only checked to open, play and show a picture or sound.
@@ -65,7 +66,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-13 16:49 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-14 02:36 UTC. Do not edit inside this block; rerun the tool._
 
 ### Open quests (7) **over the cap of 5: park or close before adding**
 
@@ -81,8 +82,8 @@ _Generated 2026-10-13 16:49 UTC. Do not edit inside this block; rerun the tool._
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| extensions | 2026-10-13 | 5 |
-| v0.5.0 | 2026-10-10 | 177 |
+| extensions | 2026-10-13 | 9 |
+| v0.5.0 | 2026-10-10 | 192 |
 | v0.4.7 | 2026-10-07 | 74 |
 | v0.4.6 | 2026-10-01 | 165 |
 

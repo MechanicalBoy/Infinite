@@ -570,6 +570,7 @@ set(COMMON_SOURCES
     src/core/field/FieldGraphOwnership.cpp
     src/core/ExprGlobals.cpp
     src/core/FactoryPresets.cpp
+    src/platform/PluginCrashGuard.cpp
     src/core/Palette.cpp
     src/core/Patch.cpp
     src/core/PatchLayout.cpp
@@ -1162,6 +1163,7 @@ if(WIN32)
         # hanging plugin only costs a dead child, never the app itself.
         add_executable(infinite-vst3-scanner
             src/scanner_main_win.cpp
+            src/platform/PluginCrashGuard.cpp
             src/platform/win/PluginVST3Win.cpp
             src/platform/win/PlatformWin.cpp
             # PlatformWin.cpp's matting entry points forward to OrtMatting,
@@ -1381,6 +1383,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         # way the Windows scanner target pulls in PlatformWin.cpp + ONNX.
         add_executable(infinite-vst3-scanner
             src/scanner_main_linux.cpp
+            src/platform/PluginCrashGuard.cpp
             src/platform/linux/PluginVST3Linux.cpp
             src/platform/linux/PlatformLinux.cpp
             src/platform/common/SubjectMaskOnnx.cpp
@@ -1464,6 +1467,7 @@ if(APPLE)
 
         add_executable(infinite-vst3-scanner
             src/scanner_main.mm
+            src/platform/PluginCrashGuard.cpp
             src/platform/PluginVST3.mm
             src/platform/Platform.mm
             ${SYPHON_SOURCES}

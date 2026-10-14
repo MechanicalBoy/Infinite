@@ -5,6 +5,7 @@
 
 #include "platform/Platform.h"
 #include "platform/AppPaths.h"
+#include "platform/PluginCrashGuard.h"
 
 #include <execinfo.h>
 #include <fcntl.h>
@@ -58,6 +59,7 @@ namespace
 
    void CrashSignalHandler(int sig, siginfo_t* info, void* /*ucontext*/)
    {
+      PluginCrashGuard::NoteCrash(); // first: names the plugin this thread was inside, if any
       int fd = -1;
       if (gCrashDir[0] != '\0')
       {

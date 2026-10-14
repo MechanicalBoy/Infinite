@@ -604,6 +604,12 @@ namespace Platform
       // what PluginConfigure below uses to decide whether to expect an input
       // bus at all.
       bool acceptsNotes = false;
+
+      // Ask for the plugin to run outside Infinite's process, so its crash
+      // cannot be the app's. Only macOS Audio Units can (the system's AU
+      // hosting service); every other format ignores it. Set by
+      // AudioPluginNode for a plugin PluginCrashGuard remembers, never saved.
+      bool outOfProcess = false;
    };
 
    // Every installed effect/music-effect/instrument Audio Unit, via

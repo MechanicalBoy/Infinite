@@ -1,3 +1,4 @@
+#include "platform/PluginCrashGuard.h"
 #include "PluginVST3.h"
 
 #if INFINITE_ENABLE_VST3
@@ -2168,6 +2169,7 @@ namespace Platform
          // dispatch_async), so it is a stable, owned snapshot safe to read
          // here no matter what the caller does to its own copy afterward.
          const PluginDesc& desc = h->desc;
+         PluginCrashGuard::Scope crashScope(desc.identifier.c_str());
          VST3Trace("resolve begin: name='%s' id='%s' path='%s'", desc.name.c_str(), desc.identifier.c_str(),
                    desc.path.c_str());
 

@@ -129,12 +129,18 @@ public:
    const std::string& PluginDisplayName() const { return pluginName; }
    const std::string& Status() const { return mStatus; }
    bool IsReady() const { return mReady; }
+   // Hosted in its own process because it crashed the app before (LoadPlugin).
+   bool IsIsolated() const { return mIsolated; }
    bool IsLoading() const { return mHandle != nullptr && !mReady && mLoadFailed == false; }
    bool HasPlugin() const { return !pluginId.empty(); }
    NodeIssue Issue() const override
    {
       if (!mLoadFailed || pluginId.empty())
          return {};
+      if (mDiedIsolated)
+         return NodeIssue::Err((pluginName.empty() ? std::string("This plugin") : pluginName) + " stopped: " +
+                                  NodeIssues::FirstLine(mStatus) + ". Sound passes through it unchanged. Click to open the plugin list.",
+                               NodeIssue::Fix::Plugins);
       return NodeIssue::Err((pluginName.empty() ? std::string("This plugin") : pluginName) + " did not load: " +
                                NodeIssues::FirstLine(mStatus) + ". The patch keeps its settings. Click to open the plugin list.",
                             NodeIssue::Fix::Plugins);
@@ -208,6 +214,10 @@ private:
    Platform::PluginHandle* mRetired = nullptr; // published one swap ago
    bool mReady = false;
    bool mLoadFailed = false;
+   // The plugin crashed the app in an earlier run (PluginCrashGuard) and is
+   // loaded out of process this time; the cook then watches for it dying there.
+   bool mIsolated = false;
+   bool mDiedIsolated = false; // ...and it did; only changes the badge wording
    std::string mStatus = "no plugin";
 
    double mPreparedRate = 0.0;

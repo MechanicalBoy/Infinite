@@ -12,6 +12,8 @@
 #include "app/graph/NodeClipboard.h"
 #include "miniz.h"
 #include <filesystem>
+#include "platform/PluginCrashGuard.h"
+#include <signal.h>
 #include <fstream>
 
 namespace app
@@ -1211,6 +1213,187 @@ int RunPluginNodeHandleTest()
    }
 #endif
    return 0;
+}
+
+// ===================================================== INFINITE_PLUGINCRASHTEST
+//
+// Crash-only plugin fallback (PluginCrashGuard). Three cases:
+//  1. A child copy of this binary dies inside a plugin call (a null write
+//     while a PluginCrashGuard::Scope is open - what a crashing plugin looks
+//     like to the host). The next start must name that plugin.
+//  2. An Audio Unit on the crashed list loads out of process and still
+//     renders. Its host process is then killed: the app stays up, the node
+//     stops processing (sound passes through) and reports an issue.
+//  3. A VST3 on the list is not loaded when a patch brings it back, and
+//     keeps its identity so the badge can say why.
+// macOS only: the fixture is Apple's AUDelay and the AU hosting service.
+#ifdef __APPLE__
+static std::vector<int> AuHostPids()
+{
+   std::vector<int> pids;
+   if (FILE* p = popen("pgrep -f AUHostingService 2>/dev/null", "r"))
+   {
+      int pid = 0;
+      while (fscanf(p, "%d", &pid) == 1)
+         pids.push_back(pid);
+      pclose(p);
+   }
+   return pids;
+}
+#endif
+
+int RunPluginCrashTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+#ifndef __APPLE__
+   printf("PLUGINCRASHTEST (macOS fixture) SKIP\n");
+   return 0;
+#else
+   static const char* kId = "au:aufx:dely:appl";
+   if (const char* dir = getenv("INFINITE_PLUGINCRASHTEST_CHILD"))
+   {
+      PluginCrashGuard::Init(dir);
+      PluginCrashGuard::Scope scope(kId);
+      volatile int* nothing = nullptr;
+      *nothing = 1; // the crash
+      return 0;
+   }
+
+   namespace fs = std::filesystem;
+   std::error_code ec;
+   const fs::path dir = fs::temp_directory_path(ec) / "infinite_plugincrashtest";
+   fs::remove_all(dir, ec);
+   fs::create_directories(dir, ec);
+   bool allOk = true;
+
+   // 1. the crash is attributed
+   {
+      const std::string cmd = "INFINITE_PLUGINCRASHTEST_CHILD='" + dir.string() + "' '" + Platform::ExecutablePath() +
+                              "' </dev/null >/dev/null 2>&1";
+      const int status = std::system(cmd.c_str());
+      const std::string named = PluginCrashGuard::Init(dir.string());
+      const bool ok = status != 0 && named == kId && PluginCrashGuard::CrashedBefore(kId) &&
+                      !PluginCrashGuard::CrashedBefore("au:aufx:lmtr:appl");
+      // A second start has no marker left but still remembers the plugin.
+      const std::string again = PluginCrashGuard::Init(dir.string());
+      const bool remembered = again.empty() && PluginCrashGuard::CrashedBefore(kId);
+      printf("PLUGINCRASHTEST child died inside the plugin (status %d), next start names '%s', remembered after=%d  %s\n",
+             status, named.c_str(), remembered ? 1 : 0, (ok && remembered) ? "OK" : "FAIL");
+      allOk = allOk && ok && remembered;
+   }
+
+   // 3. a crashed VST3 stays unloaded on patch load, and a pick by hand retries
+   {
+      { std::ofstream list(dir / "plugin-crashed.txt", std::ios::app); list << "vst3:crash-test-fixture\n"; }
+      PluginCrashGuard::Init(dir.string());
+      AudioPluginNode node;
+      node.pluginFormat = "vst3";
+      node.pluginId = "vst3:crash-test-fixture";
+      node.pluginName = "Crash Fixture";
+      node.ReloadFromIdentity();
+      const NodeIssue issue = node.Issue();
+      const bool kept = !node.IsReady() && !node.IsLoading() && node.HasPlugin() && (bool)issue &&
+                        issue.reason.find("crashed") != std::string::npos;
+      Platform::PluginDesc pick;
+      pick.format = "vst3";
+      pick.identifier = "vst3:crash-test-fixture";
+      pick.name = "Crash Fixture";
+      node.LoadPlugin(pick);
+      const bool retried = !PluginCrashGuard::CrashedBefore("vst3:crash-test-fixture");
+      node.Unload();
+      printf("PLUGINCRASHTEST crashed VST3 on patch load: left unloaded with its badge=%d, picking it again retries=%d  %s\n",
+             kept ? 1 : 0, retried ? 1 : 0, (kept && retried) ? "OK" : "FAIL");
+      allOk = allOk && kept && retried;
+   }
+
+   // 2. a crashed AU runs in its own process, and losing that process is survivable
+   std::vector<Platform::PluginDesc> plugins;
+   Platform::EnumerateAudioUnits(plugins);
+   const Platform::PluginDesc* chosen = nullptr;
+   for (const Platform::PluginDesc& d : plugins)
+      if (d.identifier == kId)
+         chosen = &d;
+   if (chosen == nullptr)
+   {
+      printf("PLUGINCRASHTEST isolated AU (AUDelay not installed) SKIP\n");
+   }
+   else
+   {
+      const std::vector<int> before = AuHostPids();
+      AudioPluginNode node;
+      AudioNode* audio = node.GetAudioNode();
+      audio->PrepareToPlay(48000.0, 512);
+      std::vector<float> inL(512), inR(512), l(512, 0.0f), r(512, 0.0f);
+      for (int i = 0; i < 512; i++)
+         inL[i] = inR[i] = 0.5f * std::sin(6.2831853f * 440.0f * (float)i / 48000.0f);
+      float* inCh[2] = { inL.data(), inR.data() };
+      float* outCh[2] = { l.data(), r.data() };
+      AudioBuffer in, out;
+      in.channels = inCh;
+      in.numChannels = 2;
+      in.numFrames = 512;
+      out.channels = outCh;
+      out.numChannels = 2;
+      out.numFrames = 512;
+      const AudioBuffer* ins[1] = { &in };
+      int frame = 0;
+      auto run = [&](int blocks)
+      {
+         float peak = 0.0f;
+         for (int b = 0; b < blocks; b++)
+         {
+            node.CookIfNeeded(++frame);
+            std::fill(l.begin(), l.end(), 0.0f);
+            std::fill(r.begin(), r.end(), 0.0f);
+            audio->ProcessBlock(ins, 1, out);
+            if (b >= blocks / 2)
+               for (float s : l)
+                  peak = std::max(peak, std::fabs(s));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+         }
+         return peak;
+      };
+
+      node.LoadPlugin(*chosen);
+      for (int i = 0; i < 1500 && node.IsLoading(); i++)
+      {
+         node.CookIfNeeded(++frame);
+         std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      }
+      const bool isolated = node.IsReady() && node.IsIsolated();
+      const float alive = run(60);
+      const bool rendered = isolated && alive > 0.05f;
+      printf("PLUGINCRASHTEST crashed AU re-opened: ready=%d isolated=%d, output peak %.3f  %s\n", node.IsReady() ? 1 : 0,
+             node.IsIsolated() ? 1 : 0, alive, rendered ? "OK" : "FAIL");
+      allOk = allOk && rendered;
+
+      std::vector<int> mine;
+      for (int pid : AuHostPids())
+         if (std::find(before.begin(), before.end(), pid) == before.end())
+            mine.push_back(pid);
+      if (!rendered || mine.size() != 1)
+      {
+         printf("PLUGINCRASHTEST isolated AU dies (%d new host processes, need exactly 1) SKIP\n", (int)mine.size());
+      }
+      else
+      {
+         kill(mine[0], SIGKILL);
+         const float dead = run(400);
+         const NodeIssue issue = node.Issue();
+         // With no plugin the node is a wire, like any plugin that did not load.
+         const bool ok = !node.IsReady() && (bool)issue && issue.reason.find("stopped") != std::string::npos &&
+                         std::fabs(dead - 0.5f) < 0.01f;
+         printf("PLUGINCRASHTEST isolated AU's process killed: app alive, node ready=%d, output peak %.3f, badge '%s'  %s\n",
+                node.IsReady() ? 1 : 0, dead, issue.reason.c_str(), ok ? "OK" : "FAIL");
+         allOk = allOk && ok;
+      }
+      node.Unload();
+   }
+
+   PluginCrashGuard::Init(AppPaths::AppSupportDir());
+   fs::remove_all(dir, ec);
+   return allOk ? 0 : 1;
+#endif
 }
 
 #if INFINITE_ENABLE_VST3

@@ -5980,6 +5980,7 @@ int RunPluginScanTest();
 int RunMidiBendTest();
 
 int RunPluginNodeHandleTest();
+int RunPluginCrashTest();
 
 #if INFINITE_ENABLE_VST3
 int RunVST3ScanTest();
