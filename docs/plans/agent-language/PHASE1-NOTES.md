@@ -26,3 +26,10 @@
 
 `python3 tools/agentlang/test_oracle.py && python3 tools/agentlang/test_codec.py && python3 tools/agentlang/report.py` exits 0.
 `python3 tools/agentlang/freeze.py check` matches `tasks/FROZEN.sha256`. `oracle.py` and `tasks/` were not edited after the freeze commit.
+
+## Phase 2 finding: percent units (frozen tasks untouched)
+
+The frozen oracles write `black_percent` limits as fractions (for example `max 0.999`); the real CLI
+reports 0-100. The harness divides every `*_percent` stat by 100 before the oracle sees it
+(`harness.stats_for`). With that, all 30 reference solutions pass the real oracle (CLI `--validate`
+plus `--frame`), and no tweak start patch passes. Tasks and `FROZEN.sha256` are unchanged.
