@@ -1961,6 +1961,107 @@ namespace app
    }
 
 
+   void DrawFMScope(FMNode* n, float h)
+   {
+      const double now = ImGui::GetTime();
+      if (n->scopeCacheTime < 0.0 || now - n->scopeCacheTime > 1.0 / 30.0)
+      {
+         float buf[FMNode::kScopeCacheCapacity];
+         const int count = n->ReadScope(buf, FMNode::kScopeCacheCapacity);
+         if (count > 0)
+         {
+            std::copy(buf, buf + count, n->scopeCache);
+            n->scopeCacheCount = count;
+         }
+         n->scopeCacheTime = now;
+      }
+
+      const float w = gAudioContentW;
+      const AudioViz::Frame f = AudioViz::Begin(w, h);
+      const float midY = f.origin.y + h * 0.5f;
+      f.dl->AddLine(ImVec2(f.origin.x, midY), ImVec2(f.br.x, midY), ScopeMidLineCol(), 1.0f);
+      if (n->scopeCacheCount > 1 && n->ActiveVoices() > 0)
+      {
+         const int count = n->scopeCacheCount;
+         f.dl->PathClear();
+         for (int i = 0; i < count; i++)
+         {
+            const float t = (float)i / (float)(count - 1);
+            const float v = std::max(-1.0f, std::min(1.0f, n->scopeCache[i]));
+            f.dl->PathLineTo(ImVec2(f.origin.x + t * w, midY - v * h * 0.44f));
+         }
+         f.dl->PathStroke(IsThemeLight() ? tok::U32(tok::pal::c_D2780AFF) : tok::U32(tok::pal::c_FFD778F0), 0, 1.6f);
+      }
+      else
+      {
+         AudioViz::IdleLabel(f, "play notes");
+      }
+      AudioViz::End(f);
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+
+   void DrawFMBody(GraphNode& gn, FMNode* n)
+   {
+      const int voices = n->ActiveVoices();
+      const FMDsp::Algorithm& alg = FMDsp::AlgorithmAt(n->algorithm);
+      char stat[96];
+      snprintf(stat, sizeof(stat), "%s  -  %d voice%s", alg.name, voices, voices == 1 ? "" : "s");
+
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      DrawFMScope(n, 52.0f);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      {
+         AudioKnobRow row(3);
+         row.Dropdown("algorithm", FMDsp::AlgorithmList(), n->algorithm, [n](int i) {
+            PushUndoCheckpoint();
+            n->algorithm = i;
+         });
+         row.Knob("feedback", &n->feedback, 0.0f, 1.0f, "%.2f");
+         row.Knob("volume", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.End();
+      }
+
+      // One section per operator; a carrier's level is its loudness, a
+      // modulator's is how deep it bends what it feeds.
+      static const char* kTitle[FMDsp::kNumOps][2] = {
+         { "operator 1  -  carrier", "operator 1  -  modulator" },
+         { "operator 2  -  carrier", "operator 2  -  modulator" },
+         { "operator 3  -  carrier", "operator 3  -  modulator" },
+         { "operator 4  -  carrier", "operator 4  -  modulator" },
+      };
+      for (int o = 0; o < FMDsp::kNumOps; o++)
+      {
+         FMNode::Operator& op = n->ops[o];
+         const bool carrier = ((alg.carriers >> o) & 1) != 0;
+         ImGui::Dummy(ImVec2(0.0f, 4.0f));
+         ImGui::PushID(o);
+         BeginAudioSection(kTitle[o][carrier ? 0 : 1]);
+         {
+            AudioKnobRow row(7);
+            if (op.fixed)
+               row.Knob("freq", &op.freq, 1.0f, 8000.0f, "%.0f Hz");
+            else
+               row.Knob("ratio", &op.ratio, 0.5f, 16.0f, "%.2f");
+            row.Checkbox("fixed", &op.fixed);
+            row.Knob("level", &op.level, 0.0f, 1.0f, "%.2f");
+            row.Knob("attack", &op.attack, 0.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                     AudioWidgetStyle::KnobSkewAttack100);
+            row.Knob("decay", &op.decay, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                     AudioWidgetStyle::KnobSkewDecay300);
+            row.Knob("sustain", &op.sustain, 0.0f, 1.0f, "%.2f");
+            row.Knob("release", &op.release, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                     AudioWidgetStyle::KnobSkewRelease400);
+            row.End();
+         }
+         EndAudioSection();
+         ImGui::PopID();
+      }
+
+      EndAudioBody();
+   }
+
+
    void DrawWaveTerrainScope(WaveTerrainNode* n, float h, float width)
    {
       const double now = ImGui::GetTime();

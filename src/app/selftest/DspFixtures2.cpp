@@ -4988,4 +4988,213 @@ bool RunSplitterFixture()
    printf("SPLITTERTEST %s\n", ok ? "OK" : "FAIL");
    return ok;
 }
+// INFINITE_FMTEST (v0.6 2.22): FM through the real node. A lone carrier
+// is in tune and pure; one 1:3 modulator puts the first sidebands where
+// Bessel says, at the level J1/J0 says; a fixed operator ignores the note;
+// all 11 algorithms sound and stay finite; a released note ends.
+bool RunFMFixture()
+{
+   const double sr = 48000.0;
+   const int block = 256;
+   bool ok = true;
+
+   struct Rig
+   {
+      std::unique_ptr<FMNode> node;
+      NoteEventQueue inbox;
+      AudioNode* audio = nullptr;
+      int frame = 0;
+   };
+   auto make = [&](Rig& r, const std::function<void(FMNode&)>& set) {
+      r.node.reset(static_cast<FMNode*>(FMNode::Create()));
+      for (auto& op : r.node->ops)
+      {
+         op.attack = 0.0f;
+         op.sustain = 1.0f;
+         op.release = 20.0f;
+      }
+      set(*r.node);
+      r.node->CookIfNeeded(r.frame++);
+      r.audio = r.node->GetAudioNode();
+      r.audio->PrepareToPlay(sr, block);
+      r.audio->SetNoteInbox(&r.inbox, r.inbox.RegisterConsumer());
+   };
+   auto note = [](Rig& r, int n, bool on) {
+      NoteEvent e;
+      e.note = n;
+      e.velocity = on ? 1.0f : 0.0f;
+      e.isNoteOn = on;
+      e.voiceId = 7;
+      r.inbox.Push(e);
+   };
+   auto render = [&](Rig& r, int frames) {
+      std::vector<float> out((size_t)frames);
+      std::vector<float> l(block), rr(block);
+      for (int done = 0; done < frames; done += block)
+      {
+         float* ch[2] = { l.data(), rr.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         r.audio->ProcessBlock(nullptr, 0, buf);
+         for (int i = 0; i < block && done + i < frames; i++)
+            out[(size_t)(done + i)] = l[(size_t)i];
+      }
+      return out;
+   };
+   // Amplitude of one frequency (Hann-windowed DFT bin), and the pitch
+   // from interpolated rising zero crossings.
+   auto amp = [&](const std::vector<float>& x, double hz) {
+      double re = 0.0, im = 0.0, wsum = 0.0;
+      const size_t n = x.size();
+      for (size_t i = 0; i < n; i++)
+      {
+         const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * (double)i / (double)(n - 1));
+         const double ph = 2.0 * M_PI * hz * (double)i / sr;
+         re += w * x[i] * std::cos(ph);
+         im += w * x[i] * std::sin(ph);
+         wsum += w;
+      }
+      return 2.0 * std::sqrt(re * re + im * im) / wsum;
+   };
+   auto pitchHz = [&](const std::vector<float>& x) {
+      double first = -1.0, last = -1.0;
+      int crossings = 0;
+      for (size_t i = 1; i < x.size(); i++)
+         if (x[i - 1] < 0.0f && x[i] >= 0.0f)
+         {
+            const double t = (double)(i - 1) + (double)(-x[i - 1] / (x[i] - x[i - 1]));
+            if (first < 0.0)
+               first = t;
+            else
+               crossings++;
+            last = t;
+         }
+      return crossings > 0 ? sr * crossings / (last - first) : 0.0;
+   };
+   auto tail = [](const std::vector<float>& x, size_t from) { return std::vector<float>(x.begin() + (long)from, x.end()); };
+
+   // 1. A lone carrier (algorithm "4, 3, 2, 1", only operator 1 up).
+   {
+      Rig r;
+      make(r, [](FMNode& n) {
+         n.algorithm = 10;
+         for (int o = 1; o < FMDsp::kNumOps; o++)
+            n.ops[o].level = 0.0f;
+      });
+      note(r, 69, true);
+      const std::vector<float> x = tail(render(r, (int)sr), 4800);
+      const double hz = pitchHz(x);
+      const double cents = 1200.0 * std::log2(hz / 440.0);
+      const double a1 = amp(x, 440.0);
+      double worst = 0.0;
+      for (int h = 2; h <= 8; h++)
+         worst = std::max(worst, amp(x, 440.0 * h));
+      const double puritydB = 20.0 * std::log10(worst / a1 + 1e-12);
+      const bool good = std::fabs(cents) < 0.5 && puritydB < -90.0;
+      printf("FMTEST carrier: %.3f Hz (%+.3f c), harmonics %.1f dB  %s\n", hz, cents, puritydB, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   // 2. Operator 2 at 3x into operator 1: the first sidebands sit at 1760 and
+   // 880 Hz at J1(b)/J0(b) of the carrier, b = 2 pi * level.
+   {
+      const float level = 0.2f;
+      Rig r;
+      make(r, [&](FMNode& n) {
+         n.algorithm = 0;
+         n.ops[1].ratio = 3.0f;
+         n.ops[1].level = level;
+         n.ops[2].level = 0.0f;
+         n.ops[3].level = 0.0f;
+      });
+      note(r, 69, true);
+      const std::vector<float> x = tail(render(r, (int)sr), 4800);
+      const double b = 2.0 * M_PI * level;
+      auto besselJ = [](int n, double x) { // power series; libc++ has no cyl_bessel_j
+         double sum = 0.0, term = std::pow(x / 2.0, n) / std::tgamma(n + 1.0);
+         for (int k = 0; k < 30; k++)
+         {
+            sum += term;
+            term *= -(x * x / 4.0) / ((k + 1.0) * (k + 1.0 + n));
+         }
+         return sum;
+      };
+      const double want = 20.0 * std::log10(besselJ(1, b) / besselJ(0, b));
+      const double up = 20.0 * std::log10(amp(x, 1760.0) / amp(x, 440.0));
+      const double down = 20.0 * std::log10(amp(x, 880.0) / amp(x, 440.0));
+      const bool good = std::fabs(up - want) < 0.3 && std::fabs(down - want) < 0.3;
+      printf("FMTEST sidebands: 1760 Hz %.2f dB, 880 Hz %.2f dB (Bessel %.2f)  %s\n", up, down, want,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   // 3. A fixed carrier plays its own frequency whatever the note.
+   {
+      Rig r;
+      make(r, [](FMNode& n) {
+         n.algorithm = 10;
+         n.ops[0].fixed = true;
+         n.ops[0].freq = 1000.0f;
+         for (int o = 1; o < FMDsp::kNumOps; o++)
+            n.ops[o].level = 0.0f;
+      });
+      note(r, 40, true);
+      const double hz = pitchHz(tail(render(r, (int)(sr / 2)), 4800));
+      const bool good = std::fabs(hz - 1000.0) < 0.1;
+      printf("FMTEST fixed: note 40 plays %.3f Hz  %s\n", hz, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   // 4. Every algorithm at the default operators, with feedback: sounds, finite, bounded.
+   {
+      bool good = true;
+      for (int a = 0; a < FMDsp::kNumAlgorithms; a++)
+      {
+         Rig r;
+         make(r, [a](FMNode& n) {
+            n.algorithm = a;
+            n.feedback = 1.0f;
+         });
+         note(r, 60, true);
+         const std::vector<float> x = render(r, (int)(sr / 4));
+         float peak = 0.0f;
+         bool finite = true;
+         for (float v : x)
+         {
+            finite = finite && std::isfinite(v);
+            peak = std::max(peak, std::fabs(v));
+         }
+         const bool fine = finite && peak > 0.05f && peak < 1.5f;
+         if (!fine)
+            printf("FMTEST algorithm %d (%s): peak %.3f finite %d  FAIL\n", a, FMDsp::AlgorithmAt(a).name, peak,
+                   (int)finite);
+         good = good && fine;
+      }
+      printf("FMTEST algorithms: %d sound, finite and under 1.5  %s\n", FMDsp::kNumAlgorithms, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   // 5. A released note ends within its release, and frees its voice.
+   {
+      Rig r;
+      make(r, [](FMNode&) {});
+      note(r, 60, true);
+      render(r, 4800);
+      note(r, 60, false);
+      const std::vector<float> x = render(r, 4800);
+      float late = 0.0f;
+      for (size_t i = 2400; i < x.size(); i++)
+         late = std::max(late, std::fabs(x[i]));
+      const int voices = r.node->ActiveVoices();
+      const bool good = late < 1e-4f && voices == 0;
+      printf("FMTEST release: peak %.2g after 50 ms of a 20 ms release, %d voices  %s\n", late, voices,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   printf("FMTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
 }

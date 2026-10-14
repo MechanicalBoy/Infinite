@@ -128,7 +128,7 @@ Do not edit between the markers; run the script. Use the `node` line exactly as 
 first, then the type name), then `--describe "<type>"` for parameters.
 
 <!-- generated:begin -->
-324 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
+325 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
 
 
 ### 3D
@@ -472,6 +472,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Analog` | notes:note | out:audio | 33 | bypass |
 | `Drum Sequencer` | none | out:audio, 1:audio, 2:audio, 3:audio, 4:audio, 5:audio, 6:audio, 7:audio, 8:audio | 372 | bypass |
 | `Equation Synth` | notes:note | out:audio | 31 | bypass |
+| `FM` | notes:note | out:audio | 35 | bypass |
 | `Field Synth` | notes:note, in:audio | out:audio | 13 | bypass |
 | `Grain Molder` | notes:note, record_in:audio | out:audio | 15 | bypass |
 | `Granular` | record_in:audio | out:audio | 21 | bypass |
