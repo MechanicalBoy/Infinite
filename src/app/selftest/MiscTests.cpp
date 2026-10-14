@@ -2018,6 +2018,151 @@ void RunRpcBatchTest()
    printf("RPCBATCHTEST %s\n", ok ? "OK" : "FAIL");
 }
 
+// ====================================================== INFINITE_OSCCONTROLTEST
+//
+// v0.6 2.31: an external script drives a patch over the OSC control API -
+// real UDP packets on loopback, through OscControl's socket and queue and
+// HandleOscRequest, exactly as a controller would.
+void RunOscControlTest()
+{
+   using OscMessage::Arg;
+   bool ok = true;
+   auto Check = [&](const char* label, bool pass)
+   {
+      printf("  [%s] %s\n", pass ? "pass" : "FAIL", label);
+      if (!pass)
+         ok = false;
+   };
+   const bool startedHere = OscControl::BoundPort() < 0;
+   if (startedHere && !OscControl::Start(9199))
+   {
+      printf("OSCCONTROLTEST FAIL (cannot bind 127.0.0.1:9199)\n");
+      return;
+   }
+   OscControl::Client client;
+   if (!client.Open(OscControl::BoundPort()))
+   {
+      printf("OSCCONTROLTEST FAIL (no client socket)\n");
+      return;
+   }
+
+   struct Msg
+   {
+      std::string address;
+      std::vector<Arg> args;
+   };
+   // Sends one message (if any), then pumps the server the way the frame loop
+   // does until a reply on `want` arrives (or ~1 s passes). Returns every
+   // reply received on the way.
+   auto Exchange = [&](const std::string& address, const std::vector<Arg>& args, const std::string& want)
+   {
+      std::vector<Msg> got;
+      if (!address.empty())
+         client.Send(address, args);
+      for (int t = 0; t < 200; t++)
+      {
+         OscControl::DrainPending(HandleOscRequest);
+         PollOscListeners();
+         bool done = false;
+         Msg m;
+         while (client.Receive(m.address, m.args))
+         {
+            done |= m.address == want;
+            got.push_back(m);
+         }
+         if (done)
+            break;
+      }
+      return got;
+   };
+   auto Last = [](const std::vector<Msg>& got, const std::string& want) -> const Msg*
+   {
+      for (auto it = got.rbegin(); it != got.rend(); ++it)
+         if (it->address == want)
+            return &*it;
+      return nullptr;
+   };
+
+   NewPatch();
+   std::vector<Msg> got = Exchange("/infinite/create", { OscMessage::StringArg("Shape"), OscMessage::FloatArg(100.0f) }, "/infinite/created");
+   const Msg* created = Last(got, "/infinite/created");
+   const int shape = created != nullptr && !created->args.empty() ? created->args[0].i : -1;
+   got = Exchange("/infinite/create", { OscMessage::StringArg("Output") }, "/infinite/created");
+   created = Last(got, "/infinite/created");
+   const int output = created != nullptr && !created->args.empty() ? created->args[0].i : -1;
+   Check("create replies with the new node's index", shape >= 0 && output >= 0 && gNodes.size() == 2);
+
+   got = Exchange("/infinite/connect", { OscMessage::IntArg(shape), OscMessage::IntArg(0), OscMessage::IntArg(output), OscMessage::IntArg(0) }, "/infinite/error");
+   for (const Msg& m : got)
+      if (m.address == "/infinite/error")
+         printf("  connect error: %s\n", m.args[0].s.c_str());
+   auto Cables = []() { const Patch::Data d = BuildPatchData(); return d.cables.size() + d.geometry.size(); };
+   Check("connect makes a cable", Cables() == 1);
+
+   got = Exchange("/infinite/nodes", {}, "/infinite/nodes/end");
+   const Msg* end = Last(got, "/infinite/nodes/end");
+   Check("nodes lists both", end != nullptr && end->args[0].i == 2 && got.size() == 3);
+
+   const std::string base = "/infinite/node/" + std::to_string(shape) + "/";
+   got = Exchange("/infinite/node/" + std::to_string(shape), {}, base + "end");
+   std::string floatParam;
+   for (const Msg& m : got)
+      if (floatParam.empty() && m.address != base + "end" && !m.args.empty() && m.args[0].type == OscMessage::ArgType::Float)
+         floatParam = m.address;
+   Check("a node replies with all its params", Last(got, base + "end") != nullptr && !floatParam.empty());
+
+   const size_t undoBefore = gUndoStack.size();
+   Exchange(floatParam, { OscMessage::FloatArg(0.37f) }, "");
+   got = Exchange(floatParam, {}, floatParam);
+   const Msg* q = Last(got, floatParam);
+   Check("set then query reads the new value", q != nullptr && q->args[0].type == OscMessage::ArgType::Float &&
+                                                std::fabs(q->args[0].f - 0.37f) < 1e-6f);
+   Check("a param set is not an undo step", gUndoStack.size() == undoBefore);
+
+   got = Exchange("/infinite/listen", { OscMessage::StringArg(floatParam) }, floatParam);
+   Check("listen sends the current value", Last(got, floatParam) != nullptr);
+   // Change it inside the app, as a knob would: the listener hears it.
+   {
+      GraphNode* gn = FindNodeByIndex(shape);
+      const std::string name = floatParam.substr(base.size());
+      std::vector<std::pair<std::string, std::string>> raw;
+      Patch::SaveParams(gn->node.get(), raw);
+      for (auto& kv : raw)
+      {
+         std::string real = kv.first.substr(kv.first.find(' ') + 1);
+         std::replace(real.begin(), real.end(), ' ', '_');
+         if (real == name)
+            Patch::LoadParams(gn->node.get(), { { kv.first, "0.61" } });
+      }
+   }
+   got = Exchange("", {}, floatParam);
+   q = Last(got, floatParam);
+   Check("listen sends a change made in the app", q != nullptr && std::fabs(q->args[0].f - 0.61f) < 1e-6f);
+   got = Exchange("", {}, floatParam);
+   Check("an unchanged value is not resent", Last(got, floatParam) == nullptr);
+
+   got = Exchange("/infinite/nope", {}, "/infinite/error");
+   Check("an unknown address replies an error", Last(got, "/infinite/error") != nullptr);
+   got = Exchange(base + "no_such_param", { OscMessage::FloatArg(1.0f) }, "/infinite/error");
+   Check("an unknown param replies an error", Last(got, "/infinite/error") != nullptr);
+
+   Exchange("/infinite/disconnect", { OscMessage::IntArg(output), OscMessage::IntArg(0) }, "");
+   Check("disconnect removes the cable", Cables() == 0);
+   got = Exchange("/infinite/disconnect", { OscMessage::IntArg(output), OscMessage::IntArg(0) }, "/infinite/error");
+   Check("disconnecting an empty slot replies an error", Last(got, "/infinite/error") != nullptr);
+   got = Exchange("/infinite/delete", { OscMessage::IntArg(shape) }, "/infinite/error");
+   Check("delete removes the node", FindNodeByIndex(shape) == nullptr && gNodes.size() == 1);
+   Check("a listener on a deleted node is told and dropped", Last(got, "/infinite/error") != nullptr);
+   Undo();
+   Check("delete is one undo step", FindNodeByIndex(shape) != nullptr);
+
+   ClearOscListeners();
+   if (startedHere)
+      OscControl::Stop();
+   NewPatch();
+   printf("OSCCONTROLTEST %s\n", ok ? "OK" : "FAIL");
+}
+
 // ====================================================== INFINITE_PATCHWATCHTEST
 //
 // R39: the open file changing on disk. Drives the real LoadPatchFromImpl /

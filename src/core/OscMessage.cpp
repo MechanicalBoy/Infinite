@@ -53,6 +53,113 @@ namespace OscMessage
       }
    }
 
+   namespace
+   {
+      bool ReadUInt32(const uint8_t* data, size_t len, size_t& pos, uint32_t& out)
+      {
+         if (pos + 4 > len)
+            return false;
+         out = (static_cast<uint32_t>(data[pos]) << 24) | (static_cast<uint32_t>(data[pos + 1]) << 16) |
+               (static_cast<uint32_t>(data[pos + 2]) << 8) | static_cast<uint32_t>(data[pos + 3]);
+         pos += 4;
+         return true;
+      }
+   }
+
+   Arg FloatArg(float f)
+   {
+      Arg a;
+      a.type = ArgType::Float;
+      a.f = f;
+      return a;
+   }
+
+   Arg IntArg(int32_t i)
+   {
+      Arg a;
+      a.type = ArgType::Int;
+      a.i = i;
+      return a;
+   }
+
+   Arg StringArg(const std::string& s)
+   {
+      Arg a;
+      a.type = ArgType::String;
+      a.s = s;
+      return a;
+   }
+
+   std::vector<uint8_t> EncodeMany(const std::string& address, const std::vector<Arg>& args)
+   {
+      std::vector<uint8_t> out;
+      AppendPaddedString(out, address);
+      std::string typeTag = ",";
+      for (const Arg& a : args)
+         typeTag += a.type == ArgType::Float ? 'f' : (a.type == ArgType::Int ? 'i' : 's');
+      AppendPaddedString(out, typeTag);
+      for (const Arg& a : args)
+      {
+         switch (a.type)
+         {
+            case ArgType::Float:  AppendFloat32(out, a.f); break;
+            case ArgType::Int:    AppendInt32(out, a.i); break;
+            case ArgType::String: AppendPaddedString(out, a.s); break;
+         }
+      }
+      return out;
+   }
+
+   bool DecodeMany(const uint8_t* data, size_t len, std::string& outAddress, std::vector<Arg>& outArgs)
+   {
+      if (data == nullptr || len == 0)
+         return false;
+      size_t pos = 0;
+      std::string address;
+      if (!ReadPaddedString(data, len, pos, address) || address.empty() || address[0] != '/')
+         return false;
+      std::vector<Arg> args;
+      // A message with no type-tag string at all is allowed by OSC 1.0 and
+      // means no arguments.
+      if (pos < len)
+      {
+         std::string typeTag;
+         if (!ReadPaddedString(data, len, pos, typeTag) || typeTag.empty() || typeTag[0] != ',')
+            return false;
+         for (size_t t = 1; t < typeTag.size(); t++)
+         {
+            Arg a;
+            uint32_t be = 0;
+            if (typeTag[t] == 'f')
+            {
+               if (!ReadUInt32(data, len, pos, be))
+                  return false;
+               a.type = ArgType::Float;
+               std::memcpy(&a.f, &be, sizeof(a.f));
+            }
+            else if (typeTag[t] == 'i')
+            {
+               if (!ReadUInt32(data, len, pos, be))
+                  return false;
+               a.type = ArgType::Int;
+               a.i = static_cast<int32_t>(be);
+            }
+            else if (typeTag[t] == 's')
+            {
+               a.type = ArgType::String;
+               if (!ReadPaddedString(data, len, pos, a.s))
+                  return false;
+            }
+            else
+               return false;
+            args.push_back(a);
+         }
+      }
+      outAddress = address;
+      outArgs = std::move(args);
+      return true;
+   }
+
    std::vector<uint8_t> Encode(const std::string& address, const Arg& arg)
    {
       std::vector<uint8_t> out;

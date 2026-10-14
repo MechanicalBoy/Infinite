@@ -2036,6 +2036,9 @@ namespace app
          const bool carrier = ((alg.carriers >> o) & 1) != 0;
          ImGui::Dummy(ImVec2(0.0f, 4.0f));
          ImGui::PushID(o);
+         // Each operator's "fixed" checkbox is a discrete param: without a
+         // scope all four hash to one pin id (PINDUPTEST).
+         DiscreteSlotScope discreteScope(o);
          BeginAudioSection(kTitle[o][carrier ? 0 : 1]);
          {
             AudioKnobRow row(7);

@@ -415,6 +415,7 @@ bool FieldOutputPinHasLiveCable(int nodeIndex, int outputIndex);
 bool CheckFieldLiveCableBridge(int nodeIndex, int slot, bool isOutput);
 
 void DisconnectLinkById(int id);
+void DisconnectDstPin(int dstPin);
 
 void DisconnectFieldPinBridge(int nodeIndex, int slot, bool isOutput);
 
@@ -4712,6 +4713,7 @@ void DrawPerfPanelDocked(const char* id, const ImVec2& size);
 void DrawModulatorMeter(IModulator* mod, int nodeIndex);
 
 void DisconnectLinkById(int id);
+void DisconnectDstPin(int dstPin);
 
 const char* NodeHelpText(const GraphNode& gn);
 const char* NodeHelpTextFor(const std::string& typeName, const std::string& category);
@@ -5557,6 +5559,11 @@ void Redo();
 bool HandleRpcCommand(const std::string& method, const nlohmann::json& params,
                          nlohmann::json& outResult, std::string& outError);
 
+// The OSC control API's address map (graph/OscApi.cpp, v0.6 2.31).
+void HandleOscRequest(const OscControl::Request& req);
+void PollOscListeners();
+void ClearOscListeners();
+
 void DrawMinimap();
 
 // Find on the canvas (Cmd/Ctrl+F), src/app/panels/FindOverlay.cpp.
@@ -6018,6 +6025,7 @@ int RunVST3BlocklistTest();
 #endif
 
 void RunRpcBatchTest();
+void RunOscControlTest();
 void RunHistoryTest();
 void RunClipboardTest();
 

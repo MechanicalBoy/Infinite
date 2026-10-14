@@ -1931,6 +1931,8 @@ void DrawFrameTestsA(FrameCtx& fc)
 
       if (getenv("INFINITE_RPCBATCHTEST") != nullptr && frameId == 4)
          RunRpcBatchTest();
+      if (getenv("INFINITE_OSCCONTROLTEST") != nullptr && frameId == 4)
+         RunOscControlTest();
       if (getenv("INFINITE_HISTORYTEST") != nullptr && frameId == 4)
          RunHistoryTest();
       if (getenv("INFINITE_CLIPBOARDTEST") != nullptr && frameId == 4)

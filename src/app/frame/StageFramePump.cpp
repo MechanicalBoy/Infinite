@@ -355,6 +355,8 @@ void DrawFramePump(FrameCtx& fc)
       // Apply any RemoteControl RPC requests queued by the network thread
       // since last frame, before any ed:: drawing reads the graph this frame.
       RemoteControl::DrainPending(HandleRpcCommand);
+      OscControl::DrainPending(HandleOscRequest);
+      PollOscListeners();
       PollPendingKeyed(); // before ClearFrameParams: last frame's registered controls are still here
 
       std::string pendingOpenPatch;

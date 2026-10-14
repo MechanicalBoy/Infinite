@@ -154,6 +154,7 @@ inline std::string TmpPath(const std::string& name)
 #include "core/AudioCable.h"
 #include "core/NoteCable.h"
 #include "core/RemoteControl.h"
+#include "core/OscControl.h"
 #include "core/PatchJson.h"
 #include "core/UpdateCheck.h"
 #include "core/Extensions.h"

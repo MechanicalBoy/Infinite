@@ -77,12 +77,23 @@
          return ::setsockopt(static_cast<SOCKET>(fd), level, optname,
                              static_cast<const char*>(optval), static_cast<int>(optlen));
       }
+      inline NetSsize NetRecvFrom(int fd, void* buf, size_t len, int flags, sockaddr* from, socklen_t* fromlen)
+      {
+         return ::recvfrom(static_cast<SOCKET>(fd), static_cast<char*>(buf), static_cast<int>(len), flags, from, fromlen);
+      }
+      // Blocking receives give up after `ms` (Windows takes a DWORD of ms).
+      inline int NetSetRecvTimeoutMs(int fd, int ms)
+      {
+         const DWORD v = static_cast<DWORD>(ms);
+         return NetSetSockOpt(fd, SOL_SOCKET, SO_RCVTIMEO, &v, sizeof(v));
+      }
       inline int NetClose(int fd) { return ::closesocket(static_cast<SOCKET>(fd)); }
    }
 #else
    #include <arpa/inet.h>
    #include <netinet/in.h>
    #include <sys/socket.h>
+   #include <sys/time.h>
    #include <unistd.h>
 
    typedef ssize_t NetSsize;
@@ -93,6 +104,15 @@
       inline NetSsize NetSend(int fd, const void* buf, size_t len, int flags) { return ::send(fd, buf, len, flags); }
       inline NetSsize NetSendTo(int fd, const void* buf, size_t len, int flags, const sockaddr* to, socklen_t tolen) { return ::sendto(fd, buf, len, flags, to, tolen); }
       inline int NetSetSockOpt(int fd, int level, int optname, const void* optval, socklen_t optlen) { return ::setsockopt(fd, level, optname, optval, optlen); }
+      inline NetSsize NetRecvFrom(int fd, void* buf, size_t len, int flags, sockaddr* from, socklen_t* fromlen) { return ::recvfrom(fd, buf, len, flags, from, fromlen); }
+      // Blocking receives give up after `ms` (POSIX takes a timeval).
+      inline int NetSetRecvTimeoutMs(int fd, int ms)
+      {
+         timeval tv{};
+         tv.tv_sec = ms / 1000;
+         tv.tv_usec = (ms % 1000) * 1000;
+         return NetSetSockOpt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+      }
       inline int NetClose(int fd) { return ::close(fd); }
    }
 #endif

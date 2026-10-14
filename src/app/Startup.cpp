@@ -1391,6 +1391,14 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       if (const char* portEnv = getenv("INFINITE_CONTROL_PORT"))
          controlPort = atoi(portEnv);
       RemoteControl::Start(controlPort);
+
+      // The OSC control API (core/OscControl.h): loopback UDP, port 9100,
+      // INFINITE_OSC_PORT to move it, 0 to turn it off.
+      int oscPort = 9100;
+      if (const char* oscEnv = getenv("INFINITE_OSC_PORT"))
+         oscPort = atoi(oscEnv);
+      if (oscPort > 0)
+         OscControl::Start(oscPort);
    }
 
    // The audio engine no longer auto-starts at launch: someone opening the

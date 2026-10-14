@@ -8,8 +8,14 @@ namespace app
       const LinkInfo* link = FindLink(id);
       if (link == nullptr)
          return;
+      DisconnectDstPin(link->dstPin);
+   }
 
-      const int dstPin = link->dstPin;
+   // The cable into one destination pin, found from the node's own slot
+   // pointers - so it works in the same frame a cable was made, before the
+   // editor re-derives gLinks (the OSC API's /infinite/disconnect).
+   void DisconnectDstPin(int dstPin)
+   {
       GraphNode* dst = FindNodeByIndex(GraphNode::NodeIndexFromPin(dstPin));
       if (dst == nullptr)
          return;

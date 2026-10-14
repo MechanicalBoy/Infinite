@@ -462,6 +462,7 @@ set(COMMON_SOURCES
     src/app/graph/NodeClipboard.cpp
     src/app/graph/Projector.cpp
     src/app/graph/Rpc.cpp
+    src/app/graph/OscApi.cpp
     src/app/graph/Wiring.cpp
     src/app/panels/ArrangePanel.cpp
     src/app/panels/ArrangeRender.cpp
@@ -579,6 +580,7 @@ set(COMMON_SOURCES
     src/core/RemoteControl.cpp
     src/core/PatchJson.cpp
     src/core/OscMessage.cpp
+    src/core/OscControl.cpp
     src/core/UpdateCheck.cpp
     src/core/SelfUpdate.cpp
     src/core/Extensions.cpp
