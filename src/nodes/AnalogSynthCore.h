@@ -17,6 +17,7 @@
 #include "audio/VoiceMod.h"
 #include "audio/dsp/BlepOscillator.h"
 #include "audio/dsp/Oversampler.h"
+#include "audio/dsp/VoiceLanes.h"
 #include "audio/dsp/ZdfLadderFilter.h"
 #include "core/Transport.h"
 
@@ -345,6 +346,15 @@ public:
          v.Reset(mSampleRate);
       }
       mFreeOs.Prepare(AnalogSynthCore::kFilterOversample, AnalogSynthCore::kFilterOversampleGroupDelay);
+      mUseLanes = !VoiceSimd::ForceScalar().load(std::memory_order_relaxed);
+      for (auto& side : mLanes)
+         for (LaneGroup& grp : side)
+         {
+            grp.os.Prepare(mFreeOs);
+            grp.ac.SetSampleRate(mSampleRate);
+         }
+      for (int vi = 0; vi < AnalogSynthCore::kMaxVoices; ++vi)
+         ResetVoiceLanes(vi);
 
       mFreeLadder.Reset();
       mFreeLadderR.Reset();
@@ -463,6 +473,60 @@ public:
       for (int k = 0; k < os.Factor(); k++)
          x[k] = ApplyFilter(ladder, svfBank, drive.Process(x[k]) + hiss, c);
       return os.Down(ch, x);
+   }
+
+   // 2.16: four voices' signal paths at once - lane l of group g is voice
+   // 4g + l, one group per side. Every lane advances; an idle voice's lane
+   // filters silence and is reset when the voice next starts a note.
+   struct LaneGroup
+   {
+      VoiceSimd::DcBlocker4 ac;
+      VoiceSimd::Oversampler4 os;
+      VoiceSimd::Ladder4 ladder;
+      VoiceSimd::Svf4 svf[SynthModes::kMaxFilterStages];
+
+      void ResetLane(int l)
+      {
+         ac.ResetLane(l);
+         os.ResetLane(l);
+         ladder.ResetLane(l);
+         for (auto& st : svf)
+            st.ResetLane(l);
+      }
+   };
+   static constexpr int kLaneGroups = AnalogSynthCore::kMaxVoices / 4;
+   static_assert(AnalogSynthCore::kMaxVoices % 4 == 0, "voices fill whole lane groups");
+
+   void ResetVoiceLanes(int vi)
+   {
+      mLanes[0][vi / 4].ResetLane(vi % 4);
+      mLanes[1][vi / 4].ResetLane(vi % 4);
+   }
+
+   // DriveAndFilter for one lane group. The ADAA drive stays per voice (it
+   // runs in double precision); only lanes whose voice is sounding call it.
+   static VoiceSimd::F4 DriveAndFilter4(LaneGroup& grp, VoiceSimd::F4 mixed, VoiceSimd::F4 driveGain,
+                                        DspMath::FastTanhAdaa* const* drive, const float* hiss, VoiceSimd::F4 g,
+                                        VoiceSimd::F4 k, const FilterCoeffs& c)
+   {
+      using VoiceSimd::F4;
+      F4 x[Oversampler::kMaxFactor];
+      grp.os.Up(grp.ac.Process(mixed) * driveGain, x);
+      for (int j = 0; j < grp.os.Factor(); j++)
+      {
+         alignas(16) float t[4];
+         x[j].Store(t);
+         for (int l = 0; l < 4; l++)
+            t[l] = drive[l] ? drive[l]->Process(t[l]) + hiss[l] : 0.0f;
+         F4 y = F4::Load(t);
+         if (c.type == kAFilterLadder)
+            y = grp.ladder.Process(y, g, k);
+         else if (c.type >= kAFilterSvfLP12 && c.type < kNumAFilterTypes)
+            for (int st = 0; st < c.stages; ++st)
+               y = grp.svf[st].Process(y, g, k, c.shape);
+         x[j] = y;
+      }
+      return grp.os.Down(x);
    }
 
    void PushParams(const AnalogSynthParams& p)
@@ -818,6 +882,8 @@ public:
                   v.driveR.Reset();
                   v.acR = v.acL; // same coupling state, so R starts without a DC step
                   v.os.ResetChannel(1);
+                  mLanes[1][vi / 4].ResetLane(vi % 4);
+                  mLanes[1][vi / 4].ac.CopyLane(mLanes[0][vi / 4].ac, vi % 4);
                }
                v.stereoPath = wantStereo;
 
@@ -826,19 +892,37 @@ public:
                const float hissR = analog ? v.noise.Next() * 0.0001f : 0.0f;
                const FilterCoeffs fc = MakeFilterCoeffs(filterType, effectiveCutoff, vk.resonance,
                                                         mSampleRate * AnalogSynthCore::kFilterOversample);
+               float vgL = 1.0f, vgR = 1.0f;
+               if (stereoAmt > 0.0001f)
+                  TolerancePan(AnalogSynthCore::kVoicePanSeed[vi] * stereoAmt, vgL, vgR);
+               const float envGain = ampEnvVal * velGain;
+
+               if (mUseLanes)
+               {
+                  // Staged; the drive and filter run four voices at a time
+                  // after this loop, and the voices are summed there in order.
+                  LaneStage& ls = mLaneStage;
+                  ls.mixed[0][vi] = mixedL;
+                  ls.mixed[1][vi] = mixedR;
+                  ls.hiss[0][vi] = hissL;
+                  ls.hiss[1][vi] = hissR;
+                  ls.driveGain[vi] = vk.driveGain;
+                  ls.g[vi] = fc.g;
+                  ls.k[vi] = fc.k;
+                  ls.envGain[vi] = envGain;
+                  ls.vg[0][vi] = vgL;
+                  ls.vg[1][vi] = vgR;
+                  ls.staged[vi] = true;
+                  ls.fc = fc;
+                  active++;
+                  continue;
+               }
+
                const float filteredL = DriveAndFilter(v.os, 0, v.acL, v.driveL, v.ladder, v.svf, mixedL, vk.driveGain, hissL, fc);
                const float filteredR = wantStereo
                   ? DriveAndFilter(v.os, 1, v.acR, v.driveR, v.ladderR, v.svfR, mixedR, vk.driveGain, hissR, fc)
                   : filteredL;
 
-               // Voice-card position on top of the stack's own width: each
-               // card sits at a fixed irregular spot in the image, so a chord
-               // lays out across the field in an order unrelated to pitch.
-               float vgL = 1.0f, vgR = 1.0f;
-               if (stereoAmt > 0.0001f)
-                  TolerancePan(AnalogSynthCore::kVoicePanSeed[vi] * stereoAmt, vgL, vgR);
-
-               const float envGain = ampEnvVal * velGain;
                const float voiceOutL = filteredL * envGain * vgL;
                const float voiceOutR = filteredR * envGain * vgR;
                v.lastOut = (voiceOutL + voiceOutR) * 0.5f;
@@ -846,6 +930,9 @@ public:
                voiceSumR += voiceOutR;
                active++;
             }
+
+            if (mUseLanes)
+               RunVoiceLanes(wantStereo, voiceSumL, voiceSumR);
 
             activeCount = active;
             const float normTarget = active > 1 ? 1.0f / sqrtf((float)active) : 1.0f;
@@ -881,6 +968,44 @@ public:
       }
 
       mActiveVoices.store(activeCount, std::memory_order_relaxed);
+   }
+
+   // Runs the staged voices' drive and filter four at a time, then sums them
+   // in voice order - the scalar loop's order, so the two paths agree.
+   void RunVoiceLanes(bool wantStereo, float& sumL, float& sumR)
+   {
+      using VoiceSimd::F4;
+      LaneStage& ls = mLaneStage;
+      alignas(16) float filtered[2][AnalogSynthCore::kMaxVoices];
+      for (int grpIdx = 0; grpIdx < kLaneGroups; ++grpIdx)
+      {
+         const int v0 = grpIdx * 4;
+         if (!(ls.staged[v0] || ls.staged[v0 + 1] || ls.staged[v0 + 2] || ls.staged[v0 + 3]))
+            continue;
+         for (int side = 0; side < (wantStereo ? 2 : 1); ++side)
+         {
+            DspMath::FastTanhAdaa* drive[4];
+            for (int l = 0; l < 4; l++)
+               drive[l] = ls.staged[v0 + l] ? (side == 0 ? &mVoices[v0 + l].driveL : &mVoices[v0 + l].driveR) : nullptr;
+            const F4 out = DriveAndFilter4(mLanes[side][grpIdx], F4::Load(&ls.mixed[side][v0]), F4::Load(&ls.driveGain[v0]),
+                                           drive, &ls.hiss[side][v0], F4::Load(&ls.g[v0]), F4::Load(&ls.k[v0]), ls.fc);
+            out.Store(&filtered[side][v0]);
+         }
+         if (!wantStereo)
+            for (int l = 0; l < 4; l++)
+               filtered[1][v0 + l] = filtered[0][v0 + l];
+      }
+      for (int vi = 0; vi < AnalogSynthCore::kMaxVoices; ++vi)
+      {
+         if (!ls.staged[vi])
+            continue;
+         ls.staged[vi] = false;
+         const float voiceOutL = filtered[0][vi] * ls.envGain[vi] * ls.vg[0][vi];
+         const float voiceOutR = filtered[1][vi] * ls.envGain[vi] * ls.vg[1][vi];
+         mVoices[vi].lastOut = (voiceOutL + voiceOutR) * 0.5f;
+         sumL += voiceOutL;
+         sumR += voiceOutR;
+      }
    }
 
    void NoteOn(int note, float velocity, int voiceId, float bendSemitones, float pressure = 0.0f, float slide = 0.0f)
@@ -940,6 +1065,7 @@ public:
       if (fresh)
       {
          v.Reset(mSampleRate);
+         ResetVoiceLanes(slot);
          const float glide = mMailbox.SmoothedValue(kGlide);
          const float targetPitch = (float)note;
          if (wasInactive)
@@ -1029,6 +1155,22 @@ private:
    DspMath::FastTanhAdaa mFreeDriveL, mFreeDriveR;
    DspMath::DcBlocker mFreeAcL, mFreeAcR;
    Oversampler mFreeOs;
+
+   // 2.16 lane path (off when VoiceSimd::ForceScalar was set at prepare).
+   bool mUseLanes = false;
+   LaneGroup mLanes[2][kLaneGroups];
+   struct LaneStage
+   {
+      alignas(16) float mixed[2][AnalogSynthCore::kMaxVoices] = {};
+      alignas(16) float hiss[2][AnalogSynthCore::kMaxVoices] = {};
+      alignas(16) float driveGain[AnalogSynthCore::kMaxVoices] = {};
+      alignas(16) float g[AnalogSynthCore::kMaxVoices] = {};
+      alignas(16) float k[AnalogSynthCore::kMaxVoices] = {};
+      float envGain[AnalogSynthCore::kMaxVoices] = {};
+      float vg[2][AnalogSynthCore::kMaxVoices] = {};
+      bool staged[AnalogSynthCore::kMaxVoices] = {};
+      FilterCoeffs fc;
+   } mLaneStage;
    bool mFreeStereoPath = false;
    // Cached normalised detune multipliers, rebuilt only when the stack size
    // changes - NormalizeUnisonDetune is a per-stack constant, not per-sample

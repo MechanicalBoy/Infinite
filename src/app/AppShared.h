@@ -5919,6 +5919,7 @@ bool RunShapeResonatorFixture();
 bool RunConvolutionFixture();
 bool RunMSEGFixture();
 bool RunVoiceModFixture();
+bool RunSynthSimdFixture();
 bool RunSpatialFixture();
 
 bool RunSpectrumSlideFixture();

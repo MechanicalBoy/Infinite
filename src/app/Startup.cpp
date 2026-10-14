@@ -560,6 +560,9 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_VOICEMODTEST") != nullptr)
       return RunVoiceModFixture() ? 0 : 1;
 
+   if (getenv("INFINITE_SYNTHSIMDTEST") != nullptr)
+      return RunSynthSimdFixture() ? 0 : 1;
+
    if (getenv("INFINITE_SPATIALTEST") != nullptr)
       return RunSpatialFixture() ? 0 : 1;
 

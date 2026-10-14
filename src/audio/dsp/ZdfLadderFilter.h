@@ -85,6 +85,7 @@ struct ZdfLadderFilter
    //             exactly, so there is nothing to iterate.
    static inline float Process(State& s, float input, float g, float k, int /*iterations*/ = 2)
    {
+      INFINITE_NO_FMA
       const float kk = std::clamp(k, 0.0f, 4.5f);
 
       // Slopes at the previous sample's operating point.

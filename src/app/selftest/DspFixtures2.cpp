@@ -1,6 +1,9 @@
 // DSP self-test fixtures, part 2: sampler..granular (moved verbatim from main.cpp).
 #include "app/AppShared.h"
 #include "audio/dsp/ConvolutionKernel.h"
+#include "audio/dsp/SimdF4.h"
+
+#include <chrono>
 
 namespace app
 {
@@ -4417,5 +4420,208 @@ bool RunVoiceModFixture()
    tr.SetTempo(tempoBefore);
    printf("VOICEMODTEST %s\n", all ? "OK" : "FAIL");
    return all;
+}
+
+// ============================================== INFINITE_SYNTHSIMDTEST
+// 2.16: each synth has a fast voice path - Analog runs four voices to a SIMD
+// lane group, Wavetable caches its per-sample math on exact inputs - and a
+// reference path (VoiceSimd::ForceScalar). Renders an 8-note chord through
+// each synth's audio half both ways and checks (1) the two agree to -120 dB
+// and (2) the render cost per voice (ms of CPU per second of audio, chord
+// minus idle) against the reference.
+namespace
+{
+   template <class N>
+   double SynthRenderMsPerSecond(int voices, double seconds, bool scalar, std::vector<float>* capture,
+                                 void (*setup)(N&) = nullptr)
+   {
+      VoiceSimd::ForceScalar().store(scalar, std::memory_order_relaxed);
+      N n;
+      if (setup)
+         setup(n);
+      AudioNode* audio = n.GetAudioNode();
+      const int block = 256;
+      audio->PrepareToPlay(48000.0, block);
+      n.CookIfNeeded(1);
+      NoteEventQueue inbox;
+      audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+      static const int kChord[8] = { 48, 52, 55, 59, 60, 64, 67, 71 };
+      for (int v = 0; v < voices; v++)
+      {
+         NoteEvent on;
+         on.note = kChord[v];
+         on.velocity = 0.7f;
+         on.isNoteOn = true;
+         on.voiceId = 100 + v;
+         inbox.Push(on);
+      }
+      std::vector<float> l(block), r(block);
+      float* chans[2] = { l.data(), r.data() };
+      AudioBuffer buf;
+      buf.channels = chans;
+      buf.numChannels = 2;
+      buf.numFrames = block;
+      const int blocks = (int)(seconds * 48000.0 / block);
+      const auto t0 = std::chrono::steady_clock::now();
+      for (int b = 0; b < blocks; b++)
+      {
+         audio->ProcessBlock(nullptr, 0, buf);
+         if (capture)
+            for (int i = 0; i < block; i++)
+            {
+               capture->push_back(l[(size_t)i]);
+               capture->push_back(r[(size_t)i]);
+            }
+      }
+      const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+      VoiceSimd::ForceScalar().store(false, std::memory_order_relaxed);
+      return ms / seconds;
+   }
+
+   // Lanes and scalar render the same 8-note chord; the difference, relative
+   // to the signal, must sit at or below -120 dB.
+   template <class N>
+   bool SynthSimdClose(const char* name, const char* variant, void (*setup)(N&))
+   {
+      std::vector<float> lanes, scalar;
+      SynthRenderMsPerSecond<N>(8, 2.0, false, &lanes, setup);
+      SynthRenderMsPerSecond<N>(8, 2.0, true, &scalar, setup);
+      double err = 0.0, ref = 0.0;
+      for (size_t i = 0; i < lanes.size() && i < scalar.size(); i++)
+      {
+         err += ((double)lanes[i] - scalar[i]) * ((double)lanes[i] - scalar[i]);
+         ref += (double)scalar[i] * scalar[i];
+      }
+      const double db = 10.0 * std::log10(std::max(1e-30, err) / std::max(1e-30, ref));
+      const bool close = db <= -120.0 && ref > 0.0 && lanes.size() == scalar.size();
+      printf("SYNTHSIMDTEST %-9s %-28s fast vs reference %.1f dB (<= -120) %s\n", name, variant, db, close ? "OK" : "FAIL");
+      return close;
+   }
+
+   template <class N>
+   bool SynthSimdCase(const char* name, double maxRatio)
+   {
+      bool ok = SynthSimdClose<N>(name, "default", nullptr);
+      // Best of three, so a busy machine reads its quietest run.
+      double best[2] = { 1e30, 1e30 };
+      for (int pass = 0; pass < 3; pass++)
+         for (int s = 0; s < 2; s++)
+         {
+            const double idle = SynthRenderMsPerSecond<N>(0, 2.0, s == 1, nullptr);
+            const double busy = SynthRenderMsPerSecond<N>(8, 2.0, s == 1, nullptr);
+            best[s] = std::min(best[s], (busy - idle) / 8.0);
+         }
+      const double ratio = best[0] / std::max(1e-9, best[1]);
+      const bool fast = ratio <= maxRatio;
+      printf("SYNTHSIMDTEST %-9s per voice %.2f ms/s fast path, %.2f reference (x%.2f, limit x%.2f) %s\n", name, best[0],
+             best[1], ratio, maxRatio, fast ? "OK" : "FAIL");
+      ok = ok && fast;
+      return ok;
+   }
+}
+
+bool RunSynthSimdFixture()
+{
+   bool ok = true;
+   // INFINITE_SYNTHSIMDTEST=Wavetable (or Analog) runs that synth only, for profiling.
+   const char* only = getenv("INFINITE_SYNTHSIMDTEST");
+   const bool all = only == nullptr || strcmp(only, "1") == 0;
+   const bool analog = all || strcmp(only, "Analog") == 0;
+   const bool wavetable = all || strcmp(only, "Wavetable") == 0;
+   // INFINITE_SYNTHSIMDPROFILE=<seconds>: just render that much of the chord
+   // on the lane path, for `sample` / Instruments, and exit.
+   if (const char* prof = getenv("INFINITE_SYNTHSIMDPROFILE"))
+   {
+      const double seconds = std::max(1.0, atof(prof));
+      if (analog)
+         printf("SYNTHSIMDTEST Analog %.2f ms/s\n", SynthRenderMsPerSecond<AnalogNode>(8, seconds, false, nullptr));
+      if (wavetable)
+         printf("SYNTHSIMDTEST Wavetable %.2f ms/s\n", SynthRenderMsPerSecond<WavetableNode>(8, seconds, false, nullptr));
+      return true;
+   }
+   if (analog)
+   {
+   // Speed is gated as fast path / reference path on the same machine, so it
+   // holds on any CI box. The 2.16 target (-50% per voice) is measured by
+   // synth_probe on the whole app: 2026-10-14, Analog 18.82 -> 6.49 ms/s,
+   // Wavetable 3.37 -> 1.37. Here (audio half alone, idle subtracted) Analog
+   // reads about x0.44 and Wavetable about x0.52, so the limits catch a lost
+   // fast path without flaking on a noisy run.
+   ok = SynthSimdCase<AnalogNode>("Analog", 0.6) && ok;
+   // The paths where lanes and scalar could drift apart: a self-oscillating
+   // driven ladder on a wide stack (both sides), and each SVF shape.
+   ok = SynthSimdClose<AnalogNode>("Analog", "ladder res 1 drive wide", [](AnalogNode& n) {
+      n.resonance = 1.0f;
+      n.drive = 0.7f;
+      n.cutoff = 2000.0f;
+      n.voices = 4.0f;
+      n.spread = 0.9f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "svf lp 36 res 0.8", [](AnalogNode& n) {
+      n.filterType = kAFilterSvfLP36;
+      n.resonance = 0.8f;
+      n.cutoff = 1500.0f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "svf hp 24 wide", [](AnalogNode& n) {
+      n.filterType = kAFilterSvfHP24;
+      n.resonance = 0.5f;
+      n.voices = 2.0f;
+      n.spread = 1.0f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "svf bp 24", [](AnalogNode& n) {
+      n.filterType = kAFilterSvfBP24;
+      n.resonance = 0.6f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "svf notch 12", [](AnalogNode& n) { n.filterType = kAFilterSvfNotch12; }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "filter off", [](AnalogNode& n) { n.filterType = kAFilterOff; }) && ok;
+   }
+   if (wavetable)
+   {
+      ok = SynthSimdCase<WavetableNode>("Wavetable", 0.7) && ok;
+      // Each cache keyed on an input that moves here: a wide unison stack
+      // (detune, pan, frames), a filter swept by its envelope, a pitch
+      // envelope (carrier), a phase warp (mip crossfade), engine B with a
+      // cross-mod warp (the operator sine), a comb filter, and glide.
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "unison 6 wide moving", [](WavetableNode& n) {
+         n.engines[0].unison = 6;
+         n.engines[0].detune = 30.0f;
+         n.engines[0].stereoWidth = 1.0f;
+         n.engines[0].position = 0.37f;
+         n.engines[0].phaseRandomize = 0.5f;
+      }) && ok;
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "lp 24 env sweep + pitch env", [](WavetableNode& n) {
+         n.engines[0].filterType = SynthModes::kFilterLP24;
+         n.engines[0].cutoff = 400.0f;
+         n.engines[0].resonance = 0.7f;
+         n.engines[0].filterAmount = 5.0f;
+         n.engines[0].pitchAmount = 12.0f;
+      }) && ok;
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "sync warp", [](WavetableNode& n) {
+         n.engines[0].warpMode = SynthModes::kWarpSync;
+         n.engines[0].warpAmount = 0.6f;
+         n.engines[0].unison = 3;
+      }) && ok;
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "engine b fm + mix", [](WavetableNode& n) {
+         n.engines[1].on = true;
+         n.engines[1].octave = 1;
+         n.engines[0].warpMode = SynthModes::kWarpFM;
+         n.engines[0].warpAmount = 0.4f;
+         n.engines[1].warpMode = SynthModes::kWarpRM;
+         n.engines[1].warpAmount = 0.5f;
+         n.mix = 0.4f;
+      }) && ok;
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "operator fm, comb, glide", [](WavetableNode& n) {
+         n.engines[1].on = false;
+         n.engines[0].warpMode = SynthModes::kWarpPD;
+         n.engines[0].warpAmount = 0.5f;
+         n.engines[0].warpRatio = 2.0f;
+         n.engines[0].filterType = SynthModes::kFilterCombPos;
+         n.engines[0].resonance = 0.5f;
+         n.engines[0].filterAmount = -2.0f;
+         n.glide = 0.05f;
+      }) && ok;
+   }
+   printf("SYNTHSIMDTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
 }
 }

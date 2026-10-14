@@ -17,6 +17,7 @@
 #include "audio/VoiceMod.h"
 #include "audio/Wavetable.h"
 #include "audio/dsp/BlepOscillator.h"
+#include "audio/dsp/SimdF4.h"
 #include "core/Transport.h"
 
 namespace WavetableSynthCore
@@ -332,6 +333,26 @@ namespace WavetableSynthCore
    // frequencies and blows past Nyquist at high ones). Tuned so a full-scale
    // modulator at depth 1.0 drives roughly a 4x frequency excursion.
    constexpr float kFmLinScale = 4.0f;
+
+   // 2.16: a voice's pitch, pan and filter inputs sit still for most of a
+   // note, but each costs a powf / sincosf / tanf per sample. Memo keeps the
+   // last input and its result and recomputes only when the input moves, so
+   // the output is bit-identical to computing every sample. `on` false (the
+   // reference path, VoiceSimd::ForceScalar) always recomputes.
+   struct Memo
+   {
+      float x = NAN, y = 0.0f;
+      template <class F>
+      float Get(bool on, float in, F f)
+      {
+         if (!on || !(in == x))
+         {
+            x = in;
+            y = f(in);
+         }
+         return y;
+      }
+   };
 }
 
 // ------------------------------------------------------------- audio thread
@@ -348,6 +369,7 @@ public:
    {
       using namespace WavetableSynthCore;
       mSampleRate = sampleRate;
+      mFast = !VoiceSimd::ForceScalar().load(std::memory_order_relaxed);
       mMailbox.PrepareToPlay(sampleRate);
       mVoiceMod.Prepare(sampleRate);
       for (int i = 0; i < kNumGlobalParams + kEngines * kNumEngineParams; i++)
@@ -561,9 +583,13 @@ public:
                }
                const SmoothedBlock& vs = perVoice ? vsm : sm;
 
-               v.glide.SetTimeConstant(vs.glide, mSampleRate);
+               if (!mFast || !(vs.glide == v.glideSec))
+               {
+                  v.glideSec = vs.glide;
+                  v.glide.SetTimeConstant(vs.glide, mSampleRate);
+               }
                const float currentPitch = v.glide.Process((float)v.note);
-               const float base = NoteToHz(currentPitch);
+               const float base = v.baseHz.Get(mFast, currentPitch, NoteToHz);
                // Velocity always shapes level. It used to be a 0..1 "amount"
                // param, which is a control nobody reaches for: a synth that
                // ignores how hard you played is broken, and one that responds
@@ -600,8 +626,9 @@ public:
                   // Carrier pitch (pre-FM) clamped to its own sane range
                   // first, then linear FM applied and clamped separately -
                   // see the free-running path's identical comment above.
-                  const float carrierFreq = std::clamp(base * powf(2.0f, semitones / 1200.0f), 20.0f,
-                                                       (float)mSampleRate * 0.45f);
+                  const float carrierFreq =
+                     std::clamp(base * v.eng[e].carrier.Get(mFast, semitones, [](float c) { return powf(2.0f, c / 1200.0f); }),
+                                20.0f, (float)mSampleRate * 0.45f);
                   const float freq = std::clamp(carrierFreq * vFmLin, -(float)mSampleRate * 0.45f,
                                                 (float)mSampleRate * 0.45f);
                   float l = 0.0f, r = 0.0f;
@@ -816,6 +843,31 @@ private:
       DspMath::TptSvf filter[2][WavetableSynthCore::kMaxStages];
       DspMath::CombFilter comb[2];
 
+      // Input-keyed caches (WavetableSynthCore::Memo); never stale, so Reset
+      // leaves them alone.
+      WavetableSynthCore::Memo carrier;                          // 2^(cents/1200)
+      WavetableSynthCore::Memo detune[WavetableSynthCore::kMaxUnison]; // 2^(spread/1200)
+      WavetableSynthCore::Memo filterOctaves;                    // 2^(amount * env)
+      struct PanMemo
+      {
+         float pan = NAN, l = 0.0f, r = 0.0f;
+      } pan[WavetableSynthCore::kMaxUnison];
+      struct SvfMemo
+      {
+         float hz = NAN, q = NAN, g = 0.0f, k = 0.0f;
+      } svf;
+      struct MipMemo
+      {
+         double inc = NAN;
+         int level = 0;
+      } mip[WavetableSynthCore::kMaxUnison];
+      struct FrameMemo
+      {
+         int table = -1, frame = -1, mip = -1;
+         const float* lo = nullptr;
+         const float* hi = nullptr;
+      } frames[WavetableSynthCore::kMaxUnison];
+
       void Reset(double sampleRate)
       {
          for (int u = 0; u < WavetableSynthCore::kMaxUnison; u++)
@@ -826,6 +878,7 @@ private:
          }
          opPhase = 0.0;
          lastOut = 0.0f;
+         svf = SvfMemo {}; // its result depends on the sample rate
          for (int ch = 0; ch < 2; ch++)
          {
             for (int s = 0; s < WavetableSynthCore::kMaxStages; s++)
@@ -852,6 +905,8 @@ private:
       Envelope filt[WavetableSynthCore::kEngines];
       EngineState eng[WavetableSynthCore::kEngines];
       DspMath::OnePole glide;
+      WavetableSynthCore::Memo baseHz; // NoteToHz of the glided pitch
+      float glideSec = NAN;            // time constant `glide.coeff` was last set for
 
       void Reset(double sampleRate)
       {
@@ -861,6 +916,7 @@ private:
          voiceId = 0;
          velocity = 0.0f;
          bend = 0.0f;
+         glideSec = NAN; // the coefficient depends on the sample rate
          for (int e = 0; e < WavetableSynthCore::kEngines; e++)
          {
             amp[e].SetSampleRate(sampleRate);
@@ -899,7 +955,9 @@ private:
       float mod = 0.0f;
       {
          const double opInc = (double)(carrierFreq * std::max(0.01f, se.warpRatio)) / mSampleRate;
-         const float opOut = sinf(2.0f * (float)M_PI * (float)st.opPhase);
+         // Only read when a cross-mod warp has no other engine to read.
+         const bool needOp = !mFast || (crossMod && !otherOn);
+         const float opOut = needOp ? sinf(2.0f * (float)M_PI * (float)st.opPhase) : 0.0f;
          st.opPhase += opInc;
          st.opPhase -= floor(st.opPhase);
          if (crossMod)
@@ -925,7 +983,7 @@ private:
          const float spread = (eb.unison > 1)
             ? se.detune * 0.5f * (2.0f * (float)u / (float)(eb.unison - 1) - 1.0f)
             : 0.0f;
-         const float voiceFreq = freq * powf(2.0f, spread / 1200.0f);
+         const float voiceFreq = freq * st.detune[u].Get(mFast, spread, [](float c) { return powf(2.0f, c / 1200.0f); });
          const double inc = (double)voiceFreq / mSampleRate;
 
          const double randOffset = (double)se.phaseRand * (double)kVoicePhaseSeed[u];
@@ -936,7 +994,14 @@ private:
          // negative; aliasing risk is about magnitude) - exactly as before
          // for plain playback - or, under a phase warp, from the read's own
          // speed, crossfaded continuously one level on the safe side.
-         int mipLo = Wavetable::MipForPhaseInc(std::abs(inc));
+         EngineState::MipMemo& mm = st.mip[u];
+         const double absInc = std::abs(inc);
+         if (!mFast || !(absInc == mm.inc))
+         {
+            mm.inc = absInc;
+            mm.level = Wavetable::MipForPhaseInc(absInc);
+         }
+         int mipLo = mm.level;
          int mipHi = mipLo;
          float mipFrac = 0.0f;
          if (phaseWarp)
@@ -949,10 +1014,22 @@ private:
             mipHi = std::min(mipLo + 1, Wavetable::kMipLevels - 1);
             mipFrac = pos - (float)mipLo;
          }
-         const float* lo0 = Wavetable::Frame(eb.table, frameLo, mipLo);
-         const float* hi0 = Wavetable::Frame(eb.table, frameHi, mipLo);
-         const float* lo1 = Wavetable::Frame(eb.table, frameLo, mipHi);
-         const float* hi1 = Wavetable::Frame(eb.table, frameHi, mipHi);
+         // The bank never moves once built, so a frame pointer is a pure
+         // function of (table, frame, mip).
+         EngineState::FrameMemo& fm = st.frames[u];
+         if (!mFast || fm.table != eb.table || fm.frame != frameLo || fm.mip != mipLo)
+         {
+            fm.table = eb.table;
+            fm.frame = frameLo;
+            fm.mip = mipLo;
+            fm.lo = Wavetable::Frame(eb.table, frameLo, mipLo);
+            fm.hi = Wavetable::Frame(eb.table, frameHi, mipLo);
+         }
+         const float* lo0 = fm.lo;
+         const float* hi0 = fm.hi;
+         const bool oneMip = mFast && mipHi == mipLo;
+         const float* lo1 = oneMip ? lo0 : Wavetable::Frame(eb.table, frameLo, mipHi);
+         const float* hi1 = oneMip ? hi0 : Wavetable::Frame(eb.table, frameHi, mipHi);
          auto read = [&](double rp) {
             const float a = Wavetable::Sample(lo0, hi0, frameFrac, rp);
             return mipFrac > 0.0f ? a + (Wavetable::Sample(lo1, hi1, frameFrac, rp) - a) * mipFrac : a;
@@ -1013,8 +1090,14 @@ private:
          const float spreadPan = (eb.unison > 1)
             ? se.stereoWidth * (2.0f * (float)u / (float)(eb.unison - 1) - 1.0f)
             : 0.0f;
-         float lg, rg;
-         DspMath::EqualPowerPan(std::clamp(se.pan + spreadPan, -1.0f, 1.0f), lg, rg);
+         EngineState::PanMemo& pm = st.pan[u];
+         const float panAt = std::clamp(se.pan + spreadPan, -1.0f, 1.0f);
+         if (!mFast || !(panAt == pm.pan))
+         {
+            pm.pan = panAt;
+            DspMath::EqualPowerPan(panAt, pm.l, pm.r);
+         }
+         const float lg = pm.l, rg = pm.r;
          sumL += s * lg;
          sumR += s * rg;
          sumMono += naive; // the other engine's cross-mod reads this sample now, uncorrected
@@ -1034,7 +1117,7 @@ private:
          // Cutoff in octaves off the knob, matching the SVF path below, so
          // switching between comb and LP/HP/etc mid-patch doesn't jump the
          // envelope's perceived depth.
-         const float hz = se.cutoff * exp2f(eb.filterAmount * filtEnv);
+         const float hz = se.cutoff * st.filterOctaves.Get(mFast, eb.filterAmount * filtEnv, [](float o) { return exp2f(o); });
          float* chans[2] = { &sumL, &sumR };
          for (int ch = 0; ch < 2; ch++)
          {
@@ -1047,13 +1130,19 @@ private:
       {
          // Cutoff in octaves off the knob, so the envelope moves the same
          // musical distance wherever the knob is parked.
-         const float hz = se.cutoff * exp2f(eb.filterAmount * filtEnv);
+         const float hz = se.cutoff * st.filterOctaves.Get(mFast, eb.filterAmount * filtEnv, [](float o) { return exp2f(o); });
          // Resonance stops just short of self-oscillation: Q beyond ~10 on a
          // cascade of three stages rings loudly enough to swamp the signal it
          // is filtering, and there is no drive stage here to tame it.
          const float q = 0.707f + se.resonance * se.resonance * 9.3f;
-         float g, k;
-         SvfCoeffs(hz, q, (float)mSampleRate, g, k);
+         EngineState::SvfMemo& cm = st.svf;
+         if (!mFast || !(hz == cm.hz) || !(q == cm.q))
+         {
+            cm.hz = hz;
+            cm.q = q;
+            SvfCoeffs(hz, q, (float)mSampleRate, cm.g, cm.k);
+         }
+         const float g = cm.g, k = cm.k;
 
          float* chans[2] = { &sumL, &sumR };
          for (int ch = 0; ch < 2; ch++)
@@ -1218,6 +1307,7 @@ private:
    }
 
    double mSampleRate = 44100.0;
+   bool mFast = true; // input-keyed caches on (off: the 2.16 reference path)
    ParamMailbox mMailbox;
    MeterRing mScopeRing;
    NoteEventQueue* mNoteInbox = nullptr;
