@@ -1,4 +1,5 @@
 #include "AudioEffectNode.h"
+#include "audio/dsp/ConvolutionKernel.h"
 #include "audio/dsp/ShapeResonatorKernel.h"
 
 #include <algorithm>
@@ -256,6 +257,8 @@ void AudioEffectNode::VisitParams(ParamVisitor& v)
    v.Float("mix", mix);
    for (size_t i = 0; i < mDef.params.size(); i++)
       v.Float(mDef.params[i].name.c_str(), mParamValues[i]);
+   if (mDef.hasFile)
+      v.Text("file", filePath);
 }
 
 AudioNode* AudioEffectNode::GetAudioNode()
@@ -287,4 +290,28 @@ int AudioEffectNode::ReadModeFrequencies(float* out, int maxCount, bool* solving
    if (solving)
       *solving = k->Solving();
    return k->ModeFrequencies(out, maxCount);
+}
+
+int AudioEffectNode::ReadImpulseEnvelope(float* outDb, int maxCount, float* seconds, bool* building, bool* usingFile,
+                                         const std::string** fileError)
+{
+   static const std::string kNone;
+   if (building)
+      *building = false;
+   if (usingFile)
+      *usingFile = false;
+   if (fileError)
+      *fileError = &kNone;
+   if (!mAudioNode)
+      return 0;
+   auto* k = dynamic_cast<ConvolutionKernel*>(&mAudioNode->Kernel());
+   if (!k)
+      return 0;
+   if (building)
+      *building = k->Building();
+   if (usingFile)
+      *usingFile = k->UsingFile();
+   if (fileError)
+      *fileError = &k->FileError();
+   return k->Envelope(outDb, maxCount, seconds);
 }

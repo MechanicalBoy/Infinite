@@ -27,6 +27,7 @@
 #include "dsp/SpecBlurKernel.h"
 #include "dsp/KeySnapKernel.h"
 #include "dsp/SpectrumSlideKernel.h"
+#include "dsp/ConvolutionKernel.h"
 #include "dsp/ShapeResonatorKernel.h"
 #include "MusicTime.h"
 
@@ -878,6 +879,27 @@ namespace
          def.params.push_back({ "pos", 0.0f, 1.0f, 0.3f });
          def.params.push_back({ "modes", 1.0f, 32.0f, 16.0f });
          def.makeKernel = []() { return std::make_unique<ShapeResonatorKernel>(); };
+         defs.push_back(std::move(def));
+      }
+
+      // ---------------------------------------------------------- Convolution Reverb
+      {
+         EffectDef def;
+         def.name = "Convolution Reverb";
+         def.category = "AudioEffects";
+         def.bodyWidth = 440.0f;
+         def.visualizerId = EffectVisualizerId::kConvolutionSpace;
+         // The impulse response starts with the direct sound, so fully wet is
+         // already "the source, in the room"; mix below 1 brings it closer.
+         def.defaultMix = 1.0f;
+         def.hasFile = true;
+         def.params.push_back({ "size", 0.0f, 1.0f, 0.45f });
+         def.params.push_back({ "shape", 0.0f, (float)(ConvolutionKernel::kNumShapes - 1), 0.0f });
+         def.params.push_back({ "material", 0.0f, 1.0f, 0.5f });
+         def.params.push_back({ "distance", 0.0f, 1.0f, 0.5f });
+         def.params.push_back({ "decay", 0.1f, ConvolutionKernel::kMaxSeconds, 1.8f });
+         def.params.push_back({ "spread", 0.0f, 1.0f, 1.0f });
+         def.makeKernel = []() { return std::make_unique<ConvolutionKernel>(); };
          defs.push_back(std::move(def));
       }
 

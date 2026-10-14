@@ -814,6 +814,9 @@ namespace app
          case EffectVisualizerId::kShapeResonator:
             DrawShapeResonatorBody(gn, n);
             break;
+         case EffectVisualizerId::kConvolutionSpace:
+            DrawConvolutionReverbBody(gn, n);
+            break;
          default:
             break;
          }

@@ -40,7 +40,7 @@ MAX_ROWS = 60  # per device; a 2,621-param synth is cut with a "(n more)" line
 # (item, title, our nodes, their devices). A device is "source:name" or "source:name~regex":
 # the regex keeps only controls whose name matches (one band, one oscillator of a big device).
 SPECS = [
-    ("2.9", "Convolution reverb from designed spaces", ["Reverb"],
+    ("2.9", "Convolution reverb from designed spaces", ["Reverb", "Convolution Reverb"],
      ["logic:Space Designer", "logic:ChromaVerb", "ableton:Hybrid Reverb", "plugin:kHs Convolver",
       "plugin:Pro-R 2~^(?!Band|Post EQ|Decay Rate EQ)", "plugin:ValhallaRoom"]),
     ("2.11", "ADAA on Drive and Wavetable Shaper", ["Drive", "Wavetable Shaper"],

@@ -3945,6 +3945,7 @@ extern std::unordered_map<AudioEffectNode*, KeySnapSpectrumState> sSpectrumSlide
 void DrawSpectrumSlideBody(GraphNode& gn, AudioEffectNode* n);
 
 void DrawShapeResonatorBody(GraphNode& gn, AudioEffectNode* n);
+void DrawConvolutionReverbBody(GraphNode& gn, AudioEffectNode* n);
 
 extern std::string gPatchPath;
 
@@ -5907,6 +5908,7 @@ bool RunMidiFileFixture();
 bool RunMpeFixture();
 
 bool RunShapeResonatorFixture();
+bool RunConvolutionFixture();
 bool RunSpatialFixture();
 
 bool RunSpectrumSlideFixture();

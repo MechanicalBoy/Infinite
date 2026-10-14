@@ -128,7 +128,7 @@ Do not edit between the markers; run the script. Use the `node` line exactly as 
 first, then the type name), then `--describe "<type>"` for parameters.
 
 <!-- generated:begin -->
-319 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
+320 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
 
 
 ### 3D
@@ -229,6 +229,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Audio Filter` | audio:audio | out:audio | 10 | bypass |
 | `Bitcrush` | audio:audio | out:audio | 5 | bypass |
 | `Chorus` | audio:audio | out:audio | 10 | bypass |
+| `Convolution Reverb` | audio:audio | out:audio | 8 | bypass |
 | `Cycle Shaper` | audio:audio | out:audio | 5 | bypass |
 | `Delay` | audio:audio | out:audio | 10 | bypass |
 | `Drive` | audio:audio | out:audio | 6 | bypass |
@@ -242,7 +243,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Limiter` | audio:audio | out:audio | 5 | bypass |
 | `Phaser` | audio:audio | out:audio | 9 | bypass |
 | `Pitch Shifter` | audio:audio | out:audio | 5 | bypass |
-| `Plugin` | in:audio | out:audio | 7 | bypass |
+| `Plugin` | in:audio | out:audio | 8 | bypass |
 | `Resonator Bank` | audio:audio | out:audio | 9 | bypass |
 | `Reverb` | audio:audio | out:audio | 7 | bypass |
 | `Ring Mod` | audio:audio | out:audio | 4 | bypass |

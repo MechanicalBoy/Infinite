@@ -92,6 +92,7 @@ enum class EffectVisualizerId
    kKeySnapScale,
    kSpectrumSlide,
    kShapeResonator,
+   kConvolutionSpace,
 };
 
 struct EffectDef
@@ -129,6 +130,9 @@ struct EffectDef
    bool forceFullyWet = false;
    // True if slot 1 is a geometry input ("shape") instead of a sidechain.
    bool hasGeometryInput = false;
+   // True if the node carries an audio file path (AudioEffectNode::filePath,
+   // saved as "file"): Convolution Reverb's loaded impulse response.
+   bool hasFile = false;
    // Mix law. False (the default) is an equal-power crossfade, right when the
    // wet signal is decorrelated from the dry (reverb, delay, pitch, spectral
    // effects). True is a linear crossfade, for effects whose wet signal is

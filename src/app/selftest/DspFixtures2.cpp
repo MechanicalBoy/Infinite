@@ -1,5 +1,6 @@
 // DSP self-test fixtures, part 2: sampler..granular (moved verbatim from main.cpp).
 #include "app/AppShared.h"
+#include "audio/dsp/ConvolutionKernel.h"
 
 namespace app
 {
@@ -3182,6 +3183,361 @@ bool RunGranularFixture()
 
    remove(path.c_str());
    printf("%s\n", ok ? "GRANULARTEST OK" : "GRANULARTEST FAIL");
+   return ok;
+}
+
+// Convolution Reverb (v0.6 2.9): the convolver against a direct convolution,
+// the swap between two impulse responses, the designed room against what its
+// controls promise, and the cost of a 5 s response.
+bool RunConvolutionFixture()
+{
+   bool ok = true;
+   const double sr = 48000.0;
+   auto verdict = [&](const char* what, bool pass, const char* fmt, double a, double b = 0.0) {
+      char num[160];
+      snprintf(num, sizeof(num), fmt, a, b);
+      printf("CONVOLUTIONTEST %s: %s %s\n", what, num, pass ? "OK" : "FAIL");
+      ok = ok && pass;
+   };
+   uint32_t seed = 0x1234567u;
+   auto noise = [&]() {
+      seed ^= seed << 13;
+      seed ^= seed >> 17;
+      seed ^= seed << 5;
+      return (float)(int32_t)seed * (1.0f / 2147483648.0f);
+   };
+   // Runs x (stereo) through the kernel in uneven blocks; `swapAt` >= 0 installs `swapTo` at that sample.
+   auto run = [&](ConvolutionKernel& k, const std::vector<float>& xL, const std::vector<float>& xR, std::vector<float>& yL,
+                  std::vector<float>& yR, int swapAt = -1, ConvolutionKernel::IrSet* swapTo = nullptr) {
+      static const int kSizes[] = { 64, 512, 37, 128, 1, 300, 256 };
+      const int n = (int)xL.size();
+      yL.assign(n, 0.0f);
+      yR.assign(n, 0.0f);
+      for (int pos = 0, b = 0; pos < n; b++)
+      {
+         const int frames = std::min(kSizes[b % 7], n - pos);
+         if (swapTo && pos >= swapAt)
+         {
+            k.InstallForTest(swapTo);
+            swapTo = nullptr;
+         }
+         float* iCh[2] = { const_cast<float*>(xL.data()) + pos, const_cast<float*>(xR.data()) + pos };
+         float* oCh[2] = { yL.data() + pos, yR.data() + pos };
+         AudioBuffer inBuf { iCh, 2, frames };
+         AudioBuffer outBuf { oCh, 2, frames };
+         k.ProcessBlock(inBuf, nullptr, outBuf);
+         pos += frames;
+      }
+   };
+   auto direct = [](const std::vector<float>& x, const std::vector<float>& h, std::vector<double>& y) {
+      const int n = (int)x.size(), len = (int)h.size();
+      y.assign(n, 0.0);
+      for (int i = 0; i < n; i++)
+      {
+         double acc = 0.0;
+         const int kMax = std::min(len - 1, i);
+         for (int k = 0; k <= kMax; k++)
+            acc += (double)h[k] * (double)x[i - k];
+         y[i] = acc;
+      }
+   };
+   auto errorDb = [](const std::vector<float>& y, const std::vector<double>& ref) {
+      double err = 0.0, sig = 0.0;
+      for (size_t i = 0; i < y.size(); i++)
+      {
+         err += ((double)y[i] - ref[i]) * ((double)y[i] - ref[i]);
+         sig += ref[i] * ref[i];
+      }
+      return 10.0 * log10((err + 1e-30) / (sig + 1e-30));
+   };
+
+   // --- 1. null against a direct convolution; every tier in play, no delay ---
+   const int irLen = 22000, sigLen = 30000;
+   std::vector<float> hL(irLen), hR(irLen), xL(sigLen), xR(sigLen);
+   for (int i = 0; i < irLen; i++)
+   {
+      const float env = expf(-(float)i / 6000.0f);
+      hL[i] = noise() * env;
+      hR[i] = noise() * env;
+   }
+   hL[0] = 1.0f; // the very first tap must come out on the very first sample
+   for (int i = 0; i < sigLen; i++)
+   {
+      xL[i] = noise();
+      xR[i] = noise();
+   }
+   std::vector<double> refL, refR;
+   direct(xL, hL, refL);
+   direct(xR, hR, refR);
+   std::vector<float> yL, yR;
+   {
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 512);
+      std::vector<float> a = hL, b = hR;
+      k.InstallForTest(ConvolutionKernel::BuildSet(a, b, sr, false));
+      run(k, xL, xR, yL, yR);
+      const double eL = errorDb(yL, refL), eR = errorDb(yR, refR);
+      verdict("null vs direct convolution", eL <= -90.0 && eR <= -90.0, "L %.1f dB, R %.1f dB (limit -90)", eL, eR);
+      verdict("latency", k.LatencySamples() == 0 && fabs((double)yL[0] - (double)xL[0]) < 1e-5, "%.0f samples, first sample error %.2g",
+              (double)k.LatencySamples(), fabs((double)yL[0] - (double)xL[0]));
+   }
+
+   // --- 2. swapping to an identical response changes nothing; to a different one, no click ---
+   {
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 512);
+      std::vector<float> a = hL, b = hR, c = hL, d = hR;
+      k.InstallForTest(ConvolutionKernel::BuildSet(a, b, sr, false));
+      std::vector<float> zL, zR;
+      run(k, xL, xR, zL, zR, 9000, ConvolutionKernel::BuildSet(c, d, sr, false));
+      const double e = errorDb(zL, refL);
+      verdict("swap to the same response", e <= -90.0, "%.1f dB (limit -90)", e);
+   }
+   {
+      const int n = 48000;
+      std::vector<float> sL(n), sR(n), zL, zR;
+      for (int i = 0; i < n; i++)
+         sL[i] = sR[i] = sinf(2.0f * (float)M_PI * 220.0f * (float)i / (float)sr);
+      ConvolutionKernel::Design small, large;
+      small.size = 0.2f;
+      small.decay = 0.4f;
+      large.size = 0.8f;
+      large.decay = 0.6f;
+      large.shape = 1;
+      std::vector<float> a, b, c, d;
+      ConvolutionKernel::DesignImpulse(small, sr, a, b);
+      ConvolutionKernel::DesignImpulse(large, sr, c, d);
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 512);
+      k.InstallForTest(ConvolutionKernel::BuildSet(a, b, sr));
+      run(k, sL, sR, zL, zR, 30000, ConvolutionKernel::BuildSet(c, d, sr));
+      // A 220 Hz sine through any linear system steps by at most peak * 2 pi f / sr per sample.
+      double peak = 0.0, step = 0.0;
+      for (int i = 24000; i < n; i++)
+      {
+         peak = std::max(peak, (double)fabsf(zL[i]));
+         step = std::max(step, (double)fabsf(zL[i] - zL[i - 1]));
+      }
+      const double smooth = peak * 2.0 * M_PI * 220.0 / sr;
+      verdict("swap to a different response", peak > 0.01 && step < 3.0 * smooth, "largest step %.5f, a click-free sine allows %.5f",
+              step, 3.0 * smooth);
+   }
+
+   // --- 3. the designed room ---
+   // Decay time of one band, from the backward-integrated energy between -5 and -25 dB.
+   auto decayTime = [&](const std::vector<float>& h, int band) {
+      std::vector<float> f(h.size());
+      DspMath::Biquad q1, q2;
+      if (band == 0)
+      {
+         q1.SetBandpass(700.0, 1.5, sr);
+         q2.SetBandpass(700.0, 1.5, sr);
+      }
+      else
+      {
+         q1.SetHighpass(7000.0, 0.7071, sr);
+         q2.SetHighpass(7000.0, 0.7071, sr);
+      }
+      for (size_t i = 0; i < h.size(); i++)
+         f[i] = q2.Process(q1.Process(h[i]));
+      std::vector<double> edc(f.size());
+      double acc = 0.0;
+      for (int i = (int)f.size() - 1; i >= 0; i--)
+      {
+         acc += (double)f[i] * (double)f[i];
+         edc[i] = acc;
+      }
+      int t5 = -1, t25 = -1;
+      for (int i = 0; i < (int)edc.size(); i++)
+      {
+         const double db = 10.0 * log10(edc[i] / (edc[0] + 1e-30) + 1e-30);
+         if (t5 < 0 && db <= -5.0)
+            t5 = i;
+         if (t25 < 0 && db <= -25.0)
+            t25 = i;
+      }
+      return (t5 >= 0 && t25 > t5) ? 3.0 * (double)(t25 - t5) / sr : 0.0;
+   };
+   for (float want : { 0.8f, 2.5f })
+   {
+      ConvolutionKernel::Design d;
+      d.decay = want;
+      std::vector<float> l, r;
+      ConvolutionKernel::DesignImpulse(d, sr, l, r);
+      const double got = decayTime(l, 0);
+      char what[48];
+      snprintf(what, sizeof(what), "decay %.1f s", want);
+      verdict(what, fabs(got / want - 1.0) < 0.2, "measured %.2f s at 700 Hz (within 20%%)", got);
+   }
+   {
+      ConvolutionKernel::Design soft, hard;
+      soft.material = 0.0f;
+      hard.material = 1.0f;
+      std::vector<float> sl, sr2, hl, hr;
+      ConvolutionKernel::DesignImpulse(soft, sr, sl, sr2);
+      ConvolutionKernel::DesignImpulse(hard, sr, hl, hr);
+      const double ts = decayTime(sl, 1), th = decayTime(hl, 1);
+      verdict("material", ts > 0.0 && ts < 0.7 * th, "highs ring %.2f s soft, %.2f s hard", ts, th);
+   }
+   {
+      ConvolutionKernel::Design mono, wide;
+      mono.spread = 0.0f;
+      wide.spread = 1.0f;
+      std::vector<float> ml, mr, wl, wr;
+      ConvolutionKernel::DesignImpulse(mono, sr, ml, mr);
+      ConvolutionKernel::DesignImpulse(wide, sr, wl, wr);
+      double diff = 0.0, lr = 0.0, ll = 0.0, rr = 0.0;
+      for (size_t i = 0; i < ml.size(); i++)
+         diff = std::max(diff, (double)fabsf(ml[i] - mr[i]));
+      for (size_t i = 4800; i < wl.size(); i++)
+      {
+         lr += (double)wl[i] * wr[i];
+         ll += (double)wl[i] * wl[i];
+         rr += (double)wr[i] * wr[i];
+      }
+      const double corr = lr / sqrt(ll * rr + 1e-30);
+      verdict("spread", diff == 0.0 && fabs(corr) < 0.2, "spread 0: L-R difference %.2g; spread 1: tail correlation %.2f", diff, corr);
+   }
+   {
+      // Direct sound against everything after it.
+      auto directShare = [&](float distance, float size) {
+         ConvolutionKernel::Design d;
+         d.distance = distance;
+         d.size = size;
+         std::vector<float> l, r;
+         ConvolutionKernel::DesignImpulse(d, sr, l, r);
+         double total = 0.0;
+         for (float v : l)
+            total += (double)v * v;
+         return ((double)l[0] * l[0] + (double)l[1] * l[1]) / total;
+      };
+      const double nearShare = directShare(0.1f, 0.45f), farShare = directShare(0.9f, 0.45f);
+      verdict("distance", nearShare > 4.0 * farShare, "direct sound is %.3f of the energy near, %.3f far", nearShare, farShare);
+      // First reflection arrives later in a larger room.
+      auto firstReflection = [&](float size, int shape = 0) {
+         ConvolutionKernel::Design d;
+         d.size = size;
+         d.shape = shape;
+         std::vector<float> l, r;
+         ConvolutionKernel::DesignImpulse(d, sr, l, r);
+         for (int i = 8; i < (int)l.size(); i++)
+            if (fabsf(l[i]) > 0.05f * fabsf(l[0]))
+               return (double)i / sr * 1000.0;
+         return 0.0;
+      };
+      const double smallMs = firstReflection(0.1f), largeMs = firstReflection(0.9f);
+      verdict("size", largeMs > 3.0 * smallMs && smallMs > 0.0, "first reflection after %.1f ms small, %.1f ms large", smallMs, largeMs);
+      // A tunnel's side walls are much closer than a room's of the same length.
+      const double roomMs = firstReflection(0.6f, 0), tunnelMs = firstReflection(0.6f, 3);
+      verdict("shape", tunnelMs > 0.0 && tunnelMs < 0.6 * roomMs, "first reflection after %.1f ms in a room, %.1f ms in a tunnel", roomMs,
+              tunnelMs);
+   }
+
+   // --- 4. a file at another rate keeps its pitch and length ---
+   {
+      const int frames = 44100;
+      std::vector<float> f(frames), l, r;
+      for (int i = 0; i < frames; i++)
+         f[i] = sinf(2.0f * (float)M_PI * 1000.0f * (float)i / 44100.0f);
+      ConvolutionKernel::ImpulseFromFile(f.data(), nullptr, frames, 44100.0, sr, l, r);
+      double dot = 0.0, a = 0.0, b = 0.0;
+      for (int i = 2000; i + 2000 < (int)l.size(); i++)
+      {
+         const double want = sin(2.0 * M_PI * 1000.0 * (double)i / sr);
+         dot += want * l[i];
+         a += want * want;
+         b += (double)l[i] * l[i];
+      }
+      const double corr = dot / sqrt(a * b + 1e-30);
+      verdict("file resampled 44.1 to 48 kHz", abs((int)l.size() - 48000) <= 1 && corr > 0.9999 && fabs(b / a - 1.0) < 0.01,
+              "%.0f samples, correlation %.6f", (double)l.size(), corr);
+   }
+
+   // --- 5. through the node: built in the background, rebuilt on a change, a bad file falls back ---
+   {
+      const EffectDef* def = nullptr;
+      for (const auto& d : GetEffectDefs())
+         if (d.name == "Convolution Reverb")
+            def = &d;
+      if (!def)
+      {
+         printf("CONVOLUTIONTEST def not found FAIL\n");
+         return false;
+      }
+      AudioEffectNode node(*def);
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 512);
+      auto settle = [&]() {
+         for (int tries = 0; tries < 1000; tries++)
+         {
+            k.PushParams(node, sr);
+            if (!k.Preparing())
+               break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+         }
+         k.PushParams(node, sr);
+      };
+      settle();
+      float envA[ConvolutionKernel::kEnvelopePoints], envB[ConvolutionKernel::kEnvelopePoints];
+      float secA = 0.0f, secB = 0.0f;
+      const int nA = k.Envelope(envA, ConvolutionKernel::kEnvelopePoints, &secA);
+      std::vector<float> iL(4800, 0.0f), zL, zR;
+      iL[0] = 1.0f;
+      run(k, iL, iL, zL, zR);
+      double energy = 0.0;
+      for (float v : zL)
+         energy += (double)v * v;
+      verdict("node builds its space", nA == ConvolutionKernel::kEnvelopePoints && !k.Preparing() && energy > 0.01,
+              "%.2f s response, impulse energy out %.3f", secA, energy);
+      *node.ParamPtr("decay") = 4.0f;
+      std::this_thread::sleep_for(std::chrono::milliseconds(80));
+      settle();
+      k.Envelope(envB, ConvolutionKernel::kEnvelopePoints, &secB);
+      verdict("node rebuilds on a change", secB > 2.0f * secA, "%.2f s -> %.2f s", secA, secB);
+      node.filePath = "/nonexistent/impulse.wav";
+      std::this_thread::sleep_for(std::chrono::milliseconds(80));
+      settle();
+      verdict("missing file", !k.FileError().empty() && !k.UsingFile() && !k.Preparing(), "falls back to the designed space, reason given in %.0f characters",
+              (double)k.FileError().size());
+   }
+
+   // --- 6. cost: a 5 s response at 48 kHz, stereo, 128-frame blocks ---
+   {
+      ConvolutionKernel::Design d;
+      d.decay = (5.0f - 0.05f) / 1.15f;
+      std::vector<float> l, r;
+      ConvolutionKernel::DesignImpulse(d, sr, l, r);
+      const double irSeconds = (double)l.size() / sr;
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 128);
+      k.InstallForTest(ConvolutionKernel::BuildSet(l, r, sr));
+      const int frames = 128, blocks = (int)(10.0 * sr / frames);
+      std::vector<float> iL(frames), iR(frames), oL(frames), oR(frames);
+      float* iCh[2] = { iL.data(), iR.data() };
+      float* oCh[2] = { oL.data(), oR.data() };
+      AudioBuffer inBuf { iCh, 2, frames };
+      AudioBuffer outBuf { oCh, 2, frames };
+      double total = 0.0, worst = 0.0;
+      for (int b = 0; b < blocks; b++)
+      {
+         for (int i = 0; i < frames; i++)
+         {
+            iL[i] = noise();
+            iR[i] = noise();
+         }
+         const auto t0 = std::chrono::steady_clock::now();
+         k.ProcessBlock(inBuf, nullptr, outBuf);
+         const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+         total += dt;
+         worst = std::max(worst, dt);
+      }
+      const double blockSeconds = (double)frames / sr;
+      const double average = 100.0 * total / ((double)blocks * blockSeconds), peak = 100.0 * worst / blockSeconds;
+      printf("CONVOLUTIONTEST cost: %.2f s response, worst single block %.1f%% of its time slot\n", irSeconds, peak);
+      verdict("cost", irSeconds > 4.9 && average < 3.0, "%.2f%% of one core on average (limit 3%%)", average);
+   }
+
+   printf("CONVOLUTIONTEST %s\n", ok ? "OK" : "FAIL");
    return ok;
 }
 }

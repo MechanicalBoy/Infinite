@@ -632,6 +632,7 @@ set(COMMON_SOURCES
     src/audio/dsp/KeySnapKernel.cpp
     src/audio/dsp/SpectrumSlideKernel.cpp
     src/audio/dsp/ShapeResonatorKernel.cpp
+    src/audio/dsp/ConvolutionKernel.cpp
     src/audio/dsp/MeshModalSolver.cpp
     src/nodes/ImageSourceNode.cpp
     src/nodes/SlideshowNode.cpp
