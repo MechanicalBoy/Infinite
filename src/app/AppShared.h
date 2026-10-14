@@ -1,5 +1,6 @@
 #pragma once
 // Shared declarations for the code split out of main.cpp.
+#include "core/ModShapes.h"
 #include "app/ui/design/TokenColors.h"
 #include "app/AppCommon.h"
 #include "app/ui/design/components/ActionButton.h"
@@ -3556,9 +3557,11 @@ void AudioBareDropdown(const char* id, const std::vector<std::string>& options, 
                           const std::vector<std::string>& categories = {},
                           bool focusSearch = false);
 
+// `shape` (optional): draw its hold and stage curves; times and sustain still come from the pointers.
 void DrawEnvelopePanel(const char* title, const char* curveId, float* attackMs, float* decayMs,
                           float* sustain, float* releaseMs, float* amount, float amountLo,
-                          float amountHi, const char* amountFmt, ImU32 color);
+                          float amountHi, const char* amountFmt, ImU32 color,
+                          const ::ModShapes::Ahdsr* shape = nullptr);
 
 void DrawWavetableBody(GraphNode& gn, WavetableNode* n);
 

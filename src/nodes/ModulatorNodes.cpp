@@ -628,51 +628,37 @@ float ModDepthNode::Value01()
 
 // ---------------------------------------------------------------- Envelope
 
-// The level at `seconds`, walking stage edges at their exact times (an
-// attack that ends between calls hands over to decay at attackMs, not at
-// the call that noticed). A time before the stage start reads as the start.
+ModShapes::Ahdsr EnvelopeNode::Shape() const
+{
+   ModShapes::Ahdsr e;
+   e.attackMs = attackMs;
+   e.holdMs = holdMs;
+   e.decayMs = decayMs;
+   e.sustain = sustainLevel;
+   e.releaseMs = releaseMs;
+   e.attackCurve = attackCurve;
+   e.decayCurve = decayCurve;
+   e.releaseCurve = releaseCurve;
+   return e;
+}
+
+// The level at `seconds`; ModShapes::AhdsrLevel walks the stage edges at
+// their exact times. A time before the stage start reads as the start.
 float EnvelopeNode::LevelAt(double seconds)
 {
-   for (int edges = 0; edges < 4; edges++)
-   {
-      const double elapsedMs = std::max(0.0, (seconds - mStageStartSeconds) * 1000.0);
-      const float sustain = std::clamp(sustainLevel, 0.0f, 1.0f);
-      switch (mStage)
-      {
-         case Stage::Idle:
-            return 0.0f;
-         case Stage::Attack:
-         {
-            const double a = std::max(0.001f, attackMs);
-            if (elapsedMs < a)
-               return mStageStartLevel + (1.0f - mStageStartLevel) * (float)(elapsedMs / a);
-            mStage = Stage::Decay;
-            mStageStartLevel = 1.0f;
-            mStageStartSeconds += a * 0.001;
-            break;
-         }
-         case Stage::Decay:
-         {
-            const double d = std::max(0.001f, decayMs);
-            if (elapsedMs < d)
-               return 1.0f + (sustain - 1.0f) * (float)(elapsedMs / d);
-            mStage = Stage::Sustain;
-            mStageStartSeconds += d * 0.001;
-            break;
-         }
-         case Stage::Sustain:
-            return sustain;
-         case Stage::Release:
-         {
-            const double r = std::max(0.001f, releaseMs);
-            if (elapsedMs < r)
-               return mStageStartLevel * (1.0f - (float)(elapsedMs / r));
-            mStage = Stage::Idle;
-            return 0.0f;
-         }
-      }
-   }
-   return mLevel;
+   return ModShapes::AhdsrLevel(Shape(), mStage, mStageStartSeconds, mStageStartLevel, seconds);
+}
+
+bool EnvelopeNode::VoiceSpec(VoiceMod::Spec& out)
+{
+   if (!voice || bypassed || output != kOutAdsr)
+      return false;
+   out = VoiceMod::Spec();
+   out.kind = VoiceMod::kEnvelope;
+   out.hz = true; // the kernel's position then counts seconds since note-on
+   out.rateHz = 1.0f;
+   out.env = Shape();
+   return true;
 }
 
 // maths 1: the gate edge sits where the input, as a straight line from the
@@ -691,7 +677,7 @@ float EnvelopeNode::LevelExact(double seconds, float in01)
       }
       const float levelAtEdge = mStageStartSeconds < 0.0 ? 0.0f : LevelAt(edge);
       mGateOpen = above;
-      mStage = above ? Stage::Attack : Stage::Release;
+      mStage = above ? ModShapes::kEnvAttack : ModShapes::kEnvRelease;
       mStageStartLevel = levelAtEdge;
       mStageStartSeconds = edge;
    }
@@ -720,7 +706,7 @@ float EnvelopeNode::Value01()
    if (above != mGateOpen)
    {
       mGateOpen = above;
-      mStage = above ? Stage::Attack : Stage::Release;
+      mStage = above ? ModShapes::kEnvAttack : ModShapes::kEnvRelease;
       mStageStartLevel = mLevel;
       mStageStartSeconds = seconds;
    }
@@ -729,17 +715,17 @@ float EnvelopeNode::Value01()
 
    switch (mStage)
    {
-      case Stage::Idle:
+      case ModShapes::kEnvIdle:
          mLevel = 0.0f;
          break;
 
-      case Stage::Attack:
+      case ModShapes::kEnvAttack:
       {
          const float t = (float)(elapsedMs / std::max(0.001f, attackMs));
          if (t >= 1.0f)
          {
             mLevel = 1.0f;
-            mStage = Stage::Decay;
+            mStage = ModShapes::kEnvDecay;
             mStageStartLevel = 1.0f;
             mStageStartSeconds = seconds;
          }
@@ -750,14 +736,14 @@ float EnvelopeNode::Value01()
          break;
       }
 
-      case Stage::Decay:
+      case ModShapes::kEnvDecay:
       {
          const float sustain = std::clamp(sustainLevel, 0.0f, 1.0f);
          const float t = (float)(elapsedMs / std::max(0.001f, decayMs));
          if (t >= 1.0f)
          {
             mLevel = sustain;
-            mStage = Stage::Sustain;
+            mStage = ModShapes::kEnvSustain;
          }
          else
          {
@@ -766,17 +752,17 @@ float EnvelopeNode::Value01()
          break;
       }
 
-      case Stage::Sustain:
+      case ModShapes::kEnvSustain:
          mLevel = std::clamp(sustainLevel, 0.0f, 1.0f);
          break;
 
-      case Stage::Release:
+      case ModShapes::kEnvRelease:
       {
          const float t = (float)(elapsedMs / std::max(0.001f, releaseMs));
          if (t >= 1.0f)
          {
             mLevel = 0.0f;
-            mStage = Stage::Idle;
+            mStage = ModShapes::kEnvIdle;
          }
          else
          {

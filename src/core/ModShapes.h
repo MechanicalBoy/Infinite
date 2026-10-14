@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cstring>
 
-// The shape maths of LFO, Random and MSEG as pure functions, shared by the
+// The shape maths of LFO, Random, MSEG, Envelope and Voice Spread as pure functions, shared by the
 // nodes' Value01() (main thread, one shared value) and VoiceMod's per-voice
 // kernel (audio thread, one instance per voice) so the two cannot drift.
 // Nothing here allocates or touches the transport.
@@ -149,6 +149,90 @@ namespace ModShapes
       if (span <= 1.0e-6f)
          return x >= b.x ? b.y : a.y; // two points on one x: a step
       return MsegSegment(a.y, b.y, a.curve, (x - a.x) / span);
+   }
+
+   // Envelope: attack, hold, decay, sustain, release (times in ms), each
+   // moving stage bent by its own curve (MsegSegment's: 0 straight,
+   // positive fast first, so a positive decay or release falls like a
+   // capacitor discharging).
+   struct Ahdsr
+   {
+      float attackMs = 10.0f;
+      float holdMs = 0.0f;
+      float decayMs = 200.0f;
+      float sustain = 0.6f;
+      float releaseMs = 400.0f;
+      float attackCurve = 0.0f;
+      float decayCurve = 0.0f;
+      float releaseCurve = 0.0f;
+   };
+
+   enum EnvStage
+   {
+      kEnvIdle = 0,
+      kEnvAttack,
+      kEnvHold,
+      kEnvDecay,
+      kEnvSustain,
+      kEnvRelease
+   };
+
+   // The level at `seconds`, walking stage edges at their exact times (an
+   // attack that ends between calls hands over at attackMs, not at the call
+   // that noticed). `stage`, `stageStart` (seconds) and `startLevel` (the
+   // level the stage began from) advance in place. Attack and release start
+   // from `startLevel`, so a retrigger or an early release never jumps.
+   inline float AhdsrLevel(const Ahdsr& e, int& stage, double& stageStart, float& startLevel, double seconds)
+   {
+      const float sustain = std::clamp(e.sustain, 0.0f, 1.0f);
+      for (int edges = 0; edges < 6; edges++)
+      {
+         const double ms = std::max(0.0, (seconds - stageStart) * 1000.0);
+         switch (stage)
+         {
+            case kEnvAttack:
+            {
+               const double a = std::max(0.001f, e.attackMs);
+               if (ms < a)
+                  return MsegSegment(startLevel, 1.0f, e.attackCurve, (float)(ms / a));
+               stage = kEnvHold;
+               startLevel = 1.0f;
+               stageStart += a * 0.001;
+               break;
+            }
+            case kEnvHold:
+            {
+               const double hd = std::max(0.0f, e.holdMs);
+               if (ms < hd)
+                  return 1.0f;
+               stage = kEnvDecay;
+               stageStart += hd * 0.001;
+               break;
+            }
+            case kEnvDecay:
+            {
+               const double d = std::max(0.001f, e.decayMs);
+               if (ms < d)
+                  return MsegSegment(1.0f, sustain, e.decayCurve, (float)(ms / d));
+               stage = kEnvSustain;
+               stageStart += d * 0.001;
+               break;
+            }
+            case kEnvSustain:
+               return sustain;
+            case kEnvRelease:
+            {
+               const double r = std::max(0.001f, e.releaseMs);
+               if (ms < r)
+                  return MsegSegment(startLevel, 0.0f, e.releaseCurve, (float)(ms / r));
+               stage = kEnvIdle;
+               return 0.0f;
+            }
+            default:
+               return 0.0f;
+         }
+      }
+      return stage == kEnvSustain ? sustain : 0.0f;
    }
 
    // The loop as ordered bounds a <= b, clamped to the shape.

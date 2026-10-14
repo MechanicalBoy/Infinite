@@ -21,6 +21,8 @@ synth's knob, the modulator runs once per voice, on the audio thread, every samp
 | LFO | each note starts the cycle at the node's `phase`; rate, shape, low/high as set; S&H draws a different sequence per note |
 | Random | each note gets its own sequence, stepping at the node's rate, with the node's smoothing |
 | MSEG | the note is the trigger: plays in on note-on, loops / sustains while the key is held, plays out on release |
+| Envelope (2.14) | the note is the gate: attack/hold/decay on note-on, sustain while held, release on note-off; a retrigger starts the attack from the level reached. ADSR output only (centred needs the shared input) |
+| Voice Spread (2.13) | always per voice, no switch: a fixed value from the note's place among the keys held at its note-on |
 
 Everything else is unchanged: the same modulator cabled to any other control, or to a synth knob
 with the switch off, behaves exactly as today. With the switch on, the knob on screen keeps showing

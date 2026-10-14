@@ -356,7 +356,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `CV to Pitch` | in:modulator | out:modulator | 7 | bypass |
 | `Compare` | input:modulator, input_2:modulator | out:modulator | 4 |  |
 | `Constant` | none | out:modulator | 1 | bypass |
-| `Envelope` | in:modulator | out:modulator | 8 | bypass |
+| `Envelope` | in:modulator | out:modulator | 13 | bypass |
 | `Face Track` | input:image | present:modulator, head x:modulator, head y:modulator, yaw:modulator, pitch:modulator, roll:modulator, eye L:modulator, eye R:modulator, brows:modulator, mouth:modulator, smile:modulator, gaze x:modulator, gaze y:modulator | 3 | bypass |
 | `Geometry Table` | geo:geometry | cx:modulator, cy:modulator, cz:modulator, spread:modulator, x1:modulator, y1:modulator, z1:modulator, x2:modulator, y2:modulator, z2:modulator, x3:modulator, y3:modulator, z3:modulator, x4:modulator, y4:modulator, z4:modulator | 10 | bypass |
 | `Hand Track` | input:image | present:modulator, palm x:modulator, palm y:modulator, index x:modulator, index y:modulator, thumb x:modulator, thumb y:modulator, pinch:modulator, open:modulator, roll:modulator, size:modulator, fist:modulator, point:modulator, peace:modulator, thumbs up:modulator, ok:modulator, rock:modulator | 3 | bypass |

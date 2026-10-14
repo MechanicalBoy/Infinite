@@ -33,7 +33,8 @@ namespace VoiceMod
       kLfo,
       kRandom,
       kMseg,
-      kSpread // a fixed value per note, by its place among the held notes
+      kSpread,   // a fixed value per note, by its place among the held notes
+      kEnvelope  // AHDSR gated by the voice's own note-on and note-off
    };
 
    // One modulator, as data.
@@ -62,6 +63,8 @@ namespace VoiceMod
       ModShapes::MsegPoint points[kMaxPoints];
       // Voice Spread (shape = ModShapes::SpreadMode)
       int count = 4;
+      // Envelope (hz, rateHz 1: position counts seconds)
+      ModShapes::Ahdsr env;
    };
 
    // One binding: source -> one of the synth's voice params, shaped exactly
@@ -245,6 +248,12 @@ namespace VoiceMod
          bool released = true;
          uint64_t serial = 0;
          int index = 0; // place among the held notes at note-on (Voice Spread)
+         // Envelope: its stage, where (seconds) and from what level it began,
+         // and the level last read, which a retrigger starts the attack from.
+         int envStage = ModShapes::kEnvIdle;
+         double envStart = 0.0;
+         float envStartLevel = 0.0f;
+         float envLevel = 0.0f;
       };
 
       struct RouteState
@@ -259,6 +268,23 @@ namespace VoiceMod
          st.x = gate ? 0.0 : 1.0;
          st.gate = gate;
          st.released = !gate;
+         st.envStage = gate ? ModShapes::kEnvAttack : ModShapes::kEnvIdle;
+         st.envStart = 0.0;
+         st.envStartLevel = gate ? st.envLevel : 0.0f;
+         if (!gate)
+            st.envLevel = 0.0f;
+      }
+
+      // A released key moves a held envelope to its release, from the level
+      // it had reached.
+      static void EnvGate(SourceState& st)
+      {
+         if (!st.gate && st.envStage != ModShapes::kEnvIdle && st.envStage != ModShapes::kEnvRelease)
+         {
+            st.envStage = ModShapes::kEnvRelease;
+            st.envStart = st.pos;
+            st.envStartLevel = st.envLevel;
+         }
       }
 
       static float Value(const Spec& sp, const SourceState& st)
@@ -279,6 +305,12 @@ namespace VoiceMod
                return std::clamp(ModShapes::MsegEvaluate(sp.points, sp.numPoints, (float)st.x), 0.0f, 1.0f);
             case kSpread:
                return ModShapes::Remap(ModShapes::Spread(sp.shape, st.index, sp.count), sp.low, sp.high);
+            case kEnvelope:
+            {
+               SourceState copy = st;
+               EnvGate(copy);
+               return std::clamp(ModShapes::AhdsrLevel(sp.env, copy.envStage, copy.envStart, copy.envStartLevel, copy.pos), 0.0f, 1.0f);
+            }
             default:
                return 0.0f;
          }
@@ -287,6 +319,13 @@ namespace VoiceMod
       // Value now, then advance one sample.
       static float Step(const Spec& sp, SourceState& st, double inc)
       {
+         if (sp.kind == kEnvelope)
+         {
+            EnvGate(st);
+            st.envLevel = std::clamp(ModShapes::AhdsrLevel(sp.env, st.envStage, st.envStart, st.envStartLevel, st.pos), 0.0f, 1.0f);
+            st.pos += inc;
+            return st.envLevel;
+         }
          const float v = Value(sp, st);
          st.pos += inc;
          if (sp.kind == kMseg)

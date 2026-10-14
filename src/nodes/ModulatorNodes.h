@@ -523,7 +523,7 @@ public:
 // envLevel 0 the input has no say (holds at 0.5), at envLevel 1 the input
 // passes through unchanged. This also means "nothing patched" holds steady
 // at whatever constantIn settles to, rather than free-running a generator.
-class EnvelopeNode : public INode, public IModulator
+class EnvelopeNode : public INode, public IModulator, public VoiceMod::IVoiceModSource
 {
 public:
    static INode* Create() { return new EnvelopeNode(); }
@@ -549,6 +549,21 @@ public:
    float releaseMs = 400.0f;
    float constantIn = 0.5f; // used when nothing is patched into "in"
    float threshold = 0.5f;  // rising edge above this (on the raw 0..1 input) = gate on
+   // Hold at the peak after attack, and each moving stage's bend
+   // (ModShapes::MsegSegment: 0 straight, positive fast first). New nodes
+   // get a falling decay and release, as an analog envelope does; patches
+   // saved before these existed load straight (BeforeLoadParams).
+   float holdMs = 0.0f;
+   float attackCurve = 0.0f;
+   float decayCurve = 0.5f;
+   float releaseCurve = 0.5f;
+   // Per voice (docs/plans/modulation/per-voice.md): cabled straight into an
+   // Analog or Wavetable knob, each voice runs its own envelope, gated by its
+   // own note-on and note-off. Only the ADSR output goes per voice (centred
+   // needs the shared input).
+   bool voice = false;
+   bool VoiceSpec(VoiceMod::Spec& out) override;
+   ModShapes::Ahdsr Shape() const;
 
    // ADSR: the output is the envelope level, 0 at rest, the standard ADSR.
    // Centred: 0.5 + (in - 0.5) * level, the output of every patch saved
@@ -560,7 +575,7 @@ public:
    // per call, as saved before the modulation pass.
    int maths = 1;
 
-   void BeforeLoadParams() override { output = kOutCentred; maths = 0; }
+   void BeforeLoadParams() override { output = kOutCentred; maths = 0; decayCurve = 0.0f; releaseCurve = 0.0f; }
 
    void VisitParams(ParamVisitor& v) override
    {
@@ -568,6 +583,9 @@ public:
       v.Float("sustainLevel", sustainLevel); v.Float("releaseMs", releaseMs);
       v.Float("constantIn", constantIn); v.Float("threshold", threshold);
       v.Int("output", output); v.Int("maths", maths);
+      v.Float("holdMs", holdMs); v.Float("attackCurve", attackCurve);
+      v.Float("decayCurve", decayCurve); v.Float("releaseCurve", releaseCurve);
+      v.Bool("voice", voice);
    }
 
 private:
@@ -575,8 +593,7 @@ private:
    float LevelAt(double seconds);
    float mPrevIn = 0.0f;
    double mPrevSeconds = -1.0;
-   enum class Stage { Idle, Attack, Decay, Sustain, Release };
-   Stage mStage = Stage::Idle;
+   int mStage = ModShapes::kEnvIdle;
    float mLevel = 0.0f;
    float mStageStartLevel = 0.0f;
    double mStageStartSeconds = -1.0;

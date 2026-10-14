@@ -2,6 +2,7 @@
 #include "app/ui/design/UiType.h"
 #include "app/ui/design/TokenColors.h"
 #include "app/AppShared.h"
+#include "core/ModShapes.h"
 #include "app/ui/design/components/AudioViz.h"
 #include "app/ui/design/components/StepCell.h"
 
@@ -2388,10 +2389,22 @@ namespace app
       // envelope-editing look across the app instead of two that behave
       // differently. No `amount`: this node's whole output *is* the depth,
       // there's nothing else for a depth control to scale here.
+      const ::ModShapes::Ahdsr shape = n->Shape();
       DrawEnvelopePanel("envelope  -  drag the handles", "##envAdsr", &n->attackMs, &n->decayMs,
                         &n->sustainLevel, &n->releaseMs, nullptr, 0.0f, 0.0f, "%.2f",
-                        tok::U32(tok::pal::c_96D6FFF5));
+                        tok::U32(tok::pal::c_96D6FFF5), &shape);
       ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+      // Hold at the peak, then each moving stage's bend: 0 straight,
+      // positive fast first (a falling decay/release), negative slow first.
+      {
+         AudioKnobRow row1(4);
+         row1.Knob("hold", &n->holdMs, 0.0f, 4000.0f, "%.0f ms", kKnobSmall);
+         row1.Knob("attack curve", &n->attackCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
+         row1.Knob("decay curve", &n->decayCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
+         row1.Knob("release curve", &n->releaseCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
+         row1.End();
+      }
 
       // "in" is used only while nothing is patched into the modulator pin;
       // "threshold" is the gate line on the raw 0..1 input - rising through
@@ -2401,10 +2414,14 @@ namespace app
       // level); centred is the pre-v0.5 bipolar offset around 0.5 that
       // patches saved before it load with.
       static const std::vector<std::string> kOutputs = { "centred", "ADSR" };
-      AudioKnobRow row2(3);
+      // "per voice": cabled straight into an Analog or Wavetable knob, each
+      // note gets its own envelope, gated by its own note-on and note-off
+      // (ADSR output only; centred needs the shared input).
+      AudioKnobRow row2(4);
+      row2.Dropdown("output", kOutputs, n->output, [n](int i) { PushUndoCheckpoint(); n->output = i; });
       row2.Knob("input", &n->constantIn, 0.0f, 1.0f, "%.2f", kKnobSmall);
       row2.Knob("threshold", &n->threshold, 0.0f, 1.0f, "%.2f", kKnobSmall);
-      row2.Dropdown("output", kOutputs, n->output, [n](int i) { PushUndoCheckpoint(); n->output = i; });
+      row2.Checkbox("per voice##envVoice", &n->voice);
       row2.End();
 
       EndAudioBody();

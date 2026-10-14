@@ -3,6 +3,7 @@
 #include "app/ui/design/TokenColors.h"
 #include "app/ui/design/components/FieldWell.h"
 #include "app/AppShared.h"
+#include "core/ModShapes.h"
 #include "app/ui/design/components/AudioViz.h"
 
 namespace app
@@ -925,7 +926,8 @@ namespace app
    // Directly editable ADSR: interactive handles with proportional relative-time
    // display, analog exponential decay/release curves, and smooth responsive dragging.
    void DrawEditableADSR(const char* id, float* attackMs, float* decayMs, float* sustain,
-                         float* releaseMs, float maxTimeMs, float h, ImU32 color, float width)
+                         float* releaseMs, float maxTimeMs, float h, ImU32 color, float width,
+                         const ::ModShapes::Ahdsr* shape = nullptr)
    {
       const float w = width > 0.0f ? width : gAudioContentW;
       const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -1059,9 +1061,17 @@ namespace app
       }
 
       // Build multi-segment curve points (Attack rise, Decay, Sustain shelf,
-      // Release). Linear segments - both Envelope::Process (AudioVoice.h)
-      // and EnvelopeNode::Value01 (ModulatorNodes.cpp) step linearly, so a
-      // curved display would be drawing a shape the audio never makes.
+      // Release). Linear segments unless `shape` is given: the synth
+      // envelopes (AudioVoice.h) step linearly, so a curved display there
+      // would be drawing a shape the audio never makes. The Envelope node
+      // passes its hold and curves, drawn with the same ModShapes maths
+      // its output uses; hold takes the front of the decay's width.
+      const float aCurve = shape ? shape->attackCurve : 0.0f;
+      const float dCurve = shape ? shape->decayCurve : 0.0f;
+      const float rCurve = shape ? shape->releaseCurve : 0.0f;
+      const float holdMs = shape ? std::max(0.0f, shape->holdMs) : 0.0f;
+      const float holdFrac = holdMs > 0.0f ? holdMs / (holdMs + std::max(0.0f, *decayMs)) : 0.0f;
+      const float s01 = std::clamp(*sustain, 0.0f, 1.0f);
       std::vector<ImVec2> curvePts;
       curvePts.reserve(24);
 
@@ -1071,12 +1081,12 @@ namespace app
       curvePts.push_back(ImVec2(layout.x0, layout.baseY));
       if (layout.pA.x - layout.x0 >= 0.5f)
       {
-         const int kAttSteps = 6;
+         const int kAttSteps = shape ? 16 : 6;
          for (int i = 1; i < kAttSteps; i++)
          {
             const float u = (float)i / (float)kAttSteps;
             const float px = layout.x0 + u * (layout.pA.x - layout.x0);
-            const float py = layout.baseY - u * layout.spanY;
+            const float py = layout.baseY - ::ModShapes::MsegSegment(0.0f, 1.0f, aCurve, u) * layout.spanY;
             curvePts.push_back(ImVec2(px, py));
          }
       }
@@ -1085,12 +1095,13 @@ namespace app
       // 2. Decay.
       if (layout.pD.x - layout.pA.x >= 0.5f)
       {
-         const int kDecSteps = 10;
+         const int kDecSteps = shape ? 20 : 10;
          for (int i = 1; i < kDecSteps; i++)
          {
             const float u = (float)i / (float)kDecSteps;
             const float px = layout.pA.x + u * (layout.pD.x - layout.pA.x);
-            const float py = layout.topY + u * (layout.pD.y - layout.topY);
+            const float k = holdFrac >= 1.0f ? 0.0f : std::max(0.0f, (u - holdFrac) / (1.0f - holdFrac));
+            const float py = layout.baseY - ::ModShapes::MsegSegment(1.0f, s01, dCurve, k) * layout.spanY;
             curvePts.push_back(ImVec2(px, py));
          }
       }
@@ -1102,12 +1113,12 @@ namespace app
       // 4. Release.
       if (layout.pR.x - layout.pS.x >= 0.5f)
       {
-         const int kRelSteps = 10;
+         const int kRelSteps = shape ? 16 : 10;
          for (int i = 1; i < kRelSteps; i++)
          {
             const float u = (float)i / (float)kRelSteps;
             const float px = layout.pS.x + u * (layout.pR.x - layout.pS.x);
-            const float py = layout.pS.y + u * (layout.baseY - layout.pS.y);
+            const float py = layout.baseY - ::ModShapes::MsegSegment(s01, 0.0f, rCurve, u) * layout.spanY;
             curvePts.push_back(ImVec2(px, py));
          }
       }
@@ -1331,7 +1342,8 @@ namespace app
    // the note), the pitch and filter envelopes do.
    void DrawEnvelopePanel(const char* title, const char* curveId, float* attackMs, float* decayMs,
                           float* sustain, float* releaseMs, float* amount, float amountLo,
-                          float amountHi, const char* amountFmt, ImU32 color)
+                          float amountHi, const char* amountFmt, ImU32 color,
+                          const ::ModShapes::Ahdsr* shape)
    {
       BeginAudioSection(title);
 
@@ -1358,7 +1370,7 @@ namespace app
       const float curveH = rowH * kFieldRows - ImGui::GetStyle().ItemSpacing.y;
 
       const ImVec2 top = ImGui::GetCursorScreenPos();
-      DrawEditableADSR(curveId, attackMs, decayMs, sustain, releaseMs, 4000.0f, curveH, color, curveW);
+      DrawEditableADSR(curveId, attackMs, decayMs, sustain, releaseMs, 4000.0f, curveH, color, curveW, shape);
       PublishWtTestRect();
 
       // Every field is positioned explicitly: ImGui would otherwise wrap each

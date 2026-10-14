@@ -4138,6 +4138,92 @@ bool RunVoiceModFixture()
       check("a retriggered key counts the others, not itself", rs->Peek(5, 0), 0.8, 1e-6);
    }
 
+   // --- (i) Envelope (2.14): AHDSR with per-stage curves. Hold 0 and
+   // curves 0 is the straight ADSR the node had; per voice, each voice is
+   // gated by its own note-on and note-off.
+   {
+      ModShapes::Ahdsr e;
+      e.attackMs = 10.0f;
+      e.holdMs = 0.0f;
+      e.decayMs = 40.0f;
+      e.sustain = 0.5f;
+      e.releaseMs = 20.0f;
+      auto at = [&](const ModShapes::Ahdsr& env, double sec) {
+         int stage = ModShapes::kEnvAttack;
+         double start = 0.0;
+         float from = 0.0f;
+         return ModShapes::AhdsrLevel(env, stage, start, from, sec);
+      };
+      check("straight attack halfway", at(e, 0.005), 0.5, 1e-5);
+      check("straight decay halfway", at(e, 0.030), 0.75, 1e-5);
+      check("sustain", at(e, 0.5), 0.5, 1e-6);
+      e.holdMs = 15.0f;
+      check("hold keeps the peak", at(e, 0.020), 1.0, 1e-6);
+      check("decay starts after the hold", at(e, 0.045), 0.75, 1e-5);
+      e.decayCurve = 0.5f;
+      check("curved decay = MsegSegment's bend", at(e, 0.045), ModShapes::MsegSegment(1.0f, 0.5f, 0.5f, 0.5f), 1e-6);
+      check("positive decay curve falls fast first", at(e, 0.045) < 0.75 ? 1 : 0, 1, 0);
+      {
+         int stage = ModShapes::kEnvRelease;
+         double start = 0.0;
+         float from = 0.8f;
+         e.releaseCurve = -0.5f;
+         check("release starts from its level, curved",
+               ModShapes::AhdsrLevel(e, stage, start, from, 0.010), ModShapes::MsegSegment(0.8f, 0.0f, -0.5f, 0.5f), 1e-6);
+      }
+
+      EnvelopeNode env;
+      VoiceMod::Spec spec;
+      check("Envelope shared by default", env.VoiceSpec(spec) ? 1 : 0, 0, 0);
+      env.voice = true;
+      env.output = EnvelopeNode::kOutCentred;
+      check("centred output stays shared", env.VoiceSpec(spec) ? 1 : 0, 0, 0);
+      env.output = EnvelopeNode::kOutAdsr;
+      env.attackMs = 10.0f;
+      env.holdMs = 5.0f;
+      env.decayMs = 50.0f;
+      env.sustainLevel = 0.5f;
+      env.releaseMs = 20.0f;
+      env.attackCurve = env.decayCurve = env.releaseCurve = 0.0f;
+      check("Envelope per voice with ADSR output", env.VoiceSpec(spec) ? 1 : 0, 1, 0);
+      EnvelopeNode fresh;
+      check("a new Envelope's decay falls fast first", fresh.decayCurve > 0.0f ? 1 : 0, 1, 0);
+      fresh.BeforeLoadParams();
+      check("an older patch loads straight", fresh.decayCurve + fresh.releaseCurve + fresh.holdMs, 0.0, 0.0);
+
+      oneRoute(spec);
+      auto re = std::make_unique<Rt>();
+      re->Prepare(kSr);
+      re->BeginBlock(*box, 120.0);
+      auto runOn = [&](Rt& r, int voice, double ms) {
+         for (int i = 0, n = (int)std::lround(ms * kSr / 1000.0); i < n; i++)
+            r.Apply(voice, [&](int, float x) { last = x; });
+      };
+      re->NoteOn(3);
+      runOn(*re, 3, 5.0);
+      check("voice 3 attack halfway at 5 ms", re->Peek(3, 0), 0.5, 2e-3);
+      check("voice 0, never played, at rest", re->Peek(0, 0), 0.0, 0.0);
+      runOn(*re, 3, 7.0);
+      check("voice 3 holds at 12 ms", re->Peek(3, 0), 1.0, 1e-6);
+      runOn(*re, 3, 28.0);
+      check("voice 3 decay halfway at 40 ms", re->Peek(3, 0), 0.75, 2e-3);
+      runOn(*re, 3, 60.0);
+      check("voice 3 sustains", re->Peek(3, 0), 0.5, 1e-6);
+      re->NoteOn(6);
+      runOn(*re, 6, 5.0);
+      check("voice 6 starts its own attack", re->Peek(6, 0), 0.5, 2e-3);
+      check("voice 3 still sustains", re->Peek(3, 0), 0.5, 1e-6);
+      re->NoteOff(3);
+      runOn(*re, 3, 10.0);
+      check("voice 3 release halfway after its note-off", re->Peek(3, 0), 0.25, 2e-3);
+      const float before = re->Peek(3, 0);
+      re->NoteOn(3);
+      check("a retrigger starts the attack where release was", re->Peek(3, 0), before, 2e-3);
+      re->NoteOff(3);
+      runOn(*re, 3, 30.0);
+      check("released to rest", re->Peek(3, 0), 0.0, 1e-6);
+   }
+
    // --- (g) the switch saves
    {
       struct BoolGrab : ParamVisitor
