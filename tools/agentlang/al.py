@@ -13,6 +13,12 @@ sys.path.insert(0, HERE)
 import codec, check  # noqa: E402
 
 WORK = "work.inf"
+LOG = ".al_log.jsonl"
+
+
+def log(ok):
+    """One line per apply, so the harness can score first-try validity (T4)."""
+    open(LOG, "a").write(json.dumps({"ok": bool(ok)}) + "\n")
 
 
 def main(argv):
@@ -21,6 +27,7 @@ def main(argv):
     if cmd == "apply":
         r = codec.decode(open(argv[1]).read(), cur)
         if not r.get("ok"):
+            log(False)
             print(json.dumps({"ok": False, "errors": r["errors"][:1]}))
             return 1
         tmp = WORK + ".try"
@@ -28,9 +35,11 @@ def main(argv):
         ok, errs, warns = check.validate(tmp)
         hard = [e for e in errs] or [w for w in warns if w.get("code") != "W_UNUSED_NODE"]
         if hard:
+            log(False)
             os.remove(tmp)
             print(json.dumps({"ok": False, "errors": [dict(hard[0], level=4, code="E_FIELD" if "field" in json.dumps(hard[0]).lower() else hard[0].get("code"))]}))
             return 1
+        log(True)
         os.replace(tmp, WORK)
         print(json.dumps({"ok": True, "checked_by": "--validate", "warnings": [w.get("code") for w in warns][:3]}))
         return 0

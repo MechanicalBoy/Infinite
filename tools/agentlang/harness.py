@@ -121,6 +121,9 @@ def run_one(task, arm, model, cap, turns, claude):
            "cache_read": u.get("cache_read_input_tokens"), "out": u.get("output_tokens"),
            "turns": j.get("num_turns"), "usd": j.get("total_cost_usd"), "is_error": j.get("is_error"),
            "error": j.get("error"), "dir": d, "oracle": score(task, work)}
+    lg = os.path.join(d, ".al_log.jsonl")
+    ap = [json.loads(l)["ok"] for l in open(lg)] if os.path.exists(lg) else []
+    rec["al_applies"], rec["al_first_ok"] = len(ap), (ap[0] if ap else None)
     rec["tokens_total"] = sum(v or 0 for v in (rec["in"], rec["cache_create"], rec["cache_read"], rec["out"]))
     return rec
 
@@ -135,19 +138,29 @@ def main():
     ap.add_argument("--max-turns", type=int, default=15)
     ap.add_argument("--out", default=os.path.join(HERE, "out", "runs.jsonl"))
     ap.add_argument("--claude", default=shutil.which("claude") or "claude")
+    ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--dry", action="store_true")
+    ap.add_argument("--t7", action="store_true", help="T7 decode-back: the goal is the English gloss of the reference solution, not the task text")
     a = ap.parse_args()
     if not a.dry:
         gate()
     T = oracle.load_tasks()
     ids = a.tasks.split(",") if a.tasks else [i for i, t in T.items() if a.split in ("all", t["split"])]
+    ids = ids * a.reps
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     n = ok = 0
     for i in ids:
         if a.dry:
             print(i, a.arm, a.model)
             continue
-        rec = run_one(T[i], a.arm, a.model, a.cap_usd, a.max_turns, a.claude)
+        task = T[i]
+        if a.t7:
+            enc = codec.encode(open(os.path.join(HERE, "tasks", i + ".solution.inf")).read())
+            if not enc.get("complete"):
+                continue
+            task = dict(task, goal_text="Build the patch these steps describe, as sentences:\n" + codec.gloss(enc["sentences"]))
+        rec = run_one(task, a.arm, a.model, a.cap_usd, a.max_turns, a.claude)
+        rec["t7"] = a.t7
         open(a.out, "a").write(json.dumps(rec) + "\n")
         n += 1
         ok += bool(rec["oracle"]["ok"])
