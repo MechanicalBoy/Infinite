@@ -857,6 +857,16 @@ namespace app
    }
 
 
+   // LFO / Random / MSEG: run once per voice when cabled straight into a
+   // synth's voice param (audio/VoiceMod.h). Off: one shared value, as ever.
+   void DrawPerVoiceCheckbox(bool* voice)
+   {
+      PushCheckboxStyle();
+      ModCheckbox("per voice", voice);
+      PopCheckboxStyle();
+   }
+
+
    void DrawLFOParams(LFONode* n)
    {
       DropdownButton("shape", LFONode::ShapeNames(), n->shape, [n](int i) { n->shape = i; });
@@ -864,8 +874,11 @@ namespace app
       ModSlider("phase", &n->phase, 0.0f, 1.0f);
       ModSlider("low", &n->low, 0.0f, 1.0f);
       ModSlider("high", &n->high, 0.0f, 1.0f);
+      // Per voice, each note starts the cycle: phase from does not apply.
+      ImGui::BeginDisabled(n->voice);
       DropdownButton("phase from", LFONode::PhaseModeNames(), n->phaseMode,
                      [n](int i) { PushUndoCheckpoint(); n->phaseMode = i; });
+      ImGui::EndDisabled();
       // Seed only means something for S&H (shape 5) on the new maths.
       if (n->shape == 5 && n->maths >= 1)
       {
@@ -876,6 +889,7 @@ namespace app
       {
          RegisterHiddenParam(&n->seed, 0.0f, 200.0f, "seed", 5);
       }
+      DrawPerVoiceCheckbox(&n->voice);
    }
 
 
@@ -886,6 +900,7 @@ namespace app
       ModSlider("low", &n->low, 0.0f, 1.0f);
       ModSlider("high", &n->high, 0.0f, 1.0f);
       ModSlider("seed", &n->seed, 0.0f, 200.0f, "%.0f", kParamWidth, false, 1.0f);
+      DrawPerVoiceCheckbox(&n->voice);
    }
 
 

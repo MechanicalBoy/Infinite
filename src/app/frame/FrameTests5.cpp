@@ -3052,6 +3052,68 @@ void FrameTest_MPCMODTEST(int frameId, GLFWwindow* window)
       }
 }
 
+// Per-voice modulation (docs/plans/modulation/per-voice.md): an LFO cabled into
+// an Analog's cutoff reaches the synth as a voice plan only while its "per voice"
+// switch is on, and turning it off publishes an empty plan.
+void FrameTest_VOICEMODFRAMETEST(int frameId, GLFWwindow* window)
+{
+   if (getenv("INFINITE_VOICEMODFRAMETEST") == nullptr)
+      return;
+   static bool ok = true;
+   static int cutoffParam = -1;
+   Modulation& mod = Modulation::Instance();
+   int lfoIdx = -1, synIdx = -1;
+   LFONode* lfo = nullptr;
+   AnalogNode* syn = nullptr;
+   for (GraphNode& gn : gNodes)
+   {
+      if (auto* l = dynamic_cast<LFONode*>(gn.node.get()))
+         lfo = l, lfoIdx = gn.index;
+      if (auto* a = dynamic_cast<AnalogNode*>(gn.node.get()))
+         syn = a, synIdx = gn.index;
+   }
+   auto expect = [&](bool cond, const char* what) {
+      printf("VOICEMODFRAMETEST %-52s %s\n", what, cond ? "OK" : "FAIL");
+      ok &= cond;
+   };
+   if (lfo == nullptr || syn == nullptr)
+   {
+      if (frameId == 2)
+         expect(false, "spawned an LFO and an Analog");
+      return;
+   }
+   if (frameId == 3)
+   {
+      for (const ParamRef& ref : mod.FrameParams())
+         if (ref.nodeIndex == synIdx && ref.value == &syn->cutoff)
+            cutoffParam = ref.paramIndex;
+      expect(cutoffParam >= 0, "Analog cutoff registered a ParamRef");
+      if (cutoffParam >= 0)
+      {
+         mod.Bind(synIdx, cutoffParam, lfoIdx);
+         mod.SetRange(synIdx, cutoffParam, 200.0f, 4000.0f);
+      }
+   }
+   if (frameId == 6)
+   {
+      expect(syn->DebugPublishedRoutes() <= 0, "switch off: no voice routes published");
+      lfo->voice = true;
+   }
+   if (frameId == 9)
+   {
+      expect(syn->DebugPublishedRoutes() == 1, "switch on: one voice route published");
+      expect(syn->DebugPublishedSourceId() == UidForIndex(lfoIdx), "the route's source is the LFO");
+      expect(syn->cutoff >= 200.0f && syn->cutoff <= 4000.0f, "the shared knob still follows the cable");
+      lfo->voice = false;
+   }
+   if (frameId == 12)
+   {
+      expect(syn->DebugPublishedRoutes() == 0, "switch off again: an empty plan published");
+      printf("VOICEMODFRAMETEST %s\n", ok ? "OK" : "FAIL");
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+   }
+}
+
 void FrameTest_LOOPERTRIGTEST(int frameId, GLFWwindow* window)
 {
    if (getenv("INFINITE_LOOPERTRIGTEST") != nullptr)

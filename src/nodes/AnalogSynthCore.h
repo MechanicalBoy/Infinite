@@ -14,9 +14,11 @@
 #include "audio/NoteEventQueue.h"
 #include "audio/ParamMailbox.h"
 #include "audio/SynthModes.h"
+#include "audio/VoiceMod.h"
 #include "audio/dsp/BlepOscillator.h"
 #include "audio/dsp/Oversampler.h"
 #include "audio/dsp/ZdfLadderFilter.h"
+#include "core/Transport.h"
 
 namespace AnalogSynthCore
 {
@@ -60,6 +62,63 @@ namespace AnalogSynthCore
    constexpr int kClipPitchParam = kNumParams;
    static_assert(kClipPitchParam < ParamMailbox::kMaxParams,
                  "AnalogNode smoothed params no longer fit ParamMailbox");
+
+   // The params each voice evaluates for itself, so a per-voice modulator
+   // (audio/VoiceMod.h) can give every voice its own value. Built once per
+   // sample from the smoothed shared values; a voice with routes copies it
+   // and overwrites what its routes drive.
+   struct VoiceKnobs
+   {
+      float fine1, semi1, oct1, fine2, semi2, oct2, pw1, fm, oscMix, osc1Vol, osc2Vol, subVol, noiseVol;
+      float cutoff, resonance, drive, keyTrack, detune, attackMs, decayMs, sustainLevel, releaseMs;
+      // Derived
+      float osc1Gain, osc2Gain, driveGain, detuneHalf;
+
+      void Derive()
+      {
+         fm = std::clamp(fm, 0.0f, 1.0f);
+         detune = std::clamp(detune, 0.0f, 100.0f);
+         oscMix = std::clamp(oscMix, 0.0f, 1.0f);
+         // Half the knob's cents either side, so "12 c" is a 12 c wide stack.
+         detuneHalf = detune * 0.5f;
+         // Equal-power crossfade weights for osc1 and osc2
+         const float mixAngle = oscMix * (float)M_PI * 0.5f;
+         osc1Gain = cosf(mixAngle);
+         osc2Gain = sinf(mixAngle);
+         // Pre-filter drive stage gain
+         driveGain = 1.0f + drive * 4.0f;
+      }
+
+      void Set(int id, float x)
+      {
+         switch (id)
+         {
+            case kFine1: fine1 = x; break;
+            case kSemi1: semi1 = x; break;
+            case kOct1: oct1 = x; break;
+            case kFine2: fine2 = x; break;
+            case kSemi2: semi2 = x; break;
+            case kOct2: oct2 = x; break;
+            case kPw1: pw1 = x; break;
+            case kFm: fm = x; break;
+            case kOscMix: oscMix = x; break;
+            case kOsc1Vol: osc1Vol = x; break;
+            case kOsc2Vol: osc2Vol = x; break;
+            case kSub: subVol = x; break;
+            case kNoise: noiseVol = x; break;
+            case kCutoff: cutoff = x; break;
+            case kResonance: resonance = x; break;
+            case kDrive: drive = x; break;
+            case kKeyTrack: keyTrack = x; break;
+            case kDetune: detune = x; break;
+            case kAttack: attackMs = x; break;
+            case kDecay: decayMs = x; break;
+            case kSustain: sustainLevel = x; break;
+            case kRelease: releaseMs = x; break;
+            default: break;
+         }
+      }
+   };
 
    // Deterministic golden-ratio phase seeds for unison voices
    constexpr float kVoicePhaseSeed[kMaxUnison] = {
@@ -276,6 +335,7 @@ public:
    {
       mSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
       mMailbox.PrepareToPlay(mSampleRate);
+      mVoiceMod.Prepare(mSampleRate);
       mPolyNormSmooth.SetTimeConstant(AnalogSynthCore::kPolyNormSmoothSec, mSampleRate);
       mFreeGlide.SetTimeConstant(0.0f, mSampleRate);
 
@@ -456,6 +516,8 @@ public:
 
       const int wave1Dsp = AnalogWaveToDsp(wave1);
       const int wave2Dsp = AnalogWaveToDsp(wave2);
+      mVoiceMod.BeginBlock(mVoicePlan, Transport::Instance().Tempo());
+      const bool perVoice = mVoiceMod.Active();
 
       const bool noteDriven = mNoteInbox != nullptr;
       NoteEvent evts[64];
@@ -655,13 +717,23 @@ public:
             float voiceSumL = 0.0f;
             float voiceSumR = 0.0f;
 
+            const AnalogSynthCore::VoiceKnobs shared = { fine1, semi1, oct1, fine2, semi2, oct2, pw1, fm, oscMix, osc1Vol, osc2Vol, subVol, noiseVol,
+                                                         cutoff, resonance, drive, keyTrack, detune, attackMs, decayMs, sustainLevel, releaseMs,
+                                                         osc1Gain, osc2Gain, driveGain, detuneHalf };
             for (int vi = 0; vi < AnalogSynthCore::kMaxVoices; ++vi)
             {
                Voice& v = mVoices[vi];
                if (!v.active)
                   continue;
 
-               v.ampEnv.SetADSR(attackMs, decayMs, sustainLevel, releaseMs);
+               AnalogSynthCore::VoiceKnobs vk = shared;
+               if (perVoice)
+               {
+                  mVoiceMod.Apply(vi, [&vk](int id, float x) { vk.Set(id, x); });
+                  vk.Derive();
+               }
+
+               v.ampEnv.SetADSR(vk.attackMs, vk.decayMs, vk.sustainLevel, vk.releaseMs);
                const float ampEnvVal = v.ampEnv.Process();
                if (!v.ampEnv.IsActive())
                {
@@ -680,17 +752,17 @@ public:
                                                     10.0f, (float)mSampleRate * 0.45f);
 
                // Osc 2
-               const float osc2Cents = oct2 * 1200.0f + semi2 * 100.0f + fine2;
+               const float osc2Cents = vk.oct2 * 1200.0f + vk.semi2 * 100.0f + vk.fine2;
                const float osc2Hz = std::clamp(voiceBaseHz * powf(2.0f, osc2Cents / 1200.0f),
                                                10.0f, (float)mSampleRate * 0.45f);
                v.osc2.SetFrequency(osc2Hz, mSampleRate);
-               const float osc2Fm = v.osc2.Peek(wave2Dsp, pw1); // see the free-running path
+               const float osc2Fm = v.osc2.Peek(wave2Dsp, vk.pw1); // see the free-running path
 
                // Osc 1 with FM from Osc 2
-               const float osc1Cents = oct1 * 1200.0f + semi1 * 100.0f + fine1;
+               const float osc1Cents = vk.oct1 * 1200.0f + vk.semi1 * 100.0f + vk.fine1;
                const float osc1BaseHz = std::clamp(voiceBaseHz * powf(2.0f, osc1Cents / 1200.0f),
                                                    10.0f, (float)mSampleRate * 0.45f);
-               const float fmRatio = std::max(0.0f, 1.0f + osc2Fm * fm * 2.5f);
+               const float fmRatio = std::max(0.0f, 1.0f + osc2Fm * vk.fm * 2.5f);
                const float osc1ModHz = std::clamp(osc1BaseHz * fmRatio, 10.0f, (float)mSampleRate * 0.45f);
 
                // Osc 1 Unison - see the free-running path for why the same
@@ -701,13 +773,13 @@ public:
                double syncAt = -1.0;
                for (int u = 0; u < unisonCount; ++u)
                {
-                  const float uDetuneCents = mUnisonDetuneMul[u] * detuneHalf;
+                  const float uDetuneCents = mUnisonDetuneMul[u] * vk.detuneHalf;
                   const float uHz = std::clamp(osc1ModHz * powf(2.0f, uDetuneCents / 1200.0f),
                                                10.0f, (float)mSampleRate * 0.45f);
                   v.osc1[u].SetFrequency(uHz, mSampleRate);
                   if (u == 0)
                      osc1Wrapped = v.osc1[0].WillWrap(syncAt);
-                  const float uSample = v.osc1[u].Step(wave1Dsp, pw1);
+                  const float uSample = v.osc1[u].Step(wave1Dsp, vk.pw1);
                   float ugL = 1.0f, ugR = 1.0f;
                   if (wantStereo)
                      TolerancePan(mUnisonDetuneMul[u] * stereoAmt, ugL, ugR);
@@ -717,7 +789,7 @@ public:
                osc1SumL *= osc1Norm;
                osc1SumR *= osc1Norm;
 
-               const float osc2Sample = v.osc2.Step(wave2Dsp, pw1, (sync && osc1Wrapped) ? syncAt : -1.0);
+               const float osc2Sample = v.osc2.Step(wave2Dsp, vk.pw1, (sync && osc1Wrapped) ? syncAt : -1.0);
 
                // Sub osc: see the free-running path - own accumulator at half
                // osc1's post-FM pitch, unaffected by unison detune.
@@ -729,14 +801,14 @@ public:
                const float noiseSample = v.noise.Next();
 
                // Mixer - osc 2, sub and noise stay centred.
-               const float centreMix = osc2Sample * osc2Gain * osc2Vol + subSample * subVol + noiseSample * noiseVol;
-               const float mixedL = osc1SumL * osc1Gain * osc1Vol + centreMix;
-               const float mixedR = osc1SumR * osc1Gain * osc1Vol + centreMix;
+               const float centreMix = osc2Sample * vk.osc2Gain * vk.osc2Vol + subSample * vk.subVol + noiseSample * vk.noiseVol;
+               const float mixedL = osc1SumL * vk.osc1Gain * vk.osc1Vol + centreMix;
+               const float mixedR = osc1SumR * vk.osc1Gain * vk.osc1Vol + centreMix;
 
                // Filter with KeyTracking
-               const float keyTrackOctaves = ((currentPitch - 60.0f) / 12.0f) * keyTrack;
+               const float keyTrackOctaves = ((currentPitch - 60.0f) / 12.0f) * vk.keyTrack;
                const float driftOctaves = analog ? v.driftCutoffOffset : 0.0f;
-               const float effectiveCutoff = std::clamp(cutoff * powf(2.0f, keyTrackOctaves + driftOctaves),
+               const float effectiveCutoff = std::clamp(vk.cutoff * powf(2.0f, keyTrackOctaves + driftOctaves),
                                                         20.0f, (float)mSampleRate * 0.45f);
                if (wantStereo && !v.stereoPath)
                {
@@ -752,11 +824,11 @@ public:
                // Drive (one noise draw per side) and filter, oversampled.
                const float hissL = analog ? v.noise.Next() * 0.0001f : 0.0f;
                const float hissR = analog ? v.noise.Next() * 0.0001f : 0.0f;
-               const FilterCoeffs fc = MakeFilterCoeffs(filterType, effectiveCutoff, resonance,
+               const FilterCoeffs fc = MakeFilterCoeffs(filterType, effectiveCutoff, vk.resonance,
                                                         mSampleRate * AnalogSynthCore::kFilterOversample);
-               const float filteredL = DriveAndFilter(v.os, 0, v.acL, v.driveL, v.ladder, v.svf, mixedL, driveGain, hissL, fc);
+               const float filteredL = DriveAndFilter(v.os, 0, v.acL, v.driveL, v.ladder, v.svf, mixedL, vk.driveGain, hissL, fc);
                const float filteredR = wantStereo
-                  ? DriveAndFilter(v.os, 1, v.acR, v.driveR, v.ladderR, v.svfR, mixedR, driveGain, hissR, fc)
+                  ? DriveAndFilter(v.os, 1, v.acR, v.driveR, v.ladderR, v.svfR, mixedR, vk.driveGain, hissR, fc)
                   : filteredL;
 
                // Voice-card position on top of the stack's own width: each
@@ -896,16 +968,19 @@ public:
       if (stolen)
          v.ampEnv.ResetLevel();
       v.ampEnv.NoteOn();
+      mVoiceMod.NoteOn(slot);
    }
 
    void NoteOff(int voiceId)
    {
-      for (Voice& v : mVoices)
+      for (int i = 0; i < AnalogSynthCore::kMaxVoices; ++i)
       {
+         Voice& v = mVoices[i];
          if (!v.active || v.voiceId != voiceId || !v.held)
             continue;
          v.held = false;
          v.ampEnv.NoteOff();
+         mVoiceMod.NoteOff(i);
       }
    }
 
@@ -922,6 +997,9 @@ public:
    int ActiveVoices() const { return mActiveVoices.load(std::memory_order_relaxed); }
    MeterRing& ScopeRing() { return mScopeRing; }
    double DebugMailboxSampleRate() const { return mMailbox.SampleRate(); }
+   void PublishVoicePlan(const VoiceMod::Plan& plan) { mVoicePlan.Publish(plan); }
+   // Tests: what voice `voice`'s per-voice source `source` reads now.
+   float DebugVoiceSource(int voice, int source) const { return mVoiceMod.Peek(voice, source); }
 
 private:
    double mSampleRate = 44100.0;
@@ -929,6 +1007,8 @@ private:
    MeterRing mScopeRing;
    NoteEventQueue* mNoteInbox = nullptr;
    int mNoteCursor = -1;
+   VoiceMod::PlanBox mVoicePlan;
+   VoiceMod::Runtime<AnalogSynthCore::kMaxVoices> mVoiceMod;
 
    Voice mVoices[AnalogSynthCore::kMaxVoices];
    uint64_t mNextAge = 1;

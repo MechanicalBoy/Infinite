@@ -389,6 +389,7 @@ namespace app
       ModSlider("loop start", &n->loopStart, 0.0f, 1.0f);
       ModSlider("loop end", &n->loopEnd, 0.0f, 1.0f);
       ImGui::EndDisabled();
+      DrawPerVoiceCheckbox(&n->voice);
    }
 
 

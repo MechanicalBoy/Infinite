@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "audio/SynthModes.h"
+#include "audio/VoiceMod.h"
 #include "core/AudioCable.h"
 #include "core/INode.h"
 #include "core/NoteCable.h"
@@ -106,7 +107,7 @@ struct AnalogSynthParams
    bool analog = true;
 };
 
-class AnalogNode : public INode, public IAudioSource
+class AnalogNode : public INode, public IAudioSource, public VoiceMod::IVoiceModTarget
 {
 public:
    static constexpr int kMaxVoices = 8;
@@ -134,6 +135,15 @@ public:
    int ReadScope(float* out, int capacity);
    int ActiveVoices() const;
    double DebugMailboxSampleRate() const;
+
+   // Per-voice modulation (audio/VoiceMod.h): the oscillator, mixer, filter
+   // and envelope params each voice evaluates for itself.
+   int VoiceParamFor(const float* member) const override;
+   void PublishVoicePlan(const VoiceMod::Plan& plan) override;
+   float DebugVoiceSource(int voice, int source) const;
+   // Tests: routes in the last plan published, source 0's modulator uid; -1 before any.
+   int DebugPublishedRoutes() const { return mPublishedRoutes; }
+   uint64_t DebugPublishedSourceId() const { return mPublishedSourceId; }
 
    // 26 smoothed floats
    float volume = 0.8f;
@@ -177,4 +187,6 @@ public:
 private:
    std::unique_ptr<AudioAnalogNode> mAudioNode;
    int mLastCookFrame = -1;
+   int mPublishedRoutes = -1;
+   uint64_t mPublishedSourceId = 0;
 };

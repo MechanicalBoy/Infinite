@@ -14,8 +14,10 @@
 #include "audio/NoteEventQueue.h"
 #include "audio/ParamMailbox.h"
 #include "audio/SynthModes.h"
+#include "audio/VoiceMod.h"
 #include "audio/Wavetable.h"
 #include "audio/dsp/BlepOscillator.h"
+#include "core/Transport.h"
 
 namespace WavetableSynthCore
 {
@@ -347,6 +349,7 @@ public:
       using namespace WavetableSynthCore;
       mSampleRate = sampleRate;
       mMailbox.PrepareToPlay(sampleRate);
+      mVoiceMod.Prepare(sampleRate);
       for (int i = 0; i < kNumGlobalParams + kEngines * kNumEngineParams; i++)
          mMailbox.SetImmediate(i, mFloatAtomics[i].load(std::memory_order_relaxed));
       mMailbox.SetImmediate(kClipPitchParam, 0.0f);
@@ -372,6 +375,8 @@ public:
 
    // See WavetableNode::DebugMailboxSampleRate's comment - test-only.
    double DebugMailboxSampleRate() const { return mMailbox.SampleRate(); }
+   void PublishVoicePlan(const VoiceMod::Plan& plan) { mVoicePlan.Publish(plan); }
+   float DebugVoiceSource(int voice, int source) const { return mVoiceMod.Peek(voice, source); }
 
    // See WavetableNode::DebugFmMode's comment - test-only. mFmMode is a
    // plain atomic (mode switches skip the smoothed ParamMailbox), so this
@@ -430,6 +435,9 @@ public:
       int evtIdx = 0;
       if (noteDriven)
          numEvts = mNoteInbox->Pop(mNoteCursor, evts, 64);
+
+      mVoiceMod.BeginBlock(mVoicePlan, Transport::Instance().Tempo());
+      const bool perVoice = mVoiceMod.Active();
 
       int activeCount = 0;
       // Fixed rate, so hoisted out of the sample loop (unlike glide, which
@@ -532,12 +540,28 @@ public:
          else
          {
             int active = 0;
-            for (Voice& v : mVoices)
+            for (int vi = 0; vi < kMaxVoices; vi++)
             {
+               Voice& v = mVoices[vi];
                if (!v.active)
                   continue;
 
-               v.glide.SetTimeConstant(sm.glide, mSampleRate);
+               // Per-voice modulation (audio/VoiceMod.h): this voice's own
+               // copy of the smoothed params, with its routes written over it.
+               SmoothedBlock vsm;
+               float vMixA = mixA, vMixB = mixB, vFmPhase = fmPhaseOffset, vFmLin = fmLinRatio;
+               if (perVoice)
+               {
+                  vsm = sm;
+                  mVoiceMod.Apply(vi, [&vsm](int id, float x) { SetVoiceParam(vsm, id, x); });
+                  vMixA = cosf(vsm.mix * (float)M_PI * 0.5f);
+                  vMixB = sinf(vsm.mix * (float)M_PI * 0.5f);
+                  vFmPhase = (fmMode == 0) ? (extFm * vsm.fmDepth) : 0.0f;
+                  vFmLin = (fmMode == 1) ? (1.0f + extFm * vsm.fmDepth * kFmLinScale) : 1.0f;
+               }
+               const SmoothedBlock& vs = perVoice ? vsm : sm;
+
+               v.glide.SetTimeConstant(vs.glide, mSampleRate);
                const float currentPitch = v.glide.Process((float)v.note);
                const float base = NoteToHz(currentPitch);
                // Velocity always shapes level. It used to be a 0..1 "amount"
@@ -571,19 +595,19 @@ public:
                   }
 
                   const float semitones = (float)(eng[e].octave * 12 + eng[e].semi) * 100.0f +
-                                          sm.eng[e].fine + eng[e].pitchAmount * pitchEnv * 100.0f +
-                                          sm.pitchBend * 100.0f + v.bend * 100.0f + sm.clipPitch * 100.0f;
+                                          vs.eng[e].fine + eng[e].pitchAmount * pitchEnv * 100.0f +
+                                          vs.pitchBend * 100.0f + v.bend * 100.0f + vs.clipPitch * 100.0f;
                   // Carrier pitch (pre-FM) clamped to its own sane range
                   // first, then linear FM applied and clamped separately -
                   // see the free-running path's identical comment above.
                   const float carrierFreq = std::clamp(base * powf(2.0f, semitones / 1200.0f), 20.0f,
                                                        (float)mSampleRate * 0.45f);
-                  const float freq = std::clamp(carrierFreq * fmLinRatio, -(float)mSampleRate * 0.45f,
+                  const float freq = std::clamp(carrierFreq * vFmLin, -(float)mSampleRate * 0.45f,
                                                 (float)mSampleRate * 0.45f);
                   float l = 0.0f, r = 0.0f;
-                  RenderEngine(eng[e], sm.eng[e], freq, carrierFreq, v.eng[e], eng[1 - e].on ? prevOut[1 - e] : 0.0f,
-                               eng[1 - e].on, filtEnv, fmPhaseOffset, l, r);
-                  const float g = (e == 0 ? mixA : mixB) * sm.eng[e].volume * ampEnv * velGain;
+                  RenderEngine(eng[e], vs.eng[e], freq, carrierFreq, v.eng[e], eng[1 - e].on ? prevOut[1 - e] : 0.0f,
+                               eng[1 - e].on, filtEnv, vFmPhase, l, r);
+                  const float g = (e == 0 ? vMixA : vMixB) * vs.eng[e].volume * ampEnv * velGain;
                   outL += l * g;
                   outR += r * g;
                }
@@ -748,6 +772,34 @@ private:
       float frequency, volume, mix, glide, pitchBend, fmDepth, clipPitch;
       SmoothedEngine eng[WavetableSynthCore::kEngines];
    };
+
+   // A per-voice route's value onto one voice's copy, clamped as the shared
+   // read is. Only the params VoiceParamFor hands out arrive here.
+   static void SetVoiceParam(SmoothedBlock& b, int id, float x)
+   {
+      using namespace WavetableSynthCore;
+      if (id == kMix)
+         b.mix = std::clamp(x, 0.0f, 1.0f);
+      else if (id == kFmDepth)
+         b.fmDepth = x;
+      if (id < kNumGlobalParams || id >= kNumGlobalParams + kEngines * kNumEngineParams)
+         return;
+      SmoothedEngine& se = b.eng[(id - kNumGlobalParams) / kNumEngineParams];
+      switch ((id - kNumGlobalParams) % kNumEngineParams)
+      {
+         case kEngPosition: se.position = std::clamp(x, 0.0f, 1.0f); break;
+         case kEngVolume: se.volume = x; break;
+         case kEngPan: se.pan = x; break;
+         case kEngDetune: se.detune = x; break;
+         case kEngStereoWidth: se.stereoWidth = x; break;
+         case kEngFine: se.fine = x; break;
+         case kEngWarpAmount: se.warpAmount = std::clamp(x, 0.0f, 1.0f); break;
+         case kEngWarpRatio: se.warpRatio = x; break;
+         case kEngCutoff: se.cutoff = x; break;
+         case kEngResonance: se.resonance = std::clamp(x, 0.0f, 1.0f); break;
+         default: break;
+      }
+   }
 
    // Everything one engine of one voice carries between samples. Free-running
    // mode uses the same struct, so the two paths cannot drift apart on what a
@@ -1126,12 +1178,14 @@ private:
          v.pitch[e].NoteOn();
          v.filt[e].NoteOn();
       }
+      mVoiceMod.NoteOn(slot);
    }
 
    void NoteOff(int voiceId)
    {
-      for (Voice& v : mVoices)
+      for (int i = 0; i < WavetableSynthCore::kMaxVoices; i++)
       {
+         Voice& v = mVoices[i];
          if (!v.active || v.voiceId != voiceId || !v.held)
             continue;
          v.held = false;
@@ -1141,6 +1195,7 @@ private:
             v.pitch[e].NoteOff();
             v.filt[e].NoteOff();
          }
+         mVoiceMod.NoteOff(i);
       }
    }
 
@@ -1164,6 +1219,8 @@ private:
    MeterRing mScopeRing;
    NoteEventQueue* mNoteInbox = nullptr;
    int mNoteCursor = -1;
+   VoiceMod::PlanBox mVoicePlan;
+   VoiceMod::Runtime<WavetableSynthCore::kMaxVoices> mVoiceMod;
 
    Voice mVoices[WavetableSynthCore::kMaxVoices];
    uint64_t mNextAge = 1;

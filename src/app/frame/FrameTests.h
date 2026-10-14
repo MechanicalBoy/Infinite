@@ -148,6 +148,7 @@ void FrameTest_HIDETEST_2(int frameId, GLFWwindow* window);
 void FrameTest_MODTEST(int frameId, GLFWwindow* window);
 void FrameTest_MODBOUNDSTEST(int frameId, GLFWwindow* window);
 void FrameTest_MPCMODTEST(int frameId, GLFWwindow* window);
+void FrameTest_VOICEMODFRAMETEST(int frameId, GLFWwindow* window);
 void FrameTest_LOOPERTRIGTEST(int frameId, GLFWwindow* window);
 void FrameTest_MIDILEARNTEST(int frameId, GLFWwindow* window);
 void FrameTest_GESTUREUNDOTEST(int frameId, GLFWwindow* window);

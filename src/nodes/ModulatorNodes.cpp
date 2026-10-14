@@ -20,43 +20,13 @@ namespace
       "Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Sample & Hold"
    };
 
-   float Frac(double v) { return (float)(v - std::floor(v)); }
+   // Shared with VoiceMod's per-voice kernel - see core/ModShapes.h.
+   using ModShapes::Frac;
+   using ModShapes::Hash01;
+   using ModShapes::HashSeeded;
+   using ModShapes::Mix64;
+   using ModShapes::SeedSalt;
 
-   // Deterministic hash so a given step always yields the same value; the pattern
-   // repeats identically after a rewind instead of drifting.
-   float Hash01(long long n)
-   {
-      unsigned long long x = (unsigned long long)(n * 2654435761u + 1013904223u);
-      x ^= x >> 33;
-      x *= 0xff51afd7ed558ccdULL;
-      x ^= x >> 33;
-      return (float)((x >> 11) & 0xFFFFFF) / (float)0xFFFFFF;
-   }
-
-   // Seeded hash for the maths-1 Random and S&H. Every bit of the seed
-   // reaches the salt, so two different seeds never share a sequence, and
-   // the arithmetic is unsigned throughout.
-   uint64_t Mix64(uint64_t x)
-   {
-      x += 0x9E3779B97F4A7C15ULL;
-      x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
-      x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
-      return x ^ (x >> 31);
-   }
-   uint64_t SeedSalt(float seed, uint64_t stream)
-   {
-      uint32_t bits = 0;
-      if (seed != 0.0f) // -0 and +0 are the same seed
-         std::memcpy(&bits, &seed, sizeof bits);
-      return Mix64((uint64_t)bits ^ (stream << 32));
-   }
-   float HashSeeded(long long step, uint64_t salt)
-   {
-      return (float)(Mix64((uint64_t)step ^ salt) >> 40) / (float)0xFFFFFF;
-   }
-
-   // Period in beats for the beats and synced rate modes (Hz is handled in
-   // RatePosition, per second).
    double PeriodBeatsFor(int rateMode, float rateBeats, SyncedPeriodCache& cache)
    {
       // Synced: a rate on a MusicTime division runs at the division's exact
@@ -90,15 +60,7 @@ namespace
       return tr.Beats() / PeriodBeatsFor(rateMode, rateBeats, cache);
    }
 
-   float Remap(float v01, float low, float high)
-   {
-      // Value01() is contractually 0..1 regardless of what low/high were
-      // typed as, so the mapped result is clamped back into that range too -
-      // low > high (an inverted swing) stays legitimate, but low/high outside
-      // 0..1 must not leak out of contract.
-      float mapped = low + (high - low) * std::min(1.0f, std::max(0.0f, v01));
-      return std::min(1.0f, std::max(0.0f, mapped));
-   }
+   using ModShapes::Remap;
 }
 
 // ---------------------------------------------------------------- LFO
@@ -187,25 +149,25 @@ float LFONode::Value01()
       cycles = rateMode == kRateSynced && mPeriodCache.Hit(rateBeats, tr) ? tr.Beats() / mPeriodCache.period // memo hit
                                                                           : RatePosition(rateMode, rateBeats, rateHz, mPeriodCache);
    }
-   const float t = Frac(cycles + phase);
-
-   float raw = 0.0f;
-   switch (shape)
-   {
-      case 0: raw = 0.5f + 0.5f * std::sin(t * 6.28318530718f); break;      // Sine
-      case 1: raw = t < 0.5f ? t * 2.0f : 2.0f - t * 2.0f; break;           // Triangle
-      case 2: raw = t; break;                                               // Saw Up
-      case 3: raw = 1.0f - t; break;                                        // Saw Down
-      case 4: raw = t < 0.5f ? 0.0f : 1.0f; break;                          // Square
-      default:                                                              // S&H
-      {
-         const long long step = (long long)std::floor(cycles + phase);
-         raw = maths >= 1 ? HashSeeded(step, SeedSalt(seed, 1)) : Hash01(step);
-         break;
-      }
-   }
-
+   const float raw = ModShapes::Lfo(shape, cycles + phase, maths, maths >= 1 ? SeedSalt(seed, 1) : 0);
    return Remap(raw, low, high);
+}
+
+bool LFONode::VoiceSpec(VoiceMod::Spec& out)
+{
+   if (!voice)
+      return false;
+   out = VoiceMod::Spec();
+   out.kind = VoiceMod::kLfo;
+   out.hz = rateMode == kRateHz;
+   out.rateHz = rateHz;
+   out.periodBeats = PeriodBeats();
+   out.low = low;
+   out.high = high;
+   out.salt = SeedSalt(seed, 1);
+   out.shape = shape;
+   out.phase = phase;
+   return true;
 }
 
 // ---------------------------------------------------------------- Random
@@ -242,17 +204,25 @@ float RandomNode::Value01()
    const uint64_t salt = maths >= 1 ? SeedSalt(seed, 2) : 0;
    const float current = ValueForStep(step, salt);
 
-   float raw = current;
-   if (smooth > 0.0f)
-   {
-      const float next = ValueForStep(step + 1, salt);
-      // ease only across the tail of the step, scaled by the smooth amount
-      float k = std::min(1.0f, t / std::max(0.0001f, smooth));
-      float eased = k * k * (3.0f - 2.0f * k);
-      raw = current + (next - current) * eased;
-   }
+   const float raw = ModShapes::RandomGlide(current, smooth > 0.0f ? ValueForStep(step + 1, salt) : current, t, smooth);
 
    return Remap(raw, low, high);
+}
+
+bool RandomNode::VoiceSpec(VoiceMod::Spec& out)
+{
+   if (!voice)
+      return false;
+   out = VoiceMod::Spec();
+   out.kind = VoiceMod::kRandom;
+   out.hz = rateMode == LFONode::kRateHz;
+   out.rateHz = rateHz;
+   out.periodBeats = PeriodBeatsFor(rateMode, rateBeats, mPeriodCache);
+   out.low = low;
+   out.high = high;
+   out.salt = SeedSalt(seed, 2);
+   out.smooth = smooth;
+   return true;
 }
 
 // ---------------------------------------------------------------- Pattern
@@ -991,30 +961,14 @@ void MSEGNode::RemovePoint(int index)
    points.erase(points.begin() + index);
 }
 
-// Exponential bend: (e^(k t) - 1) / (e^k - 1), k = -6 * curve. Positive curve
-// moves fast first and settles (the usual attack and decay shape).
 float MSEGNode::Segment(float y0, float y1, float curve, float t)
 {
-   t = std::clamp(t, 0.0f, 1.0f);
-   const float k = -6.0f * std::clamp(curve, -1.0f, 1.0f);
-   const float shaped = std::fabs(k) < 1.0e-3f ? t : std::expm1(k * t) / std::expm1(k);
-   return y0 + (y1 - y0) * shaped;
+   return ModShapes::MsegSegment(y0, y1, curve, t);
 }
 
 float MSEGNode::Evaluate(float x) const
 {
-   if (points.size() < 2)
-      return points.empty() ? 0.0f : points[0].y;
-   x = std::clamp(x, 0.0f, 1.0f);
-   int i = 0;
-   while (i < (int)points.size() - 2 && x >= points[i + 1].x)
-      i++;
-   const Point& a = points[i];
-   const Point& b = points[i + 1];
-   const float span = b.x - a.x;
-   if (span <= 1.0e-6f)
-      return x >= b.x ? b.y : a.y; // two points on one x: a step
-   return Segment(a.y, b.y, a.curve, (x - a.x) / span);
+   return ModShapes::MsegEvaluate(points.data(), (int)points.size(), x);
 }
 
 std::string MSEGNode::Encode() const
@@ -1063,17 +1017,7 @@ void MSEGNode::Decode(const std::string& s)
 
 float MSEGNode::PositionHeld(double elapsed, bool patched) const
 {
-   if (elapsed <= 0.0)
-      return 0.0f;
-   if (!loop)
-      return patched ? (float)std::min(1.0, elapsed) : Frac(elapsed);
-   const double a = std::clamp((double)std::min(loopStart, loopEnd), 0.0, 1.0);
-   const double b = std::clamp((double)std::max(loopStart, loopEnd), 0.0, 1.0);
-   if (elapsed < b)
-      return (float)elapsed;
-   if (b - a < 1.0e-4)
-      return (float)b; // sustain point
-   return (float)(a + std::fmod(elapsed - a, b - a));
+   return ModShapes::MsegPositionHeld(elapsed, patched, loop, loopStart, loopEnd);
 }
 
 // trig patched: the run moves by the clock's step since the last call, at
@@ -1101,25 +1045,28 @@ float MSEGNode::Advance()
       mX = PositionHeld((1.0 - (double)f) * dx, true);
       mReleased = false;
    }
-   else if (!mReleased && held)
-   {
-      // Still in the held part: step, wrapping inside the loop.
-      const double a = std::clamp((double)std::min(loopStart, loopEnd), 0.0, 1.0);
-      const double b = std::clamp((double)std::max(loopStart, loopEnd), 0.0, 1.0);
-      double x = mX + dx;
-      if (!loop)
-         x = std::min(1.0, x);
-      else if (x >= b)
-         x = b - a < 1.0e-4 ? b : a + std::fmod(x - a, b - a);
-      mX = x;
-   }
    else
-   {
-      mReleased = true;
-      mX = std::min(1.0, mX + dx);
-   }
+      mX = ModShapes::MsegStep(mX, dx, held, mReleased, loop, loopStart, loopEnd);
    mTrigLast = trig;
    return (float)mX;
+}
+
+bool MSEGNode::VoiceSpec(VoiceMod::Spec& out)
+{
+   if (!voice)
+      return false;
+   out = VoiceMod::Spec();
+   out.kind = VoiceMod::kMseg;
+   out.hz = rateMode == LFONode::kRateHz;
+   out.rateHz = rateHz;
+   out.periodBeats = PeriodBeatsFor(rateMode, rateBeats, mPeriodCache);
+   out.loop = loop;
+   out.loopStart = loopStart;
+   out.loopEnd = loopEnd;
+   out.numPoints = std::min((int)points.size(), VoiceMod::kMaxPoints);
+   for (int i = 0; i < out.numPoints; i++)
+      out.points[i] = points[i];
+   return true;
 }
 
 float MSEGNode::Value01()

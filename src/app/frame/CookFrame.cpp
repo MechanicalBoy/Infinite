@@ -1,5 +1,6 @@
 // Per-frame modulation + palette application (runtime code that sat among the fixtures in main.cpp).
 #include "app/AppShared.h"
+#include "audio/VoiceMod.h"
 
 namespace app
 {
@@ -339,6 +340,55 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
          file->RefreshAnalysis(frameId);
    }
 
+   // Per-voice modulation (docs/plans/modulation/per-voice.md): a modulator
+   // with `per voice` on, cabled straight into a synth's voice param, also
+   // goes into that synth's plan and runs once per voice on the audio thread.
+   // The shared write still happens: the knob shows it, and a synth playing
+   // with no notes uses it. Plans are keyed by the synth's uid, so a deleted
+   // synth is dropped rather than published to.
+   static std::map<uint64_t, VoiceMod::Plan> sVoicePlans;
+   for (auto& entry : sVoicePlans)
+   {
+      entry.second.numSources = 0;
+      entry.second.numRoutes = 0;
+   }
+   const auto collectVoiceRoute = [&](const ParamRef& ref, const Modulation::Source& src, IModulator* modulator) {
+      auto* source = dynamic_cast<VoiceMod::IVoiceModSource*>(modulator);
+      if (source == nullptr || ref.isEnum || ref.isBool)
+         return;
+      GraphNode* dst = FindNodeByIndex(ref.nodeIndex);
+      auto* target = dst != nullptr ? dynamic_cast<VoiceMod::IVoiceModTarget*>(dst->node.get()) : nullptr;
+      if (target == nullptr)
+         return;
+      const int param = target->VoiceParamFor(ref.value);
+      VoiceMod::Spec spec;
+      if (param < 0 || !source->VoiceSpec(spec))
+         return;
+      spec.id = UidForIndex(src.nodeIndex);
+      VoiceMod::Plan& plan = sVoicePlans[dst->uid];
+      int s = 0;
+      while (s < plan.numSources && plan.sources[s].id != spec.id)
+         s++;
+      if (s == plan.numSources)
+      {
+         if (s >= VoiceMod::kMaxSources)
+            return;
+         plan.sources[plan.numSources++] = spec;
+      }
+      if (plan.numRoutes >= VoiceMod::kMaxRoutes)
+         return;
+      VoiceMod::Route& r = plan.routes[plan.numRoutes++];
+      r.source = s;
+      r.param = param;
+      r.lo = src.lo;
+      r.hi = src.hi;
+      r.curve = src.curve;
+      r.smoothMs = src.smoothMs;
+      r.minValue = ref.minValue;
+      r.maxValue = ref.maxValue;
+      r.step = ref.step;
+   };
+
    const double t = Transport::Instance().Seconds();
    // Patch-wide named values, evaluated once before any parameter reads
    // them so every expression in the frame sees the same globals - see
@@ -464,6 +514,7 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
          const float rawV01 = std::clamp(modulator->Value01(), 0.0f, 1.0f);
          const float v01 = smoothDest(ref, src.smoothMs, ApplyModulationCurve(rawV01, src.curve));
          *ref.value = ShapeToParam(ref, src.lo + (src.hi - src.lo) * v01);
+         collectVoiceRoute(ref, src, modulator);
          const MovementLog::Source modSrc = ModulatorLogSource(modNode->node.get(), src.nodeIndex);
          if (modSrc == MovementLog::Source::Modulator)
             gMachineDrivenModNodes.insert(ref.nodeIndex);
@@ -557,6 +608,18 @@ void ApplyModulationAndPalette(int frameId, bool isNormalFrame)
 
    for (auto it = sDestSmooth.begin(); it != sDestSmooth.end();)
       it = it->second.frame == sDestSmoothFrame ? std::next(it) : sDestSmooth.erase(it);
+
+   // Every synth with a plan gets this frame's; one whose routes all went
+   // (unbound, switch off, modulator deleted) gets the empty plan once, so
+   // its voices fall back to the shared value, and is forgotten.
+   for (auto it = sVoicePlans.begin(); it != sVoicePlans.end();)
+   {
+      GraphNode* gn = FindNodeByUid(it->first);
+      auto* target = gn != nullptr ? dynamic_cast<VoiceMod::IVoiceModTarget*>(gn->node.get()) : nullptr;
+      if (target != nullptr)
+         target->PublishVoicePlan(it->second);
+      it = target != nullptr && it->second.numRoutes > 0 ? std::next(it) : sVoicePlans.erase(it);
+   }
 
    // Shift-drag recordings (see GestureRecorder) loop back into their param
    // once their session ends - same precedence as above: a wired modulator

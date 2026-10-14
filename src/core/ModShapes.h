@@ -1,0 +1,160 @@
+#pragma once
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+
+// The shape maths of LFO, Random and MSEG as pure functions, shared by the
+// nodes' Value01() (main thread, one shared value) and VoiceMod's per-voice
+// kernel (audio thread, one instance per voice) so the two cannot drift.
+// Nothing here allocates or touches the transport.
+namespace ModShapes
+{
+   inline float Frac(double v) { return (float)(v - std::floor(v)); }
+
+   inline float Hash01(long long n)
+   {
+      unsigned long long x = (unsigned long long)(n * 2654435761u + 1013904223u);
+      x ^= x >> 33;
+      x *= 0xff51afd7ed558ccdULL;
+      x ^= x >> 33;
+      return (float)((x >> 11) & 0xFFFFFF) / (float)0xFFFFFF;
+   }
+
+   inline uint64_t Mix64(uint64_t x)
+   {
+      x += 0x9E3779B97F4A7C15ULL;
+      x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+      x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+      return x ^ (x >> 31);
+   }
+
+   inline uint64_t SeedSalt(float seed, uint64_t stream)
+   {
+      uint32_t bits = 0;
+      if (seed != 0.0f) // -0 and +0 are the same seed
+         std::memcpy(&bits, &seed, sizeof bits);
+      return Mix64((uint64_t)bits ^ (stream << 32));
+   }
+
+   inline float HashSeeded(long long step, uint64_t salt)
+   {
+      return (float)(Mix64((uint64_t)step ^ salt) >> 40) / (float)0xFFFFFF;
+   }
+
+   inline float Remap(float v01, float low, float high)
+   {
+      const float mapped = low + (high - low) * std::min(1.0f, std::max(0.0f, v01));
+      return std::min(1.0f, std::max(0.0f, mapped));
+   }
+
+   // LFO shape at `pos` = cycles + phase. `salt` is SeedSalt(seed, 1) for
+   // maths >= 1 (S&H only); maths 0 is the unseeded hash of older patches.
+   inline float Lfo(int shape, double pos, int maths, uint64_t salt)
+   {
+      const float t = Frac(pos);
+      switch (shape)
+      {
+         case 0: return 0.5f + 0.5f * std::sin(t * 6.28318530718f); // Sine
+         case 1: return t < 0.5f ? t * 2.0f : 2.0f - t * 2.0f;      // Triangle
+         case 2: return t;                                          // Saw Up
+         case 3: return 1.0f - t;                                   // Saw Down
+         case 4: return t < 0.5f ? 0.0f : 1.0f;                     // Square
+         default:                                                   // S&H
+         {
+            const long long step = (long long)std::floor(pos);
+            return maths >= 1 ? HashSeeded(step, salt) : Hash01(step);
+         }
+      }
+   }
+
+   // Random's glide from one step's value to the next across the tail of
+   // the step, scaled by `smooth` (0 = stepped).
+   inline float RandomGlide(float current, float next, float t, float smooth)
+   {
+      if (!(smooth > 0.0f))
+         return current;
+      const float k = std::min(1.0f, t / std::max(0.0001f, smooth));
+      const float eased = k * k * (3.0f - 2.0f * k);
+      return current + (next - current) * eased;
+   }
+
+   struct MsegPoint
+   {
+      float x = 0.0f;     // 0..1 along the shape
+      float y = 0.0f;     // 0..1
+      float curve = 0.0f; // bend of the segment that leaves this point: -1..1, 0 = straight
+   };
+
+   // Exponential bend: (e^(k t) - 1) / (e^k - 1), k = -6 * curve. Positive curve
+   // moves fast first and settles (the usual attack and decay shape).
+   inline float MsegSegment(float y0, float y1, float curve, float t)
+   {
+      t = std::clamp(t, 0.0f, 1.0f);
+      const float k = -6.0f * std::clamp(curve, -1.0f, 1.0f);
+      const float shaped = std::fabs(k) < 1.0e-3f ? t : std::expm1(k * t) / std::expm1(k);
+      return y0 + (y1 - y0) * shaped;
+   }
+
+   // Shape value at x (0..1) for points sorted by x.
+   inline float MsegEvaluate(const MsegPoint* points, int count, float x)
+   {
+      if (count < 2)
+         return count <= 0 ? 0.0f : points[0].y;
+      x = std::clamp(x, 0.0f, 1.0f);
+      int i = 0;
+      while (i < count - 2 && x >= points[i + 1].x)
+         i++;
+      const MsegPoint& a = points[i];
+      const MsegPoint& b = points[i + 1];
+      const float span = b.x - a.x;
+      if (span <= 1.0e-6f)
+         return x >= b.x ? b.y : a.y; // two points on one x: a step
+      return MsegSegment(a.y, b.y, a.curve, (x - a.x) / span);
+   }
+
+   // The loop as ordered bounds a <= b, clamped to the shape.
+   inline void MsegLoopBounds(float loopStart, float loopEnd, double& a, double& b)
+   {
+      a = std::clamp((double)std::min(loopStart, loopEnd), 0.0, 1.0);
+      b = std::clamp((double)std::max(loopStart, loopEnd), 0.0, 1.0);
+   }
+
+   // Where along the shape a run that started `elapsed` shape-lengths ago
+   // is while its gate is held (or, `patched` false, while nothing gates it).
+   inline float MsegPositionHeld(double elapsed, bool patched, bool loop, float loopStart, float loopEnd)
+   {
+      if (elapsed <= 0.0)
+         return 0.0f;
+      if (!loop)
+         return patched ? (float)std::min(1.0, elapsed) : Frac(elapsed);
+      double a, b;
+      MsegLoopBounds(loopStart, loopEnd, a, b);
+      if (elapsed < b)
+         return (float)elapsed;
+      if (b - a < 1.0e-4)
+         return (float)b; // sustain point
+      return (float)(a + std::fmod(elapsed - a, b - a));
+   }
+
+   // One step of a gated run already under way: `held` keeps it in the
+   // loop (or at the end, loop off); released, it plays out to the end and
+   // rests there. `released` latches.
+   inline double MsegStep(double x, double dx, bool held, bool& released, bool loop, float loopStart, float loopEnd)
+   {
+      if (!released && held)
+      {
+         double a, b;
+         MsegLoopBounds(loopStart, loopEnd, a, b);
+         x += dx;
+         if (!loop)
+            return std::min(1.0, x);
+         if (x >= b)
+            x = b - a < 1.0e-4 ? b : a + std::fmod(x - a, b - a);
+         return x;
+      }
+      released = true;
+      return std::min(1.0, x + dx);
+   }
+}

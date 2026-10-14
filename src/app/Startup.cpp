@@ -557,6 +557,9 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_MSEGTEST") != nullptr)
       return RunMSEGFixture() ? 0 : 1;
 
+   if (getenv("INFINITE_VOICEMODTEST") != nullptr)
+      return RunVoiceModFixture() ? 0 : 1;
+
    if (getenv("INFINITE_SPATIALTEST") != nullptr)
       return RunSpatialFixture() ? 0 : 1;
 
@@ -1438,6 +1441,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
          getenv("INFINITE_CULLDRIVENTEST") != nullptr ||
          getenv("INFINITE_PREDBINDTEST") != nullptr ||
          getenv("INFINITE_MPCMODTEST") != nullptr ||
+         getenv("INFINITE_VOICEMODFRAMETEST") != nullptr ||
          getenv("INFINITE_LOOPERTRIGTEST") != nullptr ||
          getenv("INFINITE_MIDILEARNTEST") != nullptr ||
          getenv("INFINITE_KBCURSORTEST") != nullptr ||
@@ -3946,6 +3950,14 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
             SpawnNode("Range to Range", "Modulators", 60.0f, 500.0f); // gNodes[2]
             SpawnNode("MPC", "Synths", 400.0f, 500.0f);               // gNodes[3]
             gNodes[3].showParams = true;
+         }
+         if (getenv("INFINITE_VOICEMODFRAMETEST") != nullptr)
+         {
+            SpawnNode("LFO", "Modulators", 60.0f, 500.0f);
+            SpawnNode("Analog", "Synths", 400.0f, 500.0f);
+            for (GraphNode& gn : gNodes)
+               if (dynamic_cast<AnalogNode*>(gn.node.get()) != nullptr)
+                  gn.showParams = true; // params must be drawn for them to register
          }
 #ifndef NDEBUG
          if (getenv("INFINITE_PREDBINDTEST") != nullptr)

@@ -590,6 +590,7 @@ int DrawFloating(FrameCtx& fc)
       // address (MpcNode::ParamId / the per-pad mode label), independent of
       // the selected pad.
       FrameTest_MPCMODTEST(frameId, window);
+      FrameTest_VOICEMODFRAMETEST(frameId, window);
 
       FrameTest_LOOPERTRIGTEST(frameId, window);
 

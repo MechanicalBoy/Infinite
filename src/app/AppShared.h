@@ -2874,6 +2874,7 @@ void DrawPredictiveColoringParams(PredictiveColoringNode* n);
 void DrawModCurveParams(ModCurveNode* n);
 void DrawMSEGParams(MSEGNode* n);
 void DrawModRateControls(int* rateMode, float* rateBeats, float* rateHz, int hzOrdinal);
+void DrawPerVoiceCheckbox(bool* voice);
 
 void DrawRemoveBgParams(RemoveBgNode* n);
 
@@ -5912,6 +5913,7 @@ bool RunMpeFixture();
 bool RunShapeResonatorFixture();
 bool RunConvolutionFixture();
 bool RunMSEGFixture();
+bool RunVoiceModFixture();
 bool RunSpatialFixture();
 
 bool RunSpectrumSlideFixture();
