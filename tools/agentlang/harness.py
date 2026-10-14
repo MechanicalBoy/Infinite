@@ -22,6 +22,18 @@ SKILL = os.path.join(REPO, ".claude/skills/infinite-patch-authoring/SKILL.md")
 SPEC = os.path.join(HERE, "SPEC.md")
 APP = check.APP
 
+
+def app_sha():
+    import hashlib
+    return hashlib.sha256(open(APP, "rb").read()).hexdigest()[:12]
+
+
+def gate():
+    """Refuse to run on an app that is not the one the owner pinned (INFINITE_APP_SHA = first 12 hex of sha256)."""
+    want = os.environ.get("INFINITE_APP_SHA")
+    if not want or app_sha() != want:
+        sys.exit(json.dumps({"ok": False, "error": f"app sha {app_sha()} is not the pinned INFINITE_APP_SHA={want}; sync the current build first"}))
+
 NOTES = {
     "B0": "Work only in the current directory. The patch is work.inf (edit it with Write/Read). Run the Infinite CLI as ./inf (for example `./inf --validate work.inf`). Skip layout and Comment nodes. Stop when the patch does what the task says and validates.",
     "B0p": "Work only in the current directory. The patch is work.inf (edit it with Write/Read). Run `./check work.inf` for validate + graph + probe in one call, or the CLI as ./inf. Skip layout and Comment nodes. Stop when the patch does what the task says and validates.",
@@ -104,7 +116,7 @@ def run_one(task, arm, model, cap, turns, claude):
     except ValueError:
         j = {"error": (r.stdout + r.stderr)[-300:]}
     u = j.get("usage") or {}
-    rec = {"task": task["id"], "split": task["split"], "arm": arm, "model": model, "secs": secs,
+    rec = {"task": task["id"], "split": task["split"], "arm": arm, "model": model, "secs": secs, "app_sha": app_sha(),
            "in": u.get("input_tokens"), "cache_create": u.get("cache_creation_input_tokens"),
            "cache_read": u.get("cache_read_input_tokens"), "out": u.get("output_tokens"),
            "turns": j.get("num_turns"), "usd": j.get("total_cost_usd"), "is_error": j.get("is_error"),
@@ -125,6 +137,8 @@ def main():
     ap.add_argument("--claude", default=shutil.which("claude") or "claude")
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
+    if not a.dry:
+        gate()
     T = oracle.load_tasks()
     ids = a.tasks.split(",") if a.tasks else [i for i, t in T.items() if a.split in ("all", t["split"])]
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
