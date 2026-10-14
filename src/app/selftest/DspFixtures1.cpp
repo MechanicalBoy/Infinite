@@ -1565,6 +1565,50 @@ bool RunDelayFixture()
       all &= alternateOk;
    }
 
+   // 4) Tape mode (2.20): with diffusion all the way up the smeared repeat
+   //    still lands on the delay time (its tap reads early by the chain's
+   //    length), and saturation takes level off each pass.
+   {
+      Transport::Instance().SetTempo(120.0f);
+      const double beatSeconds = MusicTime::BeatsFor(MusicTime::kEighth) * 60.0 / 120.0;
+      const int repeatSamples = (int)std::lround(beatSeconds * sampleRate);
+      auto Render = [&](float diffusion, float saturation, int frame) {
+         auto node = MakeDelayNode(false, sampleRate);
+         *node->ParamPtr("sync") = 1.0f;
+         *node->ParamPtr("rateDiv") = (float)MusicTime::kEighth;
+         *node->ParamPtr("feedback") = 60.0f;
+         *node->ParamPtr("analog") = 1.0f;
+         *node->ParamPtr("wow") = 0.0f;
+         *node->ParamPtr("flutter") = 0.0f;
+         *node->ParamPtr("diffusion") = diffusion;
+         *node->ParamPtr("saturation") = saturation;
+         node->CookIfNeeded(frame);
+         std::vector<std::vector<float>> out;
+         RunSamples(*node, repeatSamples * 3 + 32, 1, [](int i, int) { return i < 48 ? 0.5f : 0.0f; }, &out);
+         return out[0];
+      };
+      auto Energy = [](const std::vector<float>& x, int from, int to) {
+         double e = 0.0;
+         for (int i = std::max(0, from); i < std::min(to, (int)x.size()); i++)
+            e += (double)x[i] * x[i];
+         return e;
+      };
+      const int ms = (int)(sampleRate * 0.001);
+      const std::vector<float> diffused = Render(1.0f, 0.0f, 5);
+      const double onTime = Energy(diffused, repeatSamples * 2 - 5 * ms, repeatSamples * 2 + 40 * ms);
+      const double between = Energy(diffused, repeatSamples + 50 * ms, repeatSamples * 3 - 50 * ms);
+      const float onTimeShare = between > 0.0 ? (float)(onTime / between) : 0.0f;
+      const std::vector<float> clean = Render(0.0f, 0.0f, 6);
+      const std::vector<float> hot = Render(0.0f, 1.0f, 7);
+      const double r2Clean = Energy(clean, repeatSamples * 2 - 5 * ms, repeatSamples * 2 + 10 * ms);
+      const double r2Hot = Energy(hot, repeatSamples * 2 - 5 * ms, repeatSamples * 2 + 10 * ms);
+      const float satDropDb = (float)(10.0 * std::log10((r2Clean + 1e-20) / (r2Hot + 1e-20)));
+      const bool tapeOk = onTimeShare > 0.8f && satDropDb > 1.0f && satDropDb < 12.0f;
+      printf("DSPTEST delay tape: diffused repeat %.0f%% on time, saturation takes %.1f dB off repeat 2  %s\n",
+             onTimeShare * 100.0f, satDropDb, tapeOk ? "OK" : "FAIL");
+      all &= tapeOk;
+   }
+
    Transport::Instance().SetTempo(120.0f); // restore default for any fixture that runs after this one
    return all;
 }

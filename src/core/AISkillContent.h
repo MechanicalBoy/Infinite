@@ -699,7 +699,7 @@ Do not edit between the markers; run the script. Use the `node` line exactly as 
 first, then the type name), then `--describe "<type>"` for parameters.
 
 <!-- generated:begin -->
-323 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
+324 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
 
 
 ### 3D
@@ -803,7 +803,7 @@ R"AISKILL(| `Normals` | geo:geometry | out:geometry | 67 | bypass |
 | `Chorus` | audio:audio | out:audio | 10 | bypass |
 | `Convolution Reverb` | audio:audio | out:audio | 8 | bypass |
 | `Cycle Shaper` | audio:audio | out:audio | 5 | bypass |
-| `Delay` | audio:audio | out:audio | 10 | bypass |
+| `Delay` | audio:audio | out:audio | 14 | bypass |
 | `Drive` | audio:audio | out:audio | 6 | bypass |
 | `Dynamics` | audio:audio, sidechain:audio | out:audio | 10 |  |
 | `EQ` | audio:audio | out:audio | 28 | bypass |
@@ -819,6 +819,7 @@ R"AISKILL(| `Normals` | geo:geometry | out:geometry | 67 | bypass |
 | `Resonator Bank` | audio:audio | out:audio | 9 | bypass |
 | `Reverb` | audio:audio | out:audio | 7 | bypass |
 | `Ring Mod` | audio:audio | out:audio | 4 | bypass |
+| `Saturator` | audio:audio | out:audio | 10 | bypass |
 | `Shape Resonator` | audio:audio, shape:geometry | out:audio | 6 |  |
 | `Spec Blur` | audio:audio | out:audio | 6 | bypass |
 | `Spectrum Slide` | audio:audio, to:audio | out:audio | 2 |  |
@@ -953,12 +954,12 @@ R"AISKILL(| `Normals` | geo:geometry | out:geometry | 67 | bypass |
 | `Smoothing` | in:modulator | out:modulator | 7 | bypass |
 | `Velocity to CV` | notes:note | out:modulator | 2 | bypass |
 | `Vibrato` | none | out:modulator | 1 | bypass |
-| `Voice Spread` | none | out:modulator | 4 | bypass |
+)AISKILL"
+R"AISKILL(| `Voice Spread` | none | out:modulator | 4 | bypass |
 
 ### Notes
 
-)AISKILL"
-R"AISKILL(| Type | Inputs | Outputs | p | Notes |
+| Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
 | `Arpeggiator` | notes:note | out:note | 9 | bypass |
 | `Bouncing Balls` | none | out:note | 9 | bypass |
@@ -1078,7 +1079,7 @@ R"AISKILL(| Type | Inputs | Outputs | p | Notes |
 | `Output` | in:image, audio:audio | out:image | 9 |  |
 | `Projection` | in:image | out:image | 135 | bypass |
 | `Spatial Mixer` | input:audio, input_2:audio, input_3:audio, input_4:audio, input_5:audio, input_6:audio, input_7:audio, input_8:audio, input_9:audio, input_10:audio, input_11:audio, input_12:audio | out:image | 107 |  |
-| `Splitter` | audio:audio | out:audio | 0 | bypass |
+| `Splitter` | audio:audio | out:audio | 4 | bypass |
 | `Syphon In` | none | out:image | 3 | hardware: refused headless, bypass |
 | `Syphon Out` | in:image | out:image | 1 | bypass |
 <!-- generated:end -->

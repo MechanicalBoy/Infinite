@@ -1321,10 +1321,10 @@ namespace app
       if (sync)
          snprintf(stat, sizeof(stat), "%s - %.0f%% fb - %.0f%% wet%s",
                   MusicTime::RateDivisionName((int)(n->Param("rateDiv") + 0.5f)), n->Param("feedback"),
-                  n->mix * 100.0f, analog ? " - analog" : "");
+                  n->mix * 100.0f, analog ? " - tape" : "");
       else
          snprintf(stat, sizeof(stat), "%.0f ms - %.0f%% fb - %.0f%% wet%s", n->Param("timeMs"), n->Param("feedback"),
-                  n->mix * 100.0f, analog ? " - analog" : "");
+                  n->mix * 100.0f, analog ? " - tape" : "");
 
       BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
       DrawDelayVisualizer(n);
@@ -1353,6 +1353,22 @@ namespace app
          row.Knob("tone", n->ParamPtr("tone"), -1.0f, 1.0f, "%.2f", kKnobLarge);
          row.Knob("feedback", n->ParamPtr("feedback"), 0.0f, 110.0f, "%.0f%%", kKnobLarge);
          row.End();
+      }
+      {
+         // Tape (2.20): the loop's wow, flutter, saturation and diffusion,
+         // greyed while tape is off rather than dropped (P5), so mix stays
+         // bottom-right (P4).
+         const bool grey = !analog && !gParamRegisterOnly;
+         if (grey)
+            ImGui::BeginDisabled();
+         AudioKnobRow row(4);
+         row.Knob("wow", n->ParamPtr("wow"), 0.0f, 1.0f, "%.2f");
+         row.Knob("flutter", n->ParamPtr("flutter"), 0.0f, 1.0f, "%.2f");
+         row.Knob("saturation", n->ParamPtr("saturation"), 0.0f, 1.0f, "%.2f");
+         row.Knob("diffusion", n->ParamPtr("diffusion"), 0.0f, 1.0f, "%.2f");
+         row.End();
+         if (grey)
+            ImGui::EndDisabled();
       }
       {
          AudioKnobRow row(3);
@@ -1387,7 +1403,7 @@ namespace app
          }
          bool analogBool = analog;
          bool analogBoolUserChanged = false;
-         if (row.Checkbox("analog##delayAnalog", &analogBool, &analogBoolUserChanged))
+         if (row.Checkbox("tape##delayAnalog", &analogBool, &analogBoolUserChanged))
          {
             if (analogBoolUserChanged) // a cable flip writes the value but never checkpoints
                PushUndoCheckpoint();

@@ -337,6 +337,13 @@ namespace
          def.params.push_back({ "pan", -1.0f, 1.0f, 0.0f, false, kShortPathPrereq });
          def.params.push_back({ "ducking", 0.0f, 1.0f, 0.0f, false, kShortPathPrereq });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f, false, kShortPathPrereq });
+         // Tape mode (2.20): only heard with `analog` on, so they gate on it
+         // as well as on the short free-ms path.
+         static const std::vector<EffectParamPrereq> kTapePrereq = { { "sync", 0.0f }, { "analog", 1.0f } };
+         def.params.push_back({ "wow", 0.0f, 1.0f, 0.5f, false, kTapePrereq });
+         def.params.push_back({ "flutter", 0.0f, 1.0f, 0.2f, false, kTapePrereq });
+         def.params.push_back({ "saturation", 0.0f, 1.0f, 0.0f, false, kTapePrereq });
+         def.params.push_back({ "diffusion", 0.0f, 1.0f, 0.0f, false, kTapePrereq });
          // mix is AudioEffectNode's universal field (defaultMix above), not
          // a table row.
 
