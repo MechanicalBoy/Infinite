@@ -422,6 +422,13 @@ bool RunAliasTest()
       { "Wavetable PD 50% (op x1) 1.75 kHz", 597, warp(SM::kWarpPD, 0.5f, 1.0f), -66.0 },
       { "Wavetable FM 30% (op x1) 1.75 kHz", 597, warp(SM::kWarpFM, 0.3f, 1.0f), -108.0 },
       { "Wavetable rectify 50% 1.75 kHz", 597, warp(SM::kWarpRectify, 0.5f), -80.0 },
+      // v0.6 2.26: the PhaseShape warps shared with Field. Pinch's read has
+      // matching slopes but opposite curvature across the wrap, which no
+      // BLAMP corrects - it is the weakest of the gated warps.
+      { "Wavetable formant x2.7 1.75 kHz", 597, warp(SM::kWarpFormant, 1.0f, 2.7f), -58.0 },
+      { "Wavetable formant x2.7 220 Hz", 75, warp(SM::kWarpFormant, 1.0f, 2.7f), -86.0 },
+      { "Wavetable pinch 100% 1.75 kHz", 597, warp(SM::kWarpPinch, 1.0f), -46.0 },
+      { "Wavetable skew 70% 1.75 kHz", 597, warp(SM::kWarpSkew, 0.7f), -63.0 },
       // A bright table: "Multi Saw" (24), so read-speed aliasing shows too.
       { "Wavetable[saw] plain 1.75 kHz", 597, [](WavetableEngine& e) { e.table = 24; }, -90.0 },
       { "Wavetable[saw] sync x2.7 1.75 kHz", 597,

@@ -13,11 +13,14 @@
 //   mirror(p, a)   a  0..1   fold: at 1 the cycle plays forward then back
 //   skew(p, a)     a -1..1   moves the half-way point (phase distortion)
 //   formant(p, r)  r  1..64  plays the cycle r times faster, then holds its end
-//   sync(p, r)     r  1..64  plays the cycle r times per period (hard sync)
+//   sync(p, r)     r  0.25..64  plays the cycle r times per period (hard sync;
+//                  below 1 it plays the first r of the cycle and restarts)
 //   quantize(p, n) n  1..256 snaps the phase to n steps
 //
 // Every shape keeps 0 -> 0 and leaves the phase in [0, 1]. Amount 0 (ratio 1
 // for formant/sync) is the identity, so a shape at rest costs no timbre.
+// Field's builtins and Wavetable's warps (WavetableSynthCore::WarpReadPhase)
+// both call Apply.
 namespace PhaseShape
 {
    enum class Kind
@@ -101,7 +104,7 @@ namespace PhaseShape
          }
          case Kind::Sync:
          {
-            const T q = f * Clamp(a, T(1), T(64));
+            const T q = f * Clamp(a, T(0.25), T(64));
             return q - std::floor(q);
          }
          case Kind::Quantize:

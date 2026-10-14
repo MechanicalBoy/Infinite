@@ -11,6 +11,7 @@
 #include "audio/AudioVoice.h"
 #include "audio/DspMath.h"
 #include "audio/MeterRing.h"
+#include "audio/PhaseShape.h"
 #include "audio/NoteEventQueue.h"
 #include "audio/ParamMailbox.h"
 #include "audio/SynthModes.h"
@@ -108,6 +109,19 @@ namespace WavetableSynthCore
       return p + w * p * (1.0 - p);
    }
 
+   // Sync's and formant's ratio, swept in from 1 by the warp amount.
+   inline double WarpBlendedRatio(float amount, float ratio)
+   {
+      return 1.0 + (double)amount * ((double)ratio - 1.0);
+   }
+
+   // Quantize's step count: 64 at the bottom of the amount, 2 at the top.
+   inline int QuantizeSteps(float amount)
+   {
+      const double inv = 1.0 - (double)amount;
+      return 2 + (int)(inv * inv * 62.0);
+   }
+
    // ------------------------------------------------------- warp, phase side
    // The part of a warp that acts before the table read. `mod` is the other
    // engine's previous sample (or the internal operator standing in for it -
@@ -139,36 +153,38 @@ namespace WavetableSynthCore
             return BendPhase(p, (double)(amount * mod));
 
          case SynthModes::kWarpSync:
-         {
             // Hard sync: the read phase runs at `ratio` times the voice's own
             // and wraps early, so the cycle restarts mid-waveform. `amount`
             // blends the ratio in from 1, so the knob sweeps sync in from
             // nothing rather than jumping to the full interval.
-            const double r = 1.0 + (double)amount * ((double)ratio - 1.0);
-            const double sp = p * (r > 0.01 ? r : 0.01);
-            return sp - floor(sp);
-         }
+            return PhaseShape::Apply(PhaseShape::Kind::Sync, p, WarpBlendedRatio(amount, ratio));
+
+         case SynthModes::kWarpFormant:
+            // The cycle plays `ratio` times faster and holds its end for the
+            // rest of the period: the table's spectrum moves up by the ratio
+            // while the pitch stays (Vital/Serum "formant"). Blended like sync.
+            return PhaseShape::Apply(PhaseShape::Kind::Formant, p, WarpBlendedRatio(amount, ratio));
 
          case SynthModes::kWarpBendPlus:  return BendPhase(p, (double)amount);
          case SynthModes::kWarpBendMinus: return BendPhase(p, -(double)amount);
 
          case SynthModes::kWarpAsymPlus:
-            // Power-law skew. exp(+/-1.6) at full depth is roughly a 5:1
-            // stretch of one half of the cycle against the other - past that
-            // the read spends so long on one sample that the result is a pulse
-            // rather than a warped table.
-            return pow(p, exp(-1.6 * (double)amount));
+            // Power-law skew, PhaseShape's bend: p^(4^-a), a 4:1 stretch of
+            // one half of the cycle against the other at full depth.
+            return PhaseShape::Apply(PhaseShape::Kind::Bend, p, (double)amount);
          case SynthModes::kWarpAsymMinus:
-            return pow(p, exp(1.6 * (double)amount));
+            return PhaseShape::Apply(PhaseShape::Kind::Bend, p, -(double)amount);
 
          case SynthModes::kWarpMirror:
-         {
             // Fold the cycle back on itself: the second half replays the first
             // in reverse, which halves the period of the fundamental and
             // leaves a waveform symmetric about its midpoint.
-            const double folded = 1.0 - fabs(2.0 * p - 1.0);
-            return p + (folded - p) * (double)amount;
-         }
+            return PhaseShape::Apply(PhaseShape::Kind::Mirror, p, (double)amount);
+
+         case SynthModes::kWarpPinch:
+            return PhaseShape::Apply(PhaseShape::Kind::Pinch, p, (double)amount);
+         case SynthModes::kWarpSkew:
+            return PhaseShape::Apply(PhaseShape::Kind::Skew, p, (double)amount);
 
          case SynthModes::kWarpQuantize:
          {
@@ -176,9 +192,7 @@ namespace WavetableSynthCore
             // the steps, the more high harmonics the edges add. 64 steps at
             // the bottom of the range down to 2 at the top, blended by the
             // same amount so the effect fades in continuously.
-            const double inv = 1.0 - (double)amount;
-            const int steps = 2 + (int)(inv * inv * 62.0);
-            const double q = floor(p * (double)steps) / (double)steps;
+            const double q = PhaseShape::Apply(PhaseShape::Kind::Quantize, p, (double)QuantizeSteps(amount));
             return p + (q - p) * (double)amount;
          }
 
@@ -254,6 +268,9 @@ namespace WavetableSynthCore
          case SynthModes::kWarpAsymMinus:
          case SynthModes::kWarpMirror:
          case SynthModes::kWarpQuantize:
+         case SynthModes::kWarpFormant:
+         case SynthModes::kWarpPinch:
+         case SynthModes::kWarpSkew:
             return true;
          default:
             return false;
@@ -281,7 +298,7 @@ namespace WavetableSynthCore
 
    // The base phases in (0, 1] at which a warp has a value or slope
    // discontinuity, in increasing order; returns how many.
-   inline int WarpBreakpoints(int mode, float amount, double* out, int maxOut)
+   inline int WarpBreakpoints(int mode, float amount, float ratio, double* out, int maxOut)
    {
       // FM's read is continuous across the wrap. The power-law skews are
       // continuous in value too, but asym+'s p^e (e < 1) has an unbounded
@@ -298,10 +315,18 @@ namespace WavetableSynthCore
       int n = 0;
       if (mode == SynthModes::kWarpMirror)
          out[n++] = 0.5;
+      if (mode == SynthModes::kWarpFormant)
+      {
+         // The read reaches the cycle's end at 1/r and holds: a corner.
+         const double r = WarpBlendedRatio(amount, ratio);
+         if (r > 1.0 + 1.0e-6)
+            out[n++] = 1.0 / std::min(r, 64.0);
+      }
+      if (mode == SynthModes::kWarpSkew)
+         out[n++] = 0.5 + 0.49 * (double)std::min(amount, 1.0f); // the moved half-way point
       if (mode == SynthModes::kWarpQuantize)
       {
-         const double inv = 1.0 - (double)amount;
-         const int steps = 2 + (int)(inv * inv * 62.0);
+         const int steps = QuantizeSteps(amount);
          for (int k = 1; k < steps && n < maxOut - 1; k++)
             out[n++] = (double)k / (double)steps;
       }
@@ -972,7 +997,7 @@ private:
       const bool needHalf = WarpNeedsHalfCycle(eb.warpMode) && se.warpAmount > 0.0f;
       const bool phaseWarp = WarpIsPhaseDomain(eb.warpMode) && se.warpAmount > 0.0f;
       double breaks[72];
-      const int numBreaks = WarpBreakpoints(eb.warpMode, se.warpAmount, breaks, 72);
+      const int numBreaks = WarpBreakpoints(eb.warpMode, se.warpAmount, se.warpRatio, breaks, 72);
 
       float sumL = 0.0f, sumR = 0.0f, sumMono = 0.0f;
       for (int u = 0; u < eb.unison; u++)

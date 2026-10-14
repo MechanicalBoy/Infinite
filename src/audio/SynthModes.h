@@ -56,6 +56,9 @@ namespace SynthModes
       kWarpRectify,   // crossfade toward the rectified sample
       kWarpOddOnly,   // keep the odd harmonics
       kWarpEvenOnly,  // keep the even harmonics
+      kWarpFormant,   // play the cycle `ratio` times faster, then hold (v0.6 2.26)
+      kWarpPinch,     // S-curve about the middle: linger at the centre (2.26)
+      kWarpSkew,      // move the half-way point, CZ phase distortion (2.26)
       kNumWarpModes
    };
 
@@ -68,12 +71,14 @@ namespace SynthModes
       static const char* const kNamesA[kNumWarpModes] = {
          "off",     "fm (b)",   "am (b)",   "rm (b)",   "pd (b)",   "hard sync",
          "bend +",  "bend -",   "asym +",   "asym -",   "flip",     "mirror",
-         "quantize","rectify",  "odd only", "even only"
+         "quantize","rectify",  "odd only", "even only",
+         "formant", "pinch",    "skew"
       };
       static const char* const kNamesB[kNumWarpModes] = {
          "off",     "fm (a)",   "am (a)",   "rm (a)",   "pd (a)",   "hard sync",
          "bend +",  "bend -",   "asym +",   "asym -",   "flip",     "mirror",
-         "quantize","rectify",  "odd only", "even only"
+         "quantize","rectify",  "odd only", "even only",
+         "formant", "pinch",    "skew"
       };
       return engine == 1 ? kNamesB : kNamesA;
    }
@@ -86,8 +91,9 @@ namespace SynthModes
 
    // True for the four modes that read the other engine (and therefore fall
    // back to the internal operator when it is off). These are also the only
-   // modes where `warpRatio` means anything besides sync's own ratio, which is
-   // why the UI greys the ratio slider outside this set plus hard sync.
+   // modes where `warpRatio` means anything besides sync's and formant's own
+   // ratio, which is why the UI greys the ratio slider outside this set plus
+   // those two.
    inline bool WarpIsCrossModulated(int mode)
    {
       return mode == kWarpFM || mode == kWarpAM || mode == kWarpRM || mode == kWarpPD;
@@ -95,7 +101,7 @@ namespace SynthModes
 
    inline bool WarpUsesRatio(int mode)
    {
-      return WarpIsCrossModulated(mode) || mode == kWarpSync;
+      return WarpIsCrossModulated(mode) || mode == kWarpSync || mode == kWarpFormant;
    }
 
    // ---------------------------------------------------------------- filter
