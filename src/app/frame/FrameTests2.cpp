@@ -1,5 +1,6 @@
 // Per-frame self-test blocks moved verbatim out of the main loop in main.cpp.
 #include "app/AppShared.h"
+#include "audio/PhaseShape.h"
 
 namespace app
 {
@@ -2178,6 +2179,24 @@ void FrameTest_FIELDPIXELTEST(int frameId, GLFWwindow* window)
                      r = d;
                      g = 1.0 - d;
                      b = d * d;
+                  }
+               },
+               // 9. Phase shaping (v0.6 2.23)
+               {
+                  "col = vec3(bend(uv.x, 0.5), skew(uv.y, -0.4), mirror(uv.x, 0.7));",
+                  [](double u, double v, double& r, double& g, double& b) {
+                     r = PhaseShape::Apply(PhaseShape::Kind::Bend, u, 0.5);
+                     g = PhaseShape::Apply(PhaseShape::Kind::Skew, v, -0.4);
+                     b = PhaseShape::Apply(PhaseShape::Kind::Mirror, u, 0.7);
+                  }
+               },
+               // 10. Phase shaping, vector form
+               {
+                  "col = vec3(pinch(uv, vec2(0.6, -0.3)), formant(uv.x, 2.5));",
+                  [](double u, double v, double& r, double& g, double& b) {
+                     r = PhaseShape::Apply(PhaseShape::Kind::Pinch, u, 0.6);
+                     g = PhaseShape::Apply(PhaseShape::Kind::Pinch, v, -0.3);
+                     b = PhaseShape::Apply(PhaseShape::Kind::Formant, u, 2.5);
                   }
                }
             };

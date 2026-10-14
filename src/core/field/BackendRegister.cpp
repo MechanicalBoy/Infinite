@@ -3,6 +3,7 @@
 #include "FieldAst.h"
 #include "FieldLex.h"
 #include "FieldParse.h"
+#include "../../audio/PhaseShape.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -142,6 +143,20 @@ namespace Field
          if (c == "min") return binary(SampleOp::Min);
          if (c == "max") return binary(SampleOp::Max);
          if (c == "pow") return binary(SampleOp::Pow);
+         PhaseShape::Kind shape;
+         if (PhaseShape::FieldBuiltin(c.c_str(), shape))
+         {
+            if (call.args.size() != 2)
+            {
+               ctx.Fail("'" + c + "' takes exactly 2 arguments (phase, amount)", call.span);
+               return 0;
+            }
+            uint8_t a = arg(0);
+            uint8_t b = arg(1);
+            uint8_t dst = ctx.AllocReg(call.span);
+            ctx.Emit(SampleOp::PhaseShape, dst, a, b, 0, (float)(int)shape, call.span);
+            return dst;
+         }
          if (c == "clamp")
          {
             if (call.args.size() != 3)

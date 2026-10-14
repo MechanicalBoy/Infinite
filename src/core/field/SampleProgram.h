@@ -77,6 +77,7 @@ namespace Field
       Select,      // dst = (a != 0) ? b : c  (branchless if/else merge - see BackendRegister)
       Sin, Cos, Tan, Sqrt, Abs, Floor, Ceil, Exp, Log,
       Min, Max, Clamp,
+      PhaseShape,  // dst = phase shape imm (PhaseShape::Kind) of phase a by amount b
       Count
    };
 

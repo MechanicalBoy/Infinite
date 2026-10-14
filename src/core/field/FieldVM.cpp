@@ -1,5 +1,6 @@
 #include "FieldVM.h"
 #include "FieldRandom.h"
+#include "../../audio/PhaseShape.h"
 
 #include <algorithm>
 #include <cmath>
@@ -77,6 +78,9 @@ namespace Field
             if (numArgs >= 2) return args[1] < args[0] ? 0.0 : 1.0;
             return 0.0;
          }
+         PhaseShape::Kind shape;
+         if (PhaseShape::FieldBuiltin(name.c_str(), shape))
+            return numArgs >= 2 ? PhaseShape::Apply(shape, args[0], args[1]) : 0.0;
          if (name == "smoothstep")
          {
             if (numArgs >= 3)

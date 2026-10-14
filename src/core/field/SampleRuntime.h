@@ -3,6 +3,7 @@
 #include "SampleProgram.h"
 #include "../../audio/DspMath.h"
 #include "../../audio/MusicTime.h"
+#include "../../audio/PhaseShape.h"
 
 #include <cassert>
 #include <cmath>
@@ -245,6 +246,9 @@ namespace Field
             case SampleOp::Min: regs[ins.dst] = fminf(regs[ins.a], regs[ins.b]); break;
             case SampleOp::Max: regs[ins.dst] = fmaxf(regs[ins.a], regs[ins.b]); break;
             case SampleOp::Clamp: regs[ins.dst] = fminf(fmaxf(regs[ins.a], regs[ins.b]), regs[ins.c]); break;
+            case SampleOp::PhaseShape:
+               regs[ins.dst] = PhaseShape::Apply((PhaseShape::Kind)(int)ins.imm, regs[ins.a], regs[ins.b]);
+               break;
             default:
                assert(false && "SampleRuntime: unhandled opcode");
                regs[ins.dst] = 0.0f;

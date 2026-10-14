@@ -1,4 +1,5 @@
 #include "FieldGraphKernel.h"
+#include "../../audio/PhaseShape.h"
 
 #include <algorithm>
 #include <cmath>
@@ -322,6 +323,16 @@ namespace Field
                return true;
             }
 
+            PhaseShape::Kind shape;
+            if (PhaseShape::FieldBuiltin(fn.c_str(), shape))
+            {
+               out.laneCount = std::max(args[0].laneCount, args[1].laneCount);
+               for (int i = 0; i < out.laneCount; ++i)
+                  out.lanes[i] = PhaseShape::Apply(shape,
+                                                   args[0].lanes[args[0].laneCount == 1 ? 0 : i],
+                                                   args[1].lanes[args[1].laneCount == 1 ? 0 : i]);
+               return true;
+            }
             if (fn == "min" || fn == "max" || fn == "mod" || fn == "fmod" || fn == "pow" || fn == "step")
             {
                out.laneCount = std::max(args[0].laneCount, args[1].laneCount);

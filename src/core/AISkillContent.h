@@ -130,6 +130,7 @@ P += vec2(1, 0)      # vec2 into vec3 — ERROR, no implicit fill
 | Trig | `sin cos tan asin acos atan atan2` |
 | Math utilities | `abs floor ceil fract clamp lerp` (`lerp(a, b, t)`) |
 | Advanced math | `smoothstep pow sqrt exp log min max` |
+| Phase shaping | `bend pinch mirror skew formant` take `(phase, amount)` and return a new 0..1 phase: `out = sin(skew(phase, 0.6) * 6.283185)` |
 | Vector math | `length normalize dot cross reflect` |
 | Randomness | `rand(t, seed)`, `noise(t, seed)` — pure, deterministic functions of time and seed, not stateful |
 
@@ -516,6 +517,7 @@ Comparisons and logic yield `1` or `0` and compose directly with arithmetic —
 | `min max clamp lerp mix` | `lerp(a, b, t)` / `mix(a, b, t)` — linear interpolation |
 | `step(edge, x)` | 0 below `edge`, 1 at/above it |
 | `smoothstep(e0, e1, x)` | smooth Hermite ramp from `e0` to `e1` |
+| `bend pinch mirror skew formant` `(phase, amount)` | phase shaping: take a 0..1 phase (wrapped) and return a new one, so `sin(bend(p, 0.5) * 2 * pi)` reshapes a sine. `bend`, `pinch`, `skew` take -1..1, `mirror` 0..1, `formant` a ratio 1..64; amount 0 (ratio 1) leaves the phase alone |
 | `if(cond, a, b)` | evaluates **both** branches (no short-circuit) and returns one — fine since the language has no side effects |
 | `rand(min, max, speed)` | smooth continuous random wander between `min` and `max` at the given speed — organic, not stepped |
 | `noise(min, max, speed)` | same family as `rand`; use when the preset library's "noise" flavor is wanted over "rand"'s |

@@ -2,6 +2,7 @@
 #include "FieldSwizzle.h"
 #include "FieldCycles.h"
 #include "ExprGlobals.h"
+#include "../../audio/PhaseShape.h"
 
 #include <cctype>
 #include <cmath>
@@ -67,6 +68,12 @@ namespace Field
          return 1;
       }
 
+      bool IsPhaseShape(const std::string& name)
+      {
+         PhaseShape::Kind k;
+         return PhaseShape::FieldBuiltin(name.c_str(), k);
+      }
+
       bool ValidateFunction(const std::string& name, size_t argCount, FieldError& error, SourceSpan span)
       {
          auto checkExact = [&](size_t n) -> bool {
@@ -89,7 +96,7 @@ namespace Field
          }
          if (name == "min" || name == "max" || name == "mod" || name == "fmod" ||
              name == "pow" || name == "step" || name == "distance" || name == "dot" ||
-             name == "cross" || name == "atan2")
+             name == "cross" || name == "atan2" || IsPhaseShape(name))
          {
             return checkExact(2);
          }
@@ -1060,7 +1067,7 @@ namespace Field
                else if (call->callee == "min" || call->callee == "max" ||
                         call->callee == "mod" || call->callee == "fmod" ||
                         call->callee == "pow" || call->callee == "step" ||
-                        call->callee == "atan2")
+                        call->callee == "atan2" || IsPhaseShape(call->callee))
                {
                   std::string rankErr;
                   if (!JoinRank(argIRs[0]->type, argIRs[1]->type, fnResultType, rankErr))

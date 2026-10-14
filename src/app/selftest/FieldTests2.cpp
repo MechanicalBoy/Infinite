@@ -1,5 +1,7 @@
 // Field self-tests, part 2 (moved verbatim from main.cpp).
 #include "app/AppShared.h"
+#include "audio/PhaseShape.h"
+#include "core/field/SampleRuntime.h"
 
 namespace app
 {
@@ -2735,6 +2737,56 @@ int RunFieldSampleTest()
 
       if (secOk) printf("SECTION 16 (noteOn/notePitch/noteVel Note History): OK\n");
       else { printf("SECTION 16 (noteOn/notePitch/noteVel Note History): FAIL\n"); allOk = false; }
+   }
+
+   // ------------------------------------------------------------
+   // SECTION 17: phase shaping builtins (v0.6 2.23) - the sample opcode
+   // returns what the shared PhaseShape math returns
+   // ------------------------------------------------------------
+   {
+      bool secOk = true;
+      struct Case { const char* fn; PhaseShape::Kind kind; float p; float a; };
+      const Case cases[] = {
+         { "bend", PhaseShape::Kind::Bend, 0.25f, 0.5f },
+         { "pinch", PhaseShape::Kind::Pinch, 0.75f, 0.5f },
+         { "mirror", PhaseShape::Kind::Mirror, 0.75f, 1.0f },
+         { "skew", PhaseShape::Kind::Skew, 1.25f, 0.5f },
+         { "formant", PhaseShape::Kind::Formant, 0.25f, 3.0f },
+      };
+      for (const Case& c : cases)
+      {
+         Field::SampleProgram prog;
+         Field::FieldError err;
+         const std::string code = std::string("out = ") + c.fn + "(in, " + std::to_string(c.a) + ")\n";
+         if (!Field::CompileSampleProgram(code, nullptr, prog, err))
+         {
+            printf("SECTION 17: FAIL - %s did not compile: %s\n", c.fn, err.message.c_str());
+            secOk = false;
+            continue;
+         }
+         float regs[Field::kSampleMaxRegs] = {};
+         Field::SampleRuntimeInput in;
+         in.in = c.p;
+         in.sr = (float)kSr;
+         const float got = Field::RunSampleProgram(prog, in, regs);
+         const float want = PhaseShape::Apply(c.kind, c.p, c.a);
+         if (std::fabs(got - want) > 1e-6f)
+         {
+            printf("SECTION 17: FAIL - %s(%g, %g) = %g, expected %g\n", c.fn, c.p, c.a, got, want);
+            secOk = false;
+         }
+      }
+      Field::SampleProgram bad;
+      Field::FieldError badErr;
+      if (Field::CompileSampleProgram("out = bend(in)\n", nullptr, bad, badErr) ||
+          badErr.message.find("2 arguments") == std::string::npos)
+      {
+         printf("SECTION 17: FAIL - bend(in) should be refused for arity, got '%s'\n", badErr.message.c_str());
+         secOk = false;
+      }
+
+      if (secOk) printf("SECTION 17 (Phase Shaping Builtins): OK\n");
+      else { printf("SECTION 17 (Phase Shaping Builtins): FAIL\n"); allOk = false; }
    }
 
    printf("INFINITE_FIELDSAMPLETEST: %s\n", allOk ? "OK" : "FAIL");
