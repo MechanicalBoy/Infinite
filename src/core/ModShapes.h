@@ -80,6 +80,43 @@ namespace ModShapes
       return current + (next - current) * eased;
    }
 
+   // Voice Spread: where the `index`th note of `count` sits, 0..1. Linear
+   // steps evenly; golden ratio scatters (each new note lands in the
+   // largest gap); primes steps unevenly, so no two spacings repeat;
+   // alternate goes out from the centre, one side then the other.
+   enum SpreadMode
+   {
+      kSpreadLinear = 0,
+      kSpreadGolden,
+      kSpreadPrimes,
+      kSpreadAlternate
+   };
+   constexpr int kSpreadMaxCount = 16;
+
+   inline float Spread(int mode, int index, int count)
+   {
+      const int n = std::clamp(count, 1, kSpreadMaxCount);
+      if (n == 1)
+         return 0.5f;
+      const int k = ((index % n) + n) % n;
+      switch (mode)
+      {
+         case kSpreadGolden: return Frac((double)k * 0.6180339887498949);
+         case kSpreadPrimes:
+         {
+            static constexpr int kPrimes[kSpreadMaxCount] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53 };
+            return (float)(kPrimes[k] - 2) / (float)(kPrimes[n - 1] - 2);
+         }
+         case kSpreadAlternate:
+         {
+            const int pairs = (n + 1) / 2;
+            const float offset = 0.5f * (float)(k / 2 + 1) / (float)pairs;
+            return (k % 2 == 0) ? 0.5f - offset : 0.5f + offset;
+         }
+         default: return (float)k / (float)(n - 1);
+      }
+   }
+
    struct MsegPoint
    {
       float x = 0.0f;     // 0..1 along the shape

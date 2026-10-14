@@ -32,7 +32,8 @@ namespace VoiceMod
       kNone = 0,
       kLfo,
       kRandom,
-      kMseg
+      kMseg,
+      kSpread // a fixed value per note, by its place among the held notes
    };
 
    // One modulator, as data.
@@ -59,6 +60,8 @@ namespace VoiceMod
       float loopEnd = 1.0f;
       int numPoints = 0;
       ModShapes::MsegPoint points[kMaxPoints];
+      // Voice Spread (shape = ModShapes::SpreadMode)
+      int count = 4;
    };
 
    // One binding: source -> one of the synth's voice params, shaped exactly
@@ -170,10 +173,16 @@ namespace VoiceMod
       {
          if (voice < 0 || voice >= kVoices)
             return;
+         // Its place among the keys held now: a chord counts 0, 1, 2...
+         int index = 0;
+         for (int v = 0; v < kVoices; v++)
+            index += v != voice && mHeld[v] ? 1 : 0;
+         mHeld[voice] = true;
          for (int s = 0; s < kMaxSources; s++)
          {
             Restart(mSrc[voice][s], true);
             mSrc[voice][s].serial = ++mSerial;
+            mSrc[voice][s].index = index;
          }
          for (int r = 0; r < kMaxRoutes; r++)
             mRoute[voice][r].primed = false;
@@ -183,6 +192,7 @@ namespace VoiceMod
       {
          if (voice < 0 || voice >= kVoices)
             return;
+         mHeld[voice] = false;
          for (int s = 0; s < kMaxSources; s++)
             mSrc[voice][s].gate = false;
       }
@@ -234,6 +244,7 @@ namespace VoiceMod
          bool gate = false;
          bool released = true;
          uint64_t serial = 0;
+         int index = 0; // place among the held notes at note-on (Voice Spread)
       };
 
       struct RouteState
@@ -266,6 +277,8 @@ namespace VoiceMod
             }
             case kMseg:
                return std::clamp(ModShapes::MsegEvaluate(sp.points, sp.numPoints, (float)st.x), 0.0f, 1.0f);
+            case kSpread:
+               return ModShapes::Remap(ModShapes::Spread(sp.shape, st.index, sp.count), sp.low, sp.high);
             default:
                return 0.0f;
          }
@@ -288,6 +301,7 @@ namespace VoiceMod
       int mKinds[kMaxSources] = {};
       double mInc[kMaxSources] = {};
       float mRouteA[kMaxRoutes] = {};
+      bool mHeld[kVoices] = {};
       SourceState mSrc[kVoices][kMaxSources];
       RouteState mRoute[kVoices][kMaxRoutes];
    };

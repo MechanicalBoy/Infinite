@@ -1376,7 +1376,7 @@ namespace
          Reg<MathNode>("Math"), Reg<CompareNode>("Compare"), Reg<RangeToRangeNode>("Range to Range", false),
          Reg<SmoothNode>("Smooth"), Reg<CVRecorderNode>("CV Recorder"), Reg<ModDepthNode>("Mod Depth"),
          Reg<EnvelopeNode>("Envelope"), Reg<CVToPitchNode>("CV to Pitch"), Reg<NullModulatorNode>("Null"),
-         Reg<InvertNode>("Invert", false), Reg<ModCurveNode>("Mod Curve"), Reg<MSEGNode>("MSEG"), Reg<AudioToCVNode>("Audio to CV"),
+         Reg<InvertNode>("Invert", false), Reg<ModCurveNode>("Mod Curve"), Reg<MSEGNode>("MSEG"), Reg<VoiceSpreadNode>("Voice Spread"), Reg<AudioToCVNode>("Audio to CV"),
          Reg<VibratoNode>("Vibrato"), Reg<NoteToCVNode>("Note to CV"), Reg<VelocityToCVNode>("Velocity to CV"),
          Reg<MacroKnobNode>("Macro Knob"), Reg<MacroXYNode>("Macro XY"), Reg<MacroSliderNode>("Macro Slider"),
          Reg<MacroBipolarKnobNode>("Macro Bipolar"), Reg<MacroToggleNode>("Macro Toggle"), Reg<MacroTriggerNode>("Macro Trigger"),

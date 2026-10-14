@@ -4088,6 +4088,56 @@ bool RunVoiceModFixture()
       check("Wavetable with a plan stays finite", finite ? 1 : 0, 1, 0);
    }
 
+   // --- (h) Voice Spread (2.13): the four spreads, and a chord's notes
+   //     each taking their place among the held keys
+   {
+      using namespace ModShapes;
+      check("spread linear, 4: note 2 at 2/3", Spread(kSpreadLinear, 2, 4), 2.0 / 3.0, 1e-6);
+      check("spread linear wraps after count (note 5 of 4 = note 1)", Spread(kSpreadLinear, 5, 4), 1.0 / 3.0, 1e-6);
+      check("spread golden: note 1 at 0.618", Spread(kSpreadGolden, 1, 8), 0.6180340, 1e-6);
+      check("spread golden: note 2 at 0.236", Spread(kSpreadGolden, 2, 8), 0.2360680, 1e-6);
+      check("spread primes, 4: note 2 = (5-2)/(7-2)", Spread(kSpreadPrimes, 2, 4), 0.6, 1e-6);
+      check("spread primes, 4: last note at 1", Spread(kSpreadPrimes, 3, 4), 1.0, 1e-6);
+      check("spread alternate, 4: note 0 left of centre", Spread(kSpreadAlternate, 0, 4), 0.25, 1e-6);
+      check("spread alternate, 4: note 1 right of centre", Spread(kSpreadAlternate, 1, 4), 0.75, 1e-6);
+      check("spread alternate, 4: note 3 at the right edge", Spread(kSpreadAlternate, 3, 4), 1.0, 1e-6);
+      check("spread of one note is the centre", Spread(kSpreadGolden, 3, 1), 0.5, 1e-6);
+      bool inside = true;
+      for (int m = 0; m < 4; m++)
+         for (int c = 1; c <= kSpreadMaxCount; c++)
+            for (int i = 0; i < 40; i++)
+            {
+               const float v = Spread(m, i, c);
+               inside &= v >= 0.0f && v <= 1.0f;
+            }
+      check("every spread stays in 0..1", inside ? 1 : 0, 1, 0);
+
+      VoiceSpreadNode sp;
+      sp.mode = kSpreadLinear;
+      sp.count = 3;
+      sp.low = 0.2f;
+      sp.high = 0.8f;
+      VoiceMod::Spec spec;
+      check("Voice Spread is always per voice", sp.VoiceSpec(spec) ? 1 : 0, 1, 0);
+      check("Voice Spread shared value = first note's", sp.Value01(), 0.2, 1e-6);
+      oneRoute(spec);
+      auto rs = std::make_unique<Rt>();
+      rs->Prepare(kSr);
+      rs->BeginBlock(*box, 120.0);
+      rs->NoteOn(5); // a chord lands on whatever slots are free
+      rs->NoteOn(2);
+      rs->NoteOn(7);
+      check("chord note 1 (slot 5) at low", rs->Peek(5, 0), 0.2, 1e-6);
+      check("chord note 2 (slot 2) in the middle", rs->Peek(2, 0), 0.5, 1e-6);
+      check("chord note 3 (slot 7) at high", rs->Peek(7, 0), 0.8, 1e-6);
+      rs->NoteOff(2);
+      rs->NoteOn(0); // two keys held: the new one is the third
+      check("a note played over two held keys is third", rs->Peek(0, 0), 0.8, 1e-6);
+      check("held notes keep their place", rs->Peek(5, 0), 0.2, 1e-6);
+      rs->NoteOn(5); // the same key again, still held by itself only: two others held
+      check("a retriggered key counts the others, not itself", rs->Peek(5, 0), 0.8, 1e-6);
+   }
+
    // --- (g) the switch saves
    {
       struct BoolGrab : ParamVisitor

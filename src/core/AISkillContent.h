@@ -699,7 +699,7 @@ Do not edit between the markers; run the script. Use the `node` line exactly as 
 first, then the type name), then `--describe "<type>"` for parameters.
 
 <!-- generated:begin -->
-321 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
+322 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
 
 
 ### 3D
@@ -934,10 +934,10 @@ R"AISKILL(| `Normals` | geo:geometry | out:geometry | 67 | bypass |
 | `Hand Track` | input:image | present:modulator, palm x:modulator, palm y:modulator, index x:modulator, index y:modulator, thumb x:modulator, thumb y:modulator, pinch:modulator, open:modulator, roll:modulator, size:modulator, fist:modulator, point:modulator, peace:modulator, thumbs up:modulator, ok:modulator, rock:modulator | 3 | bypass |
 | `Image Analyze` | input:image | result:modulator, bright:modulator, contrast:modulator, red:modulator, green:modulator, blue:modulator, sat:modulator, hue:modulator, motion:modulator, cx:modulator, cy:modulator | 14 | bypass |
 | `Invert` | in:modulator | out:modulator | 3 | bypass |
-| `LFO` | trig:modulator | out:modulator | 10 | bypass |
+| `LFO` | trig:modulator | out:modulator | 11 | bypass |
 | `MIDI CC` | none | out:modulator | 7 | hardware: refused headless, bypass |
 | `MIDI Trigger` | none | out:modulator | 6 | hardware: refused headless, bypass |
-| `MSEG` | trig:modulator | out:modulator | 7 | bypass |
+| `MSEG` | trig:modulator | out:modulator | 8 | bypass |
 | `Math` | input:modulator, input_2:modulator | out:modulator | 6 |  |
 | `Mod Curve` | in:modulator | out:modulator | 3 | bypass |
 | `Mod Depth` | in:modulator | out:modulator | 2 | bypass |
@@ -947,19 +947,20 @@ R"AISKILL(| `Normals` | geo:geometry | out:geometry | 67 | bypass |
 | `Path` | curve:geometry, geo:geometry | x:modulator, y:modulator, z:modulator, t:modulator | 14 |  |
 | `Pattern` | none | out:modulator | 24 | bypass |
 | `Pose Track` | input:image | present:modulator, body x:modulator, body y:modulator, head x:modulator, head y:modulator, wrist L x:modulator, wrist L y:modulator, wrist R x:modulator, wrist R y:modulator, arm L:modulator, arm R:modulator, spread:modulator, lean:modulator, size:modulator | 3 | bypass |
-| `Random` | none | out:modulator | 8 | bypass |
+| `Random` | none | out:modulator | 9 | bypass |
 | `Range to Range` | in:modulator | out:modulator | 6 | bypass |
 | `Smoothing` | in:modulator | out:modulator | 7 | bypass |
 | `Velocity to CV` | notes:note | out:modulator | 2 | bypass |
 | `Vibrato` | none | out:modulator | 1 | bypass |
+| `Voice Spread` | none | out:modulator | 4 | bypass |
 
 ### Notes
 
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
-| `Arpeggiator` | notes:note | out:note | 9 | bypass |
 )AISKILL"
-R"AISKILL(| `Bouncing Balls` | none | out:note | 9 | bypass |
+R"AISKILL(| `Arpeggiator` | notes:note | out:note | 9 | bypass |
+| `Bouncing Balls` | none | out:note | 9 | bypass |
 | `Chorder` | none | out:note | 10 | bypass |
 | `Field Notes` | notes:note | notes:note | 6 | bypass |
 | `Gate` | notes:note | out:note | 1 | bypass |

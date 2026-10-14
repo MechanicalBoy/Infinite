@@ -1069,6 +1069,30 @@ bool MSEGNode::VoiceSpec(VoiceMod::Spec& out)
    return true;
 }
 
+// ---------------------------------------------------------------- Voice Spread
+
+const std::vector<std::string>& VoiceSpreadNode::ModeNames()
+{
+   static const std::vector<std::string> kNames = { "linear", "golden ratio", "primes", "alternate" };
+   return kNames;
+}
+
+float VoiceSpreadNode::Value01()
+{
+   return Remap(ModShapes::Spread(mode, 0, count), low, high);
+}
+
+bool VoiceSpreadNode::VoiceSpec(VoiceMod::Spec& out)
+{
+   out = VoiceMod::Spec();
+   out.kind = VoiceMod::kSpread;
+   out.shape = mode;
+   out.count = std::clamp(count, 1, ModShapes::kSpreadMaxCount);
+   out.low = low;
+   out.high = high;
+   return true;
+}
+
 float MSEGNode::Value01()
 {
    float x;

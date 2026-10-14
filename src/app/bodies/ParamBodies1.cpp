@@ -904,6 +904,16 @@ namespace app
    }
 
 
+   void DrawVoiceSpreadParams(VoiceSpreadNode* n)
+   {
+      DropdownButton("mode", VoiceSpreadNode::ModeNames(), n->mode,
+                     [n](int i) { PushUndoCheckpoint(); n->mode = i; });
+      ModSliderInt("count", &n->count, 1, ModShapes::kSpreadMaxCount);
+      ModSlider("low", &n->low, 0.0f, 1.0f);
+      ModSlider("high", &n->high, 0.0f, 1.0f);
+   }
+
+
    void DrawPatternStepGrid(PatternNode* n)
    {
       const int count = std::clamp(n->EffectiveLength(), 1, PatternNode::kSteps);

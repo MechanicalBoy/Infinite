@@ -2790,6 +2790,7 @@ void DrawProjectionParams(ProjectionNode* n);
 void DrawLFOParams(LFONode* n);
 
 void DrawRandomParams(RandomNode* n);
+void DrawVoiceSpreadParams(VoiceSpreadNode* n);
 
 
 

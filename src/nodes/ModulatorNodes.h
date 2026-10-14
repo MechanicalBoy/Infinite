@@ -831,6 +831,35 @@ private:
    float mShownX = 0.0f;
 };
 
+// A value per note, by its place among the notes held when it started: cabled
+// into an Analog or Wavetable knob it spreads a chord's voices across low..high
+// (cutoff, pan, detune...). Always per voice (docs/plans/modulation/per-voice.md);
+// into anything that has no voices it reads as the first note's value.
+class VoiceSpreadNode : public INode, public IModulator, public VoiceMod::IVoiceModSource
+{
+public:
+   static INode* Create() { return new VoiceSpreadNode(); }
+   static const std::vector<std::string>& ModeNames();
+
+   unsigned int GetOutputTexture() override { return 0; }
+   int GetOutputWidth() const override { return 0; }
+   int GetOutputHeight() const override { return 0; }
+   void CookIfNeeded(int) override {}
+
+   float Value01() override;
+   bool VoiceSpec(VoiceMod::Spec& out) override;
+
+   int mode = ModShapes::kSpreadLinear; // ModShapes::SpreadMode
+   int count = 4;                       // notes before the spread repeats, 1..16
+   float low = 0.0f;
+   float high = 1.0f;
+
+   void VisitParams(ParamVisitor& v) override
+   {
+      v.Int("mode", mode); v.Int("count", count); v.Float("low", low); v.Float("high", high);
+   }
+};
+
 // Converts an incoming audio signal to a normalized 0..1 modulation signal
 // using an envelope/amplitude follower with Peak or RMS detection and
 // configurable attack and release smoothing.

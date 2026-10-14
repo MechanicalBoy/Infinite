@@ -833,6 +833,8 @@ void DrawNodeBodies(FrameCtx& fc)
                DrawModCurveParams(n);
             else if (auto* n = dynamic_cast<MSEGNode*>(gn.node.get()))
                DrawMSEGParams(n);
+            else if (auto* n = dynamic_cast<VoiceSpreadNode*>(gn.node.get()))
+               DrawVoiceSpreadParams(n);
             else if (auto* n = dynamic_cast<CVToPitchNode*>(gn.node.get()))
                DrawCVToPitchParams(n);
             else if (auto* n = dynamic_cast<NoteToCVNode*>(gn.node.get()))
