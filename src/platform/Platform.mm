@@ -1404,6 +1404,48 @@ namespace Platform
       }
    }
 
+   std::string OpenShowSetDialog()
+   {
+      @autoreleasepool
+      {
+         NSOpenPanel* panel = [NSOpenPanel openPanel];
+         [panel setCanChooseFiles:YES];
+         [panel setCanChooseDirectories:NO];
+         [panel setAllowsMultipleSelection:NO];
+         [panel setTitle:@"Open show set"];
+         if (@available(macOS 11.0, *))
+         {
+            UTType* t = [UTType typeWithFilenameExtension:@"infshow"];
+            if (t != nil) [panel setAllowedContentTypes:@[ t ]];
+         }
+         if ([panel runModal] != NSModalResponseOK)
+            return std::string();
+         NSURL* url = [[panel URLs] firstObject];
+         return url ? std::string([[url path] UTF8String]) : std::string();
+      }
+   }
+
+   std::string SaveShowSetDialog(const std::string& suggestedName)
+   {
+      @autoreleasepool
+      {
+         NSSavePanel* panel = [NSSavePanel savePanel];
+         [panel setTitle:@"Save show set"];
+         [panel setNameFieldStringValue:
+            [NSString stringWithUTF8String:suggestedName.empty() ? "Untitled.infshow"
+                                                                 : suggestedName.c_str()]];
+         if (@available(macOS 11.0, *))
+         {
+            UTType* t = [UTType typeWithFilenameExtension:@"infshow"];
+            if (t != nil) [panel setAllowedContentTypes:@[ t ]];
+         }
+         if ([panel runModal] != NSModalResponseOK)
+            return std::string();
+         NSURL* url = [panel URL];
+         return url ? std::string([[url path] UTF8String]) : std::string();
+      }
+   }
+
    std::string OpenModelDialog()
    {
       @autoreleasepool
@@ -5439,6 +5481,11 @@ namespace Platform
          const unsigned char hiNibble = status & 0xF0;
          const int channel = status & 0x0F;
 
+         if (hiNibble == 0xC0)
+         {
+            MidiStoreProgramChange(channel, (int)data[1]);
+            return;
+         }
          if (hiNibble == 0xB0 && len >= 3)
          {
             // Control Change

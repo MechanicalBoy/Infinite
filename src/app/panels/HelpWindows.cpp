@@ -611,6 +611,7 @@ namespace app
 
          // Transport & Audio
          { I18N_KEY("Transport & Audio"), I18N_KEY("Play / Pause"), "Space", I18N_KEY("Start / pause timeline and animations") },
+         { I18N_KEY("Transport & Audio"), I18N_KEY("Next / Previous Show Patch"), "PageDown / PageUp", I18N_KEY("Switch to the next or previous patch of the show set, on its launch grid. Works in a projector window too") },
          { I18N_KEY("Transport & Audio"), I18N_KEY("Toggle Audio Engine"), "Shift+K", I18N_KEY("Start / stop audio device. Canvas only - with the timeline focused, Shift+K adds an audio track instead") },
 
          // Arrangement Timeline - these fire only while the timeline panel

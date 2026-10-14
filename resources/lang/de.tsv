@@ -1186,3 +1186,34 @@ Playable resynthesis: a loaded sample is analysed once into tracked partials plu
 Playable resynthesis: a sample becomes tracked partials plus noise, played at any pitch with its formants kept, thinned, sped up or morphed into a second sample.	Spielbare Resynthese: Ein Sample wird zu verfolgten Partialen plus Rauschen, spielbar in jeder Tonhöhe mit erhaltenen Formanten, ausgedünnt, beschleunigt oder in ein zweites Sample gemorpht.
 Physically modelled string: every note is a waveguide string tuned exactly to its pitch, on a shared wooden body. exciter plucks it, bows it (the bow keeps it sounding while the note is held) or strikes it with a felt hammer that gets brighter the harder you hit. position is where along the string it is excited, measured from the bridge (a quarter of the way in silences every 4th harmonic, as on a real string). tone sets how bright it stays as it rings, decay how long the note rings while held, stiffness stretches the upper partials sharp like a piano or a metal string, body blends from the bare string into the body's resonances, and release is how fast the damper stops it after note-off. 8 voices, note-driven.	Physikalisch modellierte Saite: Jede Note ist eine Waveguide-Saite, exakt auf ihre Tonhöhe gestimmt, auf einem gemeinsamen Holzkorpus. exciter zupft sie, streicht sie (der Bogen hält sie, solange die Note gehalten wird) oder schlägt sie mit einem Filzhammer an, der heller klingt, je fester man anschlägt. position ist die Stelle, an der die Saite angeregt wird, gemessen vom Steg (bei einem Viertel verstummt jede 4. Harmonische, wie bei einer echten Saite). tone bestimmt, wie hell sie beim Ausklingen bleibt, decay, wie lange die gehaltene Note klingt, stiffness zieht die oberen Partiale nach oben wie bei einem Klavier oder einer Metallsaite, body blendet von der blanken Saite in die Resonanzen des Korpus, und release ist, wie schnell der Dämpfer sie nach dem Loslassen stoppt. 8 Stimmen, notengesteuert.
 Physically modelled string: pluck, bow or strike a waveguide string on a wooden body, always in tune; position, tone, decay and stiffness shape it.	Physikalisch modellierte Saite: eine Waveguide-Saite auf einem Holzkorpus zupfen, streichen oder anschlagen, immer gestimmt; position, tone, decay und stiffness formen sie.
+A switch lands on the quantize grid; the old patch fades out over the fade time	Ein Wechsel landet auf dem Quantisierungsraster; der alte Patch blendet über die Blendzeit aus
+Add current patch	Aktuellen Patch hinzufügen
+Add file...	Datei hinzufügen...
+Add patches in the order you play them. PageDown / PageUp or MIDI Program Change switch between them	Füge Patches in der Reihenfolge hinzu, in der du sie spielst. Bild ab / Bild auf oder MIDI Program Change wechseln zwischen ihnen
+Down	Nach unten
+Fade	Blende
+Go	Los
+Next	Weiter
+Next / Previous Show Patch	Nächster / vorheriger Show-Patch
+Next patch	Nächster Patch
+Open set...	Set öffnen...
+Patches	Patches
+Previous	Zurück
+Previous patch	Vorheriger Patch
+Quantize	Quantisieren
+Save set...	Set speichern...
+Save the patch before adding it to the show set	Speichere den Patch, bevor du ihn zum Show-Set hinzufügst
+Show Set	Show-Set
+Show Set window	Show-Set-Fenster
+Show set	Show-Set
+Switch	Wechsel
+Switch to the next or previous patch of the show set, on its launch grid. Works in a projector window too	Zum nächsten oder vorherigen Patch des Show-Sets wechseln, auf dessen Startraster. Funktioniert auch in einem Projektorfenster
+Up	Nach oben
+can't read	nicht lesbar
+next	als Nächstes
+none	keine
+reading	wird gelesen
+2 bars	2 Takte
+unsaved edits to the last patch were discarded	nicht gespeicherte Änderungen am letzten Patch wurden verworfen
+Couldn't open the show set	Show-Set konnte nicht geöffnet werden
+Couldn't save the show set	Show-Set konnte nicht gespeichert werden

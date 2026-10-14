@@ -143,6 +143,12 @@ void DrawKeyboard(FrameCtx& fc)
          }
       }
 
+      // PageDown / PageUp: next / previous patch of the show set (v0.6 2.35).
+      if (!typing && !cmdOrCtrl && ImGui::IsKeyPressed(ImGuiKey_PageDown, false))
+         ShowSetStep(+1);
+      if (!typing && !cmdOrCtrl && ImGui::IsKeyPressed(ImGuiKey_PageUp, false))
+         ShowSetStep(-1);
+
       // Shift+M: the docked modulation matrix, same panel the modulator
       // context menu's "Show modulation matrix" opens.
       if (!typing && shiftOnly && ImGui::IsKeyPressed(ImGuiKey_M, false))

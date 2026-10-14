@@ -1186,3 +1186,34 @@ Playable resynthesis: a loaded sample is analysed once into tracked partials plu
 Playable resynthesis: a sample becomes tracked partials plus noise, played at any pitch with its formants kept, thinned, sped up or morphed into a second sample.	可演奏的重合成：采样变为跟踪的分音加噪声，以任意音高演奏并保留共振峰，可减少分音、加速或变形到第二个采样。
 Physically modelled string: every note is a waveguide string tuned exactly to its pitch, on a shared wooden body. exciter plucks it, bows it (the bow keeps it sounding while the note is held) or strikes it with a felt hammer that gets brighter the harder you hit. position is where along the string it is excited, measured from the bridge (a quarter of the way in silences every 4th harmonic, as on a real string). tone sets how bright it stays as it rings, decay how long the note rings while held, stiffness stretches the upper partials sharp like a piano or a metal string, body blends from the bare string into the body's resonances, and release is how fast the damper stops it after note-off. 8 voices, note-driven.	物理建模琴弦：每个音符都是一根精确调到其音高的波导琴弦，装在一个共享的木质琴身上。exciter 选择拨弦、拉弓（按住音符时弓会让它持续发声）或用毛毡琴槌敲击（敲得越重越明亮）。position 是激励琴弦的位置，从琴码量起（在四分之一处，每个第 4 次谐波都会消失，和真实琴弦一样）。tone 决定余音中保持多少明亮度，decay 决定按住时音符响多久，stiffness 像钢琴或金属弦那样把高次分音拉高，body 从裸弦混合到琴身的共鸣，release 是松开音符后制音器止住它的速度。8 个声部，由音符驱动。
 Physically modelled string: pluck, bow or strike a waveguide string on a wooden body, always in tune; position, tone, decay and stiffness shape it.	物理建模琴弦：在木质琴身上拨、拉或敲击一根波导琴弦，始终准确；position、tone、decay 和 stiffness 塑造它。
+A switch lands on the quantize grid; the old patch fades out over the fade time	切换落在量化网格上；旧补丁在淡出时间内淡出
+Add current patch	添加当前补丁
+Add file...	添加文件...
+Add patches in the order you play them. PageDown / PageUp or MIDI Program Change switch between them	按演奏顺序添加补丁。PageDown / PageUp 或 MIDI 程序变更在它们之间切换
+Down	下移
+Fade	淡变
+Go	切换
+Next	下一个
+Next / Previous Show Patch	下一个 / 上一个演出补丁
+Next patch	下一个补丁
+Open set...	打开曲目单...
+Patches	补丁
+Previous	上一个
+Previous patch	上一个补丁
+Quantize	量化
+Save set...	保存曲目单...
+Save the patch before adding it to the show set	请先保存补丁再加入演出曲目单
+Show Set	演出曲目单
+Show Set window	演出曲目单窗口
+Show set	演出曲目单
+Switch	切换
+Switch to the next or previous patch of the show set, on its launch grid. Works in a projector window too	按启动网格切换到演出曲目单的下一个或上一个补丁。在投影窗口中同样可用
+Up	上移
+can't read	无法读取
+next	下一个
+none	无
+reading	读取中
+2 bars	2小节
+unsaved edits to the last patch were discarded	上一个补丁未保存的修改已丢弃
+Couldn't open the show set	无法打开演出曲目单
+Couldn't save the show set	无法保存演出曲目单

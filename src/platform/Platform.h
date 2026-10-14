@@ -186,6 +186,10 @@ namespace Platform
    // Extension pack files (.infpack, a zip). Returns the chosen path, or "" if cancelled.
    std::string OpenExtensionPackDialog();
 
+   // Show set files (.infshow, one patch path per line). Same contract as the patch dialogs.
+   std::string OpenShowSetDialog();
+   std::string SaveShowSetDialog(const std::string& suggestedName = "Untitled.infshow");
+
    // ---- text outlines -----------------------------------------------------
    // Glyph outlines for a laid-out string, flattened to polygons in font units
    // normalised so cap height is roughly 1. Curves are subdivided here because
@@ -1007,6 +1011,35 @@ namespace Platform
    // Lower-zone member channels, zero-based. 0 is the master, 15 the upper-zone master.
    inline bool MidiIsMpeMemberChannel(int channel) { return channel >= 1 && channel <= 14; }
    inline float MidiBend14ToSigned(int lsb, int msb) { return (float)(((msb << 7) | lsb) - 8192) / 8192.0f; }
+
+   // The last Program Change from any input (v0.6 2.35: a show set picks
+   // its entry by program). One word: bits 11.. count messages, 7..10 the
+   // channel, 0..6 the program. Stored by every platform's MIDI reader.
+   inline std::atomic<uint32_t>& MidiProgramChangeSlot()
+   {
+      static std::atomic<uint32_t> sSlot { 0 };
+      return sSlot;
+   }
+   inline void MidiStoreProgramChange(int channel, int program)
+   {
+      std::atomic<uint32_t>& slot = MidiProgramChangeSlot();
+      uint32_t prev = slot.load(std::memory_order_relaxed);
+      uint32_t next;
+      do
+         next = (((prev >> 11) + 1u) << 11) | ((uint32_t)(channel & 15) << 7) | (uint32_t)(program & 127);
+      while (!slot.compare_exchange_weak(prev, next, std::memory_order_release, std::memory_order_relaxed));
+   }
+   // True once per new Program Change since `seen` (start it at 0).
+   inline bool MidiPollProgramChange(uint32_t& seen, int& channel, int& program)
+   {
+      const uint32_t now = MidiProgramChangeSlot().load(std::memory_order_acquire);
+      if ((now >> 11) == (seen >> 11))
+         return false;
+      seen = now;
+      channel = (int)((now >> 7) & 15);
+      program = (int)(now & 127);
+      return true;
+   }
 
    bool MidiStart(std::string& outError);
    void MidiStop();

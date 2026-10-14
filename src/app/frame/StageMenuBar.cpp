@@ -381,6 +381,16 @@ void DrawMenuBar(FrameCtx& fc)
                ImGui::EndMenu();
             }
 
+            if (MenuParts::SubMenu(L("Show Set")))
+            {
+               MenuParts::Check(L("Show Set window"), &gShowSetOpen);
+               if (MenuParts::Item(L("Next patch"), "PgDn", false, ShowSetSize() > 0))
+                  ShowSetStep(+1);
+               if (MenuParts::Item(L("Previous patch"), "PgUp", false, ShowSetSize() > 0))
+                  ShowSetStep(-1);
+               ImGui::EndMenu();
+            }
+
             if (MenuParts::SubMenu(L("Nodes")))
             {
                if (MenuParts::Item(L("Show all params")))

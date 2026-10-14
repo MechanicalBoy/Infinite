@@ -362,6 +362,24 @@ public:
    // cables), not per block, so this one-generation grace window is cheap
    // and sufficient.
    void SetTopology(AudioTopology topology);
+   // Show-set switch (v0.6 2.35), main thread. The next SetTopology keeps
+   // the list playing now as a tail instead of retiring it: the tail plays
+   // on at full level and the new list stays silent until `switchBeat`
+   // (the transport's beat; < 0 = the next block, and a stopped transport
+   // switches at once), then the new list sounds within 5 ms and the tail
+   // fades out over `fadeFrames` (equal power). Ignored with no device
+   // open. While a tail plays, CompletedGeneration() holds at its
+   // generation so the nodes it runs are not freed under it.
+   void ArmTail(double switchBeat, int fadeFrames);
+   void DisarmTail();
+   bool TailActive() const { return mTail.load(std::memory_order_acquire) != nullptr || mTailArmed; }
+   // The beat the last show-set switch actually sounded on (-1 = none yet).
+   double LastSwitchBeat() const { return mLastSwitchBeat.load(std::memory_order_relaxed); }
+   bool SwitchLanded() const { return mSwitchLanded.load(std::memory_order_acquire); }
+   // Test probe: the quietest block peak since the reset (device output).
+   void ResetBlockPeakFloor() { mBlockPeakFloor.store(1e9f, std::memory_order_relaxed); }
+   float BlockPeakFloor() const { return mBlockPeakFloor.load(std::memory_order_relaxed); }
+
    // outputLatencySamples of the last published topology (main thread).
    int OutputLatencySamples() const { return mOutputLatencySamples.load(std::memory_order_relaxed); }
 
@@ -617,6 +635,34 @@ private:
    double mPumpFrames = 0.0;   // main thread: fractional frames owed to the device-less note pump
    double mPumpLastMs = -1.0;
    void DrainRetired();
+
+   // The show-set tail (ArmTail). Filled and cleared by the main thread;
+   // the audio thread reads it after mCurrent and only sets `done` and its
+   // own counters. `list` is never in mRetiring while it is here.
+   struct Tail
+   {
+      ProcessList* list = nullptr;
+      double switchBeat = -1.0;
+      int fadeFrames = 0;
+      int fadePos = 0;     // audio thread
+      int inPos = 0;       // audio thread: the new list's 5 ms ramp-in
+      bool switched = false; // audio thread
+      double lastBlockStart = -1.0; // audio thread: a jump back (loop, seek) switches at once
+      std::atomic<bool> done { false };
+   };
+   Tail mTailSlot;
+   std::atomic<Tail*> mTail { nullptr };
+   bool mTailArmed = false;      // main thread
+   double mArmSwitchBeat = -1.0; // main thread
+   int mArmFadeFrames = 0;       // main thread
+   void PollTail();              // main thread: retire a finished tail
+   void RunTail(Tail& tail, ProcessList* list, AudioBuffer& deviceBuffer, double* stageMs);
+   bool mRunningTail = false;    // audio thread: RunTopology over the tail
+   std::atomic<double> mLastSwitchBeat { -1.0 };
+   std::atomic<bool> mSwitchLanded { false };
+   std::atomic<float> mBlockPeakFloor { 1e9f };
+   float mTailScratch[kAudioMaxChannels][kAudioMaxBlockFrames] = {};
+   float* mTailScratchChannels[kAudioMaxChannels] = {};
 
    // Bumped once per SetTopology() call (main thread only) - see
    // CurrentGeneration(). Started at 0 so the first published topology is

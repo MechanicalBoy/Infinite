@@ -13,6 +13,8 @@
 //   /infinite/delete <index>
 //   /infinite/connect <src> <output> <dst> <slot>
 //   /infinite/disconnect <dst> <slot>
+//   /infinite/show/next, /infinite/show/prev  step the show set (v0.6 2.35)
+//   /infinite/show/go <index>                switch to show-set entry <index> (0-based)
 //
 // Param names are the patch-file names with spaces as '_' (OSC addresses
 // cannot hold a space): "warp ratio" is /infinite/node/3/warp_ratio. Any
@@ -303,6 +305,20 @@ namespace app
             return;
          }
          Error(req.from, "/infinite/disconnect: no cable into that slot");
+      }
+      else if (a == "/infinite/show/next" || a == "/infinite/show/prev")
+      {
+         ShowSetStep(a == "/infinite/show/next" ? +1 : -1);
+      }
+      else if (a == "/infinite/show/go")
+      {
+         int idx = -1;
+         if (!ArgInt(req.args, 0, idx) || idx < 0 || idx >= ShowSetSize())
+         {
+            Error(req.from, "/infinite/show/go: no such show-set entry");
+            return;
+         }
+         ShowSetGo(idx);
       }
       else
       {

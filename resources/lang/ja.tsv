@@ -1186,3 +1186,34 @@ Playable resynthesis: a loaded sample is analysed once into tracked partials plu
 Playable resynthesis: a sample becomes tracked partials plus noise, played at any pitch with its formants kept, thinned, sped up or morphed into a second sample.	演奏できるリシンセシス：サンプルを追跡したパーシャルとノイズに変え、フォルマントを保ったまま任意のピッチで演奏し、間引き、速度変更、2つ目のサンプルへのモーフができます。
 Physically modelled string: every note is a waveguide string tuned exactly to its pitch, on a shared wooden body. exciter plucks it, bows it (the bow keeps it sounding while the note is held) or strikes it with a felt hammer that gets brighter the harder you hit. position is where along the string it is excited, measured from the bridge (a quarter of the way in silences every 4th harmonic, as on a real string). tone sets how bright it stays as it rings, decay how long the note rings while held, stiffness stretches the upper partials sharp like a piano or a metal string, body blends from the bare string into the body's resonances, and release is how fast the damper stops it after note-off. 8 voices, note-driven.	物理モデリングの弦：各ノートはピッチに正確にチューニングされたウェーブガイド弦で、共有の木製ボディに張られています。exciter で弾く、弓で弾く（ノートを押している間、弓が音を持続させます）、フェルトのハンマーで打つ（強く打つほど明るくなります）を選びます。position は弦を励振する位置で、ブリッジから測ります（4分の1の位置では実際の弦と同じく4倍音ごとに消えます）。tone は響きながらどれだけ明るさを保つか、decay は押している間ノートがどれだけ鳴り続けるか、stiffness はピアノや金属弦のように上の倍音を高めに伸ばし、body はむき出しの弦からボディの共鳴へとブレンドし、release はノートを離した後にダンパーが止める速さです。8ボイス、ノート駆動。
 Physically modelled string: pluck, bow or strike a waveguide string on a wooden body, always in tune; position, tone, decay and stiffness shape it.	物理モデリングの弦：木製ボディ上のウェーブガイド弦を弾く・弓で弾く・打つ。常に正確なピッチで、position、tone、decay、stiffness で形を変えます。
+A switch lands on the quantize grid; the old patch fades out over the fade time	切り替えはクオンタイズのグリッドで行われ、前のパッチはフェード時間をかけて消えます
+Add current patch	現在のパッチを追加
+Add file...	ファイルを追加...
+Add patches in the order you play them. PageDown / PageUp or MIDI Program Change switch between them	演奏する順にパッチを追加します。PageDown / PageUp または MIDI プログラムチェンジで切り替えます
+Down	下へ
+Fade	フェード
+Go	実行
+Next	次へ
+Next / Previous Show Patch	次 / 前のショーパッチ
+Next patch	次のパッチ
+Open set...	セットを開く...
+Patches	パッチ
+Previous	前へ
+Previous patch	前のパッチ
+Quantize	クオンタイズ
+Save set...	セットを保存...
+Save the patch before adding it to the show set	ショーセットに追加する前にパッチを保存してください
+Show Set	ショーセット
+Show Set window	ショーセットウィンドウ
+Show set	ショーセット
+Switch	切り替え
+Switch to the next or previous patch of the show set, on its launch grid. Works in a projector window too	ショーセットの次または前のパッチへ、ローンチグリッドに合わせて切り替えます。プロジェクターウィンドウでも使えます
+Up	上へ
+can't read	読み込めません
+next	次
+none	なし
+reading	読み込み中
+2 bars	2小節
+unsaved edits to the last patch were discarded	前のパッチの未保存の変更は破棄されました
+Couldn't open the show set	ショーセットを開けませんでした
+Couldn't save the show set	ショーセットを保存できませんでした

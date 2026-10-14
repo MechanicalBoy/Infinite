@@ -745,6 +745,9 @@ int DrawTestsB(FrameCtx& fc)
          const double projRenderStartMs = timeProjectors ? Bench::ScopedStageTimer::NowMs() : 0.0;
          for (size_t i = gProjectorWindows.size(); i-- > 0; )
          {
+            // A show-set switch holds the last frame until the new patch has drawn.
+            if (ShowSetDrawHeldProjector(i))
+               continue;
             GraphNode* src = FindNodeByIndex(gProjectorWindows[i].nodeIndex);
             if (src == nullptr)
             {
@@ -784,6 +787,7 @@ int DrawTestsB(FrameCtx& fc)
                texH = shown->GetOutputHeight();
             }
 
+            ShowSetNoteProjectorTexture(i, tex, texW ? texW : pw, texH ? texH : ph);
             if (tex != 0)
             {
                if (dynamic_cast<ProjectionNode*>(DisplayNode(src->node.get())) != nullptr)
@@ -798,6 +802,7 @@ int DrawTestsB(FrameCtx& fc)
                glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
                glClear(GL_COLOR_BUFFER_BIT);
             }
+            ShowSetProbeProjector(i); // SHOWSETTEST only
             glFlush();
          }
          if (timeProjectors)

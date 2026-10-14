@@ -1186,3 +1186,34 @@ Playable resynthesis: a loaded sample is analysed once into tracked partials plu
 Playable resynthesis: a sample becomes tracked partials plus noise, played at any pitch with its formants kept, thinned, sped up or morphed into a second sample.	Играбельный ресинтез: сэмпл превращается в отслеживаемые партиалы плюс шум и играется на любой высоте с сохранёнными формантами, прореженный, ускоренный или переведённый во второй сэмпл.
 Physically modelled string: every note is a waveguide string tuned exactly to its pitch, on a shared wooden body. exciter plucks it, bows it (the bow keeps it sounding while the note is held) or strikes it with a felt hammer that gets brighter the harder you hit. position is where along the string it is excited, measured from the bridge (a quarter of the way in silences every 4th harmonic, as on a real string). tone sets how bright it stays as it rings, decay how long the note rings while held, stiffness stretches the upper partials sharp like a piano or a metal string, body blends from the bare string into the body's resonances, and release is how fast the damper stops it after note-off. 8 voices, note-driven.	Физически смоделированная струна: каждая нота — волноводная струна, точно настроенная на свою высоту, на общем деревянном корпусе. exciter щиплет её, ведёт смычком (смычок держит звук, пока нота нажата) или бьёт войлочным молоточком, который звучит ярче, чем сильнее удар. position — место возбуждения струны, отсчитанное от подставки (на четверти длины пропадает каждая 4-я гармоника, как у настоящей струны). tone задаёт, насколько ярким остаётся звук при затухании, decay — сколько звучит удерживаемая нота, stiffness растягивает верхние партиалы вверх, как у фортепиано или металлической струны, body смешивает голую струну с резонансами корпуса, а release — как быстро демпфер глушит её после отпускания. 8 голосов, управление нотами.
 Physically modelled string: pluck, bow or strike a waveguide string on a wooden body, always in tune; position, tone, decay and stiffness shape it.	Физически смоделированная струна: щипок, смычок или удар по волноводной струне на деревянном корпусе, всегда строит; её формируют position, tone, decay и stiffness.
+A switch lands on the quantize grid; the old patch fades out over the fade time	Переключение происходит по сетке квантования; старый патч затухает за время перехода
+Add current patch	Добавить текущий патч
+Add file...	Добавить файл...
+Add patches in the order you play them. PageDown / PageUp or MIDI Program Change switch between them	Добавьте патчи в порядке исполнения. PageDown / PageUp или MIDI Program Change переключают между ними
+Down	Вниз
+Fade	Переход
+Go	Перейти
+Next	Далее
+Next / Previous Show Patch	Следующий / предыдущий патч сета
+Next patch	Следующий патч
+Open set...	Открыть сет...
+Patches	Патчи
+Previous	Назад
+Previous patch	Предыдущий патч
+Quantize	Квантование
+Save set...	Сохранить сет...
+Save the patch before adding it to the show set	Сохраните патч перед добавлением в сет
+Show Set	Сет выступления
+Show Set window	Окно сета выступления
+Show set	Сет выступления
+Switch	Переключение
+Switch to the next or previous patch of the show set, on its launch grid. Works in a projector window too	Переключиться на следующий или предыдущий патч сета по сетке запуска. Работает и в окне проектора
+Up	Вверх
+can't read	не читается
+next	следующий
+none	нет
+reading	чтение
+2 bars	2 такта
+unsaved edits to the last patch were discarded	несохранённые изменения прошлого патча отброшены
+Couldn't open the show set	Не удалось открыть сет
+Couldn't save the show set	Не удалось сохранить сет

@@ -461,6 +461,12 @@ namespace app
          ToggleProjectorFullscreen(*pw);
       else if (key == GLFW_KEY_ESCAPE && pw->fullscreen)
          SetProjectorFullscreen(*pw, pw->monitorIndex, false);
+      // The show set steps from the projector too, the window a performer
+      // has in front of them; the switch itself happens in the next frame.
+      else if (key == GLFW_KEY_PAGE_DOWN)
+         ShowSetStep(+1);
+      else if (key == GLFW_KEY_PAGE_UP)
+         ShowSetStep(-1);
    }
 
 

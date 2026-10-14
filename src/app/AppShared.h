@@ -5564,6 +5564,34 @@ bool HandleRpcCommand(const std::string& method, const nlohmann::json& params,
 // The OSC control API's address map (graph/OscApi.cpp, v0.6 2.31).
 void HandleOscRequest(const OscControl::Request& req);
 void PollOscListeners();
+
+// Show set (v0.6 2.35, graph/ShowSet.cpp): patches played in order in a live
+// set, switched on the launch grid with an audio crossfade and a held picture.
+extern bool gShowSetOpen;
+int ShowSetSize();
+const std::string& ShowSetName(int i);
+const std::string& ShowSetEntryPath(int i);
+const std::string& ShowSetError(int i);
+bool ShowSetReady(int i);
+int ShowSetCurrent();
+int ShowSetRequested();
+int& ShowSetQuantize(); // MusicTime::LaunchQuantize
+float& ShowSetFadeMs();
+const std::string& ShowSetPath();
+void ShowSetAddFile(const std::string& path);
+bool ShowSetAddCurrent();
+void ShowSetRemove(int i);
+void ShowSetMove(int i, int dir);
+void ShowSetClear();
+bool ShowSetOpenFile(const std::string& path);
+bool ShowSetSaveFile(const std::string& path);
+void ShowSetGo(int index);
+void ShowSetStep(int dir);
+void ShowSetTick(int frameId, GLFWwindow* window);
+// Projector loop hooks (StageTestsB.cpp).
+bool ShowSetDrawHeldProjector(size_t i);
+void ShowSetNoteProjectorTexture(size_t i, unsigned int tex, int w, int h);
+void ShowSetProbeProjector(size_t i);
 void ClearOscListeners();
 
 void DrawMinimap();

@@ -463,6 +463,7 @@ set(COMMON_SOURCES
     src/app/graph/Projector.cpp
     src/app/graph/Rpc.cpp
     src/app/graph/OscApi.cpp
+    src/app/graph/ShowSet.cpp
     src/app/graph/Wiring.cpp
     src/app/panels/ArrangePanel.cpp
     src/app/panels/ArrangeRender.cpp

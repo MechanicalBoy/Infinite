@@ -345,6 +345,9 @@ namespace
             }
             break;
          }
+         case SND_SEQ_EVENT_PGMCHANGE: // a show set picks its entry by it
+            Platform::MidiStoreProgramChange(ev.data.control.channel, (int)ev.data.control.value);
+            break;
          case SND_SEQ_EVENT_CLOCK:
             gClock.Pulse();
             break;

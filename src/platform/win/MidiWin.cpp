@@ -291,6 +291,9 @@ namespace
             }
             break;
          }
+         case 0xC0: // Program Change (a show set picks its entry by it)
+            Platform::MidiStoreProgramChange(channel, (int)d1);
+            break;
          case 0xE0: // Pitch bend (14-bit) and 0xD0 channel aftertouch (7-bit),
          case 0xD0: // stored as virtual controllers 128 / 129, see Platform.h
          {

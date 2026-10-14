@@ -90,6 +90,9 @@ void AudioEngine::Stop()
    mSampleRate.store(0.0, std::memory_order_relaxed);
    // AudioDeviceClose has returned, so no callback can still hold a list.
    mDeviceOpen.store(false, std::memory_order_release);
+   if (Tail* tail = mTail.exchange(nullptr, std::memory_order_acq_rel))
+      delete tail->list;
+   mTailArmed = false;
    DrainRetired();
 
    // Reset xrun-detection state here, on Stop(), not on the next Start():
@@ -128,10 +131,59 @@ void AudioEngine::SetTopology(AudioTopology topology)
    BuildSchedule(*fresh);
    EnsureWorkers();
 
+   // A show-set switch keeps the outgoing list as the tail. Published
+   // before mCurrent, so a block that sees `fresh` also sees the tail.
+   ProcessList* outgoing = mCurrent.load(std::memory_order_acquire);
+   bool tailed = false;
+   if (mTailArmed && outgoing != nullptr && mTail.load(std::memory_order_acquire) == nullptr &&
+       mDeviceOpen.load(std::memory_order_acquire))
+   {
+      // One slot, reused: a block that loaded the pointer just before
+      // PollTail cleared it only reads `done` (true) and skips it, and the
+      // slot is not refilled until the next switch, seconds later.
+      Tail* tail = &mTailSlot;
+      tail->list = outgoing;
+      tail->fadePos = 0;
+      tail->inPos = 0;
+      tail->switched = false;
+      tail->lastBlockStart = -1.0;
+      tail->done.store(false, std::memory_order_relaxed);
+      tail->switchBeat = mArmSwitchBeat;
+      tail->fadeFrames = std::max(1, mArmFadeFrames);
+      mSwitchLanded.store(false, std::memory_order_relaxed);
+      mTail.store(tail, std::memory_order_release);
+      tailed = true;
+   }
+   mTailArmed = false;
+
    ProcessList* old = mCurrent.exchange(fresh, std::memory_order_acq_rel);
-   if (old != nullptr)
+   if (old != nullptr && !(tailed && old == outgoing))
       mRetiring.push_back(old);
    DrainRetired();
+}
+
+void AudioEngine::ArmTail(double switchBeat, int fadeFrames)
+{
+   if (!mDeviceOpen.load(std::memory_order_acquire))
+      return;
+   mTailArmed = true;
+   mArmSwitchBeat = switchBeat;
+   mArmFadeFrames = fadeFrames;
+}
+
+void AudioEngine::DisarmTail() { mTailArmed = false; }
+
+// Main thread: a tail the audio thread has finished with goes the way of any
+// superseded list (freed once a newer generation completes, which it now
+// can, since Process stops holding CompletedGeneration back).
+void AudioEngine::PollTail()
+{
+   Tail* tail = mTail.load(std::memory_order_acquire);
+   if (tail == nullptr || !tail->done.load(std::memory_order_acquire))
+      return;
+   mTail.store(nullptr, std::memory_order_release);
+   mRetiring.push_back(tail->list);
+   tail->list = nullptr;
 }
 
 // The parallel schedule for one ProcessList (main thread). Two entries are
@@ -443,6 +495,7 @@ void AudioEngine::PumpMainThread()
    // retired (superseded by a newer Play(), or Stop()'s buffer once a new
    // one lands) rather than leaving it to leak.
    mPreviewPlayer.DrainRetired();
+   PollTail();
    DrainRetired();
 }
 
@@ -618,7 +671,8 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer, doub
    // ProcessOffline. See ApplyNoteWiringIfNew's comment for why this,
    // rather than RebuildAudioTopology, is what actually mutates cursors/
    // inboxes now.
-   ApplyNoteWiringIfNew(list);
+   if (!mRunningTail)
+      ApplyNoteWiringIfNew(list); // a show-set tail keeps the wiring it already applied
 
    // Truncate to the pool's fixed capacity rather than overrun a pooled
    // buffer - see the kAudioMax* comment in AudioEngine.h. Silences the
@@ -933,7 +987,7 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer, doub
                // bucket is half-measured (see below).
                if (playing && terminal.peakClipId != 0)
                {
-                  if (terminal.peakBucket >= 0)
+                  if (terminal.peakBucket >= 0 && !mRunningTail)
                      mClipPeaks.Write({ terminal.peakClipId, terminal.peakShape, terminal.peakBucket,
                                         terminal.peakMin, terminal.peakMax });
                   terminal.peakClipId = 0;
@@ -970,7 +1024,7 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer, doub
                // Only complete buckets are published: the one in progress is
                // flushed when the playhead crosses out of it, which is also
                // why a stopped playhead leaves its last bucket unfilled.
-               if (terminal.peakBucket >= 0 && terminal.peakClipId != 0)
+               if (terminal.peakBucket >= 0 && terminal.peakClipId != 0 && !mRunningTail)
                   mClipPeaks.Write({ terminal.peakClipId, terminal.peakShape, terminal.peakBucket,
                                      terminal.peakMin, terminal.peakMax });
                terminal.peakClipId = w.clipId;
@@ -1067,6 +1121,77 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer, doub
          terminal.capture->Write(mInterleaveScratch, numFrames * 2);
       }
    }
+}
+
+// One block of a show-set switch: the tail list into scratch, the new list
+// into the device buffer, then the two mixed - the tail at full level and
+// the new list silent until the switch beat, then the new list in over 5 ms
+// and the tail out over its fade (equal power, cos).
+void AudioEngine::RunTail(Tail& tail, ProcessList* list, AudioBuffer& deviceBuffer, double* stageMs)
+{
+   const int numFrames = std::min(deviceBuffer.numFrames, kAudioMaxBlockFrames);
+   const int numChannels = std::min(deviceBuffer.numChannels, kAudioMaxChannels);
+   for (int ch = 0; ch < numChannels; ch++)
+      mTailScratchChannels[ch] = mTailScratch[ch];
+   AudioBuffer tailBuffer;
+   tailBuffer.channels = mTailScratchChannels;
+   tailBuffer.numChannels = numChannels;
+   tailBuffer.numFrames = numFrames;
+
+   // The tail's blocks continue the same transport, so it must not count as
+   // the discontinuity detector's "previous block" for the new list.
+   const double keepLastEnd = mLastBlockEndBeat;
+   mRunningTail = true;
+   RunTopology(tail.list, tailBuffer, nullptr);
+   mRunningTail = false;
+   mLastBlockEndBeat = keepLastEnd;
+   RunTopology(list, deviceBuffer, stageMs);
+
+   // Where in this block the switch lands.
+   int switchAt = numFrames;
+   const double sr = mSampleRate.load(std::memory_order_relaxed);
+   Transport& transport = Transport::Instance();
+   const double blockStart = transport.BlockStartBeats();
+   const double beatsPerSample = sr > 0.0 ? (double)transport.Tempo() / (60.0 * sr) : 0.0;
+   // A loop or seek that jumps back before the switch beat would never reach
+   // it: switch now rather than hold the old patch forever.
+   const bool jumpedBack = tail.lastBlockStart >= 0.0 && blockStart < tail.lastBlockStart;
+   tail.lastBlockStart = blockStart;
+   if (tail.switched)
+      switchAt = 0;
+   else if (tail.switchBeat < 0.0 || !transport.IsPlaying() || beatsPerSample <= 0.0 || blockStart >= tail.switchBeat ||
+            jumpedBack)
+      switchAt = 0;
+   else
+   {
+      const double into = std::ceil((tail.switchBeat - blockStart) / beatsPerSample);
+      if (into < (double)numFrames)
+         switchAt = std::max(0, (int)into);
+   }
+   if (!tail.switched && switchAt < numFrames)
+   {
+      tail.switched = true;
+      mLastSwitchBeat.store(blockStart + (double)switchAt * beatsPerSample, std::memory_order_relaxed);
+      mSwitchLanded.store(true, std::memory_order_release);
+   }
+
+   const int inFrames = std::max(1, (int)(0.005 * (sr > 0.0 ? sr : 48000.0)));
+   for (int i = 0; i < numFrames; i++)
+   {
+      float gNew = 0.0f, gTail = 1.0f;
+      if (i >= switchAt)
+      {
+         gNew = tail.inPos >= inFrames ? 1.0f : (float)tail.inPos / (float)inFrames;
+         tail.inPos++;
+         const float x = std::min(1.0f, (float)tail.fadePos / (float)tail.fadeFrames);
+         gTail = x >= 1.0f ? 0.0f : std::cos(1.5707964f * x);
+         tail.fadePos++;
+      }
+      for (int ch = 0; ch < numChannels; ch++)
+         deviceBuffer.channels[ch][i] = deviceBuffer.channels[ch][i] * gNew + mTailScratch[ch][i] * gTail;
+   }
+   if (tail.switched && tail.fadePos >= tail.fadeFrames && tail.inPos >= inFrames)
+      tail.done.store(true, std::memory_order_release);
 }
 
 void AudioEngine::RunEntry(AudioTopologyEntry& entry, ProcessList* list, int numFrames, int numChannels,
@@ -1230,13 +1355,31 @@ void AudioEngine::Process(float** buffers, int numChannels, int numFrames)
    double stageMs[kAudioStageCount] = { 0.0 };
    const double topologyStartMs = NowMs();
    ProcessList* list = mCurrent.load(std::memory_order_acquire);
-   RunTopology(list, buffer, stageMs);
+   Tail* tail = mTail.load(std::memory_order_acquire);
+   if (tail != nullptr && (tail->done.load(std::memory_order_relaxed) || tail->list == list))
+      tail = nullptr; // finished, or published but not yet swapped in
+   if (tail != nullptr)
+      RunTail(*tail, list, buffer, stageMs);
+   else
+      RunTopology(list, buffer, stageMs);
    // Published after RunTopology fully returns, so a main-thread reader never
    // observes this generation as "completed" while entry.node->ProcessBlock
    // calls against `list`'s (possibly about-to-be-retired) nodes are still
-   // in flight - see CompletedGeneration()'s doc comment.
-   if (list != nullptr)
+   // in flight - see CompletedGeneration()'s doc comment. A tail still
+   // playing holds it at the tail's generation: its nodes are retired on
+   // the main thread but this thread is still running them.
+   if (tail != nullptr && !tail->done.load(std::memory_order_relaxed))
+      mCompletedGeneration.store(tail->list->generation, std::memory_order_release);
+   else if (list != nullptr)
       mCompletedGeneration.store(list->generation, std::memory_order_release);
+   {
+      float peak = 0.0f;
+      for (int ch = 0; ch < std::min(numChannels, 2); ch++)
+         for (int i = 0; i < numFrames; i++)
+            peak = std::max(peak, std::fabs(buffers[ch][i]));
+      if (peak < mBlockPeakFloor.load(std::memory_order_relaxed))
+         mBlockPeakFloor.store(peak, std::memory_order_relaxed);
+   }
    // Deliberately after RunTopology, not part of it: the preview is not in
    // the node topology at all, so it stays audible (and unaffected by
    // bypass/the transport) across a topology swap, and even with nothing
