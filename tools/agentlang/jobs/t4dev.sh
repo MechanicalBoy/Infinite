@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../../.." || exit 1
 O=tools/agentlang/out
 for M in claude-sonnet-5-5 claude-opus-5-5 claude-haiku-5-5; do
   S=$(echo $M | sed 's/claude-//')
-  python3 tools/agentlang/harness.py --cap-usd 0.6 --arm B1 --split dev --model $M --out $O/t4.$S.jsonl &
+  python3 tools/agentlang/harness.py --cap-usd 0.6 --arm B1 --split dev --model $M --out $O/t4dev.$S.jsonl &
 done
 wait
 python3 - <<'PY'
