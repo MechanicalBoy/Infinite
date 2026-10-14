@@ -1,7 +1,7 @@
 # Field build step 4 — the `element` domain
 
 You are implementing **build step 4 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). This is a
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). This is a
 self-contained brief; you have no prior context on Field and do not need any
 beyond what is listed under "Files to read first".
 
@@ -145,7 +145,7 @@ existing geometry node without first getting §5.2's open question answered.
 The design brief requires attributes to be **structure-of-arrays**; an AoS
 layout costs a permanent 2–5×. What the code does today is **hybrid**, and it
 defends the AoS parts on purpose. Verified against
-`/Users/namansoni/infinte/src/core/Mesh.h`:
+`<repo>/src/core/Mesh.h`:
 
 | Structure | Line | Layout | Note |
 |---|---|---|---|
@@ -395,7 +395,7 @@ deliberately, watch the fixture print `FAIL`, then fix it.
 Run all of these. Every one must pass.
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 
 # 1. builds clean
 cmake --build build -j"$(sysctl -n hw.ncpu)"

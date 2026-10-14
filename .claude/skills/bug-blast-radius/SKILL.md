@@ -7,7 +7,7 @@ description: "The nine-question impact analysis. Run EVERY time the user shows a
 
 The standard nine-question impact analysis to run on ANY bug reported for Infinite before proposing or writing a fix — which node owns it, which logic is actually at fault, who else calls that logic, which other nodes it silently degrades, whether it is one node or a repeated pattern across the codebase, whether it behaves the same on macOS, Windows and Linux, and whether the obvious fix opens a loophole or breaks a documented invariant, when it was introduced and what bad state it leaves behind, and why the self-test harness never caught it. Use EVERY time the user shows a bug — a screenshot, a "my FPS drops", "this looks wrong", "this crashes", "this node is broken", a pasted stack trace, or a described misbehaviour — before writing any code or any fix prompt. Also use for "investigate this bug", "how bad is this", "what else does this affect", "is this everywhere".
 
-Repo root is `/Users/namansoni/infinte` (note the spelling — the directory
+Repo root is `<repo>` (note the spelling — the directory
 is `infinte`, not `infinite`). All paths below are relative to it.
 
 ## What this is for

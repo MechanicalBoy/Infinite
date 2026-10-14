@@ -7,7 +7,7 @@ description: "2D pipeline regression sweep (textures, bypass, cook memo, alpha, 
 
 Sweep Infinite's 2D / compositing image pipeline for bugs on both macOS and Windows - every node cooking a real texture, bypass passing through untouched, cook memoization holding under fan-out, ImageCable pulls carrying the right frame id, colour/palette extraction, correct source-over alpha compositing, and idle-frame caching. Use when a 2D node was added or changed (Blend, Layer Stack, Switcher, Filter, Curves, Feedback, Trails, Reaction Diffusion, Resynth, Fit, Ramp, Palette, Remove Background), when an image comes out black, stale, doubled or wrong-sized, when bypass leaves a node's effect on, when the same patch looks different depending on how many cables leave a node, when transparent edges fringe black/dark or stacked semi-transparent layers don't add up correctly, or before a release as a 2D-pipeline regression gate.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`).
+Paths below are relative to the repo root (`<repo>`).
 
 ## Run this first
 

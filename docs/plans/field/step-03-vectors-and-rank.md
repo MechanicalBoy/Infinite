@@ -1,6 +1,6 @@
 # Field build step 3 — `vec2` / `vec3` / `vec4` and APL-style rank polymorphism
 
-**Repo:** `/Users/namansoni/infinte` (C++17, ImGui + OpenGL, MIT).
+**Repo:** `<repo>` (C++17, ImGui + OpenGL, MIT).
 **Branch first** (`.claude/skills/git-branch-workflow`): `feature/field-step-03-vectors-and-rank`.
 
 Self-contained implementation prompt. Read the whole file before writing code.
@@ -782,7 +782,7 @@ Every command must pass. Run them in this order. Paste the **actual output**
 into the commit message; do not paraphrase.
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 
 # 1. The three Expression::Evaluate call sites are untouched.
 grep -rn "Expression::Evaluate" src/

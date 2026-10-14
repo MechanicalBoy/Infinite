@@ -5,7 +5,7 @@ Paste this whole file into a fresh Claude Code session on Infinite.
 ---
 
 You are implementing **Step 1 of 8** of the Arrangement Timeline feature in
-Infinite (C++/ImGui node compositor). Repo root: **`/Users/namansoni/infinte`**
+Infinite (C++/ImGui node compositor). Repo root: **`<repo>`**
 (that spelling is correct).
 
 The spec is `~/Downloads/README.md`; this step commits it into the repo as
@@ -37,7 +37,7 @@ criterion is a passing self-test, not a visible feature.
 ## Branch
 
 ```bash
-cd /Users/namansoni/infinte && git checkout main && git checkout -b feature/arrange-step-01-data-model
+cd <repo> && git checkout main && git checkout -b feature/arrange-step-01-data-model
 ```
 
 ```bash

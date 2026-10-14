@@ -7,7 +7,7 @@ description: "Writing Field Pixel presets: reserved names, aspect correction, th
 
 How to write a new Field Pixel preset (FieldPixelNode::Presets(), src/nodes/FieldPixelNode.cpp) that actually looks right the first time - reserved names, aspect correction, the metaball/SDF falloff trap, and the shapes that are and aren't buildable in this backend. Use BEFORE adding, editing, or debugging any Field Pixel preset string, and when a preset looks stretched, flat, or "just a circle/blob that won't blend".
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 Field Pixel compiles its kernel text to GLSL 150 via `GlslBackend.cpp` and
 runs it once per pixel through `GLUtil::CompileProgram`. This skill is the

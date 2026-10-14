@@ -1,7 +1,7 @@
 # Build Prompt — `prior-art-scout` agent
 
 Paste everything below the line into a fresh Claude Code session in
-`/Users/namansoni/infinte`.
+`<repo>`.
 
 ---
 

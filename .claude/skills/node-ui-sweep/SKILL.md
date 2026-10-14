@@ -7,7 +7,7 @@ description: "Node UI/UX regression sweep (pins, cables, drag, groups, undo, cop
 
 Sweep the UI/UX inside and around Infinite's nodes for bugs on both macOS and Windows - pin identity, cable dragging and drawing, node dragging vs canvas panning, collapsing a node's params, node box sizing, node-local viewports, in-node editors (wavetable, EQ curve), groups, undo/redo, copy/paste/delete, drag-and-drop from the browser onto a node, and whether every control is reachable by a modulation cable. Use after changing any node body, widget wrapper, pin layout, the node editor canvas, the group box, undo, or the browser drop targets; when a cable lands on the wrong control or will not attach, when collapsing a node loses its modulation, when a node will not drag or the canvas pans instead, when a node box jitters or grows, or before a release as a UI regression gate.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`).
+Paths below are relative to the repo root (`<repo>`).
 
 ## Run this first
 

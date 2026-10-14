@@ -181,7 +181,7 @@ A param row is not only a look. Each one carries the behaviours below. R1, R2, R
 | 5 | Per-family lists above, one commit per family | "<Family>: polish pass" |
 | 6 | Live-state pass (below) | "Live states: waveforms, playheads, visualisers" |
 
-After each step: build, `python3 tools/design/inventory.py && python3 tools/design/ratchet.py`, `driver.sh --skip-build --group ui`, shoot the affected families with `tools/design/gallery/shoot.py <Cat…>` + `sheet.py`, compare against the baseline in `~/infinite-node-gallery/`, send the before/after sheet. Deploy `build/Infinite.app` to `~/Desktop/Infinite.app`. Last step: `driver.sh --auto`.
+After each step: build, `python3 tools/design/inventory.py && python3 tools/design/ratchet.py`, `driver.sh --skip-build --group ui`, shoot the affected families with `tools/design/gallery/shoot.py <Cat…>` + `sheet.py`, compare against the baseline in `~/Infinite/test-output/node-gallery/`, send the before/after sheet. Deploy `build/Infinite.app` to `~/Desktop/Infinite.app`. Last step: `driver.sh --auto`.
 
 ## 5. Not yet seen (do in step 6)
 
@@ -189,5 +189,5 @@ All 2026-10-09 shots are idle. Needed: a sample loaded in Sampler / Slicer / Gra
 
 ## 6. Baseline and tools
 
-- Shots, sheets and sizes before this pass: `~/infinite-node-gallery/baseline-2026-10-09/`, `…-sheets/`, `sizes-baseline-2026-10-09.txt`.
+- Shots, sheets and sizes before this pass: `~/Infinite/test-output/node-gallery/baseline-2026-10-09/`, `…-sheets/`, `sizes-baseline-2026-10-09.txt`.
 - Tools: `tools/design/gallery/README.md`.

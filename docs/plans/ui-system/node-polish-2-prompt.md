@@ -165,7 +165,7 @@ User presets per node, panic/blackout keys (Start/Stop Audio covers it), perform
 
 ## Block C: finish
 
-- Reshoot every family, dark and light, into `~/infinite-node-gallery/after-<date>-sheets/` and send before/after contact sheets with `SendUserFile` (baseline: `~/infinite-node-gallery/baseline-2026-10-09-sheets/`).
+- Reshoot every family, dark and light, into `~/Infinite/test-output/node-gallery/after-<date>-sheets/` and send before/after contact sheets with `SendUserFile` (baseline: `~/Infinite/test-output/node-gallery/baseline-2026-10-09-sheets/`).
 - `python3 tools/design/inventory.py && python3 tools/design/ratchet.py` (raw widgets 442 vs stored 470: lower the stored number).
 - `driver.sh --skip-build --group ui,modulation,audio`, then final `driver.sh --auto`.
 - Deploy: `rm -rf ~/Desktop/Infinite.app && cp -R build/Infinite.app ~/Desktop/Infinite.app`.

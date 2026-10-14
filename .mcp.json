@@ -20,7 +20,7 @@
       "command": "repowise",
       "args": [
         "mcp",
-        "/Users/namansoni/infinte",
+        ".",
         "--transport",
         "stdio"
       ]

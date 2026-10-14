@@ -7,7 +7,7 @@ description: "Field syntax/semantics contract: domains, inferred rates, bare nam
 
 The syntax, semantics and reserved-word contract of Field, the embedded language being built for Infinite — the one primitive (a kernel per element of a domain), the five domains (graph/frame/element/pixel/sample), inferred rates, bare-name attributes with no sigils, attrib/param/state declarations, the type set and rank polymorphism, and the wrong/right table of the mistakes every fresh session makes. Use BEFORE writing or reviewing any Field source text, any Field example in a doc, any node body that hosts a Field editor, or any prompt for a session that will touch the language; use when asked "what does a Field program look like", "is this valid Field", "what rate does this run at", "why is my expression compiling to the wrong domain", or when anyone writes `@P` or declares a rate.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 **Field is implemented.** The compiler lives in `src/core/field/` (`FieldParse.cpp`,
 `FieldIR.cpp`, `Transfer.cpp`, `ReduceOps.cpp`, and friends) and is wired into

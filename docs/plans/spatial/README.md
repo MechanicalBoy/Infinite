@@ -33,7 +33,7 @@ Self-score v1 -> v2: accuracy 5->8, innovation 6->8, UX 4->7, realtime 6->8, ind
 
 ## Baseline (locked 2026-10-08, one listener, 48 trials each, generic HRTF, no head tracking)
 
-Kit: tools/spatial/make_baseline.py -> ~/infinite-spatial-baseline; scored by tools/spatial/score_baseline.py.
+Kit: tools/spatial/make_baseline.py -> ~/Infinite/test-output/spatial-baseline; scored by tools/spatial/score_baseline.py.
 
 | Condition | Azimuth error | Front/back confusion | Elevation error |
 |---|---|---|---|

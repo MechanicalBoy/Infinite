@@ -1,7 +1,7 @@
 # Field build step 17 — `.infdev` device file format (save / load / export / import)
 
 You are implementing **build step 17 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). Self-
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). Self-
 contained brief; no prior context assumed beyond "Files to read first".
 Line numbers are from `src/` at the commit this was written against
 (`feature/field-step-15-fieldgraph-encapsulation` tip, commit `f59820c`) —
@@ -388,7 +388,7 @@ force `FormulaNode` through `ParamTable`.
 ## 8. Machine-checkable exit criterion
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 cmake --build build -j"$(sysctl -n hw.ncpu)"
 
 env INFINITE_FIELDDEVICETEST=1 ./build/Infinite.app/Contents/MacOS/Infinite | tee /tmp/FIELDDEVICETEST.log | tail -5

@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Verify, review, commit, and push uncommitted Infinite changes, cut a versioned GitHub Release tag with curated "What's new" notes, build the distributable macOS DMG, pull the CI-built Windows x64/ARM64 zips and the CI-built Linux AppImage, and publish all of it via the GitHub Pages website (n1m21n.github.io/Infinite) and that Release — plus flag node-catalog changes that need the Node Reference Manual updated, and clean up junk/duplicate tracked files. Use when asked to "ship this", "release Infinite", "cut a release", "build and publish the DMG", "push and deploy", or "clean up the repo before release".
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`), not
+Paths below are relative to the repo root (`<repo>`), not
 this skill directory.
 
 ## What this does, and why it's not a single command

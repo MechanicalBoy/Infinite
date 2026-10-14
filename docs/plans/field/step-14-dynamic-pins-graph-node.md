@@ -1,7 +1,7 @@
 # Field build step 14 — dynamic pins, Phase 2c: FieldGraphNode
 
 You are implementing **build step 14 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). Self-
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). Self-
 contained brief; no prior context assumed beyond "Files to read first".
 Line numbers are from `src/` at the commit this was written against —
 re-grep the symbol if a number has drifted; the symbol wins.
@@ -248,7 +248,7 @@ the other three node types.
 ## 7. Machine-checkable exit criterion
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 cmake --build build -j"$(sysctl -n hw.ncpu)"
 
 for v in FIELDTEST FIELDELEMENTTEST FIELDPARAMTEST FIELDSTATETEST FIELDSAMPLETEST \

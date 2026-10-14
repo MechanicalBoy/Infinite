@@ -891,9 +891,9 @@ Run this from the repo root. **Every line must print `OK`.** No line may print `
 
 ```bash
 #!/usr/bin/env bash
-# docs/plans/field/step-07-exit.sh  --  run from /Users/namansoni/infinte
+# docs/plans/field/step-07-exit.sh  --  run from <repo>
 set -uo pipefail
-cd /Users/namansoni/infinte
+cd <repo>
 export INFINITE_NO_UPDATE_CHECK=1
 BIN="build/Infinite.app/Contents/MacOS/Infinite"
 FAILED=0

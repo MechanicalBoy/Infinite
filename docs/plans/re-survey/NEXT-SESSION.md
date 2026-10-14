@@ -1,6 +1,6 @@
 # re-survey: prompt for the next session (finish blocks A to F)
 
-Paste everything below the line into a fresh Claude Code session in `/Users/namansoni/infinte`. Written 2026-10-12.
+Paste everything below the line into a fresh Claude Code session in `<repo>`. Written 2026-10-12.
 
 ---
 

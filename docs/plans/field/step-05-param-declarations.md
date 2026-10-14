@@ -1,7 +1,7 @@
 # Field build step 5 — `param` declarations become real knobs
 
 You are implementing **build step 5 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). This is a
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). This is a
 self-contained brief; you have no prior context on Field and do not need any
 beyond what is listed under "Files to read first".
 
@@ -353,7 +353,7 @@ it print `FAIL`, then fix it.
 ## 7. Machine-checkable exit criterion
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 
 # 1. builds clean
 cmake --build build -j"$(sysctl -n hw.ncpu)"

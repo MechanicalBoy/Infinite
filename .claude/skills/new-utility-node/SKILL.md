@@ -7,7 +7,7 @@ description: "Procedure for adding a Utility/IO node (Output, Syphon/Spout, Proj
 
 The standard procedure for adding a Utility/IO node to Infinite - a node whose job is to move data in or out of the patch (Output/record/export, Syphon In/Out, Projection, OSC Send/Receive, Video In) rather than to make an image. Covers the terminal-node identity-pass pattern, the Platform:: one-abstraction rule that keeps it building on Windows, resource ownership across GL contexts, external side effects and how to gate them, and the machine-checkable exit criterion. Use when implementing an export/broadcast/receive/protocol node, when writing the prompt for a fresh session that will implement one, or when an IO node leaks a handle, crashes on delete, works on macOS but not Windows, or fires its side effect when it shouldn't.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 Read `new-source-node` / `new-compositing-node` first for the shared image-node
 mechanics. This skill is about what makes an IO node different: **it has an

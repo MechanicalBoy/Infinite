@@ -288,7 +288,7 @@ Do not start a phase before the previous one's check passes.
 ### Phase 0 — branch and baseline
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 git checkout -b feature/field-step-10-graph-domain
 bash .claude/skills/run-infinite-hygiene/driver.sh --full
 ```
@@ -778,7 +778,7 @@ step that prints anything other than what its comment says is a failure; do not 
 ### 7.1 Build
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j8 2>&1 | tee /tmp/field_step10_build.log
 # must print 0
@@ -830,7 +830,7 @@ grep -cE 'FAIL|BUG$|MISMATCH|SUSPECT' /tmp/fg_blast.txt
 This is half of step 10's exit criterion and it is not optional.
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 bash .claude/skills/run-infinite-hygiene/driver.sh --full 2>&1 | tee /tmp/fg_hygiene.txt
 # must print 0
 grep -cE 'FAIL|BUG$|MISMATCH|SUSPECT|DID NOT MOVE|TONE MISSING' /tmp/fg_hygiene.txt
@@ -862,7 +862,7 @@ grep -cE 'FAIL' /tmp/fg_conf.txt
 ### 7.5 The globals guarantees are untouched
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 # must print 0 - ExprGlobals is not modified by this branch
 git diff --name-only main -- src/core/ExprGlobals.h src/core/ExprGlobals.cpp | wc -l | tr -d ' '
 # must print 0 - Patch, INode, Modulation and NodeFactory are not modified either
@@ -897,7 +897,7 @@ load produces **zero** actions (§5.3.3 idempotence, end to end through the file
 Owner standing instruction: after building Infinite, always copy the app to the Desktop.
 
 ```bash
-cp -R /Users/namansoni/infinte/build/Infinite.app ~/Desktop/Infinite.app
+cp -R <repo>/build/Infinite.app ~/Desktop/Infinite.app
 ```
 
 ---

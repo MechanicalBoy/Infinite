@@ -7,7 +7,7 @@ description: "Exported-movie audio/video sync sweep (drift, dropped frames, miss
 
 Sweep Infinite's audio/video sync for bugs on both macOS and Windows - exported movies where audio and video drift apart, frames reported but never written to disk, a tone missing from the recorded audio track, wrong movie duration, playback speed and reverse scrubbing, plugin latency smearing parallel branches, and crashes when the recorder is torn down mid-take. Use after touching OutputNode recording, the PBO readback, the platform recorder or muxer, the video decoder, playback speed, or plugin delay compensation; when an exported movie's sound lags or leads the picture, when a long take drifts progressively, when the file is shorter or longer than the take, or before a release that ships export.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`).
+Paths below are relative to the repo root (`<repo>`).
 
 ## Run this first
 

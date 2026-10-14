@@ -2,7 +2,7 @@
 
 Executable prompt. Self-contained: do not assume the originating conversation.
 
-Repo root is `/Users/namansoni/infinte` (spelled `infinte`). All paths relative
+Repo root is `<repo>` (spelled `infinte`). All paths relative
 to it.
 
 ---

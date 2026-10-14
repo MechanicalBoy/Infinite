@@ -7,7 +7,7 @@ description: "How to search Infinite completely: every implementer, registration
 
 How to search Infinite's codebase efficiently and completely — trace an interface to every implementer and every hand-maintained registration site, not just the first grep hit; check both platform paths; check the living map of known connective-tissue hotspots below. Use at the start of ANY investigation, sweep, or plan-writing task that touches src/ — before reporting "the code does X" or handing findings to a planning/implementation agent. This skill accumulates a growing map of the codebase's cross-cutting wiring points; add to it whenever a task turns up a new one.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 This skill exists because Infinite has a lot of code that looks local but
 isn't: a node's behavior is split across its class, a shader string literal,

@@ -7,7 +7,7 @@ description: "Split a request into seven concern lenses to decide which skills i
 
 Splits any Infinite request into seven concern lenses — Structure, Execution, Data & State, UI/UX, Platform, Performance, Correctness — each with its own numbered sub-lenses, anchors, trigger questions and owning skills, so a change or investigation is examined along every axis it actually touches instead of only the obvious one. Two modes - Change mode (classify a request into a lens map of primary / touched / clear before planning or editing) and Deep-dive mode (walk a system lens by lens at C4-style zoom levels L1 system → L4 code). Use when asked to make any non-trivial change, "deep dive into X", "how does X work", "what does this touch", "break this down", "look at this from every angle", when planning a feature, and whenever triage, infinite-planner or cartographer needs to decide which skills to load. Complements codebase-navigation (how to search) and ARCHITECTURE.md (where code lives); this skill says which concerns a change carries.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 ## Why this exists
 

@@ -7,7 +7,7 @@ description: "Proving a Field change didn't regress (tests/field/corpus.txt gold
 
 How to prove a Field change did not regress Infinite — extending the regression corpus at tests/field/corpus.txt without baking new behaviour into golden values, the golden-value harness as an INFINITE_* fixture, per-domain conformance cases for frame/element/pixel/sample, how to re-baseline across the deliberate randomness break, and the machine-checkable exit criterion for each of the 10 build steps. Use before and after any Field compiler or language change, when adding a backend, when asked "did this break saved patches", "how do I test the language", "what proves step N is done", or when writing the prompt for a session that will implement any build step.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 Read [`field-compiler`](../field-compiler/SKILL.md) for the pipeline this tests
 and [`field-realtime`](../field-realtime/SKILL.md) for the diff checklist that

@@ -1,7 +1,7 @@
 # Prompt: build Infinite's performance benchmark suite (measure first, fix later)
 
 You are a fresh Claude Code session working on Infinite, a C++/OpenGL/ImGui
-node-based live audio-visual instrument (repo `/Users/namansoni/infinte`).
+node-based live audio-visual instrument (repo `<repo>`).
 Read `AGENTS.md`, then load these skills before touching code:
 `codebase-navigation`, `codebase-lenses`, `git-branch-workflow`,
 `run-infinite-hygiene`, `windows-parity`, `linux-parity`.

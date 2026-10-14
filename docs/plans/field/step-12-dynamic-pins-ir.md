@@ -1,7 +1,7 @@
 # Field build step 12 — dynamic pins, Phase 2a: declaration syntax and the compiler layer
 
 You are implementing **build step 12 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). This is a
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). This is a
 self-contained brief; you have no prior context on Field and do not need any
 beyond what is listed under "Files to read first".
 
@@ -503,7 +503,7 @@ Extend `field-compiler` §8's table, do not write a second one:
 ## 7. Machine-checkable exit criterion
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 cmake --build build -j"$(sysctl -n hw.ncpu)"
 
 # every existing Field harness must be unaffected — this step is additive

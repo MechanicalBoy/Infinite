@@ -7,7 +7,7 @@ description: "Map of the Timeline/Arrangement system (clips, lanes, playback, st
 
 Map of how Infinite's Timeline/Arrangement system actually works today - the single Clip/Lane/TrackGroup data model, how clips are drawn and composited, what settings each selection kind exposes, real vs. informal type distinctions (sample vs clip), grouping/nesting, the playback/playhead call paths for audio and video, retriggering, per-sample stretch/BPM, signal application order, and why the waveform is always live-drawn rather than cached from disk. Use before planning or reviewing any change to src/arrange/ or the Arrange panel in main.cpp, when asked "how does the timeline work", "what does a clip/track/group actually store", "does X exist for the timeline yet", or when deciding where a new timeline feature belongs.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`). Everything here was
+Paths below are relative to the repo root (`<repo>`). Everything here was
 verified against code (file:line) as of commit `83fd442` (post "Arrangement overhaul",
 `101c874`), then updated for the `timeline-arrangement-improvements` pass (branch
 `claude/timeline-arrangement-improvements-81c7c7`, see below). Where something the codebase's

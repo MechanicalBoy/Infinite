@@ -7,7 +7,7 @@ description: "Procedure for adding a modulator/macro node (IModulator). Use when
 
 The standard procedure for adding a Modulators/Macros node to Infinite - the IModulator contract, the idempotency rule that makes Value01() safe to call many times per frame, multi-output modulators, mod-matrix/performance-matrix visibility, unbinding on delete, and the machine-checkable exit criterion. Use when implementing an LFO/random/pattern/math/shaper/macro-control node, when writing the prompt for a fresh session that will implement one, or when a modulator node's value freezes, runs at the wrong speed, jitters differently depending on how many params it drives, or vanishes from the modulation matrix.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 This is the control-signal sibling of `new-audio-node`, `new-effect-node` and
 `new-geometry-node`. Read one of those first if this is your first node in

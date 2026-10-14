@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # One command for Block C's visual pass: every node family, dark + light, params closed + open, as contact sheets.
 #   tools/design/gallery/run_sheets.sh [OUT_DIR] [Category ...]
-# Default OUT_DIR ~/infinite-node-gallery/after-$(date +%F)-sheets. Sheets land in OUT_DIR/<theme>/sheets/.
+# Default OUT_DIR ~/Infinite/test-output/node-gallery/after-$(date +%F)-sheets. Sheets land in OUT_DIR/<theme>/sheets/.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
-OUT_BASE="${1:-$HOME/infinite-node-gallery/after-$(date +%F)-sheets}"; shift || true
+OUT_BASE="${1:-$HOME/Infinite/test-output/node-gallery/after-$(date +%F)-sheets}"; shift || true
 G=tools/design/gallery
 INFINITE_NODELIST=1 INFINITE_EXITAFTER=5 ./build/Infinite.app/Contents/MacOS/Infinite > /tmp/infinite-nodelist.txt 2>/dev/null || true
 if [ "$#" -gt 0 ]; then CATS=("$@"); else CATS=($(grep '^NODELIST ' /tmp/infinite-nodelist.txt | sed 's/^NODELIST //; s/|.*//' | sort -u)); fi

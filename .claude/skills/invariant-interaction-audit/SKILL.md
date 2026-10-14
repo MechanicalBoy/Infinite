@@ -7,7 +7,7 @@ description: "When a fix establishes a guarantee, check every later control or c
 
 Before writing (or right after writing) any code that establishes a guarantee — "note stays in scale," "value stays normalized," "budget stays under N," "state stays consistent" — check every OTHER control, branch, or downstream stage in the same node/function/pipeline that runs after your guarantee is established, because one of them can silently undo it. Then check whether the exact same undo-shape was copy-pasted into sibling nodes/functions elsewhere in the codebase. Use before shipping any fix or feature that adds an invariant, right after writing it as a self-check, and whenever a "we already fixed this" bug comes back — it usually means a sibling control or a sibling call site undid the fix, not that the fix was wrong.
 
-Repo root is `/Users/namansoni/infinte`. Paths below are relative to it.
+Repo root is `<repo>`. Paths below are relative to it.
 
 ## The failure this exists to catch
 

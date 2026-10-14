@@ -7,7 +7,7 @@ description: "Find data corruption along a patch chain (copy/paste, save/load, s
 
 Sweep Infinite for data corruption along a patch chain on both macOS and Windows - values silently dropped by copy/paste or save/load, pass-through nodes that alter what passes through, stale caches served as fresh, TextureRevision lying about a change, cook memoization breaking under fan-out, bypass substituting its own output, and modulation writing values outside a destination's units. Use when a value is right at one end of a chain and wrong at the other, when a param resets after save/load or paste, when an image is stale or a mesh re-uploads every frame, when adding a param to any node, after changing VisitParams, Patch serialization, TextureRevision, cook caching or the Null/pass-through nodes, or before a release as a data-integrity gate.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`).
+Paths below are relative to the repo root (`<repo>`).
 
 ## Run this first
 

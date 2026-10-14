@@ -1,6 +1,6 @@
 # Implement the `Slicer` audio node in Infinite
 
-Repo: `/Users/namansoni/infinte` (note the spelling — no second `i`).
+Repo: `<repo>`.
 All paths below are relative to that root. All line numbers were verified
 against the working tree at the time of writing; `src/main.cpp` is **52,899
 lines**, so if a cited line has drifted, grep the quoted symbol rather than

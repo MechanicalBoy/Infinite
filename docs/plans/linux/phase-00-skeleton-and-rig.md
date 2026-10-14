@@ -8,7 +8,7 @@ rig from [validation.md](validation.md) exists and runs.
 ## Start
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 git fetch origin && git switch main && git pull --ff-only
 git switch -c feature/linux-step-00-skeleton
 ```

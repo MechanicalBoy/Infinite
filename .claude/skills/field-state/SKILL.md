@@ -7,7 +7,7 @@ description: "Field `state` cells: delay semantics, reset on seek/loop, serializ
 
 Field's `state` cells — the delay-sugar semantics, the "every dataflow cycle must contain at least one delay" legality rule, reset on seek/loop/stop, serialization into the patch by (name, type), hot-reload transplant rules when a kernel body is edited while running, the per-domain memory cost table (1 float per cell in frame/sample, per element in element, per pixel in pixel — an 8 MB ping-pong texture pair at 1080p), and how pixel-domain state becomes a ping-pong texture pair. Use whenever writing, reviewing or lowering a `state` declaration, when a Field kernel needs memory between invocations, when a filter/feedback/integrator/smoother is involved, when a patch reloads with the wrong tail or a reset that should not have happened, or when a pixel kernel's memory cost needs to be surfaced in the UI.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 Read [`field-language`](../field-language/SKILL.md) §8 first for the syntax and
 [`field-compiler`](../field-compiler/SKILL.md) §5 for how a `state` back-edge

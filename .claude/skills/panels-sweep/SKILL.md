@@ -7,7 +7,7 @@ description: "Docked-panel sweep: modulation and performance matrices, browser, 
 
 Sweep Infinite's docked panels for bugs on both macOS and Windows - the modulation matrix (rows, collapsed-node params, disabled rows, scroll/fill geometry in all four dock orientations, patch round trip), the performance matrix (macro elements, assignment, persistence), the node browser's sort and filter strip, and node viewport cards. Use after changing any panel, the dock layout, the browser sort/filter controls, the macro element types, or modulation row rendering; when a panel's rows are blank, misaligned, or wrong while scrolling, when a sort or filter control does nothing, when a panel breaks in one dock position only, or before a release as a panel regression gate.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`).
+Paths below are relative to the repo root (`<repo>`).
 
 ## Run this first
 

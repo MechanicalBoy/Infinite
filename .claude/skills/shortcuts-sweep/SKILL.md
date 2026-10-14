@@ -7,7 +7,7 @@ description: "Static cross-check of every keyboard shortcut against the help win
 
 Cross-checks every keyboard shortcut in Infinite against three things at once - that each row of the in-app shortcuts window has a real handler, that no binding exists which the window never tells anyone about, and that no handler is gated on Cmd alone (which makes it dead on Windows). Static, needs no build. Use when asked "do the shortcuts work", "check the shortcuts on both versions", "is the shortcut list accurate", after adding or changing any keyboard binding, after editing the shortcuts help window, or when a user reports a key that does nothing on Windows.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`).
+Paths below are relative to the repo root (`<repo>`).
 
 ## Run this first
 
