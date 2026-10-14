@@ -86,7 +86,12 @@ void DrawFramePump(FrameCtx& fc)
       // A projector opened or closed, or an export started or ended, since
       // last frame: hand pacing to the right owner before this frame swaps.
       ApplyCanvasSwapInterval();
-      glfwPollEvents();
+      {
+         // On Windows this also dispatches a plugin editor's WM_PAINT and
+         // WM_TIMER; an editor with its own GL context leaves it current (R282).
+         Platform::PluginGlGuard keepGl;
+         glfwPollEvents();
+      }
       if (Bench::Tail().active)
          Bench::Tail().MarkAt(Bench::FrameTail::kMarkPolled, Bench::ScopedStageTimer::NowMs());
 

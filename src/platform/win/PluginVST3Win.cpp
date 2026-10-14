@@ -2343,16 +2343,9 @@ namespace
    // next swap. Anything that can run plugin UI code on the UI thread saves
    // the current WGL context and restores it afterwards. Found by the Turbo
    // fork (PR #24).
-   struct GlContextKeeper
-   {
-      HDC dc = wglGetCurrentDC();
-      HGLRC rc = wglGetCurrentContext();
-      ~GlContextKeeper()
-      {
-         if (wglGetCurrentContext() != rc || wglGetCurrentDC() != dc)
-            wglMakeCurrent(dc, rc);
-      }
-   };
+   // The guard is Platform::PluginGlGuard (PluginHostWin.cpp), shared with the
+   // main loop, which uses it around glfwPollEvents() (R282).
+   using GlContextKeeper = Platform::PluginGlGuard;
 
    void SetPluginEditorOpenWin(Platform::PluginHandle* h, bool open)
    {
@@ -2385,6 +2378,11 @@ namespace
       }
 
       auto* h = reinterpret_cast<Platform::PluginHandle*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+      // A drag or resize of this window runs a nested message loop inside
+      // DefWindowProc that dispatches the plugin's own GL child paints
+      // without going through our pump (R282).
+      GlContextKeeper keepGl;
 
       if (msg == WM_CLOSE)
       {

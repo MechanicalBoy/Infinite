@@ -43,6 +43,8 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 - 2026-10-14 Agent: v0.6 2.31 done. New thing a user sees: a script or controller can drive any patch over OSC on 127.0.0.1:9100 - set, query and listen to every param, add, remove and connect nodes (tools/osc_control.py). Decided: loopback only, param sets are not undo steps; FM's duplicate pin id fixed on the way.
 - 2026-10-14 Agent: v0.6 2.32 done. New thing a user sees: a Partials synth (Synths) - load any sample, it is analysed into 48 partials plus noise and plays back on the keyboard with pitch, formant, partials, morph-to-a-second-sample, speed, noise, release and loop. Decided: formants stay put when you play higher (the formant knob moves them); partials near Nyquist fade, never alias; notes restart the sample.
 - 2026-10-14 Agent: v0.6 2.33 done. New thing a user sees: a String synth in Synths - pluck, bow or strike a modelled string on a wooden body, in tune to 1 ¢ from MIDI 24 to 108, with position, tone, decay, stiffness, body and release. Decided: a new synth rather than a Metallic mode; tuning is solved at the fundamental so stiffness stretches only the upper partials; one shared body for all 8 voices.
+- 2026-10-14 Agent: v0.6 2.37 code in, row stays open (not tested on Windows). New thing a user sees: nothing on macOS or Linux; on Windows, opening an editor that draws with its own OpenGL context (Auto-Tune Pro) should no longer freeze Infinite. Decided: a GL-context guard around the main loop's event polling and the editor window (the freeze is most likely the plugin leaving its context current, from reading the code, not reproduced); the UI-thread watchdog is left for later because a blocked UI thread cannot close its own window. Still open: compile on Windows, the rig test VST3 with its own GL context, your Auto-Tune Pro check, the watchdog.
+- 2026-10-14 Agent: v0.6 2.36 done. New thing a user sees: Stage > Show Set has a Show safety card: Show lock (Cmd/Ctrl+Shift+L) stops delete, drag, new cables and undo while knobs still play; Panic (Cmd/Ctrl+Period) silences everything and freezes the projectors until pressed again; Pre-show check lists missing media, plugins, MIDI devices and unconnected Outputs; a quit stuck on the audio device now ends after 4 s. Decided: the check reuses each node's own issue; panic is a latch; the quit watchdog also cuts a slow normal quit at 4 s.
 - 2026-10-14 Agent: v0.6 2.35 done. New thing a user sees: Stage > Show Set, a list of patches you step through live with PageDown/PageUp, a MIDI program change or OSC; the switch lands on the next bar (or beat, 2 bars, none), the old patch's sound fades out under the new one and the projector never goes black. Decided: a switch discards unsaved edits and says so; a request just before a bar line lands one bar later; a backwards loop or seek during the fade switches at once.
 - 2026-10-14 Agent: v0.6 2.11 done. New thing a user sees: Drive and Wavetable Shaper delay the signal by 5 samples instead of 73, with aliasing equal or lower. Decided: a minimum-phase oversampler instead of linear-phase (true 0 latency is impossible with a band limit; 5 samples is under PDC's notice); `LatencySamples()` reports the rounded low-frequency delay; the dry half of the mix goes through an identical oversampler so wet/dry never comb; the plugin probe's -76.6 dB "aliasing" was its own bug (counted harmonics 11-23) and is fixed. FXAUDIT's click metric is phase-sensitive to the 5 ms gain-ramp corner; left as is and noted in the 2.11 row.
 - 2026-10-14 Agent: v0.6 2.10 done. New thing a user sees: an "MSEG" modulator, a shape you draw and that plays over time. Decided: with nothing patched into `trig` it follows the transport like the LFO (so it stops on Pause and two copies stay in step); with loop off and no trigger the whole shape repeats; one `loop` switch covers both loop A–B and sustain (set loop start = loop end for a sustain point); at rest it holds its last value; rate uses the LFO's beats / synced / Hz control. No Hold or per-point tempo snapping: not needed for the row's bar.
@@ -52,7 +54,6 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 - 2026-10-14 Agent: v0.6 2.5 done. New thing a user sees: a Plugin node whose plugin has a sidechain input (compressors, gates) shows a third pin, "sidechain". The plugin still has to be switched to its external sidechain in its own window (Pro-C 2 only obeys that in its expert side chain mode).
 - 2026-10-14 Agent: reviewed PR #24 and the fork commits after 2026-10-04 (0.49-0.55). Owner: Infinite is a design instrument and also a live instrument, balanced, never one-sided. Taken: 2.37 Auto-Tune GL editor freeze (R282), 2.38 bar-quantized launch, 3.18 HAP video; plugin-handle crash check in 2.6, quit-never-hangs in 2.36, bar-landing switch in 2.35. Not taken: TD Common page, Send/Receive, fader law, Super Mixer master chain (1.13 covers clipping), Punch FX (GPL edition, never read). Open for owner: Clip Matrix launcher grid. 63 items.
 - 2026-10-13 Agent: v0.6 Block 1 done on `bugfix/v06-audio-correctness` except 1.7 (not merged, not pushed). 1.0b: `data_ledger.py lint` and `community_patches.py --smoke` are part of verify-gate; a kit result is stale when its sources change after it, counted from the edit, not the commit. Community patches are only checked to open, play and show a picture or sound.
-- 2026-10-14 Agent: v0.6 2.36 done. New thing a user sees: Stage > Show Set has a Show safety card: Show lock (Cmd/Ctrl+Shift+L) stops delete, drag, new cables and undo while knobs still play; Panic (Cmd/Ctrl+Period) silences everything and freezes the projectors until pressed again; Pre-show check lists missing media, plugins, MIDI devices and unconnected Outputs; a quit stuck on the audio device now ends after 4 s. Decided: the check reuses each node's own issue; panic is a latch; the quit watchdog also cuts a slow normal quit at 4 s.
 - 2026-10-13 Owner asked for a professional, industry-standard verdict on every item; final v0.6 = 60 items. Back in: 1.0 competitor specs and 1.0b data ledger (owner's use-all-data decision), 2.5 plugin sidechain, 2.24 multicore audio (null-identical gate, audio workgroups, fallback), 2.31 OSC control, 3.14 clip speed, 3.15 GPU particles (gate then build). Out: CLAP, dynamic EQ, drum synth, note entry, .als import, starter content, linear-phase EQ, bokeh (in 3.5), Cables comparison. Supersedes the 54-item line below.
 - 2026-10-13 Owner vetted the v0.6 list and asked the agent to decide the rest; this is final. 54 items. In: Block 1 1.1-1.14; sound incl. designed-space convolution reverb, per-voice/audio-rate modulation, unison, crossover, tape delay, compressor styles + sidechain, filters, warps, strings, MPE, SIMD voices, Field phase shaping; picture incl. sweep/revolve, render quality, area light, bevel, rigid bodies, plexus, L-system, volumes, share. Out (plan section "Not in v0.6"): 1.0, 1.0b, CLAP, dynamic EQ, multicore, drum synth, note entry, .als import, starter content, full OSC API, linear-phase EQ, bokeh (in 3.5), Cables comparison, clip speed, GPU particles.
 - 2026-10-13 Owner: reopening a patch need not be identical; the software evolves with the user and a show is a holistic art experience, not a replay. Agent: dropped 1.15; user patches only need to open, play and show a picture; show set and show safety stay. 69 items.
@@ -88,7 +89,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-14 02:36 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-14 19:36 UTC. Do not edit inside this block; rerun the tool._
 
 ### Open quests (7) **over the cap of 5: park or close before adding**
 
@@ -104,10 +105,10 @@ _Generated 2026-10-14 02:36 UTC. Do not edit inside this block; rerun the tool._
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| extensions | 2026-10-13 | 9 |
-| v0.5.0 | 2026-10-10 | 192 |
+| extensions | 2026-10-13 | 10 |
+| v0.5.0 | 2026-10-10 | 204 |
 | v0.4.7 | 2026-10-07 | 74 |
-| v0.4.6 | 2026-10-01 | 165 |
+| v0.4.6 | 2026-10-01 | 166 |
 
 ### Quality of extensions (since v0.5.0; the release measure)
 
@@ -115,7 +116,7 @@ _Generated 2026-10-14 02:36 UTC. Do not edit inside this block; rerun the tool._
 |---|---|---|
 | Escaped fixes: fixes after extensions touching src it changed | 4 e90f84fe d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
 | Reverts after extensions | 0 | 0 |
-| Fix-shaped commits after extensions (all) | 24 | context |
+| Fix-shaped commits after extensions (all) | 25 | context |
 | Known test failures (macOS / Linux) | 3 / 6 | never grows |
 | Open GitHub issues labelled bug | 0 | 0 |
 | Crash reports filed since extensions | 0 | 0 |

@@ -900,6 +900,28 @@ namespace Platform
    // actually dispatched something.
    bool PumpPluginEditorEvents();
 
+   // Saves the calling thread's current GL context and puts it back when the
+   // scope ends. Wrap anything that can run a hosted plugin's UI code on the
+   // UI thread. On Windows an editor that draws with its own OpenGL context
+   // (Auto-Tune Pro, some iZotope / NI UIs) calls wglMakeCurrent while it
+   // paints and does not restore ours, so every later GL call of the main
+   // window lands in the plugin's context and Infinite looks frozen (R282).
+   // That includes glfwPollEvents(), which dispatches the editor's WM_PAINT
+   // and WM_TIMER. Does nothing on macOS and Linux (no plugin editor shares
+   // our GL thread there). Main thread only; cheap.
+   class PluginGlGuard
+   {
+   public:
+      PluginGlGuard();
+      ~PluginGlGuard();
+      PluginGlGuard(const PluginGlGuard&) = delete;
+      PluginGlGuard& operator=(const PluginGlGuard&) = delete;
+
+   private:
+      void* dc_ = nullptr;
+      void* rc_ = nullptr;
+   };
+
    // AUAudioUnit.fullState, keyed-archived and base64'd so it round-trips
    // through Patch.cpp's Text param (one backslash-escaped line, no length
    // cap). Returns false if the plugin publishes no state.

@@ -518,4 +518,7 @@ namespace Platform
    }
 
 #endif // INFINITE_ENABLE_VST3
+
+   PluginGlGuard::PluginGlGuard() = default;
+   PluginGlGuard::~PluginGlGuard() = default;
 }

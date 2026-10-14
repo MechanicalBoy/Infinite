@@ -7343,6 +7343,9 @@ namespace Platform
       }
    }
 
+   PluginGlGuard::PluginGlGuard() = default;
+   PluginGlGuard::~PluginGlGuard() = default;
+
    bool PluginSaveState(PluginHandle* h, std::string& outBase64)
    {
       PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
