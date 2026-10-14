@@ -11,6 +11,7 @@
 "volume": "f",
 "wave1": "i"
 },
+"Arpeggiator": {},
 "Audio Analyze": {},
 "Audio Displacement": {
 "attack": "f",
@@ -54,6 +55,7 @@
 "freq": "f",
 "outputGainDb": "f"
 },
+"Audio Meter": {},
 "Audio Out": {
 "recordDirectory": "s"
 },
@@ -64,7 +66,9 @@
 "Blend Audio": {
 "blend": "f"
 },
-"Camera": {},
+"Camera": {
+"orbitPerBeat": "f"
+},
 "Chorus": {
 "delay": "f",
 "depth": "f",
@@ -76,6 +80,7 @@
 "sync": "f",
 "taps": "f"
 },
+"Color Ramp": {},
 "Comment": {
 "height": "f",
 "text": "s",
@@ -218,6 +223,11 @@
 "LFO": {
 "rateBeats": "f"
 },
+"Layer Stack": {},
+"Light": {},
+"Macro Knob": {
+"label": "s"
+},
 "Macro XY": {
 "loopPath": "b",
 "padX": "f",
@@ -228,6 +238,11 @@
 "Mixer": {
 "channels": "i"
 },
+"Noise": {
+"lowColor": "c",
+"scale": "f"
+},
+"Note Sequencer": {},
 "Null": {},
 "Oscillator": {
 "frequency": "f",
@@ -268,8 +283,13 @@
 "pitch": "f",
 "spectral": "f"
 },
+"Predictive Notes": {
+"sourceMode": "i"
+},
 "Ramp": {
-"angle": "f"
+"angle": "f",
+"stopColor0": "c",
+"stopColor1": "c"
 },
 "Random": {
 "high": "f",
@@ -339,7 +359,13 @@
 "size": "f",
 "width": "f"
 },
+"Ring": {
+"fillColor": "c",
+"size": "f"
+},
 "Shape": {
+"fillColor": "c",
+"posX": "f",
 "shapeType": "i",
 "size": "f",
 "sizeX": "f",
@@ -390,6 +416,8 @@
 "Sphere": {
 "shape": "i"
 },
+"Torus Knot": {},
+"Trails": {},
 "Transform": {
 "amount": "f",
 "axis": "i",

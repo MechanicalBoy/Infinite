@@ -14,7 +14,7 @@ import inf, facts  # noqa: E402
 
 def corpus():
     out = []
-    for pat in ("assets/examples/**/*.inf", "tests/**/*.inf"):
+    for pat in ("assets/examples/**/*.inf", "assets/templates/**/*.inf", "tests/**/*.inf"):
         out += glob.glob(os.path.join(facts.ROOT, pat), recursive=True)
     return sorted(out)
 

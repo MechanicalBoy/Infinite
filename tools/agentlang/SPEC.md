@@ -26,8 +26,8 @@ add gaussianblur as soft
 set soft.uRadius 6
 set a.shapeType Star
 wire a soft
-wire soft out
-cut a out
+wire soft out.in
+cut a out.in
 del a
 field fp col = vec3(uv.x, uv.x, uv.x);
 ```
@@ -36,8 +36,8 @@ field fp col = vec3(uv.x, uv.x, uv.x);
 
 - A name is a word you choose in `add ... as <name>`, an `id` already in the patch, or a node
   number from the patch (`3`). A name has no spaces and no dot.
-- `wire` always reads source first: `wire shape out` feeds `shape` into `out`.
-- `.slot` is a slot name from `ask` (`input`, `input_2`, `audio`, `notes`, `geo_a`, `camera`).
+- `wire` always reads source first: `wire shape out.in` feeds `shape` into the `in` slot of `out`.
+- `.slot` is a slot name from `ask` (`in`, `input`, `input_2`, `audio`, `notes`, `geo_a`, `camera`).
   Leave it out only when the destination has exactly one input slot; otherwise it is `E_SEM`.
 - A wire must carry a kind the slot accepts (image to image, audio to audio, notes to notes,
   geometry to geometry). An input slot takes one wire.
