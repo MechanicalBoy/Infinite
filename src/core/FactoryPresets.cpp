@@ -109,14 +109,14 @@ namespace FactoryPresets
          { "Saturator", "Lo-Fi Crush", "model1=6 amount1=0.6 model2=2 amount2=0.2 mix=0.5" },
          { "Saturator", "Octave Fuzz", "model1=5 amount1=0.4 model2=1 amount2=0.3 mix=0.4 output=-4" },
 
-         { "Dynamics", "Gentle Glue", "threshold=-14 ratio=2 attack=30 release=200 makeup=2 detectorRms=1" },
-         { "Dynamics", "Vocal Level", "threshold=-20 ratio=3 attack=8 release=120 makeup=4 detectorRms=1" },
-         { "Dynamics", "Drum Punch", "threshold=-16 ratio=4 attack=30 release=80 makeup=3" },
+         { "Dynamics", "Gentle Glue", "threshold=-14 ratio=2 attack=30 release=200 makeup=2 detectorRms=1 style=1" },
+         { "Dynamics", "Vocal Level", "threshold=-20 ratio=3 attack=8 release=120 makeup=4 detectorRms=1 style=2" },
+         { "Dynamics", "Drum Punch", "threshold=-16 ratio=4 attack=30 release=80 makeup=3 style=3" },
          { "Dynamics", "Fast Catch", "threshold=-12 ratio=8 attack=0.5 release=50 makeup=2" },
          { "Dynamics", "Brick Squash", "threshold=-30 ratio=20 attack=1 release=150 makeup=10" },
          { "Dynamics", "Bass Tame", "threshold=-18 ratio=5 attack=15 release=180 makeup=3 detectorRms=1 scHpf=1" },
          { "Dynamics", "Parallel Crush", "threshold=-36 ratio=12 attack=2 release=90 makeup=12 mix=0.4" },
-         { "Dynamics", "Slow Bus", "threshold=-10 ratio=1.5 attack=80 release=600 makeup=1 detectorRms=1 analog=1" },
+         { "Dynamics", "Slow Bus", "threshold=-10 ratio=1.5 attack=80 release=600 makeup=1 detectorRms=1 analog=1 style=2" },
 
          { "EQ", "Rumble Trim", "band1Freq=60 band1Gain=-12" },
          { "EQ", "Warmth", "band1Gain=3 band2Freq=200 band2Gain=2 band5Gain=-2" },

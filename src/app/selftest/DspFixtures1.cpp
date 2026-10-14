@@ -1443,6 +1443,55 @@ bool RunDynamicsFixture()
       all &= releaseOk;
    }
 
+   // v0.6 2.21: the same step through each style. Same knobs, so every
+   // style must land on the same steady reduction; the curves to get there
+   // are what tell them apart.
+   {
+      const float threshold = -20.0f, ratio = 4.0f, attackMs = 20.0f, releaseMs = 200.0f;
+      const float quietDb = -40.0f, loudDb = -6.0f;
+      const float quietAmp = DspMath::DbToLinear(quietDb), loudAmp = DspMath::DbToLinear(loudDb);
+      const float expectDb = loudDb - DynamicsDsp::GainComputerDb(loudDb, threshold, ratio);
+      float atk[DynamicsDsp::kNumStyles] = {}, rel[DynamicsDsp::kNumStyles] = {}, fin[DynamicsDsp::kNumStyles] = {};
+      for (int style = 0; style < DynamicsDsp::kNumStyles; style++)
+      {
+         auto node = MakeDynamicsNode(threshold, ratio, attackMs, releaseMs, 0.0f, sampleRate);
+         *node->ParamPtr("style") = (float)style;
+         node->CookIfNeeded(2);
+         RunSamples(*node, 4000, [&](int) { return quietAmp; }, nullptr);
+         std::vector<float> up, down;
+         RunSamples(*node, 44100, [&](int) { return loudAmp; }, &up);
+         fin[style] = loudDb - DspMath::LinearToDb(std::fabs(up.back()));
+         RunSamples(*node, 88200, [&](int) { return quietAmp; }, &down);
+         atk[style] = rel[style] = -1.0f;
+         for (size_t i = 0; i < up.size(); i++)
+            if (loudDb - DspMath::LinearToDb(std::fabs(up[i])) >= 0.632f * fin[style])
+            {
+               atk[style] = (float)i / (float)sampleRate * 1000.0f;
+               break;
+            }
+         for (size_t i = 0; i < down.size(); i++)
+            if (quietDb - DspMath::LinearToDb(std::fabs(down[i])) <= 0.368f * fin[style])
+            {
+               rel[style] = (float)i / (float)sampleRate * 1000.0f;
+               break;
+            }
+         printf("DSPTEST dynamics style %-5s: attack %.1f ms, release %.1f ms, settles at -%.2f dB (expect -%.2f)\n",
+                DynamicsDsp::StyleList()[style].c_str(), atk[style], rel[style], fin[style], expectDb);
+      }
+      using namespace DynamicsDsp;
+      bool ok = true;
+      for (int style = 0; style < kNumStyles; style++)
+         ok &= atk[style] > 0.0f && rel[style] > 0.0f && std::fabs(fin[style] - expectDb) < 0.5f;
+      ok &= std::fabs(atk[kClean] - attackMs) < attackMs * 0.1f + 0.5f;
+      ok &= std::fabs(rel[kClean] - releaseMs) < releaseMs * 0.1f + 0.5f;
+      ok &= rel[kBus] > rel[kClean] * 1.05f;         // release waits for the attack stage
+      ok &= atk[kOpto] > atk[kClean] * 1.3f;         // a dim cell is slow
+      ok &= std::fabs(rel[kOpto] - rel[kClean]) > rel[kClean] * 0.2f; // two-stage release
+      ok &= atk[kFet] < atk[kClean] * 0.5f;          // feedback grabs
+      printf("DSPTEST dynamics styles: one steady reduction, four curves  %s\n", ok ? "OK" : "FAIL");
+      all &= ok;
+   }
+
    return all;
 }
 

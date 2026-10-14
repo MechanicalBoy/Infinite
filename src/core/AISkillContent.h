@@ -805,7 +805,7 @@ R"AISKILL(| `Normals` | geo:geometry | out:geometry | 67 | bypass |
 | `Cycle Shaper` | audio:audio | out:audio | 5 | bypass |
 | `Delay` | audio:audio | out:audio | 14 | bypass |
 | `Drive` | audio:audio | out:audio | 6 | bypass |
-| `Dynamics` | audio:audio, sidechain:audio | out:audio | 10 |  |
+| `Dynamics` | audio:audio, sidechain:audio | out:audio | 11 |  |
 | `EQ` | audio:audio | out:audio | 28 | bypass |
 | `Field Effect` | in:audio | out:audio | 10 | bypass |
 | `Flanger` | audio:audio | out:audio | 9 | bypass |

@@ -240,6 +240,9 @@ namespace
          // Appended (saved patches' param order). Detector-only 90 Hz high-pass,
          // off by default so existing patches compress exactly as before.
          def.params.push_back({ "scHpf", 0.0f, 1.0f, 0.0f, false, kBelowProbe });
+         // v0.6 2.21: clean / bus / opto / FET (DynamicsDsp::Style). `analog`
+         // is now the warm switch that colours any of them.
+         def.params.push_back({ "style", 0.0f, (float)(DynamicsDsp::kNumStyles - 1), 0.0f, false, kBelowProbe });
          // mix is AudioEffectNode's universal field, not a second param here.
 
          def.makeKernel = []() { return std::make_unique<DynamicsKernel>(); };

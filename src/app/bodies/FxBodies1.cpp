@@ -1010,7 +1010,7 @@ namespace app
    // The gain-computer picture shared by Dynamics and Limiter (a limiter is the same curve with an
    // infinite ratio): transfer curve + threshold marker + live operating point + slim GR meter.
    void DrawGainComputerVisualizer(const char* readoutKey, float threshold, float ratio, float makeupDb,
-                                   float inGainDb, const GainVizLive& live)
+                                   float inGainDb, const GainVizLive& live, float kneeDb = 6.0f)
    {
       const float w = gAudioBodyW;
       const float h = kAudioTimeVizH;
@@ -1062,7 +1062,7 @@ namespace app
       {
          const float x = origin.x + (float)i * (curveW / (float)(kNumPoints - 1));
          const float xDb = DynVizXToDb(x, origin.x, curveW);
-         const float yDb = DynamicsDsp::GainComputerDb(xDb + inGainDb, threshold, ratio) + makeupDb;
+         const float yDb = DynamicsDsp::GainComputerDb(xDb + inGainDb, threshold, ratio, kneeDb) + makeupDb;
          dl->PathLineTo(ImVec2(x, DynVizDbToY(yDb, origin.y, h)));
       }
       dl->PathStroke(isLight ? tok::U32(tok::pal::c_1E6EE6FF) : tok::U32(tok::pal::c_96D6FFF5), 0, 1.8f);
@@ -1139,28 +1139,32 @@ namespace app
    void DrawDynamicsBody(GraphNode& gn, AudioEffectNode* n)
    {
       const bool analog = n->Param("analog") != 0.0f;
+      const int style = std::clamp((int)std::lround(n->Param("style")), 0, DynamicsDsp::kNumStyles - 1);
       char stat[96];
-      snprintf(stat, sizeof(stat), "compress %.0f:1 @ %.0f dB%s", n->Param("ratio"), n->Param("threshold"),
-               analog ? " - analog" : "");
+      snprintf(stat, sizeof(stat), "%s %.0f:1 @ %.0f dB%s", DynamicsDsp::StyleList()[style].c_str(),
+               n->Param("ratio"), n->Param("threshold"), analog ? " - warm" : "");
 
       BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
       DrawGainComputerVisualizer("dynamics", n->Param("threshold"), n->Param("ratio"), n->Param("makeup"), 0.0f,
-                                 { n->ExtraMeterValue(0), n->ExtraMeterValue(1) });
+                                 { n->ExtraMeterValue(0), n->ExtraMeterValue(1) }, DynamicsDsp::KneeDb(style));
       ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
-      // KHS Audio Compressor's control surface: threshold, ratio, attack,
-      // release, makeup, mix - two rows of three so every knob (mix
-      // included) reads as one of the same row instead of mix living apart
-      // in its own slider section.
+      // Style, threshold, ratio, attack on top; release, makeup, mix under
+      // them, the style's slot empty below it so the knobs line up.
       {
-         AudioKnobRow row(3, kKnobLarge);
+         AudioKnobRow row(4, kKnobLarge);
+         row.Dropdown("style", DynamicsDsp::StyleList(), style, [n](int i) {
+            PushUndoCheckpoint();
+            *n->ParamPtr("style") = (float)i;
+         });
          row.Knob("threshold", n->ParamPtr("threshold"), -60.0f, 0.0f, "%.1f dB", kKnobLarge);
          row.Knob("ratio", n->ParamPtr("ratio"), 1.0f, 20.0f, "%.1f:1", kKnobLarge);
          row.Knob("attack", n->ParamPtr("attack"), 0.05f, 200.0f, "%.2f ms", kKnobLarge);
          row.End();
       }
       {
-         AudioKnobRow row(3, kKnobLarge);
+         AudioKnobRow row(4, kKnobLarge);
+         row.index++; // under the style dropdown
          row.Knob("release", n->ParamPtr("release"), 5.0f, 2000.0f, "%.0f ms", kKnobLarge);
          row.Knob("makeup", n->ParamPtr("makeup"), -12.0f, 24.0f, "%.1f dB", kKnobLarge);
          row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f", kKnobLarge);
@@ -1186,7 +1190,7 @@ namespace app
          }
          bool analogBool = analog;
          bool analogBoolUserChanged = false;
-         if (row.Checkbox("analog##dynAnalog", &analogBool, &analogBoolUserChanged))
+         if (row.Checkbox("warm##dynAnalog", &analogBool, &analogBoolUserChanged))
          {
             if (analogBoolUserChanged) // a cable flip writes the value but never checkpoints
                PushUndoCheckpoint();
@@ -1534,8 +1538,8 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("analog") = analogBool ? 1.0f : 0.0f;
          }
-         row.Skip();
-         row.Skip();
+         row.index++; // under the style dropdown
+         row.index++; // under the style dropdown
          row.End();
       }
 
@@ -2106,7 +2110,7 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("spectral") = spectralBool ? 1.0f : 0.0f;
          }
-         row.Skip();
+         row.index++; // under the style dropdown
          row.End();
       }
 
