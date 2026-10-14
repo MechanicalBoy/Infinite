@@ -51,6 +51,7 @@ void AudioFilterKernel::PushParams(const AudioEffectNode& node, double sampleRat
    mMailbox.Push(kGainSlot, gainDb);
    mMailbox.Push(kEnvAmountSlot, node.Param("envAmount"));
    mMailbox.Push(kRateSlot, node.Param("rate"));
+   mMailbox.Push(kDriveSlot, node.Param("drive"));
    mSync.store(node.Param("sync") != 0.0f ? 1 : 0, std::memory_order_relaxed);
    mRateDiv.store(std::clamp((int)(node.Param("rateDiv") + 0.5f), 0, MusicTime::kNumRateDivisions - 1),
                   std::memory_order_relaxed);

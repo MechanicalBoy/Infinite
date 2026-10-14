@@ -1183,6 +1183,9 @@ bool RunAudioFilterFixture()
       { AudioFilterDsp::kPeak, 1000.0f, 2.0f, 6.0f, 1000.0f, "peak @ centre" },
       { AudioFilterDsp::kBP, 1000.0f, 5.0f, 0.0f, 1000.0f, "BP @ centre" },
       { AudioFilterDsp::kBP, 1000.0f, 5.0f, 0.0f, 100.0f, "BP far below" },
+      { AudioFilterDsp::kLadder, 1000.0f, 0.707f, 0.0f, 1000.0f, "ladder @ cutoff" },
+      { AudioFilterDsp::kMs20, 1000.0f, 0.707f, 0.0f, 3000.0f, "ms-20 stopband" },
+      { AudioFilterDsp::kDiode, 1000.0f, 0.707f, 0.0f, 300.0f, "diode below cutoff" },
    };
    for (const Case& c : cases)
    {
@@ -1268,6 +1271,82 @@ bool RunAudioFilterFixture()
       printf("DSPTEST filter stability sweep: %d type x freq x Q combinations, no NaN/Inf  %s\n", checked,
              stableOk ? "OK" : "FAIL");
       all &= stableOk;
+   }
+
+   // 4) v0.6 2.25: at the top of Q each analogue model sings at its cutoff,
+   //    within 5 cents, through the real kernel (2x oversampled) - and the
+   //    same models at Analog's rate (4x oversampled, resonance 1 -> 1.1).
+   {
+      // Frequency of the last half of `y` from linearly interpolated rising
+      // zero crossings.
+      auto PitchHz = [](const std::vector<float>& y, double rate) {
+         double first = -1.0, last = -1.0;
+         int crossings = 0;
+         for (size_t i = y.size() / 2; i + 1 < y.size(); i++)
+         {
+            if (y[i] <= 0.0f && y[i + 1] > 0.0f)
+            {
+               const double t = (double)i + (double)(-y[i]) / (double)(y[i + 1] - y[i]);
+               if (first < 0.0)
+                  first = t;
+               else
+                  crossings++;
+               last = t;
+            }
+         }
+         return crossings > 0 ? rate * crossings / (last - first) : 0.0;
+      };
+      const int types[] = { AudioFilterDsp::kLadder, AudioFilterDsp::kMs20, AudioFilterDsp::kDiode };
+      const float cutoffs[] = { 100.0f, 300.0f, 1000.0f, 3000.0f, 8000.0f };
+      double worstNode = 0.0, worstAnalog = 0.0;
+      for (int type : types)
+      {
+         for (float fc : cutoffs)
+         {
+            std::unique_ptr<AudioEffectNode> node = MakeSingleBandNode(type, fc, 18.0f, 0.0f, sampleRate);
+            AudioNode* audioNode = node->GetAudioNode();
+            const int blockSize = 512, blocks = 120;
+            std::vector<float> inBuf(blockSize, 0.0f), outBuf(blockSize, 0.0f), y;
+            float* inPtr = inBuf.data();
+            float* outPtr = outBuf.data();
+            AudioBuffer inBuffer;
+            inBuffer.channels = &inPtr;
+            inBuffer.numChannels = 1;
+            inBuffer.numFrames = blockSize;
+            AudioBuffer outBuffer;
+            outBuffer.channels = &outPtr;
+            outBuffer.numChannels = 1;
+            outBuffer.numFrames = blockSize;
+            const AudioBuffer* inputs[1] = { &inBuffer };
+            for (int blk = 0; blk < blocks; blk++)
+            {
+               inBuf[0] = blk == 0 ? 0.1f : 0.0f;
+               audioNode->ProcessBlock(inputs, 1, outBuffer);
+               y.insert(y.end(), outBuf.begin(), outBuf.end());
+            }
+            const double hz = PitchHz(y, sampleRate);
+            const double cents = hz > 0.0 ? 1200.0 * log2(hz / fc) : 1.0e9;
+            worstNode = std::max(worstNode, fabs(cents));
+
+            const int model = AudioFilterDsp::ModelOf(type);
+            const double rate = sampleRate * 4.0;
+            FilterModels::Bank<float> bank;
+            const float g = FilterModels::CutoffToG(model, fc, rate, (float)sampleRate * 0.45f);
+            const float k = FilterModels::KFromResonance(model, 1.1f);
+            std::vector<float> ya((size_t)(rate * 2.0)); // 2 s: a 100 Hz ring builds slowly
+            for (size_t i = 0; i < ya.size(); i++)
+               ya[i] = bank.Process(model, i == 0 ? 0.1f : 0.0f, g, k);
+            const double hzA = PitchHz(ya, rate);
+            const double centsA = hzA > 0.0 ? 1200.0 * log2(hzA / fc) : 1.0e9;
+            worstAnalog = std::max(worstAnalog, fabs(centsA));
+            printf("DSPTEST filter model pitch (%s @ %.0f Hz): node %+.2f c  analog %+.2f c\n",
+                   AudioFilterDsp::TypeName(type), fc, cents, centsA);
+         }
+      }
+      const bool pitchOk = worstNode < 5.0 && worstAnalog < 5.0;
+      printf("DSPTEST filter model self-oscillation pitch: worst node %.2f c, analog %.2f c (limit 5)  %s\n",
+             worstNode, worstAnalog, pitchOk ? "OK" : "FAIL");
+      all &= pitchOk;
    }
 
    return all;

@@ -18,7 +18,7 @@
 #include "audio/dsp/BlepOscillator.h"
 #include "audio/dsp/Oversampler.h"
 #include "audio/dsp/VoiceLanes.h"
-#include "audio/dsp/ZdfLadderFilter.h"
+#include "audio/dsp/FilterModels.h"
 #include "core/Transport.h"
 
 namespace AnalogSynthCore
@@ -282,8 +282,8 @@ public:
       // between them, so left and right carry different oscillators through
       // different filter instances - decorrelation, not a panned copy of one
       // mono signal. `R` idles unless the stack has something to split.
-      ZdfLadderFilter::State ladder;
-      ZdfLadderFilter::State ladderR;
+      FilterModels::Bank<float> ladder;
+      FilterModels::Bank<float> ladderR;
       DspMath::TptSvf svf[SynthModes::kMaxFilterStages];
       DspMath::TptSvf svfR[SynthModes::kMaxFilterStages];
       bool stereoPath = false;
@@ -404,7 +404,21 @@ public:
       int type = kAFilterOff;
       float g = 0.0f, k = 0.0f;
       int stages = 0, shape = 0;
+      int model = -1;        // FilterModels::Model for the ladder/MS-20/diode types, else -1
+      float makeup = 1.0f;   // FilterModels::MakeupGain, applied after the filter
    };
+
+   static int ModelOf(int filterType)
+   {
+      switch (filterType)
+      {
+         case kAFilterLadder: return FilterModels::kModelLadder;
+         case kAFilterMs20: return FilterModels::kModelMs20;
+         case kAFilterDiode: return FilterModels::kModelDiode;
+         default: return -1;
+      }
+   }
+   static bool IsSvfType(int t) { return t >= kAFilterSvfLP12 && t <= kAFilterSvfNotch24; }
 
    // `rate` is the rate the filter runs at (the oversampled rate). The
    // cutoff stays clamped below the *base* Nyquist, as it always was.
@@ -413,14 +427,17 @@ public:
       FilterCoeffs c;
       c.type = filterType;
       const float effectiveCutoff = std::clamp(cutoff, 20.0f, (float)mSampleRate * 0.45f);
-      if (filterType == kAFilterLadder)
+      c.model = ModelOf(filterType);
+      if (c.model >= 0)
       {
-         c.g = ZdfLadderFilter::CutoffToG(effectiveCutoff, rate);
-         // Full resonance sits just past the ladder's k = 4 self-oscillation
-         // threshold, so the top of the knob sings at the cutoff (ZdfLadderFilter.h).
-         c.k = resonance * 4.2f;
+         c.g = FilterModels::CutoffToG(c.model, effectiveCutoff, rate, (float)mSampleRate * 0.45f);
+         // Full resonance sits 10% past each model's self-oscillation
+         // threshold, so the top of the knob sings at the cutoff (FilterModels.h).
+         const float res = resonance * 1.1f;
+         c.k = FilterModels::KFromResonance(c.model, res);
+         c.makeup = FilterModels::MakeupGain(c.model, res);
       }
-      else if (filterType >= kAFilterSvfLP12 && filterType < kNumAFilterTypes)
+      else if (IsSvfType(filterType))
       {
          const int svfType = filterType - 1; // maps to SynthModes::kFilterLP12 ...
          c.stages = SynthModes::FilterStages(svfType);
@@ -436,12 +453,12 @@ public:
    // left and right signal paths call this with their own state, so the two
    // sides can never drift apart in anything but their input and their own
    // accumulated history.
-   static float ApplyFilter(ZdfLadderFilter::State& ladder, DspMath::TptSvf* svfBank, float input,
+   static float ApplyFilter(FilterModels::Bank<float>& ladder, DspMath::TptSvf* svfBank, float input,
                             const FilterCoeffs& c)
    {
-      if (c.type == kAFilterLadder)
-         return ZdfLadderFilter::Process(ladder, input, c.g, c.k);
-      if (c.type >= kAFilterSvfLP12 && c.type < kNumAFilterTypes)
+      if (c.model >= 0)
+         return ladder.Process(c.model, input, c.g, c.k);
+      if (IsSvfType(c.type))
       {
          float filtered = input;
          for (int s = 0; s < c.stages; ++s)
@@ -465,7 +482,7 @@ public:
    // Drive + filter for one signal path, at the oversampled rate: AC
    // coupling, up, ADAA'd tanh (plus the analog hiss), filter, down.
    static float DriveAndFilter(Oversampler& os, int ch, DspMath::DcBlocker& ac, DspMath::FastTanhAdaa& drive,
-                               ZdfLadderFilter::State& ladder, DspMath::TptSvf* svfBank, float mixed, float driveGain,
+                               FilterModels::Bank<float>& ladder, DspMath::TptSvf* svfBank, float mixed, float driveGain,
                                float hiss, const FilterCoeffs& c)
    {
       float x[Oversampler::kMaxFactor];
@@ -482,7 +499,7 @@ public:
    {
       VoiceSimd::DcBlocker4 ac;
       VoiceSimd::Oversampler4 os;
-      VoiceSimd::Ladder4 ladder;
+      FilterModels::Bank<VoiceSimd::F4> ladder;
       VoiceSimd::Svf4 svf[SynthModes::kMaxFilterStages];
 
       void ResetLane(int l)
@@ -519,9 +536,9 @@ public:
          for (int l = 0; l < 4; l++)
             t[l] = drive[l] ? drive[l]->Process(t[l]) + hiss[l] : 0.0f;
          F4 y = F4::Load(t);
-         if (c.type == kAFilterLadder)
-            y = grp.ladder.Process(y, g, k);
-         else if (c.type >= kAFilterSvfLP12 && c.type < kNumAFilterTypes)
+         if (c.model >= 0)
+            y = grp.ladder.Process(c.model, y, g, k);
+         else if (IsSvfType(c.type))
             for (int st = 0; st < c.stages; ++st)
                y = grp.svf[st].Process(y, g, k, c.shape);
          x[j] = y;
@@ -770,8 +787,8 @@ public:
                ? DriveAndFilter(mFreeOs, 1, mFreeAcR, mFreeDriveR, mFreeLadderR, mFreeSvfR, mixedR, driveGain, hissR, fc)
                : filteredL;
 
-            outL = filteredL;
-            outR = filteredR;
+            outL = filteredL * fc.makeup;
+            outR = filteredR * fc.makeup;
             activeCount = 1;
          }
          else
@@ -895,7 +912,7 @@ public:
                float vgL = 1.0f, vgR = 1.0f;
                if (stereoAmt > 0.0001f)
                   TolerancePan(AnalogSynthCore::kVoicePanSeed[vi] * stereoAmt, vgL, vgR);
-               const float envGain = ampEnvVal * velGain;
+               const float envGain = ampEnvVal * velGain * fc.makeup;
 
                if (mUseLanes)
                {
@@ -1150,8 +1167,8 @@ private:
    BlepOsc::NarrowOscillator mFreeOsc2;
    BlepOsc::NarrowOscillator mFreeSub;
    DspMath::WhiteNoise mFreeNoise;
-   ZdfLadderFilter::State mFreeLadder;
-   ZdfLadderFilter::State mFreeLadderR;
+   FilterModels::Bank<float> mFreeLadder;
+   FilterModels::Bank<float> mFreeLadderR;
    DspMath::FastTanhAdaa mFreeDriveL, mFreeDriveR;
    DspMath::DcBlocker mFreeAcL, mFreeAcR;
    Oversampler mFreeOs;

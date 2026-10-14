@@ -16,8 +16,9 @@
 //
 //   DcBlocker4    DspMath::DcBlocker
 //   Oversampler4  Oversampler (factor and taps copied from a prepared one)
-//   Ladder4       ZdfLadderFilter
 //   Svf4          DspMath::TptSvf
+//
+// The filter models (FilterModels.h) are templates that serve both widths.
 //
 // State is stored as plain float[4] per variable, so one lane can be reset or
 // copied on its own when its voice starts a note. Every lane always runs: a
@@ -25,16 +26,6 @@
 // when it is next given a note.
 namespace VoiceSimd
 {
-   inline F4 FastTanh(F4 x)
-   {
-      // DspMath::FastTanh's +-3 clamp: the rational form is exactly +-1 at 3.
-      const F4 c = Clamp(x, F4(-3.0f), F4(3.0f));
-      const F4 x2 = c * c;
-      return c * (F4(27.0f) + x2) / (F4(27.0f) + F4(9.0f) * x2);
-   }
-
-   inline F4 FlushDenormal(F4 x) { return SelectLess(Abs(x), F4(1.0e-20f), F4(0.0f), x); }
-
    struct DcBlocker4
    {
       alignas(16) float prevIn[4] = {};
@@ -60,54 +51,6 @@ namespace VoiceSimd
          x.Store(prevIn);
          y.Store(prevOut);
          return y;
-      }
-   };
-
-   struct Ladder4
-   {
-      alignas(16) float stage[4][4] = {};
-      alignas(16) float stageTanh[4][4] = {};
-      alignas(16) float prevInput[4] = {};
-
-      void ResetLane(int l)
-      {
-         for (int i = 0; i < 4; i++)
-            stage[i][l] = stageTanh[i][l] = 0.0f;
-         prevInput[l] = 0.0f;
-      }
-
-      static F4 TanhSlope(F4 v) { return SelectLess(Abs(v), F4(1.0e-4f), F4(1.0f), FastTanh(v) / v); }
-
-      F4 Process(F4 input, F4 g, F4 k)
-      {
-         const F4 kk = Clamp(k, F4(0.0f), F4(4.5f));
-         const F4 tIn = TanhSlope(F4::Load(prevInput));
-         F4 t[4], a[4], b[4];
-         for (int i = 0; i < 4; ++i)
-            t[i] = TanhSlope(F4::Load(stageTanh[i]));
-         for (int i = 0; i < 4; ++i)
-         {
-            const F4 den = F4(1.0f) / (F4(1.0f) + g * t[i]);
-            a[i] = g * (i == 0 ? tIn : t[i - 1]) * den;
-            b[i] = F4::Load(stage[i]) * den;
-         }
-         F4 A = a[0], B = b[0];
-         for (int i = 1; i < 4; ++i)
-         {
-            B = a[i] * B + b[i];
-            A = a[i] * A;
-         }
-         const F4 u = (input - kk * B) / (F4(1.0f) + kk * A);
-         F4 prev = u;
-         for (int i = 0; i < 4; ++i)
-         {
-            const F4 y = a[i] * prev + b[i];
-            FlushDenormal(F4(2.0f) * y - F4::Load(stage[i])).Store(stage[i]);
-            y.Store(stageTanh[i]);
-            prev = y;
-         }
-         u.Store(prevInput);
-         return prev;
       }
    };
 

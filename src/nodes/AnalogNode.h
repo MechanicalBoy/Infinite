@@ -15,7 +15,7 @@ class AudioAnalogNode;
 enum AnalogFilterType
 {
    kAFilterOff = 0,
-   kAFilterLadder,   // ZDF nonlinear Moog ladder
+   kAFilterLadder,   // ZDF nonlinear Moog ladder (FilterModels::Ladder)
    kAFilterSvfLP12,  // 12 dB SVF Lowpass
    kAFilterSvfLP24,  // 24 dB SVF Lowpass
    kAFilterSvfLP36,  // 36 dB SVF Lowpass
@@ -26,6 +26,8 @@ enum AnalogFilterType
    kAFilterSvfBP24,  // 24 dB SVF Bandpass
    kAFilterSvfNotch12, // 12 dB SVF Notch
    kAFilterSvfNotch24, // 24 dB SVF Notch
+   kAFilterMs20,     // MS-20 style Sallen-Key (FilterModels::Ms20), v0.6 2.25
+   kAFilterDiode,    // diode ladder (FilterModels::Diode), v0.6 2.25
    kNumAFilterTypes
 };
 
@@ -58,7 +60,9 @@ inline const std::vector<std::string>& AnalogFilterTypeList()
       SynthModes::FilterName(SynthModes::kFilterBP12),
       SynthModes::FilterName(SynthModes::kFilterBP24),
       SynthModes::FilterName(SynthModes::kFilterNotch12),
-      SynthModes::FilterName(SynthModes::kFilterNotch24)
+      SynthModes::FilterName(SynthModes::kFilterNotch24),
+      "ms-20 lp",
+      "diode lp"
    };
    return kList;
 }

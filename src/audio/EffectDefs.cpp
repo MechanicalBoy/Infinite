@@ -84,6 +84,10 @@ namespace
             { "rateDiv", 0.0f, (float)(MusicTime::kNumRateDivisions - 1), (float)MusicTime::kQuarter });
          def.params.push_back(
             { "rate", 0.02f, 5.0f, 0.5f, false, { { "sync", 0.0f }, { "envAmount", 1.0f } } });
+         // How hard the analogue model types (ladder/MS-20/diode) are driven
+         // into their stages; the SVF/biquad/comb types ignore it, so the
+         // sweep pins type to the ladder to hear it.
+         def.params.push_back({ "drive", 0.0f, 1.0f, 0.0f, false, { { "type", (float)AudioFilterDsp::kLadder } } });
          // The "cutoff mod" audio-rate sidechain input (modAmount + a second
          // audio pin) is removed per the redesign - envAmount now drives the
          // internal LFO above instead of an external modulator or an

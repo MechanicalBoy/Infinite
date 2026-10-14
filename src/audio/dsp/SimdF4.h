@@ -112,4 +112,15 @@ namespace VoiceSimd
       F4& operator*=(F4 b) { return *this = *this * b; }
       friend F4 Clamp(F4 x, F4 lo, F4 hi) { return Min(Max(x, lo), hi); } // std::clamp(x, lo, hi) for lo <= hi
    };
+
+   // DspMath::FastTanh and DspMath::FlushDenormal, lane-wise.
+   inline F4 FastTanh(F4 x)
+   {
+      // DspMath::FastTanh's +-3 clamp: the rational form is exactly +-1 at 3.
+      const F4 c = Clamp(x, F4(-3.0f), F4(3.0f));
+      const F4 x2 = c * c;
+      return c * (F4(27.0f) + x2) / (F4(27.0f) + F4(9.0f) * x2);
+   }
+
+   inline F4 FlushDenormal(F4 x) { return SelectLess(Abs(x), F4(1.0e-20f), F4(0.0f), x); }
 }

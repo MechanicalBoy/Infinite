@@ -800,7 +800,7 @@ R"AISKILL(| `Normals` | geo:geometry | out:geometry | 67 | bypass |
 
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
-| `Audio Filter` | audio:audio | out:audio | 10 | bypass |
+| `Audio Filter` | audio:audio | out:audio | 11 | bypass |
 | `Bitcrush` | audio:audio | out:audio | 5 | bypass |
 | `Chorus` | audio:audio | out:audio | 10 | bypass |
 | `Convolution Reverb` | audio:audio | out:audio | 8 | bypass |

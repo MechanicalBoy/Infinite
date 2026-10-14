@@ -4574,6 +4574,20 @@ bool RunSynthSimdFixture()
    }) && ok;
    ok = SynthSimdClose<AnalogNode>("Analog", "svf notch 12", [](AnalogNode& n) { n.filterType = kAFilterSvfNotch12; }) && ok;
    ok = SynthSimdClose<AnalogNode>("Analog", "filter off", [](AnalogNode& n) { n.filterType = kAFilterOff; }) && ok;
+   // v0.6 2.25: the MS-20 and diode models, self-oscillating and driven.
+   ok = SynthSimdClose<AnalogNode>("Analog", "ms-20 res 1 drive wide", [](AnalogNode& n) {
+      n.filterType = kAFilterMs20;
+      n.resonance = 1.0f;
+      n.drive = 0.7f;
+      n.voices = 4.0f;
+      n.spread = 0.9f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "diode res 1 drive", [](AnalogNode& n) {
+      n.filterType = kAFilterDiode;
+      n.resonance = 1.0f;
+      n.drive = 0.7f;
+      n.cutoff = 1200.0f;
+   }) && ok;
    }
    if (wavetable)
    {

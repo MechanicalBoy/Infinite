@@ -427,6 +427,10 @@ namespace app
                          float rateLo, float rateHi);
 
 
+   // Ordinal of Audio Filter's drive knob (v0.6 2.25): above the six
+   // auto-numbered controls (freq, Q, gain, mix, env, rate).
+   const int kAudioFilterDriveParam = 16;
+
    void DrawAudioFilterBody(GraphNode& gn, AudioEffectNode* n)
    {
       const int type = (int)(n->Param("type") + 0.5f);
@@ -454,12 +458,25 @@ namespace app
          row.Knob("freq", n->ParamPtr("freq"), 20.0f, 20000.0f, "%.0f Hz", kKnobLarge);
          row.Knob("Q", n->ParamPtr("q"), 0.1f, 18.0f, "%.2f", kKnobLarge);
 
-         const bool gainLive = AudioFilterDsp::UsesGain(type);
-         if (!gainLive)
-            ImGui::BeginDisabled();
-         row.Knob("gain", n->ParamPtr("gain"), -24.0f, 24.0f, "%.1f dB", kKnobLarge);
-         if (!gainLive)
-            ImGui::EndDisabled();
+         // The analogue models have no gain; their cell is drive instead.
+         // Drive has its own ordinal past every auto-numbered control here,
+         // so swapping the cell never moves a binding between the two.
+         if (AudioFilterDsp::IsModel(type))
+         {
+            row.Knob("drive", n->ParamPtr("drive"), 0.0f, 1.0f, "%.2f", kKnobLarge, /*dbTaper=*/false,
+                     /*freqTaper=*/false, AudioWidgetStyle::Knob, nullptr, nullptr, kAudioFilterDriveParam,
+                     "drive");
+            gParamCounter++; // gain's ordinal, kept so mix/env/rate keep theirs
+         }
+         else
+         {
+            const bool gainLive = AudioFilterDsp::UsesGain(type);
+            if (!gainLive)
+               ImGui::BeginDisabled();
+            row.Knob("gain", n->ParamPtr("gain"), -24.0f, 24.0f, "%.1f dB", kKnobLarge);
+            if (!gainLive)
+               ImGui::EndDisabled();
+         }
          row.End();
       }
 
