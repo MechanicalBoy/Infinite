@@ -5352,6 +5352,8 @@ namespace Platform
             const MidiCC14::Event ev = gMidiState.cc14.OnCC(device, channel, (int)data[1], (int)data[2], MidiCC14::NowMs());
             MidiKey key{ device, channel, ev.controller, false };
             const float v = ev.value01;
+            if ((int)data[1] == kMidiSlideCC)
+               MidiStoreChannelSlide(channel, v);
             gMidiState.values[key] = v;
             gMidiState.lastTouched = MidiCCValue{ device, channel, ev.controller, false, v };
             gMidiState.lastTouchedPending = true;
@@ -5371,6 +5373,8 @@ namespace Platform
                                  : (float)data[1] / 127.0f;
             if (bend)
                MidiStoreChannelBend(channel, MidiBend14ToSigned((int)data[1], (int)data[2]));
+            else
+               MidiStoreChannelPressure(channel, v);
             std::lock_guard<std::mutex> lock(gMidiState.mutex);
             gMidiState.values[MidiKey{ device, channel, controller, false }] = v;
             gMidiState.lastTouched = MidiCCValue{ device, channel, controller, false, v };

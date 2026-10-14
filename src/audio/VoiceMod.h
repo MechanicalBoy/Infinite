@@ -34,7 +34,13 @@ namespace VoiceMod
       kRandom,
       kMseg,
       kSpread,   // a fixed value per note, by its place among the held notes
-      kEnvelope  // AHDSR gated by the voice's own note-on and note-off
+      kEnvelope, // AHDSR gated by the voice's own note-on and note-off
+      kExpression // the note's own MPE pressure (shape 0) or slide (shape 1)
+   };
+   enum ExpressionSource
+   {
+      kExprPressure = 0,
+      kExprSlide
    };
 
    // One modulator, as data.
@@ -65,6 +71,7 @@ namespace VoiceMod
       int count = 4;
       // Envelope (hz, rateHz 1: position counts seconds)
       ModShapes::Ahdsr env;
+      // Expression (shape = ExpressionSource; hz, rateHz = 1 / smoothing time)
    };
 
    // One binding: source -> one of the synth's voice params, shaped exactly
@@ -172,10 +179,14 @@ namespace VoiceMod
 
       bool Active() const { return mPlan != nullptr && mPlan->numRoutes > 0; }
 
-      void NoteOn(int voice)
+      // `pressure` and `slide` (0..1) are the note's MPE expression at its
+      // note-on; Express moves them while it is held.
+      void NoteOn(int voice, float pressure = 0.0f, float slide = 0.0f)
       {
          if (voice < 0 || voice >= kVoices)
             return;
+         mPressure[voice] = std::clamp(pressure, 0.0f, 1.0f);
+         mSlide[voice] = std::clamp(slide, 0.0f, 1.0f);
          // Its place among the keys held now: a chord counts 0, 1, 2...
          int index = 0;
          for (int v = 0; v < kVoices; v++)
@@ -186,9 +197,18 @@ namespace VoiceMod
             Restart(mSrc[voice][s], true);
             mSrc[voice][s].serial = ++mSerial;
             mSrc[voice][s].index = index;
+            mSrc[voice][s].exprPrimed = false; // a new note starts at its own value, no glide from the last
          }
          for (int r = 0; r < kMaxRoutes; r++)
             mRoute[voice][r].primed = false;
+      }
+
+      void Express(int voice, float pressure, float slide)
+      {
+         if (voice < 0 || voice >= kVoices)
+            return;
+         mPressure[voice] = std::clamp(pressure, 0.0f, 1.0f);
+         mSlide[voice] = std::clamp(slide, 0.0f, 1.0f);
       }
 
       void NoteOff(int voice)
@@ -209,7 +229,7 @@ namespace VoiceMod
             return;
          float value[kMaxSources];
          for (int s = 0; s < mPlan->numSources; s++)
-            value[s] = Step(mPlan->sources[s], mSrc[voice][s], mInc[s]);
+            value[s] = Step(mPlan->sources[s], mSrc[voice][s], mInc[s], mPressure[voice], mSlide[voice]);
          for (int r = 0; r < mPlan->numRoutes; r++)
          {
             const Route& rt = mPlan->routes[r];
@@ -236,7 +256,11 @@ namespace VoiceMod
       {
          if (mPlan == nullptr || source < 0 || source >= mPlan->numSources || voice < 0 || voice >= kVoices)
             return 0.0f;
-         return Value(mPlan->sources[source], mSrc[voice][source]);
+         const Spec& sp = mPlan->sources[source];
+         const SourceState& st = mSrc[voice][source];
+         if (sp.kind == kExpression)
+            return ModShapes::Remap(st.exprPrimed ? st.expr : ExpressionTarget(sp, mPressure[voice], mSlide[voice]), sp.low, sp.high);
+         return Value(sp, st);
       }
 
    private:
@@ -254,6 +278,9 @@ namespace VoiceMod
          double envStart = 0.0;
          float envStartLevel = 0.0f;
          float envLevel = 0.0f;
+         // Expression: the smoothed pressure or slide.
+         float expr = 0.0f;
+         bool exprPrimed = false;
       };
 
       struct RouteState
@@ -316,9 +343,26 @@ namespace VoiceMod
          }
       }
 
-      // Value now, then advance one sample.
-      static float Step(const Spec& sp, SourceState& st, double inc)
+      static float ExpressionTarget(const Spec& sp, float pressure, float slide)
       {
+         return sp.shape == kExprSlide ? slide : pressure;
+      }
+
+      // Value now, then advance one sample.
+      static float Step(const Spec& sp, SourceState& st, double inc, float pressure, float slide)
+      {
+         if (sp.kind == kExpression)
+         {
+            // A one-pole over the smoothing time: 7-bit pressure arrives in
+            // steps a filter cutoff would otherwise zipper on.
+            const float target = ExpressionTarget(sp, pressure, slide);
+            if (!st.exprPrimed)
+               st.expr = target;
+            else
+               st.expr += (target - st.expr) * (float)std::min(1.0, inc);
+            st.exprPrimed = true;
+            return ModShapes::Remap(st.expr, sp.low, sp.high);
+         }
          if (sp.kind == kEnvelope)
          {
             EnvGate(st);
@@ -341,6 +385,8 @@ namespace VoiceMod
       double mInc[kMaxSources] = {};
       float mRouteA[kMaxRoutes] = {};
       bool mHeld[kVoices] = {};
+      float mPressure[kVoices] = {};
+      float mSlide[kVoices] = {};
       SourceState mSrc[kVoices][kMaxSources];
       RouteState mRoute[kVoices][kMaxRoutes];
    };

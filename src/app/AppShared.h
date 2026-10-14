@@ -2792,6 +2792,7 @@ void DrawLFOParams(LFONode* n);
 
 void DrawRandomParams(RandomNode* n);
 void DrawVoiceSpreadParams(VoiceSpreadNode* n);
+void DrawNoteExpressionParams(NoteExpressionNode* n);
 
 
 

@@ -11,6 +11,7 @@
 #include "Transport.h"
 #include "audio/AudioNode.h"
 #include "audio/MusicTime.h"
+#include "platform/Platform.h"
 
 constexpr int PatternNode::kSteps;
 
@@ -1074,6 +1075,33 @@ bool VoiceSpreadNode::VoiceSpec(VoiceMod::Spec& out)
    out.kind = VoiceMod::kSpread;
    out.shape = mode;
    out.count = std::clamp(count, 1, ModShapes::kSpreadMaxCount);
+   out.low = low;
+   out.high = high;
+   return true;
+}
+
+// ------------------------------------------------------------- Note Expression
+
+const std::vector<std::string>& NoteExpressionNode::SourceNames()
+{
+   static const std::vector<std::string> kNames = { "pressure", "slide" };
+   return kNames;
+}
+
+float NoteExpressionNode::Value01()
+{
+   const int ch = Platform::MidiLastExpressionChannel().load(std::memory_order_relaxed);
+   const float v = source == VoiceMod::kExprSlide ? Platform::MidiChannelSlide(ch) : Platform::MidiChannelPressure(ch);
+   return Remap(v, low, high);
+}
+
+bool NoteExpressionNode::VoiceSpec(VoiceMod::Spec& out)
+{
+   out = VoiceMod::Spec();
+   out.kind = VoiceMod::kExpression;
+   out.shape = std::clamp(source, 0, 1);
+   out.hz = true;
+   out.rateHz = kSmoothHz;
    out.low = low;
    out.high = high;
    return true;

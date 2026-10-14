@@ -835,6 +835,8 @@ void DrawNodeBodies(FrameCtx& fc)
                DrawMSEGParams(n);
             else if (auto* n = dynamic_cast<VoiceSpreadNode*>(gn.node.get()))
                DrawVoiceSpreadParams(n);
+            else if (auto* n = dynamic_cast<NoteExpressionNode*>(gn.node.get()))
+               DrawNoteExpressionParams(n);
             else if (auto* n = dynamic_cast<CVToPitchNode*>(gn.node.get()))
                DrawCVToPitchParams(n);
             else if (auto* n = dynamic_cast<NoteToCVNode*>(gn.node.get()))

@@ -149,6 +149,7 @@ namespace app
       REGISTER_NODE(ModCurveNode, Mod Curve, "Modulators");
       REGISTER_NODE(MSEGNode, MSEG, "Modulators");
       REGISTER_NODE(VoiceSpreadNode, Voice Spread, "Modulators");
+      REGISTER_NODE(NoteExpressionNode, Note Expression, "Modulators");
       REGISTER_NODE(DriftNode, Drift, "Prediction");
       REGISTER_NODE(MovesNode, Moves, "Prediction");
       REGISTER_NODE(PredictiveModulatorNode, Predictive Modulator, "Prediction");

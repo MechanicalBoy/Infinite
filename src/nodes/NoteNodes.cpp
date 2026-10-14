@@ -226,6 +226,8 @@ public:
       {
          mVoiceLive[k] = false;
          mLastBend[k] = 0.0f;
+         mLastPressure[k] = 0.0f;
+         mLastSlide[k] = 0.0f;
       }
       mHeld[0].store(0, std::memory_order_relaxed);
       mHeld[1].store(0, std::memory_order_relaxed);
@@ -277,6 +279,12 @@ public:
             {
                mLastBend[msgs[i].note] = MpeBend(msgs[i].channel, mpeRange);
                e.bendSemitones = mLastBend[msgs[i].note];
+               // Pressure and slide likewise arrive before the note-on (2.15).
+               mLastPressure[msgs[i].note] = Platform::MidiChannelPressure(msgs[i].channel);
+               mLastSlide[msgs[i].note] = Platform::MidiChannelSlide(msgs[i].channel);
+               e.pressure = mLastPressure[msgs[i].note];
+               e.slide = mLastSlide[msgs[i].note];
+               e.hasExpression = true;
             }
          }
          else
@@ -292,9 +300,11 @@ public:
             mLastNote.store(note, std::memory_order_relaxed);
       }
 
-      // MPE: each held note follows its own member channel's pitch bend. One
-      // bendUpdate per note whose bend moved by more than a hundredth of a
-      // semitone, so a controller streaming bend does not flood the chain.
+      // MPE: each held note follows its own member channel's pitch bend,
+      // pressure and slide. One bendUpdate per note whose bend moved by more
+      // than a hundredth of a semitone, or whose pressure or slide moved by
+      // more than one 7-bit step, so a streaming controller does not flood
+      // the chain.
       if (mpe)
       {
          for (int k = 0; k < 128; k++)
@@ -302,35 +312,28 @@ public:
             if (!mVoiceLive[k])
                continue;
             const float bend = MpeBend(mVoiceChannel[k], mpeRange);
-            if (std::fabs(bend - mLastBend[k]) < 0.01f)
+            const float pressure = Platform::MidiChannelPressure(mVoiceChannel[k]);
+            const float slide = Platform::MidiChannelSlide(mVoiceChannel[k]);
+            if (std::fabs(bend - mLastBend[k]) < 0.01f && std::fabs(pressure - mLastPressure[k]) < 0.004f
+                && std::fabs(slide - mLastSlide[k]) < 0.004f)
                continue;
             mLastBend[k] = bend;
-            NoteEvent u;
-            u.note = mMappedNote[k];
-            u.isNoteOn = false;
-            u.bendUpdate = true;
-            u.bendSemitones = bend;
-            u.voiceId = mActiveVoiceId[k];
-            u.source = this;
-            mOutbox.Push(u);
+            mLastPressure[k] = pressure;
+            mLastSlide[k] = slide;
+            mOutbox.Push(ExpressionUpdate(k));
          }
       }
       else
       {
-         // Switching MPE off mid-note must not leave a voice bent.
+         // Switching MPE off mid-note must not leave a voice bent or pressed.
          for (int k = 0; k < 128; k++)
          {
-            if (!mVoiceLive[k] || mLastBend[k] == 0.0f)
+            if (!mVoiceLive[k] || (mLastBend[k] == 0.0f && mLastPressure[k] == 0.0f && mLastSlide[k] == 0.0f))
                continue;
             mLastBend[k] = 0.0f;
-            NoteEvent u;
-            u.note = mMappedNote[k];
-            u.isNoteOn = false;
-            u.bendUpdate = true;
-            u.bendSemitones = 0.0f;
-            u.voiceId = mActiveVoiceId[k];
-            u.source = this;
-            mOutbox.Push(u);
+            mLastPressure[k] = 0.0f;
+            mLastSlide[k] = 0.0f;
+            mOutbox.Push(ExpressionUpdate(k));
          }
       }
    }
@@ -364,6 +367,21 @@ private:
       return Platform::MidiChannelBend(channel) * memberRange + master;
    }
 
+   NoteEvent ExpressionUpdate(int key) const
+   {
+      NoteEvent u;
+      u.note = mMappedNote[key];
+      u.isNoteOn = false;
+      u.bendUpdate = true;
+      u.bendSemitones = mLastBend[key];
+      u.pressure = mLastPressure[key];
+      u.slide = mLastSlide[key];
+      u.hasExpression = true;
+      u.voiceId = mActiveVoiceId[key];
+      u.source = this;
+      return u;
+   }
+
    NoteEventQueue mOutbox;
    unsigned long long mCursor = 0;
    int mActiveVoiceId[128] = {};
@@ -371,6 +389,8 @@ private:
    signed char mVoiceChannel[128] = {};
    bool mVoiceLive[128] = {};
    float mLastBend[128] = {};
+   float mLastPressure[128] = {};
+   float mLastSlide[128] = {};
    std::atomic<bool> mMpe { false };
    std::atomic<float> mMpeRange { 48.0f };
 

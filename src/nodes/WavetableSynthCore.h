@@ -449,9 +449,9 @@ public:
          while (evtIdx < numEvts && evts[evtIdx].frameOffset <= i)
          {
             if (evts[evtIdx].isNoteOn)
-               NoteOn(evts[evtIdx].note, evts[evtIdx].velocity, evts[evtIdx].voiceId, evts[evtIdx].bendSemitones, eng);
+               NoteOn(evts[evtIdx].note, evts[evtIdx].velocity, evts[evtIdx].voiceId, evts[evtIdx].bendSemitones, eng, evts[evtIdx].pressure, evts[evtIdx].slide);
             else if (evts[evtIdx].bendUpdate)
-               BendUpdate(evts[evtIdx].voiceId, evts[evtIdx].bendSemitones);
+               BendUpdate(evts[evtIdx]);
             else
                NoteOff(evts[evtIdx].voiceId);
             evtIdx++;
@@ -1081,7 +1081,7 @@ private:
       outR = sumR;
    }
 
-   void NoteOn(int note, float velocity, int voiceId, float bendSemitones, const EngineBlock eng[WavetableSynthCore::kEngines])
+   void NoteOn(int note, float velocity, int voiceId, float bendSemitones, const EngineBlock eng[WavetableSynthCore::kEngines], float pressure = 0.0f, float slide = 0.0f)
    {
       using namespace WavetableSynthCore;
       // Retrigger an existing voice on the same note before allocating a new
@@ -1178,7 +1178,7 @@ private:
          v.pitch[e].NoteOn();
          v.filt[e].NoteOn();
       }
-      mVoiceMod.NoteOn(slot);
+      mVoiceMod.NoteOn(slot, pressure, slide);
    }
 
    void NoteOff(int voiceId)
@@ -1204,13 +1204,16 @@ private:
    // bendUpdate field): a real note-on would restart envelopes and the
    // wavetable read phase, both audible artifacts a bend wheel must not
    // cause.
-   void BendUpdate(int voiceId, float bendSemitones)
+   void BendUpdate(const NoteEvent& e)
    {
-      for (Voice& v : mVoices)
+      for (int i = 0; i < (int)(sizeof(mVoices) / sizeof(mVoices[0])); i++)
       {
-         if (!v.active || v.voiceId != voiceId)
+         Voice& v = mVoices[i];
+         if (!v.active || v.voiceId != e.voiceId)
             continue;
-         v.bend = bendSemitones;
+         v.bend = e.bendSemitones;
+         if (e.hasExpression) // MPE pressure / slide for Note Expression (2.15)
+            mVoiceMod.Express(i, e.pressure, e.slide);
       }
    }
 

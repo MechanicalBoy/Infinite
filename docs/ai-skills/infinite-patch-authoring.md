@@ -128,7 +128,7 @@ Do not edit between the markers; run the script. Use the `node` line exactly as 
 first, then the type name), then `--describe "<type>"` for parameters.
 
 <!-- generated:begin -->
-322 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
+323 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
 
 
 ### 3D
@@ -369,6 +369,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Math` | input:modulator, input_2:modulator | out:modulator | 6 |  |
 | `Mod Curve` | in:modulator | out:modulator | 3 | bypass |
 | `Mod Depth` | in:modulator | out:modulator | 2 | bypass |
+| `Note Expression` | none | out:modulator | 3 | bypass |
 | `Note to CV` | notes:note | out:modulator | 3 | bypass |
 | `Null Modulator` | in:modulator | out:modulator | 1 | bypass |
 | `Palette` | ref:image | out:palette | 14 | bypass |

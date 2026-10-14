@@ -914,6 +914,15 @@ namespace app
    }
 
 
+   void DrawNoteExpressionParams(NoteExpressionNode* n)
+   {
+      DropdownButton("source", NoteExpressionNode::SourceNames(), n->source,
+                     [n](int i) { PushUndoCheckpoint(); n->source = i; });
+      ModSlider("low", &n->low, 0.0f, 1.0f);
+      ModSlider("high", &n->high, 0.0f, 1.0f);
+   }
+
+
    void DrawPatternStepGrid(PatternNode* n)
    {
       const int count = std::clamp(n->EffectiveLength(), 1, PatternNode::kSteps);

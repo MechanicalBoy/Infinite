@@ -877,6 +877,36 @@ public:
    }
 };
 
+// MPE per-note pressure or slide (CC74) as a modulator: cabled into an Analog
+// or Wavetable knob, each voice follows its own note's expression from MIDI
+// Notes in MPE mode, smoothed over 5 ms so 7-bit steps do not zipper. Always
+// per voice; into anything that has no voices it reads the last-moved
+// channel.
+class NoteExpressionNode : public INode, public IModulator, public VoiceMod::IVoiceModSource
+{
+public:
+   static INode* Create() { return new NoteExpressionNode(); }
+   static const std::vector<std::string>& SourceNames();
+   static constexpr float kSmoothHz = 200.0f; // 1 / 5 ms
+
+   unsigned int GetOutputTexture() override { return 0; }
+   int GetOutputWidth() const override { return 0; }
+   int GetOutputHeight() const override { return 0; }
+   void CookIfNeeded(int) override {}
+
+   float Value01() override;
+   bool VoiceSpec(VoiceMod::Spec& out) override;
+
+   int source = VoiceMod::kExprPressure; // VoiceMod::ExpressionSource
+   float low = 0.0f;
+   float high = 1.0f;
+
+   void VisitParams(ParamVisitor& v) override
+   {
+      v.Int("source", source); v.Float("low", low); v.Float("high", high);
+   }
+};
+
 // Converts an incoming audio signal to a normalized 0..1 modulation signal
 // using an envelope/amplitude follower with Peak or RMS detection and
 // configurable attack and release smoothing.

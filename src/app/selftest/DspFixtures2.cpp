@@ -1412,6 +1412,49 @@ bool RunMpeFixture()
    feed({ 0x81, 60, 0 });
    run();
 
+   // 2.15: each note carries its own channel's pressure and slide, from the
+   // note-on (sent before it, as controllers do) and on every move.
+   node.mpe = true;
+   node.CookIfNeeded(frame++);
+   run();
+   feed({ 0xD3, 40 });
+   feed({ 0xB3, 74, 100 });
+   feed({ 0x93, 67, 100 });
+   feed({ 0xD4, 120 });
+   feed({ 0xB4, 74, 10 });
+   feed({ 0x94, 70, 100 });
+   n = run();
+   const NoteEvent* on67 = find(n, true, false, 67);
+   const NoteEvent* on70 = find(n, true, false, 70);
+   check(on67 && on67->hasExpression && std::fabs(on67->pressure - 40.0f / 127.0f) < 0.005f
+            && std::fabs(on67->slide - 100.0f / 127.0f) < 0.005f,
+         "note-on carries its channel's pressure and slide");
+   check(on70 && std::fabs(on70->pressure - 120.0f / 127.0f) < 0.005f && std::fabs(on70->slide - 10.0f / 127.0f) < 0.005f,
+         "a second note on another channel carries its own");
+   feed({ 0xD3, 90 });
+   n = run();
+   const NoteEvent* ex67 = find(n, false, true, 67);
+   check(ex67 && ex67->hasExpression && ex67->voiceId == on67->voiceId && std::fabs(ex67->pressure - 90.0f / 127.0f) < 0.005f
+            && std::fabs(ex67->slide - 100.0f / 127.0f) < 0.005f,
+         "pressure on channel 4 updates note 67 only, slide unchanged");
+   check(find(n, false, true, 70) == nullptr, "note 70 is not touched by channel 4's pressure");
+   feed({ 0xB4, 74, 80 });
+   n = run();
+   const NoteEvent* ex70 = find(n, false, true, 70);
+   check(ex70 && std::fabs(ex70->slide - 80.0f / 127.0f) < 0.005f && find(n, false, true, 67) == nullptr,
+         "slide on channel 5 updates note 70 only");
+   check(run() == 0, "steady pressure and slide send nothing");
+   node.mpe = false;
+   node.CookIfNeeded(frame++);
+   n = run();
+   ex67 = find(n, false, true, 67);
+   check(ex67 && ex67->pressure == 0.0f && ex67->slide == 0.0f, "switching MPE off releases a held note's pressure and slide");
+   feed({ 0xD3, 10 });
+   check(run() == 0, "MPE off: pressure sends no per-note update");
+   feed({ 0x83, 67, 0 });
+   feed({ 0x84, 70, 0 });
+   run();
+
    // Pressure and slide exist only while an MPE node listens.
    const Platform::MidiDeviceId dev2 = 5151;
    auto feed2 = [&](std::initializer_list<unsigned char> bytes) {
@@ -4222,6 +4265,119 @@ bool RunVoiceModFixture()
       re->NoteOff(3);
       runOn(*re, 3, 30.0);
       check("released to rest", re->Peek(3, 0), 0.0, 1e-6);
+   }
+
+   // --- (j) Note Expression (2.15): each voice follows its own note's MPE
+   // pressure or slide, from the note-on and through Express, smoothed.
+   {
+      NoteExpressionNode ne;
+      ne.low = 0.2f;
+      ne.high = 0.8f;
+      VoiceMod::Spec spec;
+      check("Note Expression is always per voice", ne.VoiceSpec(spec) ? 1 : 0, 1, 0);
+      oneRoute(spec);
+      auto rx = std::make_unique<Rt>();
+      rx->Prepare(kSr);
+      rx->BeginBlock(*box, 120.0);
+      auto runOn = [&](Rt& r, int voice, double ms) {
+         for (int i = 0, n = (int)std::lround(ms * kSr / 1000.0); i < n; i++)
+            r.Apply(voice, [&](int, float x) { last = x; });
+      };
+      rx->NoteOn(1, 0.5f, 0.1f);
+      rx->NoteOn(4, 1.0f, 0.9f);
+      check("voice 1 starts at its note's pressure (no glide in)", rx->Peek(1, 0), 0.2 + 0.6 * 0.5, 1e-6);
+      check("voice 4 starts at its own", rx->Peek(4, 0), 0.8, 1e-6);
+      runOn(*rx, 1, 1.0);
+      rx->Express(1, 0.0f, 0.1f);
+      runOn(*rx, 1, 5.0);
+      check("a pressure move is smoothed: one time constant in (e^-1 left)", rx->Peek(1, 0),
+            0.2 + 0.6 * 0.5 * std::exp(-1.0), 0.01);
+      runOn(*rx, 1, 50.0);
+      check("and settles", rx->Peek(1, 0), 0.2, 1e-3);
+      check("voice 4 does not move with voice 1", rx->Peek(4, 0), 0.8, 1e-6);
+      rx->NoteOn(1, 0.9f, 0.0f);
+      check("a new note on the slot starts at its own value", rx->Peek(1, 0), 0.2 + 0.6 * 0.9, 1e-6);
+
+      ne.source = VoiceMod::kExprSlide;
+      ne.VoiceSpec(spec);
+      oneRoute(spec);
+      auto rs2 = std::make_unique<Rt>();
+      rs2->Prepare(kSr);
+      rs2->BeginBlock(*box, 120.0);
+      rs2->NoteOn(2, 1.0f, 0.25f);
+      check("slide source reads slide, not pressure", rs2->Peek(2, 0), 0.2 + 0.6 * 0.25, 1e-6);
+
+      // Analog end to end: two notes with their own pressure; a Pitch Bend
+      // style bendUpdate (no expression) leaves pressure where it was.
+      AnalogNode syn;
+      syn.attack = 1.0f;
+      syn.sustain = 1.0f;
+      AudioNode* audio = syn.GetAudioNode();
+      audio->PrepareToPlay(kSr, 480);
+      syn.CookIfNeeded(1);
+      VoiceMod::Plan p;
+      p.numSources = 1;
+      NoteExpressionNode press;
+      press.VoiceSpec(p.sources[0]);
+      p.sources[0].id = 91;
+      p.numRoutes = 1;
+      p.routes[0].param = syn.VoiceParamFor(&syn.cutoff);
+      p.routes[0].lo = 200.0f;
+      p.routes[0].hi = 4000.0f;
+      p.routes[0].minValue = 20.0f;
+      p.routes[0].maxValue = 20000.0f;
+      syn.PublishVoicePlan(p);
+      NoteEventQueue inbox;
+      audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+      std::vector<float> c0(480), c1(480);
+      float* chans[2] = { c0.data(), c1.data() };
+      AudioBuffer buf;
+      buf.channels = chans;
+      buf.numChannels = 2;
+      buf.numFrames = 480;
+      bool finite = true;
+      auto blocks = [&](int count) {
+         for (int b = 0; b < count; b++)
+         {
+            audio->ProcessBlock(nullptr, 0, buf);
+            for (float x : c0)
+               finite &= std::isfinite(x);
+         }
+      };
+      NoteEvent on;
+      on.isNoteOn = true;
+      on.velocity = 1.0f;
+      on.hasExpression = true;
+      on.note = 48;
+      on.voiceId = 1;
+      on.pressure = 0.25f;
+      inbox.Push(on);
+      on.note = 55;
+      on.voiceId = 2;
+      on.pressure = 0.75f;
+      inbox.Push(on);
+      blocks(2);
+      check("Analog voice 0 follows its note's pressure", syn.DebugVoiceSource(0, 0), 0.25, 1e-3);
+      check("Analog voice 1 follows its own", syn.DebugVoiceSource(1, 0), 0.75, 1e-3);
+      NoteEvent ex;
+      ex.bendUpdate = true;
+      ex.hasExpression = true;
+      ex.voiceId = 1;
+      ex.note = 48;
+      ex.pressure = 1.0f;
+      inbox.Push(ex);
+      blocks(5); // 50 ms: ten time constants
+      check("an expression update moves voice 0 only", syn.DebugVoiceSource(0, 0), 1.0, 1e-3);
+      check("voice 1 unchanged", syn.DebugVoiceSource(1, 0), 0.75, 1e-3);
+      NoteEvent bend;
+      bend.bendUpdate = true;
+      bend.voiceId = 2;
+      bend.note = 55;
+      bend.bendSemitones = 2.0f;
+      inbox.Push(bend);
+      blocks(2);
+      check("a bendUpdate with no expression keeps the note's pressure", syn.DebugVoiceSource(1, 0), 0.75, 1e-3);
+      check("Analog with Note Expression stays finite", finite ? 1 : 0, 1, 0);
    }
 
    // --- (g) the switch saves

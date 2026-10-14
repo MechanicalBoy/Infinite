@@ -533,9 +533,9 @@ public:
          while (evtIdx < numEvts && evts[evtIdx].frameOffset <= i)
          {
             if (evts[evtIdx].isNoteOn)
-               NoteOn(evts[evtIdx].note, evts[evtIdx].velocity, evts[evtIdx].voiceId, evts[evtIdx].bendSemitones);
+               NoteOn(evts[evtIdx].note, evts[evtIdx].velocity, evts[evtIdx].voiceId, evts[evtIdx].bendSemitones, evts[evtIdx].pressure, evts[evtIdx].slide);
             else if (evts[evtIdx].bendUpdate)
-               BendUpdate(evts[evtIdx].voiceId, evts[evtIdx].bendSemitones);
+               BendUpdate(evts[evtIdx]);
             else
                NoteOff(evts[evtIdx].voiceId);
             evtIdx++;
@@ -883,7 +883,7 @@ public:
       mActiveVoices.store(activeCount, std::memory_order_relaxed);
    }
 
-   void NoteOn(int note, float velocity, int voiceId, float bendSemitones)
+   void NoteOn(int note, float velocity, int voiceId, float bendSemitones, float pressure = 0.0f, float slide = 0.0f)
    {
       using namespace AnalogSynthCore;
 
@@ -968,7 +968,7 @@ public:
       if (stolen)
          v.ampEnv.ResetLevel();
       v.ampEnv.NoteOn();
-      mVoiceMod.NoteOn(slot);
+      mVoiceMod.NoteOn(slot, pressure, slide);
    }
 
    void NoteOff(int voiceId)
@@ -984,13 +984,16 @@ public:
       }
    }
 
-   void BendUpdate(int voiceId, float bendSemitones)
+   void BendUpdate(const NoteEvent& e)
    {
-      for (Voice& v : mVoices)
+      for (int i = 0; i < (int)(sizeof(mVoices) / sizeof(mVoices[0])); i++)
       {
-         if (!v.active || v.voiceId != voiceId)
+         Voice& v = mVoices[i];
+         if (!v.active || v.voiceId != e.voiceId)
             continue;
-         v.bend = bendSemitones;
+         v.bend = e.bendSemitones;
+         if (e.hasExpression) // MPE pressure / slide for Note Expression (2.15)
+            mVoiceMod.Express(i, e.pressure, e.slide);
       }
    }
 
