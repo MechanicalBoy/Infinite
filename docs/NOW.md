@@ -17,7 +17,6 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 | Session | Branch / worktree | Quest | Uses | Since |
 |---|---|---|---|---|
 | re-survey-finish | `feature/re-survey-finish` at `infinte` (+ agent worktrees) | re-survey leftovers, quality misses, B1-B10 into scoreboard | main build, bench (later, serial), DAW/TD GUI scripting | 2026-10-13 |
-| air-agent-language | `air/agent-language` at `infinte-wt/agent-language` | agent language Phase 1 (tools/agentlang, no build) | python only | 2026-10-14 |
 
 ## Waiting on owner (one at a time, recommended answer first)
 

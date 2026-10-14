@@ -1,6 +1,6 @@
 # Tongue v0: write a patch as sentences
 
-SPEC size: 3407 characters (limit 7000).
+SPEC size: 3439 characters (limit 7000).
 
 You edit an Infinite patch with short sentences, one per line. A blank line ends a paragraph.
 A paragraph is all-or-nothing: if any sentence fails, none is applied. Sentences become `.inf` text.

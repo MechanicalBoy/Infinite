@@ -167,4 +167,17 @@ turns (15) and dollars per task.
 
 ## Results
 
-(none yet)
+### Phase 1 (Air, no build, no model runs), 2026-10-14
+
+| Item | Result |
+|---|---|
+| Tasks | 30 (build 7+3, tweak 7+3, Field 6+4; dev + held-out), frozen by `tasks/FROZEN.sha256` |
+| Oracle | every reference solution passes, every start patch fails; `frame_stats` pending until Phase 2 |
+| SPEC | 3439 chars (limit 7000); all 7 verbs kept (`ask` is needed for key names) |
+| T1 | 43 of 81 patches round-trip equal, 38 excluded (29 `mod`, 2 `expr`, `glob`, `flags`, odd slots); 40/40 canonical |
+| T2 | 200/200 random valid sentence sets decode with no wiring error |
+| T3 | 17 negative cases for E_LEX, E_SYN, E_SEM; E_FIELD is marked as checked by `--validate` |
+| T6 | Field unchanged against main |
+
+Mismatches and limits: `PHASE1-NOTES.md`. Reproduce: `python3 tools/agentlang/report.py`.
+Not done here: ranges (need `nodefacts.json` from the built app), Field compile, any model run (Phase 2).
