@@ -798,7 +798,6 @@ namespace app
           dynamic_cast<AudioMeterNode*>(node) != nullptr ||
           dynamic_cast<BlendAudioNode*>(node) != nullptr ||
           dynamic_cast<AudioInputNode*>(node) != nullptr ||
-          dynamic_cast<SplitterNode*>(node) != nullptr ||
           dynamic_cast<NoteTransposeNode*>(node) != nullptr ||
           dynamic_cast<PitchBendNode*>(node) != nullptr ||
           dynamic_cast<GateNode*>(node) != nullptr ||

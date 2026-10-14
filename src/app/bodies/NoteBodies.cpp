@@ -250,14 +250,65 @@ namespace app
    }
 
 
-   // No params - Splitter is a passthrough fan-out point, not a mixing
-   // decision (audio-graph-semantics.md §1). Narrow body: there is nothing
-   // here to spend 440px on.
-   void DrawSplitterBody(GraphNode& gn, SplitterNode*)
+   // A cable on a band pin that the new band count no longer has would point
+   // at a pin nobody draws, and the node editor drops links to undrawn pins.
+   // Disconnect those here, once per change, in the same undo step.
+   void DropSplitterCablesPast(SplitterNode* n, int pins)
    {
-      char stat[48];
-      snprintf(stat, sizeof(stat), "1 in \xE2\x86\x92 up to %d out", SplitterNode::kMaxFanout);
-      BeginAudioBody(gn.index, gn.category, kAudioNarrowWidth, stat);
+      bool dropped = false;
+      for (GraphNode& other : gNodes)
+      {
+         for (int slot = 0; slot < kMaxAudioSlots; slot++)
+         {
+            AudioCable* cable = other.node->AudioInputSlot(slot);
+            if (cable != nullptr && cable->GetSource() == n && cable->GetOutputSlot() >= pins)
+            {
+               cable->Disconnect();
+               dropped = true;
+            }
+         }
+      }
+      if (dropped)
+         RebuildAudioTopology();
+   }
+
+
+   // Copy mode is the plain fan-out point (audio-graph-semantics.md §1).
+   // Crossover mode turns the pins into bands; the split knobs past the band
+   // count grey rather than vanish, so no cell moves (P5).
+   void DrawSplitterBody(GraphNode& gn, SplitterNode* n)
+   {
+      const int bands = n->Bands();
+      char stat[64];
+      if (bands <= 1)
+         snprintf(stat, sizeof(stat), "1 in \xE2\x86\x92 up to %d out", SplitterNode::kMaxFanout);
+      else
+         snprintf(stat, sizeof(stat), "%d bands \xC2\xB7 LR4, sum flat", bands);
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      {
+         static const std::vector<std::string> kModes = { "copy", "2 bands", "3 bands", "4 bands" };
+         AudioKnobRow row(4);
+         row.Dropdown("bands", kModes, bands - 1, [n](int i) {
+            PushUndoCheckpoint();
+            n->bands = i + 1;
+            RebuildAudioTopology();
+         });
+         float* splits[3] = { &n->split1, &n->split2, &n->split3 };
+         static const char* kNames[3] = { "split1", "split2", "split3" };
+         for (int s = 0; s < 3; s++)
+         {
+            const bool grey = s + 2 > bands && !gParamRegisterOnly;
+            if (grey)
+               ImGui::BeginDisabled();
+            row.Knob(kNames[s], splits[s], 20.0f, 20000.0f, "%.0f Hz", kKnobSmall, /*dbTaper=*/false, /*freqTaper=*/true);
+            if (grey)
+               ImGui::EndDisabled();
+         }
+         row.End();
+      }
+      // A modulated or loaded band count lands here too, not just the dropdown.
+      DropSplitterCablesPast(n, n->OutputCount());
       EndAudioBody();
    }
 

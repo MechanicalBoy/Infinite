@@ -48,7 +48,7 @@ extern float gViewportPanelHeight;
    // lays rows out to fit it rather than letting them set it.
    //
    // Two sanctioned widths, nothing else: a full node, and a narrow one for
-   // a node with <=2 params (Gain, Splitter, Audio Out) so §7's "a one-param
+   // a node with <=2 params (Gain, Audio Out) so §7's "a one-param
    // node is visually smaller" is true instead of aspirational.
    inline const float kAudioNodeWidth = 440.0f;
 
@@ -5922,6 +5922,7 @@ bool RunMSEGFixture();
 bool RunVoiceModFixture();
 bool RunSynthSimdFixture();
 bool RunSaturatorFixture();
+bool RunSplitterFixture();
 bool RunSpatialFixture();
 
 bool RunSpectrumSlideFixture();

@@ -566,6 +566,9 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_SATURATORTEST") != nullptr)
       return RunSaturatorFixture() ? 0 : 1;
 
+   if (getenv("INFINITE_SPLITTERTEST") != nullptr)
+      return RunSplitterFixture() ? 0 : 1;
+
    if (getenv("INFINITE_SPATIALTEST") != nullptr)
       return RunSpatialFixture() ? 0 : 1;
 

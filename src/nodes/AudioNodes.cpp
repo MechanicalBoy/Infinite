@@ -363,15 +363,219 @@ AudioNode* BlendAudioNode::GetAudioNode()
 class AudioSplitterNode : public AudioNode
 {
 public:
+   static constexpr int kMaxChannels = 8;
+   static constexpr int kSplits = SplitterNode::kMaxBands - 1;
+
+   void PrepareToPlay(double sampleRate, int /*maxBlockSize*/) override
+   {
+      mSampleRate = sampleRate;
+      for (int s = 0; s < kSplits; s++)
+         mHz[s] = mTargetHz[s].load(std::memory_order_relaxed);
+      Reset();
+   }
+
+   void Reset() override
+   {
+      for (int ch = 0; ch < kMaxChannels; ch++)
+      {
+         for (int s = 0; s < kSplits; s++)
+            for (DspMath::TptSvf& f : mSplit[ch][s])
+               f.Reset();
+         for (DspMath::TptSvf& f : mAllpass[ch])
+            f.Reset();
+      }
+      mActiveBands = mBands.load(std::memory_order_relaxed);
+      SetCutoffs();
+   }
+
+   int AudioOutputCount() const override { return SplitterNode::kMaxBands; }
+
    void ProcessBlock(const AudioBuffer* const* inputs, int numInputs, AudioBuffer& output) override
    {
+      AudioBuffer* outs[1] = { &output };
+      ProcessBlockMulti(inputs, numInputs, outs, 1);
+   }
+
+   void ProcessBlockMulti(const AudioBuffer* const* inputs, int numInputs,
+                          AudioBuffer* const* outputs, int numOutputs) override
+   {
       const AudioBuffer* in = (numInputs > 0) ? inputs[0] : nullptr;
-      for (int ch = 0; ch < output.numChannels; ch++)
+      const int bands = mBands.load(std::memory_order_relaxed);
+      if (bands != mActiveBands)
       {
-         for (int i = 0; i < output.numFrames; i++)
-            output.channels[ch][i] = (in != nullptr) ? in->channels[ch][i] : 0.0f;
+         // A band count change re-wires the pins, so it is an edit, not a
+         // gesture: start the new tree from silence rather than reuse states
+         // that belonged to a different split.
+         Reset();
+         mActiveBands = bands;
+      }
+      AudioBuffer* out[SplitterNode::kMaxBands] = {};
+      for (int o = 0; o < numOutputs && o < SplitterNode::kMaxBands; o++)
+         out[o] = outputs[o];
+      const AudioBuffer* ref = nullptr;
+      for (AudioBuffer* o : out)
+         if (o != nullptr) { ref = o; break; }
+      if (ref == nullptr)
+         return;
+
+      if (bands <= 1)
+      {
+         if (out[0] != nullptr)
+         {
+            AudioBuffer& output = *out[0];
+            for (int ch = 0; ch < output.numChannels; ch++)
+            {
+               for (int i = 0; i < output.numFrames; i++)
+                  output.channels[ch][i] = (in != nullptr) ? in->channels[ch][i] : 0.0f;
+            }
+         }
+         ZeroFrom(out, 1);
+         return;
+      }
+
+      SmoothCutoffs(ref->numFrames);
+      const float k = 1.41421356f; // Butterworth damping, 1/Q
+      const int numCh = std::min(ref->numChannels, kMaxChannels);
+      for (int ch = 0; ch < numCh; ch++)
+      {
+         DspMath::TptSvf* x1 = mSplit[ch][0];
+         DspMath::TptSvf* x2 = mSplit[ch][1];
+         DspMath::TptSvf* x3 = mSplit[ch][2];
+         for (int i = 0; i < ref->numFrames; i++)
+         {
+            const float x = (in != nullptr && ch < in->numChannels) ? in->channels[ch][i] : 0.0f;
+            float band[SplitterNode::kMaxBands] = {};
+            // Tree: split at 1, the high side at 2, its high side at 3.
+            float lo, hi;
+            Lr4(x1, x, lo, hi);
+            band[0] = lo;
+            if (bands == 2)
+               band[1] = hi;
+            else
+            {
+               float lo2, hi2;
+               Lr4(x2, hi, lo2, hi2);
+               band[0] = Allpass(mAllpass[ch][0], band[0], k); // phase of split 2
+               band[1] = lo2;
+               if (bands == 3)
+                  band[2] = hi2;
+               else
+               {
+                  float lo3, hi3;
+                  Lr4(x3, hi2, lo3, hi3);
+                  band[0] = Allpass(mAllpass[ch][1], band[0], k); // phase of split 3
+                  band[1] = Allpass(mAllpass[ch][2], band[1], k);
+                  band[2] = lo3;
+                  band[3] = hi3;
+               }
+            }
+            for (int b = 0; b < bands; b++)
+               if (out[b] != nullptr && ch < out[b]->numChannels)
+                  out[b]->channels[ch][i] = band[b];
+         }
+      }
+      for (int b = 0; b < SplitterNode::kMaxBands; b++)
+      {
+         if (out[b] == nullptr)
+            continue;
+         for (int ch = (b < bands ? numCh : 0); ch < out[b]->numChannels; ch++)
+            std::fill(out[b]->channels[ch], out[b]->channels[ch] + out[b]->numFrames, 0.0f);
       }
    }
+
+   // Main thread only.
+   void PushParams(const SplitterNode& n)
+   {
+      mBands.store(n.Bands(), std::memory_order_relaxed);
+      mTargetHz[0].store(n.split1, std::memory_order_relaxed);
+      mTargetHz[1].store(n.split2, std::memory_order_relaxed);
+      mTargetHz[2].store(n.split3, std::memory_order_relaxed);
+   }
+
+private:
+   // LR4: low = LP(LP(x)), high = HP(HP(x)), sharing the first section.
+   static void Lr4(DspMath::TptSvf* f, float x, float& lo, float& hi)
+   {
+      const DspMath::TptSvf::Outputs a = f[0].Process(x);
+      lo = f[1].Process(a.low).low;
+      hi = f[2].Process(a.high).high;
+   }
+
+   // LP^2 + HP^2 of the LR4 above: x - 2k band.
+   static float Allpass(DspMath::TptSvf& f, float x, float k)
+   {
+      return x - 2.0f * k * f.Process(x).band;
+   }
+
+   static void ZeroFrom(AudioBuffer* const* out, int first)
+   {
+      for (int b = first; b < SplitterNode::kMaxBands; b++)
+      {
+         if (out[b] == nullptr)
+            continue;
+         for (int ch = 0; ch < out[b]->numChannels; ch++)
+            std::fill(out[b]->channels[ch], out[b]->channels[ch] + out[b]->numFrames, 0.0f);
+      }
+   }
+
+   // Splits in order, a third of an octave apart at least, below Nyquist.
+   void OrderedHz(float hz[kSplits]) const
+   {
+      const float top = (float)(0.45 * mSampleRate);
+      float floorHz = 20.0f;
+      for (int s = 0; s < kSplits; s++)
+      {
+         hz[s] = std::clamp(mHz[s], floorHz, std::max(floorHz, top));
+         floorHz = hz[s] * 1.26f;
+      }
+   }
+
+   void SetCutoffs()
+   {
+      float hz[kSplits];
+      OrderedHz(hz);
+      for (int ch = 0; ch < kMaxChannels; ch++)
+      {
+         for (int s = 0; s < kSplits; s++)
+            for (DspMath::TptSvf& f : mSplit[ch][s])
+            {
+               f.SetSampleRate(mSampleRate);
+               f.SetCutoff(hz[s], 0.70710678f);
+            }
+         const float apHz[3] = { hz[1], hz[2], hz[2] };
+         for (int a = 0; a < 3; a++)
+         {
+            mAllpass[ch][a].SetSampleRate(mSampleRate);
+            mAllpass[ch][a].SetCutoff(apHz[a], 0.70710678f);
+         }
+      }
+   }
+
+   // Per block, in octaves, ~20 ms: a split knob sweeps instead of stepping.
+   void SmoothCutoffs(int frames)
+   {
+      const float a = 1.0f - std::exp(-(float)frames / (0.02f * (float)mSampleRate));
+      bool moved = false;
+      for (int s = 0; s < kSplits; s++)
+      {
+         const float target = std::clamp(mTargetHz[s].load(std::memory_order_relaxed), 20.0f, 20000.0f);
+         if (target == mHz[s])
+            continue;
+         const float next = mHz[s] * std::pow(target / mHz[s], a);
+         mHz[s] = std::fabs(next - target) < 0.01f ? target : next;
+         moved = true;
+      }
+      if (moved)
+         SetCutoffs();
+   }
+
+   std::atomic<int> mBands { 1 };
+   std::atomic<float> mTargetHz[kSplits] { { 250.0f }, { 2500.0f }, { 8000.0f } };
+   double mSampleRate = 48000.0;
+   int mActiveBands = 1;
+   float mHz[kSplits] = { 250.0f, 2500.0f, 8000.0f };
+   DspMath::TptSvf mSplit[kMaxChannels][kSplits][3];
+   DspMath::TptSvf mAllpass[kMaxChannels][3]; // band 1 at split 2, band 1 at split 3, band 2 at split 3
 };
 
 SplitterNode::SplitterNode() = default;
@@ -384,12 +588,24 @@ void SplitterNode::CookIfNeeded(int frameId)
    mLastCookFrame = frameId;
    if (!mAudioNode)
       mAudioNode = std::make_unique<AudioSplitterNode>();
+   mAudioNode->PushParams(*this);
+}
+
+void SplitterNode::VisitParams(ParamVisitor& v)
+{
+   v.Int("bands", bands);
+   v.Float("split1", split1);
+   v.Float("split2", split2);
+   v.Float("split3", split3);
 }
 
 AudioNode* SplitterNode::GetAudioNode()
 {
    if (!mAudioNode)
+   {
       mAudioNode = std::make_unique<AudioSplitterNode>();
+      mAudioNode->PushParams(*this);
+   }
    return mAudioNode.get();
 }
 

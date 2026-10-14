@@ -4835,4 +4835,157 @@ bool RunSaturatorFixture()
    printf("SATURATORTEST %s\n", ok ? "OK" : "FAIL");
    return ok;
 }
+// ============================================== INFINITE_SPLITTERTEST
+// 2.18: Splitter's crossover mode, against facts that follow from LR4:
+//   - bands 1 is the plain copy, bit for bit;
+//   - the bands sum to an allpass of the input: each tone from 20 Hz to
+//     20 kHz comes back within 0.1 dB, for 2, 3 and 4 bands;
+//   - each band carries its own range: a tone an octave inside a band is
+//     loudest in that band;
+//   - two channels split independently (a left-only tone leaves right silent).
+namespace
+{
+   std::vector<std::vector<float>> RenderSplitter(SplitterNode& node, int frames, double sr,
+                                                   const std::function<float(int, int)>& in)
+   {
+      AudioNode* an = node.GetAudioNode();
+      an->PrepareToPlay(sr, 512);
+      node.CookIfNeeded(1);
+      const int bands = SplitterNode::kMaxBands;
+      std::vector<std::vector<float>> out((size_t)bands * 2, std::vector<float>((size_t)frames, 0.0f));
+      const int block = 256;
+      std::vector<float> inL(block), inR(block);
+      std::vector<std::vector<float>> o((size_t)bands * 2, std::vector<float>(block));
+      for (int start = 0; start < frames; start += block)
+      {
+         const int n = std::min(block, frames - start);
+         for (int i = 0; i < n; i++)
+         {
+            inL[(size_t)i] = in(start + i, 0);
+            inR[(size_t)i] = in(start + i, 1);
+         }
+         float* inCh[2] = { inL.data(), inR.data() };
+         AudioBuffer inBuf;
+         inBuf.channels = inCh;
+         inBuf.numChannels = 2;
+         inBuf.numFrames = n;
+         const AudioBuffer* ins[1] = { &inBuf };
+         float* chans[SplitterNode::kMaxBands][2];
+         AudioBuffer outBuf[SplitterNode::kMaxBands];
+         AudioBuffer* outs[SplitterNode::kMaxBands];
+         for (int b = 0; b < bands; b++)
+         {
+            chans[b][0] = o[(size_t)b * 2].data();
+            chans[b][1] = o[(size_t)b * 2 + 1].data();
+            outBuf[b].channels = chans[b];
+            outBuf[b].numChannels = 2;
+            outBuf[b].numFrames = n;
+            outs[b] = &outBuf[b];
+         }
+         an->ProcessBlockMulti(ins, 1, outs, bands);
+         for (size_t c = 0; c < out.size(); c++)
+            std::copy(o[c].begin(), o[c].begin() + n, out[c].begin() + start);
+      }
+      return out;
+   }
+}
+
+bool RunSplitterFixture()
+{
+   bool ok = true;
+   const double sr = 48000.0;
+   const int frames = 48000;
+   const int warm = 24000;
+
+   // 1. Copy mode is bit-identical.
+   {
+      SplitterNode node;
+      auto in = [](int i, int ch) { return (float)std::sin(0.0123 * i + ch) * 0.7f + 0.01f * (float)(i % 7); };
+      const auto out = RenderSplitter(node, 4096, sr, in);
+      bool same = true, restSilent = true;
+      for (int i = 0; i < 4096; i++)
+      {
+         same &= out[0][(size_t)i] == in(i, 0) && out[1][(size_t)i] == in(i, 1);
+         for (size_t c = 2; c < out.size(); c++)
+            restSilent &= out[c][(size_t)i] == 0.0f;
+      }
+      const bool pass = same && restSilent;
+      ok &= pass;
+      printf("SPLITTERTEST copy: out bit-identical %s, band pins silent %s  %s\n", same ? "yes" : "no",
+             restSilent ? "yes" : "no", pass ? "OK" : "FAIL");
+   }
+
+   // 2. The sum of the bands is flat, 20 Hz - 20 kHz.
+   const double tones[] = { 20.0, 40.0, 100.0, 200.0, 250.0, 315.0, 1000.0, 2500.0, 4000.0, 8000.0, 12000.0, 20000.0 };
+   for (int bands = 2; bands <= SplitterNode::kMaxBands; bands++)
+   {
+      double worst = 0.0;
+      for (double hz : tones)
+      {
+         SplitterNode node;
+         node.bands = bands;
+         auto in = [hz, sr](int i, int) { return 0.5f * (float)std::sin(2.0 * M_PI * hz * (double)i / sr); };
+         const auto out = RenderSplitter(node, frames, sr, in);
+         std::vector<float> sum((size_t)frames, 0.0f), ref((size_t)frames);
+         for (int b = 0; b < bands; b++)
+            for (int i = 0; i < frames; i++)
+               sum[(size_t)i] += out[(size_t)b * 2][(size_t)i];
+         for (int i = 0; i < frames; i++)
+            ref[(size_t)i] = in(i, 0);
+         const double db = 20.0 * std::log10(ToneAmp(sum, hz, sr, warm) / ToneAmp(ref, hz, sr, warm));
+         worst = std::max(worst, std::fabs(db));
+      }
+      const bool pass = worst <= 0.1;
+      ok &= pass;
+      printf("SPLITTERTEST %d bands: sum within %.4f dB of input, 20 Hz-20 kHz (<= 0.1)  %s\n", bands, worst,
+             pass ? "OK" : "FAIL");
+   }
+
+   // 3. Each band carries its own range (4 bands, 250 / 2500 / 8000 Hz).
+   {
+      const double probes[SplitterNode::kMaxBands] = { 80.0, 800.0, 4500.0, 16000.0 };
+      bool all = true;
+      for (int want = 0; want < SplitterNode::kMaxBands; want++)
+      {
+         SplitterNode node;
+         node.bands = SplitterNode::kMaxBands;
+         const double hz = probes[want];
+         auto in = [hz, sr](int i, int) { return 0.5f * (float)std::sin(2.0 * M_PI * hz * (double)i / sr); };
+         const auto out = RenderSplitter(node, frames, sr, in);
+         int loudest = 0;
+         double best = -1.0;
+         for (int b = 0; b < SplitterNode::kMaxBands; b++)
+         {
+            const double a = ToneAmp(out[(size_t)b * 2], hz, sr, warm);
+            if (a > best)
+            {
+               best = a;
+               loudest = b;
+            }
+         }
+         all &= loudest == want;
+         printf("SPLITTERTEST %6.0f Hz loudest in band %d (want %d)  %s\n", hz, loudest + 1, want + 1,
+                loudest == want ? "OK" : "FAIL");
+      }
+      ok &= all;
+   }
+
+   // 4. Channels split independently.
+   {
+      SplitterNode node;
+      node.bands = 3;
+      auto in = [sr](int i, int ch) { return ch == 0 ? 0.5f * (float)std::sin(2.0 * M_PI * 1000.0 * (double)i / sr) : 0.0f; };
+      const auto out = RenderSplitter(node, 8192, sr, in);
+      float right = 0.0f;
+      for (int b = 0; b < 3; b++)
+         for (float v : out[(size_t)b * 2 + 1])
+            right = std::max(right, std::fabs(v));
+      const bool pass = right == 0.0f;
+      ok &= pass;
+      printf("SPLITTERTEST left-only tone: right peak %g (== 0)  %s\n", right, pass ? "OK" : "FAIL");
+   }
+
+   printf("SPLITTERTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
 }
