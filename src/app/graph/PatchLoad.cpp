@@ -1459,6 +1459,8 @@ namespace app
 
    void Undo()
    {
+      if (ShowLockBlocks())
+         return;
       if (gUndoStack.empty())
          return;
       const std::string what = UndoLabelAt(0);
@@ -1495,6 +1497,8 @@ namespace app
 
    void Redo()
    {
+      if (ShowLockBlocks())
+         return;
       if (gRedoStack.empty())
          return;
       const std::string what = RedoLabelAt(0);

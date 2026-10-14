@@ -1217,3 +1217,27 @@ reading	wird gelesen
 unsaved edits to the last patch were discarded	nicht gespeicherte Änderungen am letzten Patch wurden verworfen
 Couldn't open the show set	Show-Set konnte nicht geöffnet werden
 Couldn't save the show set	Show-Set konnte nicht gespeichert werden
+Show lock on: nodes and cables stay where they are. Press again to edit	Showsperre an: Nodes und Kabel bleiben, wo sie sind. Zum Bearbeiten erneut drücken
+Show lock off	Showsperre aus
+Show is locked	Show ist gesperrt
+PANIC: sound off, projectors holding. Press again to resume	PANIK: Ton aus, Projektoren halten das Bild. Zum Fortsetzen erneut drücken
+Resumed after panic	Nach Panik fortgesetzt
+The audio device is not open	Das Audiogerät ist nicht geöffnet
+the MIDI device	das MIDI-Gerät
+is not connected	ist nicht verbunden
+its controller is not connected	der Controller ist nicht verbunden
+nothing is cabled into in, so it shows no picture	an in ist nichts angeschlossen, es zeigt kein Bild
+A projector window lost its display	Ein Projektorfenster hat sein Display verloren
+There are audio nodes but no Audio Out, so nothing is heard	Es gibt Audio-Nodes, aber keinen Audio Out, also ist nichts zu hören
+Show lock	Showsperre
+Resume after panic	Nach Panik fortsetzen
+Panic	Panik
+Pre-show check	Vor-Show-Check
+Show safety	Showsicherheit
+Unlock	Entsperren
+Lock	Sperren
+Resume	Fortsetzen
+Ready: nothing missing, every device and output in place	Bereit: nichts fehlt, alle Geräte und Ausgänge vorhanden
+Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume	Sperre: kein Ziehen, Löschen oder Rückgängig, Regler spielen weiter. Panik stoppt den Ton sofort; erneut drücken zum Fortsetzen
+Lock the canvas for a live show: no node drag, cable drag, delete or undo. Knobs, sliders and the keyboard keep working	Die Arbeitsfläche für eine Live-Show sperren: kein Ziehen von Nodes oder Kabeln, kein Löschen, kein Rückgängig. Regler, Slider und Tastatur funktionieren weiter
+Silence everything now: notes off on every MIDI Out and plugin, the sound fades in 5 ms, the transport stops and each projector holds its last frame. Press again to resume	Sofort alles stumm: Noten aus an jedem MIDI Out und Plugin, der Ton blendet in 5 ms aus, der Transport stoppt und jeder Projektor hält sein letztes Bild. Erneut drücken zum Fortsetzen

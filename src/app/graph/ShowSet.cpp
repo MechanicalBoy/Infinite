@@ -62,6 +62,7 @@ namespace app
 
       // The switch in flight, after its load.
       bool gHoldActive = false;
+      bool gPanicHold = false; // panic: every projector holds its last frame until resume
       bool gTailArmed = false;
       int gHoldFrames = 0;
       int gLandedFrames = 0;
@@ -180,6 +181,8 @@ namespace app
       void ReleaseHold()
       {
          gHoldActive = false;
+         if (gPanicHold)
+            return; // the frozen frames stay until the panic is lifted
          for (auto it = gHeld.begin(); it != gHeld.end();)
          {
             GLUtil::DestroyFbo(it->second.fbo);
@@ -381,8 +384,30 @@ namespace app
       return true;
    }
 
+   // Panic (v0.6 2.36): freeze every projector on its last frame, drop any
+   // pending switch; resume lets the Outputs draw again.
+   void ShowSetPanicHold(bool on, GLFWwindow* mainWindow)
+   {
+      if (on)
+      {
+         gRequest = -1;
+         gTargetSet = false;
+         if (!gHoldActive)
+            CaptureProjectors(mainWindow);
+         gPanicHold = true;
+      }
+      else
+      {
+         gPanicHold = false;
+         if (!gHoldActive)
+            ReleaseHold();
+      }
+   }
+
    void ShowSetGo(int index)
    {
+      if (ShowPanicLatched())
+         return;
       if (index < 0 || index >= (int)gEntries.size())
          return;
       gRequest = index;
@@ -479,7 +504,7 @@ namespace app
    // the captured frame instead of the (new, not yet drawn) node.
    bool ShowSetDrawHeldProjector(size_t i)
    {
-      if (!gHoldActive || i >= gProjectorWindows.size())
+      if ((!gHoldActive && !gPanicHold) || i >= gProjectorWindows.size())
          return false;
       auto it = gHeld.find(gProjectorWindows[i].window);
       if (it == gHeld.end() || !it->second.captured)

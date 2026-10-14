@@ -1217,3 +1217,27 @@ reading	leyendo
 unsaved edits to the last patch were discarded	se descartaron los cambios sin guardar del patch anterior
 Couldn't open the show set	No se pudo abrir el set del show
 Couldn't save the show set	No se pudo guardar el set del show
+Show lock on: nodes and cables stay where they are. Press again to edit	Bloqueo de show activo: nodos y cables se quedan donde están. Pulsa de nuevo para editar
+Show lock off	Bloqueo de show desactivado
+Show is locked	El show está bloqueado
+PANIC: sound off, projectors holding. Press again to resume	PÁNICO: sonido apagado, proyectores congelados. Pulsa de nuevo para reanudar
+Resumed after panic	Reanudado tras el pánico
+The audio device is not open	El dispositivo de audio no está abierto
+the MIDI device	el dispositivo MIDI
+is not connected	no está conectado
+its controller is not connected	su controlador no está conectado
+nothing is cabled into in, so it shows no picture	nada está conectado a in, así que no muestra imagen
+A projector window lost its display	Una ventana de proyector perdió su pantalla
+There are audio nodes but no Audio Out, so nothing is heard	Hay nodos de audio pero ningún Audio Out, así que no se oye nada
+Show lock	Bloqueo de show
+Resume after panic	Reanudar tras el pánico
+Panic	Pánico
+Pre-show check	Revisión previa al show
+Show safety	Seguridad del show
+Unlock	Desbloquear
+Lock	Bloquear
+Resume	Reanudar
+Ready: nothing missing, every device and output in place	Listo: no falta nada, todos los dispositivos y salidas en su sitio
+Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume	Bloqueo: sin arrastrar, borrar ni deshacer, los mandos siguen sonando. Pánico detiene el sonido ya; pulsa de nuevo para reanudar
+Lock the canvas for a live show: no node drag, cable drag, delete or undo. Knobs, sliders and the keyboard keep working	Bloquea el lienzo para un show en vivo: sin arrastrar nodos o cables, borrar ni deshacer. Mandos, deslizadores y teclado siguen funcionando
+Silence everything now: notes off on every MIDI Out and plugin, the sound fades in 5 ms, the transport stops and each projector holds its last frame. Press again to resume	Silencia todo ya: notas apagadas en cada MIDI Out y plugin, el sonido se desvanece en 5 ms, el transporte se detiene y cada proyector congela su último fotograma. Pulsa de nuevo para reanudar

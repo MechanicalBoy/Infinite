@@ -69,9 +69,14 @@ int main(int argc, char** argv)
       }
    }
 
+   // A teardown step that never returns (an audio driver, a plugin, a socket) must not keep a show machine
+   // hanging: the process is gone 4 s after the window closes, whatever is still running.
+   StartQuitWatchdog(4);
    CloseAllProjectorWindows();
    Platform::StopDisplayRefreshClock();
    AudioEngine::Instance().Stop();
+   if (getenv("INFINITE_QUITSTALLTEST") != nullptr)
+      printf("QUITSTALLTEST FAIL (Stop returned: the stall did not happen)\n");
    Extensions::Shutdown();
    SelfUpdate::Shutdown();
    UpdateCheck::Shutdown(); // joins the worker thread so the process doesn't exit mid-request

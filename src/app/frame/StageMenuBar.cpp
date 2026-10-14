@@ -388,6 +388,21 @@ void DrawMenuBar(FrameCtx& fc)
                   ShowSetStep(+1);
                if (MenuParts::Item(L("Previous patch"), "PgUp", false, ShowSetSize() > 0))
                   ShowSetStep(-1);
+               ImGui::Separator();
+               if (MenuParts::Item(L("Show lock"), MODKEY "+Shift+L", gShowLock))
+                  ShowLockToggle();
+               if (ShowPanicLatched())
+               {
+                  if (MenuParts::Item(L("Resume after panic"), MODKEY "+.", true))
+                     ShowPanicToggle();
+               }
+               else if (MenuParts::Item(L("Panic"), MODKEY "+."))
+                  ShowPanicToggle();
+               if (MenuParts::Item(L("Pre-show check")))
+                  {
+                  gShowSetOpen = true;
+                  gShowCheckRequest = true;
+               }
                ImGui::EndMenu();
             }
 

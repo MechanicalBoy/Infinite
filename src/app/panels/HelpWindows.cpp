@@ -612,6 +612,8 @@ namespace app
          // Transport & Audio
          { I18N_KEY("Transport & Audio"), I18N_KEY("Play / Pause"), "Space", I18N_KEY("Start / pause timeline and animations") },
          { I18N_KEY("Transport & Audio"), I18N_KEY("Next / Previous Show Patch"), "PageDown / PageUp", I18N_KEY("Switch to the next or previous patch of the show set, on its launch grid. Works in a projector window too") },
+         { I18N_KEY("Transport & Audio"), I18N_KEY("Show Lock"), MODKEY "+Shift+L", I18N_KEY("Lock the canvas for a live show: no node drag, cable drag, delete or undo. Knobs, sliders and the keyboard keep working") },
+         { I18N_KEY("Transport & Audio"), I18N_KEY("Panic"), MODKEY "+.", I18N_KEY("Silence everything now: notes off on every MIDI Out and plugin, the sound fades in 5 ms, the transport stops and each projector holds its last frame. Press again to resume") },
          { I18N_KEY("Transport & Audio"), I18N_KEY("Toggle Audio Engine"), "Shift+K", I18N_KEY("Start / stop audio device. Canvas only - with the timeline focused, Shift+K adds an audio track instead") },
 
          // Arrangement Timeline - these fire only while the timeline panel

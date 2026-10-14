@@ -5592,6 +5592,31 @@ void ShowSetTick(int frameId, GLFWwindow* window);
 bool ShowSetDrawHeldProjector(size_t i);
 void ShowSetNoteProjectorTexture(size_t i, unsigned int tex, int w, int h);
 void ShowSetProbeProjector(size_t i);
+
+// Show safety (v0.6 2.36, graph/ShowSafety.cpp).
+// Show lock: nodes cannot be dragged or cabled, nothing is deleted, undo and redo stand still; controls inside
+// nodes keep working. ShowLockBlocks() is the guard for an edit path: true (and says so in the status line) while locked.
+extern bool gShowLock;
+void ShowLockToggle();
+bool ShowLockBlocks();
+// Panic latches: notes off on every MIDI Out and plugin, the sound fades out in 5 ms and stays out, the transport stops,
+// each projector holds its last frame. Toggling again resumes (transport back to what it was).
+bool ShowPanicLatched();
+void ShowPanicToggle();
+void ShowSetPanicHold(bool on, GLFWwindow* mainWindow); // ShowSet.cpp: hold/release the projector frames
+// Pre-show check: what would go wrong on stage. One line per issue; empty = ready.
+struct ShowCheckItem
+{
+   bool error = false;
+   std::string text;
+};
+std::vector<ShowCheckItem> ShowPreCheck();
+extern bool gShowCheckRequest; // menu item: open the Show Set window and run the check
+void ShowSafetyTick(int frameId, GLFWwindow* window); // SHOWSAFETYTEST / QUITSTALLTEST harness
+void StartQuitWatchdog(int seconds);
+// AudioTopology.cpp: the audio half of panic.
+void AudioPanicSilence();
+void AudioPanicResume();
 void ClearOscListeners();
 
 void DrawMinimap();

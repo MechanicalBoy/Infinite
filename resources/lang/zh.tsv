@@ -1217,3 +1217,27 @@ reading	读取中
 unsaved edits to the last patch were discarded	上一个补丁未保存的修改已丢弃
 Couldn't open the show set	无法打开演出曲目单
 Couldn't save the show set	无法保存演出曲目单
+Show lock on: nodes and cables stay where they are. Press again to edit	演出锁定已开启：节点和线缆保持不动。再按一次即可编辑
+Show lock off	演出锁定已关闭
+Show is locked	演出已锁定
+PANIC: sound off, projectors holding. Press again to resume	紧急静音：声音已关，投影保持最后画面。再按一次恢复
+Resumed after panic	已从紧急静音恢复
+The audio device is not open	音频设备未打开
+the MIDI device	MIDI 设备
+is not connected	未连接
+its controller is not connected	其控制器未连接
+nothing is cabled into in, so it shows no picture	in 没有接入任何内容，因此没有画面
+A projector window lost its display	投影窗口失去了它的显示器
+There are audio nodes but no Audio Out, so nothing is heard	有音频节点但没有 Audio Out，因此听不到声音
+Show lock	演出锁定
+Resume after panic	从紧急静音恢复
+Panic	紧急静音
+Pre-show check	演出前检查
+Show safety	演出安全
+Unlock	解锁
+Lock	锁定
+Resume	恢复
+Ready: nothing missing, every device and output in place	就绪：没有缺失，所有设备和输出都在
+Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume	锁定：不能拖动、删除或撤销，旋钮仍可操作。紧急静音立即停声；再按一次恢复
+Lock the canvas for a live show: no node drag, cable drag, delete or undo. Knobs, sliders and the keyboard keep working	为现场演出锁定画布：不能拖动节点或线缆，不能删除或撤销。旋钮、滑块和键盘仍可使用
+Silence everything now: notes off on every MIDI Out and plugin, the sound fades in 5 ms, the transport stops and each projector holds its last frame. Press again to resume	立即全部静音：所有 MIDI Out 和插件的音符关闭，声音在 5 毫秒内淡出，走带停止，每个投影保持最后一帧。再按一次恢复

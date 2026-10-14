@@ -4003,8 +4003,15 @@ ed::DragAction::DragAction(EditorContext* editor):
 {
 }
 
+// Infinite patch: show lock (see SetEditsLocked in imgui_node_editor.h).
+static bool s_EditsLocked = false;
+void ax::NodeEditor::SetEditsLocked(bool locked) { s_EditsLocked = locked; }
+bool ax::NodeEditor::AreEditsLocked() { return s_EditsLocked; }
+
 ed::EditorAction::AcceptResult ed::DragAction::Accept(const Control& control)
 {
+    if (s_EditsLocked)
+        return False;
     IM_ASSERT(!m_IsActive);
 
     if (m_IsActive)
@@ -4718,6 +4725,8 @@ ed::CreateItemAction::CreateItemAction(EditorContext* editor):
 
 ed::EditorAction::AcceptResult ed::CreateItemAction::Accept(const Control& control)
 {
+    if (s_EditsLocked)
+        return EditorAction::False;
     IM_ASSERT(!m_IsActive);
 
     if (m_IsActive)

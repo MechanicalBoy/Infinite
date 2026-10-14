@@ -358,6 +358,7 @@ void DrawFramePump(FrameCtx& fc)
       OscControl::DrainPending(HandleOscRequest);
       PollOscListeners();
       ShowSetTick(frameId, window);
+      ShowSafetyTick(frameId, window);
       PollPendingKeyed(); // before ClearFrameParams: last frame's registered controls are still here
 
       std::string pendingOpenPatch;

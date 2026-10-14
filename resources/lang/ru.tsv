@@ -1217,3 +1217,27 @@ reading	чтение
 unsaved edits to the last patch were discarded	несохранённые изменения прошлого патча отброшены
 Couldn't open the show set	Не удалось открыть сет
 Couldn't save the show set	Не удалось сохранить сет
+Show lock on: nodes and cables stay where they are. Press again to edit	Блокировка шоу включена: ноды и кабели остаются на месте. Нажмите ещё раз для правки
+Show lock off	Блокировка шоу выключена
+Show is locked	Шоу заблокировано
+PANIC: sound off, projectors holding. Press again to resume	ПАНИКА: звук выключен, проекторы держат кадр. Нажмите ещё раз для продолжения
+Resumed after panic	Продолжено после паники
+The audio device is not open	Аудиоустройство не открыто
+the MIDI device	MIDI-устройство
+is not connected	не подключено
+its controller is not connected	контроллер не подключён
+nothing is cabled into in, so it shows no picture	в in ничего не подключено, картинки не будет
+A projector window lost its display	Окно проектора потеряло свой дисплей
+There are audio nodes but no Audio Out, so nothing is heard	Есть аудио-ноды, но нет Audio Out, звука не будет
+Show lock	Блокировка шоу
+Resume after panic	Продолжить после паники
+Panic	Паника
+Pre-show check	Проверка перед шоу
+Show safety	Безопасность шоу
+Unlock	Разблокировать
+Lock	Заблокировать
+Resume	Продолжить
+Ready: nothing missing, every device and output in place	Готово: ничего не пропало, все устройства и выходы на месте
+Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume	Блокировка: без перетаскивания, удаления и отмены, ручки работают. Паника сразу останавливает звук; ещё раз — продолжить
+Lock the canvas for a live show: no node drag, cable drag, delete or undo. Knobs, sliders and the keyboard keep working	Блокирует холст для живого шоу: без перетаскивания нод и кабелей, удаления и отмены. Ручки, ползунки и клавиатура работают
+Silence everything now: notes off on every MIDI Out and plugin, the sound fades in 5 ms, the transport stops and each projector holds its last frame. Press again to resume	Мгновенно всё глушит: ноты выключаются на каждом MIDI Out и плагине, звук затухает за 5 мс, транспорт останавливается, каждый проектор держит последний кадр. Ещё раз — продолжить

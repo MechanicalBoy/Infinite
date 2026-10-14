@@ -644,7 +644,7 @@ void DrawPopupsB(FrameCtx& fc)
          const ed::LinkId hovered = ed::GetHoveredLink();
          if (!hovered || (int)hovered.Get() != sTrashGone)
             sTrashGone = 0;
-         if (hovered && (int)hovered.Get() != sTrashGone && FindLink((int)hovered.Get()) != nullptr)
+         if (hovered && !gShowLock && (int)hovered.Get() != sTrashGone && FindLink((int)hovered.Get()) != nullptr)
          {
             sTrashLink = (int)hovered.Get();
             sTrashSeen = now;

@@ -1217,3 +1217,27 @@ reading	読み込み中
 unsaved edits to the last patch were discarded	前のパッチの未保存の変更は破棄されました
 Couldn't open the show set	ショーセットを開けませんでした
 Couldn't save the show set	ショーセットを保存できませんでした
+Show lock on: nodes and cables stay where they are. Press again to edit	ショーロック オン: ノードとケーブルは動きません。もう一度押すと編集できます
+Show lock off	ショーロック オフ
+Show is locked	ショーはロックされています
+PANIC: sound off, projectors holding. Press again to resume	パニック: 音を停止、プロジェクターは最後の映像を保持。もう一度押すと再開
+Resumed after panic	パニックから再開しました
+The audio device is not open	オーディオデバイスが開いていません
+the MIDI device	MIDIデバイス
+is not connected	は接続されていません
+its controller is not connected	コントローラーが接続されていません
+nothing is cabled into in, so it shows no picture	in に何も接続されていないため映像は出ません
+A projector window lost its display	プロジェクターウィンドウのディスプレイが失われました
+There are audio nodes but no Audio Out, so nothing is heard	オーディオノードはありますが Audio Out がないため音は出ません
+Show lock	ショーロック
+Resume after panic	パニック後に再開
+Panic	パニック
+Pre-show check	ショー前チェック
+Show safety	ショーの安全
+Unlock	ロック解除
+Lock	ロック
+Resume	再開
+Ready: nothing missing, every device and output in place	準備完了: 欠けているものはなく、すべてのデバイスと出力が揃っています
+Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume	ロック: ドラッグ・削除・取り消しは無効、ノブは操作できます。パニックは即座に音を止め、もう一度押すと再開します
+Lock the canvas for a live show: no node drag, cable drag, delete or undo. Knobs, sliders and the keyboard keep working	ライブショー用にキャンバスをロック: ノード/ケーブルのドラッグ、削除、取り消しを無効に。ノブ、スライダー、キーボードは使えます
+Silence everything now: notes off on every MIDI Out and plugin, the sound fades in 5 ms, the transport stops and each projector holds its last frame. Press again to resume	すべてを即座に無音化: 全MIDI Outとプラグインのノートをオフ、音は5 msでフェードアウト、トランスポート停止、各プロジェクターは最後のフレームを保持。もう一度押すと再開

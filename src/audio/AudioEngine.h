@@ -377,7 +377,13 @@ public:
    double LastSwitchBeat() const { return mLastSwitchBeat.load(std::memory_order_relaxed); }
    bool SwitchLanded() const { return mSwitchLanded.load(std::memory_order_acquire); }
    // Test probe: the quietest block peak since the reset (device output).
-   void ResetBlockPeakFloor() { mBlockPeakFloor.store(1e9f, std::memory_order_relaxed); }
+   void ResetBlockPeakFloor()
+   {
+      mBlockPeakFloor.store(1e9f, std::memory_order_relaxed);
+      mBlockPeakCeil.store(0.0f, std::memory_order_relaxed);
+   }
+   // Test probe: the loudest block peak since the same reset (panic must leave 0).
+   float BlockPeakCeil() const { return mBlockPeakCeil.load(std::memory_order_relaxed); }
    float BlockPeakFloor() const { return mBlockPeakFloor.load(std::memory_order_relaxed); }
 
    // outputLatencySamples of the last published topology (main thread).
@@ -661,6 +667,7 @@ private:
    std::atomic<double> mLastSwitchBeat { -1.0 };
    std::atomic<bool> mSwitchLanded { false };
    std::atomic<float> mBlockPeakFloor { 1e9f };
+   std::atomic<float> mBlockPeakCeil { 0.0f };
    float mTailScratch[kAudioMaxChannels][kAudioMaxBlockFrames] = {};
    float* mTailScratchChannels[kAudioMaxChannels] = {};
 

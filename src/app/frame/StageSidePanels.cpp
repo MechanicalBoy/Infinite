@@ -852,6 +852,31 @@ void DrawSidePanels(FrameCtx& fc)
             }
             FormParts::SliderFloat(L("Fade"), &ShowSetFadeMs(), 0.0f, 8000.0f, "%.0f ms");
             EditorHint(T("A switch lands on the quantize grid; the old patch fades out over the fade time"));
+
+            SectionCard::Begin(T("Show safety"));
+            if (FormParts::Button(gShowLock ? L("Unlock") : L("Lock")))
+               ShowLockToggle();
+            FormParts::Inline();
+            if (FormParts::Button(ShowPanicLatched() ? L("Resume") : L("Panic")))
+               ShowPanicToggle();
+            static std::vector<ShowCheckItem> sCheck;
+            static bool sChecked = false;
+            FormParts::Inline();
+            if (FormParts::Button(L("Pre-show check")) || gShowCheckRequest)
+            {
+               sCheck = ShowPreCheck();
+               sChecked = true;
+               gShowCheckRequest = false;
+            }
+            if (sChecked && sCheck.empty())
+               EditorHint(T("Ready: nothing missing, every device and output in place"));
+            for (const ShowCheckItem& item : sCheck)
+            {
+               ImGui::PushStyleColor(ImGuiCol_Text, item.error ? ImVec4(0.92f, 0.36f, 0.32f, 1.0f) : ImVec4(0.95f, 0.72f, 0.28f, 1.0f));
+               ImGui::TextWrapped("%s", item.text.c_str());
+               ImGui::PopStyleColor();
+            }
+            EditorHint(T("Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume"));
          }
          EndEditorWindow(visible);
       }

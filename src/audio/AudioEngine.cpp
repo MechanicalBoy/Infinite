@@ -86,6 +86,10 @@ bool AudioEngine::Start(std::string& outError)
 
 void AudioEngine::Stop()
 {
+   // QUITSTALLTEST (v0.6 2.36): a device that never finishes closing; the quit watchdog must still end the process.
+   static const bool sStall = getenv("INFINITE_QUITSTALLTEST") != nullptr;
+   if (sStall)
+      std::this_thread::sleep_for(std::chrono::seconds(30));
    Platform::AudioDeviceClose();
    mSampleRate.store(0.0, std::memory_order_relaxed);
    // AudioDeviceClose has returned, so no callback can still hold a list.
@@ -1379,6 +1383,8 @@ void AudioEngine::Process(float** buffers, int numChannels, int numFrames)
             peak = std::max(peak, std::fabs(buffers[ch][i]));
       if (peak < mBlockPeakFloor.load(std::memory_order_relaxed))
          mBlockPeakFloor.store(peak, std::memory_order_relaxed);
+      if (peak > mBlockPeakCeil.load(std::memory_order_relaxed))
+         mBlockPeakCeil.store(peak, std::memory_order_relaxed);
    }
    // Deliberately after RunTopology, not part of it: the preview is not in
    // the node topology at all, so it stays audible (and unaffected by
