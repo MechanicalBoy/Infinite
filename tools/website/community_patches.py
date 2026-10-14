@@ -11,13 +11,17 @@ Usage: python3 tools/website/community_patches.py --scan DIR [DIR..]   (adds new
        python3 tools/website/community_patches.py                      (build every "ok" entry + index.json)
        python3 tools/website/community_patches.py --sheet              (contact sheet of all entries to /tmp/community_sheet.png)
        python3 tools/website/community_patches.py --smoke              (every published patch must open, play and show a picture)
-Smoke: runs the staged copies in website/assets/community through --validate and --frame. A patch must load
-      without errors, render its frame, and show a picture unless it needs a camera/mic or its manifest
+Repair: a staged copy must pass the strict --validate. Old patches carry three kinds of leftover that the
+      strict pass refuses; the build fixes each in the copy (the source file is never touched) and prints it:
+      a parameter the node no longer has (line dropped), a spare Output with nothing cabled in (node dropped),
+      a Blend Audio with one side wired (swapped for a Gain at the same level, since the empty side was silence).
+Smoke: runs the staged copies in website/assets/community through the strict --validate and --frame. A patch
+      must load without errors or promoted warnings, render its frame, and show a picture unless it needs a camera/mic or its manifest
       entry says "picture": false (sound-only patch). Pixels are never compared: patches may look different
       as Infinite evolves, they must only keep working.
 Exit codes: 0 done, 1 a smoke check failed.
 """
-import json, os, re, subprocess, sys, shutil, hashlib
+import json, math, os, re, subprocess, sys, shutil, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from template_preview import render as diagram
 from PIL import Image
@@ -51,11 +55,54 @@ def scan(dirs):
                 m["items"].append({"src": p, "name": os.path.splitext(f)[0], "author": "", "description": "", "ok": False, "frame": 12})
     json.dump(m, open(MAN, "w"), indent=1, ensure_ascii=False); print(len(m["items"]), "entries")
 
+def block(ls, at):
+    """(first, last) list index of the node block whose 'node' line is ls[at]."""
+    e = at
+    while e < len(ls) and ls[e] != "end": e += 1
+    return at, e
+
+def repair_once(ls, errors):
+    """Fix what the strict validator refused, bottom line first so line numbers stay true. Returns notes."""
+    notes = []
+    for e in sorted(errors, key=lambda e: -e.get("line", 0)):
+        at = e.get("line", 0) - 1; code = e.get("code"); n = str(e.get("node"))
+        if not 0 <= at < len(ls): continue
+        if code == "W_UNKNOWN_PARAM":
+            notes.append("dropped '%s' (node %s no longer has it)" % (ls[at].strip(), n)); del ls[at]
+        elif code == "W_OUTPUT_EMPTY" and sum(bool(re.match(r"node \d+ \S+ Output$", l)) for l in ls) > 1:
+            a, b = block(ls, at); del ls[a:b + 1]; notes.append("dropped Output %s (nothing cabled in)" % n)
+        elif code == "W_OPEN_INPUT" and ls[at].endswith(" Blend Audio"):
+            ins = [k for k, l in enumerate(ls) if re.match(r"aud %s \d+ \d+$" % n, l)]
+            if len(ins) != 1 or any(re.match(r"mod (%s \d+ \d+|\d+ \d+ %s)\b" % (n, n), l) for l in ls): continue
+            a, b = block(ls, at); blend = 0.5
+            for l in ls[a:b]:
+                m = re.match(r"\s+f blend (\S+)", l)
+                if m: blend = float(m[1])
+            side = int(ls[ins[0]].split()[2])  # Blend Audio is an equal-power crossfade: A cos, B sin
+            g = max(math.cos(blend * math.pi / 2) if side == 0 else math.sin(blend * math.pi / 2), 1e-3)
+            ls[a:b] = [ls[a].replace(" Blend Audio", " Gain")] + [l for l in ls[a + 1:b] if not re.match(r"\s+f blend ", l)] + ["  f gainDb %.4g" % (20 * math.log10(g))]
+            src = ls[ins[0]].split(); ls[ins[0]] = "aud %s 0 %s" % (src[1], src[3])
+            notes.append("Blend Audio %s had one side wired: now a Gain at %.1f dB" % (n, 20 * math.log10(g)))
+    return notes
+
+def repair(dst):
+    """Make the staged copy pass the strict validator; returns what was changed."""
+    notes = []
+    for _ in range(4):
+        rc, j = headless(["--validate", dst], lenient=False)
+        if rc == 0: break
+        ls = open(dst, encoding="utf-8").read().split("\n"); did = repair_once(ls, j.get("errors", []))
+        if not did: break
+        open(dst, "w", encoding="utf-8").write("\n".join(ls)); notes += did
+    return notes
+
 def build(it, only_ok=True):
     ext = os.path.splitext(it["src"])[1]; sl = slug(it["name"]) or hashlib.md5(it["src"].encode()).hexdigest()[:8]
     os.makedirs(OUT, exist_ok=True)
     dst = os.path.join(OUT, sl + ext); txt = clean(it["src"])
     open(dst, "w").write(txt)
+    for n in repair(dst): print("  %s: %s" % (it["name"], n))
+    txt = open(dst, encoding="utf-8").read()
     prev = os.path.join(OUT, sl + ".webp"); ns = nodes(txt)
     ok = False
     if not any(t in HW for _, t in ns):
@@ -92,9 +139,9 @@ def publish():
     json.dump({"version": 1, "items": items}, open(os.path.join(OUT, "index.json"), "w"), indent=1, ensure_ascii=False)
     print(len(items), "published")
 
-def headless(args):
+def headless(args, lenient=True):
     """(exit code, last JSON line as dict) of one headless Infinite run."""
-    try: r = subprocess.run([BIN] + args + ["--lenient"], capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL)
+    try: r = subprocess.run([BIN] + args + (["--lenient"] if lenient else []), capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired: return -1, {"errors": [{"code": "TIMEOUT", "message": "no result in 180 s"}]}
     try: j = json.loads(r.stdout.strip().split("\n")[-1])
     except ValueError: j = {"errors": [{"code": "CRASH" if r.returncode < 0 else "EXIT", "message": "exit %d" % r.returncode}]}
@@ -107,8 +154,8 @@ def smoke_one(it, tmp):
     sl = slug(it["name"]); dst = os.path.join(OUT, sl + os.path.splitext(it["src"])[1])
     if not os.path.exists(dst): return "", "not staged (run community_patches.py)"
     txt = open(dst, encoding="utf-8", errors="replace").read(); ns = nodes(txt)
-    rc, j = headless(["--validate", dst])
-    if rc != 0: return "", "does not open: " + errs(j)
+    rc, j = headless(["--validate", dst], lenient=False)
+    if rc != 0: return "", "does not pass strict validate: " + errs(j)
     if any(t in HW for _, t in ns): return "opens (needs a camera, mic or MIDI to play)", ""
     d = os.path.join(tmp, sl); os.makedirs(d, exist_ok=True)
     outs = [m[1] for m in (re.match(r"node (\d+) \S+ Output$", l) for l in txt.split("\n")) if m]

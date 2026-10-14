@@ -610,16 +610,6 @@ node 33 Effects lensdistortion
   f uChroma 2.79099989
   f uZoom 1
 end
-node 34 Output Output
-  pos 8760 -5900
-  flags 1 0 1 0
-  i recordFps 30
-  b includeAudio 0
-  i imageFormat 0
-  i videoFormat 0
-  s exportImagePath 
-  s recordVideoPath 
-end
 node 35 Effects glitch
   pos 8340 -5600
   flags 1 0 1 0

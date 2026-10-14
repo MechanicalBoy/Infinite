@@ -170,11 +170,11 @@ node 7 Synths Analog
   b sync 0
   b analog 1
 end
-node 8 Utility Blend Audio
+node 8 Utility Gain
   uid 9
   pos 3656 -1410
   flags 0 0 1 0
-  f blend 0.5
+  f gainDb -3.01
 end
 node 9 AudioEffects Reverb
   uid 10
