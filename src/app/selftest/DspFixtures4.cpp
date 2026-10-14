@@ -94,21 +94,28 @@ bool RunEffectMixAndLimiterFixture()
             continue;
          // Let the mix smoother settle on 0 before the impulse.
          const int warm = (int)(0.1 * sampleRate);
+         const int tail = latency + 2048;
          std::vector<std::vector<float>> out;
-         DelayTest::RunSamples(*node, warm + latency + 64, 1,
-                               [warm](int i, int) { return i == warm ? 0.5f : 0.0f; }, &out);
-         int peakIdx = -1;
-         float peakVal = 0.0f;
+         DelayTest::RunSamples(*node, warm + tail, 1, [warm](int i, int) { return i == warm ? 0.5f : 0.0f; }, &out);
+         // A dry path that is a plain delay returns the impulse whole, at
+         // `latency`. One that goes through the kernel's own filters with
+         // the processing taken out (IEffectKernel::ProcessDry: Drive and
+         // Wavetable Shaper's minimum-phase oversampler) smears it, so the
+         // check is the one both designs owe PDC: unity gain at DC, and a
+         // DC group delay sum(n h[n]) / sum(h[n]) equal to the reported
+         // latency (exactly `latency` for a plain delay).
+         double gain = 0.0, moment = 0.0;
          for (size_t i = (size_t)warm; i < out[0].size(); i++)
-            if (std::fabs(out[0][i]) > peakVal)
-            {
-               peakVal = std::fabs(out[0][i]);
-               peakIdx = (int)i - warm;
-            }
-         const bool thisOk = peakIdx == latency && std::fabs(peakVal - 0.5f) < 1.0e-4f;
+         {
+            const double h = out[0][i] / 0.5;
+            gain += h;
+            moment += h * (double)((int)i - warm);
+         }
+         const double delay = std::fabs(gain) > 1.0e-9 ? moment / gain : -1.0;
+         const bool thisOk = std::fabs(gain - 1.0) < 1.0e-3 && std::fabs(delay - (double)latency) < 0.5;
          if (!thisOk)
-            printf("DSPTEST   %s: latency %d, dry impulse arrived at %d (%.4f)\n", def.name.c_str(), latency,
-                   peakIdx, peakVal);
+            printf("DSPTEST   %s: latency %d, dry DC gain %.5f, DC group delay %.3f samples\n", def.name.c_str(),
+                   latency, gain, delay);
          ok &= thisOk;
          checked++;
       }

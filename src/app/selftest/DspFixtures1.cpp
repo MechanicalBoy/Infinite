@@ -2149,20 +2149,37 @@ bool RunWavetableShaperFixture()
          *node, testSamples, 1,
          [sweepHz](int i, int) { return sinf(2.0f * (float)M_PI * sweepHz * (float)i / (float)44100.0); }, &out);
 
+      // The reference, then the node's output read at a fractional delay:
+      // the minimum-phase oversampler's delay is `latency` rounded, not a
+      // whole number of samples, so the node must match the curve at some
+      // delay within a sample of what it reports.
       DcBlocker refBlocker; // starts zeroed, matching the node's post-warmup state
       refBlocker.SetSampleRate(sampleRate);
-      float maxErr = 0.0f;
-      for (int i = 0; i + latency < testSamples; i++)
+      std::vector<float> expected((size_t)testSamples);
+      for (int i = 0; i < testSamples; i++)
       {
          const float x = sinf(2.0f * (float)M_PI * sweepHz * (float)i / (float)44100.0);
-         const float shaped = WavetableShaperDsp::Shape(x, table, position, driveDb, bias, smooth);
-         const float expected = refBlocker.Process(shaped);
-         if (i >= 256) // past the oversampler's start-up transient
-            maxErr = std::max(maxErr, std::fabs(expected - out[0][(size_t)(i + latency)]));
+         expected[(size_t)i] = refBlocker.Process(WavetableShaperDsp::Shape(x, table, position, driveDb, bias, smooth));
+      }
+      float maxErr = 1.0e9f;
+      double bestDelay = 0.0;
+      for (double d = latency - 1.0; d <= latency + 1.0 + 1e-9; d += 0.01)
+      {
+         float err = 0.0f;
+         for (int i = 256; i + (int)std::ceil(d) + 1 < testSamples; i++) // past the oversampler's start-up transient
+         {
+            const double at = i + d;
+            const int k = (int)std::floor(at);
+            const float f = (float)(at - k);
+            const float y = out[0][(size_t)k] + (out[0][(size_t)k + 1] - out[0][(size_t)k]) * f;
+            err = std::max(err, std::fabs(expected[(size_t)i] - y));
+         }
+         if (err < maxErr)
+            maxErr = err, bestDelay = d;
       }
       const bool parityOk = latency > 0 && maxErr < 2.0e-3f;
-      printf("DSPTEST wavetable shaper node parity: latency %d, max error vs WavetableShaperDsp::Shape %.6f  %s\n",
-             latency, maxErr, parityOk ? "OK" : "FAIL");
+      printf("DSPTEST wavetable shaper node parity: latency %d (fits at %.2f), max error vs WavetableShaperDsp::Shape %.6f  %s\n",
+             latency, bestDelay, maxErr, parityOk ? "OK" : "FAIL");
       all &= parityOk;
    }
 
