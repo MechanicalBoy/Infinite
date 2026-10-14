@@ -5211,4 +5211,254 @@ bool RunFMFixture()
    printf("FMTEST %s\n", ok ? "OK" : "FAIL");
    return ok;
 }
+
+// INFINITE_PARTIALSTEST (v0.6 2.32): resynthesis through the real node. A
+// sample played at its own pitch comes back within 1 dB per harmonic; a
+// note an octave up is in tune and keeps the sample's formants (formant
+// moves them on purpose); partials thins from the top; morph reaches the
+// second sample's spectrum; speed and loop decide when a note ends;
+// nothing is synthesised above Nyquist; the residual carries a noise
+// sample's level.
+bool RunPartialsFixture()
+{
+   const double sr = 48000.0;
+   const int block = 256;
+   bool ok = true;
+
+   // 220 Hz, 12 harmonics at 0.5/h (or only the odd ones), short fades.
+   auto harmonic = [&](float hz, bool oddOnly) {
+      std::vector<float> x(48000, 0.0f);
+      for (size_t i = 0; i < x.size(); i++)
+      {
+         float s = 0.0f;
+         for (int h = 1; h <= 12; h++)
+            if (!oddOnly || (h & 1))
+               s += 0.5f / (float)h * std::sin(2.0f * (float)M_PI * hz * (float)h * (float)i / (float)sr);
+         const float fade = std::min(1.0f, std::min((float)i, (float)(x.size() - 1 - i)) / 1440.0f);
+         x[i] = s * fade;
+      }
+      return x;
+   };
+   const std::vector<float> src = harmonic(220.0f, false);
+
+   PartialsNode node;
+   node.LoadMono(0, src, sr);
+   node.LoadMono(1, harmonic(330.0f, true), sr);
+   node.WaitIdle();
+   NoteEventQueue inbox;
+   int frame = 0;
+   AudioNode* audio = node.GetAudioNode();
+   audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+
+   auto play = [&](int noteNum, int frames, int offAt) {
+      node.CookIfNeeded(frame++);
+      audio->PrepareToPlay(sr, block);
+      NoteEvent on;
+      on.note = noteNum;
+      on.velocity = 1.0f;
+      on.isNoteOn = true;
+      on.voiceId = 3;
+      inbox.Push(on);
+      std::vector<float> out((size_t)frames);
+      std::vector<float> l(block), r(block);
+      for (int done = 0; done < frames; done += block)
+      {
+         if (offAt >= 0 && done >= offAt && done - block < offAt)
+         {
+            NoteEvent off = on;
+            off.isNoteOn = false;
+            off.velocity = 0.0f;
+            inbox.Push(off);
+         }
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         audio->ProcessBlock(nullptr, 0, buf);
+         for (int i = 0; i < block && done + i < frames; i++)
+            out[(size_t)(done + i)] = l[(size_t)i];
+      }
+      return out;
+   };
+   // Hann-windowed DFT amplitude of one frequency over [from, to).
+   auto amp = [&](const std::vector<float>& x, double hz, size_t from, size_t to) {
+      double re = 0.0, im = 0.0, wsum = 0.0;
+      const size_t n = to - from;
+      for (size_t i = 0; i < n; i++)
+      {
+         const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * (double)i / (double)(n - 1));
+         const double ph = 2.0 * M_PI * hz * (double)i / sr;
+         re += w * x[from + i] * std::cos(ph);
+         im += w * x[from + i] * std::sin(ph);
+         wsum += w;
+      }
+      return 2.0 * std::sqrt(re * re + im * im) / wsum;
+   };
+   auto db = [](double a, double b) { return 20.0 * std::log10(std::max(1e-12, a) / std::max(1e-12, b)); };
+   const size_t w0 = 9600, w1 = 28800; // 0.2 .. 0.6 s, inside the sustained part
+
+   node.pitch = node.formant = node.morph = 0.0f;
+   node.partials = 48.0f;
+   node.speed = 1.0f;
+   node.noise = 1.0f;
+   node.release = 20.0f;
+   node.volume = 1.0f;
+   node.loop = false;
+
+   // 1. At its own pitch the sample comes back.
+   {
+      const std::vector<float> y = play(57, 33600, -1);
+      double worst = 0.0;
+      for (int h = 1; h <= 12; h++)
+         worst = std::max(worst, std::fabs(db(amp(y, 220.0 * h, w0, w1), amp(src, 220.0 * h, w0, w1))));
+      const bool good = worst <= 1.0;
+      printf("PARTIALSTEST root: worst harmonic error %.3f dB over 12 (<= 1 dB), f0 %.2f Hz  %s\n", worst,
+             node.AnalyzedF0(0), good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 2. An octave up, one partial: a pure 440 Hz.
+   {
+      node.partials = 1.0f;
+      const std::vector<float> y = play(69, 33600, -1);
+      double first = -1.0, last = -1.0;
+      int crossings = 0;
+      for (size_t i = w0 + 1; i < w1; i++)
+         if (y[i - 1] < 0.0f && y[i] >= 0.0f)
+         {
+            const double t = (double)(i - 1) + (double)(-y[i - 1] / (y[i] - y[i - 1]));
+            if (first < 0.0)
+               first = t;
+            else
+               crossings++;
+            last = t;
+         }
+      const double hz = crossings > 0 ? sr * crossings / (last - first) : 0.0;
+      const double cents = 1200.0 * std::log2(std::max(1e-9, hz) / 440.0);
+      const double second = db(amp(y, 880.0, w0, w1), amp(y, 440.0, w0, w1));
+      const bool good = std::fabs(cents) < 1.0 && second < -60.0;
+      printf("PARTIALSTEST pitch + partials 1: %.3f Hz (%+.3f c), 2nd harmonic %.1f dB  %s\n", hz, cents, second,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+      node.partials = 48.0f;
+   }
+   // 3. Formants stay put an octave up; formant +12 moves them with it.
+   {
+      const std::vector<float> up = play(69, 33600, -1);
+      const double held = db(amp(up, 440.0, w0, w1), amp(src, 440.0, w0, w1)); // source level at 440
+      node.formant = 12.0f;
+      const std::vector<float> shifted = play(57, 33600, -1);
+      const double moved = db(amp(shifted, 440.0, w0, w1), amp(src, 220.0, w0, w1)); // 220's level, now at 440
+      node.formant = 0.0f;
+      const bool good = std::fabs(held) < 1.5 && std::fabs(moved) < 1.5;
+      printf("PARTIALSTEST formants: octave up %+.2f dB from the source at 440, formant +12 %+.2f dB from 220  %s\n",
+             held, moved, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 4. Nothing above Nyquist: harmonic 9 of note 103 would alias to 19776 Hz.
+   // formant follows the note here so the stack keeps its level up there.
+   {
+      node.formant = 46.0f;
+      const std::vector<float> y = play(103, 33600, -1);
+      node.formant = 0.0f;
+      const double fund = amp(y, 3136.0, w0, w1);
+      const double alias = db(amp(y, 48000.0 - 9.0 * 3136.0, w0, w1), fund);
+      bool finite = true;
+      for (float v : y)
+         finite = finite && std::isfinite(v);
+      const bool good = alias < -100.0 && finite && fund > 0.3;
+      printf("PARTIALSTEST alias: fundamental %.3f, 19776 Hz %.1f dB below it  %s\n", fund, alias, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 5. Speed 2 ends a held note at half the length; loop keeps it going.
+   {
+      node.speed = 2.0f;
+      const std::vector<float> once = play(57, 72000, -1);
+      node.loop = true;
+      const std::vector<float> looped = play(57, 72000, -1);
+      node.loop = false;
+      node.speed = 1.0f;
+      float lateOnce = 0.0f, lateLoop = 0.0f;
+      for (size_t i = 33600; i < 72000; i++)
+      {
+         lateOnce = std::max(lateOnce, std::fabs(once[i]));
+         lateLoop = std::max(lateLoop, std::fabs(looped[i]));
+      }
+      const bool good = lateOnce < 1e-4f && lateLoop > 0.1f;
+      printf("PARTIALSTEST speed 2: peak after 0.7 s %.2g one-shot, %.2f looped  %s\n", lateOnce, lateLoop,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 6. Morph 1 plays the odd-harmonic sample's spectrum at the note.
+   {
+      node.morph = 1.0f;
+      const std::vector<float> y = play(57, 33600, -1);
+      node.morph = 0.0f;
+      const double even = db(amp(y, 440.0, w0, w1), amp(y, 660.0, w0, w1));
+      const bool good = even < -30.0;
+      printf("PARTIALSTEST morph 1: 440 Hz %.1f dB below 660 Hz (odd harmonics only)  %s\n", even,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 7. A noise sample is carried by the residual.
+   {
+      std::vector<float> noiseSrc(48000);
+      uint32_t rng = 0x2468ACEu;
+      for (float& v : noiseSrc)
+      {
+         rng = rng * 1664525u + 1013904223u;
+         v = 0.2f * ((float)(rng >> 8) / 8388608.0f - 1.0f);
+      }
+      PartialsNode noisy;
+      noisy.LoadMono(0, noiseSrc, sr);
+      noisy.WaitIdle();
+      noisy.release = 20.0f;
+      noisy.volume = 1.0f;
+      NoteEventQueue nInbox;
+      AudioNode* na = noisy.GetAudioNode();
+      na->SetNoteInbox(&nInbox, nInbox.RegisterConsumer());
+      auto rms = [&](float noiseLevel) {
+         noisy.noise = noiseLevel;
+         noisy.CookIfNeeded(frame++);
+         na->PrepareToPlay(sr, block);
+         NoteEvent on;
+         on.note = 57;
+         on.velocity = 1.0f;
+         on.isNoteOn = true;
+         nInbox.Push(on);
+         std::vector<float> l(block), r(block);
+         double sum = 0.0;
+         int n = 0;
+         for (int done = 0; done < 28800; done += block)
+         {
+            float* ch[2] = { l.data(), r.data() };
+            AudioBuffer buf;
+            buf.channels = ch;
+            buf.numChannels = 2;
+            buf.numFrames = block;
+            na->ProcessBlock(nullptr, 0, buf);
+            if (done >= 9600)
+               for (float v : l)
+               {
+                  sum += (double)v * v;
+                  n++;
+               }
+         }
+         return std::sqrt(sum / std::max(1, n));
+      };
+      double srcRms = 0.0;
+      for (size_t i = 9600; i < 28800; i++)
+         srcRms += (double)noiseSrc[i] * noiseSrc[i];
+      srcRms = std::sqrt(srcRms / 19200.0);
+      const double full = db(rms(1.0f), srcRms);
+      const double none = db(rms(0.0f), srcRms);
+      const bool good = std::fabs(full) < 3.0 && none < full - 1.0;
+      printf("PARTIALSTEST residual: noise 1 %+.2f dB from the source, noise 0 %+.2f dB  %s\n", full, none,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   printf("PARTIALSTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
 }

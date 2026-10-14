@@ -569,6 +569,9 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_FMTEST") != nullptr)
       return RunFMFixture() ? 0 : 1;
 
+   if (getenv("INFINITE_PARTIALSTEST") != nullptr)
+      return RunPartialsFixture() ? 0 : 1;
+
    if (getenv("INFINITE_SPLITTERTEST") != nullptr)
       return RunSplitterFixture() ? 0 : 1;
 

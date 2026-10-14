@@ -734,6 +734,7 @@ set(COMMON_SOURCES
     src/nodes/OscillatorNode.cpp
     src/nodes/MetallicNode.cpp
     src/nodes/FMNode.cpp
+    src/nodes/PartialsNode.cpp
     src/nodes/AudioEffectNode.cpp
     src/nodes/SamplerNode.cpp
     src/nodes/LooperNode.cpp

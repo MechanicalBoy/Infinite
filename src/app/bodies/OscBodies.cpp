@@ -2065,6 +2065,98 @@ namespace app
    }
 
 
+   // The main sample's partial levels at its loudest frame, dB-scaled; the
+   // bars past the partials knob are dimmed, since they are not heard.
+   void DrawPartialsBars(PartialsNode* n, float h)
+   {
+      const float w = gAudioContentW;
+      const AudioViz::Frame f = AudioViz::Begin(w, h);
+      const int count = n->barCount;
+      if (count > 0)
+      {
+         float peak = 1e-6f;
+         for (int i = 0; i < count; i++)
+            peak = std::max(peak, n->bars[i]);
+         const bool light = IsThemeLight();
+         const ImU32 on = light ? tok::U32(tok::pal::c_5A46C8C8) : tok::U32(tok::pal::c_B4A0FFC8);
+         const ImU32 off = light ? tok::U32(tok::pal::c_FFFFFF8C) : tok::U32(tok::pal::c_00000082);
+         const float barW = w / (float)PartialsNode::kBarCount;
+         for (int i = 0; i < count; i++)
+         {
+            const float db = 20.0f * std::log10(std::max(1e-6f, n->bars[i] / peak));
+            const float frac = std::clamp(1.0f + db / 60.0f, 0.0f, 1.0f);
+            const float x = f.origin.x + barW * (float)i;
+            const ImVec2 top(x, f.br.y - frac * h);
+            const ImVec2 bot(x + std::max(1.0f, barW - 1.0f), f.br.y);
+            f.dl->AddRectFilled(top, bot, on);
+            if ((float)i >= n->partials)
+               f.dl->AddRectFilled(top, bot, off);
+         }
+      }
+      else
+      {
+         AudioViz::IdleLabel(f, n->IsAnalyzing() ? "analyzing..." : "load a sample");
+      }
+      AudioViz::End(f);
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+
+   void DrawPartialsBody(GraphNode& gn, PartialsNode* n)
+   {
+      const int voices = n->ActiveVoices();
+      char stat[160];
+      if (n->HasSample(0))
+         snprintf(stat, sizeof(stat), "%s  -  %d voice%s", n->Status().c_str(), voices, voices == 1 ? "" : "s");
+      else
+         snprintf(stat, sizeof(stat), "%s", n->Status().c_str());
+
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      for (int which = 0; which < 2; which++)
+      {
+         if (which == 1)
+            ImGui::SameLine();
+         ImGui::PushID(which);
+         const std::string& name = n->FileName(which);
+         const char* label = which == 0 ? "sample" : "morph to";
+         char text[96];
+         snprintf(text, sizeof(text), "%s: %s", label, name.empty() ? "load..." : name.c_str());
+         if (ActionButton::Draw(text, ImVec2(AudioHalfWidth(), 0)))
+         {
+            const std::string path = Platform::OpenAudioDialog();
+            if (!path.empty())
+            {
+               PushUndoCheckpoint();
+               n->LoadFile(which, path);
+            }
+         }
+         ImGui::PopID();
+      }
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      DrawPartialsBars(n, 52.0f);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      {
+         AudioKnobRow row(5);
+         row.Knob("pitch", &n->pitch, -24.0f, 24.0f, "%+.1f st");
+         row.Knob("formant", &n->formant, -12.0f, 12.0f, "%+.1f st");
+         row.Knob("partials", &n->partials, 1.0f, 48.0f, "%.0f");
+         row.Knob("morph", &n->morph, 0.0f, 1.0f, "%.2f");
+         row.Checkbox("loop", &n->loop);
+         row.End();
+      }
+      {
+         AudioKnobRow row(4);
+         row.Knob("speed", &n->speed, 0.1f, 4.0f, "%.2fx");
+         row.Knob("noise", &n->noise, 0.0f, 2.0f, "%.2f");
+         row.Knob("release", &n->release, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                  AudioWidgetStyle::KnobSkewRelease400);
+         row.Knob("volume", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.End();
+      }
+      EndAudioBody();
+   }
+
+
    void DrawWaveTerrainScope(WaveTerrainNode* n, float h, float width)
    {
       const double now = ImGui::GetTime();

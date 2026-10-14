@@ -1613,6 +1613,8 @@ namespace app
          paul->ReloadFromPath();
       if (auto* molder = dynamic_cast<MolderNode*>(node))
          molder->ReloadFromPath();
+      if (auto* partials = dynamic_cast<PartialsNode*>(node))
+         partials->ReloadFromPath();
       if (auto* gm = dynamic_cast<GrainMolderNode*>(node))
          gm->ReloadFromPath();
       if (auto* gran = dynamic_cast<GranularNode*>(node))

@@ -3572,6 +3572,7 @@ void DrawOscillatorBody(GraphNode& gn, OscillatorNode* n);
 
 void DrawMetallicBody(GraphNode& gn, MetallicNode* n);
 void DrawFMBody(GraphNode& gn, FMNode* n);
+void DrawPartialsBody(GraphNode& gn, PartialsNode* n);
 
 void DrawWaveTerrainBody(GraphNode& gn, WaveTerrainNode* n);
 
@@ -5932,6 +5933,7 @@ bool RunVoiceModFixture();
 bool RunSynthSimdFixture();
 bool RunSaturatorFixture();
 bool RunFMFixture();
+bool RunPartialsFixture();
 bool RunSplitterFixture();
 bool RunSpatialFixture();
 
