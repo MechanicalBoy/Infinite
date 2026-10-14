@@ -4,10 +4,10 @@ Phase 1 never compiled the Field kernels; this does. Last stdout line is JSON.
 
     python3 tools/agentlang/validate_all.py [--app PATH]
 """
-import glob, json, os, subprocess, sys
+import os, glob, json, os, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-APP = "/Users/namansoni/infinte-main/build/Infinite.app/Contents/MacOS/Infinite"
+APP = os.environ.get("INFINITE_APP", "/Users/namansoni/infinte-main/build/Infinite.app/Contents/MacOS/Infinite")
 if "--app" in sys.argv:
     APP = sys.argv[sys.argv.index("--app") + 1]
 
