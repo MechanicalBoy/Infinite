@@ -1351,15 +1351,13 @@ namespace app
       DrawDelayVisualizer(n);
       ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
-      // KHS Audio Delay's control surface: Time, Tone, Feedback, Pan, Duck,
-      // Mix - two rows of three (Bounce is the checkbox below, matching the
-      // reference's inline on/off switch). A single row of 6 spread the
-      // knobs across the full 440px body with wide, sparse gaps and left the
-      // node much wider than it was tall; matching Dynamics' two-row grammar
-      // fixes both at once. Rate is a dropdown when synced, a knob when
-      // free.
+      // Ten controls in two rows of five (Rate is a dropdown when synced, a
+      // knob when free, in the same first cell), then the three switches on
+      // the odd cells of a five-cell row so every row shares one grid. The
+      // tape knobs grey while tape is off rather than dropping out (P5), and
+      // mix stays bottom-right (P4).
       {
-         AudioKnobRow row(3);
+         AudioKnobRow row(5);
          if (sync)
          {
             row.Dropdown("rate", MusicTime::RateDivisionList(), (int)(n->Param("rateDiv") + 0.5f), [n](int i) {
@@ -1369,33 +1367,26 @@ namespace app
          }
          else
          {
-            row.Knob("time", n->ParamPtr("timeMs"), 1.0f, 2000.0f, "%.0f ms", kKnobLarge);
+            row.Knob("time", n->ParamPtr("timeMs"), 1.0f, 2000.0f, "%.0f ms");
          }
-         row.Knob("tone", n->ParamPtr("tone"), -1.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("feedback", n->ParamPtr("feedback"), 0.0f, 110.0f, "%.0f%%", kKnobLarge);
+         row.Knob("tone", n->ParamPtr("tone"), -1.0f, 1.0f, "%.2f");
+         row.Knob("feedback", n->ParamPtr("feedback"), 0.0f, 110.0f, "%.0f%%");
+         row.Knob("pan", n->ParamPtr("pan"), -1.0f, 1.0f, "%.2f");
+         row.Knob("duck", n->ParamPtr("ducking"), 0.0f, 1.0f, "%.2f");
          row.End();
       }
       {
-         // Tape (2.20): the loop's wow, flutter, saturation and diffusion,
-         // greyed while tape is off rather than dropped (P5), so mix stays
-         // bottom-right (P4).
          const bool grey = !analog && !gParamRegisterOnly;
          if (grey)
             ImGui::BeginDisabled();
-         AudioKnobRow row(4);
+         AudioKnobRow row(5);
          row.Knob("wow", n->ParamPtr("wow"), 0.0f, 1.0f, "%.2f");
          row.Knob("flutter", n->ParamPtr("flutter"), 0.0f, 1.0f, "%.2f");
          row.Knob("saturation", n->ParamPtr("saturation"), 0.0f, 1.0f, "%.2f");
          row.Knob("diffusion", n->ParamPtr("diffusion"), 0.0f, 1.0f, "%.2f");
-         row.End();
          if (grey)
             ImGui::EndDisabled();
-      }
-      {
-         AudioKnobRow row(3);
-         row.Knob("pan", n->ParamPtr("pan"), -1.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("duck", n->ParamPtr("ducking"), 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f");
          row.End();
       }
 
@@ -1405,7 +1396,7 @@ namespace app
          // read as too compacted against the knob row above - same pattern
          // as Pitch Shift/Ring Mod/Flanger/Phaser/Bitcrush/etc.'s trailing
          // analog rows.
-         AudioKnobRow row(3, 20.0f, 8.0f, false);
+         AudioKnobRow row(5, 20.0f, 8.0f, false);
          bool syncBool = sync;
          bool syncBoolUserChanged = false;
          if (row.Checkbox("sync to tempo##delaySync", &syncBool, &syncBoolUserChanged))
@@ -1414,6 +1405,7 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("sync") = syncBool ? 1.0f : 0.0f;
          }
+         row.Skip();
          bool bounceBool = bounce;
          bool bounceBoolUserChanged = false;
          if (row.Checkbox("bounce##delayBounce", &bounceBool, &bounceBoolUserChanged))
@@ -1422,6 +1414,7 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("bounce") = bounceBool ? 1.0f : 0.0f;
          }
+         row.Skip();
          bool analogBool = analog;
          bool analogBoolUserChanged = false;
          if (row.Checkbox("tape##delayAnalog", &analogBool, &analogBoolUserChanged))
