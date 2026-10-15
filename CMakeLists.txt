@@ -457,6 +457,7 @@ set(COMMON_SOURCES
     src/app/graph/GraphHosts.cpp
     src/app/graph/NodeRegistry.cpp
     src/app/graph/PatchFiles.cpp
+    src/app/graph/PatchShare.cpp
     src/app/graph/PatchIO.cpp
     src/app/graph/PatchLoad.cpp
     src/app/graph/NodeClipboard.cpp
@@ -588,6 +589,7 @@ set(COMMON_SOURCES
     src/core/UpdateCheck.cpp
     src/core/SelfUpdate.cpp
     src/core/Extensions.cpp
+    src/core/ShareBundle.cpp
     src/core/tracking/OrtRuntime.cpp
     src/core/tracking/HandTracker.cpp
     src/core/tracking/FaceTracker.cpp

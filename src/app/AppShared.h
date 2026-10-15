@@ -1388,6 +1388,22 @@ extern ImVec4 gCommentBodyRect;
 
 extern FieldDeviceSaveRequest gFieldDeviceSave;
 
+// File > Share Patch...: the name prompt, then one .infshare file (core/ShareBundle.h).
+struct SharePatchRequest
+{
+   char nameBuf[128] = {};
+   char authorBuf[96] = {};
+   char descBuf[200] = {};
+   bool justOpened = false;
+};
+extern SharePatchRequest gSharePatch;
+void SharePatchInteractive();
+void DrawSharePatchPopup();
+bool SharePatchBusy();
+// Synchronous form for tests: the same bundle, built on this thread.
+bool BuildShareBundleBlocking(const std::string& patchFile, const std::string& outPath, const std::string& name,
+                              const std::string& workDir, std::string& message);
+
 
 
    // Per-domain cache of the user's saved .infdev files under

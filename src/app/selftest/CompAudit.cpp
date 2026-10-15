@@ -85,6 +85,10 @@
 
 #include <array>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include "core/ShareBundle.h"
 #include <cstring>
 #include <functional>
 
@@ -1270,6 +1274,77 @@ namespace
       (void)ok;
    }
 
+   // Share bundle: cleaning, the zip round trip, unsafe names, and a real bundle of a shipped template opening again.
+   void AuditShare(Flags& f)
+   {
+      const std::string text =
+         "node 1 Image Source\n  s path /Users/jane/Pictures/cat.png\n  f speed 1\n"
+         "node 2 Sound Player\n  s sampleFile C:\\\\Users\\\\bob\\\\kick.wav\n  s label from /Users/jane/x\n";
+      std::vector<std::string> blanked;
+      const std::string cleaned = ShareBundle::CleanPatchText(text, &blanked);
+      const bool noUser = cleaned.find("jane") == std::string::npos && cleaned.find("bob") == std::string::npos;
+      printf("COMPAUDIT SHARE clean: %zu media names, user names gone %d, keeps speed %d\n", blanked.size(), noUser ? 1 : 0,
+             cleaned.find("f speed 1") != std::string::npos ? 1 : 0);
+      if (!noUser)
+         f.Flag("SHARE", "a user name is still in the cleaned patch", 1.0);
+      if (blanked.size() != 2)
+         f.Flag("SHARE", "wrong number of blanked media names", (double)blanked.size());
+
+      const std::string dir = AppPaths::AppSupportDir() + "/ShareAudit";
+      AppPaths::EnsureDir(dir);
+      const std::string zip = dir + "/t.infshare";
+      std::string error;
+      if (!ShareBundle::WriteZip(zip, { { "patch.inf", cleaned }, { "share.json", "{}" } }, error))
+         f.Flag("SHARE", "zip write failed: " + error, 1.0);
+      const std::string out = dir + "/out";
+      std::filesystem::remove_all(out);
+      const bool extracted = ShareBundle::ExtractZip(zip, out, error);
+      std::ifstream back(out + "/patch.inf", std::ios::binary);
+      std::ostringstream ss;
+      ss << back.rdbuf();
+      printf("COMPAUDIT SHARE zip round trip: extracted %d, identical %d\n", extracted ? 1 : 0, ss.str() == cleaned ? 1 : 0);
+      if (!extracted || ss.str() != cleaned)
+         f.Flag("SHARE", "zip round trip changed the patch", 1.0);
+
+      const std::string evil = dir + "/evil.infshare";
+      ShareBundle::WriteZip(evil, { { "../escape.txt", "x" } }, error);
+      const bool refused = !ShareBundle::ExtractZip(evil, dir + "/evilout", error);
+      printf("COMPAUDIT SHARE unsafe path refused: %d\n", refused ? 1 : 0);
+      if (!refused)
+         f.Flag("SHARE", "an entry climbing out of the folder was extracted", 1.0);
+      std::filesystem::remove_all(dir);
+   }
+
+   // A real bundle of a shipped template, built through the app's own headless modes, unpacked, then validated.
+   void AuditBundle(Flags& f)
+   {
+      const std::string dir = AppPaths::AppSupportDir() + "/BundleAudit";
+      std::filesystem::remove_all(dir);
+      AppPaths::EnsureDir(dir);
+      const std::string src = BundledResourcePath("templates/compositing.inf");
+      std::string message;
+      const auto t0 = std::chrono::steady_clock::now();
+      const bool built = BuildShareBundleBlocking(src, dir + "/b.infshare", "Audit", dir + "/work", message);
+      const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+      printf("COMPAUDIT BUNDLE built %d in %.1f s: %s\n", built ? 1 : 0, sec, message.c_str());
+      std::string error;
+      const bool extracted = built && ShareBundle::ExtractZip(dir + "/b.infshare", dir + "/open", error);
+      auto size = [&](const char* n) { std::error_code ec; return extracted ? (long long)std::filesystem::file_size(dir + "/open/" + n, ec) : -1LL; };
+      printf("COMPAUDIT BUNDLE parts: patch %lld bytes, thumbnail %lld, preview %lld, meta %lld\n", size("patch.inf"),
+             size("thumbnail.png"), size("preview.mp4"), size("share.json"));
+      if (!built || size("patch.inf") <= 0 || size("thumbnail.png") <= 0 || size("share.json") <= 0)
+         f.Flag("BUNDLE", "bundle is missing a part", 1.0);
+      if (extracted)
+      {
+         const std::string cmd = "env -u INFINITE_COMPAUDIT -u INFINITE_COMPAUDIT_ONLY \"" + Platform::ExecutablePath() + "\" --validate \"" + dir + "/open/patch.inf\" >/dev/null 2>&1";
+         const int rc = std::system(cmd.c_str());
+         printf("COMPAUDIT BUNDLE unpacked patch validates: %d (exit %d)\n", rc == 0 ? 1 : 0, rc);
+         if (rc != 0)
+            f.Flag("BUNDLE", "unpacked patch does not validate", (double)rc);
+      }
+      std::filesystem::remove_all(dir);
+   }
+
    void AuditFluid(Flags& f, bool& ok)
    {
       const int w = 256, h = 192;
@@ -1822,6 +1897,10 @@ bool RunCompAudit()
       AuditFlow(flags, ok);
    if (want("FLUID"))
       AuditFluid(flags, ok);
+   if (want("SHARE"))
+      AuditShare(flags);
+   if (only != nullptr && strstr(only, "BUNDLE") != nullptr)
+      AuditBundle(flags);
    if (want("VOLUME"))
       AuditVolume(flags, ok);
    if (want("TIMEMACHINE"))
