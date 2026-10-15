@@ -1163,6 +1163,113 @@ namespace
    }
 
    // ----------------------------------------------------------- FLUID
+   void AuditVolume(Flags& f, bool& ok)
+   {
+      const int w = 320, h = 180;
+      std::vector<unsigned char> pic((size_t)w * h * 4, 255);
+      for (int y = 0; y < h; y++)
+         for (int x = 0; x < w; x++)
+         {
+            unsigned char* p = &pic[((size_t)y * w + x) * 4];
+            p[0] = (unsigned char)(x * 255 / (w - 1));
+            p[1] = (unsigned char)(y * 255 / (h - 1));
+            p[2] = 128;
+         }
+      TexSource src(w, h);
+      src.Set(pic);
+      auto cook = [&](VolumeNode& v, std::vector<float>& px)
+      {
+         v.Input().Connect(&src);
+         v.CookIfNeeded(gFrame++);
+         return ReadSized(v.GetOutputTexture(), v.GetOutputWidth(), v.GetOutputHeight(), px);
+      };
+      auto mean = [](const std::vector<float>& px)
+      {
+         double s = 0.0;
+         size_t n = 0;
+         for (size_t i = 0; i + 3 < px.size(); i += 4, n++)
+            s += (px[i] + px[i + 1] + px[i + 2]) / 3.0;
+         return n ? s / (double)n : 0.0;
+      };
+      for (int shape = 0; shape < VolumeNode::kShapeCount; shape++)
+      {
+         std::vector<float> a, b;
+         VolumeNode v1, v2;
+         v1.shape = v2.shape = shape;
+         v1.centerY = v2.centerY = shape == 0 ? -0.5f : 0.0f;
+         const bool okA = cook(v1, a), okB = cook(v2, b);
+         bool finite = okA && okB;
+         for (float x : a)
+            if (!std::isfinite(x))
+               finite = false;
+         if (!finite)
+            f.Flag("VOLUME", "non-finite output, shape " + std::to_string(shape), 1.0);
+         double diff = 0.0;
+         for (size_t i = 0; i < a.size() && i < b.size(); i++)
+            diff = std::max(diff, (double)std::fabs(a[i] - b[i]));
+         printf("COMPAUDIT VOLUME shape %d: mean %.4f, same-settings difference %.6f\n", shape, mean(a), diff);
+         if (diff > 1e-6)
+            f.Flag("VOLUME", "same settings differ, shape " + std::to_string(shape), diff);
+
+         VolumeNode zero;
+         zero.shape = shape;
+         zero.density = 0.0f;
+         std::vector<float> z;
+         cook(zero, z);
+         double zd = 0.0;
+         for (size_t i = 0; i + 3 < z.size(); i += 4)
+         {
+            const size_t px = i / 4;
+            const double r = pic[px * 4] / 255.0, g = pic[px * 4 + 1] / 255.0, bl = pic[px * 4 + 2] / 255.0;
+            zd = std::max(zd, std::max(std::fabs(z[i] - r), std::max(std::fabs(z[i + 1] - g), std::fabs(z[i + 2] - bl))));
+         }
+         printf("COMPAUDIT VOLUME shape %d: zero density vs backdrop, worst %.5f\n", shape, zd);
+         if (zd > 2e-3)
+            f.Flag("VOLUME", "zero density is not the backdrop, shape " + std::to_string(shape), zd);
+
+         // A dark backdrop shows transmittance: more density means less of it comes through.
+         double prev = 2.0;
+         for (float d : { 0.5f, 2.0f, 8.0f })
+         {
+            VolumeNode v;
+            v.shape = shape;
+            v.centerY = shape == 0 ? -0.5f : 0.0f;
+            v.density = d;
+            v.color[0] = v.color[1] = v.color[2] = 0.0f;
+            v.ambient = 0.0f;
+            std::vector<float> px;
+            cook(v, px);
+            const double m = mean(px);
+            printf("COMPAUDIT VOLUME shape %d: density %.1f gives mean %.4f (all-black haze)\n", shape, d, m);
+            if (m > prev + 1e-4)
+               f.Flag("VOLUME", "more density let more through, shape " + std::to_string(shape), m - prev);
+            prev = m;
+         }
+      }
+      for (int steps : { 24, 96 })
+      {
+         const int tw = 1920, th = 1080;
+         std::vector<unsigned char> big((size_t)tw * th * 4, 128);
+         TexSource bsrc(tw, th);
+         bsrc.Set(big);
+         VolumeNode v;
+         v.shape = VolumeNode::kCloud;
+         v.centerY = 0.0f;
+         v.steps = steps;
+         v.Input().Connect(&bsrc);
+         v.CookIfNeeded(gFrame++);
+         glFinish();
+         const auto t0 = std::chrono::steady_clock::now();
+         const int reps = 5;
+         for (int i = 0; i < reps; i++)
+            v.CookIfNeeded(gFrame++);
+         glFinish();
+         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         printf("COMPAUDIT VOLUME 1080p, %d steps: %.2f ms per frame\n", steps, ms);
+      }
+      (void)ok;
+   }
+
    void AuditFluid(Flags& f, bool& ok)
    {
       const int w = 256, h = 192;
@@ -1715,6 +1822,8 @@ bool RunCompAudit()
       AuditFlow(flags, ok);
    if (want("FLUID"))
       AuditFluid(flags, ok);
+   if (want("VOLUME"))
+      AuditVolume(flags, ok);
    if (want("TIMEMACHINE"))
       AuditTimeMachine(flags, ok);
    if (want("PROXIMITY"))

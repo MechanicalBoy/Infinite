@@ -389,6 +389,8 @@ namespace app
          return 2; // slot 0 is the image, slot 1 the delay map
       if (dynamic_cast<FluidNode*>(gn.node.get()) != nullptr)
          return 3; // image (the dye), force, obstacles
+      if (dynamic_cast<VolumeNode*>(gn.node.get()) != nullptr)
+         return 1;
       if (dynamic_cast<ReactionDiffusionNode*>(gn.node.get()) != nullptr)
          return 1;
       if (dynamic_cast<WaveTerrainNode*>(gn.node.get()) != nullptr)
@@ -531,6 +533,8 @@ namespace app
          return slot == 0 ? &tm->Input() : (slot == 1 ? &tm->DelayMap() : nullptr);
       if (auto* fluid = dynamic_cast<FluidNode*>(gn.node.get()))
          return slot == 0 ? &fluid->Input() : (slot == 1 ? &fluid->Force() : (slot == 2 ? &fluid->Obstacles() : nullptr));
+      if (auto* vol = dynamic_cast<VolumeNode*>(gn.node.get()))
+         return slot == 0 ? &vol->Input() : nullptr;
       if (auto* rd = dynamic_cast<ReactionDiffusionNode*>(gn.node.get()))
          return slot == 0 ? &rd->Input() : nullptr;
       if (auto* wt = dynamic_cast<WaveTerrainNode*>(gn.node.get()))

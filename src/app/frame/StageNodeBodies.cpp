@@ -1015,6 +1015,8 @@ void DrawNodeBodies(FrameCtx& fc)
                   DrawTimeMachineParams(n);
                else if (auto* n = dynamic_cast<FluidNode*>(gn.node.get()))
                   DrawFluidParams(n);
+               else if (auto* n = dynamic_cast<VolumeNode*>(gn.node.get()))
+                  DrawVolumeParams(n);
                else if (auto* n = dynamic_cast<ReactionDiffusionNode*>(gn.node.get()))
                   DrawReactionDiffusionParams(n);
                else if (auto* n = dynamic_cast<SwitcherNode*>(gn.node.get()))

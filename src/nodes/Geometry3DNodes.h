@@ -578,6 +578,23 @@ public:
       return (slot >= 0 && slot < 9) ? kNames[slot] : nullptr;
    }
 
+   // The view of the last render and its depth buffer, for a node that draws into
+   // the same picture (Volume). Depth is a hardware depth value in 0..1. A
+   // multisampled render only resolves depth once someone asks for it, so the
+   // first frame after RequestDepth() has none (DepthValid() says so).
+   struct SceneCamera { Mat4 view, proj; float eye[3] = { 0, 0, 0 }; bool valid = false; };
+   const SceneCamera& LastCamera() const { return mLastCamera; }
+   unsigned int DepthTexture() const { return mDepthTex; }
+   bool DepthValid() const { return mDepthResolved; }
+   void RequestDepth()
+   {
+      if (!mDepthWanted)
+      {
+         mDepthWanted = true;
+         mHasSceneBuilt = false;   // draw again so depth is resolved
+      }
+   }
+
    size_t LastTriangleCount() const { return mLastTriangles; }
    size_t LastDrawCalls() const { return mLastDrawCalls; }
    // Slots that had to re-upload this frame; 0 means everything came from cache.
@@ -870,6 +887,8 @@ private:
    unsigned int mFbo = 0;
    unsigned int mColorTex = 0;
    unsigned int mDepthTex = 0; // a texture, so the post stage can sample it
+   SceneCamera mLastCamera;
+   bool mDepthWanted = false, mDepthResolved = false;
    bool mFloatTarget = false;
    // Post stage (AO, depth of field) and offline accumulation.
    GLUtil::Fbo mPostAo[2], mPostOut;

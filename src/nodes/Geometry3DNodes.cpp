@@ -1659,6 +1659,10 @@ void Render3DNode::CookOnce(int frameId)
          ? Mat4::Orthographic(orthoHeight, aspect, nearPlane, farPlane)
          : Mat4::Perspective(fov * 3.14159265f / 180.0f, aspect, nearPlane, farPlane);
    }
+   mLastCamera.view = view;
+   mLastCamera.proj = proj;
+   mLastCamera.eye[0] = eye[0]; mLastCamera.eye[1] = eye[1]; mLastCamera.eye[2] = eye[2];
+   mLastCamera.valid = true;
    if (mJitterIndex >= 0)
    {
       // Sub-pixel offset for supersampling: a Halton(2,3) point, in clip
@@ -2744,13 +2748,14 @@ void Render3DNode::CookOnce(int frameId)
       Bench::ConditionalGpuStageTimer benchResolve(benchPassRing, "r3d_resolve", frameId);
       glBindFramebuffer(GL_READ_FRAMEBUFFER, mMsFbo);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, mFbo);
-      // Depth comes along only when the post stage will read it.
+      // Depth comes along only when the post stage or a Volume node will read it.
       glBlitFramebuffer(0, 0, w, h, 0, 0, w, h,
-                        GL_COLOR_BUFFER_BIT | (PostActive() ? GL_DEPTH_BUFFER_BIT : 0), GL_NEAREST);
+                        GL_COLOR_BUFFER_BIT | ((PostActive() || mDepthWanted) ? GL_DEPTH_BUFFER_BIT : 0), GL_NEAREST);
       glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
    }
 
+   mDepthResolved = !multisampling || PostActive() || mDepthWanted;
    if (PostActive())
    {
       Bench::ConditionalGpuStageTimer benchPost(benchPassRing, "r3d_post", frameId);
