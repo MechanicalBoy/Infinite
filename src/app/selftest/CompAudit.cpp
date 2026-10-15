@@ -39,6 +39,8 @@
 //   HAP       HAP movies: snappy decode, a hand-built .mov read back frame by frame (raw, snappy and
 //             chunked frames all give the same texture), a cut-off file is refused, and Video Source
 //             shows a DXT1 clip (red) and a HAP Q clip (grey) through the real upload path
+//   HAPGEN    writes a 4096x2160 Hap1 test clip (random DXT1 blocks, snappy-wrapped) for the 3.12 bench;
+//             only when named; INFINITE_HAPGEN_OUT = path, INFINITE_HAPGEN_FRAMES = count (default 90)
 //   STACK     Layer Stack with two layers against Blend with the same mode and
 //             opacity, random alpha (flag > 1/255)
 //   CURVES    default curve is identity; an inverted RGB curve gives 1-x; a Red
@@ -1307,31 +1309,123 @@ namespace
       s.push_back((char)type);
       return s + body;
    }
-   // A QuickTime file of one HAP track: samples at 0.5 s apart, one chunk.
-   bool WriteHapMov(const std::string& path, const char* codec, int w, int h, const std::vector<std::string>& frames)
+   // The moov atom of one HAP track whose samples follow each other in one chunk at offset 8.
+   // Each sample lasts `delta` ticks of a `timescale` clock (default 0.5 s).
+   std::string HapMoov(const char* codec, int w, int h, const std::vector<uint32_t>& frameSizes,
+                       uint32_t timescale = 1000, uint32_t delta = 500)
    {
-      std::string mdat;
-      for (const auto& fr : frames)
-         mdat += fr;
       std::string sizes;
-      for (const auto& fr : frames)
-         sizes += HapU32((uint32_t)fr.size());
+      for (uint32_t sz : frameSizes)
+         sizes += HapU32(sz);
+      const uint32_t n = (uint32_t)frameSizes.size();
       std::string entry = HapU32(86) + std::string(codec, 4) + std::string(6, '\0') + std::string("\0\1", 2) +
                           std::string(16, '\0') + std::string({ (char)(w >> 8), (char)(w & 255), (char)(h >> 8), (char)(h & 255) }) +
                           std::string(50, '\0');
       std::string stbl = HapAtom("stsd", HapU32(0) + HapU32(1) + entry) +
-                         HapAtom("stts", HapU32(0) + HapU32(1) + HapU32((uint32_t)frames.size()) + HapU32(500)) +
-                         HapAtom("stsz", HapU32(0) + HapU32(0) + HapU32((uint32_t)frames.size()) + sizes) +
-                         HapAtom("stsc", HapU32(0) + HapU32(1) + HapU32(1) + HapU32((uint32_t)frames.size()) + HapU32(1)) +
+                         HapAtom("stts", HapU32(0) + HapU32(1) + HapU32(n) + HapU32(delta)) +
+                         HapAtom("stsz", HapU32(0) + HapU32(0) + HapU32(n) + sizes) +
+                         HapAtom("stsc", HapU32(0) + HapU32(1) + HapU32(1) + HapU32(n) + HapU32(1)) +
                          HapAtom("stco", HapU32(0) + HapU32(1) + HapU32(8));
-      std::string mdhd = HapU32(0) + HapU32(0) + HapU32(0) + HapU32(1000) + HapU32((uint32_t)frames.size() * 500) + std::string(4, '\0');
+      std::string mdhd = HapU32(0) + HapU32(0) + HapU32(0) + HapU32(timescale) + HapU32(n * delta) + std::string(4, '\0');
       std::string hdlr = HapU32(0) + HapU32(0) + "vide" + std::string(12, '\0') + std::string(1, '\0');
-      std::string moov = HapAtom("moov", HapAtom("trak", HapAtom("mdia", HapAtom("mdhd", mdhd) + HapAtom("hdlr", hdlr) +
+      return HapAtom("moov", HapAtom("trak", HapAtom("mdia", HapAtom("mdhd", mdhd) + HapAtom("hdlr", hdlr) +
                                                                   HapAtom("minf", HapAtom("stbl", stbl)))));
+   }
+   // A QuickTime file of one HAP track: samples at 0.5 s apart, one chunk.
+   bool WriteHapMov(const std::string& path, const char* codec, int w, int h, const std::vector<std::string>& frames)
+   {
+      std::string mdat;
+      std::vector<uint32_t> sizes;
+      for (const auto& fr : frames)
+      {
+         mdat += fr;
+         sizes.push_back((uint32_t)fr.size());
+      }
       std::ofstream out(path, std::ios::binary);
-      const std::string file = HapAtom("mdat", mdat) + moov;
+      const std::string file = HapAtom("mdat", mdat) + HapMoov(codec, w, h, sizes);
       out.write(file.data(), (std::streamsize)file.size());
       return (bool)out;
+   }
+
+   // --- HAPGEN: writes a 4096x2160 Hap1 test clip for the 3.12 bench (named explicitly, never in a full run). ---
+   // Frames are random DXT1 blocks wrapped in a literal-only snappy stream: the largest frames a Hap1 clip of
+   // this size can have, so decode and upload cost is the worst case. It tests throughput, not an encoder's output.
+   // INFINITE_HAPGEN_OUT = path (default hap4k.mov in the temp folder), INFINITE_HAPGEN_FRAMES = count (default 90).
+   void AuditHapGen(Flags& f)
+   {
+      const int w = 4096, h = 2160;
+      const char* outEnv = getenv("INFINITE_HAPGEN_OUT");
+      const std::string path = (outEnv && *outEnv) ? outEnv : (std::filesystem::temp_directory_path() / "hap4k.mov").string();
+      const char* nEnv = getenv("INFINITE_HAPGEN_FRAMES");
+      const int count = (nEnv && atoi(nEnv) > 0) ? atoi(nEnv) : 90;
+      const size_t texBytes = Hap::TextureBytes(Hap::Format::Dxt1, w, h);
+
+      // Snappy header: the length as a varint, then literal runs of up to 64 KB.
+      std::string head;
+      for (size_t v = texBytes;;)
+      {
+         uint8_t b = (uint8_t)(v & 0x7F);
+         v >>= 7;
+         if (v) b |= 0x80;
+         head.push_back((char)b);
+         if (!v) break;
+      }
+      const size_t run = 65536;
+      const size_t runs = (texBytes + run - 1) / run;
+      const size_t snapSize = head.size() + texBytes + runs * 3;
+      std::vector<uint8_t> tex(texBytes);
+      std::string frame;
+      frame.reserve(snapSize + 8);
+      std::vector<uint32_t> sizes;
+      const auto t0 = std::chrono::steady_clock::now();
+      std::ofstream out(path, std::ios::binary);
+      const uint64_t mdatBytes = (uint64_t)count * (snapSize + 4) + 8;
+      if (!out || mdatBytes > 0xFFFFFFFFull)
+      {
+         printf("COMPAUDIT HAPGEN cannot write %s (or the clip would pass 4 GB)\n", path.c_str());
+         f.Flag("HAPGEN", "cannot write the clip", 1.0);
+         return;
+      }
+      out.write(HapU32((uint32_t)mdatBytes).data(), 4);
+      out.write("mdat", 4);
+      uint64_t seed = 0x9E3779B97F4A7C15ull;
+      for (int i = 0; i < count; i++)
+      {
+         for (size_t p = 0; p + 8 <= texBytes; p += 8)
+         {
+            seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+            memcpy(&tex[p], &seed, 8);
+         }
+         frame = head;
+         for (size_t p = 0; p < texBytes; p += run)
+         {
+            const size_t n = std::min(run, texBytes - p);
+            frame.push_back((char)0xF4); // literal, length in the next two bytes
+            frame.push_back((char)((n - 1) & 0xFF));
+            frame.push_back((char)(((n - 1) >> 8) & 0xFF));
+            frame.append((const char*)&tex[p], n);
+         }
+         const std::string sec = HapSection(0xBB, frame);
+         // Frames here are over 16 MB only if the picture is far larger than 4K; the 3-byte length holds 4K.
+         out.write(sec.data(), (std::streamsize)sec.size());
+         sizes.push_back((uint32_t)sec.size());
+      }
+      const std::string moov = HapMoov("Hap1", w, h, sizes, 30000, 1000);
+      out.write(moov.data(), (std::streamsize)moov.size());
+      out.close();
+      const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+      // Read it back: the first and last frame must decode to the size the clip says.
+      Hap::Reader r;
+      std::string err;
+      std::vector<uint8_t> back;
+      const bool readable = r.Open(path, err) && r.Width() == w && r.Height() == h && r.FrameCount() == count &&
+                            r.ReadFrame(0, back, err) && back.size() == texBytes &&
+                            r.ReadFrame(count - 1, back, err) && back.size() == texBytes && memcmp(back.data(), tex.data(), texBytes) == 0;
+      printf("COMPAUDIT HAPGEN wrote %s: %d frames of %dx%d, %.1f MB, %.1f s; reads back %d (%s)\n", path.c_str(), count, w, h,
+             (double)(mdatBytes) / 1048576.0, sec, readable ? 1 : 0, err.c_str());
+      if (!readable)
+         f.Flag("HAPGEN", "clip does not read back", 1.0);
    }
 
    void AuditHap(Flags& f, bool& ok)
@@ -2099,6 +2193,8 @@ bool RunCompAudit()
       AuditFluid(flags, ok);
    if (want("HAP"))
       AuditHap(flags, ok);
+   if (only != nullptr && strstr(only, "HAPGEN") != nullptr)
+      AuditHapGen(flags);
    if (want("SHARE"))
       AuditShare(flags);
    if (only != nullptr && strstr(only, "BUNDLE") != nullptr)
