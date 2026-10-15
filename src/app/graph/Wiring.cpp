@@ -323,6 +323,8 @@ namespace app
          return 2; // depth and optional color
       if (dynamic_cast<ClothNode*>(gn.node.get()) != nullptr)
          return 1;
+      if (dynamic_cast<RigidBodyNode*>(gn.node.get()) != nullptr)
+         return 1;
       if (dynamic_cast<JoinGeometryNode*>(gn.node.get()) != nullptr)
          return JoinGeometryNode::kSlots;
       if (dynamic_cast<MetaBallNode*>(gn.node.get()) != nullptr)

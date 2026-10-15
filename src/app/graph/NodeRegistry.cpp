@@ -51,6 +51,7 @@ namespace app
       REGISTER_NODE(MappingNode, Mapping, "3D");
       REGISTER_NODE(ParticleSystemNode, Particle System, "3D");
       REGISTER_NODE(ClothNode, Cloth, "3D");
+      REGISTER_NODE(RigidBodyNode, Rigid Bodies, "3D");
       REGISTER_NODE(JoinGeometryNode, Join Geometry, "3D");
       // The boolean modes as their own nodes: "difference" is what gets
       // searched for, not "join geometry with a dropdown set to difference".

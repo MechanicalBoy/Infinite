@@ -3993,6 +3993,8 @@ void DrawWrapParams(WrapNode* n);
 
 void DrawClothParams(ClothNode* n);
 
+void DrawRigidBodyParams(RigidBodyNode* n);
+
 void DrawParticleSystemParams(ParticleSystemNode* n);
 
 void DrawMaterialParams(MaterialNode* n);

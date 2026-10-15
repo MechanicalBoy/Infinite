@@ -1853,6 +1853,192 @@ namespace
       tr.SeekBeats(0.0);
    }
 
+
+   // ============================================================ RIGID BODIES
+   void AuditRigid(Flags& f, bool& ok)
+   {
+      Transport& tr = Transport::Instance();
+      tr.SetPlaying(false);
+      tr.SetTempo(120.0f);   // one beat is half a second
+
+      auto bounds = [](const Mesh& m, double& lo, double& hi) {
+         lo = 1e30; hi = -1e30;
+         for (const Vertex& v : m.vertices) { lo = std::min(lo, (double)v.py); hi = std::max(hi, (double)v.py); }
+      };
+      auto run = [&](std::initializer_list<RigidBodyNode*> nodes, int steps, double beatsPerStep) {
+         double beat = 0.0;
+         tr.SeekBeats(0.0);
+         for (RigidBodyNode* n : nodes) n->CookIfNeeded(gFrame++);
+         for (int i = 0; i < steps; i++)
+         {
+            beat += beatsPerStep;
+            tr.SeekBeats(beat);
+            const int fr = gFrame++;
+            for (RigidBodyNode* n : nodes) n->CookIfNeeded(fr);
+         }
+      };
+      GeometryNode cube;
+      cube.shape = 1;
+      cube.detail = 4;
+      const Mesh cubeMesh = Build(cube);
+      double cLo, cHi;
+      bounds(cubeMesh, cLo, cHi);
+      const double h = cHi - cLo;
+
+      // Free fall: no ground, no damping, y drops by g t^2 / 2.
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         RigidBodyNode r;
+         r.input = &src;
+         r.groundEnabled = false;
+         r.linearDamping = 0.0f;
+         run({ &r }, 4, 0.25);   // 0.5 s
+         double lo, hi; bounds(r.GetMesh(), lo, hi);
+         const double fell = cLo - lo;
+         const double want = 0.5 * 9.8 * 0.25;
+         printf("GEOAUDIT RIGID  free fall 0.5 s: dropped %.4f | g t^2 / 2 = %.4f\n", fell, want);
+         if (std::fabs(fell / want - 1.0) > 0.05)
+            f.Flag("RIGID", "free fall", "drop differs from g t^2 / 2, %", (fell / want - 1.0) * 100.0);
+      }
+
+      // Rest on the ground: lands flat, ends at the ground height, stops moving, same shape.
+      for (int kind = 0; kind < 3; kind++)
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         RigidBodyNode r;
+         r.input = &src;
+         r.collider = kind;
+         r.groundHeight = (float)(cLo - 2.0);
+         run({ &r }, 32, 0.25);
+         const Mesh a = r.GetMesh();
+         run({ &r }, 33, 0.25);
+         const Mesh b = r.GetMesh();
+         double lo, hi; bounds(b, lo, hi);
+         double drift = 0.0;
+         for (size_t i = 0; i < a.vertices.size() && i < b.vertices.size(); i++)
+            drift = std::max(drift, (double)std::fabs(a.vertices[i].py - b.vertices[i].py));
+         const Stats st = Measure(b);
+         printf("GEOAUDIT RIGID  collider %d on ground: bottom %.4f (ground %.4f) height %.4f (was %.4f) drift %.5f\n",
+                kind, lo, cLo - 2.0, hi - lo, h, drift);
+         if (st.nonFinite > 0)
+            f.Flag("RIGID", "rest", "non-finite vertices", st.nonFinite);
+         if (lo < cLo - 2.0 - 0.03)
+            f.Flag("RIGID", "rest", "sank below the ground by", cLo - 2.0 - lo);
+         if (kind != 1 && lo > cLo - 2.0 + 0.05)
+            f.Flag("RIGID", "rest", "stopped above the ground by", lo - (cLo - 2.0));
+         if (kind != 1 && std::fabs((hi - lo) - h) > 0.02 * h + 0.05 && std::fabs((hi - lo) - h * 1.7) > 0.1 * h)
+            f.Flag("RIGID", "rest", "shape changed, height", hi - lo);
+         if (drift > 0.002)
+            f.Flag("RIGID", "rest", "still moving after 8 s, drift", drift);
+      }
+
+      // Stack: a cube dropped on a cube on the ground stays up and on top.
+      {
+         KindProbe src;
+         src.mesh = cubeMesh;
+         Mesh top = MeshOps::Transform(cubeMesh, Mat4::Translation(0.0f, (float)(h * 1.5), 0.0f));
+         const unsigned int base = (unsigned int)src.mesh.vertices.size();
+         src.mesh.vertices.insert(src.mesh.vertices.end(), top.vertices.begin(), top.vertices.end());
+         for (unsigned int i : top.indices) src.mesh.indices.push_back(i + base);
+         RigidBodyNode r;
+         r.input = &src;
+         r.groundHeight = (float)(cLo - 0.0);
+         run({ &r }, 40, 0.25);   // 10 s
+         const Mesh& m = r.GetMesh();
+         double lo = 1e30, hi = -1e30;
+         for (const Vertex& v : m.vertices) { lo = std::min(lo, (double)v.py); hi = std::max(hi, (double)v.py); }
+         double topLo = 1e30;
+         for (size_t i = base; i < m.vertices.size(); i++) topLo = std::min(topLo, (double)m.vertices[i].py);
+         double midX = 0.0;
+         for (size_t i = base; i < m.vertices.size(); i++) midX += m.vertices[i].px;
+         midX /= (double)(m.vertices.size() - base);
+         printf("GEOAUDIT RIGID  stack of two: bodies %zu, total height %.4f (2 cubes = %.4f), top rests at %.4f, top centre x %.4f\n",
+                r.BodyCount(), hi - lo, 2 * h, topLo - lo, midX);
+         if (r.BodyCount() != 2)
+            f.Flag("RIGID", "stack", "body count", (double)r.BodyCount());
+         if (std::fabs((hi - lo) - 2 * h) > 0.1 * h)
+            f.Flag("RIGID", "stack", "stack height differs from two cubes, by", (hi - lo) - 2 * h);
+         if (topLo < lo + 0.85 * h)
+            f.Flag("RIGID", "stack", "top cube sank into the bottom one, by", lo + h - topLo);
+      }
+
+      // Bounce: a sphere with bounce 0.8 comes back up a good way; with 0 it does not.
+      for (int pass = 0; pass < 2; pass++)
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         RigidBodyNode r;
+         r.input = &src;
+         r.collider = RigidBodyNode::kSphere;
+         r.bounce = pass == 0 ? 0.8f : 0.0f;
+         r.groundHeight = (float)(cLo - 1.0);
+         double beat = 0.0;
+         tr.SeekBeats(0.0);
+         r.CookIfNeeded(gFrame++);
+         double lowest = 1e30, afterLow = -1e30;
+         bool bounced = false;
+         for (int i = 0; i < 24; i++)
+         {
+            beat += 0.125;
+            tr.SeekBeats(beat);
+            r.CookIfNeeded(gFrame++);
+            double lo, hi; bounds(r.GetMesh(), lo, hi);
+            if (lo < lowest) lowest = lo; else bounced = true;
+            if (bounced) afterLow = std::max(afterLow, lo);
+         }
+         const double rose = afterLow - lowest;
+         printf("GEOAUDIT RIGID  sphere bounce %.1f: rose %.4f after the first landing (fell 1.0)\n", r.bounce, rose);
+         if (pass == 0 && rose < 0.25)
+            f.Flag("RIGID", "bounce", "bounce 0.8 rose only", rose);
+         if (pass == 1 && rose > 0.1)
+            f.Flag("RIGID", "bounce", "bounce 0 still rose", rose);
+      }
+
+      // Determinism: same patch twice, and 0.25 vs 0.5 beat steps for the same 4 s.
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         KindProbe src2; src2.mesh = cubeMesh;
+         RigidBodyNode a, b;
+         a.input = &src; b.input = &src2;
+         a.spinX = b.spinX = 3.0f; a.spinZ = b.spinZ = 2.0f; a.velX = b.velX = 1.0f;
+         a.groundHeight = b.groundHeight = (float)(cLo - 1.0);
+         run({ &a }, 16, 0.5);
+         run({ &b }, 32, 0.25);
+         const bool same = SameMesh(a.GetMesh(), b.GetMesh());
+         printf("GEOAUDIT RIGID  same result at two frame rates: %s\n", same ? "yes" : "NO");
+         if (!same)
+         {
+            f.Flag("DET", "Rigid Bodies", "result depends on the frame rate", 1);
+            ok = false;
+         }
+      }
+
+      // Hostile numbers, no input, bypass.
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         RigidBodyNode r;
+         r.input = &src;
+         r.mass = 0.0f; r.iterations = 0; r.gravityY = 1e9f; r.velX = 1e9f; r.spinY = 1e9f; r.friction = 1e9f;
+         r.wallsEnabled = true; r.bounce = 5.0f;
+         run({ &r }, 8, 1.0);
+         const Stats s = Measure(r.GetMesh());
+         printf("GEOAUDIT RIGID  hostile settings: non-finite %d\n", s.nonFinite);
+         if (s.nonFinite > 0)
+         {
+            f.Flag("DEGEN", "Rigid hostile", "non-finite vertices", s.nonFinite);
+            ok = false;
+         }
+         RigidBodyNode none;
+         none.CookIfNeeded(gFrame++);
+         RigidBodyNode byp;
+         KindProbe src3; src3.mesh = cubeMesh;
+         byp.input = &src3; byp.bypassed = true;
+         byp.CookIfNeeded(gFrame++);
+         if (!SameMesh(byp.GetMesh(), cubeMesh))
+            f.Flag("BYPASS", "Rigid Bodies", "bypassed node does not pass its input through", 1);
+      }
+      tr.SeekBeats(0.0);
+   }
+
    // ============================================================== INSTANCES
    void AuditInstances(Flags& f, bool& ok)
    {
@@ -2636,6 +2822,8 @@ bool RunGeoAudit()
       AuditBevelInset(flags, ok);
    if (want("CLOTH"))
       AuditCloth(flags, ok);
+   if (want("RIGID"))
+      AuditRigid(flags, ok);
    if (want("INST"))
       AuditInstances(flags, ok);
    if (want("REF"))

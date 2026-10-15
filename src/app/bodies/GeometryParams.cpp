@@ -454,6 +454,50 @@ namespace app
    }
 
 
+   void DrawRigidBodyParams(RigidBodyNode* n)
+   {
+      ImGui::TextDisabled("%zu bodies, %zu triangles", n->BodyCount(), n->TriangleCount());
+      if (ActionButton::Column("Reset", kParamWidth))
+         n->Reset();
+
+      NodeSeparator("bodies");
+      DropdownButton("collider", RigidBodyNode::ColliderNames(), n->collider, [n](int i) { n->collider = i; });
+      ModSlider("mass", &n->mass, 0.05f, 20.0f);
+      ModSlider("friction", &n->friction, 0.0f, 1.0f);
+      ModSlider("bounce", &n->bounce, 0.0f, 1.0f);
+      ModSlider("linear damping", &n->linearDamping, 0.0f, 2.0f);
+      ModSlider("angular damping", &n->angularDamping, 0.0f, 2.0f);
+      ModSliderInt("iterations", &n->iterations, 1, 50);
+
+      NodeSeparator("forces");
+      ModSlider("gravity x", &n->gravityX, -30.0f, 30.0f);
+      ModSlider("gravity y", &n->gravityY, -30.0f, 30.0f);
+      ModSlider("gravity z", &n->gravityZ, -30.0f, 30.0f);
+
+      NodeSeparator("start");
+      ModSlider("velocity x", &n->velX, -20.0f, 20.0f);
+      ModSlider("velocity y", &n->velY, -20.0f, 20.0f);
+      ModSlider("velocity z", &n->velZ, -20.0f, 20.0f);
+      ModSlider("spin x", &n->spinX, -20.0f, 20.0f);
+      ModSlider("spin y", &n->spinY, -20.0f, 20.0f);
+      ModSlider("spin z", &n->spinZ, -20.0f, 20.0f);
+
+      NodeSeparator("kick");
+      ModSlider("kick time", &n->kickTime, 0.0f, 20.0f);
+      ModSlider("kick x", &n->kickX, -20.0f, 20.0f);
+      ModSlider("kick y", &n->kickY, -20.0f, 20.0f);
+      ModSlider("kick z", &n->kickZ, -20.0f, 20.0f);
+
+      NodeSeparator("world");
+      ModCheckbox("ground", &n->groundEnabled);
+      if (n->groundEnabled)
+         ModSlider("ground height", &n->groundHeight, -10.0f, 10.0f);
+      ModCheckbox("walls", &n->wallsEnabled);
+      if (n->wallsEnabled)
+         ModSlider("wall distance", &n->wallSize, 0.5f, 20.0f);
+   }
+
+
    void DrawParticleSystemParams(ParticleSystemNode* n)
    {
       ImGui::TextDisabled("%zu alive", n->AliveCount());
