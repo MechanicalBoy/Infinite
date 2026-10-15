@@ -555,7 +555,7 @@ namespace app
             // fix, and the reasoning belongs in a tooltip the user opens
             // when they want it rather than in permanent panel text.
             ImGui::PushTextWrapPos(0.0f);
-             ImGui::TextDisabled("Shared with another video track.");
+             ImGui::TextDisabled("%s", I18n::T("Shared with another video track."));
              ImGui::PopTextWrapPos();
             ArrangeSharedSourceTooltip(
                "Both clips show the same frame - a video source reads the global transport, not "
@@ -575,7 +575,7 @@ namespace app
             ImGui::Spacing();
             SectionHeader(T("Playback & Trigger"));
             ImGui::PushTextWrapPos(0.0f);
-             ImGui::TextDisabled("Shared with another track.");
+             ImGui::TextDisabled("%s", I18n::T("Shared with another track."));
              ImGui::PopTextWrapPos();
             ArrangeSharedSourceTooltip(
                "The node holds one playback position and both tracks set it every block, so "
