@@ -589,6 +589,7 @@ set(COMMON_SOURCES
     src/core/UpdateCheck.cpp
     src/core/SelfUpdate.cpp
     src/core/Extensions.cpp
+    src/core/HapReader.cpp
     src/core/ShareBundle.cpp
     src/core/tracking/OrtRuntime.cpp
     src/core/tracking/HandTracker.cpp

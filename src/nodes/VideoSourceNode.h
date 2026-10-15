@@ -154,6 +154,10 @@ public:
    }
 
 private:
+   struct HapState;
+   bool OpenHap(const std::string& path, std::string& error);
+   void CloseHap();
+   void CookHap(int frameId);
    void EnsurePlaceholder();
    void LoadAudioTrack(const std::string& path);
    double WrapPosition(double raw) const;
@@ -176,6 +180,9 @@ private:
    int mLastCookFrame = -1;
    int mFrameUpdateCount = 0;
    std::unique_ptr<Bench::MediaClipCounters> mBench;
+
+   // Set while the clip is a HAP movie, which bypasses Platform::Video*.
+   std::unique_ptr<HapState> mHap;
 
    std::unique_ptr<VideoAudioNode> mAudioNode;
    bool mAudioLoaded = false;

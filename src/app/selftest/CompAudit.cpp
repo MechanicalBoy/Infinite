@@ -36,6 +36,9 @@
 //             degree and total limits, every pair once; cook is stable on a second cook;
 //             ms to find links and to cook the whole node at 100k points (reported, not flagged,
 //             like the 1080p costs of FLOW)
+//   HAP       HAP movies: snappy decode, a hand-built .mov read back frame by frame (raw, snappy and
+//             chunked frames all give the same texture), a cut-off file is refused, and Video Source
+//             shows a DXT1 clip (red) and a HAP Q clip (grey) through the real upload path
 //   STACK     Layer Stack with two layers against Blend with the same mode and
 //             opacity, random alpha (flag > 1/255)
 //   CURVES    default curve is identity; an inverted RGB curve gives 1-x; a Red
@@ -89,6 +92,9 @@
 #include <fstream>
 #include <sstream>
 #include "core/ShareBundle.h"
+#include "core/HapReader.h"
+#include "nodes/VideoSourceNode.h"
+#include <thread>
 #include <cstring>
 #include <functional>
 
@@ -1274,6 +1280,200 @@ namespace
       (void)ok;
    }
 
+
+   // --- HAP: the reader and decoder on hand-built QuickTime files, then the node showing them. ---
+   std::string HapAtom(const char* type, const std::string& body)
+   {
+      std::string s;
+      const uint32_t n = (uint32_t)(body.size() + 8);
+      for (int i = 3; i >= 0; i--)
+         s.push_back((char)((n >> (8 * i)) & 0xFF));
+      s.append(type, 4);
+      return s + body;
+   }
+   std::string HapU32(uint32_t v)
+   {
+      std::string s;
+      for (int i = 3; i >= 0; i--)
+         s.push_back((char)((v >> (8 * i)) & 0xFF));
+      return s;
+   }
+   std::string HapSection(uint8_t type, const std::string& body)
+   {
+      std::string s;
+      s.push_back((char)(body.size() & 0xFF));
+      s.push_back((char)((body.size() >> 8) & 0xFF));
+      s.push_back((char)((body.size() >> 16) & 0xFF));
+      s.push_back((char)type);
+      return s + body;
+   }
+   // A QuickTime file of one HAP track: samples at 0.5 s apart, one chunk.
+   bool WriteHapMov(const std::string& path, const char* codec, int w, int h, const std::vector<std::string>& frames)
+   {
+      std::string mdat;
+      for (const auto& fr : frames)
+         mdat += fr;
+      std::string sizes;
+      for (const auto& fr : frames)
+         sizes += HapU32((uint32_t)fr.size());
+      std::string entry = HapU32(86) + std::string(codec, 4) + std::string(6, '\0') + std::string("\0\1", 2) +
+                          std::string(16, '\0') + std::string({ (char)(w >> 8), (char)(w & 255), (char)(h >> 8), (char)(h & 255) }) +
+                          std::string(50, '\0');
+      std::string stbl = HapAtom("stsd", HapU32(0) + HapU32(1) + entry) +
+                         HapAtom("stts", HapU32(0) + HapU32(1) + HapU32((uint32_t)frames.size()) + HapU32(500)) +
+                         HapAtom("stsz", HapU32(0) + HapU32(0) + HapU32((uint32_t)frames.size()) + sizes) +
+                         HapAtom("stsc", HapU32(0) + HapU32(1) + HapU32(1) + HapU32((uint32_t)frames.size()) + HapU32(1)) +
+                         HapAtom("stco", HapU32(0) + HapU32(1) + HapU32(8));
+      std::string mdhd = HapU32(0) + HapU32(0) + HapU32(0) + HapU32(1000) + HapU32((uint32_t)frames.size() * 500) + std::string(4, '\0');
+      std::string hdlr = HapU32(0) + HapU32(0) + "vide" + std::string(12, '\0') + std::string(1, '\0');
+      std::string moov = HapAtom("moov", HapAtom("trak", HapAtom("mdia", HapAtom("mdhd", mdhd) + HapAtom("hdlr", hdlr) +
+                                                                  HapAtom("minf", HapAtom("stbl", stbl)))));
+      std::ofstream out(path, std::ios::binary);
+      const std::string file = HapAtom("mdat", mdat) + moov;
+      out.write(file.data(), (std::streamsize)file.size());
+      return (bool)out;
+   }
+
+   void AuditHap(Flags& f, bool& ok)
+   {
+      // Snappy: a literal then two kinds of back-reference, and a corrupt stream.
+      {
+         const uint8_t a[] = { 12, 0x0C, 'a', 'b', 'c', 'd', 0x1E, 4, 0 };
+         uint8_t out[12] = {};
+         const bool good = Hap::SnappyDecompress(a, sizeof(a), out, 12) && memcmp(out, "abcdabcdabcd", 12) == 0;
+         const uint8_t b[] = { 9, 0x08, 'x', 'y', 'z', 0x09, 3 };
+         uint8_t out2[9] = {};
+         const bool good2 = Hap::SnappyDecompress(b, sizeof(b), out2, 9) && memcmp(out2, "xyzxyzxyz", 9) == 0;
+         const uint8_t c[] = { 12, 0x0C, 'a', 'b', 'c', 'd', 0x1E, 9, 0 };
+         const bool refused = !Hap::SnappyDecompress(c, sizeof(c), out, 12);
+         printf("COMPAUDIT HAP snappy: two-byte offset %d, one-byte offset %d, bad offset refused %d\n", good ? 1 : 0, good2 ? 1 : 0,
+                refused ? 1 : 0);
+         if (!good || !good2 || !refused)
+            f.Flag("HAP", "snappy decode wrong", 1.0);
+      }
+
+      const std::string dir = AppPaths::AppSupportDir() + "/HapAudit";
+      AppPaths::EnsureDir(dir);
+
+      // DXT1, 16 x 8, solid red: raw, snappy and chunked frames must all give the same 64 bytes.
+      std::string red;
+      for (int b = 0; b < 8; b++)
+         red += std::string({ (char)0x00, (char)0xF8, (char)0x00, (char)0xF8, 0, 0, 0, 0 });
+      const std::string rawF = HapSection(0xAB, red);
+      const std::string snapF = HapSection(0xBB, std::string({ 0x40, (char)0xF0, 63 }) + red);
+      const std::string instr = HapSection(0x02, std::string({ 0x0A, 0x0A })) + HapSection(0x03, std::string({ 32, 0, 0, 0, 32, 0, 0, 0 }));
+      const std::string chunkF = HapSection(0xCB, HapSection(0x01, instr) + red);
+      const std::string red16 = dir + "/red.mov";
+      WriteHapMov(red16, "Hap1", 16, 8, { rawF, snapF, chunkF });
+
+      Hap::Reader r;
+      std::string error;
+      const bool probed = Hap::Reader::Probe(red16);
+      const bool opened = r.Open(red16, error);
+      printf("COMPAUDIT HAP file: probe %d, open %d, %dx%d, %d frames, %.2f s, format %d\n", probed ? 1 : 0, opened ? 1 : 0, r.Width(),
+             r.Height(), r.FrameCount(), r.Duration(), (int)r.TextureFormat());
+      if (!probed || !opened || r.Width() != 16 || r.Height() != 8 || r.FrameCount() != 3 || std::fabs(r.Duration() - 1.5) > 1e-6 ||
+          r.TextureFormat() != Hap::Format::Dxt1)
+         f.Flag("HAP", "the container was read wrong", 1.0);
+      else
+      {
+         const int i0 = r.FrameIndexAt(0.1), i1 = r.FrameIndexAt(0.6), i2 = r.FrameIndexAt(99.0), ineg = r.FrameIndexAt(-1.0);
+         printf("COMPAUDIT HAP index at 0.1 / 0.6 / 99 / -1 s: %d %d %d %d\n", i0, i1, i2, ineg);
+         if (i0 != 0 || i1 != 1 || i2 != 2 || ineg != 0)
+            f.Flag("HAP", "frame lookup by time is wrong", 1.0);
+         for (int i = 0; i < 3; i++)
+         {
+            std::vector<uint8_t> px;
+            const bool read = r.ReadFrame(i, px, error);
+            const bool same = read && px.size() == red.size() && memcmp(px.data(), red.data(), red.size()) == 0;
+            printf("COMPAUDIT HAP frame %d (%s): decoded %d, bytes match %d\n", i, i == 0 ? "raw" : i == 1 ? "snappy" : "chunked", read ? 1 : 0,
+                   same ? 1 : 0);
+            if (!same)
+               f.Flag("HAP", "frame " + std::to_string(i) + " does not decode to the texture", 1.0);
+         }
+      }
+
+      // A cut-off file must be refused, not crash.
+      {
+         std::ifstream in(red16, std::ios::binary);
+         std::ostringstream ss;
+         ss << in.rdbuf();
+         const std::string whole = ss.str();
+         std::ofstream cut(dir + "/cut.mov", std::ios::binary);
+         cut.write(whole.data(), (std::streamsize)(whole.size() - 40));
+         cut.close();
+         const bool refused = !Hap::Reader::Probe(dir + "/cut.mov");
+         printf("COMPAUDIT HAP cut-off file refused: %d\n", refused ? 1 : 0);
+         if (!refused)
+            f.Flag("HAP", "a cut-off file was accepted", 1.0);
+      }
+
+      // The node: show the DXT1 file, and a HAP Q file (grey), and read both back through a copy pass.
+      const char* copyFrag = "#version 150\nin vec2 vUv;\nout vec4 fragColor;\nuniform sampler2D uSrc;\nvoid main(){ fragColor = texture(uSrc, vUv); }\n";
+      const unsigned int copy = GLUtil::CompileProgram(copyFrag);
+      auto show = [&](const std::string& path, std::vector<float>& px, int& w) -> bool
+      {
+         VideoSourceNode n;
+         if (!n.Open(path))
+            return false;
+         bool got = false;
+         for (int i = 0; i < 600 && !got; i++)
+         {
+            n.SeekTo(0.0);
+            static int frameId = 1000;
+            n.CookIfNeeded(++frameId);
+            got = n.FrameUpdateCount() > 0;
+            if (!got)
+               std::this_thread::sleep_for(std::chrono::milliseconds(5));
+         }
+         if (!got)
+            return false;
+         w = n.GetOutputWidth();
+         GLUtil::Fbo out;
+         GLUtil::EnsureFbo(out, n.GetOutputWidth(), n.GetOutputHeight());
+         const unsigned int tex = n.GetOutputTexture();
+         GLUtil::RunShaderPass(out, copy, [&]()
+         {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glUniform1i(glGetUniformLocation(copy, "uSrc"), 0);
+         });
+         unsigned int scratch = 0;
+         const bool read = GLUtil::ReadTexturePixels(scratch, out.tex, out.w, out.h, px);
+         GLUtil::DestroyFbo(out);
+         if (scratch != 0)
+            glDeleteFramebuffers(1, &scratch);
+         return read;
+      };
+      {
+         std::vector<float> px;
+         int w = 0;
+         const bool shown = copy != 0 && show(red16, px, w);
+         const float rr = shown ? px[0] : -1.0f, gg = shown ? px[1] : -1.0f, bb = shown ? px[2] : -1.0f;
+         printf("COMPAUDIT HAP node, DXT1 red: shown %d, width %d, pixel %.3f %.3f %.3f\n", shown ? 1 : 0, w, rr, gg, bb);
+         if (!shown || w != 16 || rr < 0.95f || gg > 0.05f || bb > 0.05f)
+            f.Flag("HAP", "the node does not show the DXT1 clip", 1.0);
+      }
+      {
+         // HAP Q: one 4x4 block, Y = 128 in alpha, Co and Cg near the offset: a mid grey.
+         std::string blk = std::string({ (char)0x80, (char)0x80, 0, 0, 0, 0, 0, 0 }) + std::string({ (char)0x00, (char)0x84, (char)0x00, (char)0x84, 0, 0, 0, 0 });
+         const std::string q = dir + "/q.mov";
+         WriteHapMov(q, "HapY", 4, 4, { HapSection(0xAF, blk) });
+         std::vector<float> px;
+         int w = 0;
+         const bool shown = copy != 0 && show(q, px, w);
+         const float rr = shown ? px[0] : -1.0f, gg = shown ? px[1] : -1.0f, bb = shown ? px[2] : -1.0f;
+         printf("COMPAUDIT HAP node, HAP Q grey: shown %d, pixel %.3f %.3f %.3f\n", shown ? 1 : 0, rr, gg, bb);
+         if (!shown || std::fabs(rr - 0.5f) > 0.06f || std::fabs(gg - 0.5f) > 0.06f || std::fabs(bb - 0.5f) > 0.06f)
+            f.Flag("HAP", "the node does not show the HAP Q clip", 1.0);
+      }
+      if (copy != 0)
+         glDeleteProgram(copy);
+      std::filesystem::remove_all(dir);
+      if (f.n > 0)
+         ok = false;
+   }
+
    // Share bundle: cleaning, the zip round trip, unsafe names, and a real bundle of a shipped template opening again.
    void AuditShare(Flags& f)
    {
@@ -1897,6 +2097,8 @@ bool RunCompAudit()
       AuditFlow(flags, ok);
    if (want("FLUID"))
       AuditFluid(flags, ok);
+   if (want("HAP"))
+      AuditHap(flags, ok);
    if (want("SHARE"))
       AuditShare(flags);
    if (only != nullptr && strstr(only, "BUNDLE") != nullptr)

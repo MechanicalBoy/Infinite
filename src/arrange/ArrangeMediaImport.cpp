@@ -1,5 +1,6 @@
 #include "ArrangeMediaImport.h"
 
+#include "HapReader.h"
 #include "audio/dsp/TransientDetect.h"
 
 #include <thread>
@@ -53,8 +54,26 @@ void MediaImportManager::ThreadMain(uint64_t jobId, std::string path, ImportMedi
       // VideoOpen's own implementation ([AVAsset assetWithURL:] plus a
       // synchronous AVAssetReader setup) touches no run loop either, so it
       // is likewise safe here - same reasoning as the audio decode above.
-      Platform::VideoHandle* handle = Platform::VideoOpen(path, error);
-      if (handle != nullptr)
+      Platform::VideoHandle* handle = nullptr;
+      Hap::Reader hap;
+      const bool isHap = Hap::Reader::Probe(path) && hap.Open(path, error);
+      if (!isHap)
+         handle = Platform::VideoOpen(path, error);
+      if (isHap)
+      {
+         // HAP is read by the node itself; there is no platform handle.
+         result.success = true;
+         result.width = hap.Width();
+         result.height = hap.Height();
+         result.durationSeconds = hap.Duration();
+         auto* audioBuf = new Platform::SampleBuffer();
+         std::string audioError;
+         if (Platform::DecodeVideoAudioTrackToBuffer(path, *audioBuf, audioError))
+            result.audioBuffer = audioBuf;
+         else
+            delete audioBuf;
+      }
+      else if (handle != nullptr)
       {
          result.success = true;
          result.width = Platform::VideoWidth(handle);
