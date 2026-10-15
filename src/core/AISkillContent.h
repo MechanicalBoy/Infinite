@@ -226,8 +226,9 @@ state float pSub = 0
 state float env = 0
 state float lp = 0
 
-p1 = (p1 + freq / sr) % 1.0
-p2 = (p2 + (freq * detune) / sr) % 1.0
+spread = sqrt(detune)
+p1 = (p1 + (freq / spread) / sr) % 1.0
+p2 = (p2 + (freq * spread) / sr) % 1.0
 pSub = (pSub + (freq * 0.5) / sr) % 1.0
 
 target = if(gate > 0.5, 1.0, 0.0)
@@ -236,7 +237,8 @@ env = env + (target - env) * rate
 
 tone = sin(6.283185 * p1) * 0.45 + sin(6.283185 * p2) * 0.45 + sin(6.283185 * pSub) * sub
 drive = 1.0 + warmth * 1.5
-sat = (tone * drive) / (1.0 + abs(tone * drive * 0.5))
+u = clamp(tone * drive * 0.5, -1.5, 1.5)
+sat = (u - u * u * u * 0.148148) * 1.25
 
 f = clamp((cutoff / sr) * 3.14159, 0.001, 0.95)
 lp = lp + f * (sat - lp)

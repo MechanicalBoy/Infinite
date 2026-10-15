@@ -232,6 +232,17 @@ public:
    // or the two sides wait on each other forever.
    int OfflineAudioFramesOwed(int lookaheadFrames = 0) const;
    void NoteOfflineAudioGenerated(int frames) { mOfflineAudioFramesGenerated += frames; }
+   // The graph's output latency after PDC (AudioEngine::OutputLatencySamples),
+   // latched once before the take's first audio block: that many leading
+   // samples are generated but never muxed, and that many more are generated
+   // at the end, so a bounce through a latent node (Drive, Limiter, a plugin)
+   // lines up with the picture and with the dry signal. No-op after the first
+   // block.
+   void LatchOfflineLatency(int samples)
+   {
+      if (mOfflineAudioFramesGenerated == 0)
+         mOfflineLatencySkip = mOfflineLatencyTotal = samples > 0 ? samples : 0;
+   }
    // Audio frames actually handed to the muxer this take (self-test hook:
    // this should equal round(totalFrames * sampleRate / fps)).
    long long OfflineAudioFramesAppended() const { return mOfflineAudioFramesAppended; }
@@ -299,6 +310,13 @@ private:
    };
    FinalizeResult FinishRecorder(Platform::RecorderHandle* handle, uint64_t audioDropped);
    void ApplyFinalizeResult(const FinalizeResult& r);
+public:
+   // Raises `peak` to the largest |sample| in `data`.
+   static void NoteAudioPeak(const float* data, int samples, float& peak);
+   // " (audio clipped, +x dB over)" when the take's peak passed full scale,
+   // empty otherwise.
+   static std::string ClipSuffix(float peak);
+private:
    // Blocks until any in-flight StopRecordingAsync() finalize has actually
    // completed and joins the thread. A no-op if none is in flight. Called by
    // the destructor (a dangling `this` in the background thread's lambda
@@ -375,6 +393,9 @@ private:
    bool mPaceToAudio = false;
    double mAudioSampleRate = 0.0;
    long long mAudioFramesAppended = 0; // audio frames handed to the recorder
+   // Largest |sample| handed to the recorder this take (live or offline). The
+   // encoders clamp at full scale, so anything over 1 is written clipped.
+   float mTakeAudioPeak = 0.0f;
    long long mFramesEmitted = 0;       // video frames handed to the recorder
 
    static constexpr int kPboCount = 3;
@@ -412,6 +433,8 @@ private:
    double mOfflineAudioSampleRate = 0.0;
    long long mOfflineAudioFramesGenerated = 0;
    long long mOfflineAudioFramesAppended = 0;
+   long long mOfflineLatencySkip = 0;   // leading frames still to drop (LatchOfflineLatency)
+   long long mOfflineLatencyTotal = 0;  // frames dropped plus still to drop, for the budget
 
    std::thread mOfflineFinalizeThread;
    std::atomic<bool> mOfflineFinalizeDone{ false };

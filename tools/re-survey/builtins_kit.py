@@ -31,7 +31,7 @@ import tempfile
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, write_out  # noqa: E402
+from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, quality_line, write_out  # noqa: E402
 import bounce_kit as bk  # noqa: E402
 import plugin_probe as pp  # noqa: E402
 import synth_probe as sp  # noqa: E402
@@ -78,6 +78,10 @@ One project per DAW: 48 kHz, 120 BPM, 4/4, master with no effects, fader at 0 dB
 | Bitwig | Polymer, Phase-4, FM-4, Polysynth | Reverb, Delay-2, Chorus+, Phaser+, EQ+, Distortion, Compressor+, Peak Limiter, Filter+ |
 
 Write down any default that is not neutral (an effect that opens 50 % wet, an instrument that opens a fifth up).
+No Bounce dialog? Send the DAW to BlackHole 2ch (unity gain, buffer 256-512) and run
+`python3 tools/re-survey/loopback_rec.py rec <App> <Name> synth|fx`, then press Play: it records, trims the
+first sound to where a bounce puts it and writes the same file name.
+
 Then: `python3 tools/re-survey/builtins_kit.py analyse <folder> [<folder> ...]`.
 """
 
@@ -150,6 +154,12 @@ def analyse_dir(d):
         out, sr, bits = pp.read_wav(p)
         row = {"app": app, "name": name_of(p, "fx"), "bits": bits, "sr": sr}
         row.update(pp.analyse(out if out.shape[1] > 1 else np.repeat(out, 2, 1), sr, stim) if sr == SR else {"error": "%d Hz" % sr})
+        if sr == SR:
+            # The -1 dBFS tone's own window: an effect whose dry + wet adds above
+            # 0 dBFS there is clipped by the file's integer write, not by its DSP.
+            t0 = [s0 for nm, s0, _, _ in pp.SINES if nm == "hi"][0]
+            seg = out[int((t0 + 0.2) * sr):int((t0 + pp.SINE_LEN_S - 0.2) * sr)]
+            row["hi_clipped"] = bool(seg.size and np.abs(seg).max() >= 0.9999)
         fx.append(row)
     return {"app": app, "synths": synths, "fx": fx}
 
@@ -192,16 +202,40 @@ def report(rows):
             star = "*" if (r["tail_s"] or 0) > 0.5 else ""
             lat = r["latency_onset"]
             T.append([row["app"], r["name"], fv(None if lat is None else lat * 1000.0 / SR, "%.2f"),
-                      fv(r["lo"]["gain_db"], "%+.2f"), fv(r["lo"]["thd_db"]) + star, fv(r["hi"]["thd_db"]) + star,
+                      fv(r["lo"]["gain_db"], "%+.2f"), fv(r["lo"]["thd_db"]) + star, fv(r["hi"]["thd_db"]) + star + ("†" if r.get("hi_clipped") else ""),
                       fv(r["hf"]["nonharm_db"]) + star, fv(flat, "%.2f"), fv(r["tail_s"], "%.2f"), fv(r["rt60_s"], "%.2f")])
     L += ["## Effects", "", md_table(["App", "Effect", "Latency ms", "Gain 1k dB", "THD -12", "THD -1", "Alias HF dB",
                                       "Flatness ±dB", "Tail -60 s", "RT60 s"], T), "",
           "- Latency after the DAW's own compensation: a DAW bounce should read 0 ms whatever the effect reports.",
-          "- `*` = tail longer than 0.5 s: THD/alias then measure the tail, compare tails instead. Dry = the rig floor.", ""]
+          "- `*` = tail longer than 0.5 s: THD/alias then measure the tail, compare tails instead. Dry = the rig floor.",
+          "- `†` = the output reached full scale during the -1 dBFS tone: the bounce's integer write clipped it, so THD -1 measures that clip, not the effect.", ""]
     for row in rows:
         if not row["synths"] and not row["fx"]:
             L.append("- %s: no synth_*.wav or fx_*.wav bounces" % row["app"])
-    return "\n".join(L) + "\n"
+    return "\n".join(L + quality(rows)) + "\n"
+
+
+def quality(rows):
+    """One QUALITY row per instrument and effect per app (docs/quality/registry.tsv, builtin.*): the same
+    stimulus through every app's own built-ins, so a row for Infinite compares with the row for Live."""
+    out = []
+    for row in rows:
+        for r in row["synths"]:
+            subject = "%s: %s" % (row["app"], r["name"])
+            if r.get("cents_worst") is not None:
+                out.append(quality_line("builtin.pitch_c", subject, r["cents_worst"]))
+            if r.get("nonharm_108") is not None:
+                out.append(quality_line("builtin.nonharm108_db", subject, r["nonharm_108"]))
+        for r in row["fx"]:
+            if r.get("error"):
+                continue
+            subject = "%s: %s" % (row["app"], r["name"])
+            if r.get("latency_onset") is not None:
+                out.append(quality_line("builtin.fx_latency_ms", subject, r["latency_onset"] * 1000.0 / SR))
+            # A long tail makes the THD window measure the tail (the report's `*`).
+            if (r.get("tail_s") or 0) <= 0.5 and r["lo"].get("thd_db") is not None:
+                out.append(quality_line("builtin.fx_thd12_db", subject, r["lo"]["thd_db"]))
+    return ([""] + out) if out else []
 
 
 # ---------------------------------------------------------------- self-test

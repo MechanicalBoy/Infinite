@@ -114,7 +114,7 @@ def render_markdown(catalog):
         f"- **Color Adjustment Parameters**: **{len(adjustments)}**",
         f"- **Document Commands & Automations**: **{len(commands)}**",
         "- **Underlying Technology**: Apple Metal & CoreImage hardware-accelerated 2D pipeline.",
-        "- **Infinite Lead**: Infinite evaluates 2D compositing and grading kernels in real time at **60–263 FPS** coupled directly with audio FFT and 3D scenes.",
+        "- **Infinite**: 2D compositing and effects run live in the same patch as audio and 3D; frame rates are in render-bench.",
         "",
         "---",
         "",
@@ -127,12 +127,12 @@ def render_markdown(catalog):
         fam = classify_effect(name)
         by_family.setdefault(fam, []).append(eff)
 
-    fam_headers = ["Category", "Effects Count", "Sample Effects", "Infinite Outpace Architecture"]
+    fam_headers = ["Category", "Effects Count", "Sample Effects", "Infinite equivalent"]
     fam_rows = [
-        ["Blur & Optical Focus", len(by_family.get("Blur & Optical Focus", [])), "Gaussian, Box, Disc, Motion, Zoom, Spin, Tilt Shift, Focus", "Infinite Bloom, Blur, Fast Blur, Directional Blur, and Defocus nodes"],
-        ["Geometric & Spatial Distortion", len(by_family.get("Geometric & Spatial Distortion", [])), "Bump, Pinch, Circle Splash, Hole, Light Tunnel, Twirl, Vortex", "Infinite Lens Distortion, Transform 2D, Displace 2D, and Field Pixel kernels"],
-        ["Stylization & Halftone Patterns", len(by_family.get("Stylization & Halftone Patterns", [])), "Pixelate, Pointillize, Crystallize, Checkerboard, Stripes", "Infinite Pixelate, Halftone, Edge, and Voronoi Cells nodes"],
-        ["Procedural Fills & Patterns", len(by_family.get("Procedural Fills & Patterns", [])), "Color Fill, Image Fill, Pattern Fill", "Infinite Color, Texture, Ramp, and Gradient nodes"],
+        ["Blur & Optical Focus", len(by_family.get("Blur & Optical Focus", [])), "Gaussian, Box, Disc, Motion, Zoom, Spin, Tilt Shift, Focus", "`bloom`, `gaussianblur`, `boxblur`, `motionblur`, `radialblur`"],
+        ["Geometric & Spatial Distortion", len(by_family.get("Geometric & Spatial Distortion", [])), "Bump, Pinch, Circle Splash, Hole, Light Tunnel, Twirl, Vortex", "`lensdistortion`, `pinchpunch`, `twirl`, `ripple`, `displace`, `FieldPixel`"],
+        ["Stylization & Halftone Patterns", len(by_family.get("Stylization & Halftone Patterns", [])), "Pixelate, Pointillize, Crystallize, Checkerboard, Stripes", "`pixelate`, `halftone`, `posterize`, `edge sobel`"],
+        ["Procedural Fills & Patterns", len(by_family.get("Procedural Fills & Patterns", [])), "Color Fill, Image Fill, Pattern Fill", "`Texture`, `Ramp`, `Color Ramp`, `gradientmap`"],
     ]
     lines.append(md_table(fam_headers, fam_rows))
     lines.append("")
@@ -141,14 +141,14 @@ def render_markdown(catalog):
 
     lines.append("## 3. Color Grading & Adjustments Parameter Schema")
     lines.append("")
-    adj_headers = ["Parameter", "Data Type", "Description / Supported Range", "Infinite Equivalent"]
+    adj_headers = ["Parameter", "Data Type", "Description / Supported Range", "Infinite equivalent"]
     adj_rows = []
     for a in adjustments:
         adj_rows.append([
             a["name"],
             a["type"],
             a["description"] or "Supported value",
-            "Infinite Color Grade, Levels, or LUT node"
+            "`color adjustments`, `Curves`, `lut`"
         ])
     lines.append(md_table(adj_headers, adj_rows))
     lines.append("")

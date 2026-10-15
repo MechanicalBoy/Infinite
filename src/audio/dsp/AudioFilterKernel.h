@@ -223,6 +223,7 @@ public:
          comb.Reset();
       mLfoPhase = 0.0;
       mBiquadFreqSlew = 1000.0f;
+      mEnvPrimed = false;
    }
 
    void PushParams(const AudioEffectNode& node, double sampleRate) override;
@@ -234,10 +235,23 @@ public:
       const bool sync = mSync.load(std::memory_order_relaxed) != 0;
       const int rateDiv = mRateDiv.load(std::memory_order_relaxed);
       float lastLfoOut = 0.0f;
+      const float envCoef = expf(-1.0f / (float)(mSampleRate * 0.02));
 
       for (int i = 0; i < out.numFrames; i++)
       {
-         const float envAmount = mMailbox.SmoothedValue(kEnvAmountSlot);
+         // envAmount is octaves of sweep (x4), so the mailbox's 5 ms ramp
+         // moved the cutoff up to 3.2 octaves in 5 ms on a 30% -> 70% knob
+         // step: a +17 dB transient (F13). A 20 ms glide on the depth alone,
+         // primed to the knob on the first sample so a loaded patch does not
+         // sweep in.
+         const float envTarget = mMailbox.SmoothedValue(kEnvAmountSlot);
+         if (!mEnvPrimed)
+         {
+            mEnvSmooth = envTarget;
+            mEnvPrimed = true;
+         }
+         mEnvSmooth = envTarget + envCoef * (mEnvSmooth - envTarget);
+         const float envAmount = mEnvSmooth;
          const bool envActive = std::fabs(envAmount) > 1.0e-4f;
 
          // The internal sweep LFO always advances, active or not, so
@@ -435,4 +449,6 @@ private:
    // Slew-limits the cutoff feeding the biquad branch under modulation - see
    // ProcessBlock's comment at the biquad recompute for why.
    float mBiquadFreqSlew = 1000.0f;
+   float mEnvSmooth = 0.0f; // envAmount after its 20 ms glide (ProcessBlock)
+   bool mEnvPrimed = false;
 };

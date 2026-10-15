@@ -324,23 +324,23 @@ def render_markdown(catalog):
         "",
     ]
 
-    fam_headers = ["Family", "Module Count", "Key Capabilities", "Infinite Outpace Architecture"]
+    fam_headers = ["Family", "Module Count", "Key Capabilities", "Infinite equivalent"]
     fam_rows = [
-        ["Oscillators", module_families.get("Oscillators", 0), "Sine, Triangle, Sawtooth, Pulse, Swarm, Wavetable, Sampler, Noise, Rasp.", "Infinite Wavetable, Analog, and Field Synth kernels."],
-        ["Filters", module_families.get("Filters", 0), "Low-pass LD/MG, SVF, Sallen-Key, XP, Comb, All-pass, Bite, Fizz, Vowels.", "Infinite multi-mode filters with SIMD ladder circuits."],
-        ["Shapers", module_families.get("Shapers", 0), "Chebyshev, Wavefolder, Diode, Distortion, Heat, Howl, Push, Shred.", "Infinite Waveshaper, Drive, and Field Shaper kernels."],
-        ["Envelopes", module_families.get("Envelopes", 0), "AD, ADSR, AR, Follower, Follower RF, Pluck.", "Infinite ADSR and Envelope nodes with global modulation."],
-        ["Delays", module_families.get("Delays", 0), "Delay, Long Delay, Mod Delay, All-pass Delay, Logic Delay.", "Infinite Delay and Feedback nodes."],
-        ["Phase", module_families.get("Phase", 0), "Phasor, Phase Bend, Phase Formant, Phase Mirror, Phase Pinch, Phase Skew.", "Infinite Phase Distortion and Phase Modulation nodes."],
-        ["Math", module_families.get("Math", 0), "Add, Subtract, Multiply, Divide, Abs, MinMax, Round, Exp, Log, Sqrt.", "Infinite Math nodes and Field inline arithmetic."],
-        ["Logic", module_families.get("Logic", 0), "AND, NAND, OR, NOR, XOR, NOT, Equals, GreaterThan, Latch, Toggle.", "Infinite Logic gates and conditional triggers."],
-        ["Data & Sequencing", module_families.get("Data & Sequencing", 0), "Array, Constant, Steps, Step Access, Slopes, Curves, Value.", "Infinite Pattern, Step Sequencer, and Array nodes."],
-        ["Random", module_families.get("Random", 0), "Dice, Chance, Probabilities, Sample & Hold, SSolidusH LFO.", "Infinite Random Note and Noise generators."],
-        ["Level & Routing", module_families.get("Level & Routing", 0), "Amplify, Attenuate, Bias, Blend, Gain, Mixer, Pan, Stereo Split.", "Infinite Utility, Mixer, and Crossfader nodes."],
-        ["Pitch", module_families.get("Pitch", 0), "Pitch, Pitch Quantize, Pitch Scaler, Pitch Shift, Octaver, Transpose.", "Infinite Scale Quantizer, Pitch, and Chord nodes."],
-        ["I/O", module_families.get("I/O", 0), "Audio In/Out, CC In/Out, CV In/Out, Gate, Note, Transport, HW In/Out.", "Infinite Audio In/Out, CoreMIDI In/Out, OSC Send/Receive."],
-        ["Voice Stacking", module_families.get("Voice Stacking", 0), "Voice Stack Info, Voice Stack Mix, Voice Stack Tog.", "Infinite polyphonic voice allocator with unison spread."],
-        ["Display", module_families.get("Display", 0), "Oscilloscope, Spectrum, VU Meter, Value Readout.", "Infinite integrated GPU scopes and spectrum analyzers."],
+        ["Oscillators", module_families.get("Oscillators", 0), "Sine, Triangle, Sawtooth, Pulse, Swarm, Wavetable, Sampler, Noise, Rasp.", "`Wavetable`, `Analog`, `Oscillator`, `Field Synth`."],
+        ["Filters", module_families.get("Filters", 0), "Low-pass LD/MG, SVF, Sallen-Key, XP, Comb, All-pass, Bite, Fizz, Vowels.", "`Audio Filter`, `Formant Filter`; more filter models are plan item 2.25."],
+        ["Shapers", module_families.get("Shapers", 0), "Chebyshev, Wavefolder, Diode, Distortion, Heat, Howl, Push, Shred.", "`Drive`, `Wavetable Shaper`, `Cycle Shaper`, `Bitcrush`."],
+        ["Envelopes", module_families.get("Envelopes", 0), "AD, ADSR, AR, Follower, Follower RF, Pluck.", "`Envelope`, `Audio to CV`."],
+        ["Delays", module_families.get("Delays", 0), "Delay, Long Delay, Mod Delay, All-pass Delay, Logic Delay.", "`Delay`."],
+        ["Phase", module_families.get("Phase", 0), "Phasor, Phase Bend, Phase Formant, Phase Mirror, Phase Pinch, Phase Skew.", "none (phase warps are plan item 2.26)."],
+        ["Math", module_families.get("Math", 0), "Add, Subtract, Multiply, Divide, Abs, MinMax, Round, Exp, Log, Sqrt.", "`Math`, `Range to Range`, `Compare`; arithmetic in `Field Synth` and `Field Effect`."],
+        ["Logic", module_families.get("Logic", 0), "AND, NAND, OR, NOR, XOR, NOT, Equals, GreaterThan, Latch, Toggle.", "`Compare`."],
+        ["Data & Sequencing", module_families.get("Data & Sequencing", 0), "Array, Constant, Steps, Step Access, Slopes, Curves, Value.", "`Pattern`, `Note Sequencer`, `Macro Step Gate`, `Constant`."],
+        ["Random", module_families.get("Random", 0), "Dice, Chance, Probabilities, Sample & Hold, SSolidusH LFO.", "`Random`, `Random Note Generator`."],
+        ["Level & Routing", module_families.get("Level & Routing", 0), "Amplify, Attenuate, Bias, Blend, Gain, Mixer, Pan, Stereo Split.", "`Gain`, `Mixer`, `Blend Audio`, `Stereo`, `Splitter`."],
+        ["Pitch", module_families.get("Pitch", 0), "Pitch, Pitch Quantize, Pitch Scaler, Pitch Shift, Octaver, Transpose.", "`Quantizer`, `Note Transpose`, `Chorder`, `CV to Pitch`, `Pitch Shifter`."],
+        ["I/O", module_families.get("I/O", 0), "Audio In/Out, CC In/Out, CV In/Out, Gate, Note, Transport, HW In/Out.", "`Audio In`, `Audio Out`, `MIDI Notes`, `MIDI CC`, `MIDI Out`, `OSC Send`, `OSC Receive`."],
+        ["Voice Stacking", module_families.get("Voice Stacking", 0), "Voice Stack Info, Voice Stack Mix, Voice Stack Tog.", "none as a node."],
+        ["Display", module_families.get("Display", 0), "Oscilloscope, Spectrum, VU Meter, Value Readout.", "`Audio Meter`."],
     ]
     lines.append(md_table(fam_headers, fam_rows))
     lines.append("")
@@ -361,15 +361,15 @@ def render_markdown(catalog):
     lines.append("")
 
     # Strategic Outpace Comparison
-    lines.append("## 4. How Infinite Ingests & Outpaces Bitwig Studio")
+    lines.append("## 4. Bitwig architecture and the nearest Infinite nodes")
     lines.append("")
-    outpace_headers = ["Bitwig Architecture", "Infinite Strategic Advantage", "The Leap"]
+    outpace_headers = ["Bitwig Architecture", "Infinite equivalent"]
     outpace_rows = [
-        ["The Grid (232 modular audio blocks)", "Field language (Text & Node based C++/Metal DSP)", "Bitwig Grid is audio-only inside a DAW box; Infinite Field executes audio, 3D point vertices, and 4K visual pixel shaders in one single unified language."],
-        ["Poly Grid & Polymer", "Field Synth & Analog Engine", "Zero-latency native Metal/AVFoundation binding allows any 3D camera move or physics impulse to modulate synth voices directly."],
-        ["31 Analog Drum Synths (v0, v1, v8, v9)", "Dedicated Analog Drum Nodes", "Bitwig provides individual TR-808/909 voice devices; Infinite pairs analog drum models with synchronized GPU visual impulse triggers."],
-        ["Multi-Band Split Routers (Freq/Loud/Transient Split)", "Multi-Band & Split Containers", "Infinite's zero-copy audio pipeline guarantees sample-accurate reconstruction with zero phase cancellation."],
-        ["Universal Modulators (43 engines)", "Infinite Global Modulation + Green Family", "Bitwig modulators modulate within Bitwig; Infinite modulators cross the AV boundary to modulate 3D point positions, camera focal lengths, and external VST3/AU parameters simultaneously."],
+        ["The Grid (232 modular audio blocks)", "`Field Synth`, `Field Effect`, `Field Graph`, `FieldPixel`, `Field Modifier`"],
+        ["Poly Grid & Polymer", "`Field Synth`, `Analog`"],
+        ["31 Analog Drum Synths (v0, v1, v8, v9)", "`Drum Sequencer`, `MPC`, `Metallic`; no analog drum models"],
+        ["Multi-Band Split Routers (Freq/Loud/Transient Split)", "`Splitter` (crossover split is plan item 2.18)"],
+        ["Universal Modulators (43 engines)", "`LFO`, `Envelope`, `Random`, `Mod Curve`, `Predictive Modulator`"],
     ]
     lines.append(md_table(outpace_headers, outpace_rows))
     lines.append("")

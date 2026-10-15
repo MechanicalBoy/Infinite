@@ -728,6 +728,11 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
    static std::string sAudioSource;              // JSON describing what was measured
    static double sAudioSeconds = 0.0;
    static long long sAudioTotal = 0, sAudioDone = 0, sAudioStep = 0;
+   // The graph's output latency after PDC, latched before the first block:
+   // that many leading samples are rendered but not reported, and that many
+   // more are rendered at the end, the same shift an export take applies
+   // (OutputNode::LatchOfflineLatency). -1 = not latched yet.
+   static long long sAudioLatency = -1;
    // --stems / --notes (R471 7.5)
    struct StemTap
    {
@@ -1281,6 +1286,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
          sAudioTotal = (long long)std::llround(sAudioSeconds * gHeadlessAudioRate);
          sAudioDone = 0;
          sAudioStep = 0;
+         sAudioLatency = -1;
 
          std::error_code ec;
          for (const std::string* path : { &job.out, &job.wavPath })
@@ -1907,7 +1913,7 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       const double rate = gHeadlessAudioRate;
       const double budgetStart = glfwGetTime();
       const int blockCap = OfflineAudioBlockFrames();
-      while (sAudioDone < sAudioTotal)
+      while (sAudioLatency < 0 || sAudioDone < sAudioTotal + sAudioLatency)
       {
          // One video frame of graph time, then the audio that belongs to it:
          // the order the offline render pump runs in, so modulators and
@@ -1922,9 +1928,12 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
          // Once a video frame, as the GUI's frame pump does: a plugin or node
          // whose latency changed since the topology was built gets PDC again.
          PollAudioLatencyChanges();
+         if (sAudioLatency < 0)
+            sAudioLatency = std::max(0, AudioEngine::Instance().OutputLatencySamples());
          sAudioStep++;
 
-         const long long target = std::min(sAudioTotal, (long long)std::llround((double)sAudioStep * rate / (double)job.fps));
+         const long long target = std::min(sAudioTotal + sAudioLatency,
+                                           (long long)std::llround((double)sAudioStep * rate / (double)job.fps));
          while (sAudioDone < target)
          {
             const int n = (int)std::min<long long>(blockCap, target - sAudioDone);
@@ -1960,9 +1969,14 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
                   sInterleaved[(size_t)i * 2 + 0] = sL[i];
                   sInterleaved[(size_t)i * 2 + 1] = sR[i];
                }
-            sAnalyzer->Push(sL, sR, n);
-            if (sSummaryWav.IsOpen())
-               sSummaryWav.Append(sInterleaved.data(), n);
+            // Leading latency samples are the graph's delay, not the patch's sound.
+            const int skip = (int)std::clamp<long long>(sAudioLatency - sAudioDone, 0, n);
+            if (skip < n)
+            {
+               sAnalyzer->Push(sL + skip, sR + skip, n - skip);
+               if (sSummaryWav.IsOpen())
+                  sSummaryWav.Append(sInterleaved.data() + (size_t)skip * 2, n - skip);
+            }
             sAudioDone += n;
          }
          if (glfwGetTime() - budgetStart > 0.1)
@@ -1981,13 +1995,16 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
             return fail("E_RENDER", "could not create " + sStemInfo[i].file);
          const std::vector<float>& L = sTaps[i].left;
          const std::vector<float>& R = sTaps[i].right;
-         std::vector<float> inter(L.size() * 2);
-         for (size_t k = 0; k < L.size(); k++)
+         // A stem is its node's own output, ahead of PDC: keep the requested
+         // length, not the latency tail the master needed.
+         const size_t len = std::min(L.size(), (size_t)sAudioTotal);
+         std::vector<float> inter(len * 2);
+         for (size_t k = 0; k < len; k++)
          {
             inter[k * 2] = L[k];
             inter[k * 2 + 1] = R[k];
          }
-         w.Append(inter.data(), (int)L.size());
+         w.Append(inter.data(), (int)len);
          w.Close();
          sStatus.files.push_back(sStemInfo[i].file);
       }

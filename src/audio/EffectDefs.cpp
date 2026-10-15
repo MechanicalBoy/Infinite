@@ -208,12 +208,18 @@ namespace
          def.visualizerId = EffectVisualizerId::kDynamicsTransfer;
          def.hasSidechain = true;
 
-         def.params.push_back({ "threshold", -60.0f, 0.0f, -18.0f });
-         def.params.push_back({ "ratio", 1.0f, 20.0f, 4.0f });
-         def.params.push_back({ "attack", 0.05f, 200.0f, 10.0f });
-         def.params.push_back({ "release", 5.0f, 2000.0f, 100.0f });
+         // Threshold opens at 0 dB so inserting a compressor leaves loudness
+         // alone (v0.6 1.9: -18 dB took 2.7 dB off pink noise at -18 dBFS);
+         // pulling it down is the first move. Saved patches keep their own
+         // threshold. The sweep's probe (~-8 dBFS) never crosses 0 dB, so
+         // the detector-side params are tested with the threshold pulled down.
+         static const std::vector<EffectParamPrereq> kBelowProbe = { { "threshold", -30.0f } };
+         def.params.push_back({ "threshold", -60.0f, 0.0f, 0.0f, false, {}, { -20.0f, -30.0f, -10.0f, -15.0f } });
+         def.params.push_back({ "ratio", 1.0f, 20.0f, 4.0f, false, kBelowProbe });
+         def.params.push_back({ "attack", 0.05f, 200.0f, 10.0f, false, kBelowProbe });
+         def.params.push_back({ "release", 5.0f, 2000.0f, 100.0f, false, kBelowProbe });
          def.params.push_back({ "makeup", -12.0f, 24.0f, 0.0f });
-         def.params.push_back({ "detectorRms", 0.0f, 1.0f, 0.0f }); // 0 = peak, 1 = RMS
+         def.params.push_back({ "detectorRms", 0.0f, 1.0f, 0.0f, false, kBelowProbe }); // 0 = peak, 1 = RMS
          // Sidechain HP/audition are gone with the rest of Tier 2 - external
          // sidechain now just feeds the detector raw, unfiltered. That
          // simplicity is exactly why `sidechainExternal` is a confirmed (by
@@ -227,11 +233,11 @@ namespace
          // this file's minimalism pass. `ProcessBlock`'s
          // `useSidechain ? sidechain : in` ternary is the entire
          // implementation; correct by inspection.
-         def.params.push_back({ "sidechainExternal", 0.0f, 1.0f, 0.0f });
-         def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f });
+         def.params.push_back({ "sidechainExternal", 0.0f, 1.0f, 0.0f, false, kBelowProbe });
+         def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f, false, kBelowProbe });
          // Appended (saved patches' param order). Detector-only 90 Hz high-pass,
          // off by default so existing patches compress exactly as before.
-         def.params.push_back({ "scHpf", 0.0f, 1.0f, 0.0f });
+         def.params.push_back({ "scHpf", 0.0f, 1.0f, 0.0f, false, kBelowProbe });
          // mix is AudioEffectNode's universal field, not a second param here.
 
          def.makeKernel = []() { return std::make_unique<DynamicsKernel>(); };
@@ -919,6 +925,10 @@ namespace
          // (every other effect's `mix` still does, and stays generically
          // testable - this entry is scoped to "EQ" only).
          { "EQ", { "mix", 0.0f, 1.0f, 1.0f, true } },
+         // Dynamics opens at threshold 0 dB (v0.6 1.9), where wet equals dry
+         // on the sweep's probe, so `mix` only shows with the threshold
+         // pulled down - same prerequisite as its detector-side params.
+         { "Dynamics", { "mix", 0.0f, 1.0f, 1.0f, false, { { "threshold", -30.0f } } } },
       };
       return extra;
    }

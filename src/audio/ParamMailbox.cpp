@@ -37,6 +37,7 @@ void ParamMailbox::Push(int paramId, float value)
    if (paramId < 0 || paramId >= kMaxParams)
       return;
    mTarget[paramId].store(value, std::memory_order_release);
+   mPushed.store(true, std::memory_order_release);
 }
 
 void ParamMailbox::StartRamp(Ramp& r, float value, double startTime, double endTime)
@@ -86,6 +87,13 @@ float ParamMailbox::SmoothedValue(int paramId)
       return 0.0f;
    Ramp& r = mRamps[paramId];
    const float target = mTarget[paramId].load(std::memory_order_acquire);
+   if (!r.primed && mPushed.load(std::memory_order_acquire))
+   {
+      r.cur = r.target = r.seen = target;
+      r.remaining = 0;
+      r.hasPending = false;
+      r.primed = true;
+   }
    if (target != r.seen)
    {
       r.seen = target;
@@ -123,6 +131,7 @@ void ParamMailbox::SetImmediate(int paramId, float value)
    mTarget[paramId].store(value, std::memory_order_release);
    Ramp& r = mRamps[paramId];
    r.cur = r.target = r.seen = value;
+   r.primed = true;
    r.remaining = 0;
    r.hasPending = false;
 }

@@ -517,7 +517,11 @@ void AudioOutputNode::CookIfNeeded(int /*frameId*/)
    float scratch[4096];
    int n;
    while ((n = mCaptureRing.Read(scratch, 4096)) > 0)
+   {
+      for (int i = 0; i < n; i++)
+         mTakePeak = std::max(mTakePeak, std::fabs(scratch[i]));
       mWriter.Append(scratch, n / 2);
+   }
 }
 
 void AudioOutputNode::VisitParams(ParamVisitor& v)
@@ -527,16 +531,18 @@ void AudioOutputNode::VisitParams(ParamVisitor& v)
    v.Bool("live", live);
 }
 
-bool AudioOutputNode::StartRecording(const std::string& path)
+bool AudioOutputNode::StartRecording(const std::string& path, double sampleRate)
 {
    if (IsRecording())
       return false;
-   const double sampleRate = AudioEngine::Instance().SampleRate();
+   if (sampleRate <= 0.0)
+      sampleRate = AudioEngine::Instance().SampleRate();
    if (sampleRate <= 0.0)
       return false;
    if (!mWriter.Open(path, sampleRate, 2))
       return false;
    mOpenSampleRate = sampleRate;
+   mTakePeak = 0.0f;
    mCaptureRing.overflowCount.store(0, std::memory_order_relaxed);
    mCaptureRing.enabled.store(true, std::memory_order_relaxed);
    return true;

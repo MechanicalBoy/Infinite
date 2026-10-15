@@ -20,6 +20,7 @@ Exit: 0 ok, 1 a render failed / self-test failed, 2 usage error or no Infinite b
 
 import argparse
 import json
+import math
 import os
 import struct
 import sys
@@ -27,7 +28,7 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, write_out  # noqa: E402
+from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, quality_line, write_out  # noqa: E402
 import plugin_probe as pp  # noqa: E402
 
 SR = 48000
@@ -125,17 +126,21 @@ def patch_text(n, synth, fx):
         level.append("f%d" % k)
         idx += 2
     m = 0
+    # Every track plays the same notes in phase, so N tracks sum to N times one track. The first row of Mixers
+    # takes that back out (a mix engineer's faders), so the master sits at one track's level instead of clipping.
+    trim = ["  f gain%d %.2f" % (j, -20.0 * math.log10(n)) for j in range(8)] if n > 1 else []
     while len(level) > 1:
         nxt = []
         for g in range(0, len(level), 8):
             mid = "m%d" % m
             m += 1
-            L += ["node %d Utility Mixer" % idx, "  id " + mid, "end"]
+            L += ["node %d Utility Mixer" % idx, "  id " + mid] + trim + ["end"]
             idx += 1
             for j, src in enumerate(level[g:g + 8]):
                 wires.append("aud %s in_%d %s" % (mid, j + 1, src))
             nxt.append(mid)
         level = nxt
+        trim = []
     L += ["node %d Utility Audio Out" % idx, "  id out", "end"]
     wires.append("aud out audio %s" % level[0])
     return "\n".join(L + wires) + "\n"
@@ -193,6 +198,10 @@ def to_markdown(label, rows):
     L += ["", "- Estimated ceiling at 70 %% of one core: about %d tracks." % ceiling(rows)]
     if over:
         L.append("- At or over 70 %%: %s tracks." % ", ".join(map(str, over)))
+    if rows:
+        # The cheapest row is the per-track cost before the cache runs out; the ceiling is what a user feels.
+        L += ["", quality_line("load.ms_per_track_s", label, min(r["per_track_ms_per_s"] for r in rows)),
+              quality_line("load.tracks_at_70pct", label, ceiling(rows))]
     return "\n".join(L) + "\n"
 
 
@@ -247,6 +256,9 @@ def self_test():
     a = measure(binp, 2, {"kind": "node", "type": "Analog"}, {"kind": "node", "type": "Reverb"}, short=2.0, long=6.0)
     t.check(a["peak"] and a["peak"] > 0.01, "2 tracks of Analog + Reverb make sound (peak %s)" % a["peak"])
     t.check(0.0 <= a["load_pct"] < 100.0, "the load is a sane fraction of a core (%.1f %%)" % a["load_pct"])
+    b = measure(binp, 16, {"kind": "node", "type": "Analog"}, {"kind": "node", "type": "Reverb"}, short=1.0, long=3.0)
+    t.check(0.01 < b["peak"] < 0.999 and abs(b["peak"] - a["peak"]) < 0.25 * a["peak"],
+            "16 in-phase tracks sit at 2 tracks' level, not on the clip ceiling (peak %.3f vs %.3f)" % (b["peak"], a["peak"]))
     return t.done()
 
 

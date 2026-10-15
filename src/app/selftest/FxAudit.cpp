@@ -14,7 +14,8 @@
 //            all-max, all-min and seeded random settings
 //   click    worst param step (30% -> 70% of range, instant) on a 440 Hz
 //            tone: second-difference peak in the 50 ms after the step re
-//            the steady state either side, dB
+//            the steady state either side and the same 50 ms rendered
+//            with the param held at either end, dB
 //   rate     44.1 / 48 / 96 kHz at defaults: level spread (dB) of a 100 Hz /
 //            1 kHz / 6 kHz tone (octave bands of noise for a decorrelating
 //            wet, whose modes move with the rate) and
@@ -148,6 +149,26 @@ namespace
       const float a = rms * std::sqrt(3.0f);
       for (auto& x : v)
          x = a * r.Next();
+      return v;
+   }
+   // Pink noise (Kellet's economy filter, -3 dB/octave), scaled to `rms`:
+   // closer to music than white noise for a loudness reading.
+   std::vector<float> PinkNoise(int n, float rms, uint32_t seed)
+   {
+      std::vector<float> v = Noise(n, 1.0f, seed);
+      float b0 = 0, b1 = 0, b2 = 0;
+      double sum = 0;
+      for (auto& x : v)
+      {
+         b0 = 0.99765f * b0 + x * 0.0990460f;
+         b1 = 0.96300f * b1 + x * 0.2965164f;
+         b2 = 0.57000f * b2 + x * 1.0526913f;
+         x = b0 + b1 + b2 + x * 0.1848f;
+         sum += (double)x * x;
+      }
+      const float k = rms / (float)std::sqrt(sum / std::max(1, n));
+      for (auto& x : v)
+         x *= k;
       return v;
    }
    // Periodic noise with an exactly flat spectrum: unit magnitude and a
@@ -410,7 +431,21 @@ namespace
          for (size_t s = (size_t)(0.25 * sr); s + w10 <= oL2.size(); s += w10)
             post = std::max(post, D2Peak(oL2, s, w10));
          const double step = D2Peak(oL2, 0, (size_t)(0.05 * sr));
-         const double c = Db(step / std::max({ pre, post, 1e-5 }));
+         // The same 50 ms with no step, the param held at lo and at hi from
+         // the start: a param that moves an internal LFO's depth (Audio
+         // Filter envAmount) or a time-varying wet legitimately looks
+         // different at the step than 0.3 s either side. A click is what
+         // exceeds both steady settings at the same moment (F13).
+         double steady = 0.0;
+         for (const float v : { lo, hi })
+         {
+            auto ref = MakeRig(def, sr, { { p.name, v } });
+            std::vector<float> rL1, rR1, rL2, rR2;
+            Process(*ref, a, a, rL1, rR1);
+            Process(*ref, b, b, rL2, rR2);
+            steady = std::max(steady, D2Peak(rL2, 0, (size_t)(0.05 * sr)));
+         }
+         const double c = Db(step / std::max({ pre, post, steady, 1e-5 }));
          if (c > worstClick)
          {
             worstClick = c;
@@ -505,6 +540,58 @@ namespace
          flag(fx, "gain", "1 kHz tone %+.1f dB at defaults", gTone);
       if (std::fabs(bal) > 1.0)
          flag(fx, "stereo", "mono in -> L/R balance %+.1f dB", bal);
+      // Insert gain: what a user hears when the node opens - default mix,
+      // pink noise at -20 dBFS RMS, level change after 1 s (v0.6 1.9). A
+      // steady sine is the wrong probe here: it adds coherently with a delay
+      // or reverb's own echoes (Delay read +3 dB on a 1 kHz tone, +0.1 on this).
+      double gInsert;
+      {
+         auto rig = MakeRig(def, sr, {});
+         rig->node->mix = def.defaultMix;
+         std::vector<float> in = PinkNoise(n3, 0.1f, 5), oL, oR;
+         Process(*rig, in, in, oL, oR);
+         const size_t a = (size_t)sr;
+         const double inRms = Rms(in, a, in.size());
+         const double outRms = std::sqrt(0.5 * (std::pow(Rms(oL, a, oL.size()), 2) + std::pow(Rms(oR, a, oR.size()), 2)));
+         gInsert = Db(outRms / std::max(1e-12, inRms));
+      }
+      printf("FXAUDIT %-18s insert gain %+.2f dB (mix %.2f, pink noise)\n", fx.c_str(), gInsert, def.defaultMix);
+      Quality("fx.insert_gain_db", fx, std::fabs(gInsert));
+      // Level null for the modulated delays (v0.6 1.10): a linear effect
+      // gives the same output at -1 dBFS as at -12 dBFS scaled up, so the
+      // residual is the distortion a hot input adds. THD is the wrong tool
+      // here (the modulation's own sidebands are not harmonics), and so is a
+      // file bounce: dry + wet passes 0 dBFS on an in-phase sine and an
+      // integer WAV clamps it (builtins-kit read that clamp as -24.5 dB THD).
+      if (fx == "Chorus" || fx == "Flanger")
+      {
+         const float hot = 0.891f * 0.7071f, ref = 0.251f * 0.7071f; // -1, -12 dBFS peak
+         std::vector<float> oH, oHr, oR1, oR1r;
+         {
+            auto rig = MakeRig(def, sr, {});
+            rig->node->mix = def.defaultMix;
+            std::vector<float> in = Tone(n3, 1000.0, sr, hot);
+            Process(*rig, in, in, oH, oHr);
+         }
+         {
+            auto rig = MakeRig(def, sr, {});
+            rig->node->mix = def.defaultMix;
+            std::vector<float> in = Tone(n3, 1000.0, sr, ref);
+            Process(*rig, in, in, oR1, oR1r);
+         }
+         const float k = hot / ref;
+         float peak = 0.0f;
+         std::vector<float> diff(oH.size());
+         for (size_t i = 0; i < oH.size(); i++)
+         {
+            diff[i] = oH[i] - k * oR1[i];
+            peak = std::max(peak, std::fabs(oH[i]));
+         }
+         const size_t a = (size_t)sr;
+         const double nullDb = Db(Rms(diff, a, diff.size()) / std::max(1e-12, Rms(oH, a, oH.size())));
+         printf("FXAUDIT %-18s hot null %.1f dB (-1 vs -12 dBFS, 1 kHz), output peak %.3f\n", fx.c_str(), nullDb, peak);
+         Quality("fx.hot_null_db", fx, nullDb);
+      }
       Quality("fx.dc_dbfs", fx, dcDb);
       Quality("fx.tail_dbfs", fx, tailDb);
       Quality("fx.click_db", fx, worstClick);

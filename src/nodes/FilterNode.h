@@ -15,6 +15,11 @@
 class FilterNode : public INode
 {
 public:
+   // Compiles one not-yet-compiled effect shader stage; false when every
+   // def is warm. Called once a frame after startup so the first add of an
+   // effect links instead of compiling (a blur's three stages cost a frame).
+   static bool WarmNextShader();
+
    // `def` must outlive the node - defs live in the static vector returned by GetFilterDefs().
    static INode* CreateFor(const FilterDef& def) { return new FilterNode(def); }
 

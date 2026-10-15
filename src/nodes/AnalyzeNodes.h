@@ -202,6 +202,11 @@ public:
    int GetOutputWidth() const override { return 0; }
    int GetOutputHeight() const override { return 0; }
    void CookIfNeeded(int frameId) override;
+   // Reads the audio thread's latest analysis into Levels()/Value(), once
+   // per frame. The modulation pass calls it before any binding reads this
+   // node, so a frame's picture follows that frame's audio rather than the
+   // previous cook's (v0.6 1.5); CookIfNeeded calls it too.
+   void RefreshAnalysis(int frameId);
 
    AudioNode* GetAudioNode() override;
    void SweepPrepare() override;
@@ -289,6 +294,7 @@ private:
    bool mLoaded = false;
    double mDuration = 0.0;
    int mLastCookFrame = -1;
+   int mLastAnalysisFrame = -1;
    Platform::SampleBuffer* mBuffer = nullptr; // non-owning, see Buffer()'s comment
 };
 
@@ -336,6 +342,11 @@ public:
    int GetOutputWidth() const override { return 0; }
    int GetOutputHeight() const override { return 0; }
    void CookIfNeeded(int frameId) override;
+   // Reads the audio thread's latest analysis into Levels()/Value(), once
+   // per frame. The modulation pass calls it before any binding reads this
+   // node, so a frame's picture follows that frame's audio rather than the
+   // previous cook's (v0.6 1.5); CookIfNeeded calls it too.
+   void RefreshAnalysis(int frameId);
 
    int OutputCount() const override { return kOutputCount; }
    const char* OutputLabel(int index) const override;
@@ -392,4 +403,5 @@ private:
    double mLastSeconds = 0.0;
    std::string mStatus = "press Start to listen";
    int mLastCookFrame = -1;
+   int mLastAnalysisFrame = -1;
 };

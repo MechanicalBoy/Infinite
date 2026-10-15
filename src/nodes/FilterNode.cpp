@@ -104,6 +104,55 @@ FilterNode::FilterNode(const FilterDef& def)
                mDef.prePassBody.find("uTime") != std::string::npos;
 }
 
+// The three sources a def can need; EnsureShader and WarmNextShader must
+// build identical text or the warmed stage is never found.
+static std::string PreSource(const FilterDef& def)
+{
+   return Preamble() + def.prePassBody;
+}
+
+static std::string ConvSource(const FilterDef& def)
+{
+   return Preamble() + (def.convertBody.empty()
+                           ? std::string("void main() { fragColor = ImgTap(vUv); }\n")
+                           : def.convertBody);
+}
+
+static std::string MainSource(const FilterDef& def)
+{
+   return GLUtil::WithClampedOutput(Preamble() + def.fragmentBody, "fragColor.rgb = ImgEncode(fragColor.rgb);");
+}
+
+bool FilterNode::WarmNextShader()
+{
+   static size_t sDef = 0;
+   static int sPass = 0;
+   const std::vector<FilterDef>& defs = GetFilterDefs();
+   while (sDef < defs.size())
+   {
+      const FilterDef& def = defs[sDef];
+      const int pass = sPass++;
+      if (pass == 0 && !def.prePassBody.empty())
+      {
+         GLUtil::WarmFragmentStage(PreSource(def).c_str());
+         return true;
+      }
+      if (pass == 1 && def.convertFirst && !def.prePassBody.empty())
+      {
+         GLUtil::WarmFragmentStage(ConvSource(def).c_str());
+         return true;
+      }
+      if (pass == 2)
+      {
+         GLUtil::WarmFragmentStage(MainSource(def).c_str());
+         sPass = 0;
+         ++sDef;
+         return true;
+      }
+   }
+   return false;
+}
+
 bool FilterNode::EnsureShader()
 {
    if (mShaderTried)
@@ -112,8 +161,7 @@ bool FilterNode::EnsureShader()
 
    if (!mDef.prePassBody.empty())
    {
-      std::string preSrc = Preamble() + mDef.prePassBody;
-      mPreProgram = GLUtil::CompileProgram(preSrc.c_str());
+      mPreProgram = GLUtil::CompileProgram(PreSource(mDef).c_str());
       if (mPreProgram == 0)
          return false;
       LookupLocs(mPreProgram, mPreLocs);
@@ -121,17 +169,13 @@ bool FilterNode::EnsureShader()
 
    if (mDef.convertFirst && !mDef.prePassBody.empty())
    {
-      std::string convSrc = Preamble() + (mDef.convertBody.empty()
-                                             ? std::string("void main() { fragColor = ImgTap(vUv); }\n")
-                                             : mDef.convertBody);
-      mConvProgram = GLUtil::CompileProgram(convSrc.c_str());
+      mConvProgram = GLUtil::CompileProgram(ConvSource(mDef).c_str());
       if (mConvProgram == 0)
          return false;
       LookupLocs(mConvProgram, mConvLocs);
    }
 
-   std::string src = GLUtil::WithClampedOutput(Preamble() + mDef.fragmentBody, "fragColor.rgb = ImgEncode(fragColor.rgb);");
-   mProgram = GLUtil::CompileProgram(src.c_str());
+   mProgram = GLUtil::CompileProgram(MainSource(mDef).c_str());
    if (mProgram == 0)
       return false;
    LookupLocs(mProgram, mMainLocs);

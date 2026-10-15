@@ -567,6 +567,7 @@ bool IsHeadlessProcess();
       std::string path;
       int status = kArrangeJobQueued;
       std::string message;         // failure reason, or a note about the take
+      uint64_t oversAtStart = 0;   // AudioEngine::MasterOverSamples() when the take began
       int framesDone = 0, framesTotal = 0;
       double startedTime = 0.0;    // glfwGetTime() when it began, for the ETA
       // Empty = whole project (every lane), matching the original behavior.

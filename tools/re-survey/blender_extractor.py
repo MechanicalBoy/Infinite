@@ -222,18 +222,18 @@ def render_markdown(catalog):
         fam = classify_geo_node(idname, n["label"])
         geo_families[fam] += 1
 
-    fam_headers = ["Family", "Node Count", "Key Operations", "Infinite Outpace Architecture"]
+    fam_headers = ["Family", "Node Count", "Key Operations", "Infinite equivalent"]
     fam_rows = [
-        ["Mesh Operations", geo_families.get("Mesh Operations", 0), "Extrude Mesh, Subdivide, Triangulate, Dual Mesh, Flip Faces, Mesh to Curve.", "Infinite procedural mesh nodes (Extrude, Subdivide, Solidify, Booleans)."],
-        ["Curve & Splines", geo_families.get("Curve & Splines", 0), "Curve to Mesh, Resample, Fillet, Trim, Subdivide, Sample Curve, Spline Types.", "Infinite Curve, Curve Ops, Tube, and Helix nodes."],
-        ["Points & Cloud Distribution", geo_families.get("Points & Cloud Distribution", 0), "Distribute on Faces, Distribute in Volume/Grid, Points to Vertices.", "Infinite Distribute Points in Grid / on Faces, Image to Points."],
-        ["Instances & Duplication", geo_families.get("Instances & Duplication", 0), "Instance on Points, Realize Instances, Rotate/Scale Instances.", "Infinite InstanceOnPoints (263 FPS 4K single-draw-call instancing)."],
-        ["Geometry Topologies", geo_families.get("Geometry Topologies", 0), "Join Geometry, Transform, Bounding Box, Convex Hull, Separate Geometry.", "Infinite Group 3D, Transform 3D, and Array nodes."],
-        ["Attribute & Field Transfer", geo_families.get("Attribute & Field Transfer", 0), "Capture Attribute, Store Named Attribute, Attribute Statistic, Blur Attribute.", "Infinite Field language (C++/Metal per-vertex and per-primitive kernels)."],
-        ["Math & Numeric Functions", geo_families.get("Math & Numeric Functions", 0), "Vector Math, Boolean Math, Map Range, Compare, Clamp, Float to Int.", "Infinite Field arithmetic and Math nodes."],
-        ["Volumes & Fog VDB", geo_families.get("Volumes & Fog VDB", 0), "Mesh to Volume, Volume to Mesh, Volume Cube.", "Infinite Metaballs and Particle System volumes."],
-        ["Material & Shading Assignment", geo_families.get("Material & Shading Assignment", 0), "Set Material, Replace Material, Material Selection.", "Infinite Material node with full Principled BSDF parameter set."],
-        ["Scene & Element Inputs", geo_families.get("Scene & Element Inputs", 0), "Position, Normal, Index, ID, Radius, Tangent, Curve Length.", "Infinite Field reserved attributes P, N, Cd, id, time."],
+        ["Mesh Operations", geo_families.get("Mesh Operations", 0), "Extrude Mesh, Subdivide, Triangulate, Dual Mesh, Flip Faces, Mesh to Curve.", "`Extrude`, `Subdivide`, `Solidify`, `Triangulate`, `Union`, `Difference`, `Intersect`."],
+        ["Curve & Splines", geo_families.get("Curve & Splines", 0), "Curve to Mesh, Resample, Fillet, Trim, Subdivide, Sample Curve, Spline Types.", "`Curve`, `Curve Ops`, `Tube`, `Helix`."],
+        ["Points & Cloud Distribution", geo_families.get("Points & Cloud Distribution", 0), "Distribute on Faces, Distribute in Volume/Grid, Points to Vertices.", "`Distribute Points in Grid`, `Distribute Points on Faces`, `Image to Points`, `Mesh to Points`, `Points to Vertices`."],
+        ["Instances & Duplication", geo_families.get("Instances & Duplication", 0), "Instance on Points, Realize Instances, Rotate/Scale Instances.", "`Instance on Points`."],
+        ["Geometry Topologies", geo_families.get("Geometry Topologies", 0), "Join Geometry, Transform, Bounding Box, Convex Hull, Separate Geometry.", "`Join Geometry`, `Group 3D`, `Transform`, `Array`, `Merge by Distance`."],
+        ["Attribute & Field Transfer", geo_families.get("Attribute & Field Transfer", 0), "Capture Attribute, Store Named Attribute, Attribute Statistic, Blur Attribute.", "`Field Modifier`, `Set Vertex Color`, `Select`."],
+        ["Math & Numeric Functions", geo_families.get("Math & Numeric Functions", 0), "Vector Math, Boolean Math, Map Range, Compare, Clamp, Float to Int.", "`Math`; arithmetic in `Field Modifier`."],
+        ["Volumes & Fog VDB", geo_families.get("Volumes & Fog VDB", 0), "Mesh to Volume, Volume to Mesh, Volume Cube.", "`Metaballs`; no volume grids."],
+        ["Material & Shading Assignment", geo_families.get("Material & Shading Assignment", 0), "Set Material, Replace Material, Material Selection.", "`Material`."],
+        ["Scene & Element Inputs", geo_families.get("Scene & Element Inputs", 0), "Position, Normal, Index, ID, Radius, Tangent, Curve Length.", "`Field Modifier` (reserved names P, N, uv, Cd, i, count)."],
     ]
     lines.append(md_table(fam_headers, fam_rows))
     lines.append("")
@@ -245,12 +245,12 @@ def render_markdown(catalog):
     lines.append("")
     lines.append("Blender's material shader tree is centered around BSDFs, procedural textures, and vector transformations:")
     lines.append("")
-    shader_headers = ["Category", "Sample Nodes", "Infinite Equivalent"]
+    shader_headers = ["Category", "Sample Nodes", "Infinite equivalent"]
     shader_rows = [
-        ["Surface Shaders & BSDFs", "Principled BSDF, Glass, Glossy, Subsurface, Toon, Sheen, Hair BSDF", "Infinite Material node (carries Principled BSDF in a single node)."],
-        ["Procedural Textures", "Noise, Voronoi, Musgrave, Wave, Brick, Checker, Magic, White Noise", "Infinite Noise, Ramp, Texture, and FieldPixel kernels."],
-        ["Color & Vector Ops", "Color Ramp, Mix (Color/Vector/Float), Vector Math, Normal Map, Bump", "Infinite Color, Blend, and Field math operations."],
-        ["Displacement & Geometry", "Displacement, Vector Displacement, Geometry (Position, Normal, Tangent)", "Infinite Displacement 3D and Field Modifier kernels."],
+        ["Surface Shaders & BSDFs", "Principled BSDF, Glass, Glossy, Subsurface, Toon, Sheen, Hair BSDF", "`Material`."],
+        ["Procedural Textures", "Noise, Voronoi, Musgrave, Wave, Brick, Checker, Magic, White Noise", "`Noise`, `Ramp`, `Texture`, `FieldPixel`."],
+        ["Color & Vector Ops", "Color Ramp, Mix (Color/Vector/Float), Vector Math, Normal Map, Bump", "`Blend`, `Color Ramp`, `color adjustments`, `normal map`, `FieldPixel`."],
+        ["Displacement & Geometry", "Displacement, Vector Displacement, Geometry (Position, Normal, Tangent)", "`Displacement`, `Field Modifier`."],
     ]
     lines.append(md_table(shader_headers, shader_rows))
     lines.append("")
@@ -262,12 +262,12 @@ def render_markdown(catalog):
     lines.append("")
     lines.append("Blender's post-processing compositor includes real-time viewport compositing and offline passes:")
     lines.append("")
-    comp_headers = ["Category", "Sample Nodes", "Infinite Equivalent"]
+    comp_headers = ["Category", "Sample Nodes", "Infinite equivalent"]
     comp_rows = [
-        ["Filters & Glow", "Glare (Bloom, Streaks, Ghost), Blur, Bilateral Blur, Lens Distortion", "Infinite Bloom, Blur, Lens Distortion, and Edge nodes."],
-        ["Color Correction", "Color Balance (Lift/Gamma/Gain), Hue/Sat, RGB Curves, Brightness/Contrast", "Infinite Color Grade, Levels, and LUT nodes."],
-        ["Keying & Matte", "Keying, Difference Key, Color Spill, Channel Key, Inpaint, Dilate/Erode", "Infinite Chroma Key, Alpha Matte, and Mask nodes."],
-        ["Transform & Layering", "Alpha Over, Mix, Transform, Scale, Translate, Rotate, Displace", "Infinite Blend, Layer Stack, and Transform nodes."],
+        ["Filters & Glow", "Glare (Bloom, Streaks, Ghost), Blur, Bilateral Blur, Lens Distortion", "`bloom`, `gaussianblur`, `lensdistortion`, `edge sobel`."],
+        ["Color Correction", "Color Balance (Lift/Gamma/Gain), Hue/Sat, RGB Curves, Brightness/Contrast", "`color adjustments`, `Curves`, `exposure`, `lut`."],
+        ["Keying & Matte", "Keying, Difference Key, Color Spill, Channel Key, Inpaint, Dilate/Erode", "`chroma key`, `luma key`, `set alpha`, `Remove Background`."],
+        ["Transform & Layering", "Alpha Over, Mix, Transform, Scale, Translate, Rotate, Displace", "`Blend`, `Layer Stack`, `transform`, `displace`."],
     ]
     lines.append(md_table(comp_headers, comp_rows))
     lines.append("")
@@ -279,11 +279,11 @@ def render_markdown(catalog):
     lines.append("")
     lines.append("Blender's non-destructive stack modifiers across Generate, Deform, and Physics:")
     lines.append("")
-    mod_headers = ["Category", "Sample Modifiers", "Infinite Equivalent"]
+    mod_headers = ["Category", "Sample Modifiers", "Infinite equivalent"]
     mod_rows = [
-        ["Generate", "Subdivision Surface, Array, Bevel, Boolean, Mirror, Solidify, Remesh, Screw", "Infinite Subdivide, Array, Mirror, Solidify, Screw, Booleans."],
-        ["Deform", "Armature, Displace, Lattice, Curve, Simple Deform, Shrinkwrap, Smooth", "Infinite Displacement 3D, Twist, Wrap, and Smooth 3D nodes."],
-        ["Physics & Simulation", "Cloth, Collision, Dynamic Paint, Ocean, Fluid, Particle System", "Infinite Cloth 3D, Ocean 3D, and Particle System."],
+        ["Generate", "Subdivision Surface, Array, Bevel, Boolean, Mirror, Solidify, Remesh, Screw", "`Subdivide`, `Array`, `Mirror`, `Solidify`, `Screw`, `Union`, `Difference`, `Intersect`."],
+        ["Deform", "Armature, Displace, Lattice, Curve, Simple Deform, Shrinkwrap, Smooth", "`Displacement`, `Twist`, `Wrap`, `Smooth`."],
+        ["Physics & Simulation", "Cloth, Collision, Dynamic Paint, Ocean, Fluid, Particle System", "`Cloth`, `Ocean`, `Particle System`."],
     ]
     lines.append(md_table(mod_headers, mod_rows))
     lines.append("")

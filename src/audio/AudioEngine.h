@@ -313,6 +313,10 @@ struct AudioTopology
    // still being filled would not).
    std::vector<ClipWindow> clipWindows;
    int numBuffers = 0; // buffer indices used across `order` span [0, numBuffers)
+   // Latency of the summed output after PDC: every non-live terminal lands
+   // this many samples behind its source. An offline render drops this many
+   // leading samples so a bounce through a latent node starts on time.
+   int outputLatencySamples = 0;
 
    // Note-port wiring, DESCRIBED here by RebuildAudioTopology (main.cpp) and
    // APPLIED by AudioEngine::ApplyNoteWiringIfNew - never mutated directly by
@@ -356,6 +360,8 @@ public:
    // cables), not per block, so this one-generation grace window is cheap
    // and sufficient.
    void SetTopology(AudioTopology topology);
+   // outputLatencySamples of the last published topology (main thread).
+   int OutputLatencySamples() const { return mOutputLatencySamples.load(std::memory_order_relaxed); }
 
    double SampleRate() const;
 
@@ -388,6 +394,18 @@ public:
    uint64_t XrunOsCount() const;
    uint64_t CallbackGapCount() const;
    XrunCounts Xruns() const;
+
+   // Master output over full scale (|sample| > 1.0), which the device and every
+   // integer file format hard-clip. Counted on each finished block, live
+   // (after the preview and metronome) and offline. MasterOverPeak() is the
+   // largest sample of the most recent block that went over;
+   // MasterOverPeakHold() is the largest since ResetMasterOverPeakHold()
+   // (a render resets it at its start, so its notice names the worst peak
+   // of the take, not the last one).
+   uint64_t MasterOverSamples() const;
+   float MasterOverPeak() const;
+   float MasterOverPeakHold() const;
+   void ResetMasterOverPeakHold();
 
    // Called by the platform audio backend when the device itself reports an
    // overload/underrun (macOS kAudioDeviceProcessorOverload listener, Windows
@@ -571,6 +589,7 @@ private:
    // DrainRetired(). Main thread only.
    std::vector<ProcessList*> mRetiring;
    std::atomic<bool> mDeviceOpen { false };
+   std::atomic<int> mOutputLatencySamples { 0 };
    double mPumpFrames = 0.0;   // main thread: fractional frames owed to the device-less note pump
    double mPumpLastMs = -1.0;
    void DrainRetired();
@@ -640,6 +659,10 @@ private:
    std::atomic<uint64_t> mXrunDeadline { 0 };
    std::atomic<uint64_t> mXrunOs { 0 };
    std::atomic<uint64_t> mCallbackGaps { 0 };
+   std::atomic<uint64_t> mMasterOvers { 0 };
+   std::atomic<float> mMasterOverPeak { 0.0f };
+   std::atomic<float> mMasterOverPeakHold { 0.0f };
+   void NoteMasterOvers(const AudioBuffer& buffer);
    std::atomic<double> mLastCallbackMs { -1.0 };
    std::atomic<double> mLastBlockLoad { 0.0 };
    std::atomic<bool> mNodeCostOn { false };

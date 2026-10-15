@@ -31,7 +31,7 @@ import tempfile
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, run, write_out  # noqa: E402
+from common import RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, quality_line, run, write_out  # noqa: E402
 import bounce_kit as bk  # noqa: E402
 import plugin_probe as pp  # noqa: E402
 import synth_probe as sp  # noqa: E402
@@ -292,7 +292,10 @@ def analyse_item(item, y, r, sr=SR):
             rs, ro = [v for v in rs if v is not None], [v for v in ro if v is not None]
             if rs and ro:
                 res["smear_ms"] = float(np.median(ro) - np.median(rs))
-        res["crest_loss_db"] = crest_db(src) - crest_db(y)
+        # Against the ideal stretch, not the source: wider gaps between hits raise the crest by themselves
+        # (+2.0 / +0.3 / -1.0 / -3.0 dB at 0.5 / 0.8 / 1.25 / 2x), which read as loss before v0.6 1.6. Clipped
+        # to full scale like any fixed-point bounce: overlapping hits peak at 1.07 (0.5x) and 1.03 (0.8x).
+        res["crest_loss_db"] = crest_db(np.clip(GEN[item](r), -1.0, 1.0)) - crest_db(y)
     elif item == "vocal":
         worst, nh = 0.0, []
         for j, f0 in enumerate(NOTES):
@@ -385,7 +388,21 @@ def report(rows):
     for row in rows:
         if row.get("missing"):
             L.append("- %s missing: %s" % (row["app"], ", ".join(row["missing"])))
+    L += [""] + quality(rows)
     return "\n".join(L) + "\n"
+
+
+def quality(rows):
+    """Worst drums numbers over the four ratios, one QUALITY row each per app (docs/quality/registry.tsv)."""
+    out = []
+    for row in rows:
+        dr = [v for (item, _), v in row["items"].items() if item == "drums" and not v.get("silent")]
+        if len(dr) != len(RATIOS) or any(k not in v for v in dr for k in ("extra", "timing_ms", "crest_loss_db")):
+            continue
+        out += [quality_line("stretch.extra_onsets", row["app"], max(v["extra"] for v in dr)),
+                quality_line("stretch.timing_ms", row["app"], max(v["timing_ms"] for v in dr)),
+                quality_line("stretch.crest_err_db", row["app"], max(abs(v["crest_loss_db"]) for v in dr))]
+    return out
 
 
 # ---------------------------------------------------------------- self-test
@@ -412,8 +429,10 @@ def self_test():
         t.check(not a.get("missing"), "ideal folder complete")
         for r in RATIOS:
             dr = a["items"][("drums", r)]
-            t.check(abs(dr["len_err_pct"]) < 1 and dr["timing_ms"] < 1 and dr["missed"] == 0 and dr["extra"] == 0 and abs(dr["smear_ms"]) <= 2,  # 1 ms blocks; hits overlap at 0.5x
-                    "ideal drums x%g: length %.2f %%, timing %.2f ms, smear %s" % (r, dr["len_err_pct"], dr["timing_ms"], dr.get("smear_ms")))
+            t.check(abs(dr["len_err_pct"]) < 1 and dr["timing_ms"] < 1 and dr["missed"] == 0 and dr["extra"] == 0 and abs(dr["smear_ms"]) <= 2  # 1 ms blocks; hits overlap at 0.5x
+                    and abs(dr["crest_loss_db"]) < 0.1,
+                    "ideal drums x%g: length %.2f %%, timing %.2f ms, smear %s, crest %.2f dB"
+                    % (r, dr["len_err_pct"], dr["timing_ms"], dr.get("smear_ms"), dr["crest_loss_db"]))
             vo = a["items"][("vocal", r)]
             t.check(vo["pitch_cents"] is not None and vo["pitch_cents"] < 2, "ideal vocal x%g pitch %s cents" % (r, vo["pitch_cents"]))
             to = a["items"][("tone", r)]
@@ -428,6 +447,7 @@ def self_test():
         t.check(v["items"][("sweep", 2.0)]["track_cents"] > 1000, "varispeed sweep x2 is an octave off")
         rep = report([a, v])
         t.check("## drums" in rep and "Varispeed" in rep, "report renders")
+        t.check('QUALITY id=stretch.extra_onsets subject="Ideal" value=0.0000' in rep, "QUALITY rows")
     finally:
         shutil.rmtree(d, ignore_errors=True)
     return t.done()

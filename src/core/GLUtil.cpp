@@ -259,6 +259,33 @@ namespace GLUtil
       return 0;
    }
 
+   // A compiled stage, kept by source text. Every instance of a node type
+   // compiles the same source, and compiling is about two thirds of building
+   // a program: adding a second Shape or Blur only links. The cache owns the
+   // stage objects; callers must not delete them.
+   static unsigned int CachedStage(GLenum stage, const char* src, std::string& log)
+   {
+      static std::map<std::string, unsigned int> sStages[2];
+      static constexpr size_t kMaxStages = 512; // a live-typed Field Pixel adds one per edit
+      std::map<std::string, unsigned int>& stages = sStages[stage == GL_VERTEX_SHADER ? 0 : 1];
+      const auto it = stages.find(src);
+      if (it != stages.end())
+         return it->second;
+
+      const unsigned int shader = CompileStage(stage, src, log);
+      if (shader == 0)
+         return 0;
+      if (stages.size() >= kMaxStages)
+      {
+         // Linked programs keep their own copy, so dropping these is safe.
+         for (const auto& entry : stages)
+            glDeleteShader(entry.second);
+         stages.clear();
+      }
+      stages.emplace(src, shader);
+      return shader;
+   }
+
    unsigned int ImageWorkingFormat()
    {
       static const unsigned int sFormat = getenv("INFINITE_IMAGE_RGBA8") != nullptr ? GL_RGBA8 : GL_RGBA16F;
@@ -325,6 +352,13 @@ namespace GLUtil
       "   return sign(c) * mix(a * 12.92, 1.055 * pow(a, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, a));\n"
       "}\n";
 
+   void WarmFragmentStage(const char* fragSrc)
+   {
+      std::string log;
+      CachedStage(GL_VERTEX_SHADER, kVertSrc, log);
+      CachedStage(GL_FRAGMENT_SHADER, fragSrc, log);
+   }
+
    unsigned int CompileProgram(const char* fragSrc, std::string* outError)
    {
       auto fail = [outError](const char* stage, const std::string& log) -> unsigned int
@@ -337,16 +371,13 @@ namespace GLUtil
       };
 
       std::string log;
-      const unsigned int vert = CompileStage(GL_VERTEX_SHADER, kVertSrc, log);
+      const unsigned int vert = CachedStage(GL_VERTEX_SHADER, kVertSrc, log);
       if (vert == 0)
          return fail("shader error: ", log);
 
-      const unsigned int frag = CompileStage(GL_FRAGMENT_SHADER, fragSrc, log);
+      const unsigned int frag = CachedStage(GL_FRAGMENT_SHADER, fragSrc, log);
       if (frag == 0)
-      {
-         glDeleteShader(vert);
          return fail("shader error: ", log);
-      }
 
       // Attribute slots are fixed before linking so the shared quad's VAO
       // layout (EnsureQuad) matches every program without a lookup.
@@ -357,11 +388,9 @@ namespace GLUtil
       glAttachShader(program, frag);
       glLinkProgram(program);
 
-      // The linked program keeps its own copy; the stage objects are done.
+      // The linked program keeps its own copy; the stages stay in the cache.
       glDetachShader(program, vert);
       glDetachShader(program, frag);
-      glDeleteShader(vert);
-      glDeleteShader(frag);
 
       GLint linked = 0;
       glGetProgramiv(program, GL_LINK_STATUS, &linked);

@@ -150,6 +150,17 @@ Note the state path is reached from `Patch::SaveParams` →
 i.e. on nearly every graph edit, not just explicit saves. That is why a
 latent `getState()` bug reads to the user as a random background crash.
 
+## Is it ours at all? Check outside Infinite first
+
+`python3 tools/re-survey/host_audit.py run --filter <name>` loads the plugin in our host, runs Apple's
+`auval` on the AU and reads the bundle's signature. Its `Whose` column says `plugin` only with evidence
+from outside Infinite: `auval` dies too (the VST3 of the same product inherits that), or macOS rejects the
+signature. `host?` means it is still ours to explain.
+
+Known plugin-side crashes on the owner's machine (2026-10-13): RC-20 Retro Color 1.5.0 (null deref in its
+own code during creation; `auval` and `AUHostingServiceXPC` crash at the same frames; signed by someone
+other than the vendor) and ShaperBox 3 (signature invalid, killed by macOS). Both are Tier 3.
+
 ## Still open
 
 - **EZkeys 2 `OSStatus -10875`** — never reproduced or diagnosed.

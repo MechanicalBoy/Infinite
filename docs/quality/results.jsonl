@@ -1381,3 +1381,926 @@
 {"ts": "2026-10-13T08:00:11+00:00", "commit": "c5fd65c0", "host": "Mac14,7", "note": "F17 fix: Subdivide skips weld-degenerate triangles", "id": "geo.winding_mismatch", "subject": "node:one ball r96", "value": 0.0}
 {"ts": "2026-10-13T08:00:11+00:00", "commit": "c5fd65c0", "host": "Mac14,7", "note": "F17 fix: Subdivide skips weld-degenerate triangles", "id": "geo.winding_mismatch", "subject": "node:pinned", "value": 0.0}
 {"ts": "2026-10-13T08:00:11+00:00", "commit": "c5fd65c0", "host": "Mac14,7", "note": "F17 fix: Subdivide skips weld-degenerate triangles", "id": "geo.winding_mismatch", "subject": "node:realised", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Audio Filter", "value": 0.2927}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Bitcrush", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Chorus", "value": -0.0014}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Cycle Shaper", "value": -0.0012}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Delay", "value": -0.0898}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Drive", "value": 0.7724}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Dynamics", "value": 9.036}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:EQ", "value": 3.9371}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Flanger", "value": 3.5406}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Formant Filter", "value": 4.6295}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Frequency Shifter", "value": 0.3991}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Key-Snap", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Limiter", "value": 8.7624}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Phaser", "value": 0.3851}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Pitch Shifter", "value": -0.0001}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Resonator Bank", "value": 4.0549}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Reverb", "value": -0.5789}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Ring Mod", "value": -0.0013}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Shape Resonator", "value": -0.1559}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Spec Blur", "value": -0.028}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Spectrum Slide", "value": -0.0009}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Stereo", "value": 0.2176}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Stutter", "value": -30.8211}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Transient Shaper", "value": 8.8079}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Tremolo", "value": -0.0095}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.click_db", "subject": "node:Wavetable Shaper", "value": 8.798}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Audio Filter", "value": -68.4854}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Bitcrush", "value": -55.1102}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Chorus", "value": -69.1289}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Cycle Shaper", "value": -76.5219}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Delay", "value": -68.8274}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Drive", "value": -78.0937}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Dynamics", "value": -69.6502}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:EQ", "value": -68.556}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Flanger", "value": -64.1726}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Formant Filter", "value": -98.0866}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Frequency Shifter", "value": -69.3423}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Key-Snap", "value": -73.497}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Limiter", "value": -68.5291}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Phaser", "value": -61.7986}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Pitch Shifter", "value": -68.6162}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Resonator Bank", "value": -94.9343}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Reverb", "value": -61.7222}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Ring Mod", "value": -76.9926}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Shape Resonator", "value": -90.6385}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Spec Blur", "value": -79.1479}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Spectrum Slide", "value": -70.1905}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Stereo", "value": -68.5497}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Stutter", "value": -64.4269}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Transient Shaper", "value": -68.5497}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Tremolo", "value": -70.9745}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.dc_dbfs", "subject": "node:Wavetable Shaper", "value": -74.4296}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Audio Filter", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Bitcrush", "value": 0.0013}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Chorus", "value": 0.1203}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Cycle Shaper", "value": 0.0078}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Delay", "value": 0.0007}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Drive", "value": 0.0062}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Dynamics", "value": 0.0978}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:EQ", "value": 0.0005}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Flanger", "value": 0.1469}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Formant Filter", "value": 0.266}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Frequency Shifter", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Key-Snap", "value": 0.9958}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Limiter", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Phaser", "value": 0.2435}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Pitch Shifter", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Resonator Bank", "value": 0.4128}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Reverb", "value": 0.8239}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Ring Mod", "value": 0.1153}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Shape Resonator", "value": 0.4649}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Spec Blur", "value": 0.4465}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Spectrum Slide", "value": 0.0314}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Stereo", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Stutter", "value": 0.1303}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Transient Shaper", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Tremolo", "value": 0.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.rate_spread_db", "subject": "node:Wavetable Shaper", "value": 0.0034}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Audio Filter", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Bitcrush", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Chorus", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Cycle Shaper", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Delay", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Drive", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Dynamics", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:EQ", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Flanger", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Formant Filter", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Frequency Shifter", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Key-Snap", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Limiter", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Phaser", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Pitch Shifter", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Resonator Bank", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Reverb", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Ring Mod", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Shape Resonator", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Spec Blur", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Spectrum Slide", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Stereo", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Stutter", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Transient Shaper", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Tremolo", "value": -240.0}
+{"ts": "2026-10-13T12:50:19+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.2/1.3: F13 F14 closed", "id": "fx.tail_dbfs", "subject": "node:Wavetable Shaper", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.alias_db", "subject": "node:Analog", "value": -84.8947}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.alias_db", "subject": "node:Equation Synth", "value": -85.7927}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.alias_db", "subject": "node:Oscillator", "value": -82.6288}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.alias_db", "subject": "node:Wavetable", "value": -88.3683}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Analog", "value": -4.4971}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Equation Synth", "value": -2.7045}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Field Synth", "value": -1.1467}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Grain Molder", "value": -2.5016}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Granular", "value": -11.5424}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:MPC", "value": -13.4784}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Metallic", "value": -8.1067}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Molder", "value": -12.3681}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Oscillator", "value": -7.0185}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:PaulStretch", "value": -14.0792}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Sampler", "value": -5.7236}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Slicer", "value": -13.4784}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Spectral Synth", "value": -21.8362}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Wave Terrain", "value": -2.9788}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.chord4_peak_dbfs", "subject": "node:Wavetable", "value": -7.5185}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Analog", "value": -0.1418}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Equation Synth", "value": -0.0027}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Field Synth", "value": -10.5239}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Grain Molder", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Granular", "value": -0.0644}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:MPC", "value": -0.0428}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Metallic", "value": -32.583}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Molder", "value": -0.1672}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Oscillator", "value": -0.1275}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:PaulStretch", "value": -6.5187}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Sampler", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Slicer", "value": -0.0087}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Spectral Synth", "value": -23.542}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Wave Terrain", "value": -0.1304}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_off_db", "subject": "node:Wavetable", "value": -0.0554}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Analog", "value": -5.0434}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Equation Synth", "value": -0.6961}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Field Synth", "value": -20.9821}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Grain Molder", "value": 0.0556}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Granular", "value": -11.7423}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:MPC", "value": -0.781}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Metallic", "value": -1.9082}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Molder", "value": -0.746}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Oscillator", "value": 0.1043}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:PaulStretch", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Sampler", "value": 0.1602}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Slicer", "value": -0.781}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Spectral Synth", "value": -43.1693}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Wave Terrain", "value": -2.3196}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.click_on_db", "subject": "node:Wavetable", "value": 5.7035}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Analog", "value": 305.1542}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Equation Synth", "value": 58.233}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Grain Molder", "value": 12.0161}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Granular", "value": 42.1665}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Metallic", "value": 93.5219}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Molder", "value": 9.7837}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Oscillator", "value": 134.2807}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:PaulStretch", "value": 132.1143}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Sampler", "value": 33.1015}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Spectral Synth", "value": 347.6449}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Wave Terrain", "value": 54.8101}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.cpu_ns_frame", "subject": "node:Wavetable", "value": 90.2587}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Analog", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Equation Synth", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Grain Molder", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Granular", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Metallic", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Molder", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Oscillator", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:PaulStretch", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Sampler", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Spectral Synth", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Wave Terrain", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.det_differs", "subject": "node:Wavetable", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.note_cents", "subject": "node:Analog", "value": 0.009}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.note_cents", "subject": "node:Equation Synth", "value": 0.009}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.note_cents", "subject": "node:Oscillator", "value": 0.009}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.note_cents", "subject": "node:Wavetable", "value": 0.009}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Analog", "value": -3.1099}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Equation Synth", "value": -7.9338}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Grain Molder", "value": -11.5402}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Granular", "value": -11.5424}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Metallic", "value": -14.3764}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Molder", "value": -12.3681}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Oscillator", "value": -5.7017}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:PaulStretch", "value": -14.0792}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Sampler", "value": -11.5402}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Spectral Synth", "value": -23.8315}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Wave Terrain", "value": -8.0577}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.peak_dbfs", "subject": "node:Wavetable", "value": -7.0622}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.pitch_cents", "subject": "node:Analog", "value": 0.0345}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.pitch_cents", "subject": "node:Equation Synth", "value": 0.0345}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.pitch_cents", "subject": "node:Oscillator", "value": 0.0345}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.pitch_cents", "subject": "node:Wavetable", "value": 0.0345}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Analog", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Equation Synth", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Field Synth", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Grain Molder", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:MPC", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Metallic", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Oscillator", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Sampler", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Slicer", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Spectral Synth", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Wave Terrain", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.poly_tail_dbfs", "subject": "node:Wavetable", "value": -240.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Analog", "value": 0.0379}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Equation Synth", "value": 0.0079}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Grain Molder", "value": 0.0042}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Granular", "value": 0.0013}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Metallic", "value": 0.1442}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Molder", "value": 0.0042}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Oscillator", "value": 0.0573}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:PaulStretch", "value": 0.8237}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Sampler", "value": 0.0042}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Spectral Synth", "value": 0.0543}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Wave Terrain", "value": 0.051}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.rate_spread_db", "subject": "node:Wavetable", "value": 0.0}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_length_ratio", "subject": "node:Drum Sequencer", "value": 1.0025}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_length_ratio", "subject": "node:Grain Molder", "value": 1.0025}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_length_ratio", "subject": "node:Granular", "value": 1.0035}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_length_ratio", "subject": "node:MPC", "value": 1.0025}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_length_ratio", "subject": "node:Molder", "value": 1.0025}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_length_ratio", "subject": "node:PaulStretch", "value": 1.0035}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_length_ratio", "subject": "node:Sampler", "value": 1.0025}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_length_ratio", "subject": "node:Slicer", "value": 1.0025}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_pitch_spread_c", "subject": "node:Drum Sequencer", "value": 0.0248}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_pitch_spread_c", "subject": "node:Grain Molder", "value": 0.0162}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_pitch_spread_c", "subject": "node:Granular", "value": 0.0249}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_pitch_spread_c", "subject": "node:MPC", "value": 0.0248}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_pitch_spread_c", "subject": "node:Molder", "value": 0.0102}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_pitch_spread_c", "subject": "node:PaulStretch", "value": 6.847}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_pitch_spread_c", "subject": "node:Sampler", "value": 0.0158}
+{"ts": "2026-10-13T12:50:20+00:00", "commit": "8101f4b8", "host": "Mac14,7", "note": "v0.6 1.4: F1 closed, mailbox priming", "id": "synth.sample_pitch_spread_c", "subject": "node:Slicer", "value": 0.0248}
+{"ts": "2026-10-13T13:48:36+00:00", "commit": "ab741380", "host": "Mac14,7", "note": "v0.6 1.5: analysis refreshed before modulation bindings", "id": "av.beat_lock_pct", "subject": "Infinite", "value": 100.0}
+{"ts": "2026-10-13T13:48:36+00:00", "commit": "ab741380", "host": "Mac14,7", "note": "v0.6 1.5: analysis refreshed before modulation bindings", "id": "av.clock_lock_pct", "subject": "Infinite", "value": 100.0}
+{"ts": "2026-10-13T13:48:36+00:00", "commit": "ab741380", "host": "Mac14,7", "note": "v0.6 1.5: analysis refreshed before modulation bindings", "id": "av.drift_ms_min", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T13:48:36+00:00", "commit": "ab741380", "host": "Mac14,7", "note": "v0.6 1.5: analysis refreshed before modulation bindings", "id": "av.react_jitter_ms", "subject": "Infinite", "value": 9.3315}
+{"ts": "2026-10-13T13:48:36+00:00", "commit": "ab741380", "host": "Mac14,7", "note": "v0.6 1.5: analysis refreshed before modulation bindings", "id": "av.react_latency_ms", "subject": "Infinite", "value": 16.6253}
+{"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.crest_err_db", "subject": "Infinite", "value": 2.4993}
+{"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.extra_onsets", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T14:11:29+00:00", "commit": "aa7da27f", "host": "Mac14,7", "note": "v0.6 1.6 transient-aware stretch (stretch_kit, Infinite)", "id": "stretch.timing_ms", "subject": "Infinite", "value": 3.25}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.cloth_stretch_pct", "subject": "node:Cloth", "value": 1.3891}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.decimate_bbox_pct", "subject": "node:Decimate", "value": 0.8511}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.inst_mirrored", "subject": "node:Instance on Points", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Capsule", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Cone", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Cylinder", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Dodecahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Icosphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Normals on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Normals on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Octahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Prism", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Pyramid", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Rounded Cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Smooth on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Smooth on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Solidify on a plane", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Solidify on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Solidify on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Subdivide on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Subdivide on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Tetrahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Torus", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Transform on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Transform on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Twist on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:Twist on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:one ball r24", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:one ball r40", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.nonmanifold", "subject": "node:one ball r96", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:8 balls r96", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Array on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Array on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Arrow 3D", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Capsule", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Cone", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Curve Ops hostile", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Curve Ops no input", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Curve source tube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Cylinder", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Decimate Icosphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Decimate Torus", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Decimate on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Decimate on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Delaunay", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Delete on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Delete on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Disc", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Dodecahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Explode on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Explode on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Extrude on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Extrude on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Gear 3D", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Helix", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Icosphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Join merge", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Klein Bottle", "value": 7.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Merge by Distance", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Metaballs", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Metaballs extreme", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Mirror on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Mirror on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Mobius Strip", "value": 2.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Normals on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Normals on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Ocean", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Octahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Plane", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Prism", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Pyramid", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Rounded Cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Screw on cube", "value": 1456.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Screw on sphere", "value": 14608.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Select on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Select on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Smooth on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Smooth on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Solidify on a plane", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Solidify on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Solidify on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Star 3D", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Subdivide on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Subdivide on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Supershape", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Tetrahedron", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Torus", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Torus Knot", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Transform on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Transform on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Triangulate on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Triangulate on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Tube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Twist on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Twist on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Voronoi", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Wireframe on cube", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:Wireframe on sphere", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:default", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:node Offset", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:node Resample", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:node Simplify", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:node Smooth", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:one ball r24", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:one ball r40", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:one ball r96", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:pinned", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 GEOAUDIT re-sweep", "id": "geo.winding_mismatch", "subject": "node:realised", "value": 0.0}
+{"ts": "2026-10-13T14:12:03+00:00", "commit": "c2f7d0d1", "host": "Mac14,7", "note": "v0.6 1.8 COMPAUDIT re-sweep", "id": "comp.blend_x255", "subject": "node:Blend", "value": 0.1253}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Audio Filter", "value": 0.2927}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Bitcrush", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Chorus", "value": -0.0014}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Cycle Shaper", "value": -0.0012}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Delay", "value": -0.0898}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Drive", "value": 0.7724}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Dynamics", "value": 8.9992}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:EQ", "value": 3.9371}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Flanger", "value": 3.5406}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Formant Filter", "value": 4.6295}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Frequency Shifter", "value": 0.3991}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Key-Snap", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Limiter", "value": 8.7624}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Phaser", "value": 0.3851}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Pitch Shifter", "value": -0.0001}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Resonator Bank", "value": 4.0549}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Reverb", "value": -0.5789}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Ring Mod", "value": -0.0013}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Shape Resonator", "value": -0.1559}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Spec Blur", "value": -0.028}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Spectrum Slide", "value": -0.0009}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Stereo", "value": 0.2176}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Stutter", "value": -30.8211}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Transient Shaper", "value": 8.8079}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Tremolo", "value": -0.0095}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.click_db", "subject": "node:Wavetable Shaper", "value": 8.798}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Audio Filter", "value": -68.4854}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Bitcrush", "value": -55.1102}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Chorus", "value": -69.1289}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Cycle Shaper", "value": -76.5219}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Delay", "value": -68.8274}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Drive", "value": -78.0937}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Dynamics", "value": -68.5497}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:EQ", "value": -68.556}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Flanger", "value": -64.1726}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Formant Filter", "value": -98.0866}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Frequency Shifter", "value": -69.3423}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Key-Snap", "value": -73.497}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Limiter", "value": -68.5291}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Phaser", "value": -61.7986}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Pitch Shifter", "value": -68.6162}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Resonator Bank", "value": -94.9343}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Reverb", "value": -61.7222}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Ring Mod", "value": -76.9926}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Shape Resonator", "value": -90.6385}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Spec Blur", "value": -79.1479}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Spectrum Slide", "value": -70.1905}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Stereo", "value": -68.5497}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Stutter", "value": -64.4269}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Transient Shaper", "value": -68.5497}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Tremolo", "value": -70.9745}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.dc_dbfs", "subject": "node:Wavetable Shaper", "value": -74.4296}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Audio Filter", "value": 1.9542}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Bitcrush", "value": 0.0518}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Chorus", "value": 0.3329}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Cycle Shaper", "value": 2.1736}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Delay", "value": 0.1705}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Drive", "value": 5.309}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Dynamics", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:EQ", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Flanger", "value": 0.8783}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Formant Filter", "value": 3.8798}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Frequency Shifter", "value": 0.2511}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Key-Snap", "value": 1.5505}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Limiter", "value": 0.0019}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Phaser", "value": 0.6666}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Pitch Shifter", "value": 0.0001}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Resonator Bank", "value": 3.3366}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Reverb", "value": 0.404}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Ring Mod", "value": 3.0201}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Shape Resonator", "value": 10.8155}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Spec Blur", "value": 4.6629}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Spectrum Slide", "value": 0.3938}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Stereo", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Stutter", "value": 0.521}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Transient Shaper", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Tremolo", "value": 2.7212}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.insert_gain_db", "subject": "node:Wavetable Shaper", "value": 8.9635}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Audio Filter", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Bitcrush", "value": 0.0013}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Chorus", "value": 0.1203}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Cycle Shaper", "value": 0.0078}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Delay", "value": 0.0007}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Drive", "value": 0.0062}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Dynamics", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:EQ", "value": 0.0005}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Flanger", "value": 0.1469}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Formant Filter", "value": 0.266}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Frequency Shifter", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Key-Snap", "value": 0.9958}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Limiter", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Phaser", "value": 0.2435}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Pitch Shifter", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Resonator Bank", "value": 0.4128}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Reverb", "value": 0.8239}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Ring Mod", "value": 0.1153}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Shape Resonator", "value": 0.4649}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Spec Blur", "value": 0.4465}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Spectrum Slide", "value": 0.0314}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Stereo", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Stutter", "value": 0.1303}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Transient Shaper", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Tremolo", "value": 0.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.rate_spread_db", "subject": "node:Wavetable Shaper", "value": 0.0034}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Audio Filter", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Bitcrush", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Chorus", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Cycle Shaper", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Delay", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Drive", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Dynamics", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:EQ", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Flanger", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Formant Filter", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Frequency Shifter", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Key-Snap", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Limiter", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Phaser", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Pitch Shifter", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Resonator Bank", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Reverb", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Ring Mod", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Shape Resonator", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Spec Blur", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Spectrum Slide", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Stereo", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Stutter", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Transient Shaper", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Tremolo", "value": -240.0}
+{"ts": "2026-10-13T14:44:24+00:00", "commit": "55f36a04", "host": "Mac14,7", "note": "v0.6 1.9", "id": "fx.tail_dbfs", "subject": "node:Wavetable Shaper", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Audio Filter", "value": 0.2927}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Bitcrush", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Chorus", "value": -0.0014}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Cycle Shaper", "value": -0.0012}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Delay", "value": -0.0898}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Drive", "value": 0.7724}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Dynamics", "value": 8.9992}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:EQ", "value": 3.9371}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Flanger", "value": 3.5406}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Formant Filter", "value": 4.6295}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Frequency Shifter", "value": 0.3991}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Key-Snap", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Limiter", "value": 8.7624}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Phaser", "value": 0.3851}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Pitch Shifter", "value": -0.0001}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Resonator Bank", "value": 4.0549}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Reverb", "value": -0.5789}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Ring Mod", "value": -0.0013}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Shape Resonator", "value": -0.1559}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Spec Blur", "value": -0.028}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Spectrum Slide", "value": -0.0009}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Stereo", "value": 0.2176}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Stutter", "value": -30.8211}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Transient Shaper", "value": 8.8079}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Tremolo", "value": -0.0095}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.click_db", "subject": "node:Wavetable Shaper", "value": 8.798}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Audio Filter", "value": -68.4854}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Bitcrush", "value": -55.1102}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Chorus", "value": -69.1289}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Cycle Shaper", "value": -76.5219}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Delay", "value": -68.8274}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Drive", "value": -78.0937}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Dynamics", "value": -68.5497}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:EQ", "value": -68.556}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Flanger", "value": -64.1726}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Formant Filter", "value": -98.0866}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Frequency Shifter", "value": -69.3423}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Key-Snap", "value": -73.497}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Limiter", "value": -68.5291}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Phaser", "value": -61.7986}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Pitch Shifter", "value": -68.6162}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Resonator Bank", "value": -94.9343}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Reverb", "value": -61.7222}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Ring Mod", "value": -76.9926}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Shape Resonator", "value": -90.6385}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Spec Blur", "value": -79.1479}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Spectrum Slide", "value": -70.1905}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Stereo", "value": -68.5497}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Stutter", "value": -64.4269}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Transient Shaper", "value": -68.5497}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Tremolo", "value": -70.9745}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.dc_dbfs", "subject": "node:Wavetable Shaper", "value": -74.4296}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.hot_null_db", "subject": "node:Chorus", "value": -143.6974}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.hot_null_db", "subject": "node:Flanger", "value": -142.9658}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Audio Filter", "value": 1.9542}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Bitcrush", "value": 0.0518}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Chorus", "value": 0.3329}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Cycle Shaper", "value": 2.1736}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Delay", "value": 0.1705}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Drive", "value": 5.309}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Dynamics", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:EQ", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Flanger", "value": 0.8783}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Formant Filter", "value": 3.8798}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Frequency Shifter", "value": 0.2511}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Key-Snap", "value": 1.5505}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Limiter", "value": 0.0019}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Phaser", "value": 0.6666}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Pitch Shifter", "value": 0.0001}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Resonator Bank", "value": 3.3366}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Reverb", "value": 0.404}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Ring Mod", "value": 3.0201}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Shape Resonator", "value": 10.8155}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Spec Blur", "value": 4.6629}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Spectrum Slide", "value": 0.3938}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Stereo", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Stutter", "value": 0.521}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Transient Shaper", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Tremolo", "value": 2.7212}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.insert_gain_db", "subject": "node:Wavetable Shaper", "value": 8.9635}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Audio Filter", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Bitcrush", "value": 0.0013}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Chorus", "value": 0.1203}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Cycle Shaper", "value": 0.0078}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Delay", "value": 0.0007}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Drive", "value": 0.0062}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Dynamics", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:EQ", "value": 0.0005}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Flanger", "value": 0.1469}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Formant Filter", "value": 0.266}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Frequency Shifter", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Key-Snap", "value": 0.9958}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Limiter", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Phaser", "value": 0.2435}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Pitch Shifter", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Resonator Bank", "value": 0.4128}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Reverb", "value": 0.8239}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Ring Mod", "value": 0.1153}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Shape Resonator", "value": 0.4649}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Spec Blur", "value": 0.4465}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Spectrum Slide", "value": 0.0314}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Stereo", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Stutter", "value": 0.1303}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Transient Shaper", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Tremolo", "value": 0.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.rate_spread_db", "subject": "node:Wavetable Shaper", "value": 0.0034}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Audio Filter", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Bitcrush", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Chorus", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Cycle Shaper", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Delay", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Drive", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Dynamics", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:EQ", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Flanger", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Formant Filter", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Frequency Shifter", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Key-Snap", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Limiter", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Phaser", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Pitch Shifter", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Resonator Bank", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Reverb", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Ring Mod", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Shape Resonator", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Spec Blur", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Spectrum Slide", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Stereo", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Stutter", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Transient Shaper", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Tremolo", "value": -240.0}
+{"ts": "2026-10-13T14:48:07+00:00", "commit": "0531853e", "host": "Mac14,7", "note": "v0.6 1.10", "id": "fx.tail_dbfs", "subject": "node:Wavetable Shaper", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.alias_db", "subject": "node:Analog", "value": -84.8947}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.alias_db", "subject": "node:Equation Synth", "value": -85.7927}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.alias_db", "subject": "node:Field Synth", "value": -88.1124}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.alias_db", "subject": "node:Oscillator", "value": -82.6288}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.alias_db", "subject": "node:Wavetable", "value": -88.3683}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Analog", "value": -4.4971}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Equation Synth", "value": -2.7045}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Field Synth", "value": -2.328}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Grain Molder", "value": -2.5016}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Granular", "value": -11.5424}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:MPC", "value": -13.4784}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Metallic", "value": -8.1067}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Molder", "value": -12.3681}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Oscillator", "value": -7.0185}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:PaulStretch", "value": -14.0792}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Sampler", "value": -5.7236}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Slicer", "value": -13.4784}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Spectral Synth", "value": -21.8362}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Wave Terrain", "value": -2.9788}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.chord4_peak_dbfs", "subject": "node:Wavetable", "value": -7.5185}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Analog", "value": -0.1418}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Equation Synth", "value": -0.0027}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Field Synth", "value": -7.8025}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Grain Molder", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Granular", "value": -0.0644}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:MPC", "value": -0.0428}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Metallic", "value": -32.583}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Molder", "value": -0.1672}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Oscillator", "value": -0.1275}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:PaulStretch", "value": -6.5187}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Sampler", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Slicer", "value": -0.0087}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Spectral Synth", "value": -23.542}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Wave Terrain", "value": -0.1304}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_off_db", "subject": "node:Wavetable", "value": -0.0554}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Analog", "value": -5.0434}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Equation Synth", "value": -0.6961}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Field Synth", "value": -18.3597}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Grain Molder", "value": 0.0556}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Granular", "value": -11.7423}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:MPC", "value": -0.781}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Metallic", "value": -1.9082}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Molder", "value": -0.746}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Oscillator", "value": 0.1043}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:PaulStretch", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Sampler", "value": 0.1602}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Slicer", "value": -0.781}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Spectral Synth", "value": -43.1693}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Wave Terrain", "value": -2.3196}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.click_on_db", "subject": "node:Wavetable", "value": 5.7035}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Analog", "value": 302.8952}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Equation Synth", "value": 58.6074}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Grain Molder", "value": 11.5326}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Granular", "value": 42.3027}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Metallic", "value": 87.9934}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Molder", "value": 9.8276}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Oscillator", "value": 122.175}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:PaulStretch", "value": 133.1367}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Sampler", "value": 30.8067}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Spectral Synth", "value": 346.88}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Wave Terrain", "value": 54.0712}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.cpu_ns_frame", "subject": "node:Wavetable", "value": 83.2675}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Analog", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Equation Synth", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Grain Molder", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Granular", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Metallic", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Molder", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Oscillator", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:PaulStretch", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Sampler", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Spectral Synth", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Wave Terrain", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.det_differs", "subject": "node:Wavetable", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.note_cents", "subject": "node:Analog", "value": 0.009}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.note_cents", "subject": "node:Equation Synth", "value": 0.009}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.note_cents", "subject": "node:Oscillator", "value": 0.009}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.note_cents", "subject": "node:Wavetable", "value": 0.009}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Analog", "value": -3.1099}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Equation Synth", "value": -7.9338}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Grain Molder", "value": -11.5402}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Granular", "value": -11.5424}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Metallic", "value": -14.3764}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Molder", "value": -12.3681}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Oscillator", "value": -5.7017}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:PaulStretch", "value": -14.0792}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Sampler", "value": -11.5402}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Spectral Synth", "value": -23.8315}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Wave Terrain", "value": -8.0577}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.peak_dbfs", "subject": "node:Wavetable", "value": -7.0622}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.pitch_cents", "subject": "node:Analog", "value": 0.0345}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.pitch_cents", "subject": "node:Equation Synth", "value": 0.0345}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.pitch_cents", "subject": "node:Oscillator", "value": 0.0345}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.pitch_cents", "subject": "node:Wavetable", "value": 0.0345}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Analog", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Equation Synth", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Field Synth", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Grain Molder", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:MPC", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Metallic", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Oscillator", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Sampler", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Slicer", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Spectral Synth", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Wave Terrain", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.poly_tail_dbfs", "subject": "node:Wavetable", "value": -240.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Analog", "value": 0.0379}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Equation Synth", "value": 0.0079}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Grain Molder", "value": 0.0042}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Granular", "value": 0.0013}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Metallic", "value": 0.1442}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Molder", "value": 0.0042}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Oscillator", "value": 0.0573}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:PaulStretch", "value": 0.8237}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Sampler", "value": 0.0042}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Spectral Synth", "value": 0.0543}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Wave Terrain", "value": 0.051}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.rate_spread_db", "subject": "node:Wavetable", "value": 0.0}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_length_ratio", "subject": "node:Drum Sequencer", "value": 1.0025}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_length_ratio", "subject": "node:Grain Molder", "value": 1.0025}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_length_ratio", "subject": "node:Granular", "value": 1.0035}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_length_ratio", "subject": "node:MPC", "value": 1.0025}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_length_ratio", "subject": "node:Molder", "value": 1.0025}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_length_ratio", "subject": "node:PaulStretch", "value": 1.0035}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_length_ratio", "subject": "node:Sampler", "value": 1.0025}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_length_ratio", "subject": "node:Slicer", "value": 1.0025}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:Drum Sequencer", "value": 0.0248}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:Grain Molder", "value": 0.0162}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:Granular", "value": 0.0249}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:MPC", "value": 0.0248}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:Molder", "value": 0.0102}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:PaulStretch", "value": 6.847}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:Sampler", "value": 0.0158}
+{"ts": "2026-10-13T15:02:35+00:00", "commit": "db820427", "host": "Mac14,7", "note": "v0.6 1.11", "id": "synth.sample_pitch_spread_c", "subject": "node:Slicer", "value": 0.0248}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.beat_lock_pct", "subject": "Infinite", "value": 100.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.clock_lock_pct", "subject": "Infinite", "value": 100.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.drift_ms_min", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.react_jitter_ms", "subject": "Infinite", "value": 9.3315}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "av.react_latency_ms", "subject": "Infinite", "value": 16.6253}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: AudioFilter", "value": 0.1875}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Chorus", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Delay", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Drive", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dry", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dynamics", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: EQ", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Flanger", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Limiter", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Phaser", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Reverb", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: AudioFilter", "value": -90.7604}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Chorus", "value": -102.4367}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Drive", "value": -35.0135}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dry", "value": -92.2117}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dynamics", "value": -92.2117}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: EQ", "value": -97.2956}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Flanger", "value": -91.975}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Limiter", "value": -92.2117}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Phaser", "value": -110.483}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Analog", "value": -81.1983}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: EquationSynth", "value": -83.8895}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: FieldSynth", "value": -3.6556}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Metallic", "value": -6.2842}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Oscillator", "value": -82.1419}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Wavetable", "value": -83.9169}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Analog", "value": 0.1736}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: EquationSynth", "value": 0.1738}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: FieldSynth", "value": 6.9031}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Metallic", "value": 41.4494}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Oscillator", "value": 0.1742}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Wavetable", "value": 0.1737}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "geo.instance_ms", "subject": "Infinite", "value": 3.0778}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "geo.subdiv_ms", "subject": "Infinite", "value": 7.1944}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "host.ok_pct", "subject": "Infinite: AU", "value": 97.619}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "host.ok_pct", "subject": "Infinite: VST3", "value": 97.5904}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "host.unexplained_crashes", "subject": "Infinite: AU", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "host.unexplained_crashes", "subject": "Infinite: VST3", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "load.ms_per_track_s", "subject": "node:Analog+node:EQ", "value": 68.309}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "load.ms_per_track_s", "subject": "node:Wavetable+node:Reverb", "value": 18.172}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "load.tracks_at_70pct", "subject": "node:Analog+node:EQ", "value": 10.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "load.tracks_at_70pct", "subject": "node:Wavetable+node:Reverb", "value": 34.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "patch.community_fail", "subject": "Infinite: community patches", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_fail", "subject": "Infinite: 10 nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_fail", "subject": "Infinite: 100 nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_fail", "subject": "Infinite: 1000 nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_fail", "subject": "Infinite: 4000 nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "project.load_s", "subject": "Infinite: 4000 nodes", "value": 0.8739}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: blur_1080p", "value": 44.3403}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: blur_2160p", "value": 44.8708}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: blur_720p", "value": 46.1327}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: instanced_1080p", "value": 29.6929}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: instanced_2160p", "value": 32.1598}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Blender: instanced_720p", "value": 28.8302}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: blur_1080p", "value": 51.8106}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: blur_2160p", "value": 51.5428}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: blur_720p", "value": 50.6323}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: instanced_1080p", "value": 36.3903}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: instanced_2160p", "value": 37.0964}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.h264_psnr_db", "subject": "Infinite: instanced_720p", "value": 35.4653}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_1080p/h264", "value": 1.1648}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_1080p/prores4444", "value": 1.1697}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_2160p/h264", "value": 0.4339}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_2160p/prores4444", "value": 0.4704}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_720p/h264", "value": 1.5552}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: blur_720p/prores4444", "value": 1.5768}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_1080p/h264", "value": 0.5866}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_1080p/prores4444", "value": 0.6643}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_2160p/h264", "value": 0.1938}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_2160p/prores4444", "value": 0.207}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_720p/h264", "value": 0.8703}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Blender: instanced_720p/prores4444", "value": 0.8831}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_1080p/h264", "value": 81.001}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_1080p/prores4444", "value": 81.4345}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_2160p/h264", "value": 49.9686}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_2160p/prores4444", "value": 44.4563}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_720p/h264", "value": 263.358}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: blur_720p/prores4444", "value": 170.323}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_1080p/h264", "value": 73.2348}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_1080p/prores4444", "value": 80.2315}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_2160p/h264", "value": 60.1549}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_2160p/prores4444", "value": 56.7598}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_720p/h264", "value": 200.6974}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.movie_fps", "subject": "Infinite: instanced_720p/prores4444", "value": 128.2936}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.sync_drift_ms_min", "subject": "Blender", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.sync_drift_ms_min", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.sync_offset_ms", "subject": "Blender", "value": 0.0208}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "render.sync_offset_ms", "subject": "Infinite", "value": 0.0417}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "sim.cloth_ms", "subject": "Infinite", "value": 0.4222}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stress.failures", "subject": "Infinite: fuzz", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stress.failures", "subject": "Infinite: killsave", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stress.failures", "subject": "Infinite: nodes", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stress.failures", "subject": "Infinite: random", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.crest_err_db", "subject": "Infinite", "value": 2.4993}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.extra_onsets", "subject": "Infinite", "value": 0.0}
+{"ts": "2026-10-13T16:39:21+00:00", "commit": "c64eb6fe", "host": "Mac14,7", "id": "stretch.timing_ms", "subject": "Infinite", "value": 3.25}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: AudioFilter", "value": 0.1875}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Chorus", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Delay", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Drive", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dry", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dynamics", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: EQ", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Flanger", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Limiter", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Phaser", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Reverb", "value": 0.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: AudioFilter", "value": -90.7604}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Chorus", "value": -102.4367}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Drive", "value": -35.0135}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dry", "value": -92.2117}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dynamics", "value": -92.2117}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: EQ", "value": -97.2956}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Flanger", "value": -91.975}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Limiter", "value": -92.2117}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Phaser", "value": -110.483}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Analog", "value": -81.1983}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: EquationSynth", "value": -83.8895}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: FieldSynth", "value": -3.6556}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Metallic", "value": -6.2842}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Oscillator", "value": -82.1419}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Wavetable", "value": -83.9169}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Analog", "value": 0.1736}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: EquationSynth", "value": 0.1738}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: FieldSynth", "value": 6.9031}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Metallic", "value": 41.4494}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Oscillator", "value": 0.1742}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Wavetable", "value": 0.1737}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "load.ms_per_track_s", "subject": "node:Analog+node:EQ", "value": 68.3627}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "load.ms_per_track_s", "subject": "node:Wavetable+node:Reverb", "value": 18.5705}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "load.tracks_at_70pct", "subject": "node:Analog+node:EQ", "value": 10.0}
+{"ts": "2026-10-13T17:07:54+00:00", "commit": "38e754be", "host": "Mac14,7", "id": "load.tracks_at_70pct", "subject": "node:Wavetable+node:Reverb", "value": 34.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: AudioFilter", "value": 0.1875}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Chorus", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Delay", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Drive", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dry", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Dynamics", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: EQ", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Flanger", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Limiter", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Phaser", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_latency_ms", "subject": "Infinite: Reverb", "value": 0.0}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: AudioFilter", "value": -90.7604}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Chorus", "value": -102.4367}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Drive", "value": -35.0135}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dry", "value": -92.2117}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Dynamics", "value": -92.2117}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: EQ", "value": -97.2956}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Flanger", "value": -91.975}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Limiter", "value": -92.2117}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.fx_thd12_db", "subject": "Infinite: Phaser", "value": -110.483}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Analog", "value": -81.1983}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: EquationSynth", "value": -83.8895}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: FieldSynth", "value": -3.6556}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Metallic", "value": -6.2842}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Oscillator", "value": -82.1419}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.nonharm108_db", "subject": "Infinite: Wavetable", "value": -83.9169}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Analog", "value": 0.1736}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: EquationSynth", "value": 0.1738}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: FieldSynth", "value": 6.9031}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Metallic", "value": 41.4494}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Oscillator", "value": 0.1742}
+{"ts": "2026-10-14T00:55:25+00:00", "commit": "7f002bee", "host": "Mac14,7", "id": "builtin.pitch_c", "subject": "Infinite: Wavetable", "value": 0.1737}

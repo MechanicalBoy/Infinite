@@ -42,7 +42,7 @@ import wave
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import HERE, RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, run, write_out  # noqa: E402
+from common import HERE, RE_OUTPUT, SelfTest, ensure_dir, infinite_bin, md_table, quality_line, run, write_out  # noqa: E402
 
 SWIFT = os.path.join(HERE, "video_read.swift")
 VR_BIN = os.path.join(RE_OUTPUT, "bin", "video_read")
@@ -397,7 +397,19 @@ def report(results):
                            "%.2f / %.2f" % (r["sync"].get("first_ms", float("nan")), r["sync"].get("last_ms", float("nan"))),
                            "%.3f" % r["sync"].get("drift_ms_per_min", float("nan")), "%.2f" % r["sync"].get("spread_ms", float("nan")),
                            "%.1f" % r["sync"].get("length_gap_ms", float("nan")), r["sync"].get("within_frame")] for r in sy]), ""]
-    return "\n".join(out)
+    return "\n".join(out + quality_rows(results))
+
+
+def quality_rows(results):
+    """QUALITY rows for the scoreboard: render speed, H264 fidelity and sync, one subject per app and scene."""
+    q = []
+    for r in results:
+        q += [quality_line("render.movie_fps", "%s: %s" % (r["app"], k), v["fps"]) for k, v in sorted(r["speed"].items()) if "fps" in v]
+        q += [quality_line("render.h264_psnr_db", "%s: %s" % (r["app"], k), v["psnr_db"]) for k, v in sorted(r["quality"].items()) if "psnr_db" in v]
+        if r.get("sync") and "offset_ms" in r["sync"]:
+            q.append(quality_line("render.sync_offset_ms", r["app"], abs(r["sync"]["offset_ms"])))
+            q.append(quality_line("render.sync_drift_ms_min", r["app"], abs(r["sync"].get("drift_ms_per_min", 0.0))))
+    return q
 
 
 # ---------------------------------------------------------------- self-test

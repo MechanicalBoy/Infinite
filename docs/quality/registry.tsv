@@ -5,7 +5,7 @@
 synth.pitch_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error per note at 44.1/48/96 kHz (spectrum peak, sustained render)
 synth.note_cents	P5	Built-in instruments	cents	lower	1.0	release	SYNTHAUDIT		Pitch error of note 69 played through the note cable
 synth.alias_db	P5	Built-in instruments	dB	lower	-80	release	SYNTHAUDIT		Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz
-synth.rate_spread_db	P5	Built-in instruments	dB	lower	1.0	release	SYNTHAUDIT	node:Metallic=F1	Level spread of the same 3 s render over 44.1/48/96 kHz
+synth.rate_spread_db	P5	Built-in instruments	dB	lower	1.0	release	SYNTHAUDIT		Level spread of the same 3 s render over 44.1/48/96 kHz
 synth.click_on_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT		Note-on second difference re the larger of steady state and the 5-50 ms body
 synth.click_off_db	P5	Built-in instruments	dB	lower	12	release	SYNTHAUDIT		Note-off second difference re steady state
 synth.poly_tail_dbfs	P5	Built-in instruments	dBFS	lower	-100	release	SYNTHAUDIT		Level 9.5 s after all notes off (stuck voices); free-running nodes are not measured
@@ -25,8 +25,12 @@ probe.vel_span_db	P5	Built-in instruments	dB	none		report	synth_probe		Level cha
 probe.cpu_voice_ms_s	P8	Built-in instruments	ms/s	lower		report	synth_probe		Render ms per second of audio per voice, offline
 fx.dc_dbfs	P5	Effects	dBFS	lower	-50	release	FXAUDIT		Mean DC left by an effect under noise, at defaults
 fx.tail_dbfs	P5	Effects	dBFS	lower	-100	release	FXAUDIT		Level 10 s after the input goes silent
-fx.click_db	P5	Effects	dB	lower	12	release	FXAUDIT	node:Audio Filter=F13	Worst step transient when a parameter jumps
-fx.rate_spread_db	P5	Effects	dB	lower	1.0	release	FXAUDIT	node:Bitcrush=F14	Tone level difference across 44.1/48/96 kHz
+fx.click_db	P5	Effects	dB	lower	12	release	FXAUDIT		Worst step transient when a parameter jumps
+fx.rate_spread_db	P5	Effects	dB	lower	1.0	release	FXAUDIT		Tone level difference across 44.1/48/96 kHz
+# fx.rate_spread_db probe note (2026-10-13, F14): Bitcrush's 6 kHz probe sits on its default 6 kHz hold rate, so a correct hold samples the tone at its zero crossings and reads silence (-240 dBFS) at every rate; the -80 dBFS floor drops that band and Bitcrush is gated on 100 Hz and 1 kHz. Evidence: the old kernel with no start-up ramp still read -26.8 / -23.1 / -28.2 dBFS (holds one host sample early); the fixed clock with the ramp read -30.1 / -25.2 / -30.1 (the mailbox's ramp from 0 left a per-rate clock phase); fixed clock plus primed mailbox -240 at all three. A non-zero reading there is clock phase, not level.
+fx.insert_gain_db	P5	Effects	dB	lower	1.0	release	FXAUDIT	node:Drive=F21,node:Audio Filter=F21,node:Ring Mod=F21,node:Tremolo=F21,node:Formant Filter=F21,node:Wavetable Shaper=F21,node:Resonator Bank=F21,node:Cycle Shaper=F21,node:Spec Blur=F21,node:Key-Snap=F21,node:Shape Resonator=F21	Level change when the node opens: default mix, pink noise at -20 dBFS (v0.6 1.9)
+fx.hot_null_db	P5	Effects	dB	lower	-60	release	FXAUDIT		Chorus and Flanger: residual between a -1 dBFS and a scaled -12 dBFS 1 kHz tone (level-dependent distortion; v0.6 1.10)
+# fx.hot_null_db probe note (2026-10-13, F22): builtins-kit's THD -1 column read Chorus -24.5 / Flanger -38.2 dB because dry + wet reaches 1.26 / 1.21 on an in-phase sine and the bounce's integer WAV write clamps at 1.0 (AudioFileWriter.cpp FloatToPcm24/16). In float both null to -143 dB. builtins_kit marks such readings with a dagger; the silent clamp itself is item 1.13.
 note.pair_unpaired	P1	Note nodes	count	lower	0	release	NOTEAUDIT		Stuck, orphan-off, duplicate-on and off-before-on events
 note.grid_samples	P1	Note nodes	samples	lower	1.0	release	NOTEAUDIT		Worst note-on error against the grid across block sizes and tempi
 note.jitter_samples	P1	Note nodes	samples	lower	0	release	NOTEAUDIT		Note-on error through the node, plus missing notes
@@ -44,6 +48,9 @@ bench.b1_xruns	P8	Bench: audio	count	lower	0	release	bench		B1 xruns at 256 fram
 bench.b3_projector_p99_ms	P8	Bench: projector	ms	lower	18.3	release	bench		B3 projector present interval p99 under live load; locked 60 fps = 1.1 x 16.7 ms
 bench.b3_missed_vsync_pct	P8	Bench: projector	%	lower	0.5	release	bench		B3 projector intervals over 1.5 refresh periods (§6: under 0.5 %)
 bench.b3_input_to_photon_frames	P8	Bench: projector	frames	lower	2	release	bench		B3 injected param change to Output revision, worst sample
+bench.b3_edit_late_frames	P8	Bench: live edit	frames	lower	0	release	bench		B3 edit storm: edits (add, connect, delete, Field preset load) whose frame did over one refresh period of work or ran over 1.5 periods
+bench.b3_edit_work_ms_max	P8	Bench: live edit	ms	lower	16.7	release	bench		B3 edit storm: most frame work any single edit cost (one 60 Hz period)
+bench.b3_edit_xruns	P8	Bench: live edit	count	lower	0	release	bench		B3 edit storm: audio dropouts while the graph is edited under live load
 bench.b6_pan_p50_ms	P8	Bench: canvas	ms	lower	17.2	release	bench		B6 canvas frame p50 while panning a 200-400 node patch (>= 60 fps)
 bench.b6_pan_p95_ms	P8	Bench: canvas	ms	lower	22.8	release	bench		B6 canvas frame p95 while panning a 200-400 node patch (>= 45 fps)
 bench.r5_pan_p95_ms	P8	Bench: canvas	ms	lower	33.3	report	bench		R5 canvas frame p95 while panning a 4000-node patch (>= 30 fps; proposed, ROBUSTNESS.md R5)
@@ -73,5 +80,24 @@ av.react_jitter_ms	P1	AV integration	ms	lower		report	av_bench		Std dev of that 
 av.beat_lock_pct	P1	AV integration	%	higher	100	report	av_bench		Beats whose reactive flash lands 0-1 frames after the first possible frame, never early
 av.drift_ms_min	P1	AV integration	ms/min	lower	1	report	av_bench		Absolute trend of reactive frame error over the take
 av.clock_lock_pct	P1	AV integration	%	higher	100	report	av_bench		Beat-clock flash (no analysis) within 0-1 frames of the click in the same movie
+stretch.extra_onsets	P5	Timeline audio	onsets	lower	0	report	stretch_kit		Worst count of drum hits heard twice (flams, pre-echo) over 0.5/0.8/1.25/2x Timeline Sample stretch
+stretch.timing_ms	P5	Timeline audio	ms	lower	5	report	stretch_kit		Worst drum hit against the median hit over the four stretch ratios
+stretch.crest_err_db	P5	Timeline audio	dB	lower	0.5	report	stretch_kit	Infinite=F20	Worst drum crest against the ideal stretch (hits at their own length, clipped to full scale) over the four ratios
 live.frame_p95_ms	P8	Live scene	ms	lower	16.7	report	av_bench		p95 frame time of a real-time audio-reactive 10,000-instance scene at 1280x720 (TD logs its own; Infinite needs the GUI)
 live.drop_pct	P8	Live scene	%	lower	1	report	av_bench		Frames over 1.5x the 60 fps budget in that scene
+builtin.pitch_c	P5	Built-in instruments	cents	lower		report	builtins_kit		Worst pitch error of a built-in instrument at its default patch, same MIDI through each app's own bounce (compared, not judged: defaults differ)
+builtin.nonharm108_db	P5	Built-in instruments	dB	lower		report	builtins_kit		Non-harmonic energy at MIDI 108 of a built-in instrument at its default patch (aliasing), per app
+builtin.fx_latency_ms	P5	Effects	ms	lower		report	builtins_kit		Latency of a built-in effect after the app's own compensation (a bounce should read 0)
+builtin.fx_thd12_db	P5	Effects	dB	lower		report	builtins_kit		THD of a built-in effect at defaults, 1 kHz at -12 dBFS; effects with a tail over 0.5 s are not measured
+load.ms_per_track_s	P8	Bench: audio	ms/s	lower		report	load_bench		Audio-thread ms per second of audio per track (synth + effect, held 4-note chords, offline), cheapest track count
+load.tracks_at_70pct	P8	Bench: audio	tracks	higher		report	load_bench		Tracks of that synth + effect at 70 % of one core
+stress.failures	P1	Stability	count	lower	0	report	stress_kit		Crashes, hangs or unstable saves over every node type, 300 fuzzed patches, random patches and 40 kill-during-save rounds
+project.load_s	P6	Project files	s	lower		report	project_bench		Headless load (parse, build every node, check) of the largest generated patch, process start included
+project.load_fail	P6	Project files	bool	lower	0	report	project_bench		1 when a generated patch of that size fails to load or to write back
+host.unexplained_crashes	P5	Plugin hosting	count	lower	0	report	host_audit		Installed plugins that crash or hang Infinite's host with no outside evidence the plugin is at fault (bad signature, auval crashes too)
+host.ok_pct	P5	Plugin hosting	%	higher		report	host_audit		Installed plugins that load and pass audio in Infinite's host, headless
+patch.community_fail	P1	Project files	count	lower	0	report	community_patches		Published community patches that fail the smoke (tools/website/community_patches.py --smoke): each must open, play and show a picture or sound. Pixels are never compared; patches may change as Infinite evolves
+render.movie_fps	P8	Bench: offline render	fps	higher		report	render_bench		Movie render speed (render + encode) per scene and codec, from the slope between a 1 s and a 3 s render (render_bench)
+render.h264_psnr_db	P8	Bench: offline render	dB	higher		report	render_bench		Luma PSNR of the H264 movie against the same frames written lossless (render_bench)
+render.sync_offset_ms	P8	Bench: offline render	ms	lower		report	render_bench		Sound minus picture in a 10 minute rendered movie of flashes and clicks, absolute (render_bench)
+render.sync_drift_ms_min	P8	Bench: offline render	ms/min	lower		report	render_bench		Sync drift over the same 10 minute movie, absolute (render_bench)

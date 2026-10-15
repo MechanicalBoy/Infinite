@@ -3,6 +3,181 @@
 
 namespace app
 {
+namespace
+{
+   // B3 edit storm (INFINITE_BENCH_B3EDITS=1): the edits a user makes while a
+   // set plays, through the same calls the canvas uses (undo checkpoint, then
+   // SpawnNode / ConnectNodes / LoadPreset / RemoveNodeByIndex). One step every
+   // kEditEveryFrames frames, so each edit's cost lands in its own frames.
+   struct BenchEditStorm
+   {
+      static constexpr int kFirstFrame = 240; // after the effect-shader prewarm (StageFramePump)
+      static constexpr int kEditEveryFrames = 10;
+      static constexpr int kSteps = 12;
+
+      int step = 0;
+      int count = 0;
+      int failed = 0;
+      int pendingFrame = -1;  // frame the last edit ran on
+      int pendingKind = -1;
+      double pendingWorstMs = 0.0;
+      double pendingWorstWorkMs = 0.0;
+      Bench::PercentileRing frameMs;      // worst frame per edit
+      // Worst frame work time per edit (frame start to the vsync wait). Work
+      // over one refresh period misses a vsync, so this verdict also holds
+      // when the window is unfocused and frame_ms is not paced.
+      Bench::PercentileRing workMs;
+      double worstByKind[kSteps] = {};
+      int osc = -1, filt = -1, out = -1, shape = -1, fx = -1, pixel = -1, synth = -1, synthOut = -1;
+      int preset = 0;
+
+      static const char* KindName(int kind)
+      {
+         static const char* names[kSteps] = {
+            "audio_add", "audio_connect", "image_add_connect", "field_pixel_add", "field_synth_add_connect",
+            "field_synth_preset", "field_pixel_preset", "audio_delete_mid_chain", "audio_delete",
+            "image_delete", "field_pixel_delete", "field_synth_delete" };
+         return names[kind];
+      }
+
+      int Spawn(const char* type, const char* category, float x, float y)
+      {
+         GraphNode* gn = SpawnNode(type, category, x, y);
+         if (gn == nullptr)
+         {
+            ++failed;
+            fprintf(stderr, "BENCH: edit storm could not create '%s'\n", type);
+            return -1;
+         }
+         return gn->index;
+      }
+
+      void Connect(int src, int dst)
+      {
+         std::string err;
+         if (src < 0 || dst < 0 || !ConnectNodes(src, 0, dst, 0, err))
+         {
+            ++failed;
+            fprintf(stderr, "BENCH: edit storm connect failed: %s\n", err.c_str());
+         }
+      }
+
+      void Remove(int& index)
+      {
+         if (index >= 0 && FindNodeByIndex(index) != nullptr)
+            RemoveNodeByIndex(index);
+         index = -1;
+      }
+
+      void LoadFieldPreset(int index)
+      {
+         GraphNode* gn = FindNodeByIndex(index);
+         if (gn == nullptr)
+            return;
+         if (auto* px = dynamic_cast<FieldPixelNode*>(gn->node.get()))
+         {
+            px->presetIndex = preset % (int)FieldPixelNode::Presets().size();
+            px->LoadPreset(px->presetIndex);
+         }
+         else if (auto* sn = dynamic_cast<FieldSynthNode*>(gn->node.get()))
+         {
+            sn->presetIndex = preset % (int)FieldSynthNode::Presets().size();
+            sn->LoadPreset(sn->presetIndex);
+         }
+         ++preset;
+      }
+
+      void Close()
+      {
+         if (pendingKind < 0)
+            return;
+         frameMs.Push(pendingWorstMs);
+         workMs.Push(pendingWorstWorkMs);
+         fprintf(stderr, "BENCH: edit %s frame %.1f ms, work %.1f ms\n", KindName(pendingKind), pendingWorstMs, pendingWorstWorkMs);
+         worstByKind[pendingKind] = std::max(worstByKind[pendingKind], pendingWorstMs);
+         pendingKind = -1;
+      }
+
+      void Tick(int frameId, int lastFrame)
+      {
+         // gLastFrameMs is the frame before this one. An edit's work is split
+         // between its own frame and the next (cook, compile, audio rebuild).
+         if (pendingKind >= 0 && frameId > pendingFrame)
+         {
+            pendingWorstMs = std::max(pendingWorstMs, gLastFrameMs);
+            // An unpaced frame (unfocused window, locked screen) has no wait:
+            // its whole length is work, and workMs reads -1.
+            const double work = Bench::Tail().all.empty() ? -1.0 : Bench::Tail().all.back().workMs;
+            pendingWorstWorkMs = std::max(pendingWorstWorkMs, work >= 0.0 ? work : gLastFrameMs);
+            if (frameId >= pendingFrame + 3)
+               Close();
+         }
+         if (frameId < kFirstFrame || frameId > lastFrame || (frameId - kFirstFrame) % kEditEveryFrames != 0)
+            return;
+
+         static const char* effects[] = { "gaussianblur", "kaleidoscope", "glitch", "bloom", "vignette" };
+         const float x = 200.0f, y = -900.0f;
+         const int kind = step % kSteps;
+         PushUndoCheckpoint();
+         switch (kind)
+         {
+            case 0:
+               osc = Spawn("Oscillator", "Synths", x, y);
+               filt = Spawn("Audio Filter", "AudioEffects", x + 300.0f, y);
+               out = Spawn("Audio Out", "Utility", x + 600.0f, y);
+               break;
+            case 1: Connect(osc, filt); Connect(filt, out); break;
+            case 2:
+               shape = Spawn("Shape", "Source", x, y - 300.0f);
+               fx = Spawn(effects[(step / kSteps) % 5], "Effects", x + 300.0f, y - 300.0f);
+               Connect(shape, fx);
+               break;
+            case 3: pixel = Spawn("FieldPixel", "Source", x, y - 600.0f); LoadFieldPreset(pixel); break;
+            case 4:
+               synth = Spawn("Field Synth", "Synths", x + 900.0f, y);
+               synthOut = Spawn("Audio Out", "Utility", x + 1200.0f, y);
+               Connect(synth, synthOut);
+               break;
+            case 5: LoadFieldPreset(synth); break;
+            case 6: LoadFieldPreset(pixel); break;
+            case 7: Remove(filt); break;
+            case 8: Remove(osc); Remove(out); break;
+            case 9: Remove(fx); Remove(shape); break;
+            case 10: Remove(pixel); break;
+            case 11: Remove(synthOut); Remove(synth); break;
+         }
+         ++step;
+         ++count;
+         pendingFrame = frameId;
+         pendingKind = kind;
+         pendingWorstMs = 0.0;
+         pendingWorstWorkMs = 0.0;
+      }
+
+      nlohmann::json Report(double budgetMs, double periodMs)
+      {
+         Close();
+         nlohmann::json byKind = nlohmann::json::object();
+         for (int i = 0; i < kSteps; ++i)
+            byKind[KindName(i)] = worstByKind[i];
+         return {
+            { "count", count },
+            { "failed", failed },
+            { "budget_ms", budgetMs },
+            { "over_budget", (int)frameMs.CountOver(budgetMs) },
+            { "frame_ms_p50", frameMs.Percentile(50) },
+            { "frame_ms_p99", frameMs.Percentile(99) },
+            { "frame_ms_max", frameMs.Max() },
+            { "late_work", (int)workMs.CountOver(periodMs) },
+            { "work_ms_p50", workMs.Percentile(50) },
+            { "work_ms_max", workMs.Max() },
+            { "worst_ms_by_kind", byKind },
+         };
+      }
+   };
+   BenchEditStorm sBenchB3Edits;
+}
+
 void DrawBenchHarness(FrameCtx& fc)
 {
    auto& sMainRssStartMb = fc.sMainRssStartMb;
@@ -270,6 +445,11 @@ void DrawBenchHarness(FrameCtx& fc)
             }
          }
 
+         // Edit storm: stops 40 frames early so the last edit's frames are in.
+         const bool b3Edits = !isBenchB7 && getenv("INFINITE_BENCH_B3EDITS") != nullptr && strcmp(getenv("INFINITE_BENCH_B3EDITS"), "0") != 0;
+         if (b3Edits)
+            sBenchB3Edits.Tick(frameId, b3TotalFrames - 40);
+
          // Sample canvas frame time and memory
          if (frameId >= 32 && frameId <= b3TotalFrames)
          {
@@ -371,6 +551,16 @@ void DrawBenchHarness(FrameCtx& fc)
             report.memFootEndMb = Bench::ProcessFootprintMb();
             if (report.memFootEndMb > sBenchB3FootPeakMb) sBenchB3FootPeakMb = report.memFootEndMb;
             report.memFootPeakMb = sBenchB3FootPeakMb;
+
+            // An edit may cost one late frame at most: 1.5 refresh periods.
+            if (b3Edits)
+            {
+               const double periodMs = 1000.0 / (double)std::max(1, sBenchB3MonitorRefreshHz);
+               report.edits = sBenchB3Edits.Report(1.5 * periodMs, periodMs);
+               report.targetsPass["edit_frames_over_budget_zero"] =
+                  (report.edits["over_budget"].get<int>() == 0 && report.edits["late_work"].get<int>() == 0 &&
+                   report.edits["failed"].get<int>() == 0);
+            }
 
             // §6 Target evaluations
             // No engine, no audio verdict: a stopped engine has 0 xruns and

@@ -6,16 +6,17 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Pillar | Metrics | Met | Behind / miss | Info | Unmeasured |
 |---|---|---|---|---|---|
-| P1 Live AV workstation | 8 | 6 | 1 | 1 | 0 |
-| P5 Audio quality and hosting | 25 | 22 | 0 | 3 | 0 |
-| P7 3D, compositing, output | 10 | 8 | 2 | 0 | 0 |
-| P8 Performance | 30 | 18 | 2 | 1 | 9 |
+| P1 Live AV workstation | 10 | 9 | 0 | 1 | 0 |
+| P5 Audio quality and hosting | 36 | 28 | 0 | 8 | 0 |
+| P6 Timeline and arrangement | 2 | 1 | 0 | 1 | 0 |
+| P7 3D, compositing, output | 10 | 9 | 1 | 0 | 0 |
+| P8 Performance | 39 | 18 | 2 | 7 | 12 |
 
 ## P1 Live AV workstation: AV integration
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `av.react_latency_ms` | Click in the movie audio to the audio-reactive flash in its picture, 30 fps offline render; 45 ms = picture-late sync bound | <= 45.00 ms | report | behind | 49.96 (Infinite) | - |
+| `av.react_latency_ms` | Click in the movie audio to the audio-reactive flash in its picture, 30 fps offline render; 45 ms = picture-late sync bound | <= 45.00 ms | report | met | 16.63 (Infinite) | - |
 | `av.react_jitter_ms` | Std dev of that latency over 31 beats at 128 BPM (frame quantisation alone gives ~9.6 ms at 30 fps) |  | report | info | 9.33 (Infinite) | - |
 | `av.beat_lock_pct` | Beats whose reactive flash lands 0-1 frames after the first possible frame, never early | >= 100 % | report | met | 100 (Infinite) | - |
 | `av.drift_ms_min` | Absolute trend of reactive frame error over the take | <= 1.00 ms/min | report | met | 0 (Infinite) | - |
@@ -28,6 +29,18 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `note.pair_unpaired` | Stuck, orphan-off, duplicate-on and off-before-on events | <= 0 count | release | met | 0 (node:Arpeggiator) | - |
 | `note.grid_samples` | Worst note-on error against the grid across block sizes and tempi | <= 1.00 samples | release | met | 0.793 (node:Arpeggiator) | - |
 | `note.jitter_samples` | Note-on error through the node, plus missing notes | <= 0 samples | release | met | 0 (node:Note Filter) | - |
+
+## P1 Live AV workstation: Project files
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `patch.community_fail` | Published community patches that fail the smoke (tools/website/community_patches.py --smoke): each must open, play and show a picture or sound. Pixels are never compared; patches may change as Infinite evolves | <= 0 count | report | met | 0 (Infinite: community patches) | - |
+
+## P1 Live AV workstation: Stability
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `stress.failures` | Crashes, hangs or unstable saves over every node type, 300 fuzzed patches, random patches and 40 kill-during-save rounds | <= 0 count | report | met | 0 (Infinite: fuzz) | - |
 
 ## P5 Audio quality and hosting: Audio I/O
 
@@ -43,11 +56,11 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `synth.pitch_cents` | Pitch error per note at 44.1/48/96 kHz (spectrum peak, sustained render) | <= 1.00 cents | release | met | 0.0345 (node:Analog) | - |
 | `synth.note_cents` | Pitch error of note 69 played through the note cable | <= 1.00 cents | release | met | 0.009 (node:Analog) | - |
 | `synth.alias_db` | Non-harmonic energy re fundamental at 1.75 and 5 kHz, 48 kHz | <= -80.00 dB | release | met | -82.63 (node:Oscillator) | - |
-| `synth.rate_spread_db` | Level spread of the same 3 s render over 44.1/48/96 kHz | <= 1.00 dB | release | exc | 2.93 (node:Metallic) | - |
+| `synth.rate_spread_db` | Level spread of the same 3 s render over 44.1/48/96 kHz | <= 1.00 dB | release | met | 0.824 (node:PaulStretch) | - |
 | `synth.click_on_db` | Note-on second difference re the larger of steady state and the 5-50 ms body | <= 12.00 dB | release | met | 5.70 (node:Wavetable) | - |
 | `synth.click_off_db` | Note-off second difference re steady state | <= 12.00 dB | release | met | -0.0027 (node:Equation Synth) | - |
 | `synth.poly_tail_dbfs` | Level 9.5 s after all notes off (stuck voices); free-running nodes are not measured | <= -100 dBFS | release | met | -240 (node:Analog) | - |
-| `synth.chord4_peak_dbfs` | Peak of a 4-note chord at velocity 0.8, defaults | <= 0 dBFS | release | met | -1.15 (node:Field Synth) | - |
+| `synth.chord4_peak_dbfs` | Peak of a 4-note chord at velocity 0.8, defaults | <= 0 dBFS | release | met | -2.33 (node:Field Synth) | - |
 | `synth.peak_dbfs` | Peak of a single sustained note, defaults | <= 0 dBFS | release | met | -3.11 (node:Analog) | - |
 | `synth.sample_pitch_spread_c` | Fixture WAV (48 kHz) pitch spread over 44.1/48/96 kHz device rates (F11) | <= 20.00 cents | release | met | 6.85 (node:PaulStretch) | - |
 | `synth.sample_length_ratio` | Fixture WAV playback length, longest over shortest across device rates (F11) | <= 1.02 ratio | release | met | 1.00 (node:Granular) | - |
@@ -59,29 +72,57 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `probe.attack_ms` | Default-patch attack 10-90 % (a design choice, compared not judged) |  | report | info | - | - |
 | `probe.release_s` | Default-patch release to -60 dB |  | report | info | - | - |
 | `probe.vel_span_db` | Level change velocity 0.25 -> 1.0 |  | report | info | - | - |
+| `builtin.pitch_c` | Worst pitch error of a built-in instrument at its default patch, same MIDI through each app's own bounce (compared, not judged: defaults differ) |  | report | info | 41.45 (Infinite: Metallic) | - |
+| `builtin.nonharm108_db` | Non-harmonic energy at MIDI 108 of a built-in instrument at its default patch (aliasing), per app |  | report | info | -3.66 (Infinite: FieldSynth) | - |
 
 ## P5 Audio quality and hosting: Effects
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `fx.dc_dbfs` | Mean DC left by an effect under noise, at defaults | <= -50.00 dBFS | release | met | -53.40 (node:Bitcrush) | - |
+| `fx.dc_dbfs` | Mean DC left by an effect under noise, at defaults | <= -50.00 dBFS | release | met | -55.11 (node:Bitcrush) | - |
 | `fx.tail_dbfs` | Level 10 s after the input goes silent | <= -100 dBFS | release | met | -240 (node:Audio Filter) | - |
-| `fx.click_db` | Worst step transient when a parameter jumps | <= 12.00 dB | release | exc | 17.30 (node:Audio Filter) | - |
-| `fx.rate_spread_db` | Tone level difference across 44.1/48/96 kHz | <= 1.00 dB | release | exc | 5.38 (node:Bitcrush) | - |
+| `fx.click_db` | Worst step transient when a parameter jumps | <= 12.00 dB | release | met | 9.00 (node:Dynamics) | - |
+| `fx.rate_spread_db` | Tone level difference across 44.1/48/96 kHz | <= 1.00 dB | release | met | 0.996 (node:Key-Snap) | - |
+| `fx.insert_gain_db` | Level change when the node opens: default mix, pink noise at -20 dBFS (v0.6 1.9) | <= 1.00 dB | release | exc | 10.82 (node:Shape Resonator) | - |
+| `fx.hot_null_db` | Chorus and Flanger: residual between a -1 dBFS and a scaled -12 dBFS 1 kHz tone (level-dependent distortion; v0.6 1.10) | <= -60.00 dB | release | met | -143 (node:Flanger) | - |
+| `builtin.fx_latency_ms` | Latency of a built-in effect after the app's own compensation (a bounce should read 0) |  | report | info | 0.188 (Infinite: AudioFilter) | - |
+| `builtin.fx_thd12_db` | THD of a built-in effect at defaults, 1 kHz at -12 dBFS; effects with a tail over 0.5 s are not measured |  | report | info | -35.01 (Infinite: Drive) | - |
+
+## P5 Audio quality and hosting: Plugin hosting
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `host.unexplained_crashes` | Installed plugins that crash or hang Infinite's host with no outside evidence the plugin is at fault (bad signature, auval crashes too) | <= 0 count | report | met | 0 (Infinite: AU) | - |
+| `host.ok_pct` | Installed plugins that load and pass audio in Infinite's host, headless |  | report | info | 97.59 (Infinite: VST3) | - |
+
+## P5 Audio quality and hosting: Timeline audio
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `stretch.extra_onsets` | Worst count of drum hits heard twice (flams, pre-echo) over 0.5/0.8/1.25/2x Timeline Sample stretch | <= 0 onsets | report | met | 0 (Infinite) | - |
+| `stretch.timing_ms` | Worst drum hit against the median hit over the four stretch ratios | <= 5.00 ms | report | met | 3.25 (Infinite) | - |
+| `stretch.crest_err_db` | Worst drum crest against the ideal stretch (hits at their own length, clipped to full scale) over the four ratios | <= 0.5 dB | report | exc | 2.50 (Infinite) | - |
+
+## P6 Timeline and arrangement: Project files
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `project.load_s` | Headless load (parse, build every node, check) of the largest generated patch, process start included |  | report | info | 0.874 (Infinite: 4000 nodes) | - |
+| `project.load_fail` | 1 when a generated patch of that size fails to load or to write back | <= 0 bool | report | met | 0 (Infinite: 10 nodes) | - |
 
 ## P7 3D, compositing, output: 3D engine
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `geo.instance_ms` | Per-frame cost of 10,000 instances on a 100x100 grid, scale animated (Infinite: render slope net of baseline; Blender: depsgraph eval, 2026-10-13) | <= 1.30 ms | report | behind | 2.73 (Infinite) | 1.26 (Blender) |
-| `geo.subdiv_ms` | 32x32 grid, subdivide x2 smooth, animated noise displacement, per frame (Blender 2026-10-13 sets the target) | <= 8.10 ms | report | behind | 12.01 (Infinite) | 8.14 (Blender) |
-| `sim.cloth_ms` | 32x32 cloth sheet pinned on one edge, one simulation step per frame (solvers differ: Blender 5 quality steps, Infinite 6 iterations) | <= 18.40 ms | report | met | 0.944 (Infinite) | 18.40 (Blender) |
+| `geo.instance_ms` | Per-frame cost of 10,000 instances on a 100x100 grid, scale animated (Infinite: render slope net of baseline; Blender: depsgraph eval, 2026-10-13) | <= 1.30 ms | report | behind | 3.08 (Infinite) | 1.26 (Blender) |
+| `geo.subdiv_ms` | 32x32 grid, subdivide x2 smooth, animated noise displacement, per frame (Blender 2026-10-13 sets the target) | <= 8.10 ms | report | met | 7.19 (Infinite) | 8.14 (Blender) |
+| `sim.cloth_ms` | 32x32 cloth sheet pinned on one edge, one simulation step per frame (solvers differ: Blender 5 quality steps, Infinite 6 iterations) | <= 18.40 ms | report | met | 0.422 (Infinite) | 18.40 (Blender) |
 
 ## P7 3D, compositing, output: Compositing
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `comp.blend_x255` | Blend modes against the W3C formulas, worst over modes | <= 1.00 x/255 | release | met | 0.5 (node:Blend) | - |
+| `comp.blend_x255` | Blend modes against the W3C formulas, worst over modes | <= 1.00 x/255 | release | met | 0.125 (node:Blend) | - |
 
 ## P7 3D, compositing, output: Geometry
 
@@ -100,6 +141,8 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 |---|---|---|---|---|---|---|
 | `bench.b1_cb_load_p99` | B1 audio callback load p99, 24 voices, per buffer size (suite §6) | <= 50.00 % | release | met | 44.75 (bench:B1:buf256) | - |
 | `bench.b1_xruns` | B1 xruns at 256 frames, the §6 buffer (64 is not a target: Found in Block 1) | <= 0 count | release | met | 0 (bench:B1:buf256) | - |
+| `load.ms_per_track_s` | Audio-thread ms per second of audio per track (synth + effect, held 4-note chords, offline), cheapest track count |  | report | info | 68.36 (node:Analog+node:EQ) | - |
+| `load.tracks_at_70pct` | Tracks of that synth + effect at 70 % of one core |  | report | info | 10.00 (node:Analog+node:EQ) | - |
 
 ## P8 Performance: Bench: canvas
 
@@ -119,6 +162,14 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `bench.b5_startup_ms` | B5 launch to first frame swapped (proposed: under one second) | <= 1000 ms | release | met | 342 (bench:B5:startup) | - |
 | `bench.b5_load_ms` | B5 patch load (real LoadPatchFrom), 50-400 nodes; proposed: inside one 60 Hz frame | <= 16.70 ms | release | met | 6.04 (bench:B5:loadsave:400) | - |
 | `bench.b5_save_ms` | B5 patch save (real SavePatchTo), 50-400 nodes; proposed: inside one 60 Hz frame | <= 16.70 ms | release | met | 2.86 (bench:B5:loadsave:50) | - |
+
+## P8 Performance: Bench: live edit
+
+| Metric | What | Target | Gate | Status | Infinite worst | Best other |
+|---|---|---|---|---|---|---|
+| `bench.b3_edit_late_frames` | B3 edit storm: edits (add, connect, delete, Field preset load) whose frame did over one refresh period of work or ran over 1.5 periods | <= 0 frames | release | unmeasured | - | - |
+| `bench.b3_edit_work_ms_max` | B3 edit storm: most frame work any single edit cost (one 60 Hz period) | <= 16.70 ms | release | unmeasured | - | - |
+| `bench.b3_edit_xruns` | B3 edit storm: audio dropouts while the graph is edited under live load | <= 0 count | release | unmeasured | - | - |
 
 ## P8 Performance: Bench: media I/O
 
@@ -143,6 +194,10 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 | `bench.b10_realtime_factor` | B10 arrangement render of the B3 scene: seconds of take per wall second | >= 1.00 x realtime | release | met | 2.25 (bench:B10:30s-anim0) | - |
 | `bench.b10_av_drift_worst_frames` | B10 worst A/V marker drift in the rendered movie (av-sync-sweep: 2 frames anywhere) | <= 2.00 frames | release | met | 0 (bench:B10:30s-anim0) | - |
 | `bench.b10_av_drift_end_frames` | B10 A/V drift at the end of the take (av-sync-sweep: 1 frame at the end) | <= 1.00 frames | release | met | 0 (bench:B10:30s-anim0) | - |
+| `render.movie_fps` | Movie render speed (render + encode) per scene and codec, from the slope between a 1 s and a 3 s render (render_bench) |  | report | info | 44.46 (Infinite: blur_2160p/prores4444) | 1.58 (Blender: blur_720p/prores4444) |
+| `render.h264_psnr_db` | Luma PSNR of the H264 movie against the same frames written lossless (render_bench) |  | report | info | 35.47 (Infinite: instanced_720p) | 46.13 (Blender: blur_720p) |
+| `render.sync_offset_ms` | Sound minus picture in a 10 minute rendered movie of flashes and clicks, absolute (render_bench) |  | report | info | 0.0417 (Infinite) | 0.0208 (Blender) |
+| `render.sync_drift_ms_min` | Sync drift over the same 10 minute movie, absolute (render_bench) |  | report | info | 0 (Infinite) | 0 (Blender) |
 
 ## P8 Performance: Bench: projector
 
@@ -164,7 +219,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 | Metric | What | Target | Gate | Status | Infinite worst | Best other |
 |---|---|---|---|---|---|---|
-| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 490 (node:Spectral Synth) | - |
+| `synth.cpu_ns_frame` | Render cost per frame, one voice (noisy: report only) | <= 4000 ns/frame | report | met | 347 (node:Spectral Synth) | - |
 | `probe.cpu_voice_ms_s` | Render ms per second of audio per voice, offline |  | report | info | 29.94 (node:Analog) | - |
 
 ## P8 Performance: Live scene
@@ -178,9 +233,7 @@ Status: **met** every Infinite subject meets the target · **MISS** a release-ga
 
 Every subject for metrics that miss, carry exceptions, have no direction, or compare against other apps.
 
-- `av.react_latency_ms` (ms): Infinite 49.96 (miss)
 - `av.react_jitter_ms` (ms): Infinite 9.33
-- `synth.rate_spread_db` (dB): node:Wavetable 0 · node:Granular 0.0013 · node:Grain Molder 0.0042 · node:Molder 0.0042 · node:Sampler 0.0042 · node:Equation Synth 0.0079 · node:Analog 0.0379 · node:Wave Terrain 0.051 · node:Spectral Synth 0.0543 · node:Oscillator 0.0573 · node:PaulStretch 0.824 · node:Metallic 2.93 (exc F1)
 - `probe.pitch_worst_c` (cents): node:Analog 0.173 · node:Wavetable 0.174 · Vital Audio: Vital 0.174 · Xfer Records: Serum 2 0.174 · u-he: Diva 7.73
 - `probe.nonharm60_db` (dB): node:Analog -84.51 · node:Wavetable -84.16 · Vital Audio: Vital -84.34 · Xfer Records: Serum 2 -82.96 · u-he: Diva -40.80
 - `probe.nonharm96_db` (dB): node:Wavetable -84.94 · node:Analog -83.26 · Vital Audio: Vital -84.31 · Xfer Records: Serum 2 -82.59 · u-he: Diva -27.00
@@ -188,14 +241,26 @@ Every subject for metrics that miss, carry exceptions, have no direction, or com
 - `probe.attack_ms` (ms): node:Analog 3.00 · node:Wavetable 4.00 · Vital Audio: Vital 1.00 · Xfer Records: Serum 2 2.00 · u-he: Diva 44.00
 - `probe.release_s` (s): node:Analog 0.252 · node:Wavetable 0.263 · Xfer Records: Serum 2 0.018 · Vital Audio: Vital 0.084 · u-he: Diva 1.61
 - `probe.vel_span_db` (dB): node:Analog 24.08 · node:Wavetable 24.08 · Vital Audio: Vital -0.0023 · Xfer Records: Serum 2 -0.0021 · u-he: Diva 12.92
-- `fx.click_db` (dB): node:Stutter -30.82 · node:Reverb -0.579 · node:Shape Resonator -0.156 · node:Delay -0.0898 · node:Tremolo -0.0129 · node:Cycle Shaper -0.0012 · node:Spectrum Slide -0.0009 · node:Ring Mod -0.0001 · node:Bitcrush 0 · node:Chorus 0.0003 · node:Pitch Shifter 0.0107 · node:Key-Snap 0.0703 · node:Stereo 0.218 · node:Frequency Shifter 0.407 · node:Phaser 0.723 · node:Drive 0.772 · node:Spec Blur 1.54 · node:EQ 3.94 · node:Flanger 3.99 · node:Resonator Bank 4.05 · node:Formant Filter 4.63 · node:Limiter 8.76 · node:Wavetable Shaper 8.80 · node:Transient Shaper 8.82 · node:Dynamics 9.04 · node:Audio Filter 17.30 (exc F13)
-- `fx.rate_spread_db` (dB): node:Audio Filter 0 · node:Frequency Shifter 0 · node:Limiter 0 · node:Pitch Shifter 0 · node:Stereo 0 · node:Transient Shaper 0 · node:Tremolo 0 · node:EQ 0.0005 · node:Delay 0.0007 · node:Wavetable Shaper 0.0034 · node:Drive 0.0062 · node:Cycle Shaper 0.0078 · node:Spectrum Slide 0.0314 · node:Ring Mod 0.0853 · node:Dynamics 0.0978 · node:Chorus 0.116 · node:Stutter 0.13 · node:Flanger 0.144 · node:Phaser 0.243 · node:Formant Filter 0.266 · node:Resonator Bank 0.413 · node:Spec Blur 0.447 · node:Shape Resonator 0.465 · node:Reverb 0.824 · node:Key-Snap 0.996 · node:Bitcrush 5.38 (exc F14)
-- `geo.instance_ms` (ms): Infinite 2.73 (miss) · Blender 1.26
-- `geo.subdiv_ms` (ms): Infinite 12.01 (miss) · Blender 8.14
-- `sim.cloth_ms` (ms): Infinite 0.944 · Blender 18.40
+- `builtin.pitch_c` (cents): Infinite: Analog 0.174 · Infinite: Wavetable 0.174 · Infinite: EquationSynth 0.174 · Infinite: Oscillator 0.174 · Infinite: FieldSynth 6.90 · Infinite: Metallic 41.45
+- `builtin.nonharm108_db` (dB): Infinite: Wavetable -83.92 · Infinite: EquationSynth -83.89 · Infinite: Oscillator -82.14 · Infinite: Analog -81.20 · Infinite: Metallic -6.28 · Infinite: FieldSynth -3.66
+- `fx.insert_gain_db` (dB): node:Dynamics 0 · node:EQ 0 · node:Stereo 0 · node:Transient Shaper 0 · node:Pitch Shifter 0.0001 · node:Limiter 0.0019 · node:Bitcrush 0.0518 · node:Delay 0.171 · node:Frequency Shifter 0.251 · node:Chorus 0.333 · node:Spectrum Slide 0.394 · node:Reverb 0.404 · node:Stutter 0.521 · node:Phaser 0.667 · node:Flanger 0.878 · node:Key-Snap 1.55 (exc F21) · node:Audio Filter 1.95 (exc F21) · node:Cycle Shaper 2.17 (exc F21) · node:Tremolo 2.72 (exc F21) · node:Ring Mod 3.02 (exc F21) · node:Resonator Bank 3.34 (exc F21) · node:Formant Filter 3.88 (exc F21) · node:Spec Blur 4.66 (exc F21) · node:Drive 5.31 (exc F21) · node:Wavetable Shaper 8.96 (exc F21) · node:Shape Resonator 10.82 (exc F21)
+- `builtin.fx_latency_ms` (ms): Infinite: Chorus 0 · Infinite: Delay 0 · Infinite: Drive 0 · Infinite: Dry 0 · Infinite: Dynamics 0 · Infinite: EQ 0 · Infinite: Flanger 0 · Infinite: Limiter 0 · Infinite: Phaser 0 · Infinite: Reverb 0 · Infinite: AudioFilter 0.188
+- `builtin.fx_thd12_db` (dB): Infinite: Phaser -110 · Infinite: Chorus -102 · Infinite: EQ -97.30 · Infinite: Dry -92.21 · Infinite: Dynamics -92.21 · Infinite: Limiter -92.21 · Infinite: Flanger -91.97 · Infinite: AudioFilter -90.76 · Infinite: Drive -35.01
+- `host.ok_pct` (%): Infinite: AU 97.62 · Infinite: VST3 97.59
+- `stretch.crest_err_db` (dB): Infinite 2.50 (exc F20)
+- `project.load_s` (s): Infinite: 4000 nodes 0.874
+- `geo.instance_ms` (ms): Infinite 3.08 (miss) · Blender 1.26
+- `geo.subdiv_ms` (ms): Infinite 7.19 · Blender 8.14
+- `sim.cloth_ms` (ms): Infinite 0.422 · Blender 18.40
 - `geo.winding_mismatch` (triangles): node:8 balls r96 0 · node:Array on cube 0 · node:Array on sphere 0 · node:Arrow 3D 0 · node:Capsule 0 · node:Cone 0 · node:Cube 0 · node:Curve Ops hostile 0 · node:Curve Ops no input 0 · node:Curve source tube 0 · node:Cylinder 0 · node:Decimate Icosphere 0 · node:Decimate Torus 0 · node:Decimate on cube 0 · node:Decimate on sphere 0 · node:Delaunay 0 · node:Delete on cube 0 · node:Delete on sphere 0 · node:Disc 0 · node:Dodecahedron 0 · node:Explode on cube 0 · node:Explode on sphere 0 · node:Extrude on cube 0 · node:Extrude on sphere 0 · node:Gear 3D 0 · node:Helix 0 · node:Icosphere 0 · node:Join merge 0 · node:Merge by Distance 0 · node:Metaballs 0 · node:Metaballs extreme 0 · node:Mirror on cube 0 · node:Mirror on sphere 0 · node:Normals on cube 0 · node:Normals on sphere 0 · node:Ocean 0 · node:Octahedron 0 · node:Plane 0 · node:Prism 0 · node:Pyramid 0 · node:Rounded Cube 0 · node:Select on cube 0 · node:Select on sphere 0 · node:Smooth on cube 0 · node:Smooth on sphere 0 · node:Solidify on cube 0 · node:Solidify on sphere 0 · node:Sphere 0 · node:Star 3D 0 · node:Subdivide on cube 0 · node:Subdivide on sphere 0 · node:Supershape 0 · node:Tetrahedron 0 · node:Torus 0 · node:Torus Knot 0 · node:Transform on cube 0 · node:Transform on sphere 0 · node:Triangulate on cube 0 · node:Triangulate on sphere 0 · node:Tube 0 · node:Twist on cube 0 · node:Twist on sphere 0 · node:Voronoi 0 · node:Wireframe on cube 0 · node:Wireframe on sphere 0 · node:default 0 · node:node Offset 0 · node:node Resample 0 · node:node Simplify 0 · node:node Smooth 0 · node:one ball r24 0 · node:one ball r40 0 · node:one ball r96 0 · node:pinned 0 · node:realised 0 · node:Solidify on a plane 0 · node:Mobius Strip 2.00 (exc F16) · node:Klein Bottle 7.00 (exc F16) · node:Screw on cube 1456 (exc F18) · node:Screw on sphere 14608 (exc F18)
+- `load.ms_per_track_s` (ms/s): node:Wavetable+node:Reverb 18.57 · node:Analog+node:EQ 68.36
+- `load.tracks_at_70pct` (tracks): node:Wavetable+node:Reverb 34.00 · node:Analog+node:EQ 10.00
 - `bench.b8_window_p99_ms` (ms): bench:B8:2x1080+2w:w1 17.69 · bench:B8:2x1080+3w:w2 17.69 · bench:B8:2x1080+3w:w1 17.70 · bench:B8:2x1080+2w:w0 17.72 · bench:B8:2x1080+3w:w0 17.78 · bench:B8:4x2160+3w+cam+syphon:w0 33.04 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 33.09 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 33.21 (miss)
 - `bench.b8_window_missed_vsync_pct` (%): bench:B8:2x1080+2w:w0 0 · bench:B8:2x1080+2w:w1 0 · bench:B8:2x1080+3w:w0 0 · bench:B8:2x1080+3w:w1 0 · bench:B8:2x1080+3w:w2 0 · bench:B8:4x2160+3w+cam+syphon:w0 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w1 9.36 (miss) · bench:B8:4x2160+3w+cam+syphon:w2 9.36 (miss)
+- `render.movie_fps` (fps): Infinite: blur_720p/h264 263 · Infinite: instanced_720p/h264 201 · Infinite: blur_720p/prores4444 170 · Infinite: instanced_720p/prores4444 128 · Infinite: blur_1080p/prores4444 81.43 · Infinite: blur_1080p/h264 81.00 · Infinite: instanced_1080p/prores4444 80.23 · Infinite: instanced_1080p/h264 73.23 · Infinite: instanced_2160p/h264 60.15 · Infinite: instanced_2160p/prores4444 56.76 · Infinite: blur_2160p/h264 49.97 · Infinite: blur_2160p/prores4444 44.46 · Blender: blur_720p/prores4444 1.58 · Blender: blur_720p/h264 1.56 · Blender: blur_1080p/prores4444 1.17 · Blender: blur_1080p/h264 1.16 · Blender: instanced_720p/prores4444 0.883 · Blender: instanced_720p/h264 0.87 · Blender: instanced_1080p/prores4444 0.664 · Blender: instanced_1080p/h264 0.587 · Blender: blur_2160p/prores4444 0.47 · Blender: blur_2160p/h264 0.434 · Blender: instanced_2160p/prores4444 0.207 · Blender: instanced_2160p/h264 0.194
+- `render.h264_psnr_db` (dB): Infinite: blur_1080p 51.81 · Infinite: blur_2160p 51.54 · Infinite: blur_720p 50.63 · Infinite: instanced_2160p 37.10 · Infinite: instanced_1080p 36.39 · Infinite: instanced_720p 35.47 · Blender: blur_720p 46.13 · Blender: blur_2160p 44.87 · Blender: blur_1080p 44.34 · Blender: instanced_2160p 32.16 · Blender: instanced_1080p 29.69 · Blender: instanced_720p 28.83
+- `render.sync_offset_ms` (ms): Infinite 0.0417 · Blender 0.0208
+- `render.sync_drift_ms_min` (ms/min): Infinite 0 · Blender 0
 - `probe.cpu_voice_ms_s` (ms/s): node:Wavetable 3.03 · node:Analog 29.94
 
-Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 4466dd20; 2026-10-13 51affa29; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 8ca686d5; 2026-10-13 c5fd65c0; 2026-10-13 d6020b77; 2026-10-13 e182230c.
+Rows from (UTC date, commit): 2026-10-12 49f240d7; 2026-10-13 0531853e; 2026-10-13 38e754be; 2026-10-13 4466dd20; 2026-10-13 6136354a; 2026-10-13 71643a34; 2026-10-13 c2f7d0d1; 2026-10-13 c64eb6fe; 2026-10-13 d6020b77; 2026-10-13 db820427; 2026-10-13 e182230c; 2026-10-14 7f002bee.

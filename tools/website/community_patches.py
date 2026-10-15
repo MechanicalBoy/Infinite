@@ -10,7 +10,12 @@ Why:  patches arrive with odd names and unknown origin; one manifest holds name,
 Usage: python3 tools/website/community_patches.py --scan DIR [DIR..]   (adds new files to the manifest)
        python3 tools/website/community_patches.py                      (build every "ok" entry + index.json)
        python3 tools/website/community_patches.py --sheet              (contact sheet of all entries to /tmp/community_sheet.png)
-Exit codes: 0 done.
+       python3 tools/website/community_patches.py --smoke              (every published patch must open, play and show a picture)
+Smoke: runs the staged copies in website/assets/community through --validate and --frame. A patch must load
+      without errors, render its frame, and show a picture unless it needs a camera/mic or its manifest
+      entry says "picture": false (sound-only patch). Pixels are never compared: patches may look different
+      as Infinite evolves, they must only keep working.
+Exit codes: 0 done, 1 a smoke check failed.
 """
 import json, os, re, subprocess, sys, shutil, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -87,8 +92,56 @@ def publish():
     json.dump({"version": 1, "items": items}, open(os.path.join(OUT, "index.json"), "w"), indent=1, ensure_ascii=False)
     print(len(items), "published")
 
+def headless(args):
+    """(exit code, last JSON line as dict) of one headless Infinite run."""
+    try: r = subprocess.run([BIN] + args + ["--lenient"], capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired: return -1, {"errors": [{"code": "TIMEOUT", "message": "no result in 180 s"}]}
+    try: j = json.loads(r.stdout.strip().split("\n")[-1])
+    except ValueError: j = {"errors": [{"code": "CRASH" if r.returncode < 0 else "EXIT", "message": "exit %d" % r.returncode}]}
+    return r.returncode, j
+
+def errs(j): return "; ".join("%s %s" % (e.get("code", ""), e.get("message", "")) for e in j.get("errors", []))[:200]
+
+def smoke_one(it, tmp):
+    """(what was checked, '' or what failed) for one staged patch."""
+    sl = slug(it["name"]); dst = os.path.join(OUT, sl + os.path.splitext(it["src"])[1])
+    if not os.path.exists(dst): return "", "not staged (run community_patches.py)"
+    txt = open(dst, encoding="utf-8", errors="replace").read(); ns = nodes(txt)
+    rc, j = headless(["--validate", dst])
+    if rc != 0: return "", "does not open: " + errs(j)
+    if any(t in HW for _, t in ns): return "opens (needs a camera, mic or MIDI to play)", ""
+    d = os.path.join(tmp, sl); os.makedirs(d, exist_ok=True)
+    outs = [m[1] for m in (re.match(r"node (\d+) \S+ Output$", l) for l in txt.split("\n")) if m]
+    if outs:
+        fs = []
+        for o in outs:  # a patch may keep spare Outputs with nothing wired in: one that renders is enough
+            rc, j = headless(["--frame", dst, str(it.get("frame", 12)), d + "/", "--timeout", "60"] + (["--output", o] if len(outs) > 1 else []))
+            fs = sorted(f for f in os.listdir(d) if f.endswith(".png"))
+            if rc == 0 and fs: break
+        if rc != 0 or not fs: return "", "does not play: " + (errs(j) or "no frame")
+        if not it.get("picture", True): return "opens, plays", ""
+        lo, hi = Image.open(os.path.join(d, fs[0])).convert("RGB").resize((24, 24)).convert("L").getextrema()
+        return ("opens, plays, shows a picture", "") if hi - lo > 12 else ("", "blank picture")
+    if any(t == "Audio Out" for _, t in ns):
+        rc, j = headless(["--audio-summary", dst, os.path.join(d, "a.json"), "--duration", "2"])
+        if rc != 0 and "E_HARDWARE_SOURCE" in errs(j): return "opens (needs a live source to play)", ""
+        return ("opens, plays sound", "") if rc == 0 else ("", "does not play: " + errs(j))
+    return "opens (no Output or Audio Out to play)", ""
+
+def smoke():
+    import tempfile
+    its = [i for i in load()["items"] if i.get("ok")]; bad = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        for i in its:
+            did, why = smoke_one(i, tmp); bad += bool(why)
+            print("%s  %s: %s" % ("FAIL" if why else "ok  ", i["name"], why or did))
+    print('QUALITY id=patch.community_fail subject="Infinite: community patches" value=%d' % bad)
+    print("community smoke: %d patches, %d failed" % (len(its), bad))
+    return 1 if bad else 0
+
 if __name__ == "__main__":
     a = sys.argv[1:]
+    if a == ["--smoke"]: sys.exit(smoke())
     if a[:1] == ["--scan"]: scan(a[1:])
     elif a == ["--sheet"]: sheet()
     else: publish()

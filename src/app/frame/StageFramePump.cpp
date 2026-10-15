@@ -161,6 +161,8 @@ void DrawFramePump(FrameCtx& fc)
                // 4096-frame slab renders something the user never heard
                // (see OfflineAudioBlockFrames).
                const int blockCap = OfflineAudioBlockFrames();
+               // The take's output latency, latched before its first block.
+               on->LatchOfflineLatency(AudioEngine::Instance().OutputLatencySamples());
                int owed = on->OfflineAudioFramesOwed(lookahead);
                while (owed > 0)
                {
@@ -342,6 +344,13 @@ void DrawFramePump(FrameCtx& fc)
       // Same dev-harness carve-out as the startup check above.
       if (getenv("INFINITE_EXITAFTER") == nullptr && !HeadlessJobActive())
          PollAutosave();
+
+      // Effect shaders compile ahead, one stage a frame. Off under the dev
+      // harness (it would sit inside every fixture's sample window) except
+      // for the edit bench, which measures exactly this.
+      static bool sWarmShaders = !HeadlessJobActive() && (getenv("INFINITE_EXITAFTER") == nullptr || getenv("INFINITE_BENCH_B3EDITS") != nullptr);
+      if (sWarmShaders && frameId >= 30)
+         sWarmShaders = FilterNode::WarmNextShader();
 
       // Apply any RemoteControl RPC requests queued by the network thread
       // since last frame, before any ed:: drawing reads the graph this frame.

@@ -136,6 +136,25 @@ void RunRecSyncTest()
    printf("  [%s] a 10s stall caps at %d frames per call instead of bursting 300\n",
           capped ? "pass" : "FAIL", burst);
 
+   // A take whose audio went over full scale is written clipped, so the
+   // Output node's "saved"/"rendered" line has to say so. The peak is the
+   // largest sample handed to the recorder, kept across quieter blocks.
+   {
+      const float hot[4] = { 0.2f, -1.5f, 0.9f, 0.1f };
+      const float quiet[4] = { 0.1f, -0.3f, 0.2f, 0.0f };
+      float peak = 0.0f;
+      OutputNode::NoteAudioPeak(quiet, 4, peak);
+      const bool cleanOk = OutputNode::ClipSuffix(peak).empty() && OutputNode::ClipSuffix(1.0f).empty();
+      OutputNode::NoteAudioPeak(hot, 4, peak);
+      OutputNode::NoteAudioPeak(quiet, 4, peak);
+      const std::string note = OutputNode::ClipSuffix(peak);
+      const bool clipOk = cleanOk && std::abs(peak - 1.5f) < 1e-6f && note == " (audio clipped, +3.5 dB over)";
+      if (!clipOk)
+         failures++;
+      printf("  [%s] a take peaking at %.2f reports \"%s\"; a clean take reports nothing\n",
+             clipOk ? "pass" : "FAIL", peak, note.c_str());
+   }
+
    printf("REC SYNC %s\n", failures == 0 ? "OK" : "FAIL");
 }
 
@@ -1022,19 +1041,60 @@ bool RunAudioPdcTest()
    // device once. Same topology as zeroLatency, run with the dedupe the build
    // applies, then without it to prove the check can see a double count.
    AudioEngine::Instance().SetTopology(zeroLatency);
+   const uint64_t oversBefore = AudioEngine::Instance().MasterOverSamples();
+   AudioEngine::Instance().ResetMasterOverPeakHold();
    AudioEngine::Instance().ProcessOffline(buffer);
+   const uint64_t oversDoubled = AudioEngine::Instance().MasterOverSamples() - oversBefore;
+   const float overPeak = AudioEngine::Instance().MasterOverPeak();
    const Peak doubled = FindPeak(chan0.data(), kNumFrames);
    MarkDuplicateDeviceTerminals(zeroLatency.terminalBufferIndices);
    const bool markOk = zeroLatency.terminalBufferIndices[0].mixToDevice && !zeroLatency.terminalBufferIndices[1].mixToDevice;
    AudioEngine::Instance().SetTopology(zeroLatency);
    AudioEngine::Instance().ProcessOffline(buffer);
    const Peak deduped = FindPeak(chan0.data(), kNumFrames);
+   // v0.6 1.13: a master sum over full scale is counted (the 2.0 impulse, once
+   // per channel), and a sample at exactly full scale is not.
+   const uint64_t oversDeduped = AudioEngine::Instance().MasterOverSamples() - oversBefore - oversDoubled;
+   const bool oversOk = oversDoubled == (uint64_t)buffer.numChannels && std::abs(overPeak - doubled.value) < 1e-4f && oversDeduped == 0;
+   printf("AUDIOPDCTEST master overs: 2.0 impulse counted %llu (want %d, peak %.4f), 1.0 impulse counted %llu (want 0)  %s\n",
+          (unsigned long long)oversDoubled, buffer.numChannels, overPeak, (unsigned long long)oversDeduped, oversOk ? "OK" : "FAIL");
+   // The held peak is the worst of the take: a later block that stays under
+   // full scale must not lower it (a render's notice reads this one).
+   const float heldPeak = AudioEngine::Instance().MasterOverPeakHold();
+   AudioEngine::Instance().ResetMasterOverPeakHold();
+   const bool holdOk = std::abs(heldPeak - doubled.value) < 1e-4f && AudioEngine::Instance().MasterOverPeakHold() == 0.0f;
+   printf("AUDIOPDCTEST master over peak held across a clean block: %.4f (want %.4f), 0 after reset  %s\n",
+          heldPeak, doubled.value, holdOk ? "OK" : "FAIL");
    const bool dedupeOk = markOk && doubled.value > dryAlone.value * 1.9f &&
                          std::abs(deduped.value - dryAlone.value) <= dryAlone.value * 0.001f;
    printf("AUDIOPDCTEST same source on two terminals mixes once: alone %.4f  doubled %.4f  deduped %.4f  %s\n",
           dryAlone.value, doubled.value, deduped.value, dedupeOk ? "OK" : "FAIL");
 
-   const bool ok = hasLatency && dryOffsetOk && wetOffsetOk && alignedOk && amplitudeOk && zeroAllocOk && dedupeOk;
+   // An Audio Out's own Record keeps the largest sample it wrote, through
+   // quieter audio and after Stop (its body says "last take clipped"), and a
+   // new take starts from zero.
+   bool takePeakOk = false;
+   {
+      AudioOutputNode rec;
+      const std::string path = TmpPath("infinite_takepeak.wav");
+      const float hot[4] = { 0.5f, -1.5f, 0.25f, 0.25f };
+      const float quiet[4] = { 0.1f, -0.1f, 0.1f, -0.1f };
+      const bool started = rec.StartRecording(path, 48000.0);
+      rec.CaptureRing().Write(hot, 4);
+      rec.CookIfNeeded(1);
+      rec.CaptureRing().Write(quiet, 4);
+      rec.StopRecording();
+      const float after = rec.TakePeak();
+      const bool restarted = rec.StartRecording(path, 48000.0);
+      const float fresh = rec.TakePeak();
+      rec.StopRecording();
+      remove(path.c_str());
+      takePeakOk = started && restarted && std::abs(after - 1.5f) < 1e-6f && fresh == 0.0f;
+      printf("AUDIOPDCTEST Audio Out take peak: %.2f after a 1.5 sample (want 1.50), %.2f on a new take (want 0)  %s\n",
+             after, fresh, takePeakOk ? "OK" : "FAIL");
+   }
+
+   const bool ok = hasLatency && dryOffsetOk && wetOffsetOk && alignedOk && amplitudeOk && zeroAllocOk && dedupeOk && oversOk && holdOk && takePeakOk;
    printf("%s\n", ok ? "AUDIOPDCTEST OK" : "AUDIOPDCTEST FAIL");
    return ok;
 }

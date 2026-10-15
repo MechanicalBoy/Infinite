@@ -45,8 +45,9 @@ public:
 
    void Reset() override
    {
-      mPhase = 0.0f;
+      mPhase = 0.0;
       mHoldL = mHoldR = 0.0f;
+      mPrevL = mPrevR = 0.0f;
       for (int i = 0; i < 2; i++)
       {
          mPreFilterL[i].Reset();
@@ -82,8 +83,11 @@ private:
       return next() - next();
    }
 
-   float mPhase = 0.0f;
+   // The hold clock, in double so its instants stay on the same times at
+   // every device rate over a long render (F14).
+   double mPhase = 0.0;
    float mHoldL = 0.0f, mHoldR = 0.0f;
+   float mPrevL = 0.0f, mPrevR = 0.0f; // last input sample, for the fractional hold instant
 
    // Analog mode: 11kHz reconstruction pre-filter stages
    DspMath::TptSvf mPreFilterL[2];
