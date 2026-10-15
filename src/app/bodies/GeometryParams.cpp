@@ -1563,13 +1563,18 @@ namespace app
       DropdownButton("type", LightNode::TypeNames(), n->type, [n](int i) { n->type = i; });
       ModSlider("orbit", &n->azimuth, -180.0f, 180.0f, "%.1f\xC2\xB0");
       ModSlider("elevation", &n->elevation, -85.9437f, 85.9437f, "%.1f\xC2\xB0");
-      if (n->type == 1 || n->type == 4)
-         ModSlider("distance", &n->distance, 0.2f, 20.0f);
-      if (n->type == 4)
-      {
-         ModSlider("cone angle", &n->spotAngle, 5.0f, 85.0f, "%.1f\xC2\xB0");
-         ModSlider("penumbra", &n->spotPenumbra, 0.0f, 1.0f);
-      }
+      // Every row is always drawn; a row the chosen type does not use is greyed, so the node never changes size.
+      ImGui::BeginDisabled(!(n->type == 1 || n->type == 4 || n->type == 5));
+      ModSlider("distance", &n->distance, 0.2f, 20.0f);
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(n->type != 4);
+      ModSlider("cone angle", &n->spotAngle, 5.0f, 85.0f, "%.1f\xC2\xB0");
+      ModSlider("penumbra", &n->spotPenumbra, 0.0f, 1.0f);
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(n->type != 5);
+      ModSlider("width", &n->areaWidth, 0.05f, 10.0f);
+      ModSlider("height", &n->areaHeight, 0.05f, 10.0f);
+      ImGui::EndDisabled();
       ColorSwatch("colour", n->color, n);
       ModSlider("intensity", &n->intensity, 0.0f, 5.0f);
       ModSlider("orbit / beat", &n->orbitPerBeat, -1.0f, 1.0f);

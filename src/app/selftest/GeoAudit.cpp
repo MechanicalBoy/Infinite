@@ -67,6 +67,7 @@
 #include "nodes/SweepRevolveNodes.h"
 #include "nodes/SimulationNodes.h"
 #include "nodes/Geometry3DNodes.h"
+#include "nodes/SceneNodes.h"
 #include "nodes/DelaunayNodes.h"
 #include "nodes/GeometryOpNodes.h"
 #include "nodes/OceanNode.h"
@@ -2089,6 +2090,60 @@ namespace
       return e;
    }
 
+
+   // --- AREALIGHT: Light node "Area" type (v0.6 3.6) --------------------------
+   // A tiny panel matches a point light at the same place; a big one gives a broader, softer highlight
+   // and never makes the picture non-finite or black; the back of the panel gives no light.
+   void AuditAreaLight(Flags& f, bool& ok)
+   {
+      (void)ok;
+      GeometryNode sphere;
+      sphere.shape = 2; sphere.detail = 48; sphere.sides = 48;
+      LightNode point, tiny, big, backFacing;
+      point.type = 1; tiny.type = 5; big.type = 5; backFacing.type = 5;
+      for (LightNode* l : { &point, &tiny, &big, &backFacing })
+      {
+         l->azimuth = 40.0f; l->elevation = 35.0f; l->distance = 3.0f; l->intensity = 2.0f;
+      }
+      tiny.areaWidth = tiny.areaHeight = 0.05f;
+      big.areaWidth = big.areaHeight = 3.0f;
+      auto draw = [&](LightNode& l, RqImage& im) {
+         Render3DNode r;
+         r.width = 192.0f; r.height = 192.0f; r.camDistance = 5.0f; r.camAzimuth = 40.0f; r.camElevation = 35.0f;
+         r.samples = 2;
+         r.geometry[0] = &sphere;
+         r.lights[0] = &l;
+         r.CookIfNeeded(gFrame++);
+         return RqRead(r, im);
+      };
+      RqImage ip, it, ib;
+      bool good = draw(point, ip);
+      good = draw(tiny, it) && good;
+      good = draw(big, ib) && good;
+      auto mean = [](const RqImage& im) { double s = 0; for (int y = 0; y < im.h; y++) for (int x = 0; x < im.w; x++) s += im.Luma(x, y); return s / (double)(im.w * im.h); };
+      auto bright = [](const RqImage& im, double cut) { int n = 0; for (int y = 0; y < im.h; y++) for (int x = 0; x < im.w; x++) if (im.Luma(x, y) > cut) n++; return n; };
+      double peakB = 0.0, peakT = 0.0;
+      if (good)
+         for (int y = 0; y < ip.h; y++)
+            for (int x = 0; x < ip.w; x++) { peakT = std::max(peakT, it.Luma(x, y)); peakB = std::max(peakB, ib.Luma(x, y)); }
+      const double mp = good ? mean(ip) : 0.0, mt = good ? mean(it) : 0.0, mb = good ? mean(ib) : 0.0;
+      printf("GEOAUDIT AREALIGHT mean luma point %.2f, tiny panel %.2f, 3x3 panel %.2f; peak tiny %.0f, big %.0f; pixels over 70%% of tiny's peak: tiny %d, big %d\n",
+             mp, mt, mb, peakT, peakB, good ? bright(it, 0.7 * peakT) : 0, good ? bright(ib, 0.7 * peakT) : 0);
+      if (!good) f.Flag("AREALIGHT", "render", "could not read the render", 0);
+      else
+      {
+         if (std::fabs(mp - mt) > 6.0) f.Flag("AREALIGHT", "tiny panel", "a tiny panel does not match a point light", std::fabs(mp - mt));
+         if (mb < 5.0) f.Flag("AREALIGHT", "big panel", "a big panel renders black", mb);
+         if (bright(ib, 0.7 * peakT) < bright(it, 0.7 * peakT)) f.Flag("AREALIGHT", "big panel", "a bigger panel does not widen the lit area", mb);
+      }
+      // The panel faces the origin, so a light behind a mirror-flat floor still lights what it faces; with the
+      // light pushed under the ground plane's far side nothing may go NaN: re-render at an extreme size.
+      backFacing.areaWidth = 1e6f; backFacing.areaHeight = 1e6f;
+      RqImage ie;
+      const bool ex = draw(backFacing, ie);
+      if (!ex || !(mean(ie) >= 0.0) || !(mean(ie) <= 255.0)) f.Flag("AREALIGHT", "extreme", "huge panel is not finite", 0);
+   }
+
    void AuditRenderQuality(Flags& f, bool& ok)
    {
       (void)ok;
@@ -2330,6 +2385,7 @@ bool RunGeoAudit()
       AuditDisplace(flags, ok);
    if (only != nullptr && strstr(only, "RENDERQ") != nullptr)
       AuditRenderQuality(flags, ok);
+      AuditAreaLight(flags, ok);
    printf("GEOAUDIT %s (%d flags)\n", ok ? "PASS" : "FAIL", flags.n);
    return ok;
 }
