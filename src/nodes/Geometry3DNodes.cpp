@@ -1185,7 +1185,7 @@ void Render3DNode::ReleaseTargets()
    if (mSceneColorTex != 0) { Bench::GpuMem::ReleaseTexture(mSceneColorTex); glDeleteTextures(1, &mSceneColorTex); mSceneColorTex = 0; }
    if (mSceneColorFbo != 0) { glDeleteFramebuffers(1, &mSceneColorFbo); mSceneColorFbo = 0; }
    if (mColorTex != 0) { Bench::GpuMem::ReleaseTexture(mColorTex); glDeleteTextures(1, &mColorTex); mColorTex = 0; }
-   if (mDepthBuffer != 0) { Bench::GpuMem::ReleaseRenderbuffer(mDepthBuffer); glDeleteRenderbuffers(1, &mDepthBuffer); mDepthBuffer = 0; }
+   if (mDepthTex != 0) { Bench::GpuMem::ReleaseTexture(mDepthTex); glDeleteTextures(1, &mDepthTex); mDepthTex = 0; }
    if (mFbo != 0) { glDeleteFramebuffers(1, &mFbo); mFbo = 0; }
    if (mMsColor != 0) { Bench::GpuMem::ReleaseRenderbuffer(mMsColor); glDeleteRenderbuffers(1, &mMsColor); mMsColor = 0; }
    if (mMsDepth != 0) { Bench::GpuMem::ReleaseRenderbuffer(mMsDepth); glDeleteRenderbuffers(1, &mMsDepth); mMsDepth = 0; }
@@ -1195,6 +1195,7 @@ void Render3DNode::ReleaseTargets()
 Render3DNode::~Render3DNode()
 {
    ReleaseTargets();
+   ReleasePost();
    ReleaseShadowTargets();
    for (GpuMesh& gpu : mGpu)
       ReleaseGpuMesh(gpu);
@@ -1273,31 +1274,39 @@ bool Render3DNode::EnsureShader()
 
 bool Render3DNode::EnsureResources(int w, int h, int sampleCount)
 {
-   if (mFbo != 0 && mWidth == w && mHeight == h && mActiveSamples == sampleCount)
+   if (mFbo != 0 && mWidth == w && mHeight == h && mActiveSamples == sampleCount && mFloatTarget == floatOutput)
       return true;
 
    ReleaseTargets();
+   mFloatTarget = floatOutput;
+   const GLenum colorFmt = mFloatTarget ? GL_RGBA16F : GL_RGBA8;
+   const GLenum colorType = mFloatTarget ? GL_HALF_FLOAT : GL_UNSIGNED_BYTE;
 
    glGenTextures(1, &mColorTex);
    glBindTexture(GL_TEXTURE_2D, mColorTex);
-   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+   glTexImage2D(GL_TEXTURE_2D, 0, colorFmt, w, h, 0, GL_RGBA, colorType, nullptr);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-   Bench::GpuMem::RecordTexture(mColorTex, Bench::GpuMemCategory::RenderTargets, w, h, GL_RGBA8, false, "Render3D");
+   Bench::GpuMem::RecordTexture(mColorTex, Bench::GpuMemCategory::RenderTargets, w, h, colorFmt, false, "Render3D");
 
-   // A depth renderbuffer is the piece the 2D pipeline never needed: without it
-   // triangles composite in draw order instead of by distance.
-   glGenRenderbuffers(1, &mDepthBuffer);
-   glBindRenderbuffer(GL_RENDERBUFFER, mDepthBuffer);
-   glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
-   Bench::GpuMem::RecordRenderbuffer(mDepthBuffer, Bench::GpuMemCategory::RenderTargets, w, h, GL_DEPTH_COMPONENT24, 1, "Render3D");
+   // Depth is the piece the 2D pipeline never needed: without it triangles
+   // composite in draw order instead of by distance. It is a texture rather
+   // than a renderbuffer so ambient occlusion and depth of field can read it.
+   glGenTextures(1, &mDepthTex);
+   glBindTexture(GL_TEXTURE_2D, mDepthTex);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+   Bench::GpuMem::RecordTexture(mDepthTex, Bench::GpuMemCategory::RenderTargets, w, h, GL_DEPTH_COMPONENT24, false, "Render3D_Depth");
 
    glGenFramebuffers(1, &mFbo);
    glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mColorTex, 0);
-   glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mDepthBuffer);
+   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, mDepthTex, 0);
 
    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
    glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1336,8 +1345,8 @@ bool Render3DNode::EnsureResources(int w, int h, int sampleCount)
    {
       glGenRenderbuffers(1, &mMsColor);
       glBindRenderbuffer(GL_RENDERBUFFER, mMsColor);
-      glRenderbufferStorageMultisample(GL_RENDERBUFFER, resolved, GL_RGBA8, w, h);
-      Bench::GpuMem::RecordRenderbuffer(mMsColor, Bench::GpuMemCategory::RenderTargets, w, h, GL_RGBA8, resolved, "Render3D_MSAA");
+      glRenderbufferStorageMultisample(GL_RENDERBUFFER, resolved, colorFmt, w, h);
+      Bench::GpuMem::RecordRenderbuffer(mMsColor, Bench::GpuMemCategory::RenderTargets, w, h, colorFmt, resolved, "Render3D_MSAA");
 
       glGenRenderbuffers(1, &mMsDepth);
       glBindRenderbuffer(GL_RENDERBUFFER, mMsDepth);
@@ -1373,13 +1382,13 @@ bool Render3DNode::EnsureResources(int w, int h, int sampleCount)
    // attachment, no depth: it only exists to be blitted into and sampled.
    glGenTextures(1, &mSceneColorTex);
    glBindTexture(GL_TEXTURE_2D, mSceneColorTex);
-   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+   glTexImage2D(GL_TEXTURE_2D, 0, colorFmt, w, h, 0, GL_RGBA, colorType, nullptr);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
    glGenerateMipmap(GL_TEXTURE_2D);
-   Bench::GpuMem::RecordTexture(mSceneColorTex, Bench::GpuMemCategory::RenderTargets, w, h, GL_RGBA8, true, "Render3D_SceneColor");
+   Bench::GpuMem::RecordTexture(mSceneColorTex, Bench::GpuMemCategory::RenderTargets, w, h, colorFmt, true, "Render3D_SceneColor");
 
    glGenFramebuffers(1, &mSceneColorFbo);
    glBindFramebuffer(GL_FRAMEBUFFER, mSceneColorFbo);
@@ -1533,6 +1542,15 @@ void Render3DNode::CookIfNeeded(int frameId)
       return;
    mLastCookFrame = frameId;
 
+   // Supersampling only ever adds passes on an offline render; a live cook is
+   // always the single pass so the real-time cost never changes.
+   if (supersample > 1 && !mInAccumulate && renderPass == 0 && Transport::Instance().IsOfflineMode() && Accumulate(frameId))
+      return;
+   CookOnce(frameId);
+}
+
+void Render3DNode::CookOnce(int frameId)
+{
    if (!EnsureShader())
       return;
 
@@ -1618,6 +1636,17 @@ void Render3DNode::CookIfNeeded(int frameId)
       proj = (projection == 1)
          ? Mat4::Orthographic(orthoHeight, aspect, nearPlane, farPlane)
          : Mat4::Perspective(fov * 3.14159265f / 180.0f, aspect, nearPlane, farPlane);
+   }
+   if (mJitterIndex >= 0)
+   {
+      // Sub-pixel offset for supersampling: a Halton(2,3) point, in clip
+      // units. A perspective matrix shifts through its z column (it is divided
+      // by w = -z), an orthographic one through the translation.
+      auto halton = [](int i, int base) { float f = 1.0f, r = 0.0f; while (i > 0) { f /= (float)base; r += f * (float)(i % base); i /= base; } return r; };
+      const float jx = (halton(mJitterIndex + 1, 2) - 0.5f) * 2.0f / (float)w;
+      const float jy = (halton(mJitterIndex + 1, 3) - 0.5f) * 2.0f / (float)h;
+      if (proj.m[11] != 0.0f) { proj.m[8] += jx; proj.m[9] += jy; }
+      else { proj.m[12] += jx; proj.m[13] += jy; }
    }
    const Mat4 viewProj = Mat4::Multiply(proj, view);
    // Camera basis in world space for billboarding point-cloud sprites - rows
@@ -2688,9 +2717,17 @@ void Render3DNode::CookIfNeeded(int frameId)
       Bench::ConditionalGpuStageTimer benchResolve(benchPassRing, "r3d_resolve", frameId);
       glBindFramebuffer(GL_READ_FRAMEBUFFER, mMsFbo);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, mFbo);
-      glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      // Depth comes along only when the post stage will read it.
+      glBlitFramebuffer(0, 0, w, h, 0, 0, w, h,
+                        GL_COLOR_BUFFER_BIT | (PostActive() ? GL_DEPTH_BUFFER_BIT : 0), GL_NEAREST);
       glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+   }
+
+   if (PostActive())
+   {
+      Bench::ConditionalGpuStageTimer benchPost(benchPassRing, "r3d_post", frameId);
+      RunPost(proj, proj.m[11] == 0.0f, w, h);
    }
 
    // --- restore, or every 2D node after this draws wrongly ------------

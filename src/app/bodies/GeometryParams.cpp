@@ -1823,6 +1823,16 @@ namespace app
       ModCheckbox("depth test", &n->depthTest);
       ModCheckbox("cull backfaces", &n->backfaceCull);
 
+      NodeSeparator("quality", colW);
+      ModSlider("ambient occlusion", &n->aoStrength, 0.0f, 1.0f, "%.3f", colW);
+      if (n->aoStrength > 0.0f)
+         ModSlider("occlusion radius", &n->aoRadius, 0.05f, 3.0f, "%.3f", colW);
+      ModSlider("depth of field", &n->dofAperture, 0.0f, 4.0f, "%.3f", colW);
+      if (n->dofAperture > 0.0f)
+         ModSlider("focus distance", &n->focusDistance, 0.3f, 30.0f, "%.3f", colW);
+      ModCheckbox("16-bit float output", &n->floatOutput);
+      ModSliderInt("offline supersample", &n->supersample, 1, 64, colW);
+
       ImGui::EndGroup();
    }
 

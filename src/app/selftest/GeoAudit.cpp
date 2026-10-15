@@ -73,10 +73,12 @@
 #include "nodes/PointDistributionNodes.h"
 #include "nodes/UtilityNodes.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <functional>
 #include <map>
+#include <limits>
 #include <set>
 #include <tuple>
 #include <unordered_map>
@@ -2052,12 +2054,244 @@ namespace
          f.Flag("DISP", "no texture", "vertices moved without a texture", moved);
    }
 
+
+   // --- RENDERQ: Render 3D quality (v0.6 3.5) ---------------------------------
+   // Needs GL. Ambient occlusion, depth of field, offline supersampling and the
+   // float output, each against the plain render of the same scene.
+   struct RqImage
+   {
+      int w = 0, h = 0;
+      std::vector<unsigned char> px;
+      double Luma(int x, int y) const
+      {
+         const unsigned char* p = &px[((size_t)y * w + x) * 4];
+         return 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+      }
+   };
+
+   bool RqRead(Render3DNode& r, RqImage& img)
+   {
+      return ReadNodeImageRgba8(&r, 0, true, img.w, img.h, img.px);
+   }
+
+   void RqCook(Render3DNode& r)
+   {
+      r.CookIfNeeded(gFrame++);
+   }
+
+   // Sum of absolute luma steps inside a window: how much detail is left in it.
+   double RqEnergy(const RqImage& im, int x0, int y0, int x1, int y1)
+   {
+      double e = 0.0;
+      for (int y = y0; y < y1 - 1; y++)
+         for (int x = x0; x < x1 - 1; x++)
+            e += std::fabs(im.Luma(x + 1, y) - im.Luma(x, y)) + std::fabs(im.Luma(x, y + 1) - im.Luma(x, y));
+      return e;
+   }
+
+   void AuditRenderQuality(Flags& f, bool& ok)
+   {
+      (void)ok;
+      GeometryNode plane, cube, sphere;
+      plane.shape = 0; plane.uniformScale = 6.0f; plane.rotX = -90.0f;
+      cube.shape = 1; cube.posY = 0.5f;
+      sphere.shape = 2; sphere.detail = 48; sphere.sides = 48; sphere.posY = 0.0f;
+
+      auto setup = [](Render3DNode& r, int dim) {
+         r.width = (float)dim; r.height = (float)dim;
+         r.camDistance = 5.0f; r.camAzimuth = 35.0f; r.camElevation = 30.0f;
+         r.samples = 2;
+      };
+      Render3DNode scene, flat;
+      setup(scene, 256); setup(flat, 256);
+      scene.geometry[0] = &plane; scene.geometry[1] = &cube;
+      flat.geometry[0] = &plane;
+
+      // 1. Defaults leave the render exactly as it was.
+      RqImage base, again;
+      RqCook(scene);
+      bool good = RqRead(scene, base);
+      Render3DNode scene2; setup(scene2, 256);
+      scene2.geometry[0] = &plane; scene2.geometry[1] = &cube;
+      RqCook(scene2); good = good && RqRead(scene2, again);
+      int diff = 0;
+      if (good) for (size_t i = 0; i < base.px.size(); i++) if (base.px[i] != again.px[i]) diff++;
+      printf("GEOAUDIT RENDERQ default render repeats exactly (%d byte differences), 8-bit target %s\n", diff,
+             NodeImageIsFloat(&scene, 0) ? "NO" : "yes");
+      if (!good || diff != 0) f.Flag("RENDERQ", "defaults", "default render is not repeatable", diff);
+      if (NodeImageIsFloat(&scene, 0)) f.Flag("RENDERQ", "defaults", "default output is float", 1);
+
+      // 2. Ambient occlusion: never brightens, leaves the background and a flat plane alone, darkens the contact.
+      auto meanLuma = [](const RqImage& im) { double s = 0; for (int y = 0; y < im.h; y++) for (int x = 0; x < im.w; x++) s += im.Luma(x, y); return s / (double)(im.w * im.h); };
+      RqImage aoFull, aoHalf, flatBase, flatAo;
+      scene.aoStrength = 1.0f; scene.aoRadius = 0.6f;
+      RqCook(scene); good = RqRead(scene, aoFull);
+      scene.aoStrength = 0.5f; RqCook(scene); good = RqRead(scene, aoHalf) && good;
+      int brighter = 0, darker = 0;
+      double worstDrop = 0.0;
+      if (good)
+         for (int y = 0; y < base.h; y++)
+            for (int x = 0; x < base.w; x++)
+            {
+               const double d = aoFull.Luma(x, y) - base.Luma(x, y);
+               if (d > 1.0) brighter++;
+               if (d < -4.0) darker++;
+               worstDrop = std::min(worstDrop, d);
+            }
+      const double mBase = meanLuma(base), mFull = meanLuma(aoFull), mHalf = meanLuma(aoHalf);
+      printf("GEOAUDIT RENDERQ ao: %d px brighter, %d px darker by >4 levels, worst drop %.1f, mean luma %.2f -> half %.2f -> full %.2f\n",
+             brighter, darker, worstDrop, mBase, mHalf, mFull);
+      if (!good || brighter > 0) f.Flag("RENDERQ", "ao", "occlusion brightened pixels", brighter);
+      if (darker < 200) f.Flag("RENDERQ", "ao", "occlusion left the contact crease unchanged", darker);
+      if (!(mFull < mHalf && mHalf < mBase)) f.Flag("RENDERQ", "ao", "strength does not scale the darkening", mFull);
+      if (good && (aoFull.Luma(2, 2) != base.Luma(2, 2))) f.Flag("RENDERQ", "ao", "background pixel changed", aoFull.Luma(2, 2));
+      flat.aoStrength = 0.0f; RqCook(flat); good = RqRead(flat, flatBase);
+      flat.aoStrength = 1.0f; flat.aoRadius = 0.6f; RqCook(flat); good = RqRead(flat, flatAo) && good;
+      int flatDiff = 0;
+      if (good) for (int y = 0; y < flatBase.h; y++) for (int x = 0; x < flatBase.w; x++)
+         if (std::fabs(flatAo.Luma(x, y) - flatBase.Luma(x, y)) > 3.0) flatDiff++;
+      printf("GEOAUDIT RENDERQ ao on a lone flat plane: %d px changed by >3 levels\n", flatDiff);
+      if (flatDiff > 40) f.Flag("RENDERQ", "ao", "a flat plane was occluded", flatDiff);
+      scene.aoStrength = 0.0f;
+
+      // 3. Depth of field: focused on the cube it keeps the cube sharp and softens the rest; focused far, the cube blurs.
+      RqImage dofNear, dofFar;
+      const int cx0 = 80, cy0 = 80, cx1 = 176, cy1 = 176;
+      const double eBase = RqEnergy(base, cx0, cy0, cx1, cy1), eAll = RqEnergy(base, 0, 0, base.w, base.h);
+      scene.dofAperture = 2.0f; scene.focusDistance = 5.0f; RqCook(scene); good = RqRead(scene, dofNear);
+      scene.focusDistance = 30.0f; RqCook(scene); good = RqRead(scene, dofFar) && good;
+      const double eNear = RqEnergy(dofNear, cx0, cy0, cx1, cy1), eFar = RqEnergy(dofFar, cx0, cy0, cx1, cy1);
+      const double aNear = RqEnergy(dofNear, 0, 0, base.w, base.h);
+      printf("GEOAUDIT RENDERQ dof: cube-window detail %.0f sharp, %.0f focused on it, %.0f focused far; whole image %.0f -> %.0f\n",
+             eBase, eNear, eFar, eAll, aNear);
+      if (!good || eNear < 0.8 * eBase) f.Flag("RENDERQ", "dof", "the focused subject lost detail", eNear / std::max(1.0, eBase));
+      if (eFar > 0.75 * eBase) f.Flag("RENDERQ", "dof", "an out-of-focus subject stayed sharp", eFar / std::max(1.0, eBase));
+      scene.dofAperture = 0.0f;
+
+      // 4. Supersampling: only offline, and it adds in-between values along edges.
+      scene.samples = 0;
+      RqImage ss1, ssLive, ss8;
+      RqCook(scene); good = RqRead(scene, ss1);
+      scene.supersample = 8; RqCook(scene); good = RqRead(scene, ssLive) && good;
+      Transport::Instance().SetOfflineMode(true);
+      RqCook(scene); good = RqRead(scene, ss8) && good;
+      scene.supersample = 1; RqCook(scene);
+      RqImage ssOff1; good = RqRead(scene, ssOff1) && good;
+      Transport::Instance().SetOfflineMode(false);
+      int liveDiff = 0;
+      std::set<int> lv1, lv8;
+      if (good) for (size_t i = 0; i < ss1.px.size(); i++) if (ss1.px[i] != ssLive.px[i]) liveDiff++;
+      if (good) for (int y = 0; y < ss1.h; y++) for (int x = 0; x < ss1.w; x++) { lv1.insert((int)std::lround(ss1.Luma(x, y) * 4)); lv8.insert((int)std::lround(ss8.Luma(x, y) * 4)); }
+      int offDiff = 0;
+      if (good) for (size_t i = 0; i < ss1.px.size(); i++) if (ss1.px[i] != ssOff1.px[i]) offDiff++;
+      const double sMean1 = meanLuma(ss1), sMean8 = meanLuma(ss8);
+      printf("GEOAUDIT RENDERQ supersample: live render with 8 set differs by %d bytes; offline 1 pass differs by %d; luma levels %zu -> %zu; mean %.2f -> %.2f\n",
+             liveDiff, offDiff, lv1.size(), lv8.size(), sMean1, sMean8);
+      if (liveDiff != 0) f.Flag("RENDERQ", "supersample", "a live render changed with supersample set", liveDiff);
+      if (offDiff != 0) f.Flag("RENDERQ", "supersample", "one offline pass differs from the plain render", offDiff);
+      if (lv8.size() < lv1.size() * 12 / 10) f.Flag("RENDERQ", "supersample", "no smoother edges", (double)lv8.size());
+      if (std::fabs(sMean8 - sMean1) > 2.0) f.Flag("RENDERQ", "supersample", "brightness drifted", sMean8 - sMean1);
+
+      // 5. Float output: real precision above 8 bits, same picture.
+      Render3DNode fl8, fl16;
+      setup(fl8, 128); setup(fl16, 128);
+      for (Render3DNode* r : { &fl8, &fl16 }) { r->geometry[0] = &sphere; r->tonemap = 0; r->exposure = 1.0f; }
+      fl16.floatOutput = true;
+      RqCook(fl8); RqCook(fl16);
+      RqImage p8; good = RqRead(fl8, p8);
+      std::vector<uint16_t> deep; int dw = 0, dh = 0;
+      const bool isFloat = NodeImageIsFloat(&fl16, 0);
+      good = ReadNodeImageRgba16(&fl16, 0, true, dw, dh, deep) && good;
+      std::set<int> d8, d16;
+      int maxStep = 0;
+      if (good) for (int i = 0; i < dw * dh; i++) { d16.insert(deep[(size_t)i * 4]); d8.insert(p8.px[(size_t)i * 4]); }
+      if (good) for (int i = 0; i < dw * dh; i++)
+         maxStep = std::max(maxStep, std::abs((int)std::lround(deep[(size_t)i * 4] / 257.0) - (int)p8.px[(size_t)i * 4]));
+      printf("GEOAUDIT RENDERQ float output: target %s, distinct red levels %zu (8-bit %zu), worst gap to the 8-bit render %d levels\n",
+             isFloat ? "16-bit float" : "8-bit", d16.size(), d8.size(), maxStep);
+      if (!isFloat) f.Flag("RENDERQ", "float", "output is not 16-bit float", 0);
+      if (d16.size() < 2 * d8.size()) f.Flag("RENDERQ", "float", "no more levels than 8 bits", (double)d16.size());
+      if (maxStep > 2) f.Flag("RENDERQ", "float", "float and 8-bit renders differ", maxStep);
+
+      // 6. Float with multisampling, AO, DOF and supersample together, and hostile values: none may crash or leave black.
+      Render3DNode mix; setup(mix, 96);
+      mix.geometry[0] = &plane; mix.geometry[1] = &cube;
+      mix.floatOutput = true; mix.samples = 2; mix.aoStrength = 1.0f; mix.dofAperture = 1.5f; mix.supersample = 4;
+      Transport::Instance().SetOfflineMode(true);
+      RqCook(mix);
+      Transport::Instance().SetOfflineMode(false);
+      RqImage mi; good = RqRead(mix, mi);
+      const double mixMean = good ? meanLuma(mi) : 0.0;
+      printf("GEOAUDIT RENDERQ everything on together: %s, mean luma %.2f\n", good ? "rendered" : "FAILED", mixMean);
+      if (!good || mixMean < 5.0) f.Flag("RENDERQ", "combined", "combined render is empty", mixMean);
+
+      const float hostile[] = { -5.0f, 0.0f, 1e-9f, 1e9f, std::nanf(""), std::numeric_limits<float>::infinity() };
+      int hostileBad = 0;
+      for (float v : hostile)
+      {
+         Render3DNode hz; setup(hz, 64);
+         hz.geometry[0] = &cube;
+         hz.aoStrength = 1.0f; hz.aoRadius = v; hz.dofAperture = 1.0f; hz.focusDistance = v;
+         hz.supersample = (int)std::max(-1e6f, std::min(1e6f, std::isfinite(v) ? v : 0.0f));
+         Transport::Instance().SetOfflineMode(true);
+         RqCook(hz);
+         Transport::Instance().SetOfflineMode(false);
+         RqImage hi;
+         if (!RqRead(hz, hi) || hi.w != 64) hostileBad++;
+      }
+      if (const char* dir = getenv("INFINITE_RENDERQ_DIR"))
+      {
+         const std::pair<const char*, const RqImage*> shots[] = { { "base", &base }, { "ao", &aoFull }, { "dof_focus_cube", &dofNear },
+                                                                    { "dof_focus_far", &dofFar }, { "alias_1pass", &ss1 }, { "supersample_8", &ss8 } };
+         for (const auto& sh : shots)
+            WriteSrgbPng(std::string(dir) + "/" + sh.first + ".png", sh.second->w, sh.second->h, sh.second->px.data());
+      }
+      // 7. What the live passes cost at 1080p: median of 21 cooks, each ended with glFinish.
+      {
+         Render3DNode big; setup(big, 1080);
+         big.width = 1920.0f; big.height = 1080.0f; big.samples = 2;
+         big.geometry[0] = &plane; big.geometry[1] = &cube;
+         auto timeMs = [&](const char* label) {
+            std::vector<double> t;
+            for (int i = 0; i < 21; i++)
+            {
+               big.camAzimuth += 0.37f; // a moved camera defeats the unchanged-scene skip
+               const auto t0 = std::chrono::steady_clock::now();
+               RqCook(big);
+               glFinish();
+               t.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+            }
+            std::sort(t.begin(), t.end());
+            printf("GEOAUDIT RENDERQ cost 1920x1080 4x MSAA %-22s %.2f ms (median of 21)\n", label, t[10]);
+            return t[10];
+         };
+         const double tBase = timeMs("scene only");
+         big.aoStrength = 1.0f; big.aoRadius = 0.6f;
+         const double tAo = timeMs("+ ambient occlusion");
+         big.aoStrength = 0.0f; big.dofAperture = 1.0f; big.focusDistance = 5.0f;
+         const double tDof = timeMs("+ depth of field");
+         big.floatOutput = true; big.dofAperture = 0.0f;
+         const double tFl = timeMs("float output only");
+         printf("GEOAUDIT RENDERQ added cost: ambient occlusion %.2f ms, depth of field %.2f ms\n", tAo - tBase, tDof - tBase);
+         (void)tFl;
+      }
+
+      Render3DNode empty; setup(empty, 64);
+      empty.aoStrength = 1.0f; empty.dofAperture = 1.0f; empty.supersample = 3;
+      Transport::Instance().SetOfflineMode(true);
+      RqCook(empty);
+      Transport::Instance().SetOfflineMode(false);
+      RqImage ei; if (!RqRead(empty, ei) || ei.w != 64) hostileBad++;
+      printf("GEOAUDIT RENDERQ hostile values and an empty scene: %d failures\n", hostileBad);
+      if (hostileBad != 0) f.Flag("RENDERQ", "hostile", "a hostile value or empty scene failed to render", hostileBad);
+   }
+
 } // namespace
 
 bool GeoAuditWantsGl()
 {
    const char* only = getenv("INFINITE_GEOAUDIT_ONLY");
-   return only != nullptr && strstr(only, "DISP") != nullptr;
+   return only != nullptr && (strstr(only, "DISP") != nullptr || strstr(only, "RENDERQ") != nullptr);
 }
 
 bool RunGeoAudit()
@@ -2094,6 +2328,8 @@ bool RunGeoAudit()
    // DISP needs a GL texture, so it only runs from the GL-ready dispatch (Startup.cpp) and only when asked for by name.
    if (only != nullptr && strstr(only, "DISP") != nullptr)
       AuditDisplace(flags, ok);
+   if (only != nullptr && strstr(only, "RENDERQ") != nullptr)
+      AuditRenderQuality(flags, ok);
    printf("GEOAUDIT %s (%d flags)\n", ok ? "PASS" : "FAIL", flags.n);
    return ok;
 }

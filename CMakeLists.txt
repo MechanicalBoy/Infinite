@@ -681,6 +681,7 @@ set(COMMON_SOURCES
     src/nodes/MidiNodes.cpp
     src/nodes/MidiOutNode.cpp
     src/nodes/Geometry3DNodes.cpp
+    src/nodes/Render3DPost.cpp
     src/nodes/EnvironmentNode.cpp
     src/nodes/ModelSourceNode.cpp
     src/nodes/Text3DNode.cpp
