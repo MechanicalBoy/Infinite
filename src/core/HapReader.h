@@ -68,7 +68,14 @@ namespace Hap
       // Reads and decodes frame `index` into texture block data.
       bool ReadFrame(int index, std::vector<uint8_t>& out, std::string& error);
 
+      // Asks the OS to start reading the next `count` frames (wrapping at the end
+      // of the clip) into the page cache, so a sequential read does not stall on
+      // a cold disk. Asynchronous, advisory, and a no-op where unsupported.
+      void Prefetch(int fromIndex, int count);
+
    private:
+      int mAdviseFd = -1;
+      std::string mPath;
       struct Sample
       {
          uint64_t offset = 0;

@@ -284,6 +284,10 @@ struct VideoSourceNode::HapState
             {
                std::lock_guard<std::mutex> rl(readerMutex);
                ok = reader.ReadFrame(idx, buf, err);
+               // The playhead moves forward one frame at a time, so start the disk
+               // on the next few now instead of stalling when they are asked for.
+               if (ok)
+                  reader.Prefetch(idx + 1, 3);
             }
             if (stats)
             {

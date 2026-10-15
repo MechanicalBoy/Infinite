@@ -4,6 +4,11 @@
 #include <cstring>
 #include <filesystem>
 
+#if defined(__APPLE__) || defined(__linux__)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 namespace Hap
 {
    namespace
@@ -599,6 +604,7 @@ namespace Hap
          error = "not a HAP movie";
          return false;
       }
+      mPath = path;
       mWidth = p.width;
       mHeight = p.height;
       mDuration = p.duration;
@@ -611,8 +617,42 @@ namespace Hap
       return true;
    }
 
+   void Reader::Prefetch(int fromIndex, int count)
+   {
+#if defined(__APPLE__) || defined(__linux__)
+      if (mSamples.empty())
+         return;
+      if (mAdviseFd < 0)
+         mAdviseFd = ::open(mPath.c_str(), O_RDONLY);
+      if (mAdviseFd < 0)
+         return;
+      const int n = (int)mSamples.size();
+      for (int k = 0; k < count; k++)
+      {
+         const Sample& s = mSamples[(size_t)(((fromIndex + k) % n + n) % n)];
+#if defined(__APPLE__)
+         struct radvisory ra;
+         ra.ra_offset = (off_t)s.offset;
+         ra.ra_count = (int)s.size;
+         fcntl(mAdviseFd, F_RDADVISE, &ra);
+#else
+         posix_fadvise(mAdviseFd, (off_t)s.offset, (off_t)s.size, POSIX_FADV_WILLNEED);
+#endif
+      }
+#else
+      (void)fromIndex; (void)count;
+#endif
+   }
+
    void Reader::Close()
    {
+#if defined(__APPLE__) || defined(__linux__)
+      if (mAdviseFd >= 0)
+      {
+         ::close(mAdviseFd);
+         mAdviseFd = -1;
+      }
+#endif
       if (mFile.is_open())
          mFile.close();
       mSamples.clear();

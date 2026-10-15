@@ -752,9 +752,18 @@ public:
 
 private:
    void Rebuild();
+   // Scale is the one parameter an LFO routinely animates, and it touches only
+   // the final per-instance matrix. The sampled poses (translation * basis *
+   // rotation) and the per-point scale jitter are cached so a scale-only change
+   // skips mesh transform, welding, sampling and random generation.
+   void ApplyScale();
 
    std::vector<Mat4> mTransforms;
    std::vector<float> mColors; // rgb triples, or empty for a uniform material
+   std::vector<Mat4> mPoses;       // mesh-sampling path only
+   std::vector<float> mScaleJitter; // 1 + (r0 - 0.5) * 2 * scaleRandom, per pose
+   bool mPosesValid = false;
+   Mat4 mPoseShapeModel;
    unsigned long long mInstanceRevision = 0;
    mutable unsigned long long mMaterialRevision = 0;
    mutable size_t mLastMaterialHash = 0;
