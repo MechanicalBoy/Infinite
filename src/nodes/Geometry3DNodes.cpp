@@ -396,6 +396,7 @@ namespace
       "uniform int uLightType[3];\n"
       "uniform float uLightSpotAngle[3];\n"
       "uniform float uLightSpotPenumbra[3];\n"
+      "uniform vec2 uLightArea[3];\n"
       "uniform int uLightCount;\n"
       "uniform vec3 uAmbient;\n"
       "uniform float uRim;\n"
@@ -700,7 +701,28 @@ namespace
       "      }\n"
       "      vec3 lightDir;\n"
       "      float attenuation = 1.0;\n"
-      "      if (uLightType[i] == 1 || uLightType[i] == 4) {\n"
+      "      if (uLightType[i] == 5) {\n"
+      "         // Rectangle light facing the origin. The direction used for shading is the point of the\n"
+      "         // rectangle nearest the mirror ray (the representative-point method), so a bigger panel\n"
+      "         // gives a broader, softer highlight; one-sided, no light leaves the back.\n"
+      "         vec3 lp = uLightDir[i];\n"
+      "         vec3 fwd = normalize(-lp);\n"
+      "         vec3 rgt = cross(vec3(0.0, 1.0, 0.0), fwd);\n"
+      "         rgt = (dot(rgt, rgt) < 1e-4) ? vec3(1.0, 0.0, 0.0) : normalize(rgt);\n"
+      "         vec3 upv = cross(fwd, rgt);\n"
+      "         vec2 half2 = 0.5 * uLightArea[i];\n"
+      "         vec3 refl = reflect(-viewDir, n);\n"
+      "         float rf = dot(refl, fwd);\n"
+      "         float tHit = (rf < -1e-4) ? dot(lp - vWorldPos, fwd) / rf : 0.0;\n"
+      "         vec3 hit = vWorldPos + refl * max(tHit, 0.0);\n"
+      "         vec3 rel = hit - lp;\n"
+      "         vec3 nearP = lp + rgt * clamp(dot(rel, rgt), -half2.x, half2.x) + upv * clamp(dot(rel, upv), -half2.y, half2.y);\n"
+      "         vec3 toLight = nearP - vWorldPos;\n"
+      "         float dist = length(toLight);\n"
+      "         lightDir = toLight / max(dist, 1e-4);\n"
+      "         attenuation = 1.0 / (1.0 + dist * dist * 0.25);\n"
+      "         attenuation *= clamp(dot(-lightDir, fwd) * 4.0, 0.0, 1.0);\n"
+      "      } else if (uLightType[i] == 1 || uLightType[i] == 4) {\n"
       "         vec3 toLight = uLightDir[i] - vWorldPos;\n"
       "         float dist = length(toLight);\n"
       "         lightDir = toLight / max(dist, 1e-4);\n"
@@ -1661,6 +1683,7 @@ void Render3DNode::CookOnce(int frameId)
    int lightTypes[kLightSlots] = { 0 };
    float lightSpotAngle[kLightSlots] = { 45.0f, 45.0f, 45.0f };
    float lightSpotPenumbra[kLightSlots] = { 0.2f, 0.2f, 0.2f };
+   float lightArea[kLightSlots * 2] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
    int lightCount = 0;
    for (int i = 0; i < kLightSlots; i++)
    {
@@ -1678,6 +1701,8 @@ void Render3DNode::CookOnce(int frameId)
       lightTypes[lightCount] = lights[i]->type;
       lightSpotAngle[lightCount] = lights[i]->spotAngle;
       lightSpotPenumbra[lightCount] = lights[i]->spotPenumbra;
+      lightArea[lightCount * 2 + 0] = std::max(0.01f, lights[i]->areaWidth);
+      lightArea[lightCount * 2 + 1] = std::max(0.01f, lights[i]->areaHeight);
       lightCount++;
    }
    if (lightCount == 0)
@@ -1901,6 +1926,7 @@ void Render3DNode::CookOnce(int frameId)
    glUniform1iv(glGetUniformLocation(mProgram, "uLightType"), kLightSlots, lightTypes);
    glUniform1fv(glGetUniformLocation(mProgram, "uLightSpotAngle"), kLightSlots, lightSpotAngle);
    glUniform1fv(glGetUniformLocation(mProgram, "uLightSpotPenumbra"), kLightSlots, lightSpotPenumbra);
+   glUniform2fv(glGetUniformLocation(mProgram, "uLightArea"), kLightSlots, lightArea);
    glUniform1i(glGetUniformLocation(mProgram, "uLightCount"), lightCount);
    glUniform3fv(glGetUniformLocation(mProgram, "uAmbient"), 1, ambientColor);
    glUniform1f(glGetUniformLocation(mProgram, "uRim"), rimIntensity);
@@ -1915,7 +1941,8 @@ void Render3DNode::CookOnce(int frameId)
    glUniform1i(glGetUniformLocation(mProgram, "uShadowMap"), 1);
    glUniform1i(glGetUniformLocation(mProgram, "uShadowsOn"), shadowsActive ? 1 : 0);
    glUniform1f(glGetUniformLocation(mProgram, "uShadowBias"), shadowBias);
-   glUniform1f(glGetUniformLocation(mProgram, "uShadowSoftness"), shadowSoftness);
+   glUniform1f(glGetUniformLocation(mProgram, "uShadowSoftness"),
+               lightTypes[0] == 5 ? shadowSoftness * (1.0f + 1.5f * std::max(lightArea[0], lightArea[1])) : shadowSoftness);
    glUniform1f(glGetUniformLocation(mProgram, "uShadowStrength"), shadowStrength);
    glUniform1f(glGetUniformLocation(mProgram, "uShadowTexel"),
                mShadowSize > 0 ? 1.0f / (float)mShadowSize : 0.0f);
