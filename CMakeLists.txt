@@ -532,6 +532,7 @@ set(COMMON_SOURCES
     src/core/Delaunay.cpp
     src/core/CurveOps.cpp
     src/core/SweepRevolve.cpp
+    src/core/BevelInset.cpp
     src/core/MeshDecimate.cpp
     src/core/NodeViewport.cpp
     src/core/Transport.cpp

@@ -47,6 +47,8 @@
 //               the volume the shape has (torus, sphere, capped part-turns, a non-convex cap,
 //               a taper to a point, a closed path with whole-turn twist); lathe normals against
 //               the analytic torus; the nodes' cache, bypass, forwarding and hostile numbers
+//   BEVEL       Bevel and Inset: closed in, closed out; volume against the chamfer prisms and the
+//               six frustums of an inset cube; smooth shapes and hostile numbers hand the input back
 //   CLOTH       free fall against g t^2 / 2, pinned cloth over 12 s (finite, bounded
 //               stretch, pins hold, sags, settles), determinism, a long time jump, bypass
 //   INST        Instance on Points: count, maxPoints cap, placement on the surface, scale,
@@ -1165,6 +1167,108 @@ namespace
          return r;
       }
       return p;
+   }
+
+
+   // ================================================================= BEVEL
+   // Edge bevel and face inset (3.7). Closed in, closed out; the volume follows the shape
+   // (a bevel only removes, a wider one removes more, a rounder one removes less than the
+   // chamfer, an inset of a cube is a frustum per face), hostile numbers hand the input back
+   // or still give a closed mesh.
+   void AuditBevelInset(Flags& f, bool& ok)
+   {
+      auto stats = [&](const char* name, const Mesh& m, bool closed) {
+         const Stats s = Measure(m);
+         printf("GEOAUDIT BEVEL  %-34s %6zu verts %6zu tris | boundary %d nonmanifold %d volume %.4f\n", name,
+                s.verts, s.tris, s.boundary, s.nonManifold, s.volume);
+         if (s.tris == 0)
+            f.Flag("BEVEL", name, "no triangles", 0);
+         else
+            Report(f, "BEVEL", name, s, closed, ok);
+         return s;
+      };
+
+      const Mesh cube = Primitives::Cube(1);
+      const Stats base = Measure(cube);
+      const double edge = std::cbrt(base.volume);
+
+      const Stats b1 = stats("Bevel cube 0.1 chamfer", MeshOps::BevelEdges(cube, 0.1f * (float)edge, 1, 30.0f), true);
+      const Stats b4 = stats("Bevel cube 0.1 round x4", MeshOps::BevelEdges(cube, 0.1f * (float)edge, 4, 30.0f), true);
+      const Stats bw = stats("Bevel cube 0.2 chamfer", MeshOps::BevelEdges(cube, 0.2f * (float)edge, 1, 30.0f), true);
+      const Stats bh = stats("Bevel cube 99 (clamped)", MeshOps::BevelEdges(cube, 99.0f, 2, 30.0f), true);
+      if (!(b1.volume < base.volume))
+         f.Flag("BEVEL", "Bevel cube chamfer", "volume did not shrink", b1.volume - base.volume);
+      if (!(bw.volume < b1.volume))
+         f.Flag("BEVEL", "Bevel cube chamfer", "wider bevel did not remove more", bw.volume - b1.volume);
+      if (!(b4.volume > b1.volume && b4.volume < base.volume))
+         f.Flag("BEVEL", "Bevel cube round", "rounded bevel volume not between chamfer and original", b4.volume);
+      // Chamfer lower bound: 12 prisms of cross section w^2/2 over the edge length, overlaps at
+      // the corners only make the true volume larger.
+      const double w = 0.1 * edge;
+      const double lower = base.volume - 12.0 * 0.5 * w * w * edge;
+      if (b1.volume < lower - 1e-6)
+         f.Flag("BEVEL", "Bevel cube chamfer", "removed more than the 12 edge prisms", b1.volume - lower);
+
+      // A box that is not a cube, a cylinder with caps, and smooth shapes that must not change.
+      Mesh box = MeshOps::Transform(cube, Mat4::Scale(2.0f, 1.0f, 0.5f));
+      stats("Bevel box 2x1x0.5", MeshOps::BevelEdges(box, 0.08f, 2, 30.0f), true);
+      const Mesh cyl = Primitives::Cylinder(24, 1, 1.0f);
+      stats("Bevel cylinder", MeshOps::BevelEdges(cyl, 0.05f, 2, 30.0f), true);
+      const Mesh torus = Primitives::Torus(24, 12, 0.3f);
+      const Mesh tb = MeshOps::BevelEdges(torus, 0.05f, 2, 60.0f);
+      if (tb.indices.size() != torus.indices.size())
+         f.Flag("BEVEL", "Bevel torus", "a smooth shape changed", (double)tb.indices.size() - (double)torus.indices.size());
+      const Mesh sphere = Primitives::Sphere(12, 16);
+      if (MeshOps::BevelEdges(sphere, 0.05f, 2, 60.0f).indices.size() != sphere.indices.size())
+         f.Flag("BEVEL", "Bevel sphere", "a smooth shape changed", 0);
+
+      // Hostile numbers hand the input back untouched.
+      for (float bad : { 0.0f, -1.0f, std::nanf(""), INFINITY })
+      {
+         const Mesh r = MeshOps::BevelEdges(cube, bad, 3, 30.0f);
+         if (r.indices.size() != cube.indices.size())
+            f.Flag("BEVEL", "Bevel hostile width", "input not returned", bad);
+      }
+      stats("Bevel 999 segments (clamped)", MeshOps::BevelEdges(cube, 0.1f, 999, 30.0f), true);
+      if (!MeshOps::BevelEdges(Mesh(), 0.1f, 1, 30.0f).Empty())
+         f.Flag("BEVEL", "Bevel empty", "made geometry out of nothing", 0);
+
+      // ---- Inset: every cube face pulled in by wi and lifted by d is a frustum added to it.
+      const double wi = 0.15 * edge, d = 0.1 * edge;
+      const Stats i0 = stats("Inset cube flat", MeshOps::InsetFaces(cube, (float)wi, 0.0f, 20.0f), true);
+      const Stats i1 = stats("Inset cube raised", MeshOps::InsetFaces(cube, (float)wi, (float)d, 20.0f), true);
+      const Stats i2 = stats("Inset cube sunk", MeshOps::InsetFaces(cube, (float)wi, -(float)d, 20.0f), true);
+      if (std::fabs(i0.volume - base.volume) > 1e-5 * base.volume)
+         f.Flag("BEVEL", "Inset cube flat", "volume changed with no depth", i0.volume - base.volume);
+      const double a1 = edge * edge, a2 = (edge - 2 * wi) * (edge - 2 * wi);
+      const double frustum = d / 3.0 * (a1 + a2 + std::sqrt(a1 * a2));
+      if (std::fabs(i1.volume - (base.volume + 6.0 * frustum)) > 1e-3 * base.volume)
+         f.Flag("BEVEL", "Inset cube raised", "volume off the six frustums", i1.volume - base.volume - 6.0 * frustum);
+      if (std::fabs(i2.volume - (base.volume - 6.0 * frustum)) > 1e-3 * base.volume)
+         f.Flag("BEVEL", "Inset cube sunk", "volume off the six frustums", i2.volume - base.volume + 6.0 * frustum);
+      const Mesh sph = MeshOps::InsetFaces(sphere, 0.05f, 0.0f, 20.0f);
+      if (sph.indices.size() != sphere.indices.size())
+         f.Flag("BEVEL", "Inset sphere", "a shape with no boundary changed", 0);
+
+      // A selection: only the chosen face is inset, and it stays the selection.
+      Mesh masked = cube;
+      masked.faceMask.assign(masked.indices.size() / 3, 0);
+      masked.faceMask[0] = masked.faceMask[1] = 1;
+      const Mesh mi = MeshOps::InsetFaces(masked, (float)wi, (float)d, 20.0f);
+      stats("Inset one cube face", mi, true);
+      int selected = 0;
+      for (unsigned char m : mi.faceMask)
+         selected += m != 0;
+      if (mi.faceMask.size() != mi.indices.size() / 3)
+         f.Flag("BEVEL", "Inset one face", "mask length off the triangle count", (double)mi.faceMask.size());
+      if (selected < 1 || selected > 2)
+         f.Flag("BEVEL", "Inset one face", "inner face not left selected, selected triangles", selected);
+      for (float bad : { 0.0f, -1.0f, std::nanf("") })
+         if (MeshOps::InsetFaces(cube, bad, 0.0f, 20.0f).indices.size() != cube.indices.size())
+            f.Flag("BEVEL", "Inset hostile width", "input not returned", bad);
+      if (!MeshOps::InsetFaces(cube, 0.1f, INFINITY, 20.0f).vertices.empty() &&
+          MeshOps::InsetFaces(cube, 0.1f, INFINITY, 20.0f).indices.size() != cube.indices.size())
+         f.Flag("BEVEL", "Inset hostile depth", "input not returned", 0);
    }
 
    void AuditSweepRevolve(Flags& f, bool& ok)
@@ -2374,6 +2478,8 @@ bool RunGeoAudit()
       AuditCurveOps(flags, ok);
    if (want("SWEEP"))
       AuditSweepRevolve(flags, ok);
+   if (want("BEVEL"))
+      AuditBevelInset(flags, ok);
    if (want("CLOTH"))
       AuditCloth(flags, ok);
    if (want("INST"))

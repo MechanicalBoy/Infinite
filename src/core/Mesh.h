@@ -384,6 +384,15 @@ namespace MeshOps
    // what a bevel is usually wanted for.
    Mesh Bevel(const Mesh& in, float amount, int segments);
 
+   // True edge bevel (src/core/BevelInset.cpp). Edges where faces meet at more than `angleDeg`
+   // are cut back by `width` on both sides and filled with `segments` strips (1 = chamfer, more
+   // = round), with a patch at each corner. `width` is capped at 45 % of the shortest sharp edge.
+   Mesh BevelEdges(const Mesh& in, float width, int segments, float angleDeg);
+   // Insets the selected faces (all faces when nothing is selected): every connected smooth patch
+   // is pulled in by `width` and lifted by `depth`, leaving a wall ring. The inner faces stay
+   // selected when the input carried a selection.
+   Mesh InsetFaces(const Mesh& in, float width, float depth, float angleDeg);
+
    // --- curves ---
    // Samples a polyline by arc length rather than by index, so a point moving
    // at constant t moves at constant speed even where the control points bunch
