@@ -19,14 +19,14 @@ is reported and skipped. Audio, note and modulator nodes are listed as uncovered
 Triage the results by hand: a control that needs an input or time you did not provide can read as
 inert. Exits 0 always; this is a finder, not a gate.
 """
-import argparse, json, os, random, sys, time
+import argparse, json, math, os, random, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import node_screenshot as ns
 
 CAP_CONFIGS = 16
 EXCITED = 3
-FEEDERS = ["Circle", "Ramp", "Star", "Cross"]
+FEEDERS = ["Ramp", "Circle", "Star", "Cross"]
 SKIP_TYPES = {"Output", "Comment", "Group", "Null", "Viewport", "Syphon In", "NDI In", "Syphon Out", "NDI Out",
               "Video In", "Video", "Audio In", "Plugin", "Render 3D", "Model 3D", "Group 3D", "Null 3D", "Camera",
               "Light", "HDRI", "Projection", "Image Source", "Slideshow", "Texture"}
@@ -36,13 +36,25 @@ class Audit:
     def __init__(self, c):
         self.c = c
 
+    audio = False
+
     def hash(self, idx):
+        if self.audio:
+            r = self.c.call("audio_hash", seconds=0.4)
+            # Synth phases are not reset between renders, so compare coarse features (log buckets of
+            # level, brightness, pitch, release tail) rather than the exact samples.
+            def q(v):
+                return -99 if v <= 1e-6 else round(math.log(v) * 10)
+            return f"{q(r['rms'])}/{q(r['peak'])}/{q(r['lowRms'])}/{q(r['zcr'] + 1)}/{q(r['tailRms'])}"
         return self.c.call("output_hash", index=idx)["hash"]
 
     def state(self, idx):
         return self.c.call("param_ui_state", index=idx)
 
     def setp(self, idx, key, val):
+        # The control server replays the value as text; bool/int loaders reject "1.0", so send whole numbers as ints.
+        if isinstance(val, float) and val == int(val):
+            val = int(val)
         self.c.call("set_param", index=idx, name=key, value=val)
 
     def params(self, idx):
@@ -122,6 +134,28 @@ def run_node(a, typ, category, kind, report):
     c = a.c
     c.call("new_patch")
     idx = c.call("create_node", typeName=typ, category=category, x=0, y=0)["index"]
+    a.audio = kind == "audio"
+    if a.audio:
+        # Notes -> a source oscillator -> the node (or notes -> the node, for a synth) -> Audio Out.
+        d = c.call("describe", type=typ)
+        kb = c.call("create_node", typeName="Keyboard", category=ns.find_category(c, "Keyboard"), x=-900, y=0)["index"]
+        for inp in d["inputs"]:
+            if inp["kind"] == "note":
+                c.call("connect", srcIndex=kb, srcOutput=0, dstIndex=idx, dstSlot=inp["slot"])
+            elif inp["kind"] == "audio":
+                osc = c.call("create_node", typeName="Oscillator", category=ns.find_category(c, "Oscillator"),
+                             x=-600, y=200 * inp["slot"])["index"]
+                for oi in c.call("describe", type="Oscillator")["inputs"]:
+                    if oi["kind"] == "note":
+                        c.call("connect", srcIndex=kb, srcOutput=0, dstIndex=osc, dstSlot=oi["slot"])
+                c.call("connect", srcIndex=osc, srcOutput=0, dstIndex=idx, dstSlot=inp["slot"])
+        out = c.call("create_node", typeName="Audio Out", category=ns.find_category(c, "Audio Out"), x=600, y=0)["index"]
+        c.call("connect", srcIndex=idx, srcOutput=0, dstIndex=out, dstSlot=0)
+        c.call("expand_node", index=idx)
+        c.call("fit_view_node", index=idx)
+        time.sleep(0.8)
+        probe = idx
+        return audit_core(a, typ, idx, probe, report)
     c.call("auto_wire_inputs", index=idx)
     # One different, still picture per image input: with the same feeder on every slot a Blend or a
     # Displace sees identical inputs and most of its controls read as inert.
@@ -144,14 +178,60 @@ def run_node(a, typ, category, kind, report):
                 c.call("connect", srcIndex=f, srcOutput=0, dstIndex=idx, dstSlot=inp["slot"])
     except Exception as ex:
         print("   (feeder wiring:", ex, ")")
+    # Geometry inputs: feed what the slot is for. Curves for profile/path/curve slots, a point cloud for
+    # points slots, otherwise a mesh that already carries a half selection (so "selection only" and
+    # friends have something to act on). Each slot gets a different shape so joins and booleans see
+    # distinct inputs.
+    try:
+        gslots = [i for i in d["inputs"] if i["kind"] == "geometry"]
+        for n_geo, inp in enumerate(gslots):
+            label = inp["label"].lower()
+            if any(w in label for w in ("curve", "profile", "path")):
+                f = c.call("create_node", typeName="Curve", category="3D", x=-600, y=-200 * (n_geo + 1))["index"]
+                if n_geo:
+                    c.call("set_param", index=f, name="twist", value=0.5 * n_geo)
+            elif "point" in label:
+                f = c.call("create_node", typeName="Distribute Points in Grid", category="3D", x=-600, y=-200 * (n_geo + 1))["index"]
+            else:
+                shape = ["Cube", "Sphere", "Torus", "Cone"][n_geo % 4]
+                g = c.call("create_node", typeName="Geometry", category="3D", x=-900, y=-200 * (n_geo + 1))["index"]
+                a.setp(g, "shape", float({"Cube": 1, "Sphere": 2, "Torus": 4, "Cone": 6}[shape]))
+                if typ == "Select":
+                    f = g
+                else:
+                    f = c.call("create_node", typeName="Select", category="3D", x=-600, y=-200 * (n_geo + 1))["index"]
+                    c.call("connect", srcIndex=g, srcOutput=0, dstIndex=f, dstSlot=0)
+                    a.setp(f, "selectMode", 4.0)
+                    a.setp(f, "selectA", 0.5)
+            try:
+                c.call("connect", srcIndex=f, srcOutput=0, dstIndex=idx, dstSlot=inp["slot"])
+            except Exception:
+                g2 = c.call("get_graph")
+                for lk in g2.get("links", []):
+                    if lk.get("dstIndex") == idx and lk.get("dstSlot") == inp["slot"]:
+                        c.call("disconnect", linkId=lk["id"])
+                c.call("connect", srcIndex=f, srcOutput=0, dstIndex=idx, dstSlot=inp["slot"])
+    except Exception as ex:
+        print("   (geometry feeder wiring:", ex, ")")
     probe = idx
     if kind == "geometry":
         r3 = c.call("create_node", typeName="Render 3D", category="3D", x=400, y=0)["index"]
         c.call("connect", srcIndex=idx, srcOutput=0, dstIndex=r3, dstSlot=0)
         probe = r3
+        if typ == "Select":
+            # A selection is invisible in a render; delete the selected faces so it shows.
+            dl = c.call("create_node", typeName="Delete Selected", category="3D", x=200, y=0)["index"]
+            c.call("disconnect", linkId=[lk["id"] for lk in c.call("get_graph")["links"]
+                                          if lk.get("srcIndex") == idx and lk.get("dstIndex") == r3][0])
+            c.call("connect", srcIndex=idx, srcOutput=0, dstIndex=dl, dstSlot=0)
+            c.call("connect", srcIndex=dl, srcOutput=0, dstIndex=r3, dstSlot=0)
     c.call("expand_node", index=idx)
     c.call("fit_view_node", index=idx)
     time.sleep(0.8)
+    return audit_core(a, typ, idx, probe, report)
+
+
+def audit_core(a, typ, idx, probe, report):
     st = a.state(idx)
     controls = a.resolve_keys(idx, st)
     keyed = [x for x in controls if "key" in x]
@@ -213,6 +293,8 @@ def run_node(a, typ, category, kind, report):
                     changed = True
                     break
             a.setp(idx, k["key"], old)
+            if changed and a.hash(probe) != base:
+                continue   # the output drifts on its own (a free-running phase), so this change proves nothing
             label = f"{x['name']} [{k['key']}]"
             if not x["disabled"] and not x["hidden"]:
                 if not changed:
@@ -256,7 +338,7 @@ def main():
                     d = c.call("describe", type=typ)
                     outs = d["outputs"]
                     kind = outs[0]["kind"] if outs else ""
-                    if d.get("hardwareDriven") or kind not in ("image", "geometry"):
+                    if d.get("hardwareDriven") or kind not in ("image", "geometry", "audio"):
                         uncovered.append(f"{typ} ({kind or 'no output'})")
                         continue
                     t0 = time.time()

@@ -1366,8 +1366,10 @@ namespace app
 
    void DrawSwitcherParams(SwitcherNode* n)
    {
+      ImGui::BeginDisabled(n->manual && !gParamRegisterOnly);   // manual pins the slot; the clock is unused
       DropdownButton("unit", SwitcherNode::UnitNames(), n->unit, [n](int i) { n->unit = i; });
       ModSlider("every", &n->interval, 0.05f, 32.0f);
+      ImGui::EndDisabled();
       ModSlider("crossfade", &n->crossfade, 0.0f, 0.99f);
       ModCheckbox("manual", &n->manual);
       if (n->manual)

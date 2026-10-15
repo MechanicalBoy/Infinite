@@ -427,6 +427,7 @@ namespace MeshOps
    // inside, so the result on one is unpredictable rather than wrong.
    enum BooleanOp { kBooleanUnion = 0, kBooleanIntersect, kBooleanDifference, kBooleanCount };
    Mesh Boolean(const Mesh& a, const Mesh& b, int op);
+   bool BooleanOverBudget();   // the last Boolean() on this thread gave up and returned its first input
 
    // --- selection ---
    // How faces are chosen. Every mode is deterministic, so a patch selects the

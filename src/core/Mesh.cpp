@@ -4758,10 +4758,22 @@ namespace csg
    // Splits a polygon against a plane, appending each piece to whichever list
    // it belongs in. Coplanar polygons are sorted by facing, which is what makes
    // union and intersection differ on shared surfaces.
+   // Work budget for one Boolean(): BSP clipping is exponential on meshes with thousands of crossing
+   // polygons (a wireframe against a solid), so past the budget polygons stop being split and the
+   // caller hands back its first input with a warning instead of freezing the app.
+   thread_local long long gSplitBudget = 0;
+   thread_local bool gOverBudget = false;
+
    void SplitPolygon(const Plane& plane, const Polygon& poly,
                      std::vector<Polygon>& coplanarFront, std::vector<Polygon>& coplanarBack,
                      std::vector<Polygon>& front, std::vector<Polygon>& back)
    {
+      if (--gSplitBudget < 0)
+      {
+         gOverBudget = true;
+         front.push_back(poly);
+         return;
+      }
       enum { kCoplanar = 0, kFront = 1, kBack = 2, kSpanning = 3 };
 
       int polygonType = 0;
@@ -4988,6 +5000,8 @@ Mesh Boolean(const Mesh& a, const Mesh& b, int op)
    if (b.Empty())
       return (op == kBooleanIntersect) ? Mesh() : a;
 
+   csg::gSplitBudget = 12000000;
+   csg::gOverBudget = false;
    csg::Node treeA, treeB;
    csg::Build(treeA, csg::FromMesh(a));
    csg::Build(treeB, csg::FromMesh(b));
@@ -5047,9 +5061,16 @@ Mesh Boolean(const Mesh& a, const Mesh& b, int op)
       }
    }
 
+   if (csg::gOverBudget)
+      return a;
    std::vector<csg::Polygon> merged;
    csg::AllPolygons(treeA, merged);
    return csg::ToMesh(merged);
+}
+
+bool BooleanOverBudget()
+{
+   return csg::gOverBudget;
 }
 }
 

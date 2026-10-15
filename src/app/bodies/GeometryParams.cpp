@@ -373,8 +373,10 @@ namespace app
 
    void DrawSwitcher3DParams(Switcher3DNode* n)
    {
+      ImGui::BeginDisabled(n->manual && !gParamRegisterOnly);   // manual pins the slot; the clock is unused
       DropdownButton("unit", Switcher3DNode::UnitNames(), n->unit, [n](int i) { n->unit = i; });
       ModSlider("every", &n->interval, 0.05f, 32.0f);
+      ImGui::EndDisabled();
       ModCheckbox("manual", &n->manual);
       if (n->manual)
       {
@@ -512,10 +514,13 @@ namespace app
       DropdownButton("shading", GeometryNode::ShadingNames(), n->shading, [n](int i) { n->shading = i; }, colW);
       DropdownButton("wrap", MaterialNode::WrapModeNames(), n->wrapMode, [n](int i) { n->wrapMode = i; }, colW);
       ColorSwatch("colour", n->color, n);
+      const bool pbrUnused = n->shading != 0 && !gParamRegisterOnly;   // Normals/UV/Flat ignore the lighting model
+      ImGui::BeginDisabled(pbrUnused);
       ModSlider("metallic", &n->metallic, 0.0f, 1.0f, "%.3f", colW);
       ModSlider("roughness", &n->roughness, 0.02f, 1.0f, "%.3f", colW);
       ModSlider("specular", &n->specular, 0.0f, 1.0f, "%.3f", colW);
       ModSlider("ior", &n->ior, 1.0f, 3.0f, "%.3f", colW);
+      ImGui::EndDisabled();
       ModSlider("opacity", &n->opacity, 0.0f, 1.0f, "%.3f", colW);
       ModCheckbox("texture alpha", &n->textureAlpha);
       if (n->opacity < 1.0f || n->alphaCutoff > 0.0f || n->textureAlpha)
@@ -527,6 +532,7 @@ namespace app
       ImGui::SameLine(0.0f, gutter);
       ImGui::BeginGroup();
 
+      ImGui::BeginDisabled(pbrUnused);
       NodeSeparator("emission", colW);
       ColorSwatch("emission", n->emissionColor, n);
       ModSlider("emission", &n->emission, 0.0f, 8.0f, "%.3f", colW);
@@ -564,6 +570,7 @@ namespace app
          ColorSwatch("sss colour", n->subsurfaceColor, n);
          ModSlider("sss radius", &n->subsurfaceRadius, 0.0f, 1.0f, "%.3f", colW);
       }
+      ImGui::EndDisabled();
 
       ImGui::EndGroup();
    }
@@ -1074,9 +1081,15 @@ namespace app
             // mesh's own origin, i.e. no visible change from before pivot
             // existed. Sits after scale/before spin, same order TransformMatrix()
             // applies move/rotate/scale/pivot in.
+            {
+            const bool pivotUnused = n->rotX == 0.0f && n->rotY == 0.0f && n->rotZ == 0.0f && n->spin == 0.0f
+               && n->scaleX == 1.0f && n->scaleY == 1.0f && n->scaleZ == 1.0f;
+            ImGui::BeginDisabled(pivotUnused && !gParamRegisterOnly);   // pivot only matters once something rotates or scales
             ModSlider("pivot x", &n->pivotX, -3.0f, 3.0f);
             ModSlider("pivot y", &n->pivotY, -3.0f, 3.0f);
             ModSlider("pivot z", &n->pivotZ, -3.0f, 3.0f);
+            ImGui::EndDisabled();
+            }
             ModSlider("spin / beat", &n->spin, -2.0f, 2.0f);
             break;
          case GeometryOpNode::kArray:
@@ -1255,7 +1268,9 @@ namespace app
       ModSlider("strength", &n->strength, -4.0f, 4.0f);
       ModSlider("frequency", &n->frequency, 0.1f, 12.0f);
       ModSlider("speed", &n->speed, -5.0f, 5.0f);
+      ImGui::BeginDisabled(n->mode != AudioDisplacementNode::kModeAcousticRipples && !gParamRegisterOnly);   // only the ripple falloff reads it
       ModSlider("damping", &n->damping, 0.0f, 4.0f);
+      ImGui::EndDisabled();
       ModSlider("attack", &n->attack, 1.0f, 300.0f, "%.0f ms");
       ModSlider("decay", &n->decay, 10.0f, 1500.0f, "%.0f ms");
       ModSlider("midlevel", &n->midlevel, -1.0f, 1.0f);
@@ -2048,6 +2063,25 @@ namespace app
             }
             continue;
          }
+         // Controls the chosen mode never reads sit greyed out (audit-verified against the shaders).
+         bool unused = false;
+         {
+            auto uni = [&](const char* u) -> int
+            {
+               for (size_t k = 0; k < def.params.size(); k++)
+                  if (def.params[k].uniformName == u)
+                     return (int)(*n->ParamPtr(k) + 0.5f);
+               return 0;
+            };
+            const std::string& un = p.uniformName;
+            if (def.name == "glitch")
+               unused = (un == "uSpeed" && uni("uKind") == 1) || (un == "uSeed" && (uni("uKind") == 1 || uni("uKind") == 2 || uni("uKind") == 4));
+            else if (def.name == "symmetry")
+               unused = (un == "uCenterX" && uni("uAxis") == 1) || (un == "uCenterY" && uni("uAxis") == 0);
+            else if (def.name == "normal map")
+               unused = (un == "uStrength" && uni("uOutput") == 1) || (un == "uInvertY" && uni("uOutput") != 0);
+         }
+         ImGui::BeginDisabled(unused && !gParamRegisterOnly);
          ImGui::PushID((int)i);
          if (p.type == FilterParamDef::Type::Color)
          {
@@ -2076,6 +2110,7 @@ namespace app
                       p.format.empty() ? "%.3f" : p.format.c_str(), kParamWidth, false, p.integer ? 1.0f : 0.0f);
          }
          ImGui::PopID();
+         ImGui::EndDisabled();
       }
       gParamRegisterOnly = savedRegisterOnly;
       if (def.params.empty())

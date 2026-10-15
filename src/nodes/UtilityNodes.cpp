@@ -198,6 +198,8 @@ void JoinGeometryNode::RebuildIfNeeded()
    mCookWarning.clear();
    for (int i = 0; i < kSlots && mCookWarning.empty(); i++)
       mCookWarning = DescribeGeometryMismatch(inputs[i], GeometryRequirement::kMeshSurface);
+   if (mCookWarning.empty() && mBooleanOver)
+      mCookWarning = "Boolean too complex for these inputs (thousands of crossing faces): kept the first input unchanged";
 
    auto sameMatrix = [](const Mat4& a, const Mat4& b)
    {
@@ -243,6 +245,7 @@ void JoinGeometryNode::RebuildIfNeeded()
       return;
 
    mCache = Mesh();
+   mBooleanOver = false;
 
    // Decide up front whether this merge needs per-vertex colour at all.
    //
@@ -393,6 +396,7 @@ void JoinGeometryNode::RebuildIfNeeded()
                       : (mode == kIntersect) ? MeshOps::kBooleanIntersect
                                              : MeshOps::kBooleanDifference;
          mCache = MeshOps::Boolean(mCache, placed, op);
+         mBooleanOver = mBooleanOver || MeshOps::BooleanOverBudget();
       }
    }
    mBuiltMode = mode;
