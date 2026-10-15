@@ -1013,6 +1013,8 @@ void DrawNodeBodies(FrameCtx& fc)
                   DrawOpticalFlowParams(n);
                else if (auto* n = dynamic_cast<TimeMachineNode*>(gn.node.get()))
                   DrawTimeMachineParams(n);
+               else if (auto* n = dynamic_cast<FluidNode*>(gn.node.get()))
+                  DrawFluidParams(n);
                else if (auto* n = dynamic_cast<ReactionDiffusionNode*>(gn.node.get()))
                   DrawReactionDiffusionParams(n);
                else if (auto* n = dynamic_cast<SwitcherNode*>(gn.node.get()))

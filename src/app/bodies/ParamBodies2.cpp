@@ -464,6 +464,26 @@ namespace app
    }
 
 
+   void DrawFluidParams(FluidNode* n)
+   {
+      static const std::vector<std::string> kRes = { "Full", "Half", "Quarter" };
+      DropdownButton("view", FluidNode::ViewNames(), n->view, [n](int i) { n->view = i; });
+      DropdownButton("resolution", kRes, n->resolution, [n](int i) { n->resolution = i; });
+      DropdownButton("stirrer", FluidNode::StirrerNames(), n->stirrer, [n](int i) { n->stirrer = i; });
+      ModSlider("stirrer strength", &n->stirrerStrength, 0.0f, 4.0f);
+      ModSlider("stirrer size", &n->stirrerSize, 0.01f, 0.3f, "%.3f");
+      ModSlider("force gain", &n->forceGain, 0.0f, 8.0f);
+      ModSlider("swirl", &n->vorticity, 0.0f, 2.0f);
+      ModSlider("viscosity", &n->viscosity, 0.0f, 0.2f, "%.3f");
+      ModSlider("damping", &n->velocityDamping, 0.0f, 0.1f, "%.3f");
+      ModSlider("dye fade", &n->dyeFade, 0.0f, 0.1f, "%.3f");
+      ModSlider("image refresh", &n->refresh, 0.0f, 1.0f, "%.3f");
+      ModSliderInt("pressure iterations", &n->pressureIterations, 1, FluidNode::kMaxPressureIterations);
+      if (ActionButton::Draw("Reset", ImVec2(kPreviewSize, 0)))
+         n->Reset();
+   }
+
+
    void DrawReactionDiffusionParams(ReactionDiffusionNode* n)
    {
       DropdownButton("preset", ReactionDiffusionNode::PresetNames(), n->preset,

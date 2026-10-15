@@ -23,6 +23,10 @@
 //   FLOW      Optical Flow on a smooth pattern moved by a known amount (0.5 to 7 px a
 //             frame, sub-pixel): mean endpoint error over the interior (flag > 0.5 px),
 //             a still pattern reads zero, and ms per cook at 1080p (report)
+//   FLUID     Fluid: largest divergence left after projection (orbiting stirrer, with and
+//             without a disc obstacle, at 20 / 60 / 120 pressure iterations; flag > 1e-3 at
+//             120 iterations), a still picture with no stirring stays the picture (flag > 2/255),
+//             the output is finite after 60 frames, and ms per cook at 1080p (report, bar 3 ms)
 //   TIMEMACHINE  Time Machine fed flat frames whose grey is 3 x the frame number, a
 //             left-to-right ramp as the delay map: every pixel must read the frame
 //             the ramp asks for (mean error flag > 1 level, worst > 3), with and without
@@ -73,6 +77,7 @@
 #include "nodes/FitNode.h"
 #include "nodes/LayerStackNode.h"
 #include "nodes/OpticalFlowNode.h"
+#include "nodes/FluidNode.h"
 #include "nodes/TimeMachineNode.h"
 #include "nodes/ProximityLinesNode.h"
 #include <set>
@@ -1157,6 +1162,111 @@ namespace
       }
    }
 
+   // ----------------------------------------------------------- FLUID
+   void AuditFluid(Flags& f, bool& ok)
+   {
+      const int w = 256, h = 192;
+      std::vector<unsigned char> pic((size_t)w * h * 4, 255), disc((size_t)w * h * 4, 255);
+      for (int y = 0; y < h; y++)
+         for (int x = 0; x < w; x++)
+         {
+            unsigned char* p = &pic[((size_t)y * w + x) * 4];
+            p[0] = (unsigned char)(x * 255 / (w - 1));
+            p[1] = (unsigned char)(y * 255 / (h - 1));
+            p[2] = ((x / 16 + y / 16) & 1) ? 220 : 40;
+            const double dx = x - 150.0, dy = y - 90.0;
+            const unsigned char v = dx * dx + dy * dy < 20.0 * 20.0 ? 255 : 0;
+            disc[((size_t)y * w + x) * 4 + 0] = disc[((size_t)y * w + x) * 4 + 1] = disc[((size_t)y * w + x) * 4 + 2] = v;
+         }
+      for (int withObstacle = 0; withObstacle < 2; withObstacle++)
+         for (int iters : { 20, 60, 120 })
+         {
+            TexSource src(w, h), obs(w, h);
+            src.Set(pic);
+            obs.Set(disc);
+            FluidNode fl;
+            fl.resolution = 0;
+            fl.stirrer = 1;
+            fl.pressureIterations = iters;
+            fl.Input().Connect(&src);
+            if (withObstacle)
+               fl.Obstacles().Connect(&obs);
+            for (int i = 0; i < 30; i++)
+               fl.CookIfNeeded(gFrame++);
+            const float div = fl.MeasureDivergence();
+            printf("COMPAUDIT FLUID divergence after projection, %s, %d iterations: %.5f\n",
+                   withObstacle ? "disc obstacle" : "open", iters, div);
+            if (iters == 120 && div > 1e-3f)
+               f.Flag("FLUID", std::string("divergence after projection, ") + (withObstacle ? "obstacle" : "open") + ", 120 iterations", div);
+         }
+      {
+         TexSource src(w, h);
+         src.Set(pic);
+         FluidNode fl;
+         fl.resolution = 0;
+         fl.stirrer = 0;
+         fl.Input().Connect(&src);
+         for (int i = 0; i < 10; i++)
+            fl.CookIfNeeded(gFrame++);
+         std::vector<float> px;
+         double worst = 1e9;
+         if (ReadSized(fl.GetOutputTexture(), fl.GetOutputWidth(), fl.GetOutputHeight(), px))
+         {
+            worst = 0.0;
+            for (int y = 0; y < h; y++)
+               for (int x = 0; x < w; x++)
+                  for (int c = 0; c < 3; c++)
+                     worst = std::max(worst, std::fabs((double)px[((size_t)y * w + x) * 4 + c] - pic[((size_t)y * w + x) * 4 + c] / 255.0));
+         }
+         printf("COMPAUDIT FLUID still picture, no stirring: worst difference %.4f\n", worst);
+         if (worst > 2.0 / 255.0)
+            f.Flag("FLUID", "still picture drifts from the input", worst);
+      }
+      {
+         TexSource src(w, h);
+         src.Set(pic);
+         FluidNode fl;
+         fl.resolution = 0;
+         fl.stirrer = 1;
+         fl.refresh = 0.0f;
+         fl.Input().Connect(&src);
+         for (int i = 0; i < 60; i++)
+            fl.CookIfNeeded(gFrame++);
+         std::vector<float> px;
+         bool finite = ReadSized(fl.GetOutputTexture(), fl.GetOutputWidth(), fl.GetOutputHeight(), px);
+         double mean = 0.0;
+         for (float v : px)
+         {
+            if (!std::isfinite(v))
+               finite = false;
+            mean += v;
+         }
+         printf("COMPAUDIT FLUID 60 frames with no refresh: finite %s, mean level %.3f\n", finite ? "yes" : "NO", px.empty() ? 0.0 : mean / px.size());
+         if (!finite)
+            f.Flag("FLUID", "output has non-finite values after 60 frames", 1.0);
+      }
+      for (int res : { 0, 1, 2 })
+      {
+         const int W = 1920, H = 1080;
+         TexSource src(W, H);
+         src.Set(std::vector<unsigned char>((size_t)W * H * 4, 128));
+         FluidNode fl;
+         fl.resolution = res;
+         fl.Input().Connect(&src);
+         for (int i = 0; i < 3; i++)
+            fl.CookIfNeeded(gFrame++);
+         glFinish();
+         const int reps = 20;
+         const auto t0 = std::chrono::steady_clock::now();
+         for (int i = 0; i < reps; i++)
+            fl.CookIfNeeded(gFrame++);
+         glFinish();
+         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         printf("COMPAUDIT FLUID 1080p %s, 20 iterations: %.2f ms per cook (bar 3 ms)\n",
+                res == 0 ? "full   " : res == 1 ? "half   " : "quarter", ms);
+      }
+   }
+
    // ----------------------------------------------------------- TIMEMACHINE
    std::vector<unsigned char> FlatGrey(int w, int h, int v)
    {
@@ -1468,6 +1578,7 @@ namespace
          { "Trails", [](TexSource& s) { auto* n = new TrailsNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Optical Flow", [](TexSource& s) { auto* n = new OpticalFlowNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Time Machine", [](TexSource& s) { auto* n = new TimeMachineNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Fluid", [](TexSource& s) { auto* n = new FluidNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Reaction Diffusion", [](TexSource& s) { auto* n = new ReactionDiffusionNode(); n->Input().Connect(&s); return (INode*)n; } },
       };
       items[1].name = "Box Blur";
@@ -1602,6 +1713,8 @@ bool RunCompAudit()
       AuditTrails(flags);
    if (want("FLOW"))
       AuditFlow(flags, ok);
+   if (want("FLUID"))
+      AuditFluid(flags, ok);
    if (want("TIMEMACHINE"))
       AuditTimeMachine(flags, ok);
    if (want("PROXIMITY"))
