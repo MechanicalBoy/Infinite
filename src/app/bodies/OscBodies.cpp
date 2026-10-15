@@ -1343,10 +1343,15 @@ namespace app
    void DrawEnvelopePanel(const char* title, const char* curveId, float* attackMs, float* decayMs,
                           float* sustain, float* releaseMs, float* amount, float amountLo,
                           float amountHi, const char* amountFmt, ImU32 color,
-                          const ::ModShapes::Ahdsr* shape)
-   {
-      BeginAudioSection(title);
+                          const ::ModShapes::Ahdsr* shape);
 
+   // The curve-and-fields block with no section chrome, so a node that wants
+   // its own controls in the same section (FM's ratio and fixed switch) draws
+   // the very same component.
+   void DrawEnvelopeFields(const char* curveId, float* attackMs, float* decayMs, float* sustain,
+                           float* releaseMs, float* amount, float amountLo, float amountHi,
+                           const char* amountFmt, ImU32 color, const ::ModShapes::Ahdsr* shape)
+   {
       const float full = gAudioContentW;
       const float gap = ImGui::GetStyle().ItemSpacing.x;
       // Wide enough that the widest label/value pair a field holds in practice
@@ -1399,7 +1404,17 @@ namespace app
       // the panel rather than just the field stack.
       ImGui::SetCursorScreenPos(ImVec2(top.x, std::max(top.y + curveH, y + rowH)));
       ImGui::Dummy(ImVec2(full, 0.0f));
+   }
 
+
+   void DrawEnvelopePanel(const char* title, const char* curveId, float* attackMs, float* decayMs,
+                          float* sustain, float* releaseMs, float* amount, float amountLo,
+                          float amountHi, const char* amountFmt, ImU32 color,
+                          const ::ModShapes::Ahdsr* shape)
+   {
+      BeginAudioSection(title);
+      DrawEnvelopeFields(curveId, attackMs, decayMs, sustain, releaseMs, amount, amountLo, amountHi,
+                         amountFmt, color, shape);
       EndAudioSection();
    }
 
@@ -2041,49 +2056,27 @@ namespace app
          DiscreteSlotScope discreteScope(o);
          BeginAudioSection(kTitle[o][carrier ? 0 : 1]);
          {
-            // The same curve-beside-fields panel Wavetable and Oscillator use: the ADSR curve on the
-            // left, four slider rows on the right, every operator the same size.
+            // Pitch row: ratio (or frequency when fixed), the fixed switch, then level, so the
+            // envelope below is the same component, at the same size, as Wavetable's.
             const float full = gAudioContentW;
             const float gap = ImGui::GetStyle().ItemSpacing.x;
-            const float fieldsW = std::clamp(full * 0.66f, 260.0f, 320.0f);
-            const float curveW = full - fieldsW - gap;
-            const float halfW = (fieldsW - gap) * 0.5f;
             const float checkW = 84.0f;
-            const float rowH = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y;
-            const float curveH = rowH * 4.0f - ImGui::GetStyle().ItemSpacing.y;
-            const ImVec2 top = ImGui::GetCursorScreenPos();
-            DrawEditableADSR("##fmEnv", &op.attack, &op.decay, &op.sustain, &op.release, 5000.0f, curveH,
-                             tok::U32(tok::pal::c_96D6FFF5), curveW, nullptr);
-            op.decay = std::max(1.0f, op.decay);
-            op.release = std::max(1.0f, op.release);
-            const float fx = top.x + curveW + gap;
-            float y = top.y;
-            ImGui::SetCursorScreenPos(ImVec2(fx, y));
+            const float sliderW = (full - checkW - gap * 2.0f) * 0.5f;
+            const float rowX0 = ImGui::GetCursorScreenPos().x;
             if (op.fixed)
-               AudioSlider("freq", &op.freq, 1.0f, 8000.0f, "%.0f Hz", fieldsW - checkW - gap, FrequencyTaper::PosToValue,
+               AudioSlider("freq", &op.freq, 1.0f, 8000.0f, "%.0f Hz", sliderW, FrequencyTaper::PosToValue,
                            FrequencyTaper::ValueToPos);
             else
-               AudioSlider("ratio", &op.ratio, 0.5f, 16.0f, "%.2f", fieldsW - checkW - gap);
-            ImGui::SetCursorScreenPos(ImVec2(fx + fieldsW - checkW, y));
+               AudioSlider("ratio", &op.ratio, 0.5f, 16.0f, "%.2f", sliderW);
+            ImGui::SameLine();
             ModCheckbox("fixed", &op.fixed);
-            y += rowH;
-            ImGui::SetCursorScreenPos(ImVec2(fx, y));
-            AudioSlider("level", &op.level, 0.0f, 1.0f, "%.2f", fieldsW);
-            y += rowH;
-            ImGui::SetCursorScreenPos(ImVec2(fx, y));
-            AudioSlider("attack", &op.attack, 0.0f, 5000.0f, "%.0f ms", halfW, SkewAttack100Taper::PosToValue,
-                        SkewAttack100Taper::ValueToPos);
             ImGui::SameLine();
-            AudioSlider("decay", &op.decay, 1.0f, 5000.0f, "%.0f ms", halfW, SkewDecay300Taper::PosToValue,
-                        SkewDecay300Taper::ValueToPos);
-            y += rowH;
-            ImGui::SetCursorScreenPos(ImVec2(fx, y));
-            AudioSlider("sustain", &op.sustain, 0.0f, 1.0f, "%.2f", halfW);
-            ImGui::SameLine();
-            AudioSlider("release", &op.release, 1.0f, 5000.0f, "%.0f ms", halfW, SkewRelease400Taper::PosToValue,
-                        SkewRelease400Taper::ValueToPos);
-            ImGui::SetCursorScreenPos(ImVec2(top.x, top.y + curveH));
-            ImGui::Dummy(ImVec2(full, 0.0f));
+            // The last cell takes whatever is left, so the row ends flush with the fields below.
+            AudioSlider("level", &op.level, 0.0f, 1.0f, "%.2f", full - (ImGui::GetCursorScreenPos().x - rowX0));
+            DrawEnvelopeFields("##fmEnv", &op.attack, &op.decay, &op.sustain, &op.release, nullptr, 0.0f,
+                               1.0f, "%.2f", tok::U32(tok::pal::c_96D6FFF5), nullptr);
+            op.decay = std::max(1.0f, op.decay);
+            op.release = std::max(1.0f, op.release);
          }
          EndAudioSection();
          ImGui::PopID();
