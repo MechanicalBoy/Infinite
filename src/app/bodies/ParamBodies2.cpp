@@ -442,6 +442,19 @@ namespace app
    }
 
 
+   void DrawOpticalFlowParams(OpticalFlowNode* n)
+   {
+      static const std::vector<std::string> kViews = { "Vectors", "Colour" };
+      static const std::vector<std::string> kRes = { "Full", "Half", "Quarter" };
+      DropdownButton("view", kViews, n->view, [n](int i) { n->view = i; });
+      DropdownButton("resolution", kRes, n->resolution, [n](int i) { n->resolution = i; });
+      ModSlider("gain", &n->gain, 0.0f, 8.0f);
+      ModSliderInt("levels", &n->levels, 1, OpticalFlowNode::kMaxLevels);
+      ModSliderInt("window", &n->window, 1, 6);
+      ModSliderInt("iterations", &n->iterations, 1, 6);
+   }
+
+
    void DrawReactionDiffusionParams(ReactionDiffusionNode* n)
    {
       DropdownButton("preset", ReactionDiffusionNode::PresetNames(), n->preset,

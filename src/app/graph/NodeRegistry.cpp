@@ -125,6 +125,7 @@ namespace app
       REGISTER_NODE(RemoveBgNode, Remove Background, "Compositing");
       REGISTER_NODE(FeedbackNode, Feedback, "Compositing");
       REGISTER_NODE(TrailsNode, Trails, "Compositing");
+      REGISTER_NODE(OpticalFlowNode, Optical Flow, "Compositing");
       REGISTER_NODE(ReactionDiffusionNode, Reaction Diffusion, "Compositing");
       REGISTER_NODE(BlendNode, Blend, "Compositing");
       REGISTER_NODE(LayerStackNode, Layer Stack, "Compositing");

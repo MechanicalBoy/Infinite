@@ -20,6 +20,9 @@
 //   TRAILS    Trails decay after the input goes black: level at 10 frames
 //             against decay^10, and whether the trail ever reaches black
 //             (flag > 2/255 off, or a residual that never clears)
+//   FLOW      Optical Flow on a smooth pattern moved by a known amount (0.5 to 7 px a
+//             frame, sub-pixel): mean endpoint error over the interior (flag > 0.5 px),
+//             a still pattern reads zero, and ms per cook at 1080p (report)
 //   STACK     Layer Stack with two layers against Blend with the same mode and
 //             opacity, random alpha (flag > 1/255)
 //   CURVES    default curve is identity; an inverted RGB curve gives 1-x; a Red
@@ -60,6 +63,7 @@
 #include "nodes/FeedbackNodes.h"
 #include "nodes/FitNode.h"
 #include "nodes/LayerStackNode.h"
+#include "nodes/OpticalFlowNode.h"
 #include "nodes/SwitcherNode.h"
 
 #include <array>
@@ -1018,6 +1022,129 @@ namespace
          f.Flag("COLOUR", "ramp interpolation is not in encoded space, offset (x/255)", rampMid * 255.0);
    }
 
+   // ----------------------------------------------------------------- FLOW
+   // A band-limited pattern (wavelengths 24 to 61 px) evaluated at (x - sx, y - sy), so the
+   // shift is exact at any sub-pixel amount; row index grows with v, so a positive sy is "up".
+   std::vector<unsigned char> FlowPattern(int w, int h, double sx, double sy)
+   {
+      struct Wave { double kx, ky, ph, a; };
+      static const Wave waves[5] = {
+         { 0.2618, 0.0914, 0.4, 0.22 }, { -0.1103, 0.1675, 1.9, 0.20 }, { 0.0731, -0.2205, 3.1, 0.18 },
+         { 0.1349, 0.1871, 5.2, 0.15 }, { -0.1917, -0.0427, 2.3, 0.14 } };
+      std::vector<unsigned char> px((size_t)w * h * 4);
+      for (int y = 0; y < h; y++)
+         for (int x = 0; x < w; x++)
+         {
+            double v = 0.5;
+            for (const Wave& wv : waves)
+               v += wv.a * std::sin(wv.kx * (x - sx) + wv.ky * (y - sy) + wv.ph);
+            const unsigned char c = (unsigned char)std::lround(std::clamp(v, 0.0, 1.0) * 255.0);
+            unsigned char* o = &px[((size_t)y * w + x) * 4];
+            o[0] = o[1] = o[2] = c;
+            o[3] = 255;
+         }
+      return px;
+   }
+
+   void AuditFlow(Flags& f, bool& ok)
+   {
+      const int w = 256, h = 192, margin = 24;
+      struct Case { double sx, sy; };
+      const Case cases[] = { { 0.0, 0.0 }, { 0.5, 0.0 }, { -0.7, 0.4 }, { 1.5, -1.0 }, { 3.2, 2.1 }, { 7.0, -4.5 } };
+      for (int res : { 0, 1, 2 })
+      {
+         double worst = 0.0;
+         for (const Case& c : cases)
+         {
+            TexSource src(w, h);
+            OpticalFlowNode fl;
+            fl.resolution = res;
+            fl.Input().Connect(&src);
+            src.Set(FlowPattern(w, h, 0.0, 0.0));
+            fl.CookIfNeeded(gFrame++);
+            src.Set(FlowPattern(w, h, c.sx, c.sy));
+            fl.CookIfNeeded(gFrame++);
+            std::vector<float> px;
+            if (fl.GetOutputTexture() == 0 || !ReadSized(fl.GetOutputTexture(), fl.GetOutputWidth(), fl.GetOutputHeight(), px))
+            {
+               ok = false;
+               printf("COMPAUDIT FLOW no output texture\n");
+               return;
+            }
+            const int ow = fl.GetOutputWidth(), oh = fl.GetOutputHeight();
+            const double to = (double)w / ow; // output pixels to input pixels, for the margin
+            double sum = 0.0, mx = 0.0, mean0 = 0.0, mean1 = 0.0;
+            long n = 0;
+            for (int y = (int)(margin / to); y < oh - (int)(margin / to); y++)
+               for (int x = (int)(margin / to); x < ow - (int)(margin / to); x++)
+               {
+                  const float* p = &px[((size_t)y * ow + x) * 4];
+                  const double ex = p[0] - c.sx, ey = p[1] - c.sy;
+                  const double e = std::sqrt(ex * ex + ey * ey);
+                  sum += e;
+                  mx = std::max(mx, e);
+                  mean0 += p[0];
+                  mean1 += p[1];
+                  n++;
+              }
+            const double epe = n > 0 ? sum / n : 1e9;
+            worst = std::max(worst, epe);
+            printf("COMPAUDIT FLOW %s move (%+.1f, %+.1f) px: mean (%+.3f, %+.3f), mean endpoint error %.3f px, worst pixel %.2f px\n",
+                   res == 0 ? "full " : res == 1 ? "half " : "quart", c.sx, c.sy, n ? mean0 / n : 0.0, n ? mean1 / n : 0.0, epe, mx);
+            if (epe > 0.5)
+               f.Flag("FLOW", std::string(res == 0 ? "full" : res == 1 ? "half" : "quarter") + " resolution, move " + std::to_string(c.sx) + "," + std::to_string(c.sy)
+                      + ": mean endpoint error (px)", epe);
+         }
+         printf("COMPAUDIT FLOW %s worst mean endpoint error %.3f px (bar 0.5)\n", res == 0 ? "full " : res == 1 ? "half " : "quart", worst);
+      }
+      for (int win : { 3, 4, 5 })
+         for (int it : { 2, 3 })
+            for (int lv : { 3, 4 })
+            {
+               TexSource src(w, h);
+               OpticalFlowNode fl;
+               fl.resolution = 0;
+               fl.window = win;
+               fl.iterations = it;
+               fl.levels = lv;
+               fl.Input().Connect(&src);
+               src.Set(FlowPattern(w, h, 0.0, 0.0));
+               fl.CookIfNeeded(gFrame++);
+               src.Set(FlowPattern(w, h, 3.2, 2.1));
+               fl.CookIfNeeded(gFrame++);
+               std::vector<float> px;
+               if (!ReadSized(fl.GetOutputTexture(), fl.GetOutputWidth(), fl.GetOutputHeight(), px))
+                  continue;
+               double sum = 0.0;
+               long n = 0;
+               for (int y = margin; y < h - margin; y++)
+                  for (int x = margin; x < w - margin; x++, n++)
+                     sum += std::hypot(px[((size_t)y * w + x) * 4] - 3.2, px[((size_t)y * w + x) * 4 + 1] - 2.1);
+               printf("COMPAUDIT FLOW sweep window %d iterations %d levels %d: error %.3f px\n", win, it, lv, sum / n);
+            }
+      // Cost at 1080p, one frame of motion per cook.
+      for (int res : { 0, 1, 2 })
+      {
+         const int W = 1920, H = 1080;
+         TexSource src(W, H);
+         OpticalFlowNode fl;
+         fl.resolution = res;
+         fl.Input().Connect(&src);
+         src.Set(FlowPattern(W, H, 0.0, 0.0));
+         fl.CookIfNeeded(gFrame++);
+         src.Set(FlowPattern(W, H, 2.0, 1.0));
+         fl.CookIfNeeded(gFrame++);
+         glFinish();
+         const int reps = 20;
+         const auto t0 = std::chrono::steady_clock::now();
+         for (int i = 0; i < reps; i++)
+            fl.CookIfNeeded(gFrame++);
+         glFinish();
+         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         printf("COMPAUDIT FLOW 1080p %s: %.2f ms per cook (bar 2 ms)\n", res == 0 ? "full   " : res == 1 ? "half   " : "quarter", ms);
+      }
+   }
+
    // ------------------------------------------------------------------- RES
    void AuditRes(Flags& f, bool& ok)
    {
@@ -1094,6 +1221,7 @@ namespace
          { "Color Ramp", [](TexSource& s) { auto* n = new ColorRampNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Fit", [](TexSource& s) { auto* n = new FitNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Trails", [](TexSource& s) { auto* n = new TrailsNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Optical Flow", [](TexSource& s) { auto* n = new OpticalFlowNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Reaction Diffusion", [](TexSource& s) { auto* n = new ReactionDiffusionNode(); n->Input().Connect(&s); return (INode*)n; } },
       };
       items[1].name = "Box Blur";
@@ -1113,7 +1241,7 @@ namespace
          const bool got2 = n->GetOutputTexture() != 0 && ReadSized(n->GetOutputTexture(), n->GetOutputWidth(), n->GetOutputHeight(), again);
          const double d = (got1 && got2) ? MaxPixelDiff(first, again) : -1.0;
          // Stateful nodes (Trails, Reaction Diffusion) integrate over frames, so only the pass-through is asserted.
-         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Reaction Diffusion") == 0;
+         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Optical Flow") == 0 || strcmp(it.name, "Reaction Diffusion") == 0;
          printf("COMPAUDIT BYPASS %-18s pass-through is the input: %s | cook, bypass, un-bypass, cook: %s%s\n", it.name,
                 hasPass ? "yes" : "NO", d < 0 ? "no output" : d == 0.0 ? "identical" : "differs",
                 stateful ? " (stateful, not asserted)" : "");
@@ -1226,6 +1354,8 @@ bool RunCompAudit()
       AuditFeedback(flags);
    if (want("TRAILS"))
       AuditTrails(flags);
+   if (want("FLOW"))
+      AuditFlow(flags, ok);
    if (want("STACK"))
       AuditStack(flags, ok);
    if (want("CURVES"))

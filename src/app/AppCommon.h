@@ -216,6 +216,7 @@ inline std::string TmpPath(const std::string& name)
 #include "nodes/GenerativeNodes.h"
 #include "nodes/DrawNode.h"
 #include "nodes/FeedbackNodes.h"
+#include "nodes/OpticalFlowNode.h"
 #include "nodes/SwitcherNode.h"
 #include "nodes/Switcher3DNode.h"
 #include "nodes/Group3DNode.h"

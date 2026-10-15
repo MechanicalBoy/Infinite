@@ -993,6 +993,8 @@ void DrawNodeBodies(FrameCtx& fc)
                   DrawFeedbackParams(n);
                else if (auto* n = dynamic_cast<TrailsNode*>(gn.node.get()))
                   DrawTrailsParams(n);
+               else if (auto* n = dynamic_cast<OpticalFlowNode*>(gn.node.get()))
+                  DrawOpticalFlowParams(n);
                else if (auto* n = dynamic_cast<ReactionDiffusionNode*>(gn.node.get()))
                   DrawReactionDiffusionParams(n);
                else if (auto* n = dynamic_cast<SwitcherNode*>(gn.node.get()))

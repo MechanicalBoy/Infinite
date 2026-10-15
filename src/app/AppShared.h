@@ -2886,6 +2886,7 @@ void DrawRemoveBgParams(RemoveBgNode* n);
 void DrawFeedbackParams(FeedbackNode*);
 
 void DrawTrailsParams(TrailsNode* n);
+void DrawOpticalFlowParams(OpticalFlowNode* n);
 
 void DrawReactionDiffusionParams(ReactionDiffusionNode* n);
 
