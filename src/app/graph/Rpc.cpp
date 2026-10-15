@@ -314,7 +314,7 @@ namespace app
                   continue;
                feeder = ensureFeeder("Envelope", "Modulators");
             }
-            else if (ImageCable* cable = CableFor(*gn, slot))
+            else if (ImageCable* cable = CableFor(*target, slot))
             {
                if (cable->IsConnected())
                   continue;
@@ -324,7 +324,7 @@ namespace app
                continue;
 
             std::string ignoredErr;
-            if (ConnectNodes(feeder->index, 0, gn->index, slot, ignoredErr))
+            if (ConnectNodes(feeder->index, 0, index, slot, ignoredErr))
                wired.push_back(slot);
          }
 
