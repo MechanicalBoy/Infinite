@@ -163,11 +163,29 @@ namespace app
       // Channels param control
       {
          int ch = n->numChannels;
-         // Fixed width: the node's width follows this value, so a width taken from the node moves the slider under the drag.
-         if (AudioSliderInt("channels", &ch, 0, MixerNode::kMaxSlots, 130.0f))
+         // A stepper, not a modulatable slider: the channel count rebuilds the audio topology, so
+         // a cable driving it would rebuild it every block. The counter still advances so every
+         // later param keeps its modulation index.
+         gParamCounter++;
+         const float btnH = ImGui::GetFrameHeight();
+         const float gap = ImGui::GetStyle().ItemSpacing.x;
+         ImGui::AlignTextToFramePadding();
+         ImGui::TextDisabled("channels");
+         ImGui::SameLine();
+         int next = ch;
+         if (ActionButton::Draw("-##mixCh", ImVec2(btnH * 1.4f, btnH)))
+            next = ch - 1;
+         ImGui::SameLine(0.0f, gap);
+         ImGui::AlignTextToFramePadding();
+         ImGui::Text("%d", ch);
+         ImGui::SameLine(0.0f, gap);
+         if (ActionButton::Draw("+##mixCh", ImVec2(btnH * 1.4f, btnH)))
+            next = ch + 1;
+         next = std::clamp(next, 0, (int)MixerNode::kMaxSlots);
+         if (next != ch)
          {
             PushUndoCheckpoint();
-            n->numChannels = std::clamp(ch, 0, (int)MixerNode::kMaxSlots);
+            n->numChannels = next;
             RebuildAudioTopology();
          }
          ImGui::Dummy(ImVec2(0.0f, 4.0f));
