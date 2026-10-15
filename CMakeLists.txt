@@ -704,6 +704,7 @@ set(COMMON_SOURCES
     src/nodes/SceneNodes.cpp
     src/nodes/FeedbackNodes.cpp
     src/nodes/OpticalFlowNode.cpp
+    src/nodes/TimeMachineNode.cpp
     src/nodes/SwitcherNode.cpp
     src/nodes/Switcher3DNode.cpp
     src/nodes/CurveNode.cpp

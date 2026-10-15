@@ -455,6 +455,15 @@ namespace app
    }
 
 
+   void DrawTimeMachineParams(TimeMachineNode* n)
+   {
+      static const std::vector<std::string> kRes = { "Full", "Half", "Quarter" };
+      DropdownButton("resolution", kRes, n->resolution, [n](int i) { n->resolution = i; });
+      ModSliderInt("length", &n->length, 2, TimeMachineNode::kMaxLength);
+      ModCheckbox("invert", &n->invert);
+   }
+
+
    void DrawReactionDiffusionParams(ReactionDiffusionNode* n)
    {
       DropdownButton("preset", ReactionDiffusionNode::PresetNames(), n->preset,

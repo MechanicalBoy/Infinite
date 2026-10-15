@@ -2887,6 +2887,7 @@ void DrawFeedbackParams(FeedbackNode*);
 
 void DrawTrailsParams(TrailsNode* n);
 void DrawOpticalFlowParams(OpticalFlowNode* n);
+void DrawTimeMachineParams(TimeMachineNode* n);
 
 void DrawReactionDiffusionParams(ReactionDiffusionNode* n);
 

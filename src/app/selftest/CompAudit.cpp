@@ -23,6 +23,10 @@
 //   FLOW      Optical Flow on a smooth pattern moved by a known amount (0.5 to 7 px a
 //             frame, sub-pixel): mean endpoint error over the interior (flag > 0.5 px),
 //             a still pattern reads zero, and ms per cook at 1080p (report)
+//   TIMEMACHINE  Time Machine fed flat frames whose grey is 3 x the frame number, a
+//             left-to-right ramp as the delay map: every pixel must read the frame
+//             the ramp asks for (mean error flag > 1 level, worst > 3), with and without
+//             a map, inverted, and at length 8; the first frame fills the ring; ms per cook
 //   STACK     Layer Stack with two layers against Blend with the same mode and
 //             opacity, random alpha (flag > 1/255)
 //   CURVES    default curve is identity; an inverted RGB curve gives 1-x; a Red
@@ -64,6 +68,7 @@
 #include "nodes/FitNode.h"
 #include "nodes/LayerStackNode.h"
 #include "nodes/OpticalFlowNode.h"
+#include "nodes/TimeMachineNode.h"
 #include "nodes/SwitcherNode.h"
 
 #include <array>
@@ -1145,6 +1150,102 @@ namespace
       }
    }
 
+   // ----------------------------------------------------------- TIMEMACHINE
+   std::vector<unsigned char> FlatGrey(int w, int h, int v)
+   {
+      std::vector<unsigned char> px((size_t)w * h * 4, (unsigned char)v);
+      for (size_t i = 3; i < px.size(); i += 4)
+         px[i] = 255;
+      return px;
+   }
+
+   void AuditTimeMachine(Flags& f, bool& ok)
+   {
+      const int w = 128, h = 64;
+      struct Case { const char* name; int length; bool invert; bool useMap; };
+      const Case cases[] = { { "no map, length 60", 60, false, false }, { "ramp map, length 60", 60, false, true },
+                             { "ramp map, inverted", 60, true, true }, { "ramp map, length 8", 8, false, true } };
+      std::vector<unsigned char> ramp((size_t)w * h * 4, 255);
+      for (int y = 0; y < h; y++)
+         for (int x = 0; x < w; x++)
+            for (int c = 0; c < 3; c++)
+               ramp[((size_t)y * w + x) * 4 + c] = (unsigned char)std::lround(255.0 * (x + 0.5) / w);
+      for (const Case& c : cases)
+      {
+         TexSource src(w, h), map(w, h);
+         map.Set(ramp);
+         TimeMachineNode tm;
+         tm.resolution = 0;
+         tm.length = c.length;
+         tm.invert = c.invert;
+         tm.Input().Connect(&src);
+         if (c.useMap)
+            tm.DelayMap().Connect(&map);
+         const int frames = 70;
+         for (int k = 0; k < frames; k++)
+         {
+            src.Set(FlatGrey(w, h, 3 * k));
+            tm.CookIfNeeded(gFrame++);
+            if (k == 0)
+            {
+               std::vector<float> first;
+               if (tm.GetOutputTexture() != 0 && ReadSized(tm.GetOutputTexture(), tm.GetOutputWidth(), tm.GetOutputHeight(), first))
+               {
+                  double worst = 0.0;
+                  for (size_t i = 0; i < first.size(); i += 4)
+                     worst = std::max(worst, std::fabs(first[i] * 255.0));
+                  if (worst > 1.0)
+                     f.Flag("TIMEMACHINE", std::string(c.name) + ": first frame does not fill the ring, worst level", worst);
+               }
+            }
+         }
+         std::vector<float> px;
+         if (tm.GetOutputTexture() == 0 || !ReadSized(tm.GetOutputTexture(), tm.GetOutputWidth(), tm.GetOutputHeight(), px))
+         {
+            ok = false;
+            printf("COMPAUDIT TIMEMACHINE no output texture\n");
+            return;
+         }
+         const int ow = tm.GetOutputWidth(), oh = tm.GetOutputHeight();
+         double sum = 0.0, mx = 0.0;
+         long n = 0;
+         for (int y = 0; y < oh; y++)
+            for (int x = 0; x < ow; x++, n++)
+            {
+               double g = (x + 0.5) / ow;
+               if (c.invert)
+                  g = 1.0 - g;
+               const double expect = 3.0 * ((frames - 1) - g * (c.length - 1));
+               const double e = std::fabs(px[((size_t)y * ow + x) * 4] * 255.0 - expect);
+               sum += e;
+               mx = std::max(mx, e);
+            }
+         printf("COMPAUDIT TIMEMACHINE %-22s mean error %.2f levels, worst %.2f (bar 1 / 3)\n", c.name, sum / n, mx);
+         if (sum / n > 1.0 || mx > 3.0)
+            f.Flag("TIMEMACHINE", std::string(c.name) + ": mean error (levels of 255)", sum / n);
+      }
+      for (int res : { 0, 1, 2 })
+      {
+         const int W = 1920, H = 1080;
+         TexSource src(W, H);
+         TimeMachineNode tm;
+         tm.resolution = res;
+         tm.Input().Connect(&src);
+         src.Set(FlatGrey(W, H, 40));
+         for (int i = 0; i < 4; i++)
+            tm.CookIfNeeded(gFrame++);
+         glFinish();
+         const int reps = 20;
+         const auto t0 = std::chrono::steady_clock::now();
+         for (int i = 0; i < reps; i++)
+            tm.CookIfNeeded(gFrame++);
+         glFinish();
+         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         printf("COMPAUDIT TIMEMACHINE 1080p %s: %.2f ms per cook, ring %.0f MB\n", res == 0 ? "full   " : res == 1 ? "half   " : "quarter", ms,
+                60.0 * (W / (res == 0 ? 1 : res == 1 ? 2 : 4)) * (H / (res == 0 ? 1 : res == 1 ? 2 : 4)) * 4 / 1048576.0);
+      }
+   }
+
    // ------------------------------------------------------------------- RES
    void AuditRes(Flags& f, bool& ok)
    {
@@ -1222,6 +1323,7 @@ namespace
          { "Fit", [](TexSource& s) { auto* n = new FitNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Trails", [](TexSource& s) { auto* n = new TrailsNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Optical Flow", [](TexSource& s) { auto* n = new OpticalFlowNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Time Machine", [](TexSource& s) { auto* n = new TimeMachineNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Reaction Diffusion", [](TexSource& s) { auto* n = new ReactionDiffusionNode(); n->Input().Connect(&s); return (INode*)n; } },
       };
       items[1].name = "Box Blur";
@@ -1241,7 +1343,7 @@ namespace
          const bool got2 = n->GetOutputTexture() != 0 && ReadSized(n->GetOutputTexture(), n->GetOutputWidth(), n->GetOutputHeight(), again);
          const double d = (got1 && got2) ? MaxPixelDiff(first, again) : -1.0;
          // Stateful nodes (Trails, Reaction Diffusion) integrate over frames, so only the pass-through is asserted.
-         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Optical Flow") == 0 || strcmp(it.name, "Reaction Diffusion") == 0;
+         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Optical Flow") == 0 || strcmp(it.name, "Time Machine") == 0 || strcmp(it.name, "Reaction Diffusion") == 0;
          printf("COMPAUDIT BYPASS %-18s pass-through is the input: %s | cook, bypass, un-bypass, cook: %s%s\n", it.name,
                 hasPass ? "yes" : "NO", d < 0 ? "no output" : d == 0.0 ? "identical" : "differs",
                 stateful ? " (stateful, not asserted)" : "");
@@ -1356,6 +1458,8 @@ bool RunCompAudit()
       AuditTrails(flags);
    if (want("FLOW"))
       AuditFlow(flags, ok);
+   if (want("TIMEMACHINE"))
+      AuditTimeMachine(flags, ok);
    if (want("STACK"))
       AuditStack(flags, ok);
    if (want("CURVES"))

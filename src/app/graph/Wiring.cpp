@@ -373,6 +373,8 @@ namespace app
          return 1;
       if (dynamic_cast<OpticalFlowNode*>(gn.node.get()) != nullptr)
          return 1;
+      if (dynamic_cast<TimeMachineNode*>(gn.node.get()) != nullptr)
+         return 2; // slot 0 is the image, slot 1 the delay map
       if (dynamic_cast<ReactionDiffusionNode*>(gn.node.get()) != nullptr)
          return 1;
       if (dynamic_cast<WaveTerrainNode*>(gn.node.get()) != nullptr)
@@ -511,6 +513,8 @@ namespace app
          return slot == 0 ? &trails->Input() : nullptr;
       if (auto* flow = dynamic_cast<OpticalFlowNode*>(gn.node.get()))
          return slot == 0 ? &flow->Input() : nullptr;
+      if (auto* tm = dynamic_cast<TimeMachineNode*>(gn.node.get()))
+         return slot == 0 ? &tm->Input() : (slot == 1 ? &tm->DelayMap() : nullptr);
       if (auto* rd = dynamic_cast<ReactionDiffusionNode*>(gn.node.get()))
          return slot == 0 ? &rd->Input() : nullptr;
       if (auto* wt = dynamic_cast<WaveTerrainNode*>(gn.node.get()))

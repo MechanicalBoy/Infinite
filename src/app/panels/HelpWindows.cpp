@@ -176,6 +176,7 @@ namespace app
          { "Feedback", I18N_KEY("Outputs the previous frame - a one-frame delay, not an effect. It only does something visible inside a loop: patch a downstream node's output back into a Feedback node's input, then use that Feedback output upstream, without the graph recursing. See Menu > Help > 'Using Feedback' for the full patch.") },
          { "Trails", I18N_KEY("A pre-wired feedback loop: decaying accumulation with drift, zoom, rotation and hue rotation. Reach for this before wiring a Feedback loop by hand.") },
          { "Optical Flow", I18N_KEY("How far each part of the picture moved since the last frame, as a vector per pixel (red and green carry x and y, in pixels of the input; blue is speed). Pyramidal Lucas-Kanade on the GPU. View Colour shows direction as hue and speed as brightness. Use it to push particles or displace a picture along the motion of a video.") },
+         { "Time Machine", I18N_KEY("Shows each pixel from a different moment: it keeps the last frames and a grey map (the second input) says how far back every pixel looks, black is now and white is the oldest frame. A left-to-right ramp, the default with no map, gives a slit-scan. Length sets how many frames are kept (up to 60), Resolution how large they are stored (memory grows with it), Invert flips the map.") },
          { "Reaction Diffusion", I18N_KEY("Gray-Scott chemical simulation, six presets. Needs no input; patch one in and its luminance varies the feed rate so the pattern grows differently through light and dark.") },
 
          // ---------------- Mask ----------------
@@ -910,6 +911,7 @@ namespace app
                { "Feedback", I18N_KEY("Outputs the previous frame. Nothing visible on its own - it is the delay that makes a loop legal. See 'Using Feedback' above.") },
                { "Trails", I18N_KEY("A pre-wired feedback loop: decaying accumulation with drift, zoom, rotation and hue rotation. Reach for this before wiring a loop by hand.") },
                { "Optical Flow", I18N_KEY("How far each part of the picture moved since the last frame, as a vector per pixel (red and green carry x and y, in pixels of the input; blue is speed). Pyramidal Lucas-Kanade on the GPU. View Colour shows direction as hue and speed as brightness. Use it to push particles or displace a picture along the motion of a video.") },
+               { "Time Machine", I18N_KEY("Shows each pixel from a different moment: it keeps the last frames and a grey map (the second input) says how far back every pixel looks, black is now and white is the oldest frame. A left-to-right ramp, the default with no map, gives a slit-scan. Length sets how many frames are kept (up to 60), Resolution how large they are stored (memory grows with it), Invert flips the map.") },
                { "Reaction Diffusion", I18N_KEY("Gray-Scott chemical simulation, six presets. Needs no input; patch one in and its luminance varies the feed rate so the pattern grows differently through light and dark.") },
             } },
             { "Effects", {
