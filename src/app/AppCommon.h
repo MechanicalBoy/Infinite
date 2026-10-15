@@ -216,6 +216,7 @@ inline std::string TmpPath(const std::string& name)
 #include "nodes/OceanNode.h"
 #include "nodes/SimulationNodes.h"
 #include "nodes/RigidBodyNode.h"
+#include "nodes/LSystemNode.h"
 #include "nodes/GenerativeNodes.h"
 #include "nodes/DrawNode.h"
 #include "nodes/FeedbackNodes.h"

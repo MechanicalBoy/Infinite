@@ -1854,6 +1854,94 @@ namespace
    }
 
 
+   // ================================================================ L-SYSTEM
+   void AuditLSystem(Flags& f, bool& ok)
+   {
+      (void)ok;
+      auto finite = [](const Mesh& m) {
+         for (const Vertex& v : m.vertices)
+            if (!std::isfinite(v.px) || !std::isfinite(v.py) || !std::isfinite(v.pz))
+               return false;
+         return true;
+      };
+      auto hash = [](const Mesh& m) {
+         size_t h = m.vertices.size() * 31u + m.indices.size();
+         for (const Vertex& v : m.vertices)
+            h = h * 1000003u ^ (size_t)(long long)(v.px * 1e5f) ^ ((size_t)(long long)(v.py * 1e5f) << 7) ^
+                ((size_t)(long long)(v.pz * 1e5f) << 13);
+         return h;
+      };
+
+      // The fractal plant: F counts after n generations are 3 and 18.
+      {
+         LSystemNode a;
+         a.iterations = 1;
+         a.GetMesh();
+         const size_t one = a.SegmentCount();
+         a.iterations = 2;
+         a.GetMesh();
+         const size_t two = a.SegmentCount();
+         printf("GEOAUDIT LSYS   plant segments gen1 %zu (want 3), gen2 %zu (want 18)\n", one, two);
+         if (one != 3 || two != 18)
+            f.Flag("LSYS", "Plant", "segment count wrong", (double)two);
+         a.iterations = 5;
+         const Mesh& m = a.GetMesh();
+         printf("GEOAUDIT LSYS   plant gen5: %zu segments, %zu branches, %zu tris\n",
+                a.SegmentCount(), a.StrandCount(), a.TriangleCount());
+         if (m.indices.empty() || !finite(m))
+            f.Flag("LSYS", "Plant", "gen5 mesh empty or not finite", (double)m.indices.size());
+      }
+
+      // Geometry: "F" is one step up; "F+F" at 90 degrees turns left (-x).
+      {
+         LSystemNode n;
+         n.axiom = "F+F"; n.rules = ""; n.iterations = 0; n.angle = 90.0f; n.length = 0.5f;
+         const Polyline& line = n.GetPolyline();
+         if (line.Count() != 3)
+            f.Flag("LSYS", "Turtle", "curve point count", (double)line.Count());
+         else
+         {
+            const float* p = line.points.data();
+            printf("GEOAUDIT LSYS   F+F end (%.3f %.3f %.3f) want (-0.5 0.5 0)\n", p[6], p[7], p[8]);
+            if (std::fabs(p[6] + 0.5f) > 1e-4f || std::fabs(p[7] - 0.5f) > 1e-4f || std::fabs(p[8]) > 1e-4f)
+               f.Flag("LSYS", "Turtle", "F+F end point", p[6]);
+         }
+      }
+
+      // Same text, same mesh; and a bypassed node outputs nothing.
+      {
+         LSystemNode a, b;
+         const size_t ha = hash(a.GetMesh()), hb = hash(b.GetMesh());
+         printf("GEOAUDIT LSYS   determinism %zx %zx\n", ha, hb);
+         if (ha != hb)
+            f.Flag("LSYS", "Determinism", "two identical nodes differ", 1);
+         a.bypassed = true;
+         if (!a.GetMesh().vertices.empty() || a.GetCurve() != nullptr)
+            f.Flag("LSYS", "Bypass", "bypassed node still outputs", 1);
+      }
+
+      // Hostile input: runaway grammar, junk rules, brackets that never match, empty axiom.
+      {
+         LSystemNode n;
+         n.axiom = "X"; n.rules = "X=XXXXXXXXXX;F=FFFFFFFF"; n.iterations = 10;
+         const Mesh& m = n.GetMesh();
+         printf("GEOAUDIT LSYS   runaway: %zu segments, warning '%s'\n", n.SegmentCount(), n.CookWarning().c_str());
+         if (!finite(m) || n.CookWarning().empty())
+            f.Flag("LSYS", "Runaway", "no warning or non-finite", 1);
+
+         LSystemNode j;
+         j.axiom = "]]][[[F]F]]]+++---&&&^^^\\\\///|||f"; j.rules = "=F;X;;==;===;F=F"; j.iterations = 4;
+         if (!finite(j.GetMesh()))
+            f.Flag("LSYS", "Junk", "non-finite", 1);
+
+         LSystemNode e;
+         e.axiom = ""; e.iterations = 5;
+         if (!e.GetMesh().vertices.empty() || e.GetCurve() == nullptr)
+            f.Flag("LSYS", "Empty", "empty axiom should give an empty mesh and a (possibly empty) curve", 1);
+      }
+   }
+
+
    // ============================================================ RIGID BODIES
    void AuditRigid(Flags& f, bool& ok)
    {
@@ -2824,6 +2912,8 @@ bool RunGeoAudit()
       AuditCloth(flags, ok);
    if (want("RIGID"))
       AuditRigid(flags, ok);
+   if (want("LSYS"))
+      AuditLSystem(flags, ok);
    if (want("INST"))
       AuditInstances(flags, ok);
    if (want("REF"))

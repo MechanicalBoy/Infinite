@@ -339,6 +339,40 @@ namespace app
    }
 
 
+   void DrawLSystemParams(LSystemNode* n)
+   {
+      ImGui::TextDisabled("%s", n->Status().c_str());
+      char buf[512];
+      snprintf(buf, sizeof(buf), "%s", n->axiom.c_str());
+      ImGui::SetNextItemWidth(kParamWidth);
+      if (FieldWell::InputText("axiom", buf, sizeof(buf)))
+         n->axiom = buf;
+      snprintf(buf, sizeof(buf), "%s", n->rules.c_str());
+      ImGui::SetNextItemWidth(kParamWidth);
+      if (FieldWell::InputText("rules", buf, sizeof(buf)))
+         n->rules = buf;
+
+      NodeSeparator("growth");
+      ModSliderInt("generations", &n->iterations, 0, LSystemNode::kMaxIterations);
+      ModSlider("angle", &n->angle, 0.0f, 180.0f, "%.1f\xC2\xB0");
+      ModSlider("length", &n->length, 0.005f, 1.0f);
+      ModSlider("length / branch", &n->lengthScale, 0.1f, 1.5f);
+
+      NodeSeparator("tube");
+      ModSlider("radius", &n->radius, 0.001f, 0.2f);
+      ModSlider("radius / branch", &n->radiusScale, 0.1f, 1.5f);
+      ModSliderInt("sides", &n->sides, 3, 24);
+      ModSlider("taper", &n->taper, 0.0f, 1.0f);
+
+      if (!n->CookWarning().empty())
+      {
+         PushTextWrapWidth(kPreviewSize);
+         ImGui::TextUnformatted(n->CookWarning().c_str());
+         PopTextWrapWidth();
+      }
+   }
+
+
    void DrawMetaBallParams(MetaBallNode* n)
    {
       ImGui::TextDisabled("%zu balls, %zu triangles", n->BallCount(), n->TriangleCount());

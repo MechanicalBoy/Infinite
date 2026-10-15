@@ -692,6 +692,7 @@ set(COMMON_SOURCES
     src/nodes/OceanNode.cpp
     src/nodes/SimulationNodes.cpp
     src/nodes/RigidBodyNode.cpp
+    src/nodes/LSystemNode.cpp
     src/nodes/GenerativeNodes.cpp
     src/nodes/GeometryOpNodes.cpp
     src/nodes/FieldElementNode.cpp
