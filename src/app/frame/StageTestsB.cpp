@@ -634,6 +634,24 @@ int DrawTestsB(FrameCtx& fc)
                continue;
             }
 
+            // Geometry nodes emit a mesh, not a texture; with nothing patched in
+            // (Set Vertex Color, Delaunay Mesh, ...) the mesh is empty, so there
+            // is nothing to assert beyond "it is a geometry node".
+            if (dynamic_cast<IGeometrySource*>(gn.node.get()) != nullptr)
+            {
+               printf("%-22s [%-12s] geometry node  OK\n", gn.typeName.c_str(), gn.category.c_str());
+               continue;
+            }
+            // The viewport panel's own "does this node emit pixels" gate: false
+            // for note nodes (INoteSource / note input), audio sinks and
+            // analyzers (audio input), and Comment/Group. OSC Send has only a
+            // modulator input, so the gate cannot see it; it is a pure sink.
+            if (!CanShowInViewportPanel(gn) || dynamic_cast<OscSendNode*>(gn.node.get()) != nullptr)
+            {
+               printf("%-22s [%-12s] no image out   OK\n", gn.typeName.c_str(), gn.category.c_str());
+               continue;
+            }
+
             bool ok = gn.node->GetOutputWidth() > 0 && gn.node->GetOutputTexture() != 0;
             if (!ok)
                ++failures;
