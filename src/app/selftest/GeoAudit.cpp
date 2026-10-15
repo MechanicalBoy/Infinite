@@ -1942,6 +1942,50 @@ namespace
    }
 
 
+   // ============================================================ PARTICLE COST (gate G1 of metal-compute.md)
+   // How much of a 16.7 ms frame the CPU particle system and the copy of its points take,
+   // at counts a user would set. Only runs when INFINITE_GEOAUDIT_ONLY names PCOST.
+   void AuditParticleCost()
+   {
+      Transport& tr = Transport::Instance();
+      tr.SetPlaying(false);
+      tr.SetTempo(120.0f);   // 1/30 beat is 1/60 s
+      for (int count : { 50000, 100000, 200000 })
+      {
+         ParticleSystemNode p;
+         p.maxParticles = count;
+         p.lifetime = 3.0f;
+         p.lifetimeRandom = 0.0f;
+         p.emitRate = (float)count / 3.0f;
+         double beat = 0.0;
+         tr.SeekBeats(0.0);
+         p.CookIfNeeded(gFrame++);
+         std::vector<double> cook;
+         for (int i = 0; i < 420; i++)
+         {
+            beat += 1.0 / 30.0;
+            tr.SeekBeats(beat);
+            const auto t0 = std::chrono::steady_clock::now();
+            p.CookIfNeeded(gFrame++);
+            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+            if (i >= 240)
+               cook.push_back(ms);
+         }
+         std::sort(cook.begin(), cook.end());
+         double sum = 0.0;
+         for (double c : cook) sum += c;
+         // The hand-off to the GL buffer is at least one pass over the points.
+         const std::vector<Particle>* pts = p.GetPointCloud();
+         std::vector<Particle> copy;
+         const auto c0 = std::chrono::steady_clock::now();
+         copy = *pts;
+         const double copyMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - c0).count();
+         printf("GEOAUDIT PCOST  %6d requested, %6zu alive: cook mean %.2f ms p95 %.2f ms | copy of points %.2f ms | cook + copy %.0f%% of a 16.7 ms frame\n",
+                count, p.AliveCount(), sum / (double)cook.size(), cook[cook.size() * 95 / 100], copyMs,
+                100.0 * (sum / (double)cook.size() + copyMs) / 16.7);
+      }
+   }
+
    // ============================================================ RIGID BODIES
    void AuditRigid(Flags& f, bool& ok)
    {
@@ -2910,6 +2954,8 @@ bool RunGeoAudit()
       AuditBevelInset(flags, ok);
    if (want("CLOTH"))
       AuditCloth(flags, ok);
+   if (only != nullptr && strstr(only, "PCOST") != nullptr)
+      AuditParticleCost();
    if (want("RIGID"))
       AuditRigid(flags, ok);
    if (want("LSYS"))
