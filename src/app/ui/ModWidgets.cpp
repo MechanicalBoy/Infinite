@@ -767,12 +767,35 @@ namespace app
    }
 
 
+   // The knob and fader faces are drawn with absolute colours, which ImGui's disabled state
+   // (a style-alpha multiply) never reaches, so a greyed knob looked identical to a live one.
+   // This fades whatever the widget put on the draw list by the current style alpha.
+   struct FadeIfDisabled
+   {
+      ImDrawList* dl;
+      int vtxStart;
+      FadeIfDisabled() : dl(ImGui::GetWindowDrawList()), vtxStart(dl->VtxBuffer.Size) {}
+      ~FadeIfDisabled()
+      {
+         const float a = ImGui::GetStyle().Alpha;
+         if (a >= 0.999f)
+            return;
+         for (int i = vtxStart; i < dl->VtxBuffer.Size; i++)
+         {
+            ImU32& c = dl->VtxBuffer[i].col;
+            const ImU32 na = (ImU32)(((c >> IM_COL32_A_SHIFT) & 0xFF) * a);
+            c = (c & ~IM_COL32_A_MASK) | (na << IM_COL32_A_SHIFT);
+         }
+      }
+   };
+
    bool KnobFloat(const char* label, float* value, float minV, float maxV, const char* fmt,
                   float diameter, ImU32 fillColor, bool readOnly, float cellW,
                   FaderPosToValueFn posToValue, FaderValueToPosFn valueToPos,
                   bool hasRange, float rangeLo, float rangeHi,
                   bool activeTint)
    {
+      FadeIfDisabled fadeIfDisabled;
       const float kTwoPi = 6.28318530717958647692f;
       const float aMin = 0.75f * kTwoPi * 0.5f; // 135 deg
       const float aMax = 2.25f * kTwoPi * 0.5f; // 405 deg (270 deg sweep)
@@ -968,6 +991,7 @@ namespace app
                          bool hasRange, float rangeLo, float rangeHi,
                          bool activeTint, bool resetOnDoubleClick)
    {
+      FadeIfDisabled fadeIfDisabled;
       const float kTwoPi = 6.28318530717958647692f;
       const float aMin = 0.75f * kTwoPi * 0.5f; // 135 deg
       const float aMax = 2.25f * kTwoPi * 0.5f; // 405 deg
