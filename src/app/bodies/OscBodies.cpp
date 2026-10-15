@@ -2062,17 +2062,19 @@ namespace app
             const float gap = ImGui::GetStyle().ItemSpacing.x;
             const float checkW = 84.0f;
             const float sliderW = (full - checkW - gap * 2.0f) * 0.5f;
-            const float rowX0 = ImGui::GetCursorScreenPos().x;
+            const ImVec2 rowTop = ImGui::GetCursorScreenPos();
+            const float levelX = rowTop.x + sliderW + gap + checkW + gap;
             if (op.fixed)
                AudioSlider("freq", &op.freq, 1.0f, 8000.0f, "%.0f Hz", sliderW, FrequencyTaper::PosToValue,
                            FrequencyTaper::ValueToPos);
             else
                AudioSlider("ratio", &op.ratio, 0.5f, 16.0f, "%.2f", sliderW);
-            ImGui::SameLine();
+            // Every cell is placed from the row's own origin, so each operator lines up exactly.
+            ImGui::SetCursorScreenPos(ImVec2(rowTop.x + sliderW + gap, rowTop.y));
             ModCheckbox("fixed", &op.fixed);
-            ImGui::SameLine();
-            // The last cell takes whatever is left, so the row ends flush with the fields below.
-            AudioSlider("level", &op.level, 0.0f, 1.0f, "%.2f", full - (ImGui::GetCursorScreenPos().x - rowX0));
+            ImGui::SetCursorScreenPos(ImVec2(levelX, rowTop.y));
+            AudioSlider("level", &op.level, 0.0f, 1.0f, "%.2f", rowTop.x + full - levelX);
+            ImGui::SetCursorScreenPos(ImVec2(rowTop.x, rowTop.y + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y));
             DrawEnvelopeFields("##fmEnv", &op.attack, &op.decay, &op.sustain, &op.release, nullptr, 0.0f,
                                1.0f, "%.2f", tok::U32(tok::pal::c_96D6FFF5), nullptr);
             op.decay = std::max(1.0f, op.decay);
