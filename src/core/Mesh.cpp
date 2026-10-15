@@ -1,3 +1,4 @@
+#include <cmath>
 #include "Mesh.h"
 
 #include <algorithm>
@@ -1070,6 +1071,14 @@ namespace MeshOps
          out.indices.push_back(base + in.indices[t]);
          out.indices.push_back(base + in.indices[t + 2]);
          out.indices.push_back(base + in.indices[t + 1]);
+      }
+
+      // The mirrored triangles are the same faces again, so they carry the same selection.
+      if (!in.faceMask.empty())
+      {
+         out.faceMask = in.faceMask;
+         if (keepOriginal)
+            out.faceMask.insert(out.faceMask.end(), in.faceMask.begin(), in.faceMask.end());
       }
 
       if (weldSeam && keepOriginal)
@@ -5219,6 +5228,53 @@ void AppendMesh(Mesh& a, const Mesh& b)
       else
          a.vertexColor.insert(a.vertexColor.end(), b.vertices.size() * 3, 1.0f);
    }
+}
+
+bool IsWellFormed(const Mesh& in)
+{
+   if (in.indices.size() % 3 != 0)
+      return false;
+   const size_t tris = in.indices.size() / 3;
+   if (!in.faceMask.empty() && in.faceMask.size() != tris)
+      return false;
+   if (!in.vertexColor.empty() && in.vertexColor.size() != in.vertices.size() * 3)
+      return false;
+   const size_t n = in.vertices.size();
+   for (unsigned int i : in.indices)
+      if (i >= n)
+         return false;
+   for (const Vertex& v : in.vertices)
+      if (!std::isfinite(v.px) || !std::isfinite(v.py) || !std::isfinite(v.pz))
+         return false;
+   return true;
+}
+
+Mesh Sanitize(const Mesh& in)
+{
+   Mesh out;
+   out.vertices = in.vertices;
+   const size_t n = in.vertices.size();
+   const size_t tris = in.indices.size() / 3;
+   auto finite = [&](unsigned int i) {
+      const Vertex& v = in.vertices[i];
+      return std::isfinite(v.px) && std::isfinite(v.py) && std::isfinite(v.pz);
+   };
+   const bool maskOk = in.faceMask.size() == tris;
+   out.indices.reserve(in.indices.size());
+   for (size_t t = 0; t < tris; t++)
+   {
+      const unsigned int a = in.indices[t * 3], b = in.indices[t * 3 + 1], c = in.indices[t * 3 + 2];
+      if (a >= n || b >= n || c >= n || !finite(a) || !finite(b) || !finite(c))
+         continue;
+      out.indices.push_back(a);
+      out.indices.push_back(b);
+      out.indices.push_back(c);
+      if (maskOk)
+         out.faceMask.push_back(in.faceMask[t]);
+   }
+   if (in.vertexColor.size() == n * 3)
+      out.vertexColor = in.vertexColor;
+   return out;
 }
 
 Mesh ClearSelection(const Mesh& in)

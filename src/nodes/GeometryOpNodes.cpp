@@ -212,7 +212,14 @@ const Mesh& GeometryOpNode::GetMesh()
    if (mHasBuilt && sig == mBuilt)
       return mCache;
 
-   const Mesh& src = input->GetMesh();
+   const Mesh& rawSrc = input->GetMesh();
+   // A source may hand over a broken mesh (bad indices, NaN, a mask that no longer matches);
+   // drop what is unusable once, here, so no operator below has to defend itself.
+   const bool wellFormed = MeshOps::IsWellFormed(rawSrc);
+   Mesh sanitized;
+   if (!wellFormed)
+      sanitized = MeshOps::Sanitize(rawSrc);
+   const Mesh& src = wellFormed ? rawSrc : sanitized;
    // Per-face-independent operators (Explode, Triangulate, Normals, Solidify,
    // Wireframe) get `selectionOnly` by running on the selected faces alone
    // and stitching the untouched rest back on - see MeshOps::SplitBySelection.

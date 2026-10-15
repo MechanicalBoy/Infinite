@@ -47,6 +47,7 @@
 //               the volume the shape has (torus, sphere, capped part-turns, a non-convex cap,
 //               a taper to a point, a closed path with whole-turn twist); lathe normals against
 //               the analytic torus; the nodes' cache, bypass, forwarding and hostile numbers
+//   KINDS       every geometry op against every input kind: empty, points, curve, mixed, bad data
 //   BEVEL       Bevel and Inset: closed in, closed out; volume against the chamfer prisms and the
 //               six frustums of an inset cube; smooth shapes and hostile numbers hand the input back
 //   CLOTH       free fall against g t^2 / 2, pinned cloth over 12 s (finite, bounded
@@ -78,6 +79,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -1175,6 +1177,156 @@ namespace
    // (a bevel only removes, a wider one removes more, a rounder one removes less than the
    // chamfer, an inset of a cube is a frustum per face), hostile numbers hand the input back
    // or still give a closed mesh.
+   // ================================================================= KINDS
+   // Every geometry op against every kind of input the graph can hand it: no mesh, a mesh with no
+   // triangles, points only, a curve only, a mesh carrying points and a curve, and meshes with bad
+   // data. Each must either work or pass through cleanly - no crash, no out-of-range index, no
+   // non-finite number made from finite input. A cloud or curve must come out unchanged (or moved,
+   // for Transform) and never be dropped.
+   struct KindProbe : public IGeometrySource
+   {
+      Mesh mesh;
+      std::vector<Particle> cloud;
+      Polyline line;
+      bool hasCloud = false, hasLine = false;
+      Mat4 matrix;
+      unsigned long long rev = NextMeshRevision();
+      const Mesh& GetMesh() override { return mesh; }
+      unsigned long long MeshRevision() override { return rev; }
+      Mat4 GetModelMatrix() const override { return matrix; }
+      Material GetMaterial() const override { return Material(); }
+      const std::vector<Particle>* GetPointCloud() override { return hasCloud ? &cloud : nullptr; }
+      unsigned long long PointCloudRevision() override { return rev; }
+      const Polyline* GetCurve() override { return hasLine ? &line : nullptr; }
+      unsigned long long CurveStamp() override { return rev; }
+   };
+
+   void AuditKinds(Flags& f, bool& ok)
+   {
+      struct Kind { std::string name; KindProbe probe; bool finiteInput = true; };
+      std::vector<Kind> kinds;
+      auto cubeMesh = []() { GeometryNode g; g.shape = 1; g.detail = 4; return Build(g); };
+      auto addCloud = [](KindProbe& p) {
+         p.hasCloud = true;
+         for (int i = 0; i < 5; i++) { Particle q; q.px = (float)i; q.py = 0.5f * (float)i; q.pz = -1.0f; p.cloud.push_back(q); }
+      };
+      auto addLine = [](KindProbe& p, int n) {
+         p.hasLine = true;
+         for (int i = 0; i < n; i++) { p.line.points.push_back((float)i); p.line.points.push_back(1.0f); p.line.points.push_back(0.0f); }
+      };
+      auto add = [&](const char* name, std::function<void(KindProbe&)> fill, bool finite = true) {
+         kinds.emplace_back();
+         kinds.back().name = name;
+         kinds.back().finiteInput = finite;
+         fill(kinds.back().probe);
+      };
+      add("empty mesh", [](KindProbe&) {});
+      add("vertices, no triangles", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.indices.clear(); });
+      add("points only", [&](KindProbe& p) { addCloud(p); });
+      add("one point", [&](KindProbe& p) { addCloud(p); p.cloud.resize(1); });
+      add("curve only", [&](KindProbe& p) { addLine(p, 6); });
+      add("curve of one point", [&](KindProbe& p) { addLine(p, 1); });
+      add("closed 2-point curve", [&](KindProbe& p) { addLine(p, 2); p.line.closed = true; });
+      add("mesh + points + curve", [&](KindProbe& p) { p.mesh = cubeMesh(); addCloud(p); addLine(p, 6); });
+      add("points + curve, no mesh", [&](KindProbe& p) { addCloud(p); addLine(p, 4); });
+      add("one triangle", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.indices.resize(3); });
+      add("triangle list not a multiple of 3", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.indices.resize(p.mesh.indices.size() - 1); });
+      add("zero-area triangles", [&](KindProbe& p) {
+         p.mesh = cubeMesh();
+         for (size_t i = 0; i + 2 < p.mesh.indices.size(); i += 3) p.mesh.indices[i + 1] = p.mesh.indices[i + 2] = p.mesh.indices[i];
+      });
+      add("indices out of range", [&](KindProbe& p) {
+         p.mesh = cubeMesh();
+         p.mesh.indices[0] = (unsigned)p.mesh.vertices.size() + 50;
+      });
+      add("NaN and infinity positions", [&](KindProbe& p) {
+         p.mesh = cubeMesh();
+         p.mesh.vertices[0].px = std::nanf("");
+         p.mesh.vertices[1].py = INFINITY;
+      }, false);
+      add("huge coordinates", [&](KindProbe& p) {
+         p.mesh = cubeMesh();
+         for (auto& v : p.mesh.vertices) { v.px *= 1e9f; v.py *= 1e9f; v.pz *= 1e9f; }
+      });
+      add("short selection mask", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.faceMask.assign(3, 1); });
+      add("long selection mask", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.faceMask.assign(p.mesh.indices.size(), 1); });
+      add("everything selected", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.faceMask.assign(p.mesh.indices.size() / 3, 1); });
+      add("short vertex colours", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.vertexColor.assign(5, 0.5f); });
+
+      const auto& opNames = GeometryOpNode::OpNames();
+      int cases = 0;
+      for (int op = 0; op < GeometryOpNode::kOpCount; op++)
+      {
+         if (!GeometryOpNode::IsSpawnable(op))
+            continue;
+         const std::string name = (size_t)op < opNames.size() ? opNames[(size_t)op] : std::to_string(op);
+         for (const Kind& k : kinds)
+         {
+            for (int selOnly = 0; selOnly < 2; selOnly++)
+            {
+               KindProbe probe = k.probe;
+               probe.rev = NextMeshRevision();
+               GeometryOpNode node;
+               node.op = op;
+               node.selectionOnly = selOnly != 0;
+               node.input = &probe;
+               const std::string id = name + " on " + k.name + (selOnly ? " (selection only)" : "");
+               node.CookIfNeeded(gFrame++);
+               const Mesh m = node.GetMesh();
+               const Stats s = Measure(m);
+               cases++;
+               if (s.badIndex > 0)
+               {
+                  f.Flag("KINDS", id, "output has an out-of-range index", s.badIndex);
+                  ok = false;
+               }
+               if (k.finiteInput && s.nonFinite > 0)
+               {
+                  f.Flag("KINDS", id, "non-finite output from finite input", s.nonFinite);
+                  ok = false;
+               }
+               if (m.indices.size() % 3 != 0)
+               {
+                  f.Flag("KINDS", id, "triangle list is not a multiple of 3", (double)m.indices.size());
+                  ok = false;
+               }
+               if (!m.vertexColor.empty() && m.vertexColor.size() != m.vertices.size() * 3)
+               {
+                  f.Flag("KINDS", id, "vertex colours do not match the vertex count", (double)m.vertexColor.size());
+                  ok = false;
+               }
+               if (!m.faceMask.empty() && m.faceMask.size() != m.indices.size() / 3)
+               {
+                  f.Flag("KINDS", id, "selection mask does not match the triangle count", (double)m.faceMask.size());
+                  ok = false;
+               }
+               // Points and a curve must survive: untouched by a mesh op, moved by Transform.
+               const std::vector<Particle>* pc = node.GetPointCloud();
+               if (probe.hasCloud && (pc == nullptr || pc->size() != probe.cloud.size()))
+               {
+                  f.Flag("KINDS", id, "points were dropped", pc ? (double)pc->size() : 0.0);
+                  ok = false;
+               }
+               const Polyline* cv = node.GetCurve();
+               if (probe.hasLine && (cv == nullptr || cv->points.size() != probe.line.points.size()))
+               {
+                  f.Flag("KINDS", id, "curve was dropped", cv ? (double)cv->points.size() : 0.0);
+                  ok = false;
+               }
+               if (!probe.hasCloud && pc != nullptr)
+                  f.Flag("KINDS", id, "invented points from nothing", (double)pc->size());
+               if (!probe.hasLine && cv != nullptr)
+                  f.Flag("KINDS", id, "invented a curve from nothing", (double)cv->points.size());
+               // A mesh op fed points or a curve must say so rather than silently pass it by.
+               if ((probe.hasCloud || probe.hasLine) && probe.mesh.Empty() && op != GeometryOpNode::kTransform &&
+                   node.CookWarning().empty())
+                  f.Flag("KINDS", id, "no warning that this op does not act on points or curves", 1);
+            }
+         }
+      }
+      printf("GEOAUDIT KINDS  %d op x input-kind cases run\n", cases);
+   }
+
    void AuditBevelInset(Flags& f, bool& ok)
    {
       auto stats = [&](const char* name, const Mesh& m, bool closed) {
@@ -2478,6 +2630,8 @@ bool RunGeoAudit()
       AuditCurveOps(flags, ok);
    if (want("SWEEP"))
       AuditSweepRevolve(flags, ok);
+   if (want("KINDS"))
+      AuditKinds(flags, ok);
    if (want("BEVEL"))
       AuditBevelInset(flags, ok);
    if (want("CLOTH"))

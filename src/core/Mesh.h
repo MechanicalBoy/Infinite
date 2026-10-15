@@ -470,6 +470,11 @@ namespace MeshOps
    // be told to ignore whatever mask arrived on its input - the
    // `selectionOnly == false` half of every operator this phase touches.
    Mesh ClearSelection(const Mesh& in);
+   // True when indices are in range and a multiple of 3, positions are finite and the mask and
+   // vertex colours match the mesh. Sanitize drops the triangles that break this and the per-face
+   // data that no longer matches, so every operator can assume a well-formed input.
+   bool IsWellFormed(const Mesh& in);
+   Mesh Sanitize(const Mesh& in);
    // A vertex counts as selected if any face touching it is selected - the
    // same rule ToPoints already uses to decide which vertices survive a face
    // selection (src/core/Mesh.cpp, the point-mode `touched` loop). Shared here
