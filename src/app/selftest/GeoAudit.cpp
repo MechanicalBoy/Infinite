@@ -1950,8 +1950,11 @@ namespace
       Transport& tr = Transport::Instance();
       tr.SetPlaying(false);
       tr.SetTempo(120.0f);   // 1/30 beat is 1/60 s
-      for (int count : { 50000, 100000, 200000 })
+      int round = 0;
+      for (int count : { 50000, 100000, 200000, 100000 })
       {
+         // The last round repeats 100k on one thread: its checksum must match round two.
+         ParticleSystemNode::sMaxThreads = round++ == 3 ? 1 : 0;
          ParticleSystemNode p;
          p.maxParticles = count;
          p.lifetime = 3.0f;
@@ -1980,10 +1983,14 @@ namespace
          const auto c0 = std::chrono::steady_clock::now();
          copy = *pts;
          const double copyMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - c0).count();
+         double sumPos = 0.0;
+         for (const Particle& q : *pts) sumPos += (double)q.px + 2.0 * q.py + 3.0 * q.pz;
+         printf("GEOAUDIT PCOST  checksum %.6f (threads %d)\n", sumPos, ParticleSystemNode::sMaxThreads);
          printf("GEOAUDIT PCOST  %6d requested, %6zu alive: cook mean %.2f ms p95 %.2f ms | copy of points %.2f ms | cook + copy %.0f%% of a 16.7 ms frame\n",
                 count, p.AliveCount(), sum / (double)cook.size(), cook[cook.size() * 95 / 100], copyMs,
                 100.0 * (sum / (double)cook.size() + copyMs) / 16.7);
       }
+      ParticleSystemNode::sMaxThreads = 0;
    }
 
    // ============================================================ RIGID BODIES
