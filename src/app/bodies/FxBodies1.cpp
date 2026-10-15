@@ -1351,67 +1351,50 @@ namespace app
       DrawDelayVisualizer(n);
       ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
-      // Chorus's grammar: every row is three cells, so every pin sits the same distance from its
-      // knob and the switches below share the same thirds. Time and Rate both always draw
-      // (whichever the sync switch is not using greys out), tape's four knobs grey when tape is
-      // off, and mix stays bottom-right (P4) with diffusion bottom-left.
+      // A strict 4 x 3 grid. Row 1 is the delay itself (time, feedback, tone, mix); row 2 is the
+      // tape character (wow, flutter, saturation, diffusion), all four grey together until tape is on;
+      // row 3 is the four switches (sync, the rate division the sync uses, bounce, tape). Time and
+      // rate both always draw, and whichever the sync switch is not using greys out. Pan and duck
+      // are no longer on the face: they keep their saved values and their modulation pins, and are
+      // registered below so existing cables still land.
       {
-         AudioKnobRow row(3);
+         AudioKnobRow row(4);
          ImGui::BeginDisabled(sync && !gParamRegisterOnly);
          row.Knob("time", n->ParamPtr("timeMs"), 1.0f, 2000.0f, "%.0f ms", kKnobLarge);
          ImGui::EndDisabled();
+         row.Knob("feedback", n->ParamPtr("feedback"), 0.0f, 110.0f, "%.0f%%", kKnobLarge);
+         row.Knob("tone", n->ParamPtr("tone"), -1.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.End();
+      }
+      {
+         ImGui::BeginDisabled(!analog && !gParamRegisterOnly);
+         AudioKnobRow row(4);
+         row.Knob("wow", n->ParamPtr("wow"), 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("flutter", n->ParamPtr("flutter"), 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("saturation", n->ParamPtr("saturation"), 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("diffusion", n->ParamPtr("diffusion"), 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.End();
+         ImGui::EndDisabled();
+      }
+
+      {
+         // Tight switch row (maxDia 20 = checkbox frame height, no captions), same as Chorus.
+         AudioKnobRow row(4, 20.0f, 8.0f, false);
+         bool syncBool = sync;
+         bool syncBoolUserChanged = false;
+         if (row.Checkbox("sync##delaySync", &syncBool, &syncBoolUserChanged))
+         {
+            if (syncBoolUserChanged) // a cable flip writes the value but never checkpoints
+               PushUndoCheckpoint();
+            *n->ParamPtr("sync") = syncBool ? 1.0f : 0.0f;
+         }
          ImGui::BeginDisabled(!sync && !gParamRegisterOnly);
          row.Dropdown("rate", MusicTime::RateDivisionList(), (int)(n->Param("rateDiv") + 0.5f), [n](int i) {
             PushUndoCheckpoint();
             *n->ParamPtr("rateDiv") = (float)i;
          });
          ImGui::EndDisabled();
-         row.Knob("tone", n->ParamPtr("tone"), -1.0f, 1.0f, "%.2f", kKnobLarge);
-         row.End();
-      }
-      {
-         AudioKnobRow row(3);
-         row.Knob("feedback", n->ParamPtr("feedback"), 0.0f, 110.0f, "%.0f%%", kKnobLarge);
-         row.Knob("pan", n->ParamPtr("pan"), -1.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("duck", n->ParamPtr("ducking"), 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.End();
-      }
-      {
-         const bool grey = !analog && !gParamRegisterOnly;
-         ImGui::BeginDisabled(grey);
-         AudioKnobRow row(3);
-         row.Knob("wow", n->ParamPtr("wow"), 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("flutter", n->ParamPtr("flutter"), 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.Knob("saturation", n->ParamPtr("saturation"), 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.End();
-         ImGui::EndDisabled();
-      }
-      {
-         const bool grey = !analog && !gParamRegisterOnly;
-         AudioKnobRow row(3);
-         ImGui::BeginDisabled(grey);
-         row.Knob("diffusion", n->ParamPtr("diffusion"), 0.0f, 1.0f, "%.2f", kKnobLarge);
-         ImGui::EndDisabled();
-         row.Skip();
-         row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f", kKnobLarge);
-         row.End();
-      }
-
-      {
-         // Tight checkbox-only row (maxDia 20 = checkbox frame height,
-         // hasCaptions=false) with a small 8px headerRowH gap so it doesn't
-         // read as too compacted against the knob row above - same pattern
-         // as Pitch Shift/Ring Mod/Flanger/Phaser/Bitcrush/etc.'s trailing
-         // analog rows.
-         AudioKnobRow row(3, 20.0f, 8.0f, false);
-         bool syncBool = sync;
-         bool syncBoolUserChanged = false;
-         if (row.Checkbox("sync to tempo##delaySync", &syncBool, &syncBoolUserChanged))
-         {
-            if (syncBoolUserChanged) // a cable flip writes the value but never checkpoints
-               PushUndoCheckpoint();
-            *n->ParamPtr("sync") = syncBool ? 1.0f : 0.0f;
-         }
          bool bounceBool = bounce;
          bool bounceBoolUserChanged = false;
          if (row.Checkbox("bounce##delayBounce", &bounceBool, &bounceBoolUserChanged))
@@ -1429,6 +1412,16 @@ namespace app
             *n->ParamPtr("analog") = analogBool ? 1.0f : 0.0f;
          }
          row.End();
+      }
+
+      {
+         // Registered, not drawn (same trick as the EQ's unselected bands).
+         const bool savedRegisterOnly = gParamRegisterOnly;
+         gParamRegisterOnly = true;
+         AudioKnobRow row(2);
+         row.Knob("pan", n->ParamPtr("pan"), -1.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("duck", n->ParamPtr("ducking"), 0.0f, 1.0f, "%.2f", kKnobLarge);
+         gParamRegisterOnly = savedRegisterOnly;
       }
 
       EndAudioBody();
@@ -2093,7 +2086,12 @@ namespace app
 
       AudioKnobRow row(3);
       row.Knob("pitch", n->ParamPtr("pitch"), -24.0f, 24.0f, "%+.1f st", kKnobLarge);
-      row.Knob("grain", n->ParamPtr("grain"), 10.0f, 250.0f, "%.0f ms", kKnobLarge);
+      {
+         // Spectral mode has no grains: the knob would do nothing.
+         ImGui::BeginDisabled(spectral && !gParamRegisterOnly);
+         row.Knob("grain", n->ParamPtr("grain"), 10.0f, 250.0f, "%.0f ms", kKnobLarge);
+         ImGui::EndDisabled();
+      }
       row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f", kKnobLarge);
       row.End();
 
