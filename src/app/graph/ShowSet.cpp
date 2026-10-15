@@ -280,6 +280,23 @@ namespace app
    int ShowSetCurrent() { return gCurrent; }
    int ShowSetRequested() { return gRequest; }
    int& ShowSetQuantize() { return gQuantize; }
+
+   namespace
+   {
+      void SayLaunch(Transport::LaunchAction a)
+      {
+         const Transport& tr = Transport::Instance();
+         const std::vector<std::string>& qs = MusicTime::LaunchQuantizeList();
+         const std::string where = qs[std::clamp(tr.LaunchQuantize(), 0, (int)qs.size() - 1)];
+         if (a == Transport::kLaunchPause)
+            gPatchStatus = std::string(T("Pauses on the next grid line")) + " (" + T(where.c_str()) + ")";
+         else if (a == Transport::kLaunchRestart)
+            gPatchStatus = std::string(T("Restarts on the next grid line")) + " (" + T(where.c_str()) + ")";
+      }
+   }
+
+   void LaunchRequestTogglePlay() { SayLaunch(Transport::Instance().RequestTogglePlay()); }
+   void LaunchRequestRewind() { SayLaunch(Transport::Instance().RequestRewind()); }
    float& ShowSetFadeMs() { return gFadeMs; }
    const std::string& ShowSetPath() { return gSetPath; }
 

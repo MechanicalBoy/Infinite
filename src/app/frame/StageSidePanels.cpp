@@ -853,6 +853,20 @@ void DrawSidePanels(FrameCtx& fc)
             FormParts::SliderFloat(L("Fade"), &ShowSetFadeMs(), 0.0f, 8000.0f, "%.0f ms");
             EditorHint(T("A switch lands on the quantize grid; the old patch fades out over the fade time"));
 
+            SectionCard::Begin(T("Launch"));
+            {
+               Transport& tr = Transport::Instance();
+               int lq = tr.LaunchQuantize();
+               if (FormParts::BeginCombo(L("Pause and restart on"), T(qs[std::clamp(lq, 0, (int)qs.size() - 1)].c_str())))
+               {
+                  for (int i = 0; i < (int)qs.size(); i++)
+                     if (MenuParts::Choice(T(qs[i].c_str()), i == lq))
+                        tr.SetLaunchQuantize(i);
+                  FormParts::EndCombo();
+               }
+               EditorHint(T("With a grid set, Pause and Rewind wait for the next line while playing; Play starts at once. Sequencers, arps and MIDI files follow. Manual Switcher changes wait for the line too"));
+            }
+
             SectionCard::Begin(T("Show safety"));
             if (FormParts::Button(gShowLock ? L("Unlock") : L("Lock")))
                ShowLockToggle();

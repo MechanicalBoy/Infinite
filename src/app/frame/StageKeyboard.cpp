@@ -56,7 +56,7 @@ void DrawKeyboard(FrameCtx& fc)
       // for the mouse.
       if (!typing && !cmdOrCtrl && !io.KeyShift &&
           ImGui::IsKeyPressed(ImGuiKey_Space, false))
-         Transport::Instance().TogglePlay();
+         LaunchRequestTogglePlay();
 
       // ---- Shift+<letter> canvas shortcuts ----
       // One family, all reachable with the left hand while the right stays on

@@ -882,7 +882,7 @@ namespace app
          const bool arrangeIsPlaying = tr.IsPlaying();
          PushToolbarChip(arrangeIsPlaying, /*green=*/true);
          if (ActionButton::Draw("##arrangeplaybtn", ImVec2(30, tok::tile)))
-            tr.TogglePlay();
+            LaunchRequestTogglePlay();
          PopToolbarChip();
          if (ImGui::IsItemHovered())
             HelpTip(arrangeIsPlaying ? T("Pause (Space)") : T("Play (Space)"));
@@ -904,7 +904,7 @@ namespace app
          const bool rewindClicked = ActionButton::Draw("##arrangerewindbtn", ImVec2(30, tok::tile));
          PopToolbarChip();
          if (rewindClicked)
-            tr.Rewind();
+            LaunchRequestRewind();
          if (ImGui::IsItemHovered())
             HelpTip("%s", T("Return to Start (Enter)"));
          {

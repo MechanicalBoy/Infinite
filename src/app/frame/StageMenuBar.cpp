@@ -518,7 +518,7 @@ void DrawMenuBar(FrameCtx& fc)
          // 1. Transport (Play, Rewind, Audio On/Off)
          if (ActionButton::Draw("##transportplay", ImVec2(tok::tile + 4.0f, 0),
                                 isTransportPlaying ? ActionButton::Kind::Go : ActionButton::Kind::Plain))
-            transport.TogglePlay();
+            LaunchRequestTogglePlay();
          {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             const ImVec2 bmin = ImGui::GetItemRectMin();
@@ -538,7 +538,7 @@ void DrawMenuBar(FrameCtx& fc)
 
          ImGui::SetCursorScreenPos(ImVec2(ImGui::GetItemRectMax().x + 4.0f, ImGui::GetItemRectMin().y));
          if (ActionButton::Draw("##transportrewind", ImVec2(tok::tile + 4.0f, 0)))
-            transport.Rewind();
+            LaunchRequestRewind();
          {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             const ImVec2 bmin = ImGui::GetItemRectMin();

@@ -2468,7 +2468,8 @@ public:
          const int manualSlot = mManualSlot.load(std::memory_order_relaxed);
          if (manual || count == 1)
          {
-            const int pick = manual ? std::clamp(manualSlot, 0, kSlots - 1) : connected[0];
+            const Transport& tr = Transport::Instance();
+            const int pick = manual ? mLaunchedSlot.Resolve(std::clamp(manualSlot, 0, kSlots - 1), tr.BlockStartBeats(), tr.IsPlaying(), tr.LaunchQuantize()) : connected[0];
             activeSlot = (mInbox[pick] != nullptr) ? pick : connected[0];
          }
          else
@@ -2604,6 +2605,7 @@ private:
    std::atomic<float> mRateSeconds { 1.0f };
    std::atomic<bool> mManual { false };
    std::atomic<int> mManualSlot { 0 };
+   MusicTime::LaunchedInt mLaunchedSlot; // audio thread only
 };
 
 NoteSwitcherNode::NoteSwitcherNode() = default;

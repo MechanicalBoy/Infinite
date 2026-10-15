@@ -5576,6 +5576,11 @@ bool ShowSetReady(int i);
 int ShowSetCurrent();
 int ShowSetRequested();
 int& ShowSetQuantize(); // MusicTime::LaunchQuantize
+// v0.6 2.38: what the Play / Pause and Rewind buttons, Space and the menu call. With a launch grid set
+// (Show Set window > Launch) a pause or restart while playing waits for the next beat, bar or 2 bars and
+// says so in the status line; otherwise it acts at once. Pressing again while it waits cancels it.
+void LaunchRequestTogglePlay();
+void LaunchRequestRewind();
 float& ShowSetFadeMs();
 const std::string& ShowSetPath();
 void ShowSetAddFile(const std::string& path);
