@@ -574,6 +574,8 @@ namespace app
          { I18N_KEY("File & Patch"), I18N_KEY("Settings..."), MODKEY "+0", I18N_KEY("Open appearance, canvas, audio, and performance settings") },
          { I18N_KEY("File & Patch"), I18N_KEY("New Patch"), MODKEY "+N", I18N_KEY("Create a new empty patch") },
          { I18N_KEY("File & Patch"), I18N_KEY("New Synth"), MODKEY "+Shift+N", I18N_KEY("Add a Keyboard, a synth and an Audio Out, wired and ready to play") },
+         { I18N_KEY("File & Patch"), I18N_KEY("New Effect Chain"), "", I18N_KEY("Add an Audio File, Filter, Delay and Reverb into an Audio Out, ready for a sample") },
+         { I18N_KEY("File & Patch"), I18N_KEY("New 3D Scene"), "", I18N_KEY("Add a Sphere, Camera and Light wired into a Render 3D") },
          { I18N_KEY("File & Patch"), I18N_KEY("Open Patch"), MODKEY "+O", I18N_KEY("Open an existing .inf patch file") },
          { I18N_KEY("File & Patch"), I18N_KEY("Save"), MODKEY "+S", I18N_KEY("Save current patch") },
          { I18N_KEY("File & Patch"), I18N_KEY("Save As..."), MODKEY "+Shift+S", I18N_KEY("Save patch to a new file") },

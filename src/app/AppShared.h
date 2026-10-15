@@ -2619,6 +2619,8 @@ int HearNode(int srcIndex);
 std::vector<int> SpawnAudioDropNodes(const std::string& name, const std::string& category,
                                      const std::vector<std::string>& paths, const ImVec2& canvasPos);
 int SpawnPlayableSynth();
+int SpawnEffectChain();
+int SpawnScene3D();
 
 GraphNode* SpawnNode(const std::string& typeName, const std::string& category,
                         float x = 0.0f, float y = 0.0f);

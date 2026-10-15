@@ -166,6 +166,10 @@ void DrawMenuBar(FrameCtx& fc)
                GuardUnsavedChanges([]() { NewPatch(); });
             if (MenuParts::Item(L("New Synth"), MODKEY "+Shift+N"))
                SpawnPlayableSynth();
+            if (MenuParts::Item(L("New Effect Chain")))
+               SpawnEffectChain();
+            if (MenuParts::Item(L("New 3D Scene")))
+               SpawnScene3D();
             if (MenuParts::Item(L("Template library...")))
                gTemplatesOpen = true;
             if (MenuParts::Item(L("Open..."), MODKEY "+O"))
@@ -200,6 +204,8 @@ void DrawMenuBar(FrameCtx& fc)
             if (!gPatchPath.empty() || !gPatchStatus.empty())
             {
                MenuParts::Separator();
+               // Wrapped at a fixed width: a long status line must never widen the menu.
+               ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 260.0f);
                if (!gPatchPath.empty())
                {
                   const size_t slash = gPatchPath.find_last_of('/');
@@ -209,6 +215,7 @@ void DrawMenuBar(FrameCtx& fc)
                }
                if (!gPatchStatus.empty())
                   ImGui::TextDisabled("%s", gPatchStatus.c_str());
+               ImGui::PopTextWrapPos();
             }
             MenuParts::EndContent();
             ImGui::EndMenu();

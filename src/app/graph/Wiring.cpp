@@ -1592,6 +1592,64 @@ namespace app
       return kbIndex;
    }
 
+   // File > New Effect Chain: Audio File -> Audio Filter -> Delay -> Reverb -> Audio Out, so a dropped
+   // sample (or the file picker on the first node) runs through a ready rack.
+   int SpawnEffectChain()
+   {
+      const ImVec2 at = FindFreeSpawnPosition(gViewCenterCanvas);
+      static const char* kNames[] = { "Audio File", "Audio Filter", "Delay", "Reverb" };
+      static const char* kCats[] = { "Modulators", "AudioEffects", "AudioEffects", "AudioEffects" };
+      int idx[4] = { -1, -1, -1, -1 };
+      for (int i = 0; i < 4; i++)
+      {
+         GraphNode* gn = SpawnNode(kNames[i], kCats[i], at.x + (i - 1) * 520.0f, at.y);
+         if (gn == nullptr)
+            return -1;
+         idx[i] = gn->index;
+      }
+      for (int i = 1; i < 4; i++)
+      {
+         GraphNode* dst = FindNodeByIndex(idx[i]);
+         const int slot = dst != nullptr ? FirstInputSlot(*dst, true) : -1;
+         std::string err;
+         if (slot >= 0)
+            ConnectNodes(idx[i - 1], 0, idx[i], slot, err);
+      }
+      HearNode(idx[3]);
+      gRequestSelectNodeIndex = idx[0];
+      return idx[0];
+   }
+
+   // File > New 3D Scene: Sphere, Camera and Light cabled into a Render 3D. Slots follow Render3DNode's
+   // input order: geo A = 0, camera = 4, light 1 = 5.
+   int SpawnScene3D()
+   {
+      const ImVec2 at = FindFreeSpawnPosition(gViewCenterCanvas);
+      GraphNode* geo = SpawnNode("Sphere", "3D", at.x - 520.0f, at.y - 200.0f);
+      if (geo == nullptr)
+         return -1;
+      const int geoIndex = geo->index;
+      GraphNode* cam = SpawnNode("Camera", "3D", at.x - 520.0f, at.y + 120.0f);
+      if (cam == nullptr)
+         return -1;
+      const int camIndex = cam->index;
+      GraphNode* light = SpawnNode("Light", "3D", at.x - 520.0f, at.y + 440.0f);
+      if (light == nullptr)
+         return -1;
+      const int lightIndex = light->index;
+      GraphNode* render = SpawnNode("Render 3D", "3D", at.x, at.y);
+      if (render == nullptr)
+         return -1;
+      const int renderIndex = render->index;
+      std::string err;
+      ConnectNodes(geoIndex, 0, renderIndex, 0, err);
+      ConnectNodes(camIndex, 0, renderIndex, 4, err);
+      ConnectNodes(lightIndex, 0, renderIndex, 5, err);
+      gPatchDirty = true;
+      gRequestSelectNodeIndex = renderIndex;
+      return renderIndex;
+   }
+
 
    // File-backed and compiled-from-text nodes keep derived state (a loaded
    // texture, a compiled GL program) that VisitParams deliberately does not
