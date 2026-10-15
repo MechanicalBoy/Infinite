@@ -1730,7 +1730,7 @@ namespace app
       static const char* kStageLabel[3] = { "stage 1", "stage 2", "stage 3" };
       static const char* kAmountLabel[3] = { "amount 1", "amount 2", "amount 3" };
       {
-         AudioKnobRow row(3);
+         AudioKnobRow row(3, 20.0f, 0.0f, false);
          for (int s = 0; s < 3; s++)
          {
             const char* key = kModel[s];
