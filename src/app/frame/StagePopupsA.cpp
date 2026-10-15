@@ -954,6 +954,13 @@ void DrawPopupsA(FrameCtx& fc)
                   targetGM->LoadFile(gSampleDragPath);
                   gPatchDirty = true;
                }
+               else if (PartialsNode* targetPartials = FindNodeUnderCanvasPoint<PartialsNode>(canvasMouse))
+               {
+                  // Dropped onto Partials: it is the node's sample (slot 0).
+                  PushUndoCheckpoint();
+                  targetPartials->LoadFile(0, gSampleDragPath);
+                  gPatchDirty = true;
+               }
                else if (AudioFileNode* targetAudioFile = FindNodeUnderCanvasPoint<AudioFileNode>(canvasMouse))
                {
                   // Dropped onto an existing Audio File: swap its file.
