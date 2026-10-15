@@ -44,6 +44,8 @@ void DrawDropHandling(FrameCtx& fc)
          GranularNode* dropTargetGran = FindNodeUnderCanvasPoint<GranularNode>(canvasPos);
          MolderNode* dropTargetMolder = FindNodeUnderCanvasPoint<MolderNode>(canvasPos);
          GrainMolderNode* dropTargetGrainMolder = FindNodeUnderCanvasPoint<GrainMolderNode>(canvasPos);
+         PartialsNode* dropTargetPartials = FindNodeUnderCanvasPoint<PartialsNode>(canvasPos);
+         int partialsSlot = 0; // the first file dropped on Partials is its sample, a second one its morph target
          AudioFileNode* dropTargetAudioFile = FindNodeUnderCanvasPoint<AudioFileNode>(canvasPos);
          AudioPluginNode* dropTargetPlugin = FindNodeUnderCanvasPoint<AudioPluginNode>(canvasPos);
          ModelSourceNode* dropTargetModel = FindNodeUnderCanvasPoint<ModelSourceNode>(canvasPos);
@@ -272,6 +274,15 @@ void DrawDropHandling(FrameCtx& fc)
                   ensureDroppedCheckpoint();
                   dropTargetGrainMolder->LoadFile(path);
                   dropTargetGrainMolder = nullptr;
+                  gPatchDirty = true;
+                  continue;
+               }
+               if (dropTargetPartials != nullptr)
+               {
+                  ensureDroppedCheckpoint();
+                  dropTargetPartials->LoadFile(partialsSlot, path);
+                  if (++partialsSlot >= 2)
+                     dropTargetPartials = nullptr;
                   gPatchDirty = true;
                   continue;
                }

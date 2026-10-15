@@ -2041,21 +2041,49 @@ namespace app
          DiscreteSlotScope discreteScope(o);
          BeginAudioSection(kTitle[o][carrier ? 0 : 1]);
          {
-            AudioKnobRow row(7);
+            // The same curve-beside-fields panel Wavetable and Oscillator use: the ADSR curve on the
+            // left, four slider rows on the right, every operator the same size.
+            const float full = gAudioContentW;
+            const float gap = ImGui::GetStyle().ItemSpacing.x;
+            const float fieldsW = std::clamp(full * 0.66f, 260.0f, 320.0f);
+            const float curveW = full - fieldsW - gap;
+            const float halfW = (fieldsW - gap) * 0.5f;
+            const float checkW = 84.0f;
+            const float rowH = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y;
+            const float curveH = rowH * 4.0f - ImGui::GetStyle().ItemSpacing.y;
+            const ImVec2 top = ImGui::GetCursorScreenPos();
+            DrawEditableADSR("##fmEnv", &op.attack, &op.decay, &op.sustain, &op.release, 5000.0f, curveH,
+                             tok::U32(tok::pal::c_96D6FFF5), curveW, nullptr);
+            op.decay = std::max(1.0f, op.decay);
+            op.release = std::max(1.0f, op.release);
+            const float fx = top.x + curveW + gap;
+            float y = top.y;
+            ImGui::SetCursorScreenPos(ImVec2(fx, y));
             if (op.fixed)
-               row.Knob("freq", &op.freq, 1.0f, 8000.0f, "%.0f Hz");
+               AudioSlider("freq", &op.freq, 1.0f, 8000.0f, "%.0f Hz", fieldsW - checkW - gap, FrequencyTaper::PosToValue,
+                           FrequencyTaper::ValueToPos);
             else
-               row.Knob("ratio", &op.ratio, 0.5f, 16.0f, "%.2f");
-            row.Checkbox("fixed", &op.fixed);
-            row.Knob("level", &op.level, 0.0f, 1.0f, "%.2f");
-            row.Knob("attack", &op.attack, 0.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
-                     AudioWidgetStyle::KnobSkewAttack100);
-            row.Knob("decay", &op.decay, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
-                     AudioWidgetStyle::KnobSkewDecay300);
-            row.Knob("sustain", &op.sustain, 0.0f, 1.0f, "%.2f");
-            row.Knob("release", &op.release, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
-                     AudioWidgetStyle::KnobSkewRelease400);
-            row.End();
+               AudioSlider("ratio", &op.ratio, 0.5f, 16.0f, "%.2f", fieldsW - checkW - gap);
+            ImGui::SetCursorScreenPos(ImVec2(fx + fieldsW - checkW, y));
+            ModCheckbox("fixed", &op.fixed);
+            y += rowH;
+            ImGui::SetCursorScreenPos(ImVec2(fx, y));
+            AudioSlider("level", &op.level, 0.0f, 1.0f, "%.2f", fieldsW);
+            y += rowH;
+            ImGui::SetCursorScreenPos(ImVec2(fx, y));
+            AudioSlider("attack", &op.attack, 0.0f, 5000.0f, "%.0f ms", halfW, SkewAttack100Taper::PosToValue,
+                        SkewAttack100Taper::ValueToPos);
+            ImGui::SameLine();
+            AudioSlider("decay", &op.decay, 1.0f, 5000.0f, "%.0f ms", halfW, SkewDecay300Taper::PosToValue,
+                        SkewDecay300Taper::ValueToPos);
+            y += rowH;
+            ImGui::SetCursorScreenPos(ImVec2(fx, y));
+            AudioSlider("sustain", &op.sustain, 0.0f, 1.0f, "%.2f", halfW);
+            ImGui::SameLine();
+            AudioSlider("release", &op.release, 1.0f, 5000.0f, "%.0f ms", halfW, SkewRelease400Taper::PosToValue,
+                        SkewRelease400Taper::ValueToPos);
+            ImGui::SetCursorScreenPos(ImVec2(top.x, top.y + curveH));
+            ImGui::Dummy(ImVec2(full, 0.0f));
          }
          EndAudioSection();
          ImGui::PopID();
@@ -2095,7 +2123,7 @@ namespace app
       }
       else
       {
-         AudioViz::IdleLabel(f, n->IsAnalyzing() ? "analyzing..." : "load a sample");
+         AudioViz::IdleLabel(f, n->IsAnalyzing() ? "analyzing..." : "drop a sample here");
       }
       AudioViz::End(f);
       ImGui::Dummy(ImVec2(w, h));
@@ -2112,36 +2140,46 @@ namespace app
          snprintf(stat, sizeof(stat), "%s", n->Status().c_str());
 
       BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
-      for (int which = 0; which < 2; which++)
+      // One strip: the two loaders and the loop switch, edge to edge like every row below it.
       {
-         if (which == 1)
-            ImGui::SameLine();
-         ImGui::PushID(which);
-         const std::string& name = n->FileName(which);
-         const char* label = which == 0 ? "sample" : "morph to";
-         char text[96];
-         snprintf(text, sizeof(text), "%s: %s", label, name.empty() ? "load..." : name.c_str());
-         if (ActionButton::Draw(text, ImVec2(AudioHalfWidth(), 0)))
+         const float w = gAudioContentW;
+         const float gap = ImGui::GetStyle().ItemSpacing.x;
+         const float loopW = 84.0f;
+         const float btnW = (w - loopW - gap * 2.0f) * 0.5f;
+         const float y = ImGui::GetCursorScreenPos().y;
+         for (int which = 0; which < 2; which++)
          {
-            const std::string path = Platform::OpenAudioDialog();
-            if (!path.empty())
+            ImGui::SetCursorScreenPos(ImVec2(gAudioContentX + (float)which * (btnW + gap), y));
+            ImGui::PushID(which);
+            const std::string& name = n->FileName(which);
+            const char* label = which == 0 ? "sample" : "morph to";
+            char text[96];
+            snprintf(text, sizeof(text), "%s: %s", label, name.empty() ? "load..." : name.c_str());
+            if (ActionButton::Draw(text, ImVec2(btnW, 0)))
             {
-               PushUndoCheckpoint();
-               n->LoadFile(which, path);
+               const std::string path = Platform::OpenAudioDialog();
+               if (!path.empty())
+               {
+                  PushUndoCheckpoint();
+                  n->LoadFile(which, path);
+               }
             }
+            ImGui::PopID();
          }
-         ImGui::PopID();
+         ImGui::SetCursorScreenPos(ImVec2(gAudioContentX + w - loopW, y));
+         ModCheckbox("loop##partialsLoop", &n->loop);
+         ImGui::SetCursorScreenPos(ImVec2(gAudioContentX, y));
+         ImGui::Dummy(ImVec2(w, ImGui::GetFrameHeight()));
       }
       ImGui::Dummy(ImVec2(0.0f, 4.0f));
       DrawPartialsBars(n, 52.0f);
       ImGui::Dummy(ImVec2(0.0f, 4.0f));
       {
-         AudioKnobRow row(5);
+         AudioKnobRow row(4);
          row.Knob("pitch", &n->pitch, -24.0f, 24.0f, "%+.1f st");
          row.Knob("formant", &n->formant, -12.0f, 12.0f, "%+.1f st");
          row.Knob("partials", &n->partials, 1.0f, 48.0f, "%.0f");
          row.Knob("morph", &n->morph, 0.0f, 1.0f, "%.2f");
-         row.Checkbox("loop", &n->loop);
          row.End();
       }
       {
