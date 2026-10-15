@@ -162,6 +162,10 @@ struct ClipWindow
    bool   syncToTempo  = false;
    // Where in the source this window's box begins (a split/trimmed Sample).
    float  sourceOffsetSeconds = 0.0f;
+   // The clip's speed, signed: source seconds per timeline second, negative
+   // when the clip plays backwards. Multiplies both the source position and
+   // the rate handed to the source node. 1 = unchanged.
+   float  speed = 1.0f;
 };
 
 // One connected Audio Out: the pooled buffer its source writes into, and

@@ -59,6 +59,8 @@ namespace app
             r.origBpm = c.origBpm;
             r.sourceDurationSeconds = c.sourceDurationSeconds;
             r.sourceOffsetSeconds = c.sourceOffsetSeconds;
+            r.speed = c.speed;
+            r.reverse = c.reverse;
             r.bypassedModParams = c.bypassedModParams;
             s.clips.push_back(std::move(r));
          }
@@ -183,6 +185,8 @@ namespace app
             clip.origBpm = (c.origBpm > 0.0f) ? c.origBpm : 0.0f;
             clip.sourceDurationSeconds = c.sourceDurationSeconds;
             clip.sourceOffsetSeconds = c.sourceOffsetSeconds;
+            clip.speed = c.speed;
+            clip.reverse = c.reverse;
             clip.bypassedModParams = c.bypassedModParams;
             lane.clips.push_back(std::move(clip));
          }

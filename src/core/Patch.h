@@ -387,6 +387,10 @@ namespace Patch
       // loads with every Sample reading from the file's own beginning,
       // exactly like it always has.
       float  sourceOffsetSeconds   = 0.0f;
+      // Per-clip playback speed and direction (see Arrange::Clip::speed).
+      // 1 / false default, so a patch saved before these existed plays as it did.
+      float  speed                 = 1.0f;
+      bool   reverse               = false;
       // Per-clip modulation bypass (see Arrange::Clip::bypassedModParams).
       // Sorted, deduplicated paramIndices on the clip's source node. Empty
       // on every clip saved before this field existed, which is the same as

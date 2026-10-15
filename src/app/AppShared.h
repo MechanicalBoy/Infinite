@@ -4399,6 +4399,7 @@ void ReapArrangeGeomViewports();
       // change, a project-tempo change on an unsynced clip).
       double   sampleEffBpm = 0.0;
       float    sampleOffset = 0.0f;
+      double   sampleSpeed = 1.0;   // signed, see Arrange::ClipSpeedFactor
       const Platform::SampleBuffer* sampleBuf = nullptr;
       std::vector<float>   minv;
       std::vector<float>   maxv;
@@ -4426,11 +4427,13 @@ int ArrangeWaveBucketCount(Arrange::Tick length);
 void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
                                         Arrange::Tick start, Arrange::Tick length,
                                         double effBpm, float sourceOffsetSeconds,
-                                        const Platform::SampleBuffer* buf);
+                                        const Platform::SampleBuffer* buf, double speed = 1.0);
 
 double ArrangeSampleEffBpm(const Arrange::Clip& c);
 
 void ArrangeSetSampleSync(uint64_t clipId, bool sync);
+void ArrangeSetClipSpeed(uint64_t clipId, float speed);
+void ArrangeSetClipReverse(uint64_t clipId, bool reverse);
 
 void ArrangeSetSampleBpm(uint64_t clipId, float bpm);
 

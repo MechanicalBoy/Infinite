@@ -411,7 +411,9 @@ void VideoSourceNode::CookIfNeeded(int frameId)
    if (delta < 0.0)
       delta = 0.0;
    mLastTransportSeconds = now;
-   mPosition = WrapPosition(mPosition + delta * (double)speed);
+   const double arrangeRate = mArrangeRateFresh ? mArrangeRate : 1.0;
+   mArrangeRateFresh = false;
+   mPosition = WrapPosition(mPosition + delta * (double)speed * arrangeRate);
 
    // Published for the audio half to read - see VideoAudioNode's class
    // comment. Written every cook, whether or not this node currently has an

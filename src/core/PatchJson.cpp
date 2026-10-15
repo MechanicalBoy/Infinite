@@ -143,6 +143,8 @@ namespace PatchJson
                {"origBpm", c.origBpm},
                {"sourceDurationSeconds", c.sourceDurationSeconds},
                {"sourceOffsetSeconds", c.sourceOffsetSeconds},
+               {"speed", c.speed},
+               {"reverse", c.reverse},
                {"bypassedModParams", c.bypassedModParams}
             });
          }

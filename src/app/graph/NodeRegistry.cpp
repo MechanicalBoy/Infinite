@@ -466,6 +466,7 @@ namespace app
                 ca.sampleBpm != cb.sampleBpm || ca.origBpm != cb.origBpm ||
                 ca.sourceDurationSeconds != cb.sourceDurationSeconds ||
                 ca.sourceOffsetSeconds != cb.sourceOffsetSeconds ||
+                ca.speed != cb.speed || ca.reverse != cb.reverse ||
                 // Per-clip modulation bypass: without this a bypass toggle
                 // compares equal and ArrangeGestureEnd drops it as "no
                 // change", so it would never reach the undo stack - the same

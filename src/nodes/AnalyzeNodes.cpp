@@ -1051,7 +1051,9 @@ private:
       }
 
       const double fileRate = mActiveBuffer->sampleRate > 0.0 ? mActiveBuffer->sampleRate : mSampleRate;
-      const double sourcePerOutput = mPlaybackRate * std::max(0.0, mClipSourcePerSecond);
+      // Signed: a reversed clip reads the file backwards.
+      const bool reversed = mClipSourcePerSecond < 0.0;
+      const double sourcePerOutput = mPlaybackRate * mClipSourcePerSecond;
       const double target = mClipSourceSeconds * fileRate;
       const double driftLimit = 0.005 * fileRate;
 
@@ -1070,14 +1072,18 @@ private:
       // else goes through the spectral stretcher. The mode is only chosen on
       // a re-anchor or when the parameters leave "plain", so tempo automation
       // grazing exactly 1.0 doesn't flip modes mid-note.
-      const double rate = std::clamp(mClipSourcePerSecond, 0.05, 20.0);
-      const bool plain = std::fabs(rate - 1.0) < 1e-4 && mClipPitch == 0.0f;
-      const bool canStretch = mStretcher.Prepared();
+      const double rate = std::clamp(std::fabs(mClipSourcePerSecond), 0.05, 20.0);
+      // Reversed reads straight off the buffer (the stretcher only runs
+      // forward), so a reversed clip's pitch follows its speed.
+      const bool plain = reversed || (std::fabs(rate - 1.0) < 1e-4 && mClipPitch == 0.0f);
+      const bool canStretch = mStretcher.Prepared() && !reversed;
       bool direct = mClipDirect;
       if (reseek || !mClipActive)
          direct = plain || !canStretch;
       else if (!plain && canStretch)
          direct = false;
+      if (reversed)
+         direct = true;
 
       // Input frames are the source at engine-rate spacing.
       const double fileFramesPerInput = mPlaybackRate;

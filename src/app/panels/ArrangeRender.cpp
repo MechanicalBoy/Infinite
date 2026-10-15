@@ -765,6 +765,20 @@ namespace app
          }
 
          ImGui::Spacing();
+         SectionHeader(T("Speed"));
+         {
+            float speed = clip->speed;
+            RowLabel("Speed");
+            ImGui::SetNextItemWidth(fieldW);
+            if (ArrangeSliderFloat("##clipspeed", &speed, Arrange::kClipSpeedMin, Arrange::kClipSpeedMax,
+                                   "%.2fx", ImGuiSliderFlags_Logarithmic))
+               ArrangeEdit([&]() { ArrangeSetClipSpeed(clipId, speed); });
+            bool reverse = clip->reverse;
+            if (ToggleChip(L("Reverse##clipreverse"), &reverse, ImGui::GetContentRegionAvail().x))
+               ArrangeEdit([&]() { ArrangeSetClipReverse(clipId, reverse); });
+         }
+
+         ImGui::Spacing();
          SectionHeader(T("Color Tint"));
          drawPaletteSwatches([&](uint32_t col) {
             ArrangeEdit([&]() {
