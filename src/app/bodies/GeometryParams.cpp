@@ -1713,6 +1713,12 @@ namespace app
       if (ActionButton::Column("Frame scene", colW))
          FrameSceneInView(n);
 
+      // Both columns draw every row every frame: a row that does not apply right now is greyed, never
+      // dropped, so nothing grows, shifts or leaves a gap when a switch flips or a param is added.
+      // Left: output, camera, points, raster (25 rows). Right: light, shadows, environment, quality (25 rows).
+      char label[64];
+      const int wantedAa = (n->samples <= 0) ? 0 : (1 << n->samples);
+
       // --- Left Column ---
       ImGui::BeginGroup();
 
@@ -1726,92 +1732,40 @@ namespace app
       ModSlider("height", &n->height, 64.0f, 8192.0f, "%.0f", colW);
       DropdownButton("antialias", Render3DNode::SampleNames(), n->samples,
                      [n](int i) { n->samples = i; }, colW);
-      {
-         // The requested sample count is clamped by both the driver and a memory
-         // budget, so show what actually happened when they disagree.
-         const int wanted = (n->samples <= 0) ? 0 : (1 << n->samples);
-         if (n->ActiveSamples() != wanted)
-            ImGui::TextColored(tok::V4(tok::palf::v_950_750_350_1000),
-                               "antialias reduced to %dx at this size",
-                               n->ActiveSamples());
-      }
+      // The requested sample count is clamped by both the driver and a memory
+      // budget, so say what actually happened when they disagree.
+      if (n->ActiveSamples() != wantedAa && ImGui::IsItemHovered())
+         ImGui::SetTooltip("antialias reduced to %dx at this size", n->ActiveSamples());
       DropdownButton("tonemap", Render3DNode::TonemapNames(), n->tonemap,
                      [n](int i) { n->tonemap = i; }, colW);
       ModSlider("exposure", &n->exposure, 0.1f, 4.0f, "%.3f", colW);
       ColorSwatch("background", n->bgColor, n);
       ModSlider("bg opacity", &n->bgOpacity, 0.0f, 1.0f, "%.3f", colW);
+      ModCheckbox("16-bit float output", &n->floatOutput);
 
-      NodeSeparator("camera", colW);
-      if (n->camera != nullptr)
-         ImGui::TextDisabled("driven by a Camera node");
-      else
+      snprintf(label, sizeof(label), n->camera != nullptr ? "camera - from a Camera node" : "camera");
+      NodeSeparator(label, colW);
       {
+         // This render's own camera, entirely separate from any node's
+         // mini-viewport/panel camera (SharedViewportCamera.h/gNodeCameras):
+         // the final output framing is a deliberate setup, not something
+         // casual node-viewport orbiting should ever move.
+         ImGui::BeginDisabled(n->camera != nullptr);
          DropdownButton("projection", Render3DNode::ProjectionNames(), n->projection,
                         [n](int i) { n->projection = i; }, colW);
+         // One slot, two meanings: the field of view for perspective, the view height for orthographic.
          if (n->projection == 0)
             ModSlider("fov", &n->fov, 10.0f, 120.0f, "%.3f", colW);
          else
             ModSlider("ortho height", &n->orthoHeight, 0.2f, 8.0f, "%.3f", colW);
          ModSlider("distance", &n->camDistance, 0.3f, 20.0f, "%.3f", colW);
-         // This render's own camera, entirely separate from any node's
-         // mini-viewport/panel camera (SharedViewportCamera.h/gNodeCameras):
-         // the final output framing is a deliberate setup, not something
-         // casual node-viewport orbiting should ever move.
          ModSlider("orbit", &n->camAzimuth, -180.0f, 180.0f, "%.1f\xC2\xB0", colW);
          ModSlider("elevation", &n->camElevation, -85.9437f, 85.9437f, "%.1f\xC2\xB0", colW);
          ModSlider("target x", &n->targetX, -3.0f, 3.0f, "%.3f", colW);
          ModSlider("target y", &n->targetY, -3.0f, 3.0f, "%.3f", colW);
          ModSlider("target z", &n->targetZ, -3.0f, 3.0f, "%.3f", colW);
+         ImGui::EndDisabled();
       }
-
-      ImGui::EndGroup();
-
-      // --- Right Column ---
-      ImGui::SameLine(0.0f, gutter);
-      ImGui::BeginGroup();
-
-      NodeSeparator("light", colW);
-      int patchedLights = 0;
-      for (int i = 0; i < Render3DNode::kLightSlots; i++)
-         if (n->lights[i] != nullptr)
-            patchedLights++;
-      if (patchedLights > 0)
-         ImGui::TextDisabled("%d Light node%s patched", patchedLights, patchedLights == 1 ? "" : "s");
-      else
-      {
-         ModSlider("light orbit", &n->lightAzimuth, -180.0f, 180.0f, "%.1f\xC2\xB0", colW);
-         ModSlider("light height", &n->lightElevation, -85.9437f, 85.9437f, "%.1f\xC2\xB0", colW);
-         ColorSwatch("light", n->lightColor, n);
-         ModSlider("intensity", &n->lightIntensity, 0.0f, 4.0f, "%.3f", colW);
-      }
-      ColorSwatch("ambient", n->ambientColor, n);
-      ModSlider("rim", &n->rimIntensity, 0.0f, 2.0f, "%.3f", colW);
-
-      NodeSeparator("shadows", colW);
-      ModCheckbox("cast shadows", &n->shadowsEnabled);
-      if (n->shadowsEnabled)
-      {
-         DropdownButton("resolution", Render3DNode::ShadowQualityNames(), n->shadowQuality,
-                        [n](int i) { n->shadowQuality = i; }, colW);
-         ModSlider("strength", &n->shadowStrength, 0.0f, 1.0f, "%.3f", colW);
-         ModSlider("softness", &n->shadowSoftness, 0.0f, 4.0f, "%.3f", colW);
-         ModSlider("bias", &n->shadowBias, 0.0002f, 0.02f, "%.4f", colW);
-      }
-
-      NodeSeparator("environment", colW);
-      const bool envConnected = n->envInput.IsConnected();
-      if (envConnected)
-      {
-         ImGui::TextDisabled("driven by an HDRI node");
-         ModCheckbox("use as background", &n->envAsBackground);
-      }
-      else
-      {
-         ColorSwatch("sky", n->envSky, n);
-         ColorSwatch("horizon", n->envHorizon, n);
-         ColorSwatch("ground", n->envGround, n);
-      }
-      ModSlider("env intensity", &n->envIntensity, 0.0f, 3.0f, "%.3f", colW);
 
       NodeSeparator("points", colW);
       DropdownButton("sprite shape", Render3DNode::SpriteShapeNames(), n->spriteShape,
@@ -1823,14 +1777,56 @@ namespace app
       ModCheckbox("depth test", &n->depthTest);
       ModCheckbox("cull backfaces", &n->backfaceCull);
 
+      ImGui::EndGroup();
+
+      // --- Right Column ---
+      ImGui::SameLine(0.0f, gutter);
+      ImGui::BeginGroup();
+
+      int patchedLights = 0;
+      for (int i = 0; i < Render3DNode::kLightSlots; i++)
+         if (n->lights[i] != nullptr)
+            patchedLights++;
+      snprintf(label, sizeof(label), patchedLights > 0 ? "light - %d from Light nodes" : "light", patchedLights);
+      NodeSeparator(label, colW);
+      ImGui::BeginDisabled(patchedLights > 0);
+      ModSlider("light orbit", &n->lightAzimuth, -180.0f, 180.0f, "%.1f\xC2\xB0", colW);
+      ModSlider("light height", &n->lightElevation, -85.9437f, 85.9437f, "%.1f\xC2\xB0", colW);
+      ColorSwatch("light", n->lightColor, n);
+      ModSlider("intensity", &n->lightIntensity, 0.0f, 4.0f, "%.3f", colW);
+      ImGui::EndDisabled();
+      ColorSwatch("ambient", n->ambientColor, n);
+      ModSlider("rim", &n->rimIntensity, 0.0f, 2.0f, "%.3f", colW);
+
+      NodeSeparator("shadows", colW);
+      ModCheckbox("cast shadows", &n->shadowsEnabled);
+      ImGui::BeginDisabled(!n->shadowsEnabled);
+      DropdownButton("resolution", Render3DNode::ShadowQualityNames(), n->shadowQuality,
+                     [n](int i) { n->shadowQuality = i; }, colW);
+      ModSlider("strength", &n->shadowStrength, 0.0f, 1.0f, "%.3f", colW);
+      ModSlider("softness", &n->shadowSoftness, 0.0f, 4.0f, "%.3f", colW);
+      ModSlider("bias", &n->shadowBias, 0.0002f, 0.02f, "%.4f", colW);
+      ImGui::EndDisabled();
+
+      const bool envConnected = n->envInput.IsConnected();
+      NodeSeparator(envConnected ? "environment - from an HDRI node" : "environment", colW);
+      ModCheckbox("use as background", &n->envAsBackground);
+      ImGui::BeginDisabled(envConnected);
+      ColorSwatch("sky", n->envSky, n);
+      ColorSwatch("horizon", n->envHorizon, n);
+      ColorSwatch("ground", n->envGround, n);
+      ImGui::EndDisabled();
+      ModSlider("env intensity", &n->envIntensity, 0.0f, 3.0f, "%.3f", colW);
+
       NodeSeparator("quality", colW);
       ModSlider("ambient occlusion", &n->aoStrength, 0.0f, 1.0f, "%.3f", colW);
-      if (n->aoStrength > 0.0f)
-         ModSlider("occlusion radius", &n->aoRadius, 0.05f, 3.0f, "%.3f", colW);
+      ImGui::BeginDisabled(n->aoStrength <= 0.0f);
+      ModSlider("occlusion radius", &n->aoRadius, 0.05f, 3.0f, "%.3f", colW);
+      ImGui::EndDisabled();
       ModSlider("depth of field", &n->dofAperture, 0.0f, 4.0f, "%.3f", colW);
-      if (n->dofAperture > 0.0f)
-         ModSlider("focus distance", &n->focusDistance, 0.3f, 30.0f, "%.3f", colW);
-      ModCheckbox("16-bit float output", &n->floatOutput);
+      ImGui::BeginDisabled(n->dofAperture <= 0.0f);
+      ModSlider("focus distance", &n->focusDistance, 0.3f, 30.0f, "%.3f", colW);
+      ImGui::EndDisabled();
       ModSliderInt("offline supersample", &n->supersample, 1, 64, colW);
 
       ImGui::EndGroup();
