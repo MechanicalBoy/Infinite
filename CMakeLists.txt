@@ -531,6 +531,7 @@ set(COMMON_SOURCES
     src/core/Mesh.cpp
     src/core/Delaunay.cpp
     src/core/CurveOps.cpp
+    src/core/SweepRevolve.cpp
     src/core/MeshDecimate.cpp
     src/core/NodeViewport.cpp
     src/core/Transport.cpp
@@ -701,6 +702,7 @@ set(COMMON_SOURCES
     src/nodes/ProximityLinesNode.cpp
     src/nodes/DelaunayNodes.cpp
     src/nodes/CurveOpsNode.cpp
+    src/nodes/SweepRevolveNodes.cpp
     src/nodes/DepthProjectionNode.cpp
     src/nodes/SceneNodes.cpp
     src/nodes/FeedbackNodes.cpp

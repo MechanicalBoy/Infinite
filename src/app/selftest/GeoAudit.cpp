@@ -43,6 +43,10 @@
 //   CURVE       Curve Ops: Resample spacing and length on a circle, Simplify against the
 //               Douglas-Peucker bound, Smooth keeps the ends and never lengthens, Offset
 //               against the parallel curve; the node in every mode and on hostile numbers
+//   SWEEP       Sweep and Revolve: closed results are watertight, wound and shaded outward with
+//               the volume the shape has (torus, sphere, capped part-turns, a non-convex cap,
+//               a taper to a point, a closed path with whole-turn twist); lathe normals against
+//               the analytic torus; the nodes' cache, bypass, forwarding and hostile numbers
 //   CLOTH       free fall against g t^2 / 2, pinned cloth over 12 s (finite, bounded
 //               stretch, pins hold, sags, settles), determinism, a long time jump, bypass
 //   INST        Instance on Points: count, maxPoints cap, placement on the surface, scale,
@@ -60,6 +64,7 @@
 #include "core/Transport.h"
 #include "nodes/CurveNode.h"
 #include "nodes/CurveOpsNode.h"
+#include "nodes/SweepRevolveNodes.h"
 #include "nodes/SimulationNodes.h"
 #include "nodes/Geometry3DNodes.h"
 #include "nodes/DelaunayNodes.h"
@@ -1096,6 +1101,321 @@ namespace
       Report(f, "DEGEN", "Curve Ops no input", Measure(none.GetMesh()), false, ok);
    }
 
+   // ================================================================= SWEEP
+   // Sweep and Revolve. The done check for both is the same: the surface is wound and
+   // shaded outward, and a closed result is watertight with the volume the shape has.
+   struct CurveProbe : public IGeometrySource
+   {
+      Polyline line;
+      Mat4 matrix;
+      const Mesh& GetMesh() override { static Mesh empty; return empty; }
+      unsigned long long MeshRevision() override { return 0; }
+      Mat4 GetModelMatrix() const override { return matrix; }
+      Material GetMaterial() const override { return Material(); }
+      const Polyline* GetCurve() override { return &line; }
+      unsigned long long CurveStamp() override { return stamp; }
+      unsigned long long stamp = 1;
+   };
+
+   Polyline CirclePoly(const float c[3], const float u[3], const float v[3], float r, int n)
+   {
+      Polyline p;
+      for (int i = 0; i < n; i++)
+      {
+         const float a = 6.28318530718f * (float)i / (float)n;
+         for (int k = 0; k < 3; k++)
+            p.points.push_back(c[k] + r * (std::cos(a) * u[k] + std::sin(a) * v[k]));
+      }
+      p.closed = true;
+      return p;
+   }
+
+   Polyline PolyOf(std::initializer_list<float> xyz, bool closed)
+   {
+      Polyline p;
+      p.points.assign(xyz.begin(), xyz.end());
+      p.closed = closed;
+      return p;
+   }
+
+   // Unit-radius semicircle from the south pole to the north pole in the XY plane,
+   // closed along the axis: revolved, it is a sphere.
+   Polyline SemiCircle(int n, bool reversed)
+   {
+      Polyline p;
+      for (int i = 0; i <= n; i++)
+      {
+         const float a = -1.57079632679f + 3.14159265359f * (float)i / (float)n;
+         const bool pole = (i == 0 || i == n);
+         p.points.push_back(pole ? 0.0f : std::cos(a));
+         p.points.push_back(std::sin(a));
+         p.points.push_back(0.0f);
+      }
+      p.closed = true;
+      if (reversed)
+      {
+         Polyline r;
+         r.closed = true;
+         for (size_t i = p.Count(); i-- > 0;)
+            for (int k = 0; k < 3; k++)
+               r.points.push_back(p.points[i * 3 + (size_t)k]);
+         return r;
+      }
+      return p;
+   }
+
+   void AuditSweepRevolve(Flags& f, bool& ok)
+   {
+      const double pi = 3.14159265358979;
+      auto check = [&](const std::string& name, const Mesh& m, bool closed, double wantVolume, double tol) {
+         const Stats s = Measure(m);
+         printf("GEOAUDIT SWEEP  %-34s %6zu verts %6zu tris | boundary %d nonmanifold %d volume %.4f (want %.4f)\n",
+                name.c_str(), s.verts, s.tris, s.boundary, s.nonManifold, s.volume, wantVolume);
+         if (s.tris == 0)
+         {
+            f.Flag("SWEEP", name, "no triangles", 0);
+            return;
+         }
+         Report(f, "SWEEP", name, s, closed, ok);
+         if (closed && wantVolume > 0.0 && std::fabs(s.volume - wantVolume) > tol * wantVolume)
+            f.Flag("SWEEP", name, "volume off by fraction", (s.volume - wantVolume) / wantVolume);
+      };
+
+      const float o[3] = { 0, 0, 0 };
+      const float ex[3] = { 1, 0, 0 }, ey[3] = { 0, 1, 0 }, ez[3] = { 0, 0, 1 };
+
+      // ---- Revolve
+      const float torusC[3] = { 1, 0, 0 };
+      const Polyline tube = CirclePoly(torusC, ex, ey, 0.3f, 48);
+      const double torusVol = 2.0 * pi * pi * 1.0 * 0.09;
+      check("Revolve torus 360 Y", MeshOps::Revolve(tube, 1, 360.0f, 96, true), true, torusVol, 0.02);
+      check("Revolve torus -360 Y", MeshOps::Revolve(tube, 1, -360.0f, 96, true), true, torusVol, 0.02);
+      {
+         const float cx[3] = { 0, 1, 0 };
+         check("Revolve torus 360 X", MeshOps::Revolve(CirclePoly(cx, ey, ex, 0.3f, 48), 0, 360.0f, 96, true), true, torusVol, 0.02);
+         const float cz[3] = { 1, 0, 0 };
+         check("Revolve torus 360 Z", MeshOps::Revolve(CirclePoly(cz, ex, ez, 0.3f, 48), 2, 360.0f, 96, true), true, torusVol, 0.02);
+      }
+      check("Revolve sphere (poles)", MeshOps::Revolve(SemiCircle(32, false), 1, 360.0f, 64, true), true, 4.0 * pi / 3.0, 0.03);
+      check("Revolve sphere, profile reversed", MeshOps::Revolve(SemiCircle(32, true), 1, 360.0f, 64, true), true, 4.0 * pi / 3.0, 0.03);
+      check("Revolve half sphere 180 + caps", MeshOps::Revolve(SemiCircle(32, false), 1, 180.0f, 32, true), true, 2.0 * pi / 3.0, 0.03);
+      check("Revolve torus 270 + caps", MeshOps::Revolve(tube, 1, 270.0f, 72, true), true, torusVol * 0.75, 0.03);
+      check("Revolve cone shell (open)", MeshOps::Revolve(PolyOf({ 0.5f, 0, 0, 1.0f, 1, 0 }, false), 1, 360.0f, 48, true), false, 0, 0);
+      {
+         // The cone shell is open at both rims: exactly two boundary loops, one per rim.
+         const Stats s = Measure(MeshOps::Revolve(PolyOf({ 0.5f, 0, 0, 1.0f, 1, 0 }, false), 1, 360.0f, 48, true));
+         if (s.boundary != 96)
+            f.Flag("SWEEP", "Revolve cone shell", "boundary edges, want 96", s.boundary);
+      }
+
+      // Normals of the lathe torus against the analytic ones.
+      {
+         const Mesh m = MeshOps::Revolve(tube, 1, 360.0f, 128, true);
+         double worst = 0.0;
+         for (const Vertex& v : m.vertices)
+         {
+            const double r = std::hypot((double)v.px, (double)v.pz);
+            const double cx = r > 1e-9 ? (double)v.px / r : 1.0, cz = r > 1e-9 ? (double)v.pz / r : 0.0;
+            double wx = v.px - cx, wy = v.py, wz = v.pz - cz;
+            const double wl = std::sqrt(wx * wx + wy * wy + wz * wz);
+            wx /= wl; wy /= wl; wz /= wl;
+            const double d = std::max(-1.0, std::min(1.0, wx * v.nx + wy * v.ny + wz * v.nz));
+            worst = std::max(worst, std::acos(d));
+         }
+         printf("GEOAUDIT NORMALS Revolve torus: worst normal error %.5f rad\n", worst);
+         if (worst > 3e-3)
+            f.Flag("NORMALS", "Revolve torus", "normal off the analytic one, rad", worst);
+      }
+
+      // ---- Sweep
+      const float pc[3] = { 0, 0, 0 };
+      const Polyline round = CirclePoly(pc, ex, ey, 0.2f, 24);
+      const double roundArea = 0.5 * 24 * 0.2 * 0.2 * std::sin(2.0 * pi / 24.0);
+      const Polyline line2 = PolyOf({ 0, 0, 0, 0, 0, 1, 0, 0, 2 }, false);
+      check("Sweep circle on a line + caps", MeshOps::Sweep(round, line2, 1.0f, 1.0f, 0.0f, true), true, roundArea * 2.0, 0.01);
+      {
+         const Mesh m = MeshOps::Sweep(round, line2, 1.0f, 1.0f, 0.0f, false);
+         const Stats s = Measure(m);
+         if (s.boundary != 48)
+            f.Flag("SWEEP", "Sweep circle, caps off", "boundary edges, want 48 (two open rims)", s.boundary);
+         Report(f, "SWEEP", "Sweep circle, caps off", s, false, ok);
+      }
+      {
+         const float rc[3] = { 0, 0, 0 };
+         const Polyline ring = CirclePoly(rc, ex, ez, 1.0f, 96);
+         check("Sweep circle on a ring", MeshOps::Sweep(round, ring, 1.0f, 1.0f, 0.0f, true), true,
+               roundArea * 2.0 * pi * 1.0, 0.02);
+         check("Sweep circle on a ring, twist 360", MeshOps::Sweep(round, ring, 1.0f, 1.0f, 360.0f, true), true,
+               roundArea * 2.0 * pi * 1.0, 0.02);
+         const Polyline square = PolyOf({ -0.2f, -0.1f, 0, 0.2f, -0.1f, 0, 0.2f, 0.1f, 0, -0.2f, 0.1f, 0 }, true);
+         // A faceted twisted prism loses volume in proportion to the twist per ring, so the
+         // twisted rectangle gets a finer ring (0.4735 of 0.5027 at 96 rings, 0.4957 at 384).
+         const Polyline fine = CirclePoly(rc, ex, ez, 1.0f, 384);
+         check("Sweep rectangle on a ring, twist 720", MeshOps::Sweep(square, fine, 1.0f, 1.0f, 720.0f, true), true,
+               0.08 * 2.0 * pi, 0.02);
+      }
+      {
+         Polyline helix;
+         for (int i = 0; i <= 120; i++)
+         {
+            const float a = 6.28318530718f * 3.0f * (float)i / 120.0f;
+            helix.points.push_back(std::cos(a));
+            helix.points.push_back(0.1f * a);
+            helix.points.push_back(std::sin(a));
+         }
+         check("Sweep circle on a helix + caps", MeshOps::Sweep(round, helix, 1.0f, 1.0f, 0.0f, true), true, 0, 0);
+         check("Sweep circle on a helix, tapered", MeshOps::Sweep(round, helix, 1.5f, 0.5f, 0.0f, true), true, 0, 0);
+      }
+      {
+         // An L: not convex, so the cap needs a real triangulation, not a fan.
+         const Polyline ell = PolyOf({ 0, 0, 0, 0.4f, 0, 0, 0.4f, 0.1f, 0, 0.1f, 0.1f, 0, 0.1f, 0.4f, 0, 0, 0.4f, 0 }, true);
+         const double ellArea = 0.4 * 0.1 + 0.1 * 0.3;
+         check("Sweep L profile + caps", MeshOps::Sweep(ell, line2, 1.0f, 1.0f, 0.0f, true), true, ellArea * 2.0, 0.01);
+         Polyline cw;
+         cw.closed = true;
+         for (size_t i = ell.Count(); i-- > 0;)
+            for (size_t k = 0; k < 3; k++)
+               cw.points.push_back(ell.points[i * 3 + k]);
+         check("Sweep L profile reversed + caps", MeshOps::Sweep(cw, line2, 1.0f, 1.0f, 0.0f, true), true, ellArea * 2.0, 0.01);
+      }
+      check("Sweep cone (end scale 0)", MeshOps::Sweep(round, line2, 1.0f, 0.0f, 0.0f, true), true, roundArea * 2.0 / 3.0, 0.03);
+      {
+         const float xz[3] = { 0, 0, 0 };
+         const Polyline flat = CirclePoly(xz, ex, ez, 0.2f, 24); // drawn in the XZ plane
+         const Polyline alongZ = PolyOf({ 0, 0, 0, 0, 0, 2 }, false);
+         check("Sweep XZ profile on a line", MeshOps::Sweep(flat, alongZ, 1.0f, 1.0f, 0.0f, true), true, roundArea * 2.0, 0.01);
+      }
+      check("Sweep open profile (ribbon)", MeshOps::Sweep(PolyOf({ -0.2f, 0, 0, 0.2f, 0, 0 }, false), line2, 1.0f, 1.0f, 0.0f, true), false, 0, 0);
+
+      // ---- The nodes: cache, bypass, forwarding, wrong inputs, hostile numbers.
+      CurveProbe prof; prof.line = tube;
+      CurveProbe way; way.line = line2;
+      RevolveNode rev;
+      rev.input = &prof;
+      rev.CookIfNeeded(gFrame++);
+      const unsigned long long r0 = rev.MeshRevision();
+      rev.CookIfNeeded(gFrame++);
+      if (rev.MeshRevision() != r0)
+         f.Flag("CACHE", "Revolve", "revision changed with nothing changed", 0);
+      rev.angle = 180.0f;
+      if (rev.MeshRevision() == r0)
+         f.Flag("CACHE", "Revolve", "revision did not change with the angle", 0);
+      const unsigned long long r1 = rev.MeshRevision();
+      prof.stamp++;
+      if (rev.MeshRevision() == r1)
+         f.Flag("CACHE", "Revolve", "revision did not change with the input curve", 0);
+      prof.matrix = Mat4::Translation(5.0f, 7.0f, 3.0f);
+      {
+         const Mat4 m = rev.GetModelMatrix();
+         if (std::fabs(m.m[12] - 5.0f) > 1e-4f || std::fabs(m.m[13] - 7.0f) > 1e-4f || std::fabs(m.m[14] - 3.0f) > 1e-4f)
+            f.Flag("CACHE", "Revolve", "does not forward the input's model matrix", m.m[12]);
+      }
+      RevolveNode rev2;
+      rev2.input = &prof;
+      rev2.angle = 180.0f;
+      if (!SameMesh(rev.GetMesh(), rev2.GetMesh()))
+         f.Flag("DET", "Revolve", "two nodes with the same parameters differ", 0);
+
+      SweepNode sw;
+      sw.profile = &prof;
+      sw.path = &way;
+      sw.CookIfNeeded(gFrame++);
+      const unsigned long long s0 = sw.MeshRevision();
+      sw.CookIfNeeded(gFrame++);
+      if (sw.MeshRevision() != s0)
+         f.Flag("CACHE", "Sweep", "revision changed with nothing changed", 0);
+      sw.twist = 90.0f;
+      if (sw.MeshRevision() == s0)
+         f.Flag("CACHE", "Sweep", "revision did not change with the twist", 0);
+      way.stamp++;
+      const unsigned long long s1 = sw.MeshRevision();
+      way.stamp++;
+      if (sw.MeshRevision() == s1)
+         f.Flag("CACHE", "Sweep", "revision did not change with the path curve", 0);
+      sw.profile = nullptr; // a path alone gives a tube
+      Report(f, "SWEEP", "Sweep path alone", Measure(sw.GetMesh()), true, ok);
+      {
+         GeometryNode cube;
+         cube.shape = 1;
+         cube.CookIfNeeded(gFrame++);
+         RevolveNode wrong;
+         wrong.input = &cube;
+         wrong.CookIfNeeded(gFrame++);
+         if (wrong.CookWarning().empty() || !wrong.GetMesh().vertices.empty())
+            f.Flag("DEGEN", "Revolve", "a mesh input is not flagged and ignored", 0);
+         wrong.bypassed = true;
+         if (&wrong.GetMesh() != &cube.GetMesh())
+            f.Flag("DEGEN", "Revolve", "bypass does not hand back the input", 0);
+      }
+
+      RevolveNode none;
+      none.CookIfNeeded(gFrame++);
+      Report(f, "DEGEN", "Revolve no input", Measure(none.GetMesh()), false, ok);
+      SweepNode none2;
+      none2.CookIfNeeded(gFrame++);
+      Report(f, "DEGEN", "Sweep no input", Measure(none2.GetMesh()), false, ok);
+
+      const float nan = std::nanf("");
+      const float angles[] = { 0.0f, 1e-6f, -1e9f, 1e9f, nan, 360.0f, 359.9999f };
+      for (float a : angles)
+      {
+         for (int seg : { -5, 0, 1, 2, 100000 })
+         {
+            for (int axis : { -1, 0, 1, 2, 9 })
+            {
+               RevolveNode r;
+               r.input = &prof;
+               r.angle = a; r.segments = seg; r.axis = axis;
+               const Stats s = Measure(r.GetMesh());
+               if (s.nonFinite > 0 || s.badIndex > 0)
+               {
+                  f.Flag("DEGEN", "Revolve hostile", "non-finite or bad index at angle", a);
+                  ok = false;
+               }
+            }
+         }
+      }
+      const float scales[] = { 0.0f, -1.0f, 1e9f, nan, 1e-12f };
+      for (float a : scales)
+      {
+         for (float b : scales)
+         {
+            for (float tw : { 0.0f, 1e9f, nan, -720.0f })
+            {
+               SweepNode s;
+               s.profile = &prof;
+               s.path = &way;
+               s.startScale = a; s.endScale = b; s.twist = tw;
+               s.profileSides = 0; s.profileRadius = 0.0f;
+               const Stats st = Measure(s.GetMesh());
+               if (st.nonFinite > 0 || st.badIndex > 0)
+               {
+                  f.Flag("DEGEN", "Sweep hostile", "non-finite or bad index at scale", a);
+                  ok = false;
+               }
+            }
+         }
+      }
+      // Degenerate curves: a single point, repeated points, a path that doubles back.
+      {
+         CurveProbe dot, back;
+         dot.line = PolyOf({ 1, 1, 1, 1, 1, 1, 1, 1, 1 }, false);
+         back.line = PolyOf({ 0, 0, 0, 1, 0, 0, 0, 0, 0 }, false);
+         SweepNode s;
+         s.profile = &prof;
+         s.path = &dot;
+         Report(f, "DEGEN", "Sweep path of repeated points", Measure(s.GetMesh()), false, ok);
+         s.path = &back;
+         const Stats st = Measure(s.GetMesh());
+         if (st.nonFinite > 0 || st.badIndex > 0)
+         {
+            f.Flag("DEGEN", "Sweep path doubling back", "non-finite or bad index", 0);
+            ok = false;
+         }
+      }
+      (void)o;
+   }
+
    // ================================================================= CLOTH
    void AuditCloth(Flags& f, bool& ok)
    {
@@ -1763,6 +2083,8 @@ bool RunGeoAudit()
       AuditMetaballs(flags, ok);
    if (want("CURVE"))
       AuditCurveOps(flags, ok);
+   if (want("SWEEP"))
+      AuditSweepRevolve(flags, ok);
    if (want("CLOTH"))
       AuditCloth(flags, ok);
    if (want("INST"))

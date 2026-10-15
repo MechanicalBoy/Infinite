@@ -955,6 +955,10 @@ void DrawNodeBodies(FrameCtx& fc)
                   DrawProximityLinesParams(n);
                else if (auto* n = dynamic_cast<CurveOpsNode*>(gn.node.get()))
                   DrawCurveOpsParams(n);
+               else if (auto* n = dynamic_cast<SweepNode*>(gn.node.get()))
+                  DrawSweepParams(n);
+               else if (auto* n = dynamic_cast<RevolveNode*>(gn.node.get()))
+                  DrawRevolveParams(n);
                else if (auto* n = dynamic_cast<DelaunayMeshNode*>(gn.node.get()))
                   DrawDelaunayParams(n);
                else if (auto* n = dynamic_cast<DistributePointsInGridNode*>(gn.node.get()))

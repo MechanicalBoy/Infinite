@@ -98,6 +98,8 @@ namespace app
       REGISTER_NODE(PointsToVerticesNode, Points to Vertices, "3D");
       REGISTER_NODE(ProximityLinesNode, Proximity Lines, "3D");
       REGISTER_NODE(CurveOpsNode, Curve Ops, "3D");
+      REGISTER_NODE(SweepNode, Sweep, "3D");
+      REGISTER_NODE(RevolveNode, Revolve, "3D");
       REGISTER_NODE(DelaunayMeshNode, Delaunay Mesh, "3D");
       REGISTER_NODE(VoronoiCellsNode, Voronoi Cells, "3D");
       REGISTER_NODE(DistributePointsInGridNode, Distribute Points in Grid, "3D");

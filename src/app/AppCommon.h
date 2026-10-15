@@ -208,6 +208,7 @@ inline std::string TmpPath(const std::string& name)
 #include "nodes/ProximityLinesNode.h"
 #include "nodes/DelaunayNodes.h"
 #include "nodes/CurveOpsNode.h"
+#include "nodes/SweepRevolveNodes.h"
 #include "nodes/DepthProjectionNode.h"
 #include "nodes/PathNode.h"
 #include "nodes/GeometryTableNode.h"

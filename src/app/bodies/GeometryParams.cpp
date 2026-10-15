@@ -771,6 +771,29 @@ namespace app
    }
 
 
+   void DrawRevolveParams(RevolveNode* n)
+   {
+      DropdownButton("axis", kAxisXYZ, n->axis, [n](int i) { PushUndoCheckpoint(); n->axis = i; });
+      ModSlider("angle", &n->angle, -360.0f, 360.0f, "%.0f");
+      ModSliderInt("segments", &n->segments, 3, 256);
+      ModCheckbox("caps", &n->caps);
+   }
+
+
+   void DrawSweepParams(SweepNode* n)
+   {
+      if (n->profile == nullptr)
+      {
+         ModSlider("profile radius", &n->profileRadius, 0.002f, 2.0f, "%.3f");
+         ModSliderInt("profile sides", &n->profileSides, 3, 64);
+      }
+      ModSlider("start scale", &n->startScale, 0.0f, 4.0f);
+      ModSlider("end scale", &n->endScale, 0.0f, 4.0f);
+      ModSlider("twist", &n->twist, -1080.0f, 1080.0f, "%.0f");
+      ModCheckbox("caps", &n->caps);
+   }
+
+
    void DrawDelaunayParams(DelaunayMeshNode* n)
    {
       ImGui::TextDisabled("%zu triangles", n->TriangleCount());

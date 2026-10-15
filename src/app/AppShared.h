@@ -4011,6 +4011,8 @@ void DrawPointsToVerticesParams(PointsToVerticesNode* n);
 void DrawProximityLinesParams(ProximityLinesNode* n);
 void DrawDelaunayParams(DelaunayMeshNode* n);
 void DrawCurveOpsParams(CurveOpsNode* n);
+void DrawRevolveParams(RevolveNode* n);
+void DrawSweepParams(SweepNode* n);
 
 void DrawDistributePointsInGridParams(DistributePointsInGridNode* n);
 

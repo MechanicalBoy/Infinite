@@ -317,6 +317,20 @@ namespace MeshOps
    // per turn for threads and helices.
    Mesh Screw(const Mesh& in, int steps, float turns, float rise, float radiusOffset, int axis);
 
+   // Lathe: revolves a curve about a world axis (0 X, 1 Y, 2 Z) through the origin,
+   // `angleDegrees` of it in `segments` steps. A closed profile that goes all the way
+   // round is a watertight solid; one that stops short is closed with flat caps when
+   // `caps` is set. An open profile gives an open surface. Winding and normals face
+   // outward on a closed result.
+   Mesh Revolve(const Polyline& profile, int axis, float angleDegrees, int segments, bool caps);
+   // Sweep: carries a profile along a path. The profile's two in-plane coordinates become
+   // offsets along the path's carried frame (parallel transport, so it does not spin where
+   // the path bends), scaled from startScale to endScale and twisted `twistDegrees` in
+   // total. A closed profile on an open path is closed with flat end caps when `caps` is
+   // set; on a closed path the result is a watertight ring.
+   Mesh Sweep(const Polyline& profile, const Polyline& path, float startScale, float endScale,
+              float twistDegrees, bool caps);
+
    // Turns closed 2D contours into an extruded solid. Contours wound
    // anticlockwise are treated as outlines and clockwise ones as holes, so the
    // counter of an 'o' is cut out rather than filled.
