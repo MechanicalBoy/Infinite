@@ -1354,11 +1354,18 @@ namespace
          fill(n, extent, 3u, xyz);
          std::vector<std::pair<unsigned int, unsigned int>> links;
          ProximityLinesNode::FindLinks(xyz.data(), n, r, 4, 200000, links);
-         const int reps = 5;
-         auto t0 = std::chrono::steady_clock::now();
-         for (int i = 0; i < reps; i++)
+         // Median of 21 timed calls: one call is short enough that a background process
+         // waking up on a core moves it by a large fraction.
+         std::vector<double> times;
+         for (int i = 0; i < 21; i++)
+         {
+            const auto t0 = std::chrono::steady_clock::now();
             ProximityLinesNode::FindLinks(xyz.data(), n, r, 4, 200000, links);
-         const double msFind = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+            times.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+         }
+         std::sort(times.begin(), times.end());
+         const double msFind = times[times.size() / 2];
+         const double msFindBest = times.front();
          CloudSource src;
          src.pts.resize(n);
          for (size_t i = 0; i < n; i++)
@@ -1370,14 +1377,14 @@ namespace
          node.radius = r;
          node.maxPerPoint = 4;
          node.maxLinks = 200000;
-         t0 = std::chrono::steady_clock::now();
+         auto t0 = std::chrono::steady_clock::now();
          node.CookIfNeeded(gFrame++);
          const double msCook = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
          const unsigned long long rev = node.MeshRevision();
          node.CookIfNeeded(gFrame++);
          const bool stable = node.MeshRevision() == rev;
-         printf("COMPAUDIT PROXIMITY 100k points: find links %.2f ms (bar 4 ms), %zu links; whole node incl. mesh build %.1f ms; revision stable on a second cook: %s\n",
-                msFind, links.size(), msCook, stable ? "yes" : "NO");
+         printf("COMPAUDIT PROXIMITY 100k points: find links median %.2f ms, best %.2f ms (bar 4 ms), %zu links; whole node incl. mesh build %.1f ms; revision stable on a second cook: %s\n",
+                msFind, msFindBest, links.size(), msCook, stable ? "yes" : "NO");
          if (!stable)
             f.Flag("PROXIMITY", "revision changes on a second cook with nothing changed", 1.0);
       }
