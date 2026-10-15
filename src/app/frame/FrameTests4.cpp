@@ -107,6 +107,9 @@ void FrameTest_TRANSFORMSWEEPTEST(int frameId, GLFWwindow* window)
          PointsToVerticesNode p2vNode; p2vNode.input = &probe;
          checkGeneric("PointsToVerticesNode", &p2vNode);
 
+         ProximityLinesNode proxNode; proxNode.input = &probe; proxNode.radius = 100.0f;
+         checkGeneric("ProximityLinesNode", &proxNode);
+
          MergeByDistanceNode mergeNode; mergeNode.input = &probe; mergeNode.threshold = 0.0f;
          checkGeneric("MergeByDistanceNode", &mergeNode);
 
@@ -371,6 +374,9 @@ void FrameTest_MAPPINGSWEEPTEST(int frameId, GLFWwindow* window)
          PointsToVerticesNode p2vNode; p2vNode.input = &probe;
          checkForwarding("PointsToVerticesNode", &p2vNode);
 
+         ProximityLinesNode proxNode; proxNode.input = &probe; proxNode.radius = 100.0f;
+         checkForwarding("ProximityLinesNode", &proxNode);
+
          MergeByDistanceNode mergeNode; mergeNode.input = &probe; mergeNode.threshold = 0.0f;
          checkForwarding("MergeByDistanceNode", &mergeNode);
 
@@ -559,6 +565,9 @@ void FrameTest_MATERIALSWEEPTEST(int frameId, GLFWwindow* window)
          PointsToVerticesNode p2vNode; p2vNode.input = &probe;
          checkForwarding("PointsToVerticesNode", &p2vNode);
 
+         ProximityLinesNode proxNode; proxNode.input = &probe; proxNode.radius = 100.0f;
+         checkForwarding("ProximityLinesNode", &proxNode);
+
          MergeByDistanceNode mergeNode; mergeNode.input = &probe; mergeNode.threshold = 0.0f;
          checkForwarding("MergeByDistanceNode", &mergeNode);
 
@@ -680,6 +689,9 @@ void FrameTest_TEXTURESWEEPTEST(int frameId, GLFWwindow* window)
 
          PointsToVerticesNode p2vNode; p2vNode.input = &probe;
          checkForwarding("PointsToVerticesNode", &p2vNode);
+
+         ProximityLinesNode proxNode; proxNode.input = &probe; proxNode.radius = 100.0f;
+         checkForwarding("ProximityLinesNode", &proxNode);
 
          MergeByDistanceNode mergeNode; mergeNode.input = &probe; mergeNode.threshold = 0.0f;
          checkForwarding("MergeByDistanceNode", &mergeNode);

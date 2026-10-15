@@ -698,6 +698,7 @@ set(COMMON_SOURCES
     src/nodes/FieldPixelNode.cpp
     src/nodes/FieldGraphNode.cpp
     src/nodes/PointDistributionNodes.cpp
+    src/nodes/ProximityLinesNode.cpp
     src/nodes/DelaunayNodes.cpp
     src/nodes/CurveOpsNode.cpp
     src/nodes/DepthProjectionNode.cpp

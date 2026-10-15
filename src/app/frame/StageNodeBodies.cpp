@@ -951,6 +951,8 @@ void DrawNodeBodies(FrameCtx& fc)
                   DrawDistributePointsOnFacesParams(n);
                else if (auto* n = dynamic_cast<PointsToVerticesNode*>(gn.node.get()))
                   DrawPointsToVerticesParams(n);
+               else if (auto* n = dynamic_cast<ProximityLinesNode*>(gn.node.get()))
+                  DrawProximityLinesParams(n);
                else if (auto* n = dynamic_cast<CurveOpsNode*>(gn.node.get()))
                   DrawCurveOpsParams(n);
                else if (auto* n = dynamic_cast<DelaunayMeshNode*>(gn.node.get()))

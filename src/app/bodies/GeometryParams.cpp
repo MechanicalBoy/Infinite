@@ -733,6 +733,17 @@ namespace app
    }
 
 
+   void DrawProximityLinesParams(ProximityLinesNode* n)
+   {
+      ImGui::TextDisabled("%zu lines", n->LinkCount());
+      ModSlider("radius", &n->radius, 0.0f, 5.0f, "%.3f");
+      ModSliderInt("max per point", &n->maxPerPoint, 1, 16);
+      ModSliderInt("max lines", &n->maxLinks, 1, 200000);
+      ModSlider("thickness", &n->thickness, 0.0005f, 0.2f, "%.4f");
+      ModCheckbox("alive only", &n->aliveOnly);
+   }
+
+
    void DrawCurveOpsParams(CurveOpsNode* n)
    {
       if (n->input != nullptr)

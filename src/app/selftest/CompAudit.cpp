@@ -27,6 +27,11 @@
 //             left-to-right ramp as the delay map: every pixel must read the frame
 //             the ramp asks for (mean error flag > 1 level, worst > 3), with and without
 //             a map, inverted, and at length 8; the first frame fills the ring; ms per cook
+//   PROXIMITY Proximity Lines: with caps that do not bind, the link set equals a brute
+//             force all-pairs search exactly (2000 random points); with caps it keeps the
+//             degree and total limits, every pair once; cook is stable on a second cook;
+//             ms to find links and to cook the whole node at 100k points (reported, not flagged,
+//             like the 1080p costs of FLOW)
 //   STACK     Layer Stack with two layers against Blend with the same mode and
 //             opacity, random alpha (flag > 1/255)
 //   CURVES    default curve is identity; an inverted RGB curve gives 1-x; a Red
@@ -69,6 +74,8 @@
 #include "nodes/LayerStackNode.h"
 #include "nodes/OpticalFlowNode.h"
 #include "nodes/TimeMachineNode.h"
+#include "nodes/ProximityLinesNode.h"
+#include <set>
 #include "nodes/SwitcherNode.h"
 
 #include <array>
@@ -1246,6 +1253,136 @@ namespace
       }
    }
 
+   // ------------------------------------------------------------- PROXIMITY
+   class CloudSource : public INode, public IGeometrySource
+   {
+   public:
+      std::vector<Particle> pts;
+      unsigned long long rev = 1;
+      unsigned int GetOutputTexture() override { return 0; }
+      int GetOutputWidth() const override { return 0; }
+      int GetOutputHeight() const override { return 0; }
+      void CookIfNeeded(int) override {}
+      const Mesh& GetMesh() override { return mEmpty; }
+      unsigned long long MeshRevision() override { return 0; }
+      Mat4 GetModelMatrix() const override { return Mat4::Identity(); }
+      Material GetMaterial() const override { return Material(); }
+      const std::vector<Particle>* GetPointCloud() override { return &pts; }
+      unsigned long long PointCloudRevision() override { return rev; }
+   private:
+      Mesh mEmpty;
+   };
+
+   void AuditProximity(Flags& f)
+   {
+      auto fill = [](size_t n, float extent, unsigned seed, std::vector<float>& xyz)
+      {
+         xyz.resize(n * 3);
+         unsigned s = seed;
+         for (float& v : xyz)
+         {
+            s = s * 1664525u + 1013904223u;
+            v = ((s >> 8) & 0xFFFFFF) / 16777216.0f * extent;
+         }
+      };
+      {
+         std::vector<float> xyz;
+         fill(2000, 10.0f, 7u, xyz);
+         const float r = 0.5f;
+         std::vector<std::pair<unsigned int, unsigned int>> links;
+         ProximityLinesNode::FindLinks(xyz.data(), 2000, r, 16, 1000000, links);
+         std::set<std::pair<unsigned int, unsigned int>> got(links.begin(), links.end()), want;
+         std::vector<int> deg(2000, 0);
+         for (unsigned int i = 0; i < 2000; i++)
+            for (unsigned int j = i + 1; j < 2000; j++)
+            {
+               const float dx = xyz[i * 3] - xyz[j * 3], dy = xyz[i * 3 + 1] - xyz[j * 3 + 1], dz = xyz[i * 3 + 2] - xyz[j * 3 + 2];
+               if (dx * dx + dy * dy + dz * dz <= r * r)
+               {
+                  want.insert({ i, j });
+                  deg[i]++;
+                  deg[j]++;
+               }
+            }
+         const int maxDeg = *std::max_element(deg.begin(), deg.end());
+         printf("COMPAUDIT PROXIMITY exact search: %zu links, brute force %zu, duplicates %zu, max degree %d (cap 16)\n",
+                links.size(), want.size(), links.size() - got.size(), maxDeg);
+         if (maxDeg > 16)
+            f.Flag("PROXIMITY", "test cloud is too dense for the exactness check, max degree", maxDeg);
+         else if (got != want || got.size() != links.size())
+            f.Flag("PROXIMITY", "link set differs from brute force, links found", (double)links.size());
+         // Reach: dense cloud, every point's 3 nearest inside the radius must be linked to it.
+         fill(2000, 3.0f, 11u, xyz);
+         ProximityLinesNode::FindLinks(xyz.data(), 2000, r, 3, 1000000, links);
+         std::set<std::pair<unsigned int, unsigned int>> uniq(links.begin(), links.end());
+         int missing = 0, outside = 0;
+         for (const auto& l : links)
+         {
+            const float dx = xyz[l.first * 3] - xyz[l.second * 3], dy = xyz[l.first * 3 + 1] - xyz[l.second * 3 + 1],
+                        dz = xyz[l.first * 3 + 2] - xyz[l.second * 3 + 2];
+            if (l.first >= l.second || dx * dx + dy * dy + dz * dz > r * r)
+               outside++;
+         }
+         for (unsigned int i = 0; i < 2000; i++)
+         {
+            std::vector<std::pair<float, unsigned int>> near;
+            for (unsigned int j = 0; j < 2000; j++)
+            {
+               const float dx = xyz[i * 3] - xyz[j * 3], dy = xyz[i * 3 + 1] - xyz[j * 3 + 1], dz = xyz[i * 3 + 2] - xyz[j * 3 + 2];
+               const float d = dx * dx + dy * dy + dz * dz;
+               if (j != i && d <= r * r)
+                  near.push_back({ d, j });
+            }
+            std::sort(near.begin(), near.end());
+            for (size_t m = 0; m < near.size() && m < 3; m++)
+               if (!uniq.count({ std::min(i, near[m].second), std::max(i, near[m].second) }))
+                  missing++;
+         }
+         printf("COMPAUDIT PROXIMITY reach: %zu links, unique %zu, outside radius or unordered %d, nearest-3 links missing %d\n",
+                links.size(), uniq.size(), outside, missing);
+         if (uniq.size() != links.size() || outside > 0 || missing > 0)
+            f.Flag("PROXIMITY", "reach, uniqueness or radius broken, missing nearest links", missing + outside);
+         ProximityLinesNode::FindLinks(xyz.data(), 2000, r, 3, 500, links);
+         if (links.size() > 500)
+            f.Flag("PROXIMITY", "total cap broken, links", (double)links.size());
+      }
+      // Cost at 100k points, roughly six neighbours inside the radius.
+      {
+         const size_t n = 100000;
+         const float extent = 40.0f, r = 1.0f;
+         std::vector<float> xyz;
+         fill(n, extent, 3u, xyz);
+         std::vector<std::pair<unsigned int, unsigned int>> links;
+         ProximityLinesNode::FindLinks(xyz.data(), n, r, 4, 200000, links);
+         const int reps = 5;
+         auto t0 = std::chrono::steady_clock::now();
+         for (int i = 0; i < reps; i++)
+            ProximityLinesNode::FindLinks(xyz.data(), n, r, 4, 200000, links);
+         const double msFind = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         CloudSource src;
+         src.pts.resize(n);
+         for (size_t i = 0; i < n; i++)
+         {
+            src.pts[i].px = xyz[i * 3]; src.pts[i].py = xyz[i * 3 + 1]; src.pts[i].pz = xyz[i * 3 + 2];
+         }
+         ProximityLinesNode node;
+         node.input = &src;
+         node.radius = r;
+         node.maxPerPoint = 4;
+         node.maxLinks = 200000;
+         t0 = std::chrono::steady_clock::now();
+         node.CookIfNeeded(gFrame++);
+         const double msCook = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+         const unsigned long long rev = node.MeshRevision();
+         node.CookIfNeeded(gFrame++);
+         const bool stable = node.MeshRevision() == rev;
+         printf("COMPAUDIT PROXIMITY 100k points: find links %.2f ms (bar 4 ms), %zu links; whole node incl. mesh build %.1f ms; revision stable on a second cook: %s\n",
+                msFind, links.size(), msCook, stable ? "yes" : "NO");
+         if (!stable)
+            f.Flag("PROXIMITY", "revision changes on a second cook with nothing changed", 1.0);
+      }
+   }
+
    // ------------------------------------------------------------------- RES
    void AuditRes(Flags& f, bool& ok)
    {
@@ -1460,6 +1597,8 @@ bool RunCompAudit()
       AuditFlow(flags, ok);
    if (want("TIMEMACHINE"))
       AuditTimeMachine(flags, ok);
+   if (want("PROXIMITY"))
+      AuditProximity(flags);
    if (want("STACK"))
       AuditStack(flags, ok);
    if (want("CURVES"))
