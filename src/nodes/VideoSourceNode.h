@@ -124,6 +124,8 @@ public:
    // node first cooked with a clip loaded.
    const Bench::MediaClipCounters* BenchCounters() const { return mBench.get(); }
    Platform::VideoHandle* BenchVideoHandle() const { return mVideo; }
+   // The decoder's stats for either path: the platform handle's, or the HAP worker's.
+   Bench::MediaDecodeStats* BenchDecodeStats() const;
 
    bool HasAudio() const { return mAudioLoaded; }
    const std::string& AudioError() const { return mAudioError; }

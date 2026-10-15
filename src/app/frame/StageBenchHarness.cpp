@@ -1109,7 +1109,7 @@ void DrawBenchHarness(FrameCtx& fc)
                      st.counters = *cc;
                      st.uploadSamples = cc->uploadCpuMs.size();
                   }
-                  if (Bench::MediaDecodeStats* ds = Platform::VideoBenchStats(vid->BenchVideoHandle()))
+                  if (Bench::MediaDecodeStats* ds = vid->BenchDecodeStats())
                   {
                      st.decodeSamples = ds->decodeMs.Count();
                      st.cacheSamples = ds->cacheHitMs.Count();
@@ -1217,7 +1217,7 @@ void DrawBenchHarness(FrameCtx& fc)
                   GraphNode* gn = FindNodeByIndex(sBenchB8ClipIdx[c]);
                   auto* vid = gn ? dynamic_cast<VideoSourceNode*>(gn->node.get()) : nullptr;
                   const Bench::MediaClipCounters* cc = vid ? vid->BenchCounters() : nullptr;
-                  Bench::MediaDecodeStats* ds = vid ? Platform::VideoBenchStats(vid->BenchVideoHandle()) : nullptr;
+                  Bench::MediaDecodeStats* ds = vid ? vid->BenchDecodeStats() : nullptr;
                   if (cc == nullptr || c >= sClipStart.size())
                   {
                      clips.push_back(nullptr);

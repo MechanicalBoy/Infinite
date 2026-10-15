@@ -224,7 +224,13 @@ struct VideoSourceNode::HapState
    int decoded = -1;
    bool available = false;
    std::vector<uint8_t> readyBuf;
+   // A frame buffer the main thread has finished uploading, handed back so the worker does
+   // not allocate and zero-fill 4+ MB for every frame.
+   std::vector<uint8_t> spareBuf;
    std::string error;
+
+   // B8 bench only: created while Bench::MediaIoEnabled() when the clip opens.
+   std::unique_ptr<Bench::MediaDecodeStats> stats;
 
    int uploaded = -1;
    bool specified = false;
@@ -271,13 +277,26 @@ struct VideoSourceNode::HapState
             std::string err;
             bool ok = false;
             {
+               std::lock_guard<std::mutex> l(m);
+               buf.swap(spareBuf);
+            }
+            const double startMs = stats ? Bench::MediaNowMs() : 0.0;
+            {
                std::lock_guard<std::mutex> rl(readerMutex);
                ok = reader.ReadFrame(idx, buf, err);
+            }
+            if (stats)
+            {
+               stats->decodeMs.Push(Bench::MediaNowMs() - startMs);
+               stats->decoded.fetch_add(1);
             }
             std::lock_guard<std::mutex> l(m);
             decoded = idx;
             if (ok)
             {
+               // A frame still waiting here was never shown.
+               if (available && stats)
+                  stats->dropped.fetch_add(1);
                readyBuf.swap(buf);
                available = true;
             }
@@ -296,6 +315,11 @@ bool VideoSourceNode::OpenHap(const std::string& path, std::string& error)
    if (!hap->reader.Open(path, error))
       return false;
    hap->ycocg = hap->reader.TextureFormat() == Hap::Format::YCoCg5;
+   if (Bench::MediaIoEnabled().load(std::memory_order_relaxed))
+   {
+      hap->stats = std::make_unique<Bench::MediaDecodeStats>();
+      hap->stats->nominalFps = hap->reader.Fps();
+   }
    hap->StartWorker();
 
    CloseHap();
@@ -325,6 +349,11 @@ void VideoSourceNode::CloseHap()
    mTexHeight = 0;
 }
 
+Bench::MediaDecodeStats* VideoSourceNode::BenchDecodeStats() const
+{
+   return mHap ? mHap->stats.get() : Platform::VideoBenchStats(mVideo);
+}
+
 void VideoSourceNode::CookHap(int /*frameId*/)
 {
    HapState& h = *mHap;
@@ -334,6 +363,22 @@ void VideoSourceNode::CookHap(int /*frameId*/)
    const int idx = h.reader.FrameIndexAt(mPosition);
    std::vector<uint8_t> data;
    bool have = false;
+   int shownIdx = idx;
+
+   if (!mBench && Bench::MediaIoEnabled().load(std::memory_order_relaxed))
+      mBench = std::make_unique<Bench::MediaClipCounters>();
+   if (mBench)
+   {
+      // Same bookkeeping as the other decoders: what the clip asks for here,
+      // so a request that stays inside the previous source frame is an
+      // expected repeat and only repeats beyond those are late frames.
+      if (idx != mBench->lastExpectedIndex)
+         mBench->expectedNew++;
+      else
+         mBench->expectedRepeats++;
+      mBench->lastExpectedIndex = idx;
+      mBench->requests++;
+   }
 
    if (Transport::Instance().IsOfflineMode())
    {
@@ -359,11 +404,22 @@ void VideoSourceNode::CookHap(int /*frameId*/)
          data.swap(h.readyBuf);
          h.available = false;
          h.uploaded = h.decoded;
+         shownIdx = h.decoded;
          have = !data.empty();
       }
    }
    if (!have)
+   {
+      // No new frame this cook: the previous one stays up, which counts as a
+      // repeat (a read error is a failed request as well).
+      if (mBench)
+      {
+         mBench->repeats++;
+         if (!mLastError.empty() && Transport::Instance().IsOfflineMode())
+            mBench->failed++;
+      }
       return;
+   }
    if (Transport::Instance().IsOfflineMode())
       h.uploaded = idx;
 
@@ -380,6 +436,7 @@ void VideoSourceNode::CookHap(int /*frameId*/)
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
    }
+   const double benchUploadStartMs = mBench ? Bench::MediaNowMs() : 0.0;
    glBindTexture(GL_TEXTURE_2D, target);
    while (glGetError() != GL_NO_ERROR) {}
    if (!h.specified)
@@ -398,6 +455,36 @@ void VideoSourceNode::CookHap(int /*frameId*/)
       h.failed = true;
       mLastError = "this graphics driver cannot show HAP (no S3TC texture support)";
       return;
+   }
+   if (!Transport::Instance().IsOfflineMode())
+   {
+      std::lock_guard<std::mutex> l(h.m);
+      h.spareBuf.swap(data);
+   }
+   if (mBench)
+   {
+      mBench->uploadCpuMs.push_back(Bench::MediaNowMs() - benchUploadStartMs);
+      mBench->uploads++;
+      if (mBench->lastPts >= 0.0 && (int)mBench->lastPts == shownIdx)
+      {
+         mBench->repeats++;
+         mBench->reuploads++;
+      }
+      else
+      {
+         mBench->newFrames++;
+         if (mBench->lastPts >= 0.0)
+         {
+            const int step = shownIdx - (int)mBench->lastPts;
+            if (step < 0)
+               mBench->loopWraps++;
+            else if (step > 1)
+               mBench->skipped += step - 1;
+         }
+      }
+      mBench->lastPts = (double)shownIdx;
+      if (h.stats)
+         h.stats->deliveredPts = (double)shownIdx / h.reader.Fps();
    }
 
    if (h.ycocg)

@@ -3800,8 +3800,14 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
          const char* mediaEnv = getenv("INFINITE_BENCH_B8MEDIA");
          const std::string mediaDir = (mediaEnv != nullptr && *mediaEnv != '\0') ? mediaEnv : "bench/media";
          std::vector<std::string> clipPaths;
+         // INFINITE_BENCH_B8HAP=<file>: every clip is that HAP movie (3.18), so 4 clips play 4 copies of it.
+         const char* hapEnv = getenv("INFINITE_BENCH_B8HAP");
+         const bool hapClips = hapEnv != nullptr && *hapEnv != '\0';
          for (int i = 0; i < sBenchB8Clips; i++)
-            clipPaths.push_back(mediaDir + "/b8_" + std::to_string(sBenchB8Res) + "p30_" + std::to_string(i) + ".mp4");
+            clipPaths.push_back(hapClips ? std::string(hapEnv)
+                                         : mediaDir + "/b8_" + std::to_string(sBenchB8Res) + "p30_" + std::to_string(i) + ".mp4");
+         if (hapClips)
+            sBenchB8Variant += ",codec=hap";
 
          // Before any clip opens: handles only grow stats if this is on.
          Bench::MediaIoEnabled().store(true);
