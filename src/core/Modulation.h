@@ -85,6 +85,11 @@ struct ParamRef
    // dereferenced: --describe compares it with the addresses VisitParams hands
    // out to learn which saved key this control is. nullptr = not known.
    const void* srcAddr = nullptr;
+   // How the control was drawn this frame: greyed out (BeginDisabled) or not drawn at all (registered
+   // only, see gParamRegisterOnly). Filled by the state probe in RegisterParam; the dimming audit reads it.
+   bool disabled = false;
+   bool hidden = false;
+   float shownValue = 0.0f; // *value as it was when the control registered (safe to read later)
    // The saved key this control edits (`radius` for the "size x" label).
    // Filled by the headless join (main.cpp ParamKeyJoiner), kept only in
    // mKnownParams; empty when unknown.
@@ -309,6 +314,9 @@ public:
 
    // Parameters registered during the current frame's node drawing.
    void ClearFrameParams() { mFrameParams.clear(); }
+   // Set by the app: reports whether the control being registered right now is greyed or hidden.
+   using StateProbe = void (*)(bool& disabled, bool& hidden);
+   void SetStateProbe(StateProbe probe) { mStateProbe = probe; }
    void RegisterParam(const ParamRef& ref);
    const std::vector<ParamRef>& FrameParams() const { return mFrameParams; }
 
@@ -335,6 +343,7 @@ private:
    std::map<Key, std::pair<float, float>> mExpressionRanges;
    std::map<Key, float> mExpressionCurves;
    std::vector<ParamRef> mFrameParams;
+   StateProbe mStateProbe = nullptr;
    std::map<Key, ParamRef> mKnownParams;
    BindingCallback mBindingCallback = nullptr;
 };

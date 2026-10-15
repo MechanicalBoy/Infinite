@@ -910,7 +910,15 @@ namespace app
       ImGui::TextDisabled("%zu triangles", n->TriangleCount());
 
       NodeSeparator("form");
-      ModSliderInt("detail", &n->detail, 2, 96);
+      {
+         // Shapes whose generator ignores `detail` (fixed solids, flat
+         // profiles built from `sides` alone): dim it rather than offer a
+         // dead slider.
+         const bool detailUnused = n->shape == 10 || (n->shape >= 14 && n->shape <= 16) || n->shape >= 20;
+         ImGui::BeginDisabled(detailUnused && !gParamRegisterOnly);
+         ModSliderInt("detail", &n->detail, 2, 96);
+         ImGui::EndDisabled();
+      }
       ModSlider("bevel", &n->bevel, 0.0f, 1.0f);
       if (n->shape == 13) // supershape
       {
@@ -921,7 +929,12 @@ namespace app
       }
       if (n->bevel > 0.0f)
          ModSliderInt("bevel segments", &n->bevelSegments, 1, 3);
-      ModSliderInt("sides", &n->sides, 3, 64);
+      {
+         const bool sidesUnused = n->shape == 0 || n->shape == 1 || n->shape == 3 || (n->shape >= 14 && n->shape <= 19);
+         ImGui::BeginDisabled(sidesUnused && !gParamRegisterOnly);
+         ModSliderInt("sides", &n->sides, 3, 64);
+         ImGui::EndDisabled();
+      }
       // `tube` and `n2` are reused as the second and third form parameter by
       // several primitives, so each one is labelled for the shape in front of
       // you rather than by the variable it happens to live in. Capsule, Tube
@@ -1119,7 +1132,9 @@ namespace app
             DropdownButton("axis", kAxisXYZ, n->axis, [n](int i) { PushUndoCheckpoint(); n->axis = i; }, kParamWidth, true, true);
             ModSlider("plane offset", &n->mirrorOffset, -2.0f, 2.0f);
             ModCheckbox("keep original", &n->keepOriginal);
+            ImGui::BeginDisabled(!n->keepOriginal && !gParamRegisterOnly); // the seam only exists when both halves are kept
             ModCheckbox("weld seam", &n->weldSeam);
+            ImGui::EndDisabled();
             break;
          case GeometryOpNode::kSelect:
          {

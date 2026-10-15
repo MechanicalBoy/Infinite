@@ -1,5 +1,6 @@
 // RPC command handler (moved verbatim from main.cpp).
 #include "app/AppShared.h"
+#include "imgui_internal.h"
 
 namespace app
 {
@@ -13,6 +14,17 @@ namespace app
                          nlohmann::json& outResult, std::string& outError)
    {
       using json = nlohmann::json;
+      // From the first command on, every control records whether it was drawn greyed or hidden
+      // (read back by param_ui_state). Cheap: one flag test per registered control.
+      static const bool sProbeSet = []() {
+         Modulation::Instance().SetStateProbe([](bool& disabled, bool& hidden) {
+            ImGuiContext* g = ImGui::GetCurrentContext();
+            disabled = g != nullptr && (g->CurrentItemFlags & ImGuiItemFlags_Disabled) != 0;
+            hidden = gParamRegisterOnly;
+         });
+         return true;
+      }();
+      (void)sProbeSet;
 
       if (method == "list_node_types")
       {
@@ -130,6 +142,89 @@ namespace app
          for (const auto& kv : raw)
             out[kv.first] = kv.second;
          outResult = out;
+         return true;
+      }
+      else if (method == "param_ui_state")
+      {
+         // How each saved parameter of one node was drawn on the last frame: live, greyed out
+         // (disabled) or not drawn (hidden, registered only). The dimming audit
+         // (scripts/audit_dimming.py) pairs this with an output hash to find controls that are live
+         // but change nothing, and greyed ones that change something. Expand the node first -
+         // a collapsed node draws nothing, so every control reads as hidden.
+         const int index = params.value("index", -1);
+         GraphNode* gn = FindNodeByIndex(index);
+         if (gn == nullptr)
+         {
+            outError = "unknown node index";
+            return false;
+         }
+         struct Collector : public ParamVisitor
+         {
+            std::map<const void*, std::pair<std::string, char>> byAddr;
+            std::vector<std::pair<std::string, char>> keys;
+            void Float(const char* n, float& v) override { byAddr[&v] = { n, 'f' }; keys.push_back({ n, 'f' }); }
+            void Int(const char* n, int& v) override { byAddr[&v] = { n, 'i' }; keys.push_back({ n, 'i' }); }
+            void Bool(const char* n, bool& v) override { byAddr[&v] = { n, 'b' }; keys.push_back({ n, 'b' }); }
+            void Text(const char*, std::string&) override {}
+            void Color(const char*, float*) override {}
+         } col;
+         gn->node->VisitParams(col);
+         json controls = json::array();
+         std::set<std::string> matched;
+         for (const ParamRef& r : Modulation::Instance().FrameParams())
+         {
+            if (r.nodeIndex != index)
+               continue;
+            json c = { {"name", r.name}, {"paramIndex", r.paramIndex}, {"min", r.minValue}, {"max", r.maxValue},
+                       {"step", r.step}, {"isEnum", r.isEnum}, {"isBool", r.isBool}, {"momentary", r.momentary},
+                       {"disabled", r.disabled}, {"hidden", r.hidden} };
+            c["value"] = r.shownValue;
+            auto it = r.srcAddr != nullptr ? col.byAddr.find(r.srcAddr) : col.byAddr.end();
+            if (it != col.byAddr.end())
+            {
+               c["key"] = it->second.first;
+               c["kind"] = std::string(1, it->second.second);
+               matched.insert(it->second.first);
+            }
+            if (const ParamRef* k = Modulation::Instance().KnownParam(index, r.paramIndex))
+               c["options"] = (int)k->enumOptions.size();
+            controls.push_back(c);
+         }
+         json unmatched = json::array();
+         for (const auto& k : col.keys)
+            if (!matched.count(k.first))
+               unmatched.push_back(k.first);
+         outResult = { {"controls", controls}, {"unmatchedKeys", unmatched} };
+         return true;
+      }
+      else if (method == "output_hash")
+      {
+         // A hash and mean brightness of one node's image output as of the last cooked frame, without
+         // writing a file. The dimming audit compares these before and after changing a control.
+         const int index = params.value("index", -1);
+         const int output = params.value("output", 0);
+         GraphNode* gn = FindNodeByIndex(index);
+         if (gn == nullptr)
+         {
+            outError = "unknown node index";
+            return false;
+         }
+         int w = 0, h = 0;
+         std::vector<unsigned char> rgba;
+         if (!ReadNodeImageRgba8(gn->node.get(), output, false, w, h, rgba))
+         {
+            outError = "the node has no image output";
+            return false;
+         }
+         unsigned long long hash = 1469598103934665603ull;
+         double sum = 0.0;
+         for (size_t i = 0; i < rgba.size(); i++)
+         {
+            hash = (hash ^ rgba[i]) * 1099511628211ull;
+            sum += rgba[i];
+         }
+         outResult = { {"hash", std::to_string(hash)}, {"width", w}, {"height", h},
+                       {"mean", rgba.empty() ? 0.0 : sum / (double)rgba.size()} };
          return true;
       }
       else if (method == "set_param")
