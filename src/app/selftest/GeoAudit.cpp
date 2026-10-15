@@ -2346,7 +2346,7 @@ namespace
 bool GeoAuditWantsGl()
 {
    const char* only = getenv("INFINITE_GEOAUDIT_ONLY");
-   return only != nullptr && (strstr(only, "DISP") != nullptr || strstr(only, "RENDERQ") != nullptr);
+   return only != nullptr && (strstr(only, "DISP") != nullptr || strstr(only, "RENDERQ") != nullptr || strstr(only, "AREALIGHT") != nullptr);
 }
 
 bool RunGeoAudit()
