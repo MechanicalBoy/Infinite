@@ -12,6 +12,7 @@
 #include "app/ui/design/TokenColors.h"
 #include "app/ui/design/Tokens.gen.h"
 #include "app/ui/design/UiAnim.h"
+#include "app/ui/design/GlyphDraw.h"
 
 namespace app { ImVec4 AccentEmphasisSelected(); bool IsThemeLight(); }
 
@@ -37,7 +38,8 @@ namespace ActionButton
    inline void RowNext() { ImGui::SameLine(0.0f, tok::space_1); }
    inline void RowEnd() { ImGui::Unindent(ColumnIndent()); }
 
-   inline bool Draw(const char* label, ImVec2 size = ImVec2(0, 0), Kind kind = Kind::Plain)
+   // `glyph` (an IconsInfinite:: glyph) puts a 14px icon before the label, the pair centred as one.
+   inline bool Draw(const char* label, ImVec2 size = ImVec2(0, 0), Kind kind = Kind::Plain, const char* glyph = nullptr)
    {
       if (kind == Kind::Plain)
          kind = Scoped();
@@ -46,7 +48,7 @@ namespace ActionButton
       const ImVec2 ts = ImGui::CalcTextSize(shown.c_str());
       const float h = size.y > 0.0f ? size.y : ImGui::GetFrameHeight();
       const float w = size.x < 0.0f ? std::max(1.0f, ImGui::GetContentRegionAvail().x + size.x + 1.0f)
-                                    : std::max(size.x, ts.x + 2.0f * tok::space_2);
+                                    : std::max(size.x, ts.x + (glyph != nullptr ? 20.0f : 0.0f) + 2.0f * tok::space_2);
       const ImVec2 p = ImGui::GetCursorScreenPos();
       if (ImGui::ButtonLabelHook != nullptr)
          ImGui::ButtonLabelHook(label); // headless --describe lists the buttons a node draws, as ImGui::Button does
@@ -74,8 +76,12 @@ namespace ActionButton
       }
       ImDrawList* dl = ImGui::GetWindowDrawList();
       dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), ImGui::GetColorU32(fill), tok::radius_tile);
-      dl->AddText(ImVec2(std::round(p.x + (w - ts.x) * 0.5f), std::round(p.y + (h - ts.y) * 0.5f)),
-                  ImGui::GetColorU32(kind == Kind::Solo ? ImVec4(0.10f, 0.10f, 0.12f, 1.0f) : solid ? ImVec4(1, 1, 1, 1) : ImVec4(t.x, t.y, t.z, 0.85f)), shown.c_str());
+      const float iconW = glyph != nullptr ? 20.0f : 0.0f; // 14px glyph + 6px gap
+      const ImU32 ink = ImGui::GetColorU32(kind == Kind::Solo ? ImVec4(0.10f, 0.10f, 0.12f, 1.0f) : solid ? ImVec4(1, 1, 1, 1) : ImVec4(t.x, t.y, t.z, 0.85f));
+      const float x0 = p.x + (w - ts.x - iconW) * 0.5f;
+      if (glyph != nullptr)
+         glyph::Draw(dl, ImVec2(std::round(x0 + 7.0f), std::round(p.y + h * 0.5f)), 14.0f, ink, glyph);
+      dl->AddText(ImVec2(std::round(x0 + iconW), std::round(p.y + (h - ts.y) * 0.5f)), ink, shown.c_str());
       return clicked;
    }
 

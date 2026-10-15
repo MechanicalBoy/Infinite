@@ -791,11 +791,19 @@ void DrawSidePanels(FrameCtx& fc)
                   ImGui::SetTooltip("%s", ShowSetError(i).c_str());
             }
 
+            // Every row of buttons spans the full width in equal cells with the same 4px gutter,
+            // so the panel reads as one grid with no ragged edges.
+            const auto rowBtn = [](const char* label, const char* glyphName, int cells, ActionButton::Kind kind = ActionButton::Kind::Plain) {
+               const float gap = ImGui::GetStyle().ItemSpacing.x;
+               const float w = (ImGui::GetContentRegionAvail().x - gap * (float)(cells - 1)) / (float)cells;
+               return ActionButton::Draw(label, ImVec2(std::floor(w), 0.0f), kind, glyphName);
+            };
+
             SectionCard::Begin(T("Edit"));
-            if (FormParts::Button(L("Add current patch")))
+            if (rowBtn(L("Add current patch"), IconsInfinite::Plus, 2))
                ShowSetAddCurrent();
-            FormParts::Inline();
-            if (FormParts::Button(L("Add file...")))
+            ImGui::SameLine();
+            if (rowBtn(L("Add file..."), IconsInfinite::Folder, 1))
             {
                const std::string path = Platform::OpenPatchDialog();
                if (!path.empty())
@@ -803,32 +811,32 @@ void DrawSidePanels(FrameCtx& fc)
             }
             const bool haveSel = sSelected >= 0 && sSelected < count;
             ImGui::BeginDisabled(!haveSel);
-            if (FormParts::Button(L("Remove")))
+            if (rowBtn(L("Remove"), IconsInfinite::Close, 4))
                ShowSetRemove(sSelected);
-            FormParts::Inline();
-            if (FormParts::Button(L("Up")) && sSelected > 0)
+            ImGui::SameLine();
+            if (rowBtn(L("Up"), IconsInfinite::ChevronUp, 3) && sSelected > 0)
             {
                ShowSetMove(sSelected, -1);
                sSelected--;
             }
-            FormParts::Inline();
-            if (FormParts::Button(L("Down")) && sSelected + 1 < count)
+            ImGui::SameLine();
+            if (rowBtn(L("Down"), IconsInfinite::ChevronDown, 2) && sSelected + 1 < count)
             {
                ShowSetMove(sSelected, +1);
                sSelected++;
             }
-            FormParts::Inline();
-            if (FormParts::Button(L("Go")))
+            ImGui::SameLine();
+            if (rowBtn(L("Go"), IconsInfinite::Play, 1))
                ShowSetGo(sSelected);
             ImGui::EndDisabled();
-            if (FormParts::Button(L("Open set...")))
+            if (rowBtn(L("Open set..."), IconsInfinite::Library, 2))
             {
                const std::string path = Platform::OpenShowSetDialog();
                if (!path.empty())
                   ShowSetOpenFile(path);
             }
-            FormParts::Inline();
-            if (FormParts::Button(L("Save set...")))
+            ImGui::SameLine();
+            if (rowBtn(L("Save set..."), IconsInfinite::Capture, 1))
             {
                const std::string path = Platform::SaveShowSetDialog();
                if (!path.empty())
@@ -836,10 +844,10 @@ void DrawSidePanels(FrameCtx& fc)
             }
 
             SectionCard::Begin(T("Switch"));
-            if (FormParts::Button(L("Previous")))
+            if (rowBtn(L("Previous"), IconsInfinite::Rewind, 2))
                ShowSetStep(-1);
-            FormParts::Inline();
-            if (FormParts::Button(L("Next")))
+            ImGui::SameLine();
+            if (rowBtn(L("Next"), IconsInfinite::ChevronRight, 1))
                ShowSetStep(+1);
             const std::vector<std::string>& qs = MusicTime::LaunchQuantizeList();
             int& q = ShowSetQuantize();
@@ -854,15 +862,15 @@ void DrawSidePanels(FrameCtx& fc)
             EditorHint(T("A switch lands on the quantize grid; the old patch fades out over the fade time"));
 
             SectionCard::Begin(T("Show safety"));
-            if (FormParts::Button(gShowLock ? L("Unlock") : L("Lock")))
+            if (rowBtn(gShowLock ? L("Unlock") : L("Lock"), IconsInfinite::Power, 3))
                ShowLockToggle();
-            FormParts::Inline();
-            if (FormParts::Button(ShowPanicLatched() ? L("Resume") : L("Panic")))
+            ImGui::SameLine();
+            if (rowBtn(ShowPanicLatched() ? L("Resume") : L("Panic"), ShowPanicLatched() ? IconsInfinite::Play : IconsInfinite::Stop, 2))
                ShowPanicToggle();
             static std::vector<ShowCheckItem> sCheck;
             static bool sChecked = false;
-            FormParts::Inline();
-            if (FormParts::Button(L("Pre-show check")) || gShowCheckRequest)
+            ImGui::SameLine();
+            if (rowBtn(L("Pre-show check"), IconsInfinite::Flag, 1) || gShowCheckRequest)
             {
                sCheck = ShowPreCheck();
                sChecked = true;
