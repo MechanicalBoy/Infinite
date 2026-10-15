@@ -738,7 +738,9 @@ namespace app
       if (AudioSlider("unison", &unisonF, 1.0f, 8.0f, "%.0f v", AudioHalfWidth()))
          n->unison = std::clamp((int)(unisonF + 0.5f), 1, 8);
 
+      ImGui::BeginDisabled((n->unison <= 1) && !gParamRegisterOnly);
       AudioSlider("detune", &n->detune, 0.0f, 100.0f, "%.1f c", AudioHalfWidth());
+      ImGui::EndDisabled();
       ImGui::SameLine();
       if (AudioSlider("position", &n->position, 0.0f, 1.0f, "%.3f", AudioHalfWidth()))
       {

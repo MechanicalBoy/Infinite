@@ -1502,7 +1502,9 @@ namespace app
          row.Knob("volume", &eng.volume, 0.0f, 1.0f, "%.2f");
          row.Knob("position", &eng.position, 0.0f, 1.0f, "%.3f");
          row.KnobInt("unison", &eng.unison, 1, WavetableNode::kMaxUnison);
+         ImGui::BeginDisabled((eng.unison <= 1) && !gParamRegisterOnly);
          row.Knob("detune", &eng.detune, 0.0f, 100.0f, "%.1f c");
+         ImGui::EndDisabled();
          row.End();
       }
       {
@@ -1812,7 +1814,9 @@ namespace app
          row.Knob("volume", &eng.volume, 0.0f, 1.0f, "%.2f");
          row.Knob("phase", &eng.phase, 0.0f, 1.0f, "%.3f");
          row.KnobInt("unison", &eng.unison, 1, OscillatorNode::kMaxUnison);
+         ImGui::BeginDisabled((eng.unison <= 1) && !gParamRegisterOnly);
          row.Knob("detune", &eng.detune, 0.0f, 100.0f, "%.1f c");
+         ImGui::EndDisabled();
          row.End();
       }
       {
@@ -1822,7 +1826,9 @@ namespace app
          row.DropdownKnob("oscFilter", SynthModes::FilterTypeList(), eng.filterType,
                           [&eng](int i) { PushUndoCheckpoint(); eng.filterType = i; },
                           "filter", &eng.cutoff, 20.0f, 18000.0f, "%.0f Hz", filterOff);
+         ImGui::BeginDisabled((filterOff) && !gParamRegisterOnly);
          row.Knob("reso", &eng.resonance, 0.0f, 1.0f, "%.3f");
+         ImGui::EndDisabled();
          row.Knob("sync", &eng.warpRatio, 1.0f, 16.0f, "%.2f");
          row.Knob("pan", &eng.pan, -1.0f, 1.0f, "%.2f");
          row.End();
@@ -1949,7 +1955,9 @@ namespace app
                           MetallicDsp::FilterModeToDisplayIndex(n->filterType),
                           [n](int displayIdx) { PushUndoCheckpoint(); n->filterType = MetallicDsp::DisplayIndexToFilterMode(displayIdx); },
                           "filter", &n->filterCutoff, 20.0f, 18000.0f, "%.0f Hz", filterOff);
+         ImGui::BeginDisabled((filterOff) && !gParamRegisterOnly);
          row.Knob("reso", &n->filterResonance, 0.0f, 1.0f, "%.2f");
+         ImGui::EndDisabled();
          row.Knob("drive", &n->drive, 0.0f, 1.0f, "%.2f");
          row.Knob("volume", &n->volume, 0.0f, 2.0f, "%.2f");
          row.End();
@@ -2464,7 +2472,9 @@ namespace app
          row1.Knob("volume", &n->volume, 0.0f, 2.0f, "%.2f");
          row1.Knob("pan", &n->pan, -1.0f, 1.0f, "%.2f");
          row1.KnobInt("unison", &n->unison, 1, WaveTerrainNode::kMaxUnison);
+         ImGui::BeginDisabled((n->unison <= 1) && !gParamRegisterOnly);
          row1.Knob("detune", &n->detune, 0.0f, 100.0f, "%.1f c");
+         ImGui::EndDisabled();
          row1.End();
 
          ImGui::Dummy(ImVec2(0.0f, 3.0f));
@@ -2473,7 +2483,9 @@ namespace app
          row2.DropdownKnob("wtFilter", WaveTerrainNode::FilterTypeNames(), n->filterType,
                           [n](int i) { PushUndoCheckpoint(); n->filterType = i; },
                           "cutoff", &n->cutoff, 20.0f, 20000.0f, "%.0f Hz", filterOff);
+         ImGui::BeginDisabled((filterOff) && !gParamRegisterOnly);
          row2.Knob("reso", &n->resonance, 0.0f, 1.0f, "%.2f");
+         ImGui::EndDisabled();
          row2.Knob("drive", &n->drive, 0.0f, 1.0f, "%.2f");
          row2.Knob("morph", &n->position, 0.0f, 1.0f, "%.2f");
          row2.End();
@@ -2715,7 +2727,9 @@ namespace app
          row1.Knob("volume", &n->volume, 0.0f, 2.0f, "%.2f");
          row1.Knob("pan", &n->pan, -1.0f, 1.0f, "%.2f");
          row1.KnobInt("unison", &n->unison, 1, EquationNode::kMaxUnison);
+         ImGui::BeginDisabled((n->unison <= 1) && !gParamRegisterOnly);
          row1.Knob("detune", &n->detune, 0.0f, 100.0f, "%.1f c");
+         ImGui::EndDisabled();
          row1.End();
 
          ImGui::Dummy(ImVec2(0.0f, 3.0f));
@@ -2724,7 +2738,9 @@ namespace app
          row2.DropdownKnob("eqFilter", EquationNode::FilterTypeNames(), n->filterType,
                            [n](int i) { PushUndoCheckpoint(); n->filterType = i; },
                            "cutoff", &n->cutoff, 20.0f, 20000.0f, "%.0f Hz", filterOff);
+         ImGui::BeginDisabled((filterOff) && !gParamRegisterOnly);
          row2.Knob("reso", &n->resonance, 0.0f, 1.0f, "%.2f");
+         ImGui::EndDisabled();
          row2.Knob("drive", &n->drive, 0.0f, 1.0f, "%.2f");
          row2.Knob("glide", &n->glide, 0.0f, 1.0f, "%.3f s", kKnobLarge, false, false, AudioWidgetStyle::KnobSkewGlide150);
          row2.End();
@@ -3026,7 +3042,9 @@ namespace app
          row2.Knob("gain", &n->brightness, 0.0f, 3.0f, "%.2f");
          row2.Knob("thresh", &n->threshold, 0.0f, 0.5f, "%.2f");
          row2.Knob("contrast", &n->contrast, 0.2f, 4.0f, "%.2f");
+         ImGui::BeginDisabled((n->unison <= 1) && !gParamRegisterOnly);
          row2.Knob("detune", &n->detune, 0.0f, 50.0f, "%.1f c");
+         ImGui::EndDisabled();
          row2.End();
       }
       EndAudioSection();
@@ -3049,7 +3067,9 @@ namespace app
          row2.DropdownKnob("specFilter", ImageSpectralSynthNode::FilterTypeNames(), n->filterType,
                           [n](int i) { PushUndoCheckpoint(); n->filterType = i; },
                           "cutoff", &n->cutoff, 20.0f, 20000.0f, "%.0f Hz", filterOff);
+         ImGui::BeginDisabled((filterOff) && !gParamRegisterOnly);
          row2.Knob("reso", &n->resonance, 0.0f, 1.0f, "%.2f");
+         ImGui::EndDisabled();
          row2.End();
       }
       EndAudioSection();

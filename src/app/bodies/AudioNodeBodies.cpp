@@ -546,7 +546,9 @@ namespace app
          AudioKnobRow row(4);
          row.Knob("pw", &n->pw1, 0.01f, 0.99f, "%.2f");
          row.Knob("voices", &n->voices, 1.0f, 7.0f, "%.0f");
+         ImGui::BeginDisabled((n->voices < 1.5f) && !gParamRegisterOnly);
          row.Knob("spread", &n->spread, 0.0f, 1.0f, "%.2f");
+         ImGui::EndDisabled();
          row.Knob("fm", &n->fm, 0.0f, 1.0f, "%.2f", kKnobLarge);
          row.End();
       }
@@ -571,7 +573,9 @@ namespace app
          row.DropdownKnob("analogFlt", filterNames, n->filterType,
                           [n](int i) { PushUndoCheckpoint(); n->filterType = i; },
                           "filter", &n->cutoff, 20.0f, 18000.0f, "%.0f Hz", filterOff, kKnobLarge, true);
+         ImGui::BeginDisabled((filterOff) && !gParamRegisterOnly);
          row.Knob("reso", &n->resonance, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         ImGui::EndDisabled();
          row.Knob("drive", &n->drive, 0.0f, 1.0f, "%.2f");
          row.Knob("key track", &n->keyTrack, 0.0f, 1.0f, "%.2f");
          row.End();
