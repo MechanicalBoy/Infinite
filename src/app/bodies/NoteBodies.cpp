@@ -2501,9 +2501,9 @@ namespace app
       // note gets its own envelope, gated by its own note-on and note-off
       // (ADSR output only; centred needs the shared input).
       BeginAudioSection("trigger");
-      pair([&](float) {
-              AudioKnobRow row(2, gParamRegisterOnly ? 20.0f : ImGui::GetFrameHeight(), 0.0f, false);
-              row.Dropdown("output", kOutputs, n->output, [n](int i) { PushUndoCheckpoint(); n->output = i; });
+      pair([&](float w) {
+              DropdownButton("output", kOutputs, n->output,
+                             [n](int i) { PushUndoCheckpoint(); n->output = i; }, w);
            },
            [&](float w) { AudioSlider("input", &n->constantIn, 0.0f, 1.0f, "%.2f", w); });
       pair([&](float w) { AudioSlider("threshold", &n->threshold, 0.0f, 1.0f, "%.2f", w); },
