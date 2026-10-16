@@ -802,7 +802,7 @@ void DrawSidePanels(FrameCtx& fc)
             SectionCard::Begin(T("Edit"));
             if (rowBtn(L("Add current patch"), IconsInfinite::Plus, 2))
                ShowSetAddCurrent();
-            ImGui::SameLine();
+            FormParts::Inline();
             if (rowBtn(L("Add file..."), IconsInfinite::Folder, 1))
             {
                const std::string path = Platform::OpenPatchDialog();
@@ -813,19 +813,19 @@ void DrawSidePanels(FrameCtx& fc)
             ImGui::BeginDisabled(!haveSel);
             if (rowBtn(L("Remove"), IconsInfinite::Close, 4))
                ShowSetRemove(sSelected);
-            ImGui::SameLine();
+            FormParts::Inline();
             if (rowBtn(L("Up"), IconsInfinite::ChevronUp, 3) && sSelected > 0)
             {
                ShowSetMove(sSelected, -1);
                sSelected--;
             }
-            ImGui::SameLine();
+            FormParts::Inline();
             if (rowBtn(L("Down"), IconsInfinite::ChevronDown, 2) && sSelected + 1 < count)
             {
                ShowSetMove(sSelected, +1);
                sSelected++;
             }
-            ImGui::SameLine();
+            FormParts::Inline();
             if (rowBtn(L("Go"), IconsInfinite::Play, 1))
                ShowSetGo(sSelected);
             ImGui::EndDisabled();
@@ -835,7 +835,7 @@ void DrawSidePanels(FrameCtx& fc)
                if (!path.empty())
                   ShowSetOpenFile(path);
             }
-            ImGui::SameLine();
+            FormParts::Inline();
             if (rowBtn(L("Save set..."), IconsInfinite::Capture, 1))
             {
                const std::string path = Platform::SaveShowSetDialog();
@@ -846,7 +846,7 @@ void DrawSidePanels(FrameCtx& fc)
             SectionCard::Begin(T("Switch"));
             if (rowBtn(L("Previous"), IconsInfinite::Rewind, 2))
                ShowSetStep(-1);
-            ImGui::SameLine();
+            FormParts::Inline();
             if (rowBtn(L("Next"), IconsInfinite::ChevronRight, 1))
                ShowSetStep(+1);
             const std::vector<std::string>& qs = MusicTime::LaunchQuantizeList();
@@ -878,12 +878,12 @@ void DrawSidePanels(FrameCtx& fc)
             SectionCard::Begin(T("Show safety"));
             if (rowBtn(gShowLock ? L("Unlock") : L("Lock"), IconsInfinite::Power, 3))
                ShowLockToggle();
-            ImGui::SameLine();
+            FormParts::Inline();
             if (rowBtn(ShowPanicLatched() ? L("Resume") : L("Panic"), ShowPanicLatched() ? IconsInfinite::Play : IconsInfinite::Stop, 2))
                ShowPanicToggle();
             static std::vector<ShowCheckItem> sCheck;
             static bool sChecked = false;
-            ImGui::SameLine();
+            FormParts::Inline();
             if (rowBtn(L("Pre-show check"), IconsInfinite::Flag, 1) || gShowCheckRequest)
             {
                sCheck = ShowPreCheck();
@@ -894,9 +894,10 @@ void DrawSidePanels(FrameCtx& fc)
                EditorHint(T("Ready: nothing missing, every device and output in place"));
             for (const ShowCheckItem& item : sCheck)
             {
-               ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(item.error ? tok::U32(tok::record) : tok::U32(tok::pin_mod, IsThemeLight())));
-               ImGui::TextWrapped("%s", item.text.c_str());
-               ImGui::PopStyleColor();
+               ImGui::PushTextWrapPos(0.0f);
+               ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(item.error ? tok::U32(tok::record) : tok::U32(tok::pin_mod, IsThemeLight())),
+                                  "%s", item.text.c_str());
+               ImGui::PopTextWrapPos();
             }
             EditorHint(T("Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume"));
          }
