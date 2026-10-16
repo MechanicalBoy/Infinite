@@ -132,7 +132,11 @@ namespace app
       std::thread([seconds]() {
          std::this_thread::sleep_for(std::chrono::seconds(seconds));
          if (getenv("INFINITE_QUITSTALLTEST") != nullptr)
-            printf("QUITSTALLTEST OK (the watchdog ended a quit that was stalled in the audio device)\n");
+         {
+            // Two lines so the verdict line ends in OK, which is what the hygiene driver matches.
+            printf("quit stall: the watchdog ended a quit that was stalled in the audio device\n");
+            printf("QUITSTALLTEST OK\n");
+         }
          fflush(stdout);
          fflush(stderr);
          std::_Exit(0);
