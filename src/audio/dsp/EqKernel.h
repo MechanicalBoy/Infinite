@@ -282,6 +282,20 @@ public:
                for (int c = 0; c < kCoeffsPerStage; c++)
                   coeffs[b][s][c] = mMailbox.SmoothedValue((b * kMaxStagesPerBand + s) * kCoeffsPerStage + c);
 
+         // The mailbox ramps each coefficient on its own, so halfway through a ramp a1 and a2 can
+         // describe a filter outside the stable triangle. At high sample rates the poles of a low
+         // band sit a few 1e-4 from its edge, and that is enough for silence to grow into inf and
+         // then NaN. Pull the denominator back inside with a margin above float precision.
+         for (int b = 0; b < kNumBands; b++)
+            for (int s = 0; s < kMaxStagesPerBand; s++)
+            {
+               float& a1 = coeffs[b][s][3];
+               float& a2 = coeffs[b][s][4];
+               a2 = std::min(a2, 1.0f - 4.0e-6f);
+               const float limit = 1.0f + a2 - 4.0e-6f;
+               a1 = std::max(-limit, std::min(limit, a1));
+            }
+
          // Output gain hardcoded to unity (0 dB) - the "output" section
          // (output gain + mix) was removed from DrawEqBody entirely, so this
          // no longer reads outputGainDb/kOutputGainSlot at all. Keeping the
