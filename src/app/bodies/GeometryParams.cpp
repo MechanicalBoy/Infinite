@@ -488,6 +488,34 @@ namespace app
    }
 
 
+   // Shared "show more" fold for long single-column bodies (GraphNode::showAdvancedParams, saved with the patch).
+   // Call right before the folded rows with how many float params (ModSlider/ModSliderInt) and colours they
+   // register; folded rows are still registered in order (gParamRegisterOnly), so indices, modulation and
+   // expressions are unchanged, and a folded row with a cable, expression or palette binding opens the fold.
+   // Returns whether the rows are shown; restore gParamRegisterOnly to `saved` after them.
+   bool BeginAdvancedFold(const char* id, int floatCount, int colorCount, bool& saved)
+   {
+      GraphNode* gn = FindNodeByIndex(gCurrentNodeIndex);
+      saved = gParamRegisterOnly;
+      const bool pinned = gn != nullptr && gn->showAdvancedParams;
+      bool inUse = false;
+      for (int k = 0; k < colorCount && !inUse; k++)
+         inUse = PaletteBinding::Instance().IsBound(gCurrentNodeIndex, gColorCounter + k);
+      for (int k = 0; k < floatCount && !inUse; k++)
+         inUse = Modulation::Instance().IsModulated(gCurrentNodeIndex, gParamCounter + k) ||
+                 Modulation::Instance().HasExpression(gCurrentNodeIndex, gParamCounter + k);
+      const bool open = pinned || inUse;
+      ImGui::PushID(id);
+      if (ActionButton::Column(inUse && !pinned ? "show more (in use)" : open ? "show less" : "show more",
+                               kParamWidth) &&
+          gn != nullptr)
+         gn->showAdvancedParams = !gn->showAdvancedParams;
+      ImGui::PopID();
+      gParamRegisterOnly = saved || !open;
+      return open;
+   }
+
+
    void DrawRigidBodyParams(RigidBodyNode* n)
    {
       ImGui::TextDisabled("%zu bodies, %zu triangles", n->BodyCount(), n->TriangleCount());
@@ -508,7 +536,10 @@ namespace app
       ModSlider("gravity y", &n->gravityY, -30.0f, 30.0f);
       ModSlider("gravity z", &n->gravityZ, -30.0f, 30.0f);
 
-      NodeSeparator("start");
+      bool rbSaved = false;
+      const bool rbOpen = BeginAdvancedFold("showMoreRigid", 10, 0, rbSaved);   // start + kick sliders
+      if (rbOpen)
+         NodeSeparator("start");
       ModSlider("velocity x", &n->velX, -20.0f, 20.0f);
       ModSlider("velocity y", &n->velY, -20.0f, 20.0f);
       ModSlider("velocity z", &n->velZ, -20.0f, 20.0f);
@@ -516,11 +547,13 @@ namespace app
       ModSlider("spin y", &n->spinY, -20.0f, 20.0f);
       ModSlider("spin z", &n->spinZ, -20.0f, 20.0f);
 
-      NodeSeparator("kick");
+      if (rbOpen)
+         NodeSeparator("kick");
       ModSlider("kick time", &n->kickTime, 0.0f, 20.0f);
       ModSlider("kick x", &n->kickX, -20.0f, 20.0f);
       ModSlider("kick y", &n->kickY, -20.0f, 20.0f);
       ModSlider("kick z", &n->kickZ, -20.0f, 20.0f);
+      gParamRegisterOnly = rbSaved;
 
       NodeSeparator("world");
       ModCheckbox("ground", &n->groundEnabled);
@@ -555,7 +588,10 @@ namespace app
       ModSlider("dir y", &n->dirY, -1.0f, 1.0f);
       ModSlider("dir z", &n->dirZ, -1.0f, 1.0f);
 
-      NodeSeparator("forces");
+      bool psSaved = false;
+      const bool psOpen = BeginAdvancedFold("showMoreParticles", 9, 2, psSaved);   // forces + over life
+      if (psOpen)
+         NodeSeparator("forces");
       ModSlider("gravity x", &n->gravityX, -10.0f, 10.0f);
       ModSlider("gravity y", &n->gravityY, -10.0f, 10.0f);
       ModSlider("gravity z", &n->gravityZ, -10.0f, 10.0f);
@@ -563,12 +599,14 @@ namespace app
       ModSlider("turbulence", &n->turbulence, 0.0f, 10.0f);
       ModSlider("turb scale", &n->turbulenceScale, 0.1f, 8.0f);
 
-      NodeSeparator("over life");
+      if (psOpen)
+         NodeSeparator("over life");
       ModSlider("start size", &n->startSize, 0.0f, 0.5f);
       ModSlider("end size", &n->endSize, 0.0f, 0.5f);
       ColorSwatch("start colour", n->startColor, n);
       ColorSwatch("end colour", n->endColor, n);
       ModSlider("seed", &n->seed, 0.0f, 100.0f, "%.0f", kParamWidth, false, 1.0f);
+      gParamRegisterOnly = psSaved;
    }
 
 
