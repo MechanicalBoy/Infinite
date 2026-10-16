@@ -62,48 +62,50 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-13 12:13 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-15 02:34 UTC. Do not edit inside this block; rerun the tool._
 
-### Open quests (6) **over the cap of 5: park or close before adding**
+### Open quests (8) **over the cap of 5: park or close before adding**
 
 - R709 [later] Plan: re-survey: deconstruct competitors, one by one
 - R711 [later] Plan: Modulators to industry grade
 - R717 [later] Plan: Node audits: beyond effects and modulators
-- R757 [later] Plan: Metal compute for particles and simulations (R556): design, scope and gates
-- R767 [later] Plan: Image effects to industry grade
-- R779 [later] Plan: v0.6 plan: quality lead
+- R754 [next] Perf: motion blur and radial blur cost
+- R790 [later] Plan: Agent language (working name: Tongue)
+- R791 [later] Plan: Image effects to industry grade
+- R792 [later] Plan: Metal compute for particles and simulations (R556): design, scope and gates
+- R793 [later] Plan: v0.6 plan: quality lead
 
 ### Releases
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| v0.5.0 | 2026-10-10 | 166 |
+| extensions | 2026-10-13 | 10 |
+| v0.5.0 | 2026-10-10 | 206 |
 | v0.4.7 | 2026-10-07 | 74 |
-| v0.4.6 | 2026-10-01 | 165 |
-| v0.4.5 | 2026-09-26 | 203 |
+| v0.4.6 | 2026-10-01 | 166 |
 
-### Quality of v0.5.0 (since v0.4.7; the release measure)
+### Quality of extensions (since v0.5.0; the release measure)
 
 | Measure | Value | Want |
 |---|---|---|
-| Escaped fixes: fixes after v0.5.0 touching src it changed | 8 b40f8c8e fc683464 e90f84fe 01059f67 2846a30a d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
-| Reverts after v0.5.0 | 0 | 0 |
-| Fix-shaped commits after v0.5.0 (all) | 24 | context |
+| Escaped fixes: fixes after extensions touching src it changed | 6 7f002bee 79c8e6b4 e90f84fe d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
+| Reverts after extensions | 0 | 0 |
+| Fix-shaped commits after extensions (all) | 36 | context |
 | Known test failures (macOS / Linux) | 3 / 6 | never grows |
 | Open GitHub issues labelled bug | 0 | 0 |
-| Crash reports filed since v0.5.0 | 0 | 0 |
+| Crash reports filed since extensions | 0 | 0 |
 
 ### Reach (context only: moves with outreach, not with release quality)
 
-- GitHub (2026-10-13): 276 stars, 21 forks, 1866 downloads all-time
-- Website (2026-10-13, last 30 days): 1113 sessions, 740 users
+- GitHub (2026-10-15): 277 stars, 21 forks, 1940 downloads all-time
+- Website (2026-10-15, last 30 days): 1199 sessions, 804 users
 
 ### Last merges to main
 
-- 2026-10-13 Merge docs/v06-full-scope
-- 2026-10-13 Merge docs/v06-carryover
-- 2026-10-13 Merge docs/re-survey-data-fix
-- 2026-10-13 Merge bugfix/step4-offline-audio
-- 2026-10-13 Merge bugfix/render3d-stats-width: fold label fix
+- 2026-10-15 Merge bugfix/v06-audio-correctness (v0.6 Block 1)
+- 2026-10-13 Merge feature/extensions-seamless: pack store on its own release tag, Extensions tab status and app update row, Library category
+- 2026-10-13 Merge docs/v06-pro-verdict
+- 2026-10-13 Merge docs/v06-final-list
+- 2026-10-13 Merge docs/v06-evolving-patches
 
 <!-- FACTS:END -->
