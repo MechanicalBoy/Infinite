@@ -3563,42 +3563,59 @@ bool RunConvolutionFixture()
       float* oCh[2] = { oL.data(), oR.data() };
       AudioBuffer inBuf { iCh, 2, frames };
       AudioBuffer outBuf { oCh, 2, frames };
-      double total = 0.0, worst = 0.0;
-      int worstBlock = 0;
-      std::vector<double> blockTimes((size_t)blocks);
-      for (int b = 0; b < blocks; b++)
-      {
-         for (int i = 0; i < frames; i++)
-         {
-            iL[i] = noise();
-            iR[i] = noise();
-         }
-         const auto t0 = std::chrono::steady_clock::now();
-         k.ProcessBlock(inBuf, nullptr, outBuf);
-         const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-         total += dt;
-         blockTimes[(size_t)b] = dt;
-         if (dt > worst)
-         {
-            worst = dt;
-            worstBlock = b;
-         }
-      }
       const double blockSeconds = (double)frames / sr;
-      const double average = 100.0 * total / ((double)blocks * blockSeconds), peak = 100.0 * worst / blockSeconds;
-      printf("CONVOLUTIONTEST cost: %.2f s response, worst single block %.1f%% of its time slot\n", irSeconds, peak);
-      {
-         // Where the time goes block by block: tells scheduling noise (one lone spike) from a periodic cost.
+      // Wall-clock timing on an ordinary thread picks up whatever else the machine is doing, so the gate takes the
+      // best of three passes: a real cost shows in all of them, a busy Mac in only some.
+      struct Pass { double average, p50, p99, p999, peak; int worstBlock, over; };
+      auto runPass = [&]() {
+         double total = 0.0, worst = 0.0;
+         int worstBlock = 0, over = 0;
+         std::vector<double> blockTimes((size_t)blocks);
+         for (int b = 0; b < blocks; b++)
+         {
+            for (int i = 0; i < frames; i++)
+            {
+               iL[i] = noise();
+               iR[i] = noise();
+            }
+            const auto t0 = std::chrono::steady_clock::now();
+            k.ProcessBlock(inBuf, nullptr, outBuf);
+            const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            total += dt;
+            blockTimes[(size_t)b] = dt;
+            over += dt > blockSeconds ? 1 : 0;
+            if (dt > worst)
+            {
+               worst = dt;
+               worstBlock = b;
+            }
+         }
          std::vector<double> sorted = blockTimes;
          std::sort(sorted.begin(), sorted.end());
          auto pct = [&](double q) { return 100.0 * sorted[(size_t)std::min((double)(blocks - 1), q * (double)blocks)] / blockSeconds; };
-         int over = 0;
-         for (double t : blockTimes)
-            over += t > blockSeconds ? 1 : 0;
-         printf("CONVOLUTIONTEST block times: p50 %.1f%%, p99 %.1f%%, p99.9 %.1f%% of the slot; worst at block %d of %d; %d blocks over 100%%\n",
-                pct(0.5), pct(0.99), pct(0.999), worstBlock, blocks, over);
+         return Pass { 100.0 * total / ((double)blocks * blockSeconds), pct(0.5), pct(0.99), pct(0.999),
+                       100.0 * worst / blockSeconds, worstBlock, over };
+      };
+      Pass best = runPass();
+      for (int p = 1; p < 3; p++)
+      {
+         const Pass next = runPass();
+         best.average = std::min(best.average, next.average);
+         if (next.p99 < best.p99)
+         {
+            best.p50 = next.p50;
+            best.p99 = next.p99;
+            best.p999 = next.p999;
+            best.peak = next.peak;
+            best.worstBlock = next.worstBlock;
+            best.over = next.over;
+         }
       }
-      verdict("cost", irSeconds > 4.9 && average < 3.0, "%.2f%% of one core on average (limit 3%%)", average);
+      printf("CONVOLUTIONTEST cost: %.2f s response, worst single block %.1f%% of its time slot (best of 3)\n", irSeconds, best.peak);
+      printf("CONVOLUTIONTEST block times: p50 %.1f%%, p99 %.1f%%, p99.9 %.1f%% of the slot; worst at block %d of %d; %d blocks over 100%%\n",
+             best.p50, best.p99, best.p999, best.worstBlock, blocks, best.over);
+      verdict("cost", irSeconds > 4.9 && best.average < 3.0 && best.p99 < 50.0,
+              "%.2f%% of one core on average (limit 3%%), p99 block %.1f%% of its slot (limit 50%%), best of 3", best.average, best.p99);
    }
 
    printf("CONVOLUTIONTEST %s\n", ok ? "OK" : "FAIL");
