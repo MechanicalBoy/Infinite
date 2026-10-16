@@ -611,8 +611,22 @@ namespace
       "   return base.xy;\n"
       "}\n"
       "\n"
+      // Sprite quads discard their round corners before the texture is read.
+      // Implicit-derivative sampling after a divergent discard is undefined, and
+      // on macOS it made the mip level (so a few pixels) differ from run to run.
+      // So the UV derivatives are taken at the top of main(), in uniform control
+      // flow, and the LOD is chosen from them explicitly. textureGrad() is not
+      // used: the macOS driver ignores its gradients and reads level 0.
+      "vec2 gSpriteDx = vec2(0.0);\n"
+      "vec2 gSpriteDy = vec2(0.0);\n"
+      "vec4 sampleSprite(sampler2D tex, vec2 uv) {\n"
+      "   vec2 size = vec2(textureSize(tex, 0));\n"
+      "   float rho = max(length(gSpriteDx * size), length(gSpriteDy * size));\n"
+      "   return textureLod(tex, uv, max(log2(max(rho, 1e-6)), 0.0));\n"
+      "}\n"
+      "\n"
       "vec4 sampleMap(sampler2D tex, vec3 n, vec2 uv) {\n"
-      "   if (uMapSpace == 0 || uTriplanarBlend <= 0.001) return texture(tex, uv);\n"
+      "   if (uMapSpace == 0 || uTriplanarBlend <= 0.001) return uIsSprite == 1 ? sampleSprite(tex, uv) : texture(tex, uv);\n"
       "   vec3 base;\n"
       "   if (uMapSpace == 1) {\n"
       "      vec3 sz = max(uObjHi - uObjLo, vec3(1e-5));\n"
@@ -629,6 +643,11 @@ namespace
       "}\n"
       "\n"
       "void main() {\n"
+      "   if (uIsSprite == 1) {\n"
+      "      vec2 uv0 = computeMapUv(normalize(vNormal));\n"
+      "      gSpriteDx = dFdx(uv0);\n"
+      "      gSpriteDy = dFdy(uv0);\n"
+      "   }\n"
       "   if (uIsSprite == 1 && uSpriteShape == 0) {\n"
       "      vec2 d = vUv * 2.0 - 1.0;\n"
       "      if (dot(d, d) > 1.0) discard;\n"
