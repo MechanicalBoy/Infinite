@@ -16,15 +16,15 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 | Session | Branch / worktree | Quest | Uses | Since |
 |---|---|---|---|---|
-| v06-block2 | `feature/v06-sound` (on top of `bugfix/v06-audio-correctness`, not yet on main) | v0.6 Block 2: sound | main build; no bench | 2026-10-14 |
-| re-survey-finish | `feature/re-survey-finish` (+ agent worktrees) | re-survey leftovers, quality misses, B1-B10 into scoreboard | main build, bench (later, serial), DAW/TD GUI scripting | 2026-10-13 |
+| (none) | | | | |
 
 ## Waiting on owner (one at a time, recommended answer first)
 
-- Merge `bugfix/v06-audio-correctness` (v0.6 Block 1, items 1.0-1.14 except 1.7) to main? Recommended: yes. Code review 2026-10-14: no blockers. New wording since: the Output node's status line ends `(audio clipped, +x dB over)` when a take clipped, and Audio Out shows `last take clipped, +x dB over`. Sweeps: av-sync 19/19, modulation 9/9; the two other sweeps each fail one check that fails the same on main. verify-gate: driver audio+video 25 passed, ui+compositing 51 passed, community smoke 27/27, ledger lint 0 stale. Two things you will see: Audio Out shows `clipping +x dB` for 3 s and Timeline renders end with an "Audio clipped" notice (1.13); effect shaders now warm up one a frame after startup (1.14). Still open on the branch: 1.7 (waits for re-survey-finish) and one 1.14 bench run with the screen unlocked and the window focused.
-
+- v0.6 is on `main` locally (blocks 1-3 and the bug hunt, 579 commits since v0.5.0), not yet pushed. Owner has asked for: CI green, push to `main`, release notes from the v0.5.0 notes and git history, then release. Still open: Windows verification (2.37), B8 reruns on a quiet Mac, the version bump from 0.5.0.
 
 ## Decisions (newest first, keep the last 10)
+
+- 2026-10-16 Agent: v0.6 bug hunt closed. Fixed: headless Time Machine determinism (offline clock held for video jobs), Boolean BSP over-budget timeouts (250k polygon cap, 2M split budget), headless runs no longer read or write the learned prediction profiles (they made Predictive Velocity renders differ run to run and altered user data). Volume, Rigid Body and Particle System fold their lower rows behind show more/less (folded rows stay registered in order, so modulation indices are unchanged). Connection audit: no bugs; fuzz refusals come from the fuzzer's own wrong-kind and fan-out extras. Drive bounce latency check is now within 1 sample (it lands 1 sample early, same as before).
 
 - 2026-10-13 Owner: pack and app updates must be seamless. Agent: catalog moves to its own release tag `extensions` (app releases no longer carry it; old apps fed via `--also-latest`), tab refetches on open and shows versions, up-to-date, catalog errors and the app update; `tools/release/publish_extensions.py` is the one publish route.
 
@@ -92,7 +92,7 @@ Process: `.claude/skills/infinite-lifecycle/SKILL.md` (follow it in every decisi
 
 <!-- FACTS:BEGIN (tools/lifecycle/now.py) -->
 
-_Generated 2026-10-15 02:34 UTC. Do not edit inside this block; rerun the tool._
+_Generated 2026-10-16 12:50 UTC. Do not edit inside this block; rerun the tool._
 
 ### Open quests (8) **over the cap of 5: park or close before adding**
 
@@ -109,8 +109,8 @@ _Generated 2026-10-15 02:34 UTC. Do not edit inside this block; rerun the tool._
 
 | Tag | Date | Downloads (context) |
 |---|---|---|
-| extensions | 2026-10-13 | 10 |
-| v0.5.0 | 2026-10-10 | 206 |
+| extensions | 2026-10-13 | 11 |
+| v0.5.0 | 2026-10-10 | 249 |
 | v0.4.7 | 2026-10-07 | 74 |
 | v0.4.6 | 2026-10-01 | 166 |
 
@@ -118,25 +118,24 @@ _Generated 2026-10-15 02:34 UTC. Do not edit inside this block; rerun the tool._
 
 | Measure | Value | Want |
 |---|---|---|
-| Escaped fixes: fixes after extensions touching src it changed | 6 7f002bee 79c8e6b4 e90f84fe d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
-| Reverts after extensions | 0 | 0 |
-| Fix-shaped commits after extensions (all) | 36 | context |
-| Known test failures (macOS / Linux) | 3 / 6 | never grows |
+| Escaped fixes: fixes after extensions touching src it changed | 7 da62c225 7f002bee 79c8e6b4 e90f84fe d90f745a 89555bc0 9f5fd27d | 0, falling release to release |
+| Reverts after extensions | 1 | 0 |
+| Fix-shaped commits after extensions (all) | 40 | context |
+| Known test failures (macOS / Linux) | 4 / 6 | never grows |
 | Open GitHub issues labelled bug | 0 | 0 |
 | Crash reports filed since extensions | 0 | 0 |
 
 ### Reach (context only: moves with outreach, not with release quality)
 
-- GitHub (2026-10-15): 277 stars, 21 forks, 1940 downloads all-time
-- Website (2026-10-15, last 30 days): 1199 sessions, 804 users
+- GitHub (2026-10-16): 279 stars, 22 forks, 1977 downloads all-time
+- Website (2026-10-16, last 30 days): 1314 sessions, 899 users
 
 ### Last merges to main
 
+- 2026-10-16 Merge feature/v06-3.7-bevel-inset (v0.6 Block 3)
+- 2026-10-16 Merge feature/v06-sound (v0.6 Block 2)
 - 2026-10-15 Merge bugfix/v06-audio-correctness (v0.6 Block 1)
 - 2026-10-13 Merge feature/extensions-seamless: pack store on its own release tag, Extensions tab status and app update row, Library category
 - 2026-10-13 Merge docs/v06-pro-verdict
-- 2026-10-13 Merge docs/v06-final-list
-- 2026-10-13 Merge docs/v06-evolving-patches
-- 2026-10-13 Merge docs/v06-take-it-live
 
 <!-- FACTS:END -->
