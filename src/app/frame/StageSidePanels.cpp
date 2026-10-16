@@ -894,7 +894,7 @@ void DrawSidePanels(FrameCtx& fc)
                EditorHint(T("Ready: nothing missing, every device and output in place"));
             for (const ShowCheckItem& item : sCheck)
             {
-               ImGui::PushStyleColor(ImGuiCol_Text, item.error ? ImVec4(0.92f, 0.36f, 0.32f, 1.0f) : ImVec4(0.95f, 0.72f, 0.28f, 1.0f));
+               ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(item.error ? tok::U32(tok::record) : tok::U32(tok::pin_mod, IsThemeLight())));
                ImGui::TextWrapped("%s", item.text.c_str());
                ImGui::PopStyleColor();
             }
