@@ -1238,8 +1238,12 @@ namespace app
 
       ed::EditorContext* prevEditor = ed::GetCurrentEditor();
       ed::SetCurrentEditor(gEditor);
-      const ImVec2 origPos = ed::GetNodePosition(srcNode->NodeId());
+      ImVec2 origPos = ed::GetNodePosition(srcNode->NodeId());
       ed::SetCurrentEditor(prevEditor);
+      // The editor reports FLT_MAX for a node it has never drawn (its bounds are still empty); fall back to where
+      // the node was placed so the copy does not land at FLT_MAX.
+      if (!(std::fabs(origPos.x) < 1.0e9f) || !(std::fabs(origPos.y) < 1.0e9f))
+         origPos = ImVec2(srcNode->spawnX, srcNode->spawnY);
       const ImVec2 pos = FindFreeSpawnPosition(ImVec2(origPos.x + 60.0f, origPos.y + 60.0f));
 
       GraphNode* copy = SpawnNode(typeName, category, pos.x, pos.y);
