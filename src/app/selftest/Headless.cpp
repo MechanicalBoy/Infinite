@@ -1111,9 +1111,15 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       {
          gHeadlessProbeAll = true;
          gHeadlessDrawn.clear();
+         // The warm-up frames cook the graph too. On the live clock they would feed wall-clock
+         // time into anything that keeps history (Time Machine, feedback), so two renders of the
+         // same patch differ; hold the clock at zero until the job takes over.
+         Transport::Instance().SetOfflineMode(true, gHeadlessAudioRate);
+         Transport::Instance().SetOfflineVideoTime(0.0);
       }
       if (++sTicks < 3)
          return;
+      Transport::Instance().SetOfflineMode(false);
       // The parameter-index check below needs every node a mod/expr line
       // drives to have drawn (it registers its parameters by drawing). They
       // are param-driven, so the cull never skips them; this only guards a
