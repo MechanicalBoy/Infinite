@@ -659,6 +659,9 @@ private:
    // exactly rather than tinting every part by whichever input materialFrom
    // happens to point at.
    bool mBakedPerInputColour = false;
+   // The previous rebuild ran past its budget. When the inputs change every frame (audio-driven geometry) that
+   // would stall each frame for seconds, so the next rebuild gets a small budget until a cook fits again.
+   bool mBooleanSlow = false;
    bool mBooleanOver = false;   // the last rebuild's Boolean ran past its work budget
    int mLastCookFrame = -1;
    mutable unsigned long long mMaterialRevision = 0;

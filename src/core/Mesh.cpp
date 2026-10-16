@@ -4881,7 +4881,8 @@ namespace csg
 
    std::vector<Polygon> ClipPolygons(const Node& node, const std::vector<Polygon>& polygons)
    {
-      if (!node.plane.valid)
+      // Past the budget the caller discards the result, so stop walking the tree.
+      if (!node.plane.valid || gOverBudget)
          return polygons;
 
       std::vector<Polygon> frontList, backList;
@@ -4903,6 +4904,8 @@ namespace csg
 
    void ClipTo(Node& node, const Node& other)
    {
+      if (gOverBudget)
+         return;
       node.polygons = ClipPolygons(other, node.polygons);
       if (node.front) ClipTo(*node.front, other);
       if (node.back) ClipTo(*node.back, other);
@@ -4993,14 +4996,14 @@ namespace csg
    }
 }
 
-Mesh Boolean(const Mesh& a, const Mesh& b, int op)
+Mesh Boolean(const Mesh& a, const Mesh& b, int op, long long workBudget)
 {
    if (a.Empty())
       return (op == kBooleanIntersect || op == kBooleanDifference) ? Mesh() : b;
    if (b.Empty())
       return (op == kBooleanIntersect) ? Mesh() : a;
 
-   csg::gSplitBudget = 12000000;
+   csg::gSplitBudget = workBudget;
    csg::gOverBudget = false;
    csg::Node treeA, treeB;
    csg::Build(treeA, csg::FromMesh(a));

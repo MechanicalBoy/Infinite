@@ -395,10 +395,12 @@ void JoinGeometryNode::RebuildIfNeeded()
          const int op = (mode == kUnion) ? MeshOps::kBooleanUnion
                       : (mode == kIntersect) ? MeshOps::kBooleanIntersect
                                              : MeshOps::kBooleanDifference;
-         mCache = MeshOps::Boolean(mCache, placed, op);
+         mCache = MeshOps::Boolean(mCache, placed, op, mBooleanSlow ? 100000 : 12000000);
          mBooleanOver = mBooleanOver || MeshOps::BooleanOverBudget();
       }
    }
+   if (mBooleanOver)
+      mBooleanSlow = true;
    mBuiltMode = mode;
    mBakedPerInputColour = bakePerInputColour;
    mMeshRevision = NextMeshRevision();
