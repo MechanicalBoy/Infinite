@@ -1690,7 +1690,12 @@ void ed::EditorContext::SetNodePosition(NodeId nodeId, const ImVec2& position)
 
     if (node->m_Bounds.Min != position)
     {
-        node->m_Bounds.Translate(position - node->m_Bounds.Min);
+        // A node that has never been drawn has an empty (inverted, +/-FLT_MAX) rect; translating it
+        // overflowed the int cast in FloorRect. Start from a point rect, the first draw sizes it.
+        if (node->m_Bounds.Min.x > node->m_Bounds.Max.x || node->m_Bounds.Min.y > node->m_Bounds.Max.y)
+            node->m_Bounds = ImRect(position, position);
+        else
+            node->m_Bounds.Translate(position - node->m_Bounds.Min);
         FloorRect(node->m_Bounds);
         MakeDirty(NodeEditor::SaveReasonFlags::Position, node);
     }
