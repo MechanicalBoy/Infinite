@@ -1704,7 +1704,13 @@ void FrameTest_NEWSYNTHTEST(int frameId, GLFWwindow* window)
       auto* n = kb != nullptr ? dynamic_cast<KeyboardNode*>(kb->node.get()) : nullptr;
       bool keys[128] = {};
       if (n != nullptr)
+      {
+         // The engine is stopped (see frame 3), so nothing drains the Keyboard's key queue: run its block here, the
+         // way the audio thread would. Without it the held bits never move on a machine with no audio device.
+         AudioBuffer none;
+         n->GetAudioNode()->ProcessBlock(nullptr, 0, none);
          n->HeldKeys(keys);
+      }
       int count = 0;
       for (bool k : keys)
          count += k ? 1 : 0;

@@ -608,7 +608,7 @@ namespace
       node->mix = mix;
       node->GetAudioNode()->PrepareToPlay(kRate, 512);
       node->CookIfNeeded(1);
-      constexpr int kLen = 4096;
+      static constexpr int kLen = 4096;
       const int warm = (int)(0.3 * kRate);
       const double cycles = std::round(hz * kLen / kRate);
       std::vector<std::vector<float>> rendered;
