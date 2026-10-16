@@ -519,18 +519,4 @@ namespace Platform
    }
 
 #endif // INFINITE_ENABLE_VST3
-
-   // Defined outside the VST3 flag: Platform.h declares it for every build
-   // and the main loop uses it around glfwPollEvents().
-   PluginGlGuard::PluginGlGuard()
-      : dc_((void*)wglGetCurrentDC())
-      , rc_((void*)wglGetCurrentContext())
-   {
-   }
-
-   PluginGlGuard::~PluginGlGuard()
-   {
-      if (wglGetCurrentContext() != (HGLRC)rc_ || wglGetCurrentDC() != (HDC)dc_)
-         wglMakeCurrent((HDC)dc_, (HGLRC)rc_);
-   }
 }

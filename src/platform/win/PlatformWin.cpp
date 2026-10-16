@@ -1525,4 +1525,19 @@ namespace Platform
       if (hIconSmall != nullptr)
          SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
    }
+
+   // Defined here, not in PluginHostWin.cpp: infinite-vst3-scanner compiles
+   // PluginVST3Win.cpp and PlatformWin.cpp but not PluginHostWin.cpp. Platform.h
+   // declares it for every build; the main loop uses it around glfwPollEvents().
+   PluginGlGuard::PluginGlGuard()
+      : dc_((void*)wglGetCurrentDC())
+      , rc_((void*)wglGetCurrentContext())
+   {
+   }
+
+   PluginGlGuard::~PluginGlGuard()
+   {
+      if (wglGetCurrentContext() != (HGLRC)rc_ || wglGetCurrentDC() != (HDC)dc_)
+         wglMakeCurrent((HDC)dc_, (HGLRC)rc_);
+   }
 }
