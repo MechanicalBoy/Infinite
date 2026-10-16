@@ -787,6 +787,17 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       return;
    }
 
+   // Frame jobs hold the clock at zero from the first tick: the probe/load ticks and the warm-up cook the
+   // graph too, and a wall-clock frame in a history node (Time Machine ring, Trails) makes two renders differ.
+   const bool videoJob = job.mode == Headless::Mode::Frame || job.mode == Headless::Mode::Frames;
+   static bool sClockHeld = false;
+   if (videoJob && !sClockHeld)
+   {
+      sClockHeld = true;
+      Transport::Instance().SetOfflineMode(true, gHeadlessAudioRate);
+      Transport::Instance().SetOfflineVideoTime(0.0);
+   }
+
    if (gHeadlessNeedProbe)
    {
       // The file names controls (`mod 5 radius ...`) or dropdown options (`i shapeType Star`).
@@ -1119,7 +1130,8 @@ void HeadlessTick(int& frameId, GLFWwindow* window)
       }
       if (++sTicks < 3)
          return;
-      Transport::Instance().SetOfflineMode(false);
+      if (!videoJob)
+         Transport::Instance().SetOfflineMode(false);
       // The parameter-index check below needs every node a mod/expr line
       // drives to have drawn (it registers its parameters by drawing). They
       // are param-driven, so the cull never skips them; this only guards a
