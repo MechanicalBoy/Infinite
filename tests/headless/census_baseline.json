@@ -21,7 +21,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Circle",
@@ -29,7 +29,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Ellipse",
@@ -37,7 +37,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Rectangle",
@@ -45,7 +45,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Rounded Rect",
@@ -53,7 +53,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Triangle",
@@ -61,7 +61,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Polygon",
@@ -69,7 +69,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Star",
@@ -77,7 +77,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Ring",
@@ -85,7 +85,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.04
+  "render_vs_frame": 0.01
  },
  {
   "type": "Cross",
@@ -93,7 +93,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Line",
@@ -101,7 +101,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Hexagon",
@@ -109,7 +109,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Heart",
@@ -117,7 +117,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Arrow",
@@ -125,7 +125,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Crescent",
@@ -133,7 +133,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Gear",
@@ -141,7 +141,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Superellipse",
@@ -149,7 +149,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Pie",
@@ -157,7 +157,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Teardrop",
@@ -165,7 +165,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Chevron",
@@ -173,7 +173,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Blob",
@@ -181,7 +181,7 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.01
  },
  {
   "type": "Formula",
@@ -197,7 +197,15 @@
   "out": "image",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.84
+  "render_vs_frame": 0.87
+ },
+ {
+  "type": "Sketch",
+  "cat": "Source",
+  "out": "image",
+  "issues": [],
+  "animates": true,
+  "render_vs_frame": 0.08
  },
  {
   "type": "Text",
@@ -276,6 +284,15 @@
   "animates": false
  },
  {
+  "type": "NDI In",
+  "cat": "Utility",
+  "out": "image",
+  "issues": [
+   "render:E_HARDWARE_SOURCE"
+  ],
+  "animates": false
+ },
+ {
   "type": "Output",
   "cat": "Utility",
   "out": "image",
@@ -285,6 +302,14 @@
  },
  {
   "type": "Syphon Out",
+  "cat": "Utility",
+  "out": "image",
+  "issues": [],
+  "animates": true,
+  "render_vs_frame": 0.23
+ },
+ {
+  "type": "NDI Out",
   "cat": "Utility",
   "out": "image",
   "issues": [],
@@ -305,7 +330,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "OSC Send",
@@ -329,8 +354,8 @@
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.853
+  "render_vs_frame": 0.0,
+  "peak": 0.806
  },
  {
   "type": "Audio Meter",
@@ -338,8 +363,8 @@
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.853
+  "render_vs_frame": 0.0,
+  "peak": 0.806
  },
  {
   "type": "Audio In",
@@ -366,8 +391,16 @@
    "clips"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 6.827
+  "render_vs_frame": 0.0,
+  "peak": 6.451
+ },
+ {
+  "type": "Spatial Mixer",
+  "cat": "Utility",
+  "out": "image",
+  "issues": [
+   "frame:E_RENDER"
+  ]
  },
  {
   "type": "Splitter",
@@ -375,8 +408,8 @@
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.853
+  "render_vs_frame": 0.0,
+  "peak": 0.806
  },
  {
   "type": "Blend Audio",
@@ -386,8 +419,16 @@
    "clips"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.207
+  "render_vs_frame": 0.0,
+  "peak": 1.14
+ },
+ {
+  "type": "MIDI Out",
+  "cat": "Utility",
+  "out": "image",
+  "issues": [
+   "frame:E_RENDER"
+  ]
  },
  {
   "type": "Geometry",
@@ -443,7 +484,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.45
+  "render_vs_frame": 0.44
  },
  {
   "type": "Cone",
@@ -451,7 +492,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.42
+  "render_vs_frame": 0.39
  },
  {
   "type": "Torus Knot",
@@ -459,7 +500,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.52
+  "render_vs_frame": 0.54
  },
  {
   "type": "Capsule",
@@ -483,7 +524,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.44
+  "render_vs_frame": 0.45
  },
  {
   "type": "Prism",
@@ -491,7 +532,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.46
+  "render_vs_frame": 0.44
  },
  {
   "type": "Helix",
@@ -499,7 +540,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.52
+  "render_vs_frame": 0.51
  },
  {
   "type": "Supershape",
@@ -587,7 +628,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.42
+  "render_vs_frame": 0.4
  },
  {
   "type": "Model 3D",
@@ -619,7 +660,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.41
+  "render_vs_frame": 0.66
  },
  {
   "type": "Material",
@@ -651,7 +692,7 @@
   "out": "geometry",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.33
+  "render_vs_frame": 0.39
  },
  {
   "type": "Mapping",
@@ -676,6 +717,22 @@
   "issues": [],
   "animates": false,
   "render_vs_frame": 0.46
+ },
+ {
+  "type": "Rigid Bodies",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.42
+ },
+ {
+  "type": "L-System",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.44
  },
  {
   "type": "Join Geometry",
@@ -739,7 +796,7 @@
   "out": "geometry",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.37
+  "render_vs_frame": 0.38
  },
  {
   "type": "Curve",
@@ -747,7 +804,7 @@
   "out": "geometry",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.42
+  "render_vs_frame": 0.44
  },
  {
   "type": "Mesh to Points",
@@ -918,12 +975,36 @@
   "render_vs_frame": 0.33
  },
  {
+  "type": "Decimate",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.43
+ },
+ {
+  "type": "Bevel",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.43
+ },
+ {
+  "type": "Inset",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.43
+ },
+ {
   "type": "Instance on Points",
   "cat": "3D",
   "out": "geometry",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.56
+  "render_vs_frame": 0.61
  },
  {
   "type": "Set Vertex Color",
@@ -958,6 +1039,14 @@
   "render_vs_frame": 0.75
  },
  {
+  "type": "Sketch 3D",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": true,
+  "render_vs_frame": 0.69
+ },
+ {
   "type": "Distribute Points on Faces",
   "cat": "3D",
   "out": "geometry",
@@ -972,6 +1061,54 @@
   "issues": [],
   "animates": false,
   "render_vs_frame": 0.35
+ },
+ {
+  "type": "Proximity Lines",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.68
+ },
+ {
+  "type": "Curve Ops",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.33
+ },
+ {
+  "type": "Sweep",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.33
+ },
+ {
+  "type": "Revolve",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.33
+ },
+ {
+  "type": "Delaunay Mesh",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.33
+ },
+ {
+  "type": "Voronoi Cells",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.33
  },
  {
   "type": "Distribute Points in Grid",
@@ -998,12 +1135,20 @@
   "render_vs_frame": 0.43
  },
  {
+  "type": "Group 3D",
+  "cat": "3D",
+  "out": "geometry",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.43
+ },
+ {
   "type": "Camera",
   "cat": "3D",
   "out": "camera",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.43
  },
  {
   "type": "Light",
@@ -1011,7 +1156,7 @@
   "out": "light",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.43
  },
  {
   "type": "HDRI",
@@ -1043,7 +1188,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.24
+  "render_vs_frame": 0.25
  },
  {
   "type": "boxblur",
@@ -1051,7 +1196,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.25
+  "render_vs_frame": 0.26
  },
  {
   "type": "motionblur",
@@ -1059,7 +1204,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.24
+  "render_vs_frame": 0.25
  },
  {
   "type": "radialblur",
@@ -1067,7 +1212,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.29
+  "render_vs_frame": 0.31
  },
  {
   "type": "unsharpmask",
@@ -1083,7 +1228,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "pinchpunch",
@@ -1091,7 +1236,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.3
+  "render_vs_frame": 0.31
  },
  {
   "type": "ripple",
@@ -1099,7 +1244,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "pixelate",
@@ -1107,7 +1252,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.26
+  "render_vs_frame": 0.22
  },
  {
   "type": "addnoise",
@@ -1117,7 +1262,7 @@
    "clock-suspect"
   ],
   "animates": true,
-  "render_vs_frame": 3.37
+  "render_vs_frame": 3.85
  },
  {
   "type": "vignette",
@@ -1125,7 +1270,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.31
+  "render_vs_frame": 0.44
  },
  {
   "type": "bloom",
@@ -1133,7 +1278,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "diffuseglow",
@@ -1141,7 +1286,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.15
+  "render_vs_frame": 0.36
  },
  {
   "type": "glitch",
@@ -1149,7 +1294,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.33
+  "render_vs_frame": 0.34
  },
  {
   "type": "lensdistortion",
@@ -1157,7 +1302,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "displace",
@@ -1165,7 +1310,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.25
+  "render_vs_frame": 0.26
  },
  {
   "type": "liquify",
@@ -1173,7 +1318,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "symmetry",
@@ -1213,7 +1358,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.03
+  "render_vs_frame": 0.51
  },
  {
   "type": "normal map",
@@ -1221,7 +1366,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.19
+  "render_vs_frame": 0.52
  },
  {
   "type": "convolve",
@@ -1253,7 +1398,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.22
+  "render_vs_frame": 0.23
  },
  {
   "type": "Fit",
@@ -1301,7 +1446,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.93
+  "render_vs_frame": 0.24
  },
  {
   "type": "Color Ramp",
@@ -1309,7 +1454,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.67
+  "render_vs_frame": 0.79
  },
  {
   "type": "Remove Background",
@@ -1325,7 +1470,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.22
  },
  {
   "type": "Trails",
@@ -1334,6 +1479,40 @@
   "issues": [],
   "animates": true,
   "render_vs_frame": 0.24
+ },
+ {
+  "type": "Optical Flow",
+  "cat": "Compositing",
+  "out": "image",
+  "issues": [],
+  "animates": true,
+  "render_vs_frame": 1.79
+ },
+ {
+  "type": "Time Machine",
+  "cat": "Compositing",
+  "out": "image",
+  "issues": [],
+  "animates": true,
+  "render_vs_frame": 0.31
+ },
+ {
+  "type": "Fluid",
+  "cat": "Compositing",
+  "out": "image",
+  "issues": [
+   "nondeterministic"
+  ],
+  "animates": true,
+  "render_vs_frame": 1.24
+ },
+ {
+  "type": "Volume",
+  "cat": "Compositing",
+  "out": "image",
+  "issues": [],
+  "animates": true,
+  "render_vs_frame": 0.58
  },
  {
   "type": "Reaction Diffusion",
@@ -1349,7 +1528,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "Layer Stack",
@@ -1357,7 +1536,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "Switcher",
@@ -1389,7 +1568,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.14
+  "render_vs_frame": 0.18
  },
  {
   "type": "posterize",
@@ -1397,7 +1576,17 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.18
+  "render_vs_frame": 0.19
+ },
+ {
+  "type": "dither",
+  "cat": "Compositing",
+  "out": "image",
+  "issues": [
+   "clock-suspect"
+  ],
+  "animates": true,
+  "render_vs_frame": 4.99
  },
  {
   "type": "threshold",
@@ -1413,7 +1602,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "show alpha",
@@ -1509,7 +1698,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.49
+  "render_vs_frame": 0.64
  },
  {
   "type": "color adjustments",
@@ -1525,7 +1714,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.23
+  "render_vs_frame": 0.24
  },
  {
   "type": "coloroverlay",
@@ -1533,7 +1722,7 @@
   "out": "image",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.13
+  "render_vs_frame": 0.23
  },
  {
   "type": "dropshadow",
@@ -1549,7 +1738,7 @@
   "out": "modulator",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Random",
@@ -1557,7 +1746,7 @@
   "out": "modulator",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Pattern",
@@ -1565,7 +1754,7 @@
   "out": "modulator",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.03
+  "render_vs_frame": 0.01
  },
  {
   "type": "Math",
@@ -1573,7 +1762,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Compare",
@@ -1581,7 +1770,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Range to Range",
@@ -1589,7 +1778,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Smoothing",
@@ -1597,7 +1786,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Invert",
@@ -1605,7 +1794,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Mod Depth",
@@ -1613,7 +1802,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Mod Curve",
@@ -1621,7 +1810,31 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
+ },
+ {
+  "type": "MSEG",
+  "cat": "Modulators",
+  "out": "modulator",
+  "issues": [],
+  "animates": true,
+  "render_vs_frame": 0.0
+ },
+ {
+  "type": "Voice Spread",
+  "cat": "Modulators",
+  "out": "modulator",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0
+ },
+ {
+  "type": "Note Expression",
+  "cat": "Modulators",
+  "out": "modulator",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0
  },
  {
   "type": "CV to Pitch",
@@ -1629,7 +1842,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "MIDI CC",
@@ -1655,7 +1868,7 @@
   "out": "modulator",
   "issues": [],
   "animates": true,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Geometry Table",
@@ -1663,7 +1876,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Constant",
@@ -1671,7 +1884,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Null Modulator",
@@ -1679,7 +1892,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Image Analyze",
@@ -1687,7 +1900,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Hand Track",
@@ -1695,7 +1908,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Face Track",
@@ -1703,7 +1916,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Pose Track",
@@ -1711,7 +1924,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Palette",
@@ -1719,7 +1932,7 @@
   "out": "palette",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.43
  },
  {
   "type": "Audio File",
@@ -1729,7 +1942,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -1738,7 +1951,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Vibrato",
@@ -1746,7 +1959,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Envelope",
@@ -1754,18 +1967,17 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Note to CV",
   "cat": "Modulators",
   "out": "modulator",
   "issues": [
-   "nondeterministic",
-   "clock-suspect"
+   "nondeterministic"
   ],
   "animates": false,
-  "render_vs_frame": 12.71
+  "render_vs_frame": 0.0
  },
  {
   "type": "Velocity to CV",
@@ -1773,7 +1985,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "CV Recorder",
@@ -1781,7 +1993,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Audio to CV",
@@ -1789,29 +2001,25 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Drift",
   "cat": "Prediction",
   "out": "predictor",
-  "issues": [
-   "nondeterministic",
-   "clock-suspect"
-  ],
+  "issues": [],
   "animates": true,
-  "render_vs_frame": 8.04
+  "render_vs_frame": 0.0
  },
  {
   "type": "Moves",
   "cat": "Prediction",
   "out": "predictor",
   "issues": [
-   "nondeterministic",
-   "clock-suspect"
+   "nondeterministic"
   ],
   "animates": true,
-  "render_vs_frame": 37.14
+  "render_vs_frame": 0.06
  },
  {
   "type": "Predictive Modulator",
@@ -1819,7 +2027,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Predictive Coloring",
@@ -1837,7 +2045,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -1846,8 +2054,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.669
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Predictive Velocity",
@@ -1855,8 +2063,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.776
+  "render_vs_frame": 0.0,
+  "peak": 0.654
  },
  {
   "type": "Predictive Rhythm",
@@ -1866,7 +2074,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -1875,7 +2083,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Macro Slider",
@@ -1883,7 +2091,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Macro Bipolar Knob",
@@ -1891,7 +2099,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Macro XY",
@@ -1899,7 +2107,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02
+  "render_vs_frame": 0.0
  },
  {
   "type": "Macro Toggle",
@@ -1907,7 +2115,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Macro Trigger",
@@ -1915,7 +2123,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Macro NumBox",
@@ -1923,7 +2131,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Macro Radio Selector",
@@ -1931,7 +2139,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Macro Step Gate",
@@ -1939,7 +2147,7 @@
   "out": "modulator",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.01
+  "render_vs_frame": 0.0
  },
  {
   "type": "Oscillator",
@@ -1947,8 +2155,8 @@
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.677
+  "render_vs_frame": 0.0,
+  "peak": 0.65
  },
  {
   "type": "Wavetable",
@@ -1956,19 +2164,48 @@
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.501
+  "render_vs_frame": 0.0,
+  "peak": 0.547
  },
  {
   "type": "Analog",
+  "cat": "Synths",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.865
+ },
+ {
+  "type": "FM",
   "cat": "Synths",
   "out": "audio",
   "issues": [
    "clips"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.383
+  "render_vs_frame": 0.0,
+  "peak": 1.648
+ },
+ {
+  "type": "Partials",
+  "cat": "Synths",
+  "out": "audio",
+  "issues": [
+   "silent"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.0
+ },
+ {
+  "type": "String",
+  "cat": "Synths",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.32
  },
  {
   "type": "Wave Terrain",
@@ -1978,8 +2215,8 @@
    "clips"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.08
+  "render_vs_frame": 0.0,
+  "peak": 1.65
  },
  {
   "type": "Equation Synth",
@@ -1987,8 +2224,8 @@
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.724
+  "render_vs_frame": 0.0,
+  "peak": 0.982
  },
  {
   "type": "Spectral Synth",
@@ -1996,17 +2233,19 @@
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.095
+  "render_vs_frame": 0.0,
+  "peak": 0.099
  },
  {
   "type": "Metallic",
   "cat": "Synths",
   "out": "audio",
-  "issues": [],
+  "issues": [
+   "clips"
+  ],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.998
+  "render_vs_frame": 0.0,
+  "peak": 1.132
  },
  {
   "type": "Sampler",
@@ -2016,7 +2255,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -2027,7 +2266,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -2038,7 +2277,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -2049,7 +2288,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -2060,7 +2299,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -2071,7 +2310,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -2080,8 +2319,8 @@
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.915
+  "render_vs_frame": 0.0,
+  "peak": 0.649
  },
  {
   "type": "Drum Sequencer",
@@ -2091,251 +2330,37 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
-  "type": "Field Effect",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.991
- },
- {
-  "type": "Plugin",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.853
- },
- {
-  "type": "Audio Filter",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.664
- },
- {
-  "type": "EQ",
-  "cat": "AudioEffects",
+  "type": "MPC",
+  "cat": "Synths",
   "out": "audio",
   "issues": [
-   "clips"
+   "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.57
+  "render_vs_frame": 0.0,
+  "peak": 0.0
  },
  {
-  "type": "Dynamics",
-  "cat": "AudioEffects",
+  "type": "Looper",
+  "cat": "Synths",
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.592
+  "render_vs_frame": 0.0,
+  "peak": 0.806
  },
  {
-  "type": "Limiter",
-  "cat": "AudioEffects",
-  "out": "audio",
+  "type": "Field Notes",
+  "cat": "Notes",
+  "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.884
- },
- {
-  "type": "Delay",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.83
- },
- {
-  "type": "Reverb",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.882
- },
- {
-  "type": "Drive",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [
-   "clips"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.581
- },
- {
-  "type": "Stereo",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [
-   "clips"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.207
- },
- {
-  "type": "Pitch Shifter",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.105
- },
- {
-  "type": "Chorus",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.758
- },
- {
-  "type": "Flanger",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [
-   "clips"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.417
- },
- {
-  "type": "Phaser",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [
-   "clips"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.112
- },
- {
-  "type": "Bitcrush",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.971
- },
- {
-  "type": "Transient Shaper",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.853
- },
- {
-  "type": "Stutter",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.864
- },
- {
-  "type": "Ring Mod",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.824
- },
- {
-  "type": "Frequency Shifter",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [
-   "clips"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.308
- },
- {
-  "type": "Tremolo",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.823
- },
- {
-  "type": "Formant Filter",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [
-   "clips"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 5.442
- },
- {
-  "type": "Wavetable Shaper",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [
-   "clips"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 1.92
- },
- {
-  "type": "Resonator Bank",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [
-   "clips"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 2.418
- },
- {
-  "type": "Cycle Shaper",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.798
- },
- {
-  "type": "Spec Blur",
-  "cat": "AudioEffects",
-  "out": "audio",
-  "issues": [],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.595
+  "render_vs_frame": 0.0,
+  "peak": 0.613
  },
  {
   "type": "MIDI Notes",
@@ -2354,7 +2379,7 @@
    "silent"
   ],
   "animates": false,
-  "render_vs_frame": 0.02,
+  "render_vs_frame": 0.0,
   "peak": 0.0
  },
  {
@@ -2363,8 +2388,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.677
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Note Transpose",
@@ -2372,8 +2397,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.672
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Pitch Bend",
@@ -2381,8 +2406,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.754
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Velocity Curve",
@@ -2390,8 +2415,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.672
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Gate",
@@ -2399,8 +2424,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.677
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Humanizer",
@@ -2408,8 +2433,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.725
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Quantizer",
@@ -2417,8 +2442,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.677
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Glide",
@@ -2426,8 +2451,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.754
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Note Echo",
@@ -2435,8 +2460,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.754
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Note Router",
@@ -2444,8 +2469,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.675
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Note Merge",
@@ -2453,8 +2478,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.677
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Note Switcher",
@@ -2462,8 +2487,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.677
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Arpeggiator",
@@ -2471,8 +2496,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.672
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Note Sequencer",
@@ -2480,8 +2505,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.559
+  "render_vs_frame": 0.0,
+  "peak": 0.477
  },
  {
   "type": "Random Note Generator",
@@ -2489,8 +2514,19 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.754
+  "render_vs_frame": 0.0,
+  "peak": 0.674
+ },
+ {
+  "type": "MIDI File",
+  "cat": "Notes",
+  "out": "note",
+  "issues": [
+   "silent"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.0
  },
  {
   "type": "Chorder",
@@ -2498,8 +2534,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.762
+  "render_vs_frame": 0.0,
+  "peak": 0.867
  },
  {
   "type": "Note Stack",
@@ -2507,8 +2543,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.677
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Note Capturer",
@@ -2516,8 +2552,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.677
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
   "type": "Bouncing Balls",
@@ -2525,8 +2561,8 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.587
+  "render_vs_frame": 0.0,
+  "peak": 0.791
  },
  {
   "type": "Note Strum",
@@ -2534,27 +2570,297 @@
   "out": "note",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.672
+  "render_vs_frame": 0.0,
+  "peak": 0.674
  },
  {
-  "type": "MPC",
-  "cat": "Synths",
-  "out": "audio",
-  "issues": [
-   "silent"
-  ],
-  "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.0
- },
- {
-  "type": "Looper",
-  "cat": "Synths",
+  "type": "Field Effect",
+  "cat": "AudioEffects",
   "out": "audio",
   "issues": [],
   "animates": false,
-  "render_vs_frame": 0.02,
-  "peak": 0.853
+  "render_vs_frame": 0.0,
+  "peak": 0.98
+ },
+ {
+  "type": "Plugin",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.806
+ },
+ {
+  "type": "Audio Filter",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.733
+ },
+ {
+  "type": "EQ",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.806
+ },
+ {
+  "type": "Dynamics",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.806
+ },
+ {
+  "type": "Limiter",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.806
+ },
+ {
+  "type": "Delay",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.16
+ },
+ {
+  "type": "Reverb",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.041
+ },
+ {
+  "type": "Drive",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.4
+ },
+ {
+  "type": "Saturator",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.78
+ },
+ {
+  "type": "Stereo",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.806
+ },
+ {
+  "type": "Pitch Shifter",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.806
+ },
+ {
+  "type": "Chorus",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.72
+ },
+ {
+  "type": "Flanger",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.781
+ },
+ {
+  "type": "Phaser",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.692
+ },
+ {
+  "type": "Bitcrush",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.929
+ },
+ {
+  "type": "Transient Shaper",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.806
+ },
+ {
+  "type": "Stutter",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.789
+ },
+ {
+  "type": "Ring Mod",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.683
+ },
+ {
+  "type": "Frequency Shifter",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.352
+ },
+ {
+  "type": "Tremolo",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.757
+ },
+ {
+  "type": "Formant Filter",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 2.132
+ },
+ {
+  "type": "Wavetable Shaper",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.891
+ },
+ {
+  "type": "Resonator Bank",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.703
+ },
+ {
+  "type": "Cycle Shaper",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.754
+ },
+ {
+  "type": "Spec Blur",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.587
+ },
+ {
+  "type": "Key-Snap",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.298
+ },
+ {
+  "type": "Spectrum Slide",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.947
+ },
+ {
+  "type": "Shape Resonator",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [
+   "clips"
+  ],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 1.422
+ },
+ {
+  "type": "Convolution Reverb",
+  "cat": "AudioEffects",
+  "out": "audio",
+  "issues": [],
+  "animates": false,
+  "render_vs_frame": 0.0,
+  "peak": 0.964
  }
 ]
