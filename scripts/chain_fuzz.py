@@ -91,6 +91,114 @@ class Gen:
         unconnected = {i: rnd.random() < 0.3 for i in range(len(names))}
         return {"names": names, "extras": extras, "sets": sets, "unc": unconnected}
 
+    # ---- branching topologies: split one output into parallel paths and merge them again --------------------
+    MAX_NODES = 12
+
+    def merges(self, kind):
+        """Types whose output is `kind` and that take two or more inputs of `kind` (a mixer, a join, a blend)."""
+        return [n for n, t in sorted(self.types.items())
+                if t["outputs"] and t["outputs"][0]["kind"] == kind and sum(1 for i in t["inputs"] if i["kind"] == kind) >= 2]
+
+    def preserving(self, kind):
+        return [n for n, t in sorted(self.types.items())
+                if t["outputs"] and t["outputs"][0]["kind"] == kind and any(i["kind"] == kind for i in t["inputs"])]
+
+    def split(self, rnd, kind, depth, budget):
+        """("split", branches, merge type, open): 2-4 parallel paths of 0-2 same-kind nodes, joined by a merge node."""
+        m = rnd.choice(self.merges(kind))
+        slots = sum(1 for i in self.types[m]["inputs"] if i["kind"] == kind)
+        branches = []
+        for _ in range(min(rnd.choice([2, 2, 3, 4]), slots)):
+            b = []
+            for _ in range(rnd.choice([0, 1, 1, 2, 2])):
+                if budget[0] <= 1:
+                    break
+                if depth > 0 and budget[0] >= 6 and rnd.random() < 0.2:
+                    b.append(self.split(rnd, kind, depth - 1, budget))
+                else:
+                    b.append(("node", rnd.choice(self.preserving(kind))))
+                    budget[0] -= 1
+            branches.append(b)
+        budget[0] -= 1  # the merge node
+        return ("split", branches, m, rnd.random() < 0.10)  # open: the last path is left dangling
+
+    def plan(self, rnd):
+        budget = [self.MAX_NODES - 1]
+        head = rnd.choice([n for n, t in sorted(self.types.items()) if t["outputs"] and t["outputs"][0]["kind"] in CHAIN_KINDS])
+        stages, kind = [("node", head)], self.types[head]["outputs"][0]["kind"]
+        for _ in range(rnd.choice([1, 2, 2, 3])):
+            if budget[0] <= 1:
+                break
+            if kind in CHAIN_KINDS and self.merges(kind) and budget[0] >= 4 and rnd.random() < 0.6:
+                stages.append(self.split(rnd, kind, 1, budget))
+                continue
+            nxt = [n for n in self.by_in.get(kind, []) if self.types[n]["outputs"] and self.types[n]["outputs"][0]["kind"] in CHAIN_KINDS]
+            if not nxt:
+                break
+            n = rnd.choice(nxt)
+            stages.append(("node", n))
+            budget[0] -= 1
+            kind = self.types[n]["outputs"][0]["kind"]
+        return stages
+
+    def mods(self, rnd, names):
+        """0-3 modulators, each bound to a float parameter of a chain node or of an earlier modulator."""
+        srcs = [n for n, t in sorted(self.types.items())
+                if t["category"] == "Modulators" and t["outputs"] and t["outputs"][0]["kind"] == "modulator"]
+        out = []
+        for _ in range(rnd.choice([0, 1, 1, 2, 3])):
+            m = rnd.choice(srcs)
+            pool = [("n", i, names[i]) for i in range(len(names))] + [("m", j, o["type"]) for j, o in enumerate(out)]
+            kind, idx, tname = rnd.choice(pool if rnd.random() < 0.25 else pool[:len(names)])
+            rows = [r for r in self.types[tname].get("rows", [])
+                    if r.get("kind") == "float" and r.get("modulatable_index") is not None and r.get("min") is not None and r.get("max") is not None]
+            if not rows:
+                continue
+            r = rnd.choice(rows)
+            out.append({"type": m, "on": [kind, idx], "key": r["key"], "lo": r["min"], "hi": r["max"],
+                        "pol": rnd.choice([0, 1]), "depth": round(rnd.uniform(0.2, 1.0), 3), "centre": rnd.choice([0.0, 0.5])})
+        return out
+
+    def graph_spec(self, rnd):
+        stages = self.plan(rnd)
+        names = flatten(stages)
+        sp = self.spec(rnd, names)
+        sp.update({"plan": stages, "mods": self.mods(rnd, names), "label": plan_str(stages)})
+        return sp
+
+
+def flatten(stages):
+    out = []
+    for st in stages:
+        if st[0] == "node":
+            out.append(st[1])
+        else:
+            for b in st[1]:
+                out += flatten(b)
+            out.append(st[2])
+    return out
+
+
+def plan_str(stages):
+    parts = []
+    for st in stages:
+        if st[0] == "node":
+            parts.append(st[1])
+        else:
+            paths = [plan_str(b) or "(direct)" for b in st[1]]
+            if st[3]:
+                paths[-1] += " (open)"
+            parts.append("{" + " | ".join(paths) + "} > " + st[2])
+    return " > ".join(parts)
+
+
+def respec(types, sp, plan=None, mods=None):
+    """The same patch with a different plan or modulator list; names, sets and the label follow from it."""
+    plan = sp["plan"] if plan is None else plan
+    names = flatten(plan)
+    return dict(sp, plan=plan, names=names, label=plan_str(plan), mods=sp["mods"] if mods is None else mods,
+                sets=[x for x in sp["sets"] if x[0] < len(names)])
+
 
 def build(types, spec):
     """(patch text, sink kind, node ids of the chain nodes in order)."""
@@ -135,6 +243,83 @@ def build(types, spec):
         elif ex[0] == "wrongkind" and len(ids) > 1:
             links.append(f"cable {ids[-1]} 0 {ids[0]}" if last != "image" else f"aud {ids[-1]} 0 {ids[0]}")
     sink = add_sink(add, links, last, ids[-1])
+    return "\n".join(lines + links) + "\n", last, ids
+
+
+def build_graph(types, spec):
+    """Like build(), for a branching plan: (patch text, sink kind, node ids of the chain nodes in emission order)."""
+    lines, links, nid, ids = ["infinite-patch 1"], [], [0], []
+
+    def add(node_spec, extra=""):
+        nid[0] += 1
+        lines.append(f"node {nid[0]} {node_spec}\n{extra}end")
+        return nid[0]
+
+    def feed_rest(me, t, used, fed):
+        for sl in t["inputs"]:
+            if sl["slot"] in used or sl["kind"] not in nc.FEED:
+                continue
+            if fed:
+                continue  # left unconnected on purpose
+            links.append(link(sl["kind"], me, sl["slot"], add(nc.FEED[sl["kind"]])))
+
+    def new_node(name, src, kind):
+        t = types[name]
+        me = add(f"{t['category']} {name}")
+        ids.append(me)
+        used = set()
+        if src is not None:
+            slot = [x["slot"] for x in t["inputs"] if x["kind"] == kind][0]
+            links.append(link(kind, me, slot, src))
+            used.add(slot)
+        feed_rest(me, t, used, src is not None and spec["unc"].get(len(ids) - 1))
+        return me
+
+    def emit(stages, src, kind):
+        for st in stages:
+            if st[0] == "node":
+                src, kind = new_node(st[1], src, kind), types[st[1]]["outputs"][0]["kind"]
+                continue
+            _, branches, mname, open_ = st
+            ends = [emit(b, src, kind)[0] for b in branches]
+            t = types[mname]
+            me = add(f"{t['category']} {mname}")
+            ids.append(me)
+            slots = [x["slot"] for x in t["inputs"] if x["kind"] == kind]
+            used = set()
+            for bi, e in enumerate(ends):
+                if bi < len(slots) and not (open_ and bi == len(ends) - 1):
+                    links.append(link(kind, me, slots[bi], e))
+                    used.add(slots[bi])
+            feed_rest(me, t, used, False)
+            src = me
+        return src, kind
+
+    end, last = emit(spec["plan"], None, None)
+    mod_ids = []
+    for m in spec["mods"]:
+        t = types[m["type"]]
+        mid = add(f"Modulators {m['type']}")
+        for sl in t["inputs"]:
+            if sl["kind"] in nc.FEED:
+                links.append(link(sl["kind"], mid, sl["slot"], add(nc.FEED[sl["kind"]])))
+        mod_ids.append(mid)
+        which, idx = m["on"]
+        dst = ids[idx] if which == "n" else mod_ids[idx]
+        links.append(f"mod {dst} {m['key']} {mid} 0 {m['pol']} {m['depth']} {m['centre']} {m['lo']} {m['hi']}")
+    for ex in spec["extras"]:
+        if ex[0] == "feedback" and len(ids) > 1:
+            m = [x for x in types[spec["names"][0]]["inputs"] if x["kind"] == last]
+            if m:
+                links.append(link(last, ids[0], m[0]["slot"], ids[-1]))
+        elif ex[0] == "fanout" and len(ids) > 1:
+            kind0 = types[spec["names"][0]]["outputs"][0]["kind"]
+            slots = [x["slot"] for x in types[spec["names"][-1]]["inputs"] if x["kind"] == kind0]
+            if slots:
+                links.append(link(kind0, ids[-1], slots[-1], ids[0]))
+        elif ex[0] == "wrongkind" and len(ids) > 1:
+            links.append(f"cable {end} 0 {ids[0]}" if last != "image" else f"aud {end} 0 {ids[0]}")
+    add_sink(add, links, last, end)
     return "\n".join(lines + links) + "\n", last, ids
 
 
@@ -232,6 +417,29 @@ class Runner:
         return "pass", ""
 
 
+def label_of(spec):
+    return spec.get("label") or ">".join(spec["names"])
+
+
+def shrink_candidates(types, spec):
+    """Simpler versions of a failing patch, simplest first. Linear specs: the shortest prefixes, as before."""
+    if "plan" not in spec:
+        for k in range(2, len(spec["names"])):
+            yield dict(spec, names=spec["names"][:k], sets=[x for x in spec["sets"] if x[0] < k])
+        return
+    plan = spec["plan"]
+    if spec["mods"]:
+        yield respec(types, spec, mods=[])
+    if any(st[0] == "split" for st in plan):
+        lin = []
+        for st in plan:
+            lin += [("node", n) for n in flatten(st[1][0])] if st[0] == "split" else [st]
+        if len(flatten(lin)) >= 2:
+            yield respec(types, spec, plan=lin, mods=[])
+    for k in range(2, len(plan)):
+        yield respec(types, spec, plan=plan[:k], mods=[])
+
+
 def re_names(text):
     return [ln.split(" ", 3)[3] for ln in text.splitlines() if ln.startswith("node ") and len(ln.split(" ", 3)) == 4]
 
@@ -256,6 +464,9 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--timeout", type=int, default=60)
     ap.add_argument("--replay")
+    ap.add_argument("--shape", choices=["linear", "graph"], default="graph",
+                    help="linear: the original A>B>C chains (seed 7 reproduces the old set); graph: split, merge, modulators")
+    ap.add_argument("--dry", action="store_true", help="only generate and --validate; print each chain")
     a = ap.parse_args()
     os.makedirs(os.path.join(a.out, "fail"), exist_ok=True)
 
@@ -271,6 +482,12 @@ def main():
         jobs.append(("replay", gen.spec(random.Random(a.seed), names)))
     else:
         for i in range(a.n):
+            if a.shape == "graph":
+                rnd = random.Random(f"g{a.seed}:{i}")
+                sp = gen.graph_spec(rnd)
+                if len(sp["names"]) >= 2:
+                    jobs.append((f"g{a.seed}-{i}", sp))
+                continue
             rnd = random.Random(f"{a.seed}:{i}")
             names = gen.chain(rnd, rnd.choice([2, 2, 3, 3, 4]))
             if len(names) >= 2:
@@ -280,23 +497,30 @@ def main():
     for jid, spec in jobs:
         if jid in done:
             continue
-        text, kind, ids = build(types, spec)
+        builder = build_graph if "plan" in spec else build
+        text, kind, ids = builder(types, spec)
+        if a.dry:
+            pf = os.path.join(a.out, "dry.inf")
+            open(pf, "w").write(text)
+            rc, j = runner.run(["--validate", pf])
+            status, detail = ("pass", "") if rc == 0 else ("refused" if rc == 3 else "fail", f"rc={rc} {codes(j)}")
+            print(f"{jid:12s} {status:8s} {spec.get('label') or '>'.join(spec['names'])}  mods={len(spec.get('mods', []))} {detail}", flush=True)
+            counts[status] += 1
+            continue
         status, detail = runner.execute(text, kind, spec["sets"], ids, jid, known)
-        if status == "fail":  # shrink to the shortest failing prefix
-            for k in range(2, len(spec["names"])):
-                sub = dict(spec, names=spec["names"][:k], sets=[s for s in spec["sets"] if s[0] < k],
-                           extras=spec["extras"], unc=spec["unc"])
-                t2, k2, i2 = build(types, sub)
+        if status == "fail":  # shrink: drop modulators, collapse splits, then the shortest failing prefix
+            for sub in shrink_candidates(types, spec):
+                t2, k2, i2 = builder(types, sub)
                 s2, d2 = runner.execute(t2, k2, sub["sets"], i2, jid + "-min", known)
                 if s2 == "fail":
                     spec, text, status, detail = sub, t2, s2, d2
                     break
             open(os.path.join(a.out, "fail", jid + ".inf"), "w").write(text)
-            fails.append((jid, ">".join(spec["names"]), detail, spec))
+            fails.append((jid, label_of(spec), detail, spec))
         counts[status] += 1
-        log.write("\t".join([jid, status, ">".join(spec["names"]), json.dumps(spec["extras"]), json.dumps(spec["sets"]), detail]) + "\n")
+        log.write("\t".join([jid, status, label_of(spec), json.dumps(spec["extras"]), json.dumps(spec["sets"]), detail]) + "\n")
         log.flush()
-        print(f"{jid:12s} {status:8s} {'>'.join(spec['names'])}  {detail}", flush=True)
+        print(f"{jid:12s} {status:8s} {label_of(spec)}  {detail}", flush=True)
 
     print(f"\nchains: {sum(counts.values())}  pass {counts['pass']}  refused {counts['refused']}  FAIL {counts['fail']}")
     for jid, chain, detail, spec in fails:
