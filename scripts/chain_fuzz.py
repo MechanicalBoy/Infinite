@@ -197,6 +197,9 @@ class Runner:
                 rc, j = self.run(["--frame", pf, "0.5", os.path.join(d, f"f{rep}") + "/"] + setargs)
             if rc in REFUSED_EXIT:
                 return "refused", REFUSED_EXIT[rc] + ":" + codes(j)
+            # An Output fed by a node with no image says so with E_RENDER; that is the right answer, not a bug.
+            if rc == 5 and "produced no image" in json.dumps(j):
+                return "refused", "no-image:" + codes(j)
             if rc != 0:
                 why = "TIMEOUT" if rc == "timeout" else (f"signal {-rc}" if isinstance(rc, int) and rc < 0 else f"exit {rc}")
                 return "fail", f"{why} {codes(j)}"
