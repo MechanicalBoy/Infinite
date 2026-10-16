@@ -501,22 +501,45 @@ namespace app
       ModSlider("wind z", &n->windZ, -2.0f, 2.0f);
       ModSlider("speed", &n->speed, 0.0f, 4.0f);
       ColorSwatch("colour", n->color, n);
-      ColorSwatch("light colour", n->lightColor, n);
-      ModSlider("light azimuth", &n->lightAzimuth, -180.0f, 180.0f, "%.0f");
-      ModSlider("light elevation", &n->lightElevation, -90.0f, 90.0f, "%.0f");
-      ModSlider("light", &n->lightIntensity, 0.0f, 4.0f);
-      ModSlider("ambient", &n->ambient, 0.0f, 2.0f);
-      ModSlider("scatter", &n->scatter, 0.0f, 1.0f);
-      ModSlider("anisotropy", &n->anisotropy, -0.9f, 0.9f);
-      ModSliderInt("light steps", &n->lightSteps, 0, 16);
-      ModSliderInt("steps", &n->steps, 8, 256);
-      ModSliderInt("render steps", &n->renderSteps, 16, 512);
-      ModSlider("max distance", &n->maxDistance, 1.0f, 100.0f, "%.0f");
-      ImGui::TextDisabled("own camera (no Render 3D input):");
-      ModSlider("cam azimuth", &n->camAzimuth, -180.0f, 180.0f, "%.0f");
-      ModSlider("cam elevation", &n->camElevation, -89.0f, 89.0f, "%.0f");
-      ModSlider("cam distance", &n->camDistance, 0.5f, 30.0f);
-      ModSlider("fov", &n->fov, 10.0f, 120.0f, "%.0f");
+      // Lighting, quality and the own-camera rows sit behind "show more" (GraphNode::showAdvancedParams, saved
+      // with the patch). They are still registered in the same order, so indices, modulation, expressions and
+      // the matrix are unchanged; a folded row with a cable, expression or palette binding opens the section.
+      {
+         constexpr int kFoldedParams = 14; // light azimuth .. fov
+         GraphNode* gn = FindNodeByIndex(gCurrentNodeIndex);
+         const bool savedRegisterOnly = gParamRegisterOnly;
+         const bool pinned = gn != nullptr && gn->showAdvancedParams;
+         bool inUse = PaletteBinding::Instance().IsBound(gCurrentNodeIndex, gColorCounter);
+         for (int k = 0; k < kFoldedParams && !inUse; k++)
+            inUse = Modulation::Instance().IsModulated(gCurrentNodeIndex, gParamCounter + k) ||
+                    Modulation::Instance().HasExpression(gCurrentNodeIndex, gParamCounter + k);
+         const bool open = pinned || inUse;
+         ImGui::PushID("showMoreVolume");
+         if (ActionButton::Column(inUse && !pinned ? "show more (in use)" : open ? "show less" : "show more",
+                                  kParamWidth) &&
+             gn != nullptr)
+            gn->showAdvancedParams = !gn->showAdvancedParams;
+         ImGui::PopID();
+         gParamRegisterOnly = savedRegisterOnly || !open;
+         ColorSwatch("light colour", n->lightColor, n);
+         ModSlider("light azimuth", &n->lightAzimuth, -180.0f, 180.0f, "%.0f");
+         ModSlider("light elevation", &n->lightElevation, -90.0f, 90.0f, "%.0f");
+         ModSlider("light", &n->lightIntensity, 0.0f, 4.0f);
+         ModSlider("ambient", &n->ambient, 0.0f, 2.0f);
+         ModSlider("scatter", &n->scatter, 0.0f, 1.0f);
+         ModSlider("anisotropy", &n->anisotropy, -0.9f, 0.9f);
+         ModSliderInt("light steps", &n->lightSteps, 0, 16);
+         ModSliderInt("steps", &n->steps, 8, 256);
+         ModSliderInt("render steps", &n->renderSteps, 16, 512);
+         ModSlider("max distance", &n->maxDistance, 1.0f, 100.0f, "%.0f");
+         if (open)
+            ImGui::TextDisabled("own camera (no Render 3D input):");
+         ModSlider("cam azimuth", &n->camAzimuth, -180.0f, 180.0f, "%.0f");
+         ModSlider("cam elevation", &n->camElevation, -89.0f, 89.0f, "%.0f");
+         ModSlider("cam distance", &n->camDistance, 0.5f, 30.0f);
+         ModSlider("fov", &n->fov, 10.0f, 120.0f, "%.0f");
+         gParamRegisterOnly = savedRegisterOnly;
+      }
    }
 
 
