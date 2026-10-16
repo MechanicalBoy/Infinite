@@ -2976,6 +2976,7 @@ bool RunGeoAudit()
       AuditDisplace(flags, ok);
    if (only != nullptr && strstr(only, "RENDERQ") != nullptr)
       AuditRenderQuality(flags, ok);
+   if (only != nullptr && strstr(only, "AREALIGHT") != nullptr)
       AuditAreaLight(flags, ok);
    printf("GEOAUDIT %s (%d flags)\n", ok ? "PASS" : "FAIL", flags.n);
    return ok;
