@@ -81,16 +81,19 @@ int main(int argc, char** argv)
    SelfUpdate::Shutdown();
    UpdateCheck::Shutdown(); // joins the worker thread so the process doesn't exit mid-request
    MovementLog::Stop();
-   if (ColorStats::Engine::Instance().HasLearnedData())
-      ColorStats::Engine::Instance().Save(AppPaths::AppSupportDir() + "/prediction");
-   if (PredictiveQuantizeProfile::HasLearnedData())
-      PredictiveQuantizeProfile::Save(AppPaths::AppSupportDir() + "/prediction");
-   if (PredictiveVelocityProfile::HasLearnedData())
-      PredictiveVelocityProfile::Save(AppPaths::AppSupportDir() + "/prediction");
-   if (PredictiveNotesStyle::HasLearnedData())
-      PredictiveNotesStyle::Save(AppPaths::AppSupportDir() + "/prediction");
-   if (PredictiveRhythmStyle::HasLearnedData())
-      PredictiveRhythmStyle::Save(AppPaths::AppSupportDir() + "/prediction");
+   if (gHeadlessJob.mode == Headless::Mode::None) // headless renders never write the learned profiles
+   {
+      if (ColorStats::Engine::Instance().HasLearnedData())
+         ColorStats::Engine::Instance().Save(AppPaths::AppSupportDir() + "/prediction");
+      if (PredictiveQuantizeProfile::HasLearnedData())
+         PredictiveQuantizeProfile::Save(AppPaths::AppSupportDir() + "/prediction");
+      if (PredictiveVelocityProfile::HasLearnedData())
+         PredictiveVelocityProfile::Save(AppPaths::AppSupportDir() + "/prediction");
+      if (PredictiveNotesStyle::HasLearnedData())
+         PredictiveNotesStyle::Save(AppPaths::AppSupportDir() + "/prediction");
+      if (PredictiveRhythmStyle::HasLearnedData())
+         PredictiveRhythmStyle::Save(AppPaths::AppSupportDir() + "/prediction");
+   }
    gNodes.clear();
    if (getenv("INFINITE_RECTEARDOWNTEST") != nullptr && std::string(getenv("INFINITE_RECTEARDOWNTEST")) == "quit")
       printf("quit-mid-record: survived  OK\n");

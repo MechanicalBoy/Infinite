@@ -1367,11 +1367,16 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       return std::string();
    });
    MovementLog::Start();
-   ColorStats::Engine::Instance().Load(AppPaths::AppSupportDir() + "/prediction");
-   PredictiveQuantizeProfile::Load(AppPaths::AppSupportDir() + "/prediction");
-   PredictiveVelocityProfile::Load(AppPaths::AppSupportDir() + "/prediction");
-   PredictiveNotesStyle::Load(AppPaths::AppSupportDir() + "/prediction");
-   PredictiveRhythmStyle::Load(AppPaths::AppSupportDir() + "/prediction");
+   // Headless jobs neither read nor write the learned profiles: a render must not depend on (or change)
+   // the user's accumulated data, or the same patch renders differently run to run.
+   if (gHeadlessJob.mode == Headless::Mode::None)
+   {
+      ColorStats::Engine::Instance().Load(AppPaths::AppSupportDir() + "/prediction");
+      PredictiveQuantizeProfile::Load(AppPaths::AppSupportDir() + "/prediction");
+      PredictiveVelocityProfile::Load(AppPaths::AppSupportDir() + "/prediction");
+      PredictiveNotesStyle::Load(AppPaths::AppSupportDir() + "/prediction");
+      PredictiveRhythmStyle::Load(AppPaths::AppSupportDir() + "/prediction");
+   }
    ApplyTheme();
 
    // Skipped under the dev-test harness (INFINITE_EXITAFTER) so that running
