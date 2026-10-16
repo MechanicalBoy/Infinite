@@ -127,7 +127,7 @@ namespace
    {
       size_t operator()(const Key& k) const
       {
-         return (size_t)(k.x * 73856093LL) ^ (size_t)(k.y * 19349663LL) ^ (size_t)(k.z * 83492791LL);
+         return (size_t)((unsigned long long)k.x * 73856093ULL) ^ (size_t)((unsigned long long)k.y * 19349663ULL) ^ (size_t)((unsigned long long)k.z * 83492791ULL);
       }
    };
 
