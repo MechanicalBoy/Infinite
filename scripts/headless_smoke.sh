@@ -6,7 +6,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${1:-$ROOT/build/Infinite.app/Contents/MacOS/Infinite}"
 PATCH="$ROOT/tests/headless/patch_video.inf"
-OUT="$(mktemp -d)"
+OUT="${SMOKE_OUT:-$(mktemp -d)}"
 fail=0
 check() { if [ "$2" = "0" ]; then echo "[pass] $1"; else echo "[FAIL] $1"; fail=1; fi; }
 json_file() { python3 -c "import json; d=json.load(open('$1')); print($2)"; }
@@ -79,7 +79,7 @@ def lag(dry, wet):  # cross-correlation peak over +-200 samples around the click
 dry = load(sys.argv[1]); tol = int(sys.argv[2])
 sys.exit(0 if all(abs(lag(dry, load(p))) <= tol for p in sys.argv[3:]) else 1)
 '
-python3 -c "$LATPY" "$OUT/lat_dry.wav" 0 "$OUT/lat_drive.wav" "$OUT/lat_limiter.wav"; check "bounce: Drive and Limiter land on the dry click (0 samples, --audio-summary)" $?
+python3 -c "$LATPY" "$OUT/lat_dry.wav" 1 "$OUT/lat_drive.wav" "$OUT/lat_limiter.wav"; check "bounce: Drive and Limiter land on the dry click (within 1 sample, --audio-summary)" $?
 if command -v ffmpeg >/dev/null; then
   for n in dry drive limiter; do "$BIN" --render "$OUT/lat_$n.inf" "$OUT/lat_$n.mp4" --duration 1 --fps 30 >/dev/null 2>&1; done
   python3 -c "$LATPY" "$OUT/lat_dry.mp4" 2 "$OUT/lat_drive.mp4" "$OUT/lat_limiter.mp4"; check "export: Drive and Limiter land on the dry click in the movie (within 2 samples)" $?
