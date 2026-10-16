@@ -15,7 +15,7 @@ namespace ModShapes
 
    inline float Hash01(long long n)
    {
-      unsigned long long x = (unsigned long long)(n * 2654435761u + 1013904223u);
+      unsigned long long x = (unsigned long long)n * 2654435761ULL + 1013904223ULL;
       x ^= x >> 33;
       x *= 0xff51afd7ed558ccdULL;
       x ^= x >> 33;

@@ -181,7 +181,8 @@ float RandomNode::ValueForStep(long long step, uint64_t salt) const
    // two seeds give genuinely different sequences instead of the same sequence
    // offset by a constant.
    const long long legacySalt = (long long)(seed * 1013.0f);
-   return Hash01(step * 6364136223LL + legacySalt * 1442695040888963407LL);
+   // Unsigned so the mix wraps by definition; the signed form overflowed (UB) for large seeds.
+   return Hash01((long long)((unsigned long long)step * 6364136223ULL + (unsigned long long)legacySalt * 1442695040888963407ULL));
 }
 
 float RandomNode::Value01()
