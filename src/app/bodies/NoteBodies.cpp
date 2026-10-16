@@ -4,6 +4,7 @@
 #include "app/AppShared.h"
 #include "core/ModShapes.h"
 #include "app/ui/design/components/AudioViz.h"
+#include "app/ui/design/components/FormParts.h"
 #include "app/ui/design/components/StepCell.h"
 
 namespace app
@@ -171,14 +172,14 @@ namespace app
          const float gap = ImGui::GetStyle().ItemSpacing.x;
          ImGui::AlignTextToFramePadding();
          ImGui::TextDisabled("channels");
-         ImGui::SameLine();
+         FormParts::Inline();
          int next = ch;
          if (ActionButton::Draw("-##mixCh", ImVec2(btnH * 1.4f, btnH)))
             next = ch - 1;
-         ImGui::SameLine(0.0f, gap);
+         FormParts::Inline(0.0f, gap);
          ImGui::AlignTextToFramePadding();
          ImGui::Text("%d", ch);
-         ImGui::SameLine(0.0f, gap);
+         FormParts::Inline(0.0f, gap);
          if (ActionButton::Draw("+##mixCh", ImVec2(btnH * 1.4f, btnH)))
             next = ch + 1;
          next = std::clamp(next, 0, (int)MixerNode::kMaxSlots);
