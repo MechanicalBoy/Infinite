@@ -40,12 +40,16 @@ def load_types(binary, out):
     return {t["type"]: t for t in types if not t.get("hardware_driven") and t["type"] not in SKIP_TYPES}
 
 
+# Textured point-sprite draws sample a mipmapped surface texture and differ by a few pixels run to run (finding B-D, v0.6).
+KNOWN_NONDETERMINISTIC = {"Mesh to Points", "Mesh to Edges", "Mesh to Faces"}
+
+
 def known_nondeterministic():
     p = os.path.join(ROOT, "tests", "headless", "census_baseline.json")
     try:
-        return {r["type"] for r in json.load(open(p)) if "nondeterministic" in r.get("issues", [])}
+        return {r["type"] for r in json.load(open(p)) if "nondeterministic" in r.get("issues", [])} | KNOWN_NONDETERMINISTIC
     except Exception:
-        return set()
+        return set(KNOWN_NONDETERMINISTIC)
 
 
 class Gen:
