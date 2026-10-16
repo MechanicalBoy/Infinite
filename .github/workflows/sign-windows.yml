@@ -1,0 +1,120 @@
+name: Sign Windows
+
+# Signs the Windows builds with SignPath Foundation (project "Infinite", artifact configuration "Zip-Archive":
+# Infinite.exe, Infinite.com and infinite-vst3-scanner.exe at the root of the zip). Manual only: it never runs on a
+# push, so it cannot affect the Build workflow.
+#
+# Usage: Actions > Sign Windows > Run workflow, give the id of a finished Build run on the commit to release
+# (the number in the run's URL). Policy "test-signing" proves the pipeline with a test certificate (Windows will
+# not trust it); "release-signing" produces the real signature once SignPath has issued that certificate.
+# Give a release tag to also attach the signed zips to that GitHub release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: "Id of the finished Build run that produced the Infinite-windows-* artifacts"
+        required: true
+        type: string
+      policy:
+        description: "SignPath signing policy"
+        required: true
+        default: test-signing
+        type: choice
+        options:
+          - test-signing
+          - release-signing
+      release_tag:
+        description: "Optional: attach the signed zips to this release (for example v0.6.0). Leave empty to only produce workflow artifacts."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  sign:
+    name: Sign (${{ matrix.arch }})
+    runs-on: windows-latest
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, ARM64]
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download the unsigned build
+        uses: actions/download-artifact@v4
+        with:
+          name: Infinite-windows-${{ matrix.arch }}
+          path: unsigned
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Check the three executables are at the root
+        shell: bash
+        run: |
+          for f in Infinite.exe Infinite.com infinite-vst3-scanner.exe; do
+            test -f "unsigned/$f" || { echo "missing unsigned/$f"; ls -la unsigned; exit 1; }
+          done
+
+      # SignPath reads an artifact uploaded by THIS run, so the build is re-uploaded here.
+      - name: Upload for signing
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Infinite-windows-${{ matrix.arch }}-unsigned
+          path: unsigned
+          if-no-files-found: error
+
+      - name: Sign with SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: Infinite
+          signing-policy-slug: ${{ inputs.policy }}
+          artifact-configuration-slug: Zip-Archive
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-zip
+
+      # The signed output is a zip of the artifact root; unpack it, then check each exe carries a signature.
+      - name: Unpack and check signatures
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path signed | Out-Null
+          $zip = Get-ChildItem signed-zip -Filter *.zip | Select-Object -First 1
+          if ($zip) { Expand-Archive -Path $zip.FullName -DestinationPath signed -Force }
+          else { Copy-Item -Recurse -Force signed-zip\* signed }
+          foreach ($f in 'Infinite.exe', 'Infinite.com', 'infinite-vst3-scanner.exe') {
+            $s = Get-AuthenticodeSignature "signed\$f"
+            Write-Host "$f : $($s.Status) : $($s.SignerCertificate.Subject)"
+            if ($null -eq $s.SignerCertificate) { throw "$f has no signature" }
+          }
+
+      - name: Upload signed build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Infinite-windows-${{ matrix.arch }}-signed
+          path: signed
+          if-no-files-found: error
+
+      - name: Zip and attach to the release
+        if: ${{ inputs.release_tag != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          # Same layout as the release's current zips: Infinite-windows-<arch>.zip holding an Infinite/ folder.
+          New-Item -ItemType Directory -Force -Path stage | Out-Null
+          Copy-Item -Recurse -Force signed stage\Infinite
+          $zip = "Infinite-windows-$env:ARCH.zip"
+          Compress-Archive -Path stage\Infinite -DestinationPath $zip -Force
+          gh release upload $env:TAG $zip --clobber --repo $env:GITHUB_REPOSITORY

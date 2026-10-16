@@ -107,4 +107,5 @@ v0.6 is a quality release: audio that measures right, a faster first run, a deep
 - Fluid, Instance, Cycle Shaper aliasing and Analog FM are measured misses we accepted for this release
 - Three saturation stages in series alias at -46 dB
 - The Plugin editor GL context guard (R282) is in but not yet verified on Windows
+- Headless renders of a patch with Field Notes and any modulation cable can differ slightly between runs (about 0.1 dB in loudness in the case we measured); Field Notes alone is repeatable
 - Hardware controller testing for MPE is still a follow-up; the tests use injected MIDI bytes

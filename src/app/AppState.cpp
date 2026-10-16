@@ -493,7 +493,7 @@ bool gHeadlessNeedProbe = false;
    // toggled via right-click on the monitor itself.
    bool  gArrangeViewportOnRight = false;
 
-   bool  gArrangeShowViewport = false;
+   bool  gArrangeShowViewport = true;
 
    // The snap grid itself is model state (Settings::snapDivision, 0 = off,
    // and snapTriplet - WP6). The magnet button toggles off <-> the last
