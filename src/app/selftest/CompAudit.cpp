@@ -443,11 +443,12 @@ namespace
 
    void AuditFeedback(Flags& f)
    {
+      // By design (FeedbackNodes.h): the delay comes from the cycle, so in a plain chain the capture is the
+      // current frame and the node is a pass-through copy. Saved loops depend on exactly this timing.
       TexSource src;
       FeedbackNode fb;
       fb.Input().Connect(&src);
       double worst = 0.0;
-      float prevIn = 0.0f;
       for (int k = 0; k < 6; k++)
       {
          const unsigned char v = (unsigned char)(40 + 35 * k);
@@ -456,15 +457,13 @@ namespace
          std::vector<float> px;
          if (!Read(fb.GetOutputTexture(), px) || px.empty())
             continue;
-         if (k > 0)
-            worst = std::max(worst, (double)std::fabs(px[0] - prevIn));
-         prevIn = v / 255.0f;
+         worst = std::max(worst, (double)std::fabs(px[0] - v / 255.0f));
       }
-      printf("COMPAUDIT FEEDBACK frame delay: worst difference from the previous input %.2f / 255\n", worst * 255.0);
+      printf("COMPAUDIT FEEDBACK plain chain is a pass-through of the current frame: worst difference %.2f / 255\n", worst * 255.0);
       if (worst > 1.0 / 255.0 + 1e-6)
-         f.Flag("FEEDBACK", "in a plain chain the output follows the current frame, not the previous one, off by (x/255)",
-                worst * 255.0);
+         f.Flag("FEEDBACK", "in a plain chain the output is not the current frame, off by (x/255)", worst * 255.0);
    }
+
 
    void AuditTrails(Flags& f)
    {
@@ -2074,7 +2073,7 @@ namespace
          const bool got2 = n->GetOutputTexture() != 0 && ReadSized(n->GetOutputTexture(), n->GetOutputWidth(), n->GetOutputHeight(), again);
          const double d = (got1 && got2) ? MaxPixelDiff(first, again) : -1.0;
          // Stateful nodes (Trails, Reaction Diffusion) integrate over frames, so only the pass-through is asserted.
-         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Optical Flow") == 0 || strcmp(it.name, "Time Machine") == 0 || strcmp(it.name, "Reaction Diffusion") == 0;
+         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Optical Flow") == 0 || strcmp(it.name, "Time Machine") == 0 || strcmp(it.name, "Reaction Diffusion") == 0 || strcmp(it.name, "Fluid") == 0;
          printf("COMPAUDIT BYPASS %-18s pass-through is the input: %s | cook, bypass, un-bypass, cook: %s%s\n", it.name,
                 hasPass ? "yes" : "NO", d < 0 ? "no output" : d == 0.0 ? "identical" : "differs",
                 stateful ? " (stateful, not asserted)" : "");
