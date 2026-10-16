@@ -206,7 +206,11 @@ class Runner:
             if kind in ("audio", "note"):
                 s = json.load(open(of))
                 silent = s.get("sample_peak") == 0  # silence reads as null loudness; that is not a NaN
-                bad = [k for k in ("sample_peak", "dc_offset") + (() if silent else ("rms_dbfs",)) if has_bad(s.get(k))]
+                rms = s.get("rms_dbfs")
+                # One silent channel (mono source) reads as null rms for that channel only; that is not a NaN.
+                rms_ok = isinstance(rms, list) and any(isinstance(x, float) and math.isfinite(x) for x in rms) \
+                    and all(x is None or (isinstance(x, float) and math.isfinite(x)) for x in rms)
+                bad = [k for k in ("sample_peak", "dc_offset") + (() if silent or rms_ok else ("rms_dbfs",)) if has_bad(s.get(k))]
                 if s.get("frames") and (s.get("sample_peak") is None or bad):
                     return "fail", "audio non-finite " + ",".join(bad or ["sample_peak"])
                 if (s.get("sample_peak") or 0) > 1000:
