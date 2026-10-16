@@ -122,7 +122,7 @@ const std::vector<FilterDef>& GetFilterDefs()
       // bright-pass is applied per sample before weighting, so it splits the
       // same way (exact at integer Radius, where every tap is a texel centre).
       // quality: Classic keeps the original nine taps spaced `radius` px apart
-      // (saved looks unchanged). Smooth walks every pixel out to 4 sigma with
+      // (saved looks unchanged). Smooth walks every pixel out to 3 sigma (6 x radius, the slider is sigma/2) with
       // the same gaussian, so a large radius blurs instead of ghosting.
       // Smooth (the default for new nodes) walks every pixel, so there are no
       // holes between taps. Its vertical pass reads the linear 16F
@@ -143,7 +143,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      }\n"
         "   } else {\n"
         "      float r = max(uRadius, 0.001);\n"
-        "      int n = min(int(ceil(4.0 * r)), 40);\n"
+        "      int n = min(int(ceil(6.0 * r)), 60);\n"
         "      sum = texture(uPass, vUv); total = 1.0;\n"
         "      for (int y = 1; y <= n; y += 2) {\n"
         "         float d1 = float(y) / r, d2 = float(y + 1) / r;\n"
@@ -166,7 +166,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "   vec4 sum = vec4(0.0); float total = 0.0;\n"
         "   if (uConverted == 1) {\n"
         "      float r = max(uRadius, 0.001);\n"
-        "      int n = min(int(ceil(4.0 * r)), 40);\n"
+        "      int n = min(int(ceil(6.0 * r)), 60);\n"
         "      sum = texture(uSrc, vUv); total = 1.0;\n"
         "      for (int x = 1; x <= n; x += 2) {\n"
         "         float d1 = float(x) / r, d2 = float(x + 1) / r;\n"
@@ -187,7 +187,7 @@ const std::vector<FilterDef>& GetFilterDefs()
         "      }\n"
         "   } else {\n"
         "      float r = max(uRadius, 0.001);\n"
-        "      int n = min(int(ceil(4.0 * r)), 40);\n"
+        "      int n = min(int(ceil(6.0 * r)), 60);\n"
         "      for (int x = -n; x <= n; x++) {\n"
         "         float d = float(x) / r;\n"
         "         float w = exp(-d * d / 8.0);\n"

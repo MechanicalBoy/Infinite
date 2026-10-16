@@ -816,7 +816,7 @@ namespace
       if (kind == 1)
       {
          const double rr = std::max(r, 0.001);
-         const int n = std::min((int)std::ceil(4.0 * rr), 40);
+         const int n = std::min((int)std::ceil(6.0 * rr), 60);
          for (int i = -n; i <= n; i++)
          {
             const double d = i / rr;
