@@ -688,7 +688,9 @@ namespace app
             {
                ImGui::TableSetupColumn(T("Action"), ImGuiTableColumnFlags_WidthFixed, 150.0f);
                ImGui::TableSetupColumn(T("Shortcut"), ImGuiTableColumnFlags_WidthFixed, 180.0f);
-               ImGui::TableSetupColumn(T("Description"), ImGuiTableColumnFlags_WidthStretch);
+               // Explicit weight: with SizingStretchProp and no weight, a hidden first frame gave the column a NaN weight
+               // (0/0), which reached the window content size (UBSan float-to-int, NAVTEST).
+               ImGui::TableSetupColumn(T("Description"), ImGuiTableColumnFlags_WidthStretch, 1.0f);
                ImGui::TableHeadersRow();
                inTable = true;
             }
