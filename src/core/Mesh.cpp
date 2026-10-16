@@ -4840,6 +4840,13 @@ namespace csg
    {
       if (polygons.empty())
          return;
+      // Over budget the result is thrown away, and SplitPolygon no longer partitions (it files every polygon
+      // as "front"), so recursing would copy the whole list down 256 levels for nothing.
+      if (gOverBudget)
+      {
+         node.polygons.insert(node.polygons.end(), polygons.begin(), polygons.end());
+         return;
+      }
       // Depth cap: a pathological input can otherwise recurse until the stack
       // gives out, and a slightly wrong result beats a crash.
       if (depth > 256)
@@ -5006,8 +5013,18 @@ Mesh Boolean(const Mesh& a, const Mesh& b, int op, long long workBudget)
    csg::gSplitBudget = workBudget;
    csg::gOverBudget = false;
    csg::Node treeA, treeB;
-   csg::Build(treeA, csg::FromMesh(a));
-   csg::Build(treeB, csg::FromMesh(b));
+   const std::vector<csg::Polygon> polysA = csg::FromMesh(a);
+   const std::vector<csg::Polygon> polysB = csg::FromMesh(b);
+   // BSP clipping is super-linear in the polygon count; past this the budget would be spent (and the result
+   // discarded) anyway, only after minutes of work. Refuse up front, same outcome as running out of budget.
+   constexpr size_t kMaxBooleanPolygons = 250000;
+   if (polysA.size() + polysB.size() > kMaxBooleanPolygons)
+   {
+      csg::gOverBudget = true;
+      return a;
+   }
+   csg::Build(treeA, polysA);
+   csg::Build(treeB, polysB);
 
    // The three operations are the same clipping sequence with inversions in
    // different places - inverting a tree swaps its notion of inside and out,

@@ -427,7 +427,7 @@ namespace MeshOps
    // inside, so the result on one is unpredictable rather than wrong.
    enum BooleanOp { kBooleanUnion = 0, kBooleanIntersect, kBooleanDifference, kBooleanCount };
    // workBudget caps the BSP splits (about 12M is a few seconds); a caller that recooks every frame passes less.
-   Mesh Boolean(const Mesh& a, const Mesh& b, int op, long long workBudget = 12000000);
+   Mesh Boolean(const Mesh& a, const Mesh& b, int op, long long workBudget = 2000000);
    bool BooleanOverBudget();   // the last Boolean() on this thread gave up and returned its first input
 
    // --- selection ---
