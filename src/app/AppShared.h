@@ -1388,6 +1388,22 @@ extern ImVec4 gCommentBodyRect;
 
 extern FieldDeviceSaveRequest gFieldDeviceSave;
 
+// File > Share Patch...: the name prompt, then one .infshare file (core/ShareBundle.h).
+struct SharePatchRequest
+{
+   char nameBuf[128] = {};
+   char authorBuf[96] = {};
+   char descBuf[200] = {};
+   bool justOpened = false;
+};
+extern SharePatchRequest gSharePatch;
+void SharePatchInteractive();
+void DrawSharePatchPopup();
+bool SharePatchBusy();
+// Synchronous form for tests: the same bundle, built on this thread.
+bool BuildShareBundleBlocking(const std::string& patchFile, const std::string& outPath, const std::string& name,
+                              const std::string& workDir, std::string& message);
+
 
 
    // Per-domain cache of the user's saved .infdev files under
@@ -2619,6 +2635,8 @@ int HearNode(int srcIndex);
 std::vector<int> SpawnAudioDropNodes(const std::string& name, const std::string& category,
                                      const std::vector<std::string>& paths, const ImVec2& canvasPos);
 int SpawnPlayableSynth();
+int SpawnEffectChain();
+int SpawnScene3D();
 
 GraphNode* SpawnNode(const std::string& typeName, const std::string& category,
                         float x = 0.0f, float y = 0.0f);
@@ -2886,6 +2904,10 @@ void DrawRemoveBgParams(RemoveBgNode* n);
 void DrawFeedbackParams(FeedbackNode*);
 
 void DrawTrailsParams(TrailsNode* n);
+void DrawOpticalFlowParams(OpticalFlowNode* n);
+void DrawTimeMachineParams(TimeMachineNode* n);
+void DrawFluidParams(FluidNode* n);
+void DrawVolumeParams(VolumeNode* n);
 
 void DrawReactionDiffusionParams(ReactionDiffusionNode* n);
 
@@ -3989,6 +4011,9 @@ void DrawWrapParams(WrapNode* n);
 
 void DrawClothParams(ClothNode* n);
 
+void DrawRigidBodyParams(RigidBodyNode* n);
+void DrawLSystemParams(LSystemNode* n);
+
 void DrawParticleSystemParams(ParticleSystemNode* n);
 
 void DrawMaterialParams(MaterialNode* n);
@@ -4006,8 +4031,11 @@ void DrawMeshToPointsParams(MeshToPointsNode* n);
 void DrawDistributePointsOnFacesParams(DistributePointsOnFacesNode* n);
 
 void DrawPointsToVerticesParams(PointsToVerticesNode* n);
+void DrawProximityLinesParams(ProximityLinesNode* n);
 void DrawDelaunayParams(DelaunayMeshNode* n);
 void DrawCurveOpsParams(CurveOpsNode* n);
+void DrawRevolveParams(RevolveNode* n);
+void DrawSweepParams(SweepNode* n);
 
 void DrawDistributePointsInGridParams(DistributePointsInGridNode* n);
 
@@ -4389,6 +4417,7 @@ void ReapArrangeGeomViewports();
       // change, a project-tempo change on an unsynced clip).
       double   sampleEffBpm = 0.0;
       float    sampleOffset = 0.0f;
+      double   sampleSpeed = 1.0;   // signed, see Arrange::ClipSpeedFactor
       const Platform::SampleBuffer* sampleBuf = nullptr;
       std::vector<float>   minv;
       std::vector<float>   maxv;
@@ -4416,11 +4445,13 @@ int ArrangeWaveBucketCount(Arrange::Tick length);
 void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
                                         Arrange::Tick start, Arrange::Tick length,
                                         double effBpm, float sourceOffsetSeconds,
-                                        const Platform::SampleBuffer* buf);
+                                        const Platform::SampleBuffer* buf, double speed = 1.0);
 
 double ArrangeSampleEffBpm(const Arrange::Clip& c);
 
 void ArrangeSetSampleSync(uint64_t clipId, bool sync);
+void ArrangeSetClipSpeed(uint64_t clipId, float speed);
+void ArrangeSetClipReverse(uint64_t clipId, bool reverse);
 
 void ArrangeSetSampleBpm(uint64_t clipId, float bpm);
 

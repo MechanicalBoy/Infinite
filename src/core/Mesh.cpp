@@ -1,3 +1,4 @@
+#include <cmath>
 #include "Mesh.h"
 
 #include <algorithm>
@@ -1070,6 +1071,14 @@ namespace MeshOps
          out.indices.push_back(base + in.indices[t]);
          out.indices.push_back(base + in.indices[t + 2]);
          out.indices.push_back(base + in.indices[t + 1]);
+      }
+
+      // The mirrored triangles are the same faces again, so they carry the same selection.
+      if (!in.faceMask.empty())
+      {
+         out.faceMask = in.faceMask;
+         if (keepOriginal)
+            out.faceMask.insert(out.faceMask.end(), in.faceMask.begin(), in.faceMask.end());
       }
 
       if (weldSeam && keepOriginal)
@@ -4749,10 +4758,22 @@ namespace csg
    // Splits a polygon against a plane, appending each piece to whichever list
    // it belongs in. Coplanar polygons are sorted by facing, which is what makes
    // union and intersection differ on shared surfaces.
+   // Work budget for one Boolean(): BSP clipping is exponential on meshes with thousands of crossing
+   // polygons (a wireframe against a solid), so past the budget polygons stop being split and the
+   // caller hands back its first input with a warning instead of freezing the app.
+   thread_local long long gSplitBudget = 0;
+   thread_local bool gOverBudget = false;
+
    void SplitPolygon(const Plane& plane, const Polygon& poly,
                      std::vector<Polygon>& coplanarFront, std::vector<Polygon>& coplanarBack,
                      std::vector<Polygon>& front, std::vector<Polygon>& back)
    {
+      if (--gSplitBudget < 0)
+      {
+         gOverBudget = true;
+         front.push_back(poly);
+         return;
+      }
       enum { kCoplanar = 0, kFront = 1, kBack = 2, kSpanning = 3 };
 
       int polygonType = 0;
@@ -4979,6 +5000,8 @@ Mesh Boolean(const Mesh& a, const Mesh& b, int op)
    if (b.Empty())
       return (op == kBooleanIntersect) ? Mesh() : a;
 
+   csg::gSplitBudget = 12000000;
+   csg::gOverBudget = false;
    csg::Node treeA, treeB;
    csg::Build(treeA, csg::FromMesh(a));
    csg::Build(treeB, csg::FromMesh(b));
@@ -5038,9 +5061,16 @@ Mesh Boolean(const Mesh& a, const Mesh& b, int op)
       }
    }
 
+   if (csg::gOverBudget)
+      return a;
    std::vector<csg::Polygon> merged;
    csg::AllPolygons(treeA, merged);
    return csg::ToMesh(merged);
+}
+
+bool BooleanOverBudget()
+{
+   return csg::gOverBudget;
 }
 }
 
@@ -5219,6 +5249,53 @@ void AppendMesh(Mesh& a, const Mesh& b)
       else
          a.vertexColor.insert(a.vertexColor.end(), b.vertices.size() * 3, 1.0f);
    }
+}
+
+bool IsWellFormed(const Mesh& in)
+{
+   if (in.indices.size() % 3 != 0)
+      return false;
+   const size_t tris = in.indices.size() / 3;
+   if (!in.faceMask.empty() && in.faceMask.size() != tris)
+      return false;
+   if (!in.vertexColor.empty() && in.vertexColor.size() != in.vertices.size() * 3)
+      return false;
+   const size_t n = in.vertices.size();
+   for (unsigned int i : in.indices)
+      if (i >= n)
+         return false;
+   for (const Vertex& v : in.vertices)
+      if (!std::isfinite(v.px) || !std::isfinite(v.py) || !std::isfinite(v.pz))
+         return false;
+   return true;
+}
+
+Mesh Sanitize(const Mesh& in)
+{
+   Mesh out;
+   out.vertices = in.vertices;
+   const size_t n = in.vertices.size();
+   const size_t tris = in.indices.size() / 3;
+   auto finite = [&](unsigned int i) {
+      const Vertex& v = in.vertices[i];
+      return std::isfinite(v.px) && std::isfinite(v.py) && std::isfinite(v.pz);
+   };
+   const bool maskOk = in.faceMask.size() == tris;
+   out.indices.reserve(in.indices.size());
+   for (size_t t = 0; t < tris; t++)
+   {
+      const unsigned int a = in.indices[t * 3], b = in.indices[t * 3 + 1], c = in.indices[t * 3 + 2];
+      if (a >= n || b >= n || c >= n || !finite(a) || !finite(b) || !finite(c))
+         continue;
+      out.indices.push_back(a);
+      out.indices.push_back(b);
+      out.indices.push_back(c);
+      if (maskOk)
+         out.faceMask.push_back(in.faceMask[t]);
+   }
+   if (in.vertexColor.size() == n * 3)
+      out.vertexColor = in.vertexColor;
+   return out;
 }
 
 Mesh ClearSelection(const Mesh& in)

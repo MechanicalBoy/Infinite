@@ -317,6 +317,20 @@ namespace MeshOps
    // per turn for threads and helices.
    Mesh Screw(const Mesh& in, int steps, float turns, float rise, float radiusOffset, int axis);
 
+   // Lathe: revolves a curve about a world axis (0 X, 1 Y, 2 Z) through the origin,
+   // `angleDegrees` of it in `segments` steps. A closed profile that goes all the way
+   // round is a watertight solid; one that stops short is closed with flat caps when
+   // `caps` is set. An open profile gives an open surface. Winding and normals face
+   // outward on a closed result.
+   Mesh Revolve(const Polyline& profile, int axis, float angleDegrees, int segments, bool caps);
+   // Sweep: carries a profile along a path. The profile's two in-plane coordinates become
+   // offsets along the path's carried frame (parallel transport, so it does not spin where
+   // the path bends), scaled from startScale to endScale and twisted `twistDegrees` in
+   // total. A closed profile on an open path is closed with flat end caps when `caps` is
+   // set; on a closed path the result is a watertight ring.
+   Mesh Sweep(const Polyline& profile, const Polyline& path, float startScale, float endScale,
+              float twistDegrees, bool caps);
+
    // Turns closed 2D contours into an extruded solid. Contours wound
    // anticlockwise are treated as outlines and clockwise ones as holes, so the
    // counter of an 'o' is cut out rather than filled.
@@ -370,6 +384,15 @@ namespace MeshOps
    // what a bevel is usually wanted for.
    Mesh Bevel(const Mesh& in, float amount, int segments);
 
+   // True edge bevel (src/core/BevelInset.cpp). Edges where faces meet at more than `angleDeg`
+   // are cut back by `width` on both sides and filled with `segments` strips (1 = chamfer, more
+   // = round), with a patch at each corner. `width` is capped at 45 % of the shortest sharp edge.
+   Mesh BevelEdges(const Mesh& in, float width, int segments, float angleDeg);
+   // Insets the selected faces (all faces when nothing is selected): every connected smooth patch
+   // is pulled in by `width` and lifted by `depth`, leaving a wall ring. The inner faces stay
+   // selected when the input carried a selection.
+   Mesh InsetFaces(const Mesh& in, float width, float depth, float angleDeg);
+
    // --- curves ---
    // Samples a polyline by arc length rather than by index, so a point moving
    // at constant t moves at constant speed even where the control points bunch
@@ -404,6 +427,7 @@ namespace MeshOps
    // inside, so the result on one is unpredictable rather than wrong.
    enum BooleanOp { kBooleanUnion = 0, kBooleanIntersect, kBooleanDifference, kBooleanCount };
    Mesh Boolean(const Mesh& a, const Mesh& b, int op);
+   bool BooleanOverBudget();   // the last Boolean() on this thread gave up and returned its first input
 
    // --- selection ---
    // How faces are chosen. Every mode is deterministic, so a patch selects the
@@ -447,6 +471,11 @@ namespace MeshOps
    // be told to ignore whatever mask arrived on its input - the
    // `selectionOnly == false` half of every operator this phase touches.
    Mesh ClearSelection(const Mesh& in);
+   // True when indices are in range and a multiple of 3, positions are finite and the mask and
+   // vertex colours match the mesh. Sanitize drops the triangles that break this and the per-face
+   // data that no longer matches, so every operator can assume a well-formed input.
+   bool IsWellFormed(const Mesh& in);
+   Mesh Sanitize(const Mesh& in);
    // A vertex counts as selected if any face touching it is selected - the
    // same rule ToPoints already uses to decide which vertices survive a face
    // selection (src/core/Mesh.cpp, the point-mode `touched` loop). Shared here

@@ -54,6 +54,8 @@ public:
       // Quadric edge-collapse simplification (MeshOps::Decimate). Appended
       // after kDelete so every saved `op` integer keeps its meaning.
       kDecimate,
+      // True edge bevel and face inset (MeshOps::BevelEdges / InsetFaces, v0.6 3.7).
+      kBevel, kInset,
       kOpCount
    };
 
@@ -223,6 +225,12 @@ public:
    // Mirror
    float mirrorOffset = 0.0f;
    bool weldSeam = true;
+   // Bevel and Inset
+   float bevelWidth = 0.05f;
+   int bevelSegments = 1;
+   float bevelAngle = 30.0f;
+   float insetWidth = 0.05f;
+   float insetDepth = 0.0f;
    // Decimate
    float decimateRatio = 0.5f;
    bool lockBorder = true;
@@ -295,6 +303,9 @@ public:
       v.Int("iterations", iterations); v.Float("mirrorOffset", mirrorOffset);
       v.Bool("weldSeam", weldSeam); v.Int("screwSteps", screwSteps);
       v.Float("decimateRatio", decimateRatio); v.Bool("lockBorder", lockBorder);
+      v.Float("bevelWidth", bevelWidth); v.Int("bevelSegments", bevelSegments);
+      v.Float("bevelAngle", bevelAngle); v.Float("insetWidth", insetWidth);
+      v.Float("insetDepth", insetDepth);
       v.Float("turns", turns); v.Float("rise", rise); v.Float("radiusOffset", radiusOffset);
       v.Int("selectMode", selectMode); v.Float("selectA", selectA);
       v.Float("selectB", selectB); v.Float("selectC", selectC);
@@ -333,6 +344,8 @@ private:
       bool weldSeam = false;
       float decimateRatio = 0;
       bool lockBorder = false;
+      float bevelWidth = 0, bevelAngle = 0, insetWidth = 0, insetDepth = 0;
+      int bevelSegments = 0;
       int selectMode = -1;
       float selectA = 0, selectB = 0, selectC = 0, selectSeed = 0, normalAmount = 0;
       bool selectInvert = false, selectAppend = false, keepSelected = false;
@@ -362,6 +375,9 @@ private:
                 mirrorOffset == o.mirrorOffset && turns == o.turns && rise == o.rise &&
                 radiusOffset == o.radiusOffset && weldSeam == o.weldSeam &&
                 decimateRatio == o.decimateRatio && lockBorder == o.lockBorder &&
+                bevelWidth == o.bevelWidth && bevelSegments == o.bevelSegments &&
+                bevelAngle == o.bevelAngle && insetWidth == o.insetWidth &&
+                insetDepth == o.insetDepth &&
                 selectMode == o.selectMode && selectA == o.selectA &&
                 selectB == o.selectB && selectC == o.selectC &&
                 selectSeed == o.selectSeed && normalAmount == o.normalAmount &&
@@ -736,9 +752,18 @@ public:
 
 private:
    void Rebuild();
+   // Scale is the one parameter an LFO routinely animates, and it touches only
+   // the final per-instance matrix. The sampled poses (translation * basis *
+   // rotation) and the per-point scale jitter are cached so a scale-only change
+   // skips mesh transform, welding, sampling and random generation.
+   void ApplyScale();
 
    std::vector<Mat4> mTransforms;
    std::vector<float> mColors; // rgb triples, or empty for a uniform material
+   std::vector<Mat4> mPoses;       // mesh-sampling path only
+   std::vector<float> mScaleJitter; // 1 + (r0 - 0.5) * 2 * scaleRandom, per pose
+   bool mPosesValid = false;
+   Mat4 mPoseShapeModel;
    unsigned long long mInstanceRevision = 0;
    mutable unsigned long long mMaterialRevision = 0;
    mutable size_t mLastMaterialHash = 0;

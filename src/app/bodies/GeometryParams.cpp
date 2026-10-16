@@ -339,6 +339,40 @@ namespace app
    }
 
 
+   void DrawLSystemParams(LSystemNode* n)
+   {
+      ImGui::TextDisabled("%s", n->Status().c_str());
+      char buf[512];
+      snprintf(buf, sizeof(buf), "%s", n->axiom.c_str());
+      ImGui::SetNextItemWidth(kParamWidth);
+      if (FieldWell::InputText("axiom", buf, sizeof(buf)))
+         n->axiom = buf;
+      snprintf(buf, sizeof(buf), "%s", n->rules.c_str());
+      ImGui::SetNextItemWidth(kParamWidth);
+      if (FieldWell::InputText("rules", buf, sizeof(buf)))
+         n->rules = buf;
+
+      NodeSeparator("growth");
+      ModSliderInt("generations", &n->iterations, 0, LSystemNode::kMaxIterations);
+      ModSlider("angle", &n->angle, 0.0f, 180.0f, "%.1f\xC2\xB0");
+      ModSlider("length", &n->length, 0.005f, 1.0f);
+      ModSlider("length / branch", &n->lengthScale, 0.1f, 1.5f);
+
+      NodeSeparator("tube");
+      ModSlider("radius", &n->radius, 0.001f, 0.2f);
+      ModSlider("radius / branch", &n->radiusScale, 0.1f, 1.5f);
+      ModSliderInt("sides", &n->sides, 3, 24);
+      ModSlider("taper", &n->taper, 0.0f, 1.0f);
+
+      if (!n->CookWarning().empty())
+      {
+         PushTextWrapWidth(kPreviewSize);
+         ImGui::TextUnformatted(n->CookWarning().c_str());
+         PopTextWrapWidth();
+      }
+   }
+
+
    void DrawMetaBallParams(MetaBallNode* n)
    {
       ImGui::TextDisabled("%zu balls, %zu triangles", n->BallCount(), n->TriangleCount());
@@ -373,8 +407,10 @@ namespace app
 
    void DrawSwitcher3DParams(Switcher3DNode* n)
    {
+      ImGui::BeginDisabled(n->manual && !gParamRegisterOnly);   // manual pins the slot; the clock is unused
       DropdownButton("unit", Switcher3DNode::UnitNames(), n->unit, [n](int i) { n->unit = i; });
       ModSlider("every", &n->interval, 0.05f, 32.0f);
+      ImGui::EndDisabled();
       ModCheckbox("manual", &n->manual);
       if (n->manual)
       {
@@ -452,6 +488,50 @@ namespace app
    }
 
 
+   void DrawRigidBodyParams(RigidBodyNode* n)
+   {
+      ImGui::TextDisabled("%zu bodies, %zu triangles", n->BodyCount(), n->TriangleCount());
+      if (ActionButton::Column("Reset", kParamWidth))
+         n->Reset();
+
+      NodeSeparator("bodies");
+      DropdownButton("collider", RigidBodyNode::ColliderNames(), n->collider, [n](int i) { n->collider = i; });
+      ModSlider("mass", &n->mass, 0.05f, 20.0f);
+      ModSlider("friction", &n->friction, 0.0f, 1.0f);
+      ModSlider("bounce", &n->bounce, 0.0f, 1.0f);
+      ModSlider("linear damping", &n->linearDamping, 0.0f, 2.0f);
+      ModSlider("angular damping", &n->angularDamping, 0.0f, 2.0f);
+      ModSliderInt("iterations", &n->iterations, 1, 50);
+
+      NodeSeparator("forces");
+      ModSlider("gravity x", &n->gravityX, -30.0f, 30.0f);
+      ModSlider("gravity y", &n->gravityY, -30.0f, 30.0f);
+      ModSlider("gravity z", &n->gravityZ, -30.0f, 30.0f);
+
+      NodeSeparator("start");
+      ModSlider("velocity x", &n->velX, -20.0f, 20.0f);
+      ModSlider("velocity y", &n->velY, -20.0f, 20.0f);
+      ModSlider("velocity z", &n->velZ, -20.0f, 20.0f);
+      ModSlider("spin x", &n->spinX, -20.0f, 20.0f);
+      ModSlider("spin y", &n->spinY, -20.0f, 20.0f);
+      ModSlider("spin z", &n->spinZ, -20.0f, 20.0f);
+
+      NodeSeparator("kick");
+      ModSlider("kick time", &n->kickTime, 0.0f, 20.0f);
+      ModSlider("kick x", &n->kickX, -20.0f, 20.0f);
+      ModSlider("kick y", &n->kickY, -20.0f, 20.0f);
+      ModSlider("kick z", &n->kickZ, -20.0f, 20.0f);
+
+      NodeSeparator("world");
+      ModCheckbox("ground", &n->groundEnabled);
+      if (n->groundEnabled)
+         ModSlider("ground height", &n->groundHeight, -10.0f, 10.0f);
+      ModCheckbox("walls", &n->wallsEnabled);
+      if (n->wallsEnabled)
+         ModSlider("wall distance", &n->wallSize, 0.5f, 20.0f);
+   }
+
+
    void DrawParticleSystemParams(ParticleSystemNode* n)
    {
       ImGui::TextDisabled("%zu alive", n->AliveCount());
@@ -512,10 +592,13 @@ namespace app
       DropdownButton("shading", GeometryNode::ShadingNames(), n->shading, [n](int i) { n->shading = i; }, colW);
       DropdownButton("wrap", MaterialNode::WrapModeNames(), n->wrapMode, [n](int i) { n->wrapMode = i; }, colW);
       ColorSwatch("colour", n->color, n);
+      const bool pbrUnused = n->shading != 0 && !gParamRegisterOnly;   // Normals/UV/Flat ignore the lighting model
+      ImGui::BeginDisabled(pbrUnused);
       ModSlider("metallic", &n->metallic, 0.0f, 1.0f, "%.3f", colW);
       ModSlider("roughness", &n->roughness, 0.02f, 1.0f, "%.3f", colW);
       ModSlider("specular", &n->specular, 0.0f, 1.0f, "%.3f", colW);
       ModSlider("ior", &n->ior, 1.0f, 3.0f, "%.3f", colW);
+      ImGui::EndDisabled();
       ModSlider("opacity", &n->opacity, 0.0f, 1.0f, "%.3f", colW);
       ModCheckbox("texture alpha", &n->textureAlpha);
       if (n->opacity < 1.0f || n->alphaCutoff > 0.0f || n->textureAlpha)
@@ -527,6 +610,7 @@ namespace app
       ImGui::SameLine(0.0f, gutter);
       ImGui::BeginGroup();
 
+      ImGui::BeginDisabled(pbrUnused);
       NodeSeparator("emission", colW);
       ColorSwatch("emission", n->emissionColor, n);
       ModSlider("emission", &n->emission, 0.0f, 8.0f, "%.3f", colW);
@@ -564,6 +648,7 @@ namespace app
          ColorSwatch("sss colour", n->subsurfaceColor, n);
          ModSlider("sss radius", &n->subsurfaceRadius, 0.0f, 1.0f, "%.3f", colW);
       }
+      ImGui::EndDisabled();
 
       ImGui::EndGroup();
    }
@@ -733,6 +818,17 @@ namespace app
    }
 
 
+   void DrawProximityLinesParams(ProximityLinesNode* n)
+   {
+      ImGui::TextDisabled("%zu lines", n->LinkCount());
+      ModSlider("radius", &n->radius, 0.0f, 5.0f, "%.3f");
+      ModSliderInt("max per point", &n->maxPerPoint, 1, 16);
+      ModSliderInt("max lines", &n->maxLinks, 1, 200000);
+      ModSlider("thickness", &n->thickness, 0.0005f, 0.2f, "%.4f");
+      ModCheckbox("alive only", &n->aliveOnly);
+   }
+
+
    void DrawCurveOpsParams(CurveOpsNode* n)
    {
       if (n->input != nullptr)
@@ -757,6 +853,29 @@ namespace app
             break;
       }
       ModSlider("tube radius", &n->radius, 0.002f, 0.2f, "%.3f");
+   }
+
+
+   void DrawRevolveParams(RevolveNode* n)
+   {
+      DropdownButton("axis", kAxisXYZ, n->axis, [n](int i) { PushUndoCheckpoint(); n->axis = i; });
+      ModSlider("angle", &n->angle, -360.0f, 360.0f, "%.0f");
+      ModSliderInt("segments", &n->segments, 3, 256);
+      ModCheckbox("caps", &n->caps);
+   }
+
+
+   void DrawSweepParams(SweepNode* n)
+   {
+      if (n->profile == nullptr)
+      {
+         ModSlider("profile radius", &n->profileRadius, 0.002f, 2.0f, "%.3f");
+         ModSliderInt("profile sides", &n->profileSides, 3, 64);
+      }
+      ModSlider("start scale", &n->startScale, 0.0f, 4.0f);
+      ModSlider("end scale", &n->endScale, 0.0f, 4.0f);
+      ModSlider("twist", &n->twist, -1080.0f, 1080.0f, "%.0f");
+      ModCheckbox("caps", &n->caps);
    }
 
 
@@ -876,7 +995,15 @@ namespace app
       ImGui::TextDisabled("%zu triangles", n->TriangleCount());
 
       NodeSeparator("form");
-      ModSliderInt("detail", &n->detail, 2, 96);
+      {
+         // Shapes whose generator ignores `detail` (fixed solids, flat
+         // profiles built from `sides` alone): dim it rather than offer a
+         // dead slider.
+         const bool detailUnused = n->shape == 10 || (n->shape >= 14 && n->shape <= 16) || n->shape >= 20;
+         ImGui::BeginDisabled(detailUnused && !gParamRegisterOnly);
+         ModSliderInt("detail", &n->detail, 2, 96);
+         ImGui::EndDisabled();
+      }
       ModSlider("bevel", &n->bevel, 0.0f, 1.0f);
       if (n->shape == 13) // supershape
       {
@@ -887,7 +1014,12 @@ namespace app
       }
       if (n->bevel > 0.0f)
          ModSliderInt("bevel segments", &n->bevelSegments, 1, 3);
-      ModSliderInt("sides", &n->sides, 3, 64);
+      {
+         const bool sidesUnused = n->shape == 0 || n->shape == 1 || n->shape == 3 || (n->shape >= 14 && n->shape <= 19);
+         ImGui::BeginDisabled(sidesUnused && !gParamRegisterOnly);
+         ModSliderInt("sides", &n->sides, 3, 64);
+         ImGui::EndDisabled();
+      }
       // `tube` and `n2` are reused as the second and third form parameter by
       // several primitives, so each one is labelled for the shape in front of
       // you rather than by the variable it happens to live in. Capsule, Tube
@@ -944,6 +1076,7 @@ namespace app
          case GeometryOpNode::kTransform:
          case GeometryOpNode::kSolidify:
          case GeometryOpNode::kExtrude:
+         case GeometryOpNode::kInset:
          case GeometryOpNode::kWireframe:
          case GeometryOpNode::kTriangulate:
          case GeometryOpNode::kNormals:
@@ -1026,9 +1159,15 @@ namespace app
             // mesh's own origin, i.e. no visible change from before pivot
             // existed. Sits after scale/before spin, same order TransformMatrix()
             // applies move/rotate/scale/pivot in.
+            {
+            const bool pivotUnused = n->rotX == 0.0f && n->rotY == 0.0f && n->rotZ == 0.0f && n->spin == 0.0f
+               && n->scaleX == 1.0f && n->scaleY == 1.0f && n->scaleZ == 1.0f;
+            ImGui::BeginDisabled(pivotUnused && !gParamRegisterOnly);   // pivot only matters once something rotates or scales
             ModSlider("pivot x", &n->pivotX, -3.0f, 3.0f);
             ModSlider("pivot y", &n->pivotY, -3.0f, 3.0f);
             ModSlider("pivot z", &n->pivotZ, -3.0f, 3.0f);
+            ImGui::EndDisabled();
+            }
             ModSlider("spin / beat", &n->spin, -2.0f, 2.0f);
             break;
          case GeometryOpNode::kArray:
@@ -1084,7 +1223,9 @@ namespace app
             DropdownButton("axis", kAxisXYZ, n->axis, [n](int i) { PushUndoCheckpoint(); n->axis = i; }, kParamWidth, true, true);
             ModSlider("plane offset", &n->mirrorOffset, -2.0f, 2.0f);
             ModCheckbox("keep original", &n->keepOriginal);
+            ImGui::BeginDisabled(!n->keepOriginal && !gParamRegisterOnly); // the seam only exists when both halves are kept
             ModCheckbox("weld seam", &n->weldSeam);
+            ImGui::EndDisabled();
             break;
          case GeometryOpNode::kSelect:
          {
@@ -1151,6 +1292,16 @@ namespace app
             ModSlider("distance", &n->thickness, -1.0f, 1.0f);
             ModSlider("inset", &n->inset, 0.0f, 0.9f);
             break;
+         case GeometryOpNode::kBevel:
+            ModSlider("width", &n->bevelWidth, 0.001f, 0.5f, "%.3f");
+            ModSliderInt("segments", &n->bevelSegments, 1, 16);
+            ModSlider("sharp angle", &n->bevelAngle, 1.0f, 120.0f, "%.0f deg");
+            break;
+         case GeometryOpNode::kInset:
+            ModSlider("width", &n->insetWidth, 0.001f, 0.5f, "%.3f");
+            ModSlider("depth", &n->insetDepth, -0.5f, 0.5f, "%.3f");
+            ModSlider("patch angle", &n->bevelAngle, 1.0f, 120.0f, "%.0f deg");
+            break;
          case GeometryOpNode::kDecimate:
             ModSlider("keep", &n->decimateRatio, 0.01f, 1.0f, "%.2f");
             ModCheckbox("lock border", &n->lockBorder);
@@ -1195,7 +1346,9 @@ namespace app
       ModSlider("strength", &n->strength, -4.0f, 4.0f);
       ModSlider("frequency", &n->frequency, 0.1f, 12.0f);
       ModSlider("speed", &n->speed, -5.0f, 5.0f);
+      ImGui::BeginDisabled(n->mode != AudioDisplacementNode::kModeAcousticRipples && !gParamRegisterOnly);   // only the ripple falloff reads it
       ModSlider("damping", &n->damping, 0.0f, 4.0f);
+      ImGui::EndDisabled();
       ModSlider("attack", &n->attack, 1.0f, 300.0f, "%.0f ms");
       ModSlider("decay", &n->decay, 10.0f, 1500.0f, "%.0f ms");
       ModSlider("midlevel", &n->midlevel, -1.0f, 1.0f);
@@ -1529,13 +1682,18 @@ namespace app
       DropdownButton("type", LightNode::TypeNames(), n->type, [n](int i) { n->type = i; });
       ModSlider("orbit", &n->azimuth, -180.0f, 180.0f, "%.1f\xC2\xB0");
       ModSlider("elevation", &n->elevation, -85.9437f, 85.9437f, "%.1f\xC2\xB0");
-      if (n->type == 1 || n->type == 4)
-         ModSlider("distance", &n->distance, 0.2f, 20.0f);
-      if (n->type == 4)
-      {
-         ModSlider("cone angle", &n->spotAngle, 5.0f, 85.0f, "%.1f\xC2\xB0");
-         ModSlider("penumbra", &n->spotPenumbra, 0.0f, 1.0f);
-      }
+      // Every row is always drawn; a row the chosen type does not use is greyed, so the node never changes size.
+      ImGui::BeginDisabled(!(n->type == 1 || n->type == 4 || n->type == 5));
+      ModSlider("distance", &n->distance, 0.2f, 20.0f);
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(n->type != 4);
+      ModSlider("cone angle", &n->spotAngle, 5.0f, 85.0f, "%.1f\xC2\xB0");
+      ModSlider("penumbra", &n->spotPenumbra, 0.0f, 1.0f);
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(n->type != 5);
+      ModSlider("width", &n->areaWidth, 0.05f, 10.0f);
+      ModSlider("height", &n->areaHeight, 0.05f, 10.0f);
+      ImGui::EndDisabled();
       ColorSwatch("colour", n->color, n);
       ModSlider("intensity", &n->intensity, 0.0f, 5.0f);
       ModSlider("orbit / beat", &n->orbitPerBeat, -1.0f, 1.0f);
@@ -1679,6 +1837,12 @@ namespace app
       if (ActionButton::Column("Frame scene", colW))
          FrameSceneInView(n);
 
+      // Both columns draw every row every frame: a row that does not apply right now is greyed, never
+      // dropped, so nothing grows, shifts or leaves a gap when a switch flips or a param is added.
+      // Left: output, camera, points, raster (25 rows). Right: light, shadows, environment, quality (25 rows).
+      char label[64];
+      const int wantedAa = (n->samples <= 0) ? 0 : (1 << n->samples);
+
       // --- Left Column ---
       ImGui::BeginGroup();
 
@@ -1692,92 +1856,40 @@ namespace app
       ModSlider("height", &n->height, 64.0f, 8192.0f, "%.0f", colW);
       DropdownButton("antialias", Render3DNode::SampleNames(), n->samples,
                      [n](int i) { n->samples = i; }, colW);
-      {
-         // The requested sample count is clamped by both the driver and a memory
-         // budget, so show what actually happened when they disagree.
-         const int wanted = (n->samples <= 0) ? 0 : (1 << n->samples);
-         if (n->ActiveSamples() != wanted)
-            ImGui::TextColored(tok::V4(tok::palf::v_950_750_350_1000),
-                               "antialias reduced to %dx at this size",
-                               n->ActiveSamples());
-      }
+      // The requested sample count is clamped by both the driver and a memory
+      // budget, so say what actually happened when they disagree.
+      if (n->ActiveSamples() != wantedAa && ImGui::IsItemHovered())
+         ImGui::SetTooltip("antialias reduced to %dx at this size", n->ActiveSamples());
       DropdownButton("tonemap", Render3DNode::TonemapNames(), n->tonemap,
                      [n](int i) { n->tonemap = i; }, colW);
       ModSlider("exposure", &n->exposure, 0.1f, 4.0f, "%.3f", colW);
       ColorSwatch("background", n->bgColor, n);
       ModSlider("bg opacity", &n->bgOpacity, 0.0f, 1.0f, "%.3f", colW);
+      ModCheckbox("16-bit float output", &n->floatOutput);
 
-      NodeSeparator("camera", colW);
-      if (n->camera != nullptr)
-         ImGui::TextDisabled("driven by a Camera node");
-      else
+      snprintf(label, sizeof(label), n->camera != nullptr ? "camera - from a Camera node" : "camera");
+      NodeSeparator(label, colW);
       {
+         // This render's own camera, entirely separate from any node's
+         // mini-viewport/panel camera (SharedViewportCamera.h/gNodeCameras):
+         // the final output framing is a deliberate setup, not something
+         // casual node-viewport orbiting should ever move.
+         ImGui::BeginDisabled(n->camera != nullptr);
          DropdownButton("projection", Render3DNode::ProjectionNames(), n->projection,
                         [n](int i) { n->projection = i; }, colW);
+         // One slot, two meanings: the field of view for perspective, the view height for orthographic.
          if (n->projection == 0)
             ModSlider("fov", &n->fov, 10.0f, 120.0f, "%.3f", colW);
          else
             ModSlider("ortho height", &n->orthoHeight, 0.2f, 8.0f, "%.3f", colW);
          ModSlider("distance", &n->camDistance, 0.3f, 20.0f, "%.3f", colW);
-         // This render's own camera, entirely separate from any node's
-         // mini-viewport/panel camera (SharedViewportCamera.h/gNodeCameras):
-         // the final output framing is a deliberate setup, not something
-         // casual node-viewport orbiting should ever move.
          ModSlider("orbit", &n->camAzimuth, -180.0f, 180.0f, "%.1f\xC2\xB0", colW);
          ModSlider("elevation", &n->camElevation, -85.9437f, 85.9437f, "%.1f\xC2\xB0", colW);
          ModSlider("target x", &n->targetX, -3.0f, 3.0f, "%.3f", colW);
          ModSlider("target y", &n->targetY, -3.0f, 3.0f, "%.3f", colW);
          ModSlider("target z", &n->targetZ, -3.0f, 3.0f, "%.3f", colW);
+         ImGui::EndDisabled();
       }
-
-      ImGui::EndGroup();
-
-      // --- Right Column ---
-      ImGui::SameLine(0.0f, gutter);
-      ImGui::BeginGroup();
-
-      NodeSeparator("light", colW);
-      int patchedLights = 0;
-      for (int i = 0; i < Render3DNode::kLightSlots; i++)
-         if (n->lights[i] != nullptr)
-            patchedLights++;
-      if (patchedLights > 0)
-         ImGui::TextDisabled("%d Light node%s patched", patchedLights, patchedLights == 1 ? "" : "s");
-      else
-      {
-         ModSlider("light orbit", &n->lightAzimuth, -180.0f, 180.0f, "%.1f\xC2\xB0", colW);
-         ModSlider("light height", &n->lightElevation, -85.9437f, 85.9437f, "%.1f\xC2\xB0", colW);
-         ColorSwatch("light", n->lightColor, n);
-         ModSlider("intensity", &n->lightIntensity, 0.0f, 4.0f, "%.3f", colW);
-      }
-      ColorSwatch("ambient", n->ambientColor, n);
-      ModSlider("rim", &n->rimIntensity, 0.0f, 2.0f, "%.3f", colW);
-
-      NodeSeparator("shadows", colW);
-      ModCheckbox("cast shadows", &n->shadowsEnabled);
-      if (n->shadowsEnabled)
-      {
-         DropdownButton("resolution", Render3DNode::ShadowQualityNames(), n->shadowQuality,
-                        [n](int i) { n->shadowQuality = i; }, colW);
-         ModSlider("strength", &n->shadowStrength, 0.0f, 1.0f, "%.3f", colW);
-         ModSlider("softness", &n->shadowSoftness, 0.0f, 4.0f, "%.3f", colW);
-         ModSlider("bias", &n->shadowBias, 0.0002f, 0.02f, "%.4f", colW);
-      }
-
-      NodeSeparator("environment", colW);
-      const bool envConnected = n->envInput.IsConnected();
-      if (envConnected)
-      {
-         ImGui::TextDisabled("driven by an HDRI node");
-         ModCheckbox("use as background", &n->envAsBackground);
-      }
-      else
-      {
-         ColorSwatch("sky", n->envSky, n);
-         ColorSwatch("horizon", n->envHorizon, n);
-         ColorSwatch("ground", n->envGround, n);
-      }
-      ModSlider("env intensity", &n->envIntensity, 0.0f, 3.0f, "%.3f", colW);
 
       NodeSeparator("points", colW);
       DropdownButton("sprite shape", Render3DNode::SpriteShapeNames(), n->spriteShape,
@@ -1788,6 +1900,58 @@ namespace app
       NodeSeparator("raster", colW);
       ModCheckbox("depth test", &n->depthTest);
       ModCheckbox("cull backfaces", &n->backfaceCull);
+
+      ImGui::EndGroup();
+
+      // --- Right Column ---
+      ImGui::SameLine(0.0f, gutter);
+      ImGui::BeginGroup();
+
+      int patchedLights = 0;
+      for (int i = 0; i < Render3DNode::kLightSlots; i++)
+         if (n->lights[i] != nullptr)
+            patchedLights++;
+      snprintf(label, sizeof(label), patchedLights > 0 ? "light - %d from Light nodes" : "light", patchedLights);
+      NodeSeparator(label, colW);
+      ImGui::BeginDisabled(patchedLights > 0);
+      ModSlider("light orbit", &n->lightAzimuth, -180.0f, 180.0f, "%.1f\xC2\xB0", colW);
+      ModSlider("light height", &n->lightElevation, -85.9437f, 85.9437f, "%.1f\xC2\xB0", colW);
+      ColorSwatch("light", n->lightColor, n);
+      ModSlider("intensity", &n->lightIntensity, 0.0f, 4.0f, "%.3f", colW);
+      ImGui::EndDisabled();
+      ColorSwatch("ambient", n->ambientColor, n);
+      ModSlider("rim", &n->rimIntensity, 0.0f, 2.0f, "%.3f", colW);
+
+      NodeSeparator("shadows", colW);
+      ModCheckbox("cast shadows", &n->shadowsEnabled);
+      ImGui::BeginDisabled(!n->shadowsEnabled);
+      DropdownButton("resolution", Render3DNode::ShadowQualityNames(), n->shadowQuality,
+                     [n](int i) { n->shadowQuality = i; }, colW);
+      ModSlider("strength", &n->shadowStrength, 0.0f, 1.0f, "%.3f", colW);
+      ModSlider("softness", &n->shadowSoftness, 0.0f, 4.0f, "%.3f", colW);
+      ModSlider("bias", &n->shadowBias, 0.0002f, 0.02f, "%.4f", colW);
+      ImGui::EndDisabled();
+
+      const bool envConnected = n->envInput.IsConnected();
+      NodeSeparator(envConnected ? "environment - from an HDRI node" : "environment", colW);
+      ModCheckbox("use as background", &n->envAsBackground);
+      ImGui::BeginDisabled(envConnected);
+      ColorSwatch("sky", n->envSky, n);
+      ColorSwatch("horizon", n->envHorizon, n);
+      ColorSwatch("ground", n->envGround, n);
+      ImGui::EndDisabled();
+      ModSlider("env intensity", &n->envIntensity, 0.0f, 3.0f, "%.3f", colW);
+
+      NodeSeparator("quality", colW);
+      ModSlider("ambient occlusion", &n->aoStrength, 0.0f, 1.0f, "%.3f", colW);
+      ImGui::BeginDisabled(n->aoStrength <= 0.0f);
+      ModSlider("occlusion radius", &n->aoRadius, 0.05f, 3.0f, "%.3f", colW);
+      ImGui::EndDisabled();
+      ModSlider("depth of field", &n->dofAperture, 0.0f, 4.0f, "%.3f", colW);
+      ImGui::BeginDisabled(n->dofAperture <= 0.0f);
+      ModSlider("focus distance", &n->focusDistance, 0.3f, 30.0f, "%.3f", colW);
+      ImGui::EndDisabled();
+      ModSliderInt("offline supersample", &n->supersample, 1, 64, colW);
 
       ImGui::EndGroup();
    }
@@ -1977,6 +2141,25 @@ namespace app
             }
             continue;
          }
+         // Controls the chosen mode never reads sit greyed out (audit-verified against the shaders).
+         bool unused = false;
+         {
+            auto uni = [&](const char* u) -> int
+            {
+               for (size_t k = 0; k < def.params.size(); k++)
+                  if (def.params[k].uniformName == u)
+                     return (int)(*n->ParamPtr(k) + 0.5f);
+               return 0;
+            };
+            const std::string& un = p.uniformName;
+            if (def.name == "glitch")
+               unused = (un == "uSpeed" && uni("uKind") == 1) || (un == "uSeed" && (uni("uKind") == 1 || uni("uKind") == 2 || uni("uKind") == 4));
+            else if (def.name == "symmetry")
+               unused = (un == "uCenterX" && uni("uAxis") == 1) || (un == "uCenterY" && uni("uAxis") == 0);
+            else if (def.name == "normal map")
+               unused = (un == "uStrength" && uni("uOutput") == 1) || (un == "uInvertY" && uni("uOutput") != 0);
+         }
+         ImGui::BeginDisabled(unused && !gParamRegisterOnly);
          ImGui::PushID((int)i);
          if (p.type == FilterParamDef::Type::Color)
          {
@@ -2005,6 +2188,7 @@ namespace app
                       p.format.empty() ? "%.3f" : p.format.c_str(), kParamWidth, false, p.integer ? 1.0f : 0.0f);
          }
          ImGui::PopID();
+         ImGui::EndDisabled();
       }
       gParamRegisterOnly = savedRegisterOnly;
       if (def.params.empty())

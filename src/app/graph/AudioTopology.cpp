@@ -426,6 +426,8 @@ namespace app
                // point. sampleBpm/syncToTempo above stay Sample-only, which is
                // what makes the mapping fall back to native speed.
                w.sourceOffsetSeconds = c.sourceOffsetSeconds;
+               // Signed source seconds per timeline second (negative = reversed).
+               w.speed = (float)Arrange::ClipSpeedFactor(c);
                // Retrigger is an Audio Sample-only feature (Clip Settings
                // hides the control for every other category) - a stray
                // `retrigger=true` left over from a patch saved before this

@@ -457,6 +457,7 @@ set(COMMON_SOURCES
     src/app/graph/GraphHosts.cpp
     src/app/graph/NodeRegistry.cpp
     src/app/graph/PatchFiles.cpp
+    src/app/graph/PatchShare.cpp
     src/app/graph/PatchIO.cpp
     src/app/graph/PatchLoad.cpp
     src/app/graph/NodeClipboard.cpp
@@ -531,6 +532,8 @@ set(COMMON_SOURCES
     src/core/Mesh.cpp
     src/core/Delaunay.cpp
     src/core/CurveOps.cpp
+    src/core/SweepRevolve.cpp
+    src/core/BevelInset.cpp
     src/core/MeshDecimate.cpp
     src/core/NodeViewport.cpp
     src/core/Transport.cpp
@@ -586,6 +589,8 @@ set(COMMON_SOURCES
     src/core/UpdateCheck.cpp
     src/core/SelfUpdate.cpp
     src/core/Extensions.cpp
+    src/core/HapReader.cpp
+    src/core/ShareBundle.cpp
     src/core/tracking/OrtRuntime.cpp
     src/core/tracking/HandTracker.cpp
     src/core/tracking/FaceTracker.cpp
@@ -680,6 +685,7 @@ set(COMMON_SOURCES
     src/nodes/MidiNodes.cpp
     src/nodes/MidiOutNode.cpp
     src/nodes/Geometry3DNodes.cpp
+    src/nodes/Render3DPost.cpp
     src/nodes/EnvironmentNode.cpp
     src/nodes/ModelSourceNode.cpp
     src/nodes/Text3DNode.cpp
@@ -688,6 +694,8 @@ set(COMMON_SOURCES
     src/nodes/GeometryTableNode.cpp
     src/nodes/OceanNode.cpp
     src/nodes/SimulationNodes.cpp
+    src/nodes/RigidBodyNode.cpp
+    src/nodes/LSystemNode.cpp
     src/nodes/GenerativeNodes.cpp
     src/nodes/GeometryOpNodes.cpp
     src/nodes/FieldElementNode.cpp
@@ -698,11 +706,17 @@ set(COMMON_SOURCES
     src/nodes/FieldPixelNode.cpp
     src/nodes/FieldGraphNode.cpp
     src/nodes/PointDistributionNodes.cpp
+    src/nodes/ProximityLinesNode.cpp
     src/nodes/DelaunayNodes.cpp
     src/nodes/CurveOpsNode.cpp
+    src/nodes/SweepRevolveNodes.cpp
     src/nodes/DepthProjectionNode.cpp
     src/nodes/SceneNodes.cpp
     src/nodes/FeedbackNodes.cpp
+    src/nodes/OpticalFlowNode.cpp
+    src/nodes/TimeMachineNode.cpp
+    src/nodes/FluidNode.cpp
+    src/nodes/VolumeNode.cpp
     src/nodes/SwitcherNode.cpp
     src/nodes/Switcher3DNode.cpp
     src/nodes/CurveNode.cpp

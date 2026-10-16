@@ -61,7 +61,7 @@ public:
    // Direction for a directional light, world position for a point light.
    void ComputeVector(float out[3]) const;
 
-   int type = 0; // directional / point / sun / ambient / spot
+   int type = 0; // directional / point / sun / ambient / spot / area
    float azimuth = 51.5662f;
    float elevation = 51.5662f;
    float distance = 4.0f;
@@ -70,6 +70,10 @@ public:
    float falloff = 1.0f;
    float spotAngle = 45.0f;       // degrees half-angle for spot cone
    float spotPenumbra = 0.2f;    // 0..1 softness of the cone edge
+   // Area: a one-sided rectangle at `distance`, facing the origin. Sizes in world units; intensity is
+   // the brightness of the emitting face, so resizing it changes the soft look, not the exposure.
+   float areaWidth = 1.0f;
+   float areaHeight = 1.0f;
 
    void VisitParams(ParamVisitor& v) override
    {
@@ -78,6 +82,7 @@ public:
       v.Float("intensity", intensity); v.Float("falloff", falloff);
       v.Float("spotAngle", spotAngle); v.Float("spotPenumbra", spotPenumbra);
       v.Float("orbitPerBeat", orbitPerBeat);
+      v.Float("areaWidth", areaWidth); v.Float("areaHeight", areaHeight);
    }
    float orbitPerBeat = 0.0f;
 };

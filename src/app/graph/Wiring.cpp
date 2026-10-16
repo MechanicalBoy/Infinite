@@ -59,6 +59,8 @@ namespace app
             r.origBpm = c.origBpm;
             r.sourceDurationSeconds = c.sourceDurationSeconds;
             r.sourceOffsetSeconds = c.sourceOffsetSeconds;
+            r.speed = c.speed;
+            r.reverse = c.reverse;
             r.bypassedModParams = c.bypassedModParams;
             s.clips.push_back(std::move(r));
          }
@@ -183,6 +185,8 @@ namespace app
             clip.origBpm = (c.origBpm > 0.0f) ? c.origBpm : 0.0f;
             clip.sourceDurationSeconds = c.sourceDurationSeconds;
             clip.sourceOffsetSeconds = c.sourceOffsetSeconds;
+            clip.speed = c.speed;
+            clip.reverse = c.reverse;
             clip.bypassedModParams = c.bypassedModParams;
             lane.clips.push_back(std::move(clip));
          }
@@ -323,6 +327,8 @@ namespace app
          return 2; // depth and optional color
       if (dynamic_cast<ClothNode*>(gn.node.get()) != nullptr)
          return 1;
+      if (dynamic_cast<RigidBodyNode*>(gn.node.get()) != nullptr)
+         return 1;
       if (dynamic_cast<JoinGeometryNode*>(gn.node.get()) != nullptr)
          return JoinGeometryNode::kSlots;
       if (dynamic_cast<MetaBallNode*>(gn.node.get()) != nullptr)
@@ -356,9 +362,15 @@ namespace app
          return 1;
       if (dynamic_cast<PointsToVerticesNode*>(gn.node.get()) != nullptr)
          return 1;
+      if (dynamic_cast<ProximityLinesNode*>(gn.node.get()) != nullptr)
+         return 1;
       if (dynamic_cast<DelaunayMeshNode*>(gn.node.get()) != nullptr)
          return 1;
       if (dynamic_cast<CurveOpsNode*>(gn.node.get()) != nullptr)
+         return 1;
+      if (dynamic_cast<SweepNode*>(gn.node.get()) != nullptr)
+         return 2;
+      if (dynamic_cast<RevolveNode*>(gn.node.get()) != nullptr)
          return 1;
       if (dynamic_cast<MergeByDistanceNode*>(gn.node.get()) != nullptr)
          return 1;
@@ -370,6 +382,14 @@ namespace app
       if (dynamic_cast<FeedbackNode*>(gn.node.get()) != nullptr)
          return 1;
       if (dynamic_cast<TrailsNode*>(gn.node.get()) != nullptr)
+         return 1;
+      if (dynamic_cast<OpticalFlowNode*>(gn.node.get()) != nullptr)
+         return 1;
+      if (dynamic_cast<TimeMachineNode*>(gn.node.get()) != nullptr)
+         return 2; // slot 0 is the image, slot 1 the delay map
+      if (dynamic_cast<FluidNode*>(gn.node.get()) != nullptr)
+         return 3; // image (the dye), force, obstacles
+      if (dynamic_cast<VolumeNode*>(gn.node.get()) != nullptr)
          return 1;
       if (dynamic_cast<ReactionDiffusionNode*>(gn.node.get()) != nullptr)
          return 1;
@@ -507,6 +527,14 @@ namespace app
          return slot == 0 ? &fb->Input() : nullptr;
       if (auto* trails = dynamic_cast<TrailsNode*>(gn.node.get()))
          return slot == 0 ? &trails->Input() : nullptr;
+      if (auto* flow = dynamic_cast<OpticalFlowNode*>(gn.node.get()))
+         return slot == 0 ? &flow->Input() : nullptr;
+      if (auto* tm = dynamic_cast<TimeMachineNode*>(gn.node.get()))
+         return slot == 0 ? &tm->Input() : (slot == 1 ? &tm->DelayMap() : nullptr);
+      if (auto* fluid = dynamic_cast<FluidNode*>(gn.node.get()))
+         return slot == 0 ? &fluid->Input() : (slot == 1 ? &fluid->Force() : (slot == 2 ? &fluid->Obstacles() : nullptr));
+      if (auto* vol = dynamic_cast<VolumeNode*>(gn.node.get()))
+         return slot == 0 ? &vol->Input() : nullptr;
       if (auto* rd = dynamic_cast<ReactionDiffusionNode*>(gn.node.get()))
          return slot == 0 ? &rd->Input() : nullptr;
       if (auto* wt = dynamic_cast<WaveTerrainNode*>(gn.node.get()))
@@ -1576,6 +1604,64 @@ namespace app
       HearNode(synthIndex);
       gRequestSelectNodeIndex = kbIndex;
       return kbIndex;
+   }
+
+   // File > New Effect Chain: Audio File -> Audio Filter -> Delay -> Reverb -> Audio Out, so a dropped
+   // sample (or the file picker on the first node) runs through a ready rack.
+   int SpawnEffectChain()
+   {
+      const ImVec2 at = FindFreeSpawnPosition(gViewCenterCanvas);
+      static const char* kNames[] = { "Audio File", "Audio Filter", "Delay", "Reverb" };
+      static const char* kCats[] = { "Modulators", "AudioEffects", "AudioEffects", "AudioEffects" };
+      int idx[4] = { -1, -1, -1, -1 };
+      for (int i = 0; i < 4; i++)
+      {
+         GraphNode* gn = SpawnNode(kNames[i], kCats[i], at.x + (i - 1) * 520.0f, at.y);
+         if (gn == nullptr)
+            return -1;
+         idx[i] = gn->index;
+      }
+      for (int i = 1; i < 4; i++)
+      {
+         GraphNode* dst = FindNodeByIndex(idx[i]);
+         const int slot = dst != nullptr ? FirstInputSlot(*dst, true) : -1;
+         std::string err;
+         if (slot >= 0)
+            ConnectNodes(idx[i - 1], 0, idx[i], slot, err);
+      }
+      HearNode(idx[3]);
+      gRequestSelectNodeIndex = idx[0];
+      return idx[0];
+   }
+
+   // File > New 3D Scene: Sphere, Camera and Light cabled into a Render 3D. Slots follow Render3DNode's
+   // input order: geo A = 0, camera = 4, light 1 = 5.
+   int SpawnScene3D()
+   {
+      const ImVec2 at = FindFreeSpawnPosition(gViewCenterCanvas);
+      GraphNode* geo = SpawnNode("Sphere", "3D", at.x - 520.0f, at.y - 200.0f);
+      if (geo == nullptr)
+         return -1;
+      const int geoIndex = geo->index;
+      GraphNode* cam = SpawnNode("Camera", "3D", at.x - 520.0f, at.y + 120.0f);
+      if (cam == nullptr)
+         return -1;
+      const int camIndex = cam->index;
+      GraphNode* light = SpawnNode("Light", "3D", at.x - 520.0f, at.y + 440.0f);
+      if (light == nullptr)
+         return -1;
+      const int lightIndex = light->index;
+      GraphNode* render = SpawnNode("Render 3D", "3D", at.x, at.y);
+      if (render == nullptr)
+         return -1;
+      const int renderIndex = render->index;
+      std::string err;
+      ConnectNodes(geoIndex, 0, renderIndex, 0, err);
+      ConnectNodes(camIndex, 0, renderIndex, 4, err);
+      ConnectNodes(lightIndex, 0, renderIndex, 5, err);
+      gPatchDirty = true;
+      gRequestSelectNodeIndex = renderIndex;
+      return renderIndex;
    }
 
 

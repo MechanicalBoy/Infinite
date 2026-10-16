@@ -43,6 +43,13 @@
 //   CURVE       Curve Ops: Resample spacing and length on a circle, Simplify against the
 //               Douglas-Peucker bound, Smooth keeps the ends and never lengthens, Offset
 //               against the parallel curve; the node in every mode and on hostile numbers
+//   SWEEP       Sweep and Revolve: closed results are watertight, wound and shaded outward with
+//               the volume the shape has (torus, sphere, capped part-turns, a non-convex cap,
+//               a taper to a point, a closed path with whole-turn twist); lathe normals against
+//               the analytic torus; the nodes' cache, bypass, forwarding and hostile numbers
+//   KINDS       every geometry op against every input kind: empty, points, curve, mixed, bad data
+//   BEVEL       Bevel and Inset: closed in, closed out; volume against the chamfer prisms and the
+//               six frustums of an inset cube; smooth shapes and hostile numbers hand the input back
 //   CLOTH       free fall against g t^2 / 2, pinned cloth over 12 s (finite, bounded
 //               stretch, pins hold, sags, settles), determinism, a long time jump, bypass
 //   INST        Instance on Points: count, maxPoints cap, placement on the surface, scale,
@@ -60,18 +67,23 @@
 #include "core/Transport.h"
 #include "nodes/CurveNode.h"
 #include "nodes/CurveOpsNode.h"
+#include "nodes/SweepRevolveNodes.h"
 #include "nodes/SimulationNodes.h"
 #include "nodes/Geometry3DNodes.h"
+#include "nodes/SceneNodes.h"
 #include "nodes/DelaunayNodes.h"
 #include "nodes/GeometryOpNodes.h"
 #include "nodes/OceanNode.h"
 #include "nodes/PointDistributionNodes.h"
 #include "nodes/UtilityNodes.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <map>
+#include <limits>
 #include <set>
 #include <tuple>
 #include <unordered_map>
@@ -1096,6 +1108,573 @@ namespace
       Report(f, "DEGEN", "Curve Ops no input", Measure(none.GetMesh()), false, ok);
    }
 
+   // ================================================================= SWEEP
+   // Sweep and Revolve. The done check for both is the same: the surface is wound and
+   // shaded outward, and a closed result is watertight with the volume the shape has.
+   struct CurveProbe : public IGeometrySource
+   {
+      Polyline line;
+      Mat4 matrix;
+      const Mesh& GetMesh() override { static Mesh empty; return empty; }
+      unsigned long long MeshRevision() override { return 0; }
+      Mat4 GetModelMatrix() const override { return matrix; }
+      Material GetMaterial() const override { return Material(); }
+      const Polyline* GetCurve() override { return &line; }
+      unsigned long long CurveStamp() override { return stamp; }
+      unsigned long long stamp = 1;
+   };
+
+   Polyline CirclePoly(const float c[3], const float u[3], const float v[3], float r, int n)
+   {
+      Polyline p;
+      for (int i = 0; i < n; i++)
+      {
+         const float a = 6.28318530718f * (float)i / (float)n;
+         for (int k = 0; k < 3; k++)
+            p.points.push_back(c[k] + r * (std::cos(a) * u[k] + std::sin(a) * v[k]));
+      }
+      p.closed = true;
+      return p;
+   }
+
+   Polyline PolyOf(std::initializer_list<float> xyz, bool closed)
+   {
+      Polyline p;
+      p.points.assign(xyz.begin(), xyz.end());
+      p.closed = closed;
+      return p;
+   }
+
+   // Unit-radius semicircle from the south pole to the north pole in the XY plane,
+   // closed along the axis: revolved, it is a sphere.
+   Polyline SemiCircle(int n, bool reversed)
+   {
+      Polyline p;
+      for (int i = 0; i <= n; i++)
+      {
+         const float a = -1.57079632679f + 3.14159265359f * (float)i / (float)n;
+         const bool pole = (i == 0 || i == n);
+         p.points.push_back(pole ? 0.0f : std::cos(a));
+         p.points.push_back(std::sin(a));
+         p.points.push_back(0.0f);
+      }
+      p.closed = true;
+      if (reversed)
+      {
+         Polyline r;
+         r.closed = true;
+         for (size_t i = p.Count(); i-- > 0;)
+            for (int k = 0; k < 3; k++)
+               r.points.push_back(p.points[i * 3 + (size_t)k]);
+         return r;
+      }
+      return p;
+   }
+
+
+   // ================================================================= BEVEL
+   // Edge bevel and face inset (3.7). Closed in, closed out; the volume follows the shape
+   // (a bevel only removes, a wider one removes more, a rounder one removes less than the
+   // chamfer, an inset of a cube is a frustum per face), hostile numbers hand the input back
+   // or still give a closed mesh.
+   // ================================================================= KINDS
+   // Every geometry op against every kind of input the graph can hand it: no mesh, a mesh with no
+   // triangles, points only, a curve only, a mesh carrying points and a curve, and meshes with bad
+   // data. Each must either work or pass through cleanly - no crash, no out-of-range index, no
+   // non-finite number made from finite input. A cloud or curve must come out unchanged (or moved,
+   // for Transform) and never be dropped.
+   struct KindProbe : public IGeometrySource
+   {
+      Mesh mesh;
+      std::vector<Particle> cloud;
+      Polyline line;
+      bool hasCloud = false, hasLine = false;
+      Mat4 matrix;
+      unsigned long long rev = NextMeshRevision();
+      const Mesh& GetMesh() override { return mesh; }
+      unsigned long long MeshRevision() override { return rev; }
+      Mat4 GetModelMatrix() const override { return matrix; }
+      Material GetMaterial() const override { return Material(); }
+      const std::vector<Particle>* GetPointCloud() override { return hasCloud ? &cloud : nullptr; }
+      unsigned long long PointCloudRevision() override { return rev; }
+      const Polyline* GetCurve() override { return hasLine ? &line : nullptr; }
+      unsigned long long CurveStamp() override { return rev; }
+   };
+
+   void AuditKinds(Flags& f, bool& ok)
+   {
+      struct Kind { std::string name; KindProbe probe; bool finiteInput = true; };
+      std::vector<Kind> kinds;
+      auto cubeMesh = []() { GeometryNode g; g.shape = 1; g.detail = 4; return Build(g); };
+      auto addCloud = [](KindProbe& p) {
+         p.hasCloud = true;
+         for (int i = 0; i < 5; i++) { Particle q; q.px = (float)i; q.py = 0.5f * (float)i; q.pz = -1.0f; p.cloud.push_back(q); }
+      };
+      auto addLine = [](KindProbe& p, int n) {
+         p.hasLine = true;
+         for (int i = 0; i < n; i++) { p.line.points.push_back((float)i); p.line.points.push_back(1.0f); p.line.points.push_back(0.0f); }
+      };
+      auto add = [&](const char* name, std::function<void(KindProbe&)> fill, bool finite = true) {
+         kinds.emplace_back();
+         kinds.back().name = name;
+         kinds.back().finiteInput = finite;
+         fill(kinds.back().probe);
+      };
+      add("empty mesh", [](KindProbe&) {});
+      add("vertices, no triangles", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.indices.clear(); });
+      add("points only", [&](KindProbe& p) { addCloud(p); });
+      add("one point", [&](KindProbe& p) { addCloud(p); p.cloud.resize(1); });
+      add("curve only", [&](KindProbe& p) { addLine(p, 6); });
+      add("curve of one point", [&](KindProbe& p) { addLine(p, 1); });
+      add("closed 2-point curve", [&](KindProbe& p) { addLine(p, 2); p.line.closed = true; });
+      add("mesh + points + curve", [&](KindProbe& p) { p.mesh = cubeMesh(); addCloud(p); addLine(p, 6); });
+      add("points + curve, no mesh", [&](KindProbe& p) { addCloud(p); addLine(p, 4); });
+      add("one triangle", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.indices.resize(3); });
+      add("triangle list not a multiple of 3", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.indices.resize(p.mesh.indices.size() - 1); });
+      add("zero-area triangles", [&](KindProbe& p) {
+         p.mesh = cubeMesh();
+         for (size_t i = 0; i + 2 < p.mesh.indices.size(); i += 3) p.mesh.indices[i + 1] = p.mesh.indices[i + 2] = p.mesh.indices[i];
+      });
+      add("indices out of range", [&](KindProbe& p) {
+         p.mesh = cubeMesh();
+         p.mesh.indices[0] = (unsigned)p.mesh.vertices.size() + 50;
+      });
+      add("NaN and infinity positions", [&](KindProbe& p) {
+         p.mesh = cubeMesh();
+         p.mesh.vertices[0].px = std::nanf("");
+         p.mesh.vertices[1].py = INFINITY;
+      }, false);
+      add("huge coordinates", [&](KindProbe& p) {
+         p.mesh = cubeMesh();
+         for (auto& v : p.mesh.vertices) { v.px *= 1e9f; v.py *= 1e9f; v.pz *= 1e9f; }
+      });
+      add("short selection mask", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.faceMask.assign(3, 1); });
+      add("long selection mask", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.faceMask.assign(p.mesh.indices.size(), 1); });
+      add("everything selected", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.faceMask.assign(p.mesh.indices.size() / 3, 1); });
+      add("short vertex colours", [&](KindProbe& p) { p.mesh = cubeMesh(); p.mesh.vertexColor.assign(5, 0.5f); });
+
+      const auto& opNames = GeometryOpNode::OpNames();
+      int cases = 0;
+      for (int op = 0; op < GeometryOpNode::kOpCount; op++)
+      {
+         if (!GeometryOpNode::IsSpawnable(op))
+            continue;
+         const std::string name = (size_t)op < opNames.size() ? opNames[(size_t)op] : std::to_string(op);
+         for (const Kind& k : kinds)
+         {
+            for (int selOnly = 0; selOnly < 2; selOnly++)
+            {
+               KindProbe probe = k.probe;
+               probe.rev = NextMeshRevision();
+               GeometryOpNode node;
+               node.op = op;
+               node.selectionOnly = selOnly != 0;
+               node.input = &probe;
+               const std::string id = name + " on " + k.name + (selOnly ? " (selection only)" : "");
+               node.CookIfNeeded(gFrame++);
+               const Mesh m = node.GetMesh();
+               const Stats s = Measure(m);
+               cases++;
+               if (s.badIndex > 0)
+               {
+                  f.Flag("KINDS", id, "output has an out-of-range index", s.badIndex);
+                  ok = false;
+               }
+               if (k.finiteInput && s.nonFinite > 0)
+               {
+                  f.Flag("KINDS", id, "non-finite output from finite input", s.nonFinite);
+                  ok = false;
+               }
+               if (m.indices.size() % 3 != 0)
+               {
+                  f.Flag("KINDS", id, "triangle list is not a multiple of 3", (double)m.indices.size());
+                  ok = false;
+               }
+               if (!m.vertexColor.empty() && m.vertexColor.size() != m.vertices.size() * 3)
+               {
+                  f.Flag("KINDS", id, "vertex colours do not match the vertex count", (double)m.vertexColor.size());
+                  ok = false;
+               }
+               if (!m.faceMask.empty() && m.faceMask.size() != m.indices.size() / 3)
+               {
+                  f.Flag("KINDS", id, "selection mask does not match the triangle count", (double)m.faceMask.size());
+                  ok = false;
+               }
+               // Points and a curve must survive: untouched by a mesh op, moved by Transform.
+               const std::vector<Particle>* pc = node.GetPointCloud();
+               if (probe.hasCloud && (pc == nullptr || pc->size() != probe.cloud.size()))
+               {
+                  f.Flag("KINDS", id, "points were dropped", pc ? (double)pc->size() : 0.0);
+                  ok = false;
+               }
+               const Polyline* cv = node.GetCurve();
+               if (probe.hasLine && (cv == nullptr || cv->points.size() != probe.line.points.size()))
+               {
+                  f.Flag("KINDS", id, "curve was dropped", cv ? (double)cv->points.size() : 0.0);
+                  ok = false;
+               }
+               if (!probe.hasCloud && pc != nullptr)
+                  f.Flag("KINDS", id, "invented points from nothing", (double)pc->size());
+               if (!probe.hasLine && cv != nullptr)
+                  f.Flag("KINDS", id, "invented a curve from nothing", (double)cv->points.size());
+               // A mesh op fed points or a curve must say so rather than silently pass it by.
+               if ((probe.hasCloud || probe.hasLine) && probe.mesh.Empty() && op != GeometryOpNode::kTransform &&
+                   node.CookWarning().empty())
+                  f.Flag("KINDS", id, "no warning that this op does not act on points or curves", 1);
+            }
+         }
+      }
+      printf("GEOAUDIT KINDS  %d op x input-kind cases run\n", cases);
+   }
+
+   void AuditBevelInset(Flags& f, bool& ok)
+   {
+      auto stats = [&](const char* name, const Mesh& m, bool closed) {
+         const Stats s = Measure(m);
+         printf("GEOAUDIT BEVEL  %-34s %6zu verts %6zu tris | boundary %d nonmanifold %d volume %.4f\n", name,
+                s.verts, s.tris, s.boundary, s.nonManifold, s.volume);
+         if (s.tris == 0)
+            f.Flag("BEVEL", name, "no triangles", 0);
+         else
+            Report(f, "BEVEL", name, s, closed, ok);
+         return s;
+      };
+
+      const Mesh cube = Primitives::Cube(1);
+      const Stats base = Measure(cube);
+      const double edge = std::cbrt(base.volume);
+
+      const Stats b1 = stats("Bevel cube 0.1 chamfer", MeshOps::BevelEdges(cube, 0.1f * (float)edge, 1, 30.0f), true);
+      const Stats b4 = stats("Bevel cube 0.1 round x4", MeshOps::BevelEdges(cube, 0.1f * (float)edge, 4, 30.0f), true);
+      const Stats bw = stats("Bevel cube 0.2 chamfer", MeshOps::BevelEdges(cube, 0.2f * (float)edge, 1, 30.0f), true);
+      const Stats bh = stats("Bevel cube 99 (clamped)", MeshOps::BevelEdges(cube, 99.0f, 2, 30.0f), true);
+      if (!(b1.volume < base.volume))
+         f.Flag("BEVEL", "Bevel cube chamfer", "volume did not shrink", b1.volume - base.volume);
+      if (!(bw.volume < b1.volume))
+         f.Flag("BEVEL", "Bevel cube chamfer", "wider bevel did not remove more", bw.volume - b1.volume);
+      if (!(b4.volume > b1.volume && b4.volume < base.volume))
+         f.Flag("BEVEL", "Bevel cube round", "rounded bevel volume not between chamfer and original", b4.volume);
+      // Chamfer lower bound: 12 prisms of cross section w^2/2 over the edge length, overlaps at
+      // the corners only make the true volume larger.
+      const double w = 0.1 * edge;
+      const double lower = base.volume - 12.0 * 0.5 * w * w * edge;
+      if (b1.volume < lower - 1e-6)
+         f.Flag("BEVEL", "Bevel cube chamfer", "removed more than the 12 edge prisms", b1.volume - lower);
+
+      // A box that is not a cube, a cylinder with caps, and smooth shapes that must not change.
+      Mesh box = MeshOps::Transform(cube, Mat4::Scale(2.0f, 1.0f, 0.5f));
+      stats("Bevel box 2x1x0.5", MeshOps::BevelEdges(box, 0.08f, 2, 30.0f), true);
+      const Mesh cyl = Primitives::Cylinder(24, 1, 1.0f);
+      stats("Bevel cylinder", MeshOps::BevelEdges(cyl, 0.05f, 2, 30.0f), true);
+      const Mesh torus = Primitives::Torus(24, 12, 0.3f);
+      const Mesh tb = MeshOps::BevelEdges(torus, 0.05f, 2, 60.0f);
+      if (tb.indices.size() != torus.indices.size())
+         f.Flag("BEVEL", "Bevel torus", "a smooth shape changed", (double)tb.indices.size() - (double)torus.indices.size());
+      const Mesh sphere = Primitives::Sphere(12, 16);
+      if (MeshOps::BevelEdges(sphere, 0.05f, 2, 60.0f).indices.size() != sphere.indices.size())
+         f.Flag("BEVEL", "Bevel sphere", "a smooth shape changed", 0);
+
+      // Hostile numbers hand the input back untouched.
+      for (float bad : { 0.0f, -1.0f, std::nanf(""), INFINITY })
+      {
+         const Mesh r = MeshOps::BevelEdges(cube, bad, 3, 30.0f);
+         if (r.indices.size() != cube.indices.size())
+            f.Flag("BEVEL", "Bevel hostile width", "input not returned", bad);
+      }
+      stats("Bevel 999 segments (clamped)", MeshOps::BevelEdges(cube, 0.1f, 999, 30.0f), true);
+      if (!MeshOps::BevelEdges(Mesh(), 0.1f, 1, 30.0f).Empty())
+         f.Flag("BEVEL", "Bevel empty", "made geometry out of nothing", 0);
+
+      // ---- Inset: every cube face pulled in by wi and lifted by d is a frustum added to it.
+      const double wi = 0.15 * edge, d = 0.1 * edge;
+      const Stats i0 = stats("Inset cube flat", MeshOps::InsetFaces(cube, (float)wi, 0.0f, 20.0f), true);
+      const Stats i1 = stats("Inset cube raised", MeshOps::InsetFaces(cube, (float)wi, (float)d, 20.0f), true);
+      const Stats i2 = stats("Inset cube sunk", MeshOps::InsetFaces(cube, (float)wi, -(float)d, 20.0f), true);
+      if (std::fabs(i0.volume - base.volume) > 1e-5 * base.volume)
+         f.Flag("BEVEL", "Inset cube flat", "volume changed with no depth", i0.volume - base.volume);
+      const double a1 = edge * edge, a2 = (edge - 2 * wi) * (edge - 2 * wi);
+      const double frustum = d / 3.0 * (a1 + a2 + std::sqrt(a1 * a2));
+      if (std::fabs(i1.volume - (base.volume + 6.0 * frustum)) > 1e-3 * base.volume)
+         f.Flag("BEVEL", "Inset cube raised", "volume off the six frustums", i1.volume - base.volume - 6.0 * frustum);
+      if (std::fabs(i2.volume - (base.volume - 6.0 * frustum)) > 1e-3 * base.volume)
+         f.Flag("BEVEL", "Inset cube sunk", "volume off the six frustums", i2.volume - base.volume + 6.0 * frustum);
+      const Mesh sph = MeshOps::InsetFaces(sphere, 0.05f, 0.0f, 20.0f);
+      if (sph.indices.size() != sphere.indices.size())
+         f.Flag("BEVEL", "Inset sphere", "a shape with no boundary changed", 0);
+
+      // A selection: only the chosen face is inset, and it stays the selection.
+      Mesh masked = cube;
+      masked.faceMask.assign(masked.indices.size() / 3, 0);
+      masked.faceMask[0] = masked.faceMask[1] = 1;
+      const Mesh mi = MeshOps::InsetFaces(masked, (float)wi, (float)d, 20.0f);
+      stats("Inset one cube face", mi, true);
+      int selected = 0;
+      for (unsigned char m : mi.faceMask)
+         selected += m != 0;
+      if (mi.faceMask.size() != mi.indices.size() / 3)
+         f.Flag("BEVEL", "Inset one face", "mask length off the triangle count", (double)mi.faceMask.size());
+      if (selected < 1 || selected > 2)
+         f.Flag("BEVEL", "Inset one face", "inner face not left selected, selected triangles", selected);
+      for (float bad : { 0.0f, -1.0f, std::nanf("") })
+         if (MeshOps::InsetFaces(cube, bad, 0.0f, 20.0f).indices.size() != cube.indices.size())
+            f.Flag("BEVEL", "Inset hostile width", "input not returned", bad);
+      if (!MeshOps::InsetFaces(cube, 0.1f, INFINITY, 20.0f).vertices.empty() &&
+          MeshOps::InsetFaces(cube, 0.1f, INFINITY, 20.0f).indices.size() != cube.indices.size())
+         f.Flag("BEVEL", "Inset hostile depth", "input not returned", 0);
+   }
+
+   void AuditSweepRevolve(Flags& f, bool& ok)
+   {
+      const double pi = 3.14159265358979;
+      auto check = [&](const std::string& name, const Mesh& m, bool closed, double wantVolume, double tol) {
+         const Stats s = Measure(m);
+         printf("GEOAUDIT SWEEP  %-34s %6zu verts %6zu tris | boundary %d nonmanifold %d volume %.4f (want %.4f)\n",
+                name.c_str(), s.verts, s.tris, s.boundary, s.nonManifold, s.volume, wantVolume);
+         if (s.tris == 0)
+         {
+            f.Flag("SWEEP", name, "no triangles", 0);
+            return;
+         }
+         Report(f, "SWEEP", name, s, closed, ok);
+         if (closed && wantVolume > 0.0 && std::fabs(s.volume - wantVolume) > tol * wantVolume)
+            f.Flag("SWEEP", name, "volume off by fraction", (s.volume - wantVolume) / wantVolume);
+      };
+
+      const float o[3] = { 0, 0, 0 };
+      const float ex[3] = { 1, 0, 0 }, ey[3] = { 0, 1, 0 }, ez[3] = { 0, 0, 1 };
+
+      // ---- Revolve
+      const float torusC[3] = { 1, 0, 0 };
+      const Polyline tube = CirclePoly(torusC, ex, ey, 0.3f, 48);
+      const double torusVol = 2.0 * pi * pi * 1.0 * 0.09;
+      check("Revolve torus 360 Y", MeshOps::Revolve(tube, 1, 360.0f, 96, true), true, torusVol, 0.02);
+      check("Revolve torus -360 Y", MeshOps::Revolve(tube, 1, -360.0f, 96, true), true, torusVol, 0.02);
+      {
+         const float cx[3] = { 0, 1, 0 };
+         check("Revolve torus 360 X", MeshOps::Revolve(CirclePoly(cx, ey, ex, 0.3f, 48), 0, 360.0f, 96, true), true, torusVol, 0.02);
+         const float cz[3] = { 1, 0, 0 };
+         check("Revolve torus 360 Z", MeshOps::Revolve(CirclePoly(cz, ex, ez, 0.3f, 48), 2, 360.0f, 96, true), true, torusVol, 0.02);
+      }
+      check("Revolve sphere (poles)", MeshOps::Revolve(SemiCircle(32, false), 1, 360.0f, 64, true), true, 4.0 * pi / 3.0, 0.03);
+      check("Revolve sphere, profile reversed", MeshOps::Revolve(SemiCircle(32, true), 1, 360.0f, 64, true), true, 4.0 * pi / 3.0, 0.03);
+      check("Revolve half sphere 180 + caps", MeshOps::Revolve(SemiCircle(32, false), 1, 180.0f, 32, true), true, 2.0 * pi / 3.0, 0.03);
+      check("Revolve torus 270 + caps", MeshOps::Revolve(tube, 1, 270.0f, 72, true), true, torusVol * 0.75, 0.03);
+      check("Revolve cone shell (open)", MeshOps::Revolve(PolyOf({ 0.5f, 0, 0, 1.0f, 1, 0 }, false), 1, 360.0f, 48, true), false, 0, 0);
+      {
+         // The cone shell is open at both rims: exactly two boundary loops, one per rim.
+         const Stats s = Measure(MeshOps::Revolve(PolyOf({ 0.5f, 0, 0, 1.0f, 1, 0 }, false), 1, 360.0f, 48, true));
+         if (s.boundary != 96)
+            f.Flag("SWEEP", "Revolve cone shell", "boundary edges, want 96", s.boundary);
+      }
+
+      // Normals of the lathe torus against the analytic ones.
+      {
+         const Mesh m = MeshOps::Revolve(tube, 1, 360.0f, 128, true);
+         double worst = 0.0;
+         for (const Vertex& v : m.vertices)
+         {
+            const double r = std::hypot((double)v.px, (double)v.pz);
+            const double cx = r > 1e-9 ? (double)v.px / r : 1.0, cz = r > 1e-9 ? (double)v.pz / r : 0.0;
+            double wx = v.px - cx, wy = v.py, wz = v.pz - cz;
+            const double wl = std::sqrt(wx * wx + wy * wy + wz * wz);
+            wx /= wl; wy /= wl; wz /= wl;
+            const double d = std::max(-1.0, std::min(1.0, wx * v.nx + wy * v.ny + wz * v.nz));
+            worst = std::max(worst, std::acos(d));
+         }
+         printf("GEOAUDIT NORMALS Revolve torus: worst normal error %.5f rad\n", worst);
+         if (worst > 3e-3)
+            f.Flag("NORMALS", "Revolve torus", "normal off the analytic one, rad", worst);
+      }
+
+      // ---- Sweep
+      const float pc[3] = { 0, 0, 0 };
+      const Polyline round = CirclePoly(pc, ex, ey, 0.2f, 24);
+      const double roundArea = 0.5 * 24 * 0.2 * 0.2 * std::sin(2.0 * pi / 24.0);
+      const Polyline line2 = PolyOf({ 0, 0, 0, 0, 0, 1, 0, 0, 2 }, false);
+      check("Sweep circle on a line + caps", MeshOps::Sweep(round, line2, 1.0f, 1.0f, 0.0f, true), true, roundArea * 2.0, 0.01);
+      {
+         const Mesh m = MeshOps::Sweep(round, line2, 1.0f, 1.0f, 0.0f, false);
+         const Stats s = Measure(m);
+         if (s.boundary != 48)
+            f.Flag("SWEEP", "Sweep circle, caps off", "boundary edges, want 48 (two open rims)", s.boundary);
+         Report(f, "SWEEP", "Sweep circle, caps off", s, false, ok);
+      }
+      {
+         const float rc[3] = { 0, 0, 0 };
+         const Polyline ring = CirclePoly(rc, ex, ez, 1.0f, 96);
+         check("Sweep circle on a ring", MeshOps::Sweep(round, ring, 1.0f, 1.0f, 0.0f, true), true,
+               roundArea * 2.0 * pi * 1.0, 0.02);
+         check("Sweep circle on a ring, twist 360", MeshOps::Sweep(round, ring, 1.0f, 1.0f, 360.0f, true), true,
+               roundArea * 2.0 * pi * 1.0, 0.02);
+         const Polyline square = PolyOf({ -0.2f, -0.1f, 0, 0.2f, -0.1f, 0, 0.2f, 0.1f, 0, -0.2f, 0.1f, 0 }, true);
+         // A faceted twisted prism loses volume in proportion to the twist per ring, so the
+         // twisted rectangle gets a finer ring (0.4735 of 0.5027 at 96 rings, 0.4957 at 384).
+         const Polyline fine = CirclePoly(rc, ex, ez, 1.0f, 384);
+         check("Sweep rectangle on a ring, twist 720", MeshOps::Sweep(square, fine, 1.0f, 1.0f, 720.0f, true), true,
+               0.08 * 2.0 * pi, 0.02);
+      }
+      {
+         Polyline helix;
+         for (int i = 0; i <= 120; i++)
+         {
+            const float a = 6.28318530718f * 3.0f * (float)i / 120.0f;
+            helix.points.push_back(std::cos(a));
+            helix.points.push_back(0.1f * a);
+            helix.points.push_back(std::sin(a));
+         }
+         check("Sweep circle on a helix + caps", MeshOps::Sweep(round, helix, 1.0f, 1.0f, 0.0f, true), true, 0, 0);
+         check("Sweep circle on a helix, tapered", MeshOps::Sweep(round, helix, 1.5f, 0.5f, 0.0f, true), true, 0, 0);
+      }
+      {
+         // An L: not convex, so the cap needs a real triangulation, not a fan.
+         const Polyline ell = PolyOf({ 0, 0, 0, 0.4f, 0, 0, 0.4f, 0.1f, 0, 0.1f, 0.1f, 0, 0.1f, 0.4f, 0, 0, 0.4f, 0 }, true);
+         const double ellArea = 0.4 * 0.1 + 0.1 * 0.3;
+         check("Sweep L profile + caps", MeshOps::Sweep(ell, line2, 1.0f, 1.0f, 0.0f, true), true, ellArea * 2.0, 0.01);
+         Polyline cw;
+         cw.closed = true;
+         for (size_t i = ell.Count(); i-- > 0;)
+            for (size_t k = 0; k < 3; k++)
+               cw.points.push_back(ell.points[i * 3 + k]);
+         check("Sweep L profile reversed + caps", MeshOps::Sweep(cw, line2, 1.0f, 1.0f, 0.0f, true), true, ellArea * 2.0, 0.01);
+      }
+      check("Sweep cone (end scale 0)", MeshOps::Sweep(round, line2, 1.0f, 0.0f, 0.0f, true), true, roundArea * 2.0 / 3.0, 0.03);
+      {
+         const float xz[3] = { 0, 0, 0 };
+         const Polyline flat = CirclePoly(xz, ex, ez, 0.2f, 24); // drawn in the XZ plane
+         const Polyline alongZ = PolyOf({ 0, 0, 0, 0, 0, 2 }, false);
+         check("Sweep XZ profile on a line", MeshOps::Sweep(flat, alongZ, 1.0f, 1.0f, 0.0f, true), true, roundArea * 2.0, 0.01);
+      }
+      check("Sweep open profile (ribbon)", MeshOps::Sweep(PolyOf({ -0.2f, 0, 0, 0.2f, 0, 0 }, false), line2, 1.0f, 1.0f, 0.0f, true), false, 0, 0);
+
+      // ---- The nodes: cache, bypass, forwarding, wrong inputs, hostile numbers.
+      CurveProbe prof; prof.line = tube;
+      CurveProbe way; way.line = line2;
+      RevolveNode rev;
+      rev.input = &prof;
+      rev.CookIfNeeded(gFrame++);
+      const unsigned long long r0 = rev.MeshRevision();
+      rev.CookIfNeeded(gFrame++);
+      if (rev.MeshRevision() != r0)
+         f.Flag("CACHE", "Revolve", "revision changed with nothing changed", 0);
+      rev.angle = 180.0f;
+      if (rev.MeshRevision() == r0)
+         f.Flag("CACHE", "Revolve", "revision did not change with the angle", 0);
+      const unsigned long long r1 = rev.MeshRevision();
+      prof.stamp++;
+      if (rev.MeshRevision() == r1)
+         f.Flag("CACHE", "Revolve", "revision did not change with the input curve", 0);
+      prof.matrix = Mat4::Translation(5.0f, 7.0f, 3.0f);
+      {
+         const Mat4 m = rev.GetModelMatrix();
+         if (std::fabs(m.m[12] - 5.0f) > 1e-4f || std::fabs(m.m[13] - 7.0f) > 1e-4f || std::fabs(m.m[14] - 3.0f) > 1e-4f)
+            f.Flag("CACHE", "Revolve", "does not forward the input's model matrix", m.m[12]);
+      }
+      RevolveNode rev2;
+      rev2.input = &prof;
+      rev2.angle = 180.0f;
+      if (!SameMesh(rev.GetMesh(), rev2.GetMesh()))
+         f.Flag("DET", "Revolve", "two nodes with the same parameters differ", 0);
+
+      SweepNode sw;
+      sw.profile = &prof;
+      sw.path = &way;
+      sw.CookIfNeeded(gFrame++);
+      const unsigned long long s0 = sw.MeshRevision();
+      sw.CookIfNeeded(gFrame++);
+      if (sw.MeshRevision() != s0)
+         f.Flag("CACHE", "Sweep", "revision changed with nothing changed", 0);
+      sw.twist = 90.0f;
+      if (sw.MeshRevision() == s0)
+         f.Flag("CACHE", "Sweep", "revision did not change with the twist", 0);
+      way.stamp++;
+      const unsigned long long s1 = sw.MeshRevision();
+      way.stamp++;
+      if (sw.MeshRevision() == s1)
+         f.Flag("CACHE", "Sweep", "revision did not change with the path curve", 0);
+      sw.profile = nullptr; // a path alone gives a tube
+      Report(f, "SWEEP", "Sweep path alone", Measure(sw.GetMesh()), true, ok);
+      {
+         GeometryNode cube;
+         cube.shape = 1;
+         cube.CookIfNeeded(gFrame++);
+         RevolveNode wrong;
+         wrong.input = &cube;
+         wrong.CookIfNeeded(gFrame++);
+         if (wrong.CookWarning().empty() || !wrong.GetMesh().vertices.empty())
+            f.Flag("DEGEN", "Revolve", "a mesh input is not flagged and ignored", 0);
+         wrong.bypassed = true;
+         if (&wrong.GetMesh() != &cube.GetMesh())
+            f.Flag("DEGEN", "Revolve", "bypass does not hand back the input", 0);
+      }
+
+      RevolveNode none;
+      none.CookIfNeeded(gFrame++);
+      Report(f, "DEGEN", "Revolve no input", Measure(none.GetMesh()), false, ok);
+      SweepNode none2;
+      none2.CookIfNeeded(gFrame++);
+      Report(f, "DEGEN", "Sweep no input", Measure(none2.GetMesh()), false, ok);
+
+      const float nan = std::nanf("");
+      const float angles[] = { 0.0f, 1e-6f, -1e9f, 1e9f, nan, 360.0f, 359.9999f };
+      for (float a : angles)
+      {
+         for (int seg : { -5, 0, 1, 2, 100000 })
+         {
+            for (int axis : { -1, 0, 1, 2, 9 })
+            {
+               RevolveNode r;
+               r.input = &prof;
+               r.angle = a; r.segments = seg; r.axis = axis;
+               const Stats s = Measure(r.GetMesh());
+               if (s.nonFinite > 0 || s.badIndex > 0)
+               {
+                  f.Flag("DEGEN", "Revolve hostile", "non-finite or bad index at angle", a);
+                  ok = false;
+               }
+            }
+         }
+      }
+      const float scales[] = { 0.0f, -1.0f, 1e9f, nan, 1e-12f };
+      for (float a : scales)
+      {
+         for (float b : scales)
+         {
+            for (float tw : { 0.0f, 1e9f, nan, -720.0f })
+            {
+               SweepNode s;
+               s.profile = &prof;
+               s.path = &way;
+               s.startScale = a; s.endScale = b; s.twist = tw;
+               s.profileSides = 0; s.profileRadius = 0.0f;
+               const Stats st = Measure(s.GetMesh());
+               if (st.nonFinite > 0 || st.badIndex > 0)
+               {
+                  f.Flag("DEGEN", "Sweep hostile", "non-finite or bad index at scale", a);
+                  ok = false;
+               }
+            }
+         }
+      }
+      // Degenerate curves: a single point, repeated points, a path that doubles back.
+      {
+         CurveProbe dot, back;
+         dot.line = PolyOf({ 1, 1, 1, 1, 1, 1, 1, 1, 1 }, false);
+         back.line = PolyOf({ 0, 0, 0, 1, 0, 0, 0, 0, 0 }, false);
+         SweepNode s;
+         s.profile = &prof;
+         s.path = &dot;
+         Report(f, "DEGEN", "Sweep path of repeated points", Measure(s.GetMesh()), false, ok);
+         s.path = &back;
+         const Stats st = Measure(s.GetMesh());
+         if (st.nonFinite > 0 || st.badIndex > 0)
+         {
+            f.Flag("DEGEN", "Sweep path doubling back", "non-finite or bad index", 0);
+            ok = false;
+         }
+      }
+      (void)o;
+   }
+
    // ================================================================= CLOTH
    void AuditCloth(Flags& f, bool& ok)
    {
@@ -1270,6 +1849,331 @@ namespace
          printf("GEOAUDIT CLOTH  bypassed: output is the input mesh %s\n", same ? "yes" : "NO");
          if (!same)
             f.Flag("BYPASS", "Cloth", "bypassed cloth does not pass its input through", 1);
+      }
+      tr.SeekBeats(0.0);
+   }
+
+
+   // ================================================================ L-SYSTEM
+   void AuditLSystem(Flags& f, bool& ok)
+   {
+      (void)ok;
+      auto finite = [](const Mesh& m) {
+         for (const Vertex& v : m.vertices)
+            if (!std::isfinite(v.px) || !std::isfinite(v.py) || !std::isfinite(v.pz))
+               return false;
+         return true;
+      };
+      auto hash = [](const Mesh& m) {
+         size_t h = m.vertices.size() * 31u + m.indices.size();
+         for (const Vertex& v : m.vertices)
+            h = h * 1000003u ^ (size_t)(long long)(v.px * 1e5f) ^ ((size_t)(long long)(v.py * 1e5f) << 7) ^
+                ((size_t)(long long)(v.pz * 1e5f) << 13);
+         return h;
+      };
+
+      // The fractal plant: F counts after n generations are 3 and 18.
+      {
+         LSystemNode a;
+         a.iterations = 1;
+         a.GetMesh();
+         const size_t one = a.SegmentCount();
+         a.iterations = 2;
+         a.GetMesh();
+         const size_t two = a.SegmentCount();
+         printf("GEOAUDIT LSYS   plant segments gen1 %zu (want 3), gen2 %zu (want 18)\n", one, two);
+         if (one != 3 || two != 18)
+            f.Flag("LSYS", "Plant", "segment count wrong", (double)two);
+         a.iterations = 5;
+         const Mesh& m = a.GetMesh();
+         printf("GEOAUDIT LSYS   plant gen5: %zu segments, %zu branches, %zu tris\n",
+                a.SegmentCount(), a.StrandCount(), a.TriangleCount());
+         if (m.indices.empty() || !finite(m))
+            f.Flag("LSYS", "Plant", "gen5 mesh empty or not finite", (double)m.indices.size());
+      }
+
+      // Geometry: "F" is one step up; "F+F" at 90 degrees turns left (-x).
+      {
+         LSystemNode n;
+         n.axiom = "F+F"; n.rules = ""; n.iterations = 0; n.angle = 90.0f; n.length = 0.5f;
+         const Polyline& line = n.GetPolyline();
+         if (line.Count() != 3)
+            f.Flag("LSYS", "Turtle", "curve point count", (double)line.Count());
+         else
+         {
+            const float* p = line.points.data();
+            printf("GEOAUDIT LSYS   F+F end (%.3f %.3f %.3f) want (-0.5 0.5 0)\n", p[6], p[7], p[8]);
+            if (std::fabs(p[6] + 0.5f) > 1e-4f || std::fabs(p[7] - 0.5f) > 1e-4f || std::fabs(p[8]) > 1e-4f)
+               f.Flag("LSYS", "Turtle", "F+F end point", p[6]);
+         }
+      }
+
+      // Same text, same mesh; and a bypassed node outputs nothing.
+      {
+         LSystemNode a, b;
+         const size_t ha = hash(a.GetMesh()), hb = hash(b.GetMesh());
+         printf("GEOAUDIT LSYS   determinism %zx %zx\n", ha, hb);
+         if (ha != hb)
+            f.Flag("LSYS", "Determinism", "two identical nodes differ", 1);
+         a.bypassed = true;
+         if (!a.GetMesh().vertices.empty() || a.GetCurve() != nullptr)
+            f.Flag("LSYS", "Bypass", "bypassed node still outputs", 1);
+      }
+
+      // Hostile input: runaway grammar, junk rules, brackets that never match, empty axiom.
+      {
+         LSystemNode n;
+         n.axiom = "X"; n.rules = "X=XXXXXXXXXX;F=FFFFFFFF"; n.iterations = 10;
+         const Mesh& m = n.GetMesh();
+         printf("GEOAUDIT LSYS   runaway: %zu segments, warning '%s'\n", n.SegmentCount(), n.CookWarning().c_str());
+         if (!finite(m) || n.CookWarning().empty())
+            f.Flag("LSYS", "Runaway", "no warning or non-finite", 1);
+
+         LSystemNode j;
+         j.axiom = "]]][[[F]F]]]+++---&&&^^^\\\\///|||f"; j.rules = "=F;X;;==;===;F=F"; j.iterations = 4;
+         if (!finite(j.GetMesh()))
+            f.Flag("LSYS", "Junk", "non-finite", 1);
+
+         LSystemNode e;
+         e.axiom = ""; e.iterations = 5;
+         if (!e.GetMesh().vertices.empty() || e.GetCurve() == nullptr)
+            f.Flag("LSYS", "Empty", "empty axiom should give an empty mesh and a (possibly empty) curve", 1);
+      }
+   }
+
+
+   // ============================================================ PARTICLE COST (gate G1 of metal-compute.md)
+   // How much of a 16.7 ms frame the CPU particle system and the copy of its points take,
+   // at counts a user would set. Only runs when INFINITE_GEOAUDIT_ONLY names PCOST.
+   void AuditParticleCost()
+   {
+      Transport& tr = Transport::Instance();
+      tr.SetPlaying(false);
+      tr.SetTempo(120.0f);   // 1/30 beat is 1/60 s
+      int round = 0;
+      for (int count : { 50000, 100000, 200000, 100000 })
+      {
+         // The last round repeats 100k on one thread: its checksum must match round two.
+         ParticleSystemNode::sMaxThreads = round++ == 3 ? 1 : 0;
+         ParticleSystemNode p;
+         p.maxParticles = count;
+         p.lifetime = 3.0f;
+         p.lifetimeRandom = 0.0f;
+         p.emitRate = (float)count / 3.0f;
+         double beat = 0.0;
+         tr.SeekBeats(0.0);
+         p.CookIfNeeded(gFrame++);
+         std::vector<double> cook;
+         for (int i = 0; i < 420; i++)
+         {
+            beat += 1.0 / 30.0;
+            tr.SeekBeats(beat);
+            const auto t0 = std::chrono::steady_clock::now();
+            p.CookIfNeeded(gFrame++);
+            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+            if (i >= 240)
+               cook.push_back(ms);
+         }
+         std::sort(cook.begin(), cook.end());
+         double sum = 0.0;
+         for (double c : cook) sum += c;
+         // The hand-off to the GL buffer is at least one pass over the points.
+         const std::vector<Particle>* pts = p.GetPointCloud();
+         std::vector<Particle> copy;
+         const auto c0 = std::chrono::steady_clock::now();
+         copy = *pts;
+         const double copyMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - c0).count();
+         double sumPos = 0.0;
+         for (const Particle& q : *pts) sumPos += (double)q.px + 2.0 * q.py + 3.0 * q.pz;
+         printf("GEOAUDIT PCOST  checksum %.6f (threads %d)\n", sumPos, ParticleSystemNode::sMaxThreads);
+         printf("GEOAUDIT PCOST  %6d requested, %6zu alive: cook mean %.2f ms p95 %.2f ms | copy of points %.2f ms | cook + copy %.0f%% of a 16.7 ms frame\n",
+                count, p.AliveCount(), sum / (double)cook.size(), cook[cook.size() * 95 / 100], copyMs,
+                100.0 * (sum / (double)cook.size() + copyMs) / 16.7);
+      }
+      ParticleSystemNode::sMaxThreads = 0;
+   }
+
+   // ============================================================ RIGID BODIES
+   void AuditRigid(Flags& f, bool& ok)
+   {
+      Transport& tr = Transport::Instance();
+      tr.SetPlaying(false);
+      tr.SetTempo(120.0f);   // one beat is half a second
+
+      auto bounds = [](const Mesh& m, double& lo, double& hi) {
+         lo = 1e30; hi = -1e30;
+         for (const Vertex& v : m.vertices) { lo = std::min(lo, (double)v.py); hi = std::max(hi, (double)v.py); }
+      };
+      auto run = [&](std::initializer_list<RigidBodyNode*> nodes, int steps, double beatsPerStep) {
+         double beat = 0.0;
+         tr.SeekBeats(0.0);
+         for (RigidBodyNode* n : nodes) n->CookIfNeeded(gFrame++);
+         for (int i = 0; i < steps; i++)
+         {
+            beat += beatsPerStep;
+            tr.SeekBeats(beat);
+            const int fr = gFrame++;
+            for (RigidBodyNode* n : nodes) n->CookIfNeeded(fr);
+         }
+      };
+      GeometryNode cube;
+      cube.shape = 1;
+      cube.detail = 4;
+      const Mesh cubeMesh = Build(cube);
+      double cLo, cHi;
+      bounds(cubeMesh, cLo, cHi);
+      const double h = cHi - cLo;
+
+      // Free fall: no ground, no damping, y drops by g t^2 / 2.
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         RigidBodyNode r;
+         r.input = &src;
+         r.groundEnabled = false;
+         r.linearDamping = 0.0f;
+         run({ &r }, 4, 0.25);   // 0.5 s
+         double lo, hi; bounds(r.GetMesh(), lo, hi);
+         const double fell = cLo - lo;
+         const double want = 0.5 * 9.8 * 0.25;
+         printf("GEOAUDIT RIGID  free fall 0.5 s: dropped %.4f | g t^2 / 2 = %.4f\n", fell, want);
+         if (std::fabs(fell / want - 1.0) > 0.05)
+            f.Flag("RIGID", "free fall", "drop differs from g t^2 / 2, %", (fell / want - 1.0) * 100.0);
+      }
+
+      // Rest on the ground: lands flat, ends at the ground height, stops moving, same shape.
+      for (int kind = 0; kind < 3; kind++)
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         RigidBodyNode r;
+         r.input = &src;
+         r.collider = kind;
+         r.groundHeight = (float)(cLo - 2.0);
+         run({ &r }, 32, 0.25);
+         const Mesh a = r.GetMesh();
+         run({ &r }, 33, 0.25);
+         const Mesh b = r.GetMesh();
+         double lo, hi; bounds(b, lo, hi);
+         double drift = 0.0;
+         for (size_t i = 0; i < a.vertices.size() && i < b.vertices.size(); i++)
+            drift = std::max(drift, (double)std::fabs(a.vertices[i].py - b.vertices[i].py));
+         const Stats st = Measure(b);
+         printf("GEOAUDIT RIGID  collider %d on ground: bottom %.4f (ground %.4f) height %.4f (was %.4f) drift %.5f\n",
+                kind, lo, cLo - 2.0, hi - lo, h, drift);
+         if (st.nonFinite > 0)
+            f.Flag("RIGID", "rest", "non-finite vertices", st.nonFinite);
+         if (lo < cLo - 2.0 - 0.03)
+            f.Flag("RIGID", "rest", "sank below the ground by", cLo - 2.0 - lo);
+         if (kind != 1 && lo > cLo - 2.0 + 0.05)
+            f.Flag("RIGID", "rest", "stopped above the ground by", lo - (cLo - 2.0));
+         if (kind != 1 && std::fabs((hi - lo) - h) > 0.02 * h + 0.05 && std::fabs((hi - lo) - h * 1.7) > 0.1 * h)
+            f.Flag("RIGID", "rest", "shape changed, height", hi - lo);
+         if (drift > 0.002)
+            f.Flag("RIGID", "rest", "still moving after 8 s, drift", drift);
+      }
+
+      // Stack: a cube dropped on a cube on the ground stays up and on top.
+      {
+         KindProbe src;
+         src.mesh = cubeMesh;
+         Mesh top = MeshOps::Transform(cubeMesh, Mat4::Translation(0.0f, (float)(h * 1.5), 0.0f));
+         const unsigned int base = (unsigned int)src.mesh.vertices.size();
+         src.mesh.vertices.insert(src.mesh.vertices.end(), top.vertices.begin(), top.vertices.end());
+         for (unsigned int i : top.indices) src.mesh.indices.push_back(i + base);
+         RigidBodyNode r;
+         r.input = &src;
+         r.groundHeight = (float)(cLo - 0.0);
+         run({ &r }, 40, 0.25);   // 10 s
+         const Mesh& m = r.GetMesh();
+         double lo = 1e30, hi = -1e30;
+         for (const Vertex& v : m.vertices) { lo = std::min(lo, (double)v.py); hi = std::max(hi, (double)v.py); }
+         double topLo = 1e30;
+         for (size_t i = base; i < m.vertices.size(); i++) topLo = std::min(topLo, (double)m.vertices[i].py);
+         double midX = 0.0;
+         for (size_t i = base; i < m.vertices.size(); i++) midX += m.vertices[i].px;
+         midX /= (double)(m.vertices.size() - base);
+         printf("GEOAUDIT RIGID  stack of two: bodies %zu, total height %.4f (2 cubes = %.4f), top rests at %.4f, top centre x %.4f\n",
+                r.BodyCount(), hi - lo, 2 * h, topLo - lo, midX);
+         if (r.BodyCount() != 2)
+            f.Flag("RIGID", "stack", "body count", (double)r.BodyCount());
+         if (std::fabs((hi - lo) - 2 * h) > 0.1 * h)
+            f.Flag("RIGID", "stack", "stack height differs from two cubes, by", (hi - lo) - 2 * h);
+         if (topLo < lo + 0.85 * h)
+            f.Flag("RIGID", "stack", "top cube sank into the bottom one, by", lo + h - topLo);
+      }
+
+      // Bounce: a sphere with bounce 0.8 comes back up a good way; with 0 it does not.
+      for (int pass = 0; pass < 2; pass++)
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         RigidBodyNode r;
+         r.input = &src;
+         r.collider = RigidBodyNode::kSphere;
+         r.bounce = pass == 0 ? 0.8f : 0.0f;
+         r.groundHeight = (float)(cLo - 1.0);
+         double beat = 0.0;
+         tr.SeekBeats(0.0);
+         r.CookIfNeeded(gFrame++);
+         double lowest = 1e30, afterLow = -1e30;
+         bool bounced = false;
+         for (int i = 0; i < 24; i++)
+         {
+            beat += 0.125;
+            tr.SeekBeats(beat);
+            r.CookIfNeeded(gFrame++);
+            double lo, hi; bounds(r.GetMesh(), lo, hi);
+            if (lo < lowest) lowest = lo; else bounced = true;
+            if (bounced) afterLow = std::max(afterLow, lo);
+         }
+         const double rose = afterLow - lowest;
+         printf("GEOAUDIT RIGID  sphere bounce %.1f: rose %.4f after the first landing (fell 1.0)\n", r.bounce, rose);
+         if (pass == 0 && rose < 0.25)
+            f.Flag("RIGID", "bounce", "bounce 0.8 rose only", rose);
+         if (pass == 1 && rose > 0.1)
+            f.Flag("RIGID", "bounce", "bounce 0 still rose", rose);
+      }
+
+      // Determinism: same patch twice, and 0.25 vs 0.5 beat steps for the same 4 s.
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         KindProbe src2; src2.mesh = cubeMesh;
+         RigidBodyNode a, b;
+         a.input = &src; b.input = &src2;
+         a.spinX = b.spinX = 3.0f; a.spinZ = b.spinZ = 2.0f; a.velX = b.velX = 1.0f;
+         a.groundHeight = b.groundHeight = (float)(cLo - 1.0);
+         run({ &a }, 16, 0.5);
+         run({ &b }, 32, 0.25);
+         const bool same = SameMesh(a.GetMesh(), b.GetMesh());
+         printf("GEOAUDIT RIGID  same result at two frame rates: %s\n", same ? "yes" : "NO");
+         if (!same)
+         {
+            f.Flag("DET", "Rigid Bodies", "result depends on the frame rate", 1);
+            ok = false;
+         }
+      }
+
+      // Hostile numbers, no input, bypass.
+      {
+         KindProbe src; src.mesh = cubeMesh;
+         RigidBodyNode r;
+         r.input = &src;
+         r.mass = 0.0f; r.iterations = 0; r.gravityY = 1e9f; r.velX = 1e9f; r.spinY = 1e9f; r.friction = 1e9f;
+         r.wallsEnabled = true; r.bounce = 5.0f;
+         run({ &r }, 8, 1.0);
+         const Stats s = Measure(r.GetMesh());
+         printf("GEOAUDIT RIGID  hostile settings: non-finite %d\n", s.nonFinite);
+         if (s.nonFinite > 0)
+         {
+            f.Flag("DEGEN", "Rigid hostile", "non-finite vertices", s.nonFinite);
+            ok = false;
+         }
+         RigidBodyNode none;
+         none.CookIfNeeded(gFrame++);
+         RigidBodyNode byp;
+         KindProbe src3; src3.mesh = cubeMesh;
+         byp.input = &src3; byp.bypassed = true;
+         byp.CookIfNeeded(gFrame++);
+         if (!SameMesh(byp.GetMesh(), cubeMesh))
+            f.Flag("BYPASS", "Rigid Bodies", "bypassed node does not pass its input through", 1);
       }
       tr.SeekBeats(0.0);
    }
@@ -1732,12 +2636,298 @@ namespace
          f.Flag("DISP", "no texture", "vertices moved without a texture", moved);
    }
 
+
+   // --- RENDERQ: Render 3D quality (v0.6 3.5) ---------------------------------
+   // Needs GL. Ambient occlusion, depth of field, offline supersampling and the
+   // float output, each against the plain render of the same scene.
+   struct RqImage
+   {
+      int w = 0, h = 0;
+      std::vector<unsigned char> px;
+      double Luma(int x, int y) const
+      {
+         const unsigned char* p = &px[((size_t)y * w + x) * 4];
+         return 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+      }
+   };
+
+   bool RqRead(Render3DNode& r, RqImage& img)
+   {
+      return ReadNodeImageRgba8(&r, 0, true, img.w, img.h, img.px);
+   }
+
+   void RqCook(Render3DNode& r)
+   {
+      r.CookIfNeeded(gFrame++);
+   }
+
+   // Sum of absolute luma steps inside a window: how much detail is left in it.
+   double RqEnergy(const RqImage& im, int x0, int y0, int x1, int y1)
+   {
+      double e = 0.0;
+      for (int y = y0; y < y1 - 1; y++)
+         for (int x = x0; x < x1 - 1; x++)
+            e += std::fabs(im.Luma(x + 1, y) - im.Luma(x, y)) + std::fabs(im.Luma(x, y + 1) - im.Luma(x, y));
+      return e;
+   }
+
+
+   // --- AREALIGHT: Light node "Area" type (v0.6 3.6) --------------------------
+   // A tiny panel matches a point light at the same place; a big one gives a broader, softer highlight
+   // and never makes the picture non-finite or black; the back of the panel gives no light.
+   void AuditAreaLight(Flags& f, bool& ok)
+   {
+      (void)ok;
+      GeometryNode sphere;
+      sphere.shape = 2; sphere.detail = 48; sphere.sides = 48;
+      LightNode point, tiny, big, backFacing;
+      point.type = 1; tiny.type = 5; big.type = 5; backFacing.type = 5;
+      for (LightNode* l : { &point, &tiny, &big, &backFacing })
+      {
+         l->azimuth = 40.0f; l->elevation = 35.0f; l->distance = 3.0f; l->intensity = 2.0f;
+      }
+      tiny.areaWidth = tiny.areaHeight = 0.05f;
+      big.areaWidth = big.areaHeight = 3.0f;
+      auto draw = [&](LightNode& l, RqImage& im) {
+         Render3DNode r;
+         r.width = 192.0f; r.height = 192.0f; r.camDistance = 5.0f; r.camAzimuth = 40.0f; r.camElevation = 35.0f;
+         r.samples = 2;
+         r.geometry[0] = &sphere;
+         r.lights[0] = &l;
+         r.CookIfNeeded(gFrame++);
+         return RqRead(r, im);
+      };
+      RqImage ip, it, ib;
+      bool good = draw(point, ip);
+      good = draw(tiny, it) && good;
+      good = draw(big, ib) && good;
+      auto mean = [](const RqImage& im) { double s = 0; for (int y = 0; y < im.h; y++) for (int x = 0; x < im.w; x++) s += im.Luma(x, y); return s / (double)(im.w * im.h); };
+      auto bright = [](const RqImage& im, double cut) { int n = 0; for (int y = 0; y < im.h; y++) for (int x = 0; x < im.w; x++) if (im.Luma(x, y) > cut) n++; return n; };
+      double peakB = 0.0, peakT = 0.0;
+      if (good)
+         for (int y = 0; y < ip.h; y++)
+            for (int x = 0; x < ip.w; x++) { peakT = std::max(peakT, it.Luma(x, y)); peakB = std::max(peakB, ib.Luma(x, y)); }
+      const double mp = good ? mean(ip) : 0.0, mt = good ? mean(it) : 0.0, mb = good ? mean(ib) : 0.0;
+      printf("GEOAUDIT AREALIGHT mean luma point %.2f, tiny panel %.2f, 3x3 panel %.2f; peak tiny %.0f, big %.0f; pixels over 70%% of tiny's peak: tiny %d, big %d\n",
+             mp, mt, mb, peakT, peakB, good ? bright(it, 0.7 * peakT) : 0, good ? bright(ib, 0.7 * peakT) : 0);
+      if (!good) f.Flag("AREALIGHT", "render", "could not read the render", 0);
+      else
+      {
+         if (std::fabs(mp - mt) > 6.0) f.Flag("AREALIGHT", "tiny panel", "a tiny panel does not match a point light", std::fabs(mp - mt));
+         if (mb < 5.0) f.Flag("AREALIGHT", "big panel", "a big panel renders black", mb);
+         if (bright(ib, 0.7 * peakT) < bright(it, 0.7 * peakT)) f.Flag("AREALIGHT", "big panel", "a bigger panel does not widen the lit area", mb);
+      }
+      // The panel faces the origin, so a light behind a mirror-flat floor still lights what it faces; with the
+      // light pushed under the ground plane's far side nothing may go NaN: re-render at an extreme size.
+      backFacing.areaWidth = 1e6f; backFacing.areaHeight = 1e6f;
+      RqImage ie;
+      const bool ex = draw(backFacing, ie);
+      if (!ex || !(mean(ie) >= 0.0) || !(mean(ie) <= 255.0)) f.Flag("AREALIGHT", "extreme", "huge panel is not finite", 0);
+   }
+
+   void AuditRenderQuality(Flags& f, bool& ok)
+   {
+      (void)ok;
+      GeometryNode plane, cube, sphere;
+      plane.shape = 0; plane.uniformScale = 6.0f; plane.rotX = -90.0f;
+      cube.shape = 1; cube.posY = 0.5f;
+      sphere.shape = 2; sphere.detail = 48; sphere.sides = 48; sphere.posY = 0.0f;
+
+      auto setup = [](Render3DNode& r, int dim) {
+         r.width = (float)dim; r.height = (float)dim;
+         r.camDistance = 5.0f; r.camAzimuth = 35.0f; r.camElevation = 30.0f;
+         r.samples = 2;
+      };
+      Render3DNode scene, flat;
+      setup(scene, 256); setup(flat, 256);
+      scene.geometry[0] = &plane; scene.geometry[1] = &cube;
+      flat.geometry[0] = &plane;
+
+      // 1. Defaults leave the render exactly as it was.
+      RqImage base, again;
+      RqCook(scene);
+      bool good = RqRead(scene, base);
+      Render3DNode scene2; setup(scene2, 256);
+      scene2.geometry[0] = &plane; scene2.geometry[1] = &cube;
+      RqCook(scene2); good = good && RqRead(scene2, again);
+      int diff = 0;
+      if (good) for (size_t i = 0; i < base.px.size(); i++) if (base.px[i] != again.px[i]) diff++;
+      printf("GEOAUDIT RENDERQ default render repeats exactly (%d byte differences), 8-bit target %s\n", diff,
+             NodeImageIsFloat(&scene, 0) ? "NO" : "yes");
+      if (!good || diff != 0) f.Flag("RENDERQ", "defaults", "default render is not repeatable", diff);
+      if (NodeImageIsFloat(&scene, 0)) f.Flag("RENDERQ", "defaults", "default output is float", 1);
+
+      // 2. Ambient occlusion: never brightens, leaves the background and a flat plane alone, darkens the contact.
+      auto meanLuma = [](const RqImage& im) { double s = 0; for (int y = 0; y < im.h; y++) for (int x = 0; x < im.w; x++) s += im.Luma(x, y); return s / (double)(im.w * im.h); };
+      RqImage aoFull, aoHalf, flatBase, flatAo;
+      scene.aoStrength = 1.0f; scene.aoRadius = 0.6f;
+      RqCook(scene); good = RqRead(scene, aoFull);
+      scene.aoStrength = 0.5f; RqCook(scene); good = RqRead(scene, aoHalf) && good;
+      int brighter = 0, darker = 0;
+      double worstDrop = 0.0;
+      if (good)
+         for (int y = 0; y < base.h; y++)
+            for (int x = 0; x < base.w; x++)
+            {
+               const double d = aoFull.Luma(x, y) - base.Luma(x, y);
+               if (d > 1.0) brighter++;
+               if (d < -4.0) darker++;
+               worstDrop = std::min(worstDrop, d);
+            }
+      const double mBase = meanLuma(base), mFull = meanLuma(aoFull), mHalf = meanLuma(aoHalf);
+      printf("GEOAUDIT RENDERQ ao: %d px brighter, %d px darker by >4 levels, worst drop %.1f, mean luma %.2f -> half %.2f -> full %.2f\n",
+             brighter, darker, worstDrop, mBase, mHalf, mFull);
+      if (!good || brighter > 0) f.Flag("RENDERQ", "ao", "occlusion brightened pixels", brighter);
+      if (darker < 200) f.Flag("RENDERQ", "ao", "occlusion left the contact crease unchanged", darker);
+      if (!(mFull < mHalf && mHalf < mBase)) f.Flag("RENDERQ", "ao", "strength does not scale the darkening", mFull);
+      if (good && (aoFull.Luma(2, 2) != base.Luma(2, 2))) f.Flag("RENDERQ", "ao", "background pixel changed", aoFull.Luma(2, 2));
+      flat.aoStrength = 0.0f; RqCook(flat); good = RqRead(flat, flatBase);
+      flat.aoStrength = 1.0f; flat.aoRadius = 0.6f; RqCook(flat); good = RqRead(flat, flatAo) && good;
+      int flatDiff = 0;
+      if (good) for (int y = 0; y < flatBase.h; y++) for (int x = 0; x < flatBase.w; x++)
+         if (std::fabs(flatAo.Luma(x, y) - flatBase.Luma(x, y)) > 3.0) flatDiff++;
+      printf("GEOAUDIT RENDERQ ao on a lone flat plane: %d px changed by >3 levels\n", flatDiff);
+      if (flatDiff > 40) f.Flag("RENDERQ", "ao", "a flat plane was occluded", flatDiff);
+      scene.aoStrength = 0.0f;
+
+      // 3. Depth of field: focused on the cube it keeps the cube sharp and softens the rest; focused far, the cube blurs.
+      RqImage dofNear, dofFar;
+      const int cx0 = 80, cy0 = 80, cx1 = 176, cy1 = 176;
+      const double eBase = RqEnergy(base, cx0, cy0, cx1, cy1), eAll = RqEnergy(base, 0, 0, base.w, base.h);
+      scene.dofAperture = 2.0f; scene.focusDistance = 5.0f; RqCook(scene); good = RqRead(scene, dofNear);
+      scene.focusDistance = 30.0f; RqCook(scene); good = RqRead(scene, dofFar) && good;
+      const double eNear = RqEnergy(dofNear, cx0, cy0, cx1, cy1), eFar = RqEnergy(dofFar, cx0, cy0, cx1, cy1);
+      const double aNear = RqEnergy(dofNear, 0, 0, base.w, base.h);
+      printf("GEOAUDIT RENDERQ dof: cube-window detail %.0f sharp, %.0f focused on it, %.0f focused far; whole image %.0f -> %.0f\n",
+             eBase, eNear, eFar, eAll, aNear);
+      if (!good || eNear < 0.8 * eBase) f.Flag("RENDERQ", "dof", "the focused subject lost detail", eNear / std::max(1.0, eBase));
+      if (eFar > 0.75 * eBase) f.Flag("RENDERQ", "dof", "an out-of-focus subject stayed sharp", eFar / std::max(1.0, eBase));
+      scene.dofAperture = 0.0f;
+
+      // 4. Supersampling: only offline, and it adds in-between values along edges.
+      scene.samples = 0;
+      RqImage ss1, ssLive, ss8;
+      RqCook(scene); good = RqRead(scene, ss1);
+      scene.supersample = 8; RqCook(scene); good = RqRead(scene, ssLive) && good;
+      Transport::Instance().SetOfflineMode(true);
+      RqCook(scene); good = RqRead(scene, ss8) && good;
+      scene.supersample = 1; RqCook(scene);
+      RqImage ssOff1; good = RqRead(scene, ssOff1) && good;
+      Transport::Instance().SetOfflineMode(false);
+      int liveDiff = 0;
+      std::set<int> lv1, lv8;
+      if (good) for (size_t i = 0; i < ss1.px.size(); i++) if (ss1.px[i] != ssLive.px[i]) liveDiff++;
+      if (good) for (int y = 0; y < ss1.h; y++) for (int x = 0; x < ss1.w; x++) { lv1.insert((int)std::lround(ss1.Luma(x, y) * 4)); lv8.insert((int)std::lround(ss8.Luma(x, y) * 4)); }
+      int offDiff = 0;
+      if (good) for (size_t i = 0; i < ss1.px.size(); i++) if (ss1.px[i] != ssOff1.px[i]) offDiff++;
+      const double sMean1 = meanLuma(ss1), sMean8 = meanLuma(ss8);
+      printf("GEOAUDIT RENDERQ supersample: live render with 8 set differs by %d bytes; offline 1 pass differs by %d; luma levels %zu -> %zu; mean %.2f -> %.2f\n",
+             liveDiff, offDiff, lv1.size(), lv8.size(), sMean1, sMean8);
+      if (liveDiff != 0) f.Flag("RENDERQ", "supersample", "a live render changed with supersample set", liveDiff);
+      if (offDiff != 0) f.Flag("RENDERQ", "supersample", "one offline pass differs from the plain render", offDiff);
+      if (lv8.size() < lv1.size() * 12 / 10) f.Flag("RENDERQ", "supersample", "no smoother edges", (double)lv8.size());
+      if (std::fabs(sMean8 - sMean1) > 2.0) f.Flag("RENDERQ", "supersample", "brightness drifted", sMean8 - sMean1);
+
+      // 5. Float output: real precision above 8 bits, same picture.
+      Render3DNode fl8, fl16;
+      setup(fl8, 128); setup(fl16, 128);
+      for (Render3DNode* r : { &fl8, &fl16 }) { r->geometry[0] = &sphere; r->tonemap = 0; r->exposure = 1.0f; }
+      fl16.floatOutput = true;
+      RqCook(fl8); RqCook(fl16);
+      RqImage p8; good = RqRead(fl8, p8);
+      std::vector<uint16_t> deep; int dw = 0, dh = 0;
+      const bool isFloat = NodeImageIsFloat(&fl16, 0);
+      good = ReadNodeImageRgba16(&fl16, 0, true, dw, dh, deep) && good;
+      std::set<int> d8, d16;
+      int maxStep = 0;
+      if (good) for (int i = 0; i < dw * dh; i++) { d16.insert(deep[(size_t)i * 4]); d8.insert(p8.px[(size_t)i * 4]); }
+      if (good) for (int i = 0; i < dw * dh; i++)
+         maxStep = std::max(maxStep, std::abs((int)std::lround(deep[(size_t)i * 4] / 257.0) - (int)p8.px[(size_t)i * 4]));
+      printf("GEOAUDIT RENDERQ float output: target %s, distinct red levels %zu (8-bit %zu), worst gap to the 8-bit render %d levels\n",
+             isFloat ? "16-bit float" : "8-bit", d16.size(), d8.size(), maxStep);
+      if (!isFloat) f.Flag("RENDERQ", "float", "output is not 16-bit float", 0);
+      if (d16.size() < 2 * d8.size()) f.Flag("RENDERQ", "float", "no more levels than 8 bits", (double)d16.size());
+      if (maxStep > 2) f.Flag("RENDERQ", "float", "float and 8-bit renders differ", maxStep);
+
+      // 6. Float with multisampling, AO, DOF and supersample together, and hostile values: none may crash or leave black.
+      Render3DNode mix; setup(mix, 96);
+      mix.geometry[0] = &plane; mix.geometry[1] = &cube;
+      mix.floatOutput = true; mix.samples = 2; mix.aoStrength = 1.0f; mix.dofAperture = 1.5f; mix.supersample = 4;
+      Transport::Instance().SetOfflineMode(true);
+      RqCook(mix);
+      Transport::Instance().SetOfflineMode(false);
+      RqImage mi; good = RqRead(mix, mi);
+      const double mixMean = good ? meanLuma(mi) : 0.0;
+      printf("GEOAUDIT RENDERQ everything on together: %s, mean luma %.2f\n", good ? "rendered" : "FAILED", mixMean);
+      if (!good || mixMean < 5.0) f.Flag("RENDERQ", "combined", "combined render is empty", mixMean);
+
+      const float hostile[] = { -5.0f, 0.0f, 1e-9f, 1e9f, std::nanf(""), std::numeric_limits<float>::infinity() };
+      int hostileBad = 0;
+      for (float v : hostile)
+      {
+         Render3DNode hz; setup(hz, 64);
+         hz.geometry[0] = &cube;
+         hz.aoStrength = 1.0f; hz.aoRadius = v; hz.dofAperture = 1.0f; hz.focusDistance = v;
+         hz.supersample = (int)std::max(-1e6f, std::min(1e6f, std::isfinite(v) ? v : 0.0f));
+         Transport::Instance().SetOfflineMode(true);
+         RqCook(hz);
+         Transport::Instance().SetOfflineMode(false);
+         RqImage hi;
+         if (!RqRead(hz, hi) || hi.w != 64) hostileBad++;
+      }
+      if (const char* dir = getenv("INFINITE_RENDERQ_DIR"))
+      {
+         const std::pair<const char*, const RqImage*> shots[] = { { "base", &base }, { "ao", &aoFull }, { "dof_focus_cube", &dofNear },
+                                                                    { "dof_focus_far", &dofFar }, { "alias_1pass", &ss1 }, { "supersample_8", &ss8 } };
+         for (const auto& sh : shots)
+            WriteSrgbPng(std::string(dir) + "/" + sh.first + ".png", sh.second->w, sh.second->h, sh.second->px.data());
+      }
+      // 7. What the live passes cost at 1080p: median of 21 cooks, each ended with glFinish.
+      {
+         Render3DNode big; setup(big, 1080);
+         big.width = 1920.0f; big.height = 1080.0f; big.samples = 2;
+         big.geometry[0] = &plane; big.geometry[1] = &cube;
+         auto timeMs = [&](const char* label) {
+            std::vector<double> t;
+            for (int i = 0; i < 21; i++)
+            {
+               big.camAzimuth += 0.37f; // a moved camera defeats the unchanged-scene skip
+               const auto t0 = std::chrono::steady_clock::now();
+               RqCook(big);
+               glFinish();
+               t.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+            }
+            std::sort(t.begin(), t.end());
+            printf("GEOAUDIT RENDERQ cost 1920x1080 4x MSAA %-22s %.2f ms (median of 21)\n", label, t[10]);
+            return t[10];
+         };
+         const double tBase = timeMs("scene only");
+         big.aoStrength = 1.0f; big.aoRadius = 0.6f;
+         const double tAo = timeMs("+ ambient occlusion");
+         big.aoStrength = 0.0f; big.dofAperture = 1.0f; big.focusDistance = 5.0f;
+         const double tDof = timeMs("+ depth of field");
+         big.floatOutput = true; big.dofAperture = 0.0f;
+         const double tFl = timeMs("float output only");
+         printf("GEOAUDIT RENDERQ added cost: ambient occlusion %.2f ms, depth of field %.2f ms\n", tAo - tBase, tDof - tBase);
+         (void)tFl;
+      }
+
+      Render3DNode empty; setup(empty, 64);
+      empty.aoStrength = 1.0f; empty.dofAperture = 1.0f; empty.supersample = 3;
+      Transport::Instance().SetOfflineMode(true);
+      RqCook(empty);
+      Transport::Instance().SetOfflineMode(false);
+      RqImage ei; if (!RqRead(empty, ei) || ei.w != 64) hostileBad++;
+      printf("GEOAUDIT RENDERQ hostile values and an empty scene: %d failures\n", hostileBad);
+      if (hostileBad != 0) f.Flag("RENDERQ", "hostile", "a hostile value or empty scene failed to render", hostileBad);
+   }
+
 } // namespace
 
 bool GeoAuditWantsGl()
 {
    const char* only = getenv("INFINITE_GEOAUDIT_ONLY");
-   return only != nullptr && strstr(only, "DISP") != nullptr;
+   return only != nullptr && (strstr(only, "DISP") != nullptr || strstr(only, "RENDERQ") != nullptr || strstr(only, "AREALIGHT") != nullptr);
 }
 
 bool RunGeoAudit()
@@ -1763,8 +2953,20 @@ bool RunGeoAudit()
       AuditMetaballs(flags, ok);
    if (want("CURVE"))
       AuditCurveOps(flags, ok);
+   if (want("SWEEP"))
+      AuditSweepRevolve(flags, ok);
+   if (want("KINDS"))
+      AuditKinds(flags, ok);
+   if (want("BEVEL"))
+      AuditBevelInset(flags, ok);
    if (want("CLOTH"))
       AuditCloth(flags, ok);
+   if (only != nullptr && strstr(only, "PCOST") != nullptr)
+      AuditParticleCost();
+   if (want("RIGID"))
+      AuditRigid(flags, ok);
+   if (want("LSYS"))
+      AuditLSystem(flags, ok);
    if (want("INST"))
       AuditInstances(flags, ok);
    if (want("REF"))
@@ -1772,6 +2974,9 @@ bool RunGeoAudit()
    // DISP needs a GL texture, so it only runs from the GL-ready dispatch (Startup.cpp) and only when asked for by name.
    if (only != nullptr && strstr(only, "DISP") != nullptr)
       AuditDisplace(flags, ok);
+   if (only != nullptr && strstr(only, "RENDERQ") != nullptr)
+      AuditRenderQuality(flags, ok);
+      AuditAreaLight(flags, ok);
    printf("GEOAUDIT %s (%d flags)\n", ok ? "PASS" : "FAIL", flags.n);
    return ok;
 }

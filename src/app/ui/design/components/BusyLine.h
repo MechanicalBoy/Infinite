@@ -4,6 +4,7 @@
 #pragma once
 #include <cmath>
 #include "imgui.h"
+#include "core/I18n.h"
 #include "core/CategoryColors.h"
 #include "app/ui/design/Tokens.gen.h"
 #include "app/ui/design/UiType.h"
@@ -47,7 +48,7 @@ namespace BusyLine
       if (cancellable)
       {
          ImGui::SameLine(0.0f, tok::space_2);
-         cancelled = ImGui::SmallButton("Cancel");
+         cancelled = ImGui::SmallButton(I18n::T("Cancel"));
       }
       if (progress >= 0.0f)
          ImGui::ProgressBar(progress > 1.0f ? 1.0f : progress, ImVec2(-1.0f, 4.0f), "");

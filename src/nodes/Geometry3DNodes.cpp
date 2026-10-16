@@ -396,6 +396,7 @@ namespace
       "uniform int uLightType[3];\n"
       "uniform float uLightSpotAngle[3];\n"
       "uniform float uLightSpotPenumbra[3];\n"
+      "uniform vec2 uLightArea[3];\n"
       "uniform int uLightCount;\n"
       "uniform vec3 uAmbient;\n"
       "uniform float uRim;\n"
@@ -700,7 +701,28 @@ namespace
       "      }\n"
       "      vec3 lightDir;\n"
       "      float attenuation = 1.0;\n"
-      "      if (uLightType[i] == 1 || uLightType[i] == 4) {\n"
+      "      if (uLightType[i] == 5) {\n"
+      "         // Rectangle light facing the origin. The direction used for shading is the point of the\n"
+      "         // rectangle nearest the mirror ray (the representative-point method), so a bigger panel\n"
+      "         // gives a broader, softer highlight; one-sided, no light leaves the back.\n"
+      "         vec3 lp = uLightDir[i];\n"
+      "         vec3 fwd = normalize(-lp);\n"
+      "         vec3 rgt = cross(vec3(0.0, 1.0, 0.0), fwd);\n"
+      "         rgt = (dot(rgt, rgt) < 1e-4) ? vec3(1.0, 0.0, 0.0) : normalize(rgt);\n"
+      "         vec3 upv = cross(fwd, rgt);\n"
+      "         vec2 half2 = 0.5 * uLightArea[i];\n"
+      "         vec3 refl = reflect(-viewDir, n);\n"
+      "         float rf = dot(refl, fwd);\n"
+      "         float tHit = (rf < -1e-4) ? dot(lp - vWorldPos, fwd) / rf : 0.0;\n"
+      "         vec3 hit = vWorldPos + refl * max(tHit, 0.0);\n"
+      "         vec3 rel = hit - lp;\n"
+      "         vec3 nearP = lp + rgt * clamp(dot(rel, rgt), -half2.x, half2.x) + upv * clamp(dot(rel, upv), -half2.y, half2.y);\n"
+      "         vec3 toLight = nearP - vWorldPos;\n"
+      "         float dist = length(toLight);\n"
+      "         lightDir = toLight / max(dist, 1e-4);\n"
+      "         attenuation = 1.0 / (1.0 + dist * dist * 0.25);\n"
+      "         attenuation *= clamp(dot(-lightDir, fwd) * 4.0, 0.0, 1.0);\n"
+      "      } else if (uLightType[i] == 1 || uLightType[i] == 4) {\n"
       "         vec3 toLight = uLightDir[i] - vWorldPos;\n"
       "         float dist = length(toLight);\n"
       "         lightDir = toLight / max(dist, 1e-4);\n"
@@ -1185,7 +1207,7 @@ void Render3DNode::ReleaseTargets()
    if (mSceneColorTex != 0) { Bench::GpuMem::ReleaseTexture(mSceneColorTex); glDeleteTextures(1, &mSceneColorTex); mSceneColorTex = 0; }
    if (mSceneColorFbo != 0) { glDeleteFramebuffers(1, &mSceneColorFbo); mSceneColorFbo = 0; }
    if (mColorTex != 0) { Bench::GpuMem::ReleaseTexture(mColorTex); glDeleteTextures(1, &mColorTex); mColorTex = 0; }
-   if (mDepthBuffer != 0) { Bench::GpuMem::ReleaseRenderbuffer(mDepthBuffer); glDeleteRenderbuffers(1, &mDepthBuffer); mDepthBuffer = 0; }
+   if (mDepthTex != 0) { Bench::GpuMem::ReleaseTexture(mDepthTex); glDeleteTextures(1, &mDepthTex); mDepthTex = 0; }
    if (mFbo != 0) { glDeleteFramebuffers(1, &mFbo); mFbo = 0; }
    if (mMsColor != 0) { Bench::GpuMem::ReleaseRenderbuffer(mMsColor); glDeleteRenderbuffers(1, &mMsColor); mMsColor = 0; }
    if (mMsDepth != 0) { Bench::GpuMem::ReleaseRenderbuffer(mMsDepth); glDeleteRenderbuffers(1, &mMsDepth); mMsDepth = 0; }
@@ -1195,6 +1217,7 @@ void Render3DNode::ReleaseTargets()
 Render3DNode::~Render3DNode()
 {
    ReleaseTargets();
+   ReleasePost();
    ReleaseShadowTargets();
    for (GpuMesh& gpu : mGpu)
       ReleaseGpuMesh(gpu);
@@ -1273,31 +1296,39 @@ bool Render3DNode::EnsureShader()
 
 bool Render3DNode::EnsureResources(int w, int h, int sampleCount)
 {
-   if (mFbo != 0 && mWidth == w && mHeight == h && mActiveSamples == sampleCount)
+   if (mFbo != 0 && mWidth == w && mHeight == h && mActiveSamples == sampleCount && mFloatTarget == floatOutput)
       return true;
 
    ReleaseTargets();
+   mFloatTarget = floatOutput;
+   const GLenum colorFmt = mFloatTarget ? GL_RGBA16F : GL_RGBA8;
+   const GLenum colorType = mFloatTarget ? GL_HALF_FLOAT : GL_UNSIGNED_BYTE;
 
    glGenTextures(1, &mColorTex);
    glBindTexture(GL_TEXTURE_2D, mColorTex);
-   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+   glTexImage2D(GL_TEXTURE_2D, 0, colorFmt, w, h, 0, GL_RGBA, colorType, nullptr);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-   Bench::GpuMem::RecordTexture(mColorTex, Bench::GpuMemCategory::RenderTargets, w, h, GL_RGBA8, false, "Render3D");
+   Bench::GpuMem::RecordTexture(mColorTex, Bench::GpuMemCategory::RenderTargets, w, h, colorFmt, false, "Render3D");
 
-   // A depth renderbuffer is the piece the 2D pipeline never needed: without it
-   // triangles composite in draw order instead of by distance.
-   glGenRenderbuffers(1, &mDepthBuffer);
-   glBindRenderbuffer(GL_RENDERBUFFER, mDepthBuffer);
-   glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
-   Bench::GpuMem::RecordRenderbuffer(mDepthBuffer, Bench::GpuMemCategory::RenderTargets, w, h, GL_DEPTH_COMPONENT24, 1, "Render3D");
+   // Depth is the piece the 2D pipeline never needed: without it triangles
+   // composite in draw order instead of by distance. It is a texture rather
+   // than a renderbuffer so ambient occlusion and depth of field can read it.
+   glGenTextures(1, &mDepthTex);
+   glBindTexture(GL_TEXTURE_2D, mDepthTex);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+   Bench::GpuMem::RecordTexture(mDepthTex, Bench::GpuMemCategory::RenderTargets, w, h, GL_DEPTH_COMPONENT24, false, "Render3D_Depth");
 
    glGenFramebuffers(1, &mFbo);
    glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mColorTex, 0);
-   glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mDepthBuffer);
+   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, mDepthTex, 0);
 
    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
    glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1336,8 +1367,8 @@ bool Render3DNode::EnsureResources(int w, int h, int sampleCount)
    {
       glGenRenderbuffers(1, &mMsColor);
       glBindRenderbuffer(GL_RENDERBUFFER, mMsColor);
-      glRenderbufferStorageMultisample(GL_RENDERBUFFER, resolved, GL_RGBA8, w, h);
-      Bench::GpuMem::RecordRenderbuffer(mMsColor, Bench::GpuMemCategory::RenderTargets, w, h, GL_RGBA8, resolved, "Render3D_MSAA");
+      glRenderbufferStorageMultisample(GL_RENDERBUFFER, resolved, colorFmt, w, h);
+      Bench::GpuMem::RecordRenderbuffer(mMsColor, Bench::GpuMemCategory::RenderTargets, w, h, colorFmt, resolved, "Render3D_MSAA");
 
       glGenRenderbuffers(1, &mMsDepth);
       glBindRenderbuffer(GL_RENDERBUFFER, mMsDepth);
@@ -1373,13 +1404,13 @@ bool Render3DNode::EnsureResources(int w, int h, int sampleCount)
    // attachment, no depth: it only exists to be blitted into and sampled.
    glGenTextures(1, &mSceneColorTex);
    glBindTexture(GL_TEXTURE_2D, mSceneColorTex);
-   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+   glTexImage2D(GL_TEXTURE_2D, 0, colorFmt, w, h, 0, GL_RGBA, colorType, nullptr);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
    glGenerateMipmap(GL_TEXTURE_2D);
-   Bench::GpuMem::RecordTexture(mSceneColorTex, Bench::GpuMemCategory::RenderTargets, w, h, GL_RGBA8, true, "Render3D_SceneColor");
+   Bench::GpuMem::RecordTexture(mSceneColorTex, Bench::GpuMemCategory::RenderTargets, w, h, colorFmt, true, "Render3D_SceneColor");
 
    glGenFramebuffers(1, &mSceneColorFbo);
    glBindFramebuffer(GL_FRAMEBUFFER, mSceneColorFbo);
@@ -1533,6 +1564,15 @@ void Render3DNode::CookIfNeeded(int frameId)
       return;
    mLastCookFrame = frameId;
 
+   // Supersampling only ever adds passes on an offline render; a live cook is
+   // always the single pass so the real-time cost never changes.
+   if (supersample > 1 && !mInAccumulate && renderPass == 0 && Transport::Instance().IsOfflineMode() && Accumulate(frameId))
+      return;
+   CookOnce(frameId);
+}
+
+void Render3DNode::CookOnce(int frameId)
+{
    if (!EnsureShader())
       return;
 
@@ -1619,6 +1659,21 @@ void Render3DNode::CookIfNeeded(int frameId)
          ? Mat4::Orthographic(orthoHeight, aspect, nearPlane, farPlane)
          : Mat4::Perspective(fov * 3.14159265f / 180.0f, aspect, nearPlane, farPlane);
    }
+   mLastCamera.view = view;
+   mLastCamera.proj = proj;
+   mLastCamera.eye[0] = eye[0]; mLastCamera.eye[1] = eye[1]; mLastCamera.eye[2] = eye[2];
+   mLastCamera.valid = true;
+   if (mJitterIndex >= 0)
+   {
+      // Sub-pixel offset for supersampling: a Halton(2,3) point, in clip
+      // units. A perspective matrix shifts through its z column (it is divided
+      // by w = -z), an orthographic one through the translation.
+      auto halton = [](int i, int base) { float f = 1.0f, r = 0.0f; while (i > 0) { f /= (float)base; r += f * (float)(i % base); i /= base; } return r; };
+      const float jx = (halton(mJitterIndex + 1, 2) - 0.5f) * 2.0f / (float)w;
+      const float jy = (halton(mJitterIndex + 1, 3) - 0.5f) * 2.0f / (float)h;
+      if (proj.m[11] != 0.0f) { proj.m[8] += jx; proj.m[9] += jy; }
+      else { proj.m[12] += jx; proj.m[13] += jy; }
+   }
    const Mat4 viewProj = Mat4::Multiply(proj, view);
    // Camera basis in world space for billboarding point-cloud sprites - rows
    // of the view matrix's rotation part (see Mat4::LookAt), not columns.
@@ -1632,6 +1687,7 @@ void Render3DNode::CookIfNeeded(int frameId)
    int lightTypes[kLightSlots] = { 0 };
    float lightSpotAngle[kLightSlots] = { 45.0f, 45.0f, 45.0f };
    float lightSpotPenumbra[kLightSlots] = { 0.2f, 0.2f, 0.2f };
+   float lightArea[kLightSlots * 2] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
    int lightCount = 0;
    for (int i = 0; i < kLightSlots; i++)
    {
@@ -1649,6 +1705,8 @@ void Render3DNode::CookIfNeeded(int frameId)
       lightTypes[lightCount] = lights[i]->type;
       lightSpotAngle[lightCount] = lights[i]->spotAngle;
       lightSpotPenumbra[lightCount] = lights[i]->spotPenumbra;
+      lightArea[lightCount * 2 + 0] = std::max(0.01f, lights[i]->areaWidth);
+      lightArea[lightCount * 2 + 1] = std::max(0.01f, lights[i]->areaHeight);
       lightCount++;
    }
    if (lightCount == 0)
@@ -1872,6 +1930,7 @@ void Render3DNode::CookIfNeeded(int frameId)
    glUniform1iv(glGetUniformLocation(mProgram, "uLightType"), kLightSlots, lightTypes);
    glUniform1fv(glGetUniformLocation(mProgram, "uLightSpotAngle"), kLightSlots, lightSpotAngle);
    glUniform1fv(glGetUniformLocation(mProgram, "uLightSpotPenumbra"), kLightSlots, lightSpotPenumbra);
+   glUniform2fv(glGetUniformLocation(mProgram, "uLightArea"), kLightSlots, lightArea);
    glUniform1i(glGetUniformLocation(mProgram, "uLightCount"), lightCount);
    glUniform3fv(glGetUniformLocation(mProgram, "uAmbient"), 1, ambientColor);
    glUniform1f(glGetUniformLocation(mProgram, "uRim"), rimIntensity);
@@ -1886,7 +1945,8 @@ void Render3DNode::CookIfNeeded(int frameId)
    glUniform1i(glGetUniformLocation(mProgram, "uShadowMap"), 1);
    glUniform1i(glGetUniformLocation(mProgram, "uShadowsOn"), shadowsActive ? 1 : 0);
    glUniform1f(glGetUniformLocation(mProgram, "uShadowBias"), shadowBias);
-   glUniform1f(glGetUniformLocation(mProgram, "uShadowSoftness"), shadowSoftness);
+   glUniform1f(glGetUniformLocation(mProgram, "uShadowSoftness"),
+               lightTypes[0] == 5 ? shadowSoftness * (1.0f + 1.5f * std::max(lightArea[0], lightArea[1])) : shadowSoftness);
    glUniform1f(glGetUniformLocation(mProgram, "uShadowStrength"), shadowStrength);
    glUniform1f(glGetUniformLocation(mProgram, "uShadowTexel"),
                mShadowSize > 0 ? 1.0f / (float)mShadowSize : 0.0f);
@@ -2688,9 +2748,18 @@ void Render3DNode::CookIfNeeded(int frameId)
       Bench::ConditionalGpuStageTimer benchResolve(benchPassRing, "r3d_resolve", frameId);
       glBindFramebuffer(GL_READ_FRAMEBUFFER, mMsFbo);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, mFbo);
-      glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      // Depth comes along only when the post stage or a Volume node will read it.
+      glBlitFramebuffer(0, 0, w, h, 0, 0, w, h,
+                        GL_COLOR_BUFFER_BIT | ((PostActive() || mDepthWanted) ? GL_DEPTH_BUFFER_BIT : 0), GL_NEAREST);
       glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+   }
+
+   mDepthResolved = !multisampling || PostActive() || mDepthWanted;
+   if (PostActive())
+   {
+      Bench::ConditionalGpuStageTimer benchPost(benchPassRing, "r3d_post", frameId);
+      RunPost(proj, proj.m[11] == 0.0f, w, h);
    }
 
    // --- restore, or every 2D node after this draws wrongly ------------

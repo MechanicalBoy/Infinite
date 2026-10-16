@@ -90,7 +90,7 @@ namespace app
    void ArrangeComputeSampleStaticWave(uint64_t clipId, uint64_t srcUid, int srcOutput,
                                         Arrange::Tick start, Arrange::Tick length,
                                         double effBpm, float sourceOffsetSeconds,
-                                        const Platform::SampleBuffer* buf)
+                                        const Platform::SampleBuffer* buf, double speed)
    {
       const int buckets = ArrangeWaveBucketCount(length);
       if (buckets <= 0 || buf == nullptr || buf->numFrames <= 0 || buf->channels <= 0 ||
@@ -102,7 +102,8 @@ namespace app
 
       const long long frames = buf->numFrames;
       const int channels = buf->channels;
-      const double framesPerTick = Arrange::TicksToSeconds(1, effBpm) * buf->sampleRate;
+      // Signed: a reversed clip walks the file backwards from its offset.
+      const double framesPerTick = Arrange::TicksToSeconds(1, effBpm) * buf->sampleRate * speed;
       const double frame0 = (double)sourceOffsetSeconds * buf->sampleRate;
 
       ArrangeClipWave w;
@@ -113,6 +114,7 @@ namespace app
       w.shape = ArrangeClipShape(srcUid, srcOutput, start, length);
       w.sampleEffBpm = effBpm;
       w.sampleOffset = sourceOffsetSeconds;
+      w.sampleSpeed = speed;
       w.sampleBuf = buf;
       w.minv.assign((size_t)buckets, 0.0f);
       w.maxv.assign((size_t)buckets, 0.0f);
@@ -122,9 +124,11 @@ namespace app
       {
          const double t0 = (double)b * (double)kArrangeWaveBucketTicks;
          const double t1 = t0 + (double)kArrangeWaveBucketTicks;
-         const long long f0 = std::clamp<long long>((long long)std::floor(frame0 + t0 * framesPerTick), 0, frames);
+         const double a0 = frame0 + t0 * framesPerTick;
+         const double a1 = frame0 + t1 * framesPerTick;
+         const long long f0 = std::clamp<long long>((long long)std::floor(std::min(a0, a1)), 0, frames);
          const long long f1 = std::clamp<long long>(
-            std::max<long long>((long long)std::floor(frame0 + t1 * framesPerTick), f0 + 1), 0, frames);
+            std::max<long long>((long long)std::floor(std::max(a0, a1)), f0 + 1), 0, frames);
          float mn = 0.0f, mx = 0.0f;
          for (long long f = f0; f < f1; ++f)
          {
@@ -194,6 +198,42 @@ namespace app
    }
 
 
+   // Changing a clip's speed keeps the same source covered: the box scales by
+   // oldSpeed / newSpeed, so 2x halves it and the same take now plays twice as
+   // fast. Goes through TrimEdge so growing into a neighbour clamps there.
+   void ArrangeSetClipSpeed(uint64_t clipId, float speed)
+   {
+      Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+      if (c == nullptr || !std::isfinite(speed))
+         return;
+      speed = std::clamp(speed, Arrange::kClipSpeedMin, Arrange::kClipSpeedMax);
+      const double oldSpeed = std::fabs(Arrange::ClipSpeedFactor(*c));
+      if (speed == c->speed)
+         return;
+      c->speed = speed;
+      gArrange.revision++;
+      const double newSpeed = std::fabs(Arrange::ClipSpeedFactor(*c));
+      const Arrange::Tick newLength =
+         std::max<Arrange::Tick>(1, (Arrange::Tick)std::llround((double)c->length * oldSpeed / newSpeed));
+      Arrange::TrimEdge(gArrange, clipId, Arrange::kEdgeEnd, c->start + newLength);
+   }
+
+
+   // Turning reverse on or off keeps the same stretch of source under the
+   // box: forward starts at the offset, reversed starts at the far end of the
+   // region and runs back to it.
+   void ArrangeSetClipReverse(uint64_t clipId, bool reverse)
+   {
+      Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+      if (c == nullptr || c->reverse == reverse)
+         return;
+      const double covered = std::fabs(Arrange::ClipSourceAdvance(*c, c->length));
+      c->reverse = reverse;
+      c->sourceOffsetSeconds = (float)std::max(0.0, (double)c->sourceOffsetSeconds + (reverse ? covered : -covered));
+      gArrange.revision++;
+   }
+
+
    // Status line under the Sample BPM field, shared by the context menu and
    // the docked Clip Settings panel.
    void ArrangeDrawSampleTempoInfo(const Arrange::Clip& c)
@@ -244,7 +284,8 @@ namespace app
          return;
       }
       ArrangeComputeSampleStaticWave(c->id, c->srcUid, c->srcOutput, c->start, c->length,
-                                      ArrangeSampleEffBpm(*c), c->sourceOffsetSeconds, buf);
+                                      ArrangeSampleEffBpm(*c), c->sourceOffsetSeconds, buf,
+                                      Arrange::ClipSpeedFactor(*c));
    }
 
    constexpr double kArrangeThumbRefreshSeconds = 1.0;
@@ -395,9 +436,11 @@ namespace app
                   if (sw == gArrangeSampleStaticWaves.end() || sw->second.sampleBuf != buf ||
                       sw->second.srcUid != c.srcUid || sw->second.length != c.length ||
                       sw->second.start != c.start || sw->second.sampleEffBpm != effBpm ||
-                      sw->second.sampleOffset != c.sourceOffsetSeconds)
+                      sw->second.sampleOffset != c.sourceOffsetSeconds ||
+                      sw->second.sampleSpeed != Arrange::ClipSpeedFactor(c))
                      ArrangeComputeSampleStaticWave(c.id, c.srcUid, c.srcOutput, c.start, c.length,
-                                                    effBpm, c.sourceOffsetSeconds, buf);
+                                                    effBpm, c.sourceOffsetSeconds, buf,
+                                                    Arrange::ClipSpeedFactor(c));
                   continue;
                }
                const int buckets = ArrangeWaveBucketCount(c.length);
@@ -612,8 +655,14 @@ namespace app
                   // timeline-second, so leaving it out would seek to the
                   // wrong frame for any Sample with speed != 1.
                   const double elapsedSeconds = std::max(0.0, (beat - startBeat) * 60.0 / bpm);
-                  const double offsetSeconds = elapsedSeconds * (double)vid->speed;
-                  vid->SyncToArrangement(vid->trimStart + offsetSeconds);
+                  // The clip's own speed and direction sit on top of the
+                  // node's: a reversed clip starts at the end of the node's
+                  // window and runs back toward its start.
+                  const double factor = Arrange::ClipSpeedFactor(c);
+                  const double offsetSeconds = elapsedSeconds * (double)vid->speed * std::fabs(factor);
+                  const double target = c.reverse ? vid->WindowEndSeconds() - offsetSeconds
+                                                  : (double)vid->trimStart + offsetSeconds;
+                  vid->SyncToArrangement(target, factor);
                }
             }
             break;

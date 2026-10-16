@@ -51,6 +51,8 @@ namespace app
       REGISTER_NODE(MappingNode, Mapping, "3D");
       REGISTER_NODE(ParticleSystemNode, Particle System, "3D");
       REGISTER_NODE(ClothNode, Cloth, "3D");
+      REGISTER_NODE(RigidBodyNode, Rigid Bodies, "3D");
+      REGISTER_NODE(LSystemNode, L-System, "3D");
       REGISTER_NODE(JoinGeometryNode, Join Geometry, "3D");
       // The boolean modes as their own nodes: "difference" is what gets
       // searched for, not "join geometry with a dropdown set to difference".
@@ -96,7 +98,10 @@ namespace app
       REGISTER_NODE(Sketch3DNode, Sketch 3D, "3D");
       REGISTER_NODE(DistributePointsOnFacesNode, Distribute Points on Faces, "3D");
       REGISTER_NODE(PointsToVerticesNode, Points to Vertices, "3D");
+      REGISTER_NODE(ProximityLinesNode, Proximity Lines, "3D");
       REGISTER_NODE(CurveOpsNode, Curve Ops, "3D");
+      REGISTER_NODE(SweepNode, Sweep, "3D");
+      REGISTER_NODE(RevolveNode, Revolve, "3D");
       REGISTER_NODE(DelaunayMeshNode, Delaunay Mesh, "3D");
       REGISTER_NODE(VoronoiCellsNode, Voronoi Cells, "3D");
       REGISTER_NODE(DistributePointsInGridNode, Distribute Points in Grid, "3D");
@@ -125,6 +130,10 @@ namespace app
       REGISTER_NODE(RemoveBgNode, Remove Background, "Compositing");
       REGISTER_NODE(FeedbackNode, Feedback, "Compositing");
       REGISTER_NODE(TrailsNode, Trails, "Compositing");
+      REGISTER_NODE(OpticalFlowNode, Optical Flow, "Compositing");
+      REGISTER_NODE(TimeMachineNode, Time Machine, "Compositing");
+      REGISTER_NODE(FluidNode, Fluid, "Compositing");
+      REGISTER_NODE(VolumeNode, Volume, "Compositing");
       REGISTER_NODE(ReactionDiffusionNode, Reaction Diffusion, "Compositing");
       REGISTER_NODE(BlendNode, Blend, "Compositing");
       REGISTER_NODE(LayerStackNode, Layer Stack, "Compositing");
@@ -459,6 +468,7 @@ namespace app
                 ca.sampleBpm != cb.sampleBpm || ca.origBpm != cb.origBpm ||
                 ca.sourceDurationSeconds != cb.sourceDurationSeconds ||
                 ca.sourceOffsetSeconds != cb.sourceOffsetSeconds ||
+                ca.speed != cb.speed || ca.reverse != cb.reverse ||
                 // Per-clip modulation bypass: without this a bypass toggle
                 // compares equal and ArrangeGestureEnd drops it as "no
                 // change", so it would never reach the undo stack - the same

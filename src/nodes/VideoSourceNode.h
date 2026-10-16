@@ -61,6 +61,12 @@ public:
    bool Relink() override { return OpenViaDialog(); }
    double Duration() const { return mDuration; }
    double Position() const { return mPosition; }
+   // The end of the playable window (trim end, or the full duration): where a
+   // reversed arrangement clip starts reading.
+   double WindowEndSeconds() const
+   {
+      return (trimEnd <= 0.0f || (double)trimEnd > mDuration) ? mDuration : (double)trimEnd;
+   }
 
    // Arrangement Timeline exact seek (Video Sample only - see
    // ArrangeSeekVideoSampleSources in main.cpp): jumps straight to `seconds`
@@ -94,8 +100,16 @@ public:
    // delta hasn't caught up to yet, or a fresh Play landing mid-clip - is
    // exactly when the wrapped target and the current position diverge, which
    // is what actually needs a hard seek.
-   void SyncToArrangement(double targetSeconds)
+   //
+   // `rate` is the arrangement clip's own signed speed (negative = reversed):
+   // it scales how fast the free-run advance in the next CookIfNeeded moves,
+   // so a 2x or reversed clip keeps agreeing with `targetSeconds` frame to
+   // frame instead of being yanked back by a seek every frame. It applies to
+   // that one cook only; a node no clip is driving runs at its own speed.
+   void SyncToArrangement(double targetSeconds, double rate = 1.0)
    {
+      mArrangeRate = rate;
+      mArrangeRateFresh = true;
       const double wrapped = WrapPosition(targetSeconds);
       constexpr double kSyncEpsilonSeconds = 1.0 / 24.0; // ~ one frame at a typical rate
       if (std::abs(wrapped - mPosition) > kSyncEpsilonSeconds)
@@ -110,6 +124,8 @@ public:
    // node first cooked with a clip loaded.
    const Bench::MediaClipCounters* BenchCounters() const { return mBench.get(); }
    Platform::VideoHandle* BenchVideoHandle() const { return mVideo; }
+   // The decoder's stats for either path: the platform handle's, or the HAP worker's.
+   Bench::MediaDecodeStats* BenchDecodeStats() const;
 
    bool HasAudio() const { return mAudioLoaded; }
    const std::string& AudioError() const { return mAudioError; }
@@ -140,6 +156,10 @@ public:
    }
 
 private:
+   struct HapState;
+   bool OpenHap(const std::string& path, std::string& error);
+   void CloseHap();
+   void CookHap(int frameId);
    void EnsurePlaceholder();
    void LoadAudioTrack(const std::string& path);
    double WrapPosition(double raw) const;
@@ -154,12 +174,17 @@ private:
    double mDuration = 0.0;
    double mPosition = 0.0;
    double mLastTransportSeconds = 0.0;
+   double mArrangeRate = 1.0;
+   bool mArrangeRateFresh = false;
    std::vector<unsigned char> mFrame;
    std::string mLoadedPath;
    std::string mLastError;
    int mLastCookFrame = -1;
    int mFrameUpdateCount = 0;
    std::unique_ptr<Bench::MediaClipCounters> mBench;
+
+   // Set while the clip is a HAP movie, which bypasses Platform::Video*.
+   std::unique_ptr<HapState> mHap;
 
    std::unique_ptr<VideoAudioNode> mAudioNode;
    bool mAudioLoaded = false;

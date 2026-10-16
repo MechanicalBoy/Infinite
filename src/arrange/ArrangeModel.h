@@ -128,6 +128,15 @@ namespace Arrange
       // another Split - a Sample BPM edit changes `length` but not where in
       // the file playback starts.
       float    sourceOffsetSeconds = 0.0f;
+      // Playback speed and direction of the source under this clip's box.
+      // speed multiplies how many source seconds pass per timeline second
+      // (2 = twice as fast, 0.5 = half speed), reverse plays the source
+      // backwards from sourceOffsetSeconds. Neither changes the box. Audio
+      // keeps its pitch when going forward (the stretcher); a reversed clip
+      // reads the file backwards at the speed rate, so its pitch follows the
+      // speed. Defaults are a no-op, so older patches play unchanged.
+      float    speed   = 1.0f;
+      bool     reverse = false;
       // Video/image only. Basic color grade, consumed by the compositor as a
       // per-clip shader pass. Defaults are a no-op so every clip that
       // predates this field renders identically.
@@ -190,6 +199,27 @@ namespace Arrange
 
       Tick End() const { return start + length; }
    };
+
+   inline constexpr float kClipSpeedMin = 0.1f;
+   inline constexpr float kClipSpeedMax = 8.0f;
+
+   // Source seconds per timeline second, signed: negative for a reversed clip.
+   inline double ClipSpeedFactor(const Clip& c)
+   {
+      double sp = (double)c.speed;
+      if (!(sp == sp)) sp = 1.0;
+      sp = std::min((double)kClipSpeedMax, std::max((double)kClipSpeedMin, sp));
+      return c.reverse ? -sp : sp;
+   }
+
+   // Source seconds that `dt` ticks into the clip move the read point by
+   // (signed): what Split, a start trim and an overwrite add to
+   // sourceOffsetSeconds.
+   inline double ClipSourceAdvance(const Clip& c, Tick dt)
+   {
+      return TicksToSeconds(dt, SampleSourceBpm(c.syncToTempo, c.sampleBpm, gSampleLiveTempoBpm)) *
+             ClipSpeedFactor(c);
+   }
 
    struct Lane
    {

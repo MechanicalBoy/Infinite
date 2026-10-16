@@ -556,6 +556,8 @@ int DrawTestsB(FrameCtx& fc)
                 dynamic_cast<MaterialNode*>(gn.node.get()) != nullptr ||
                 dynamic_cast<DisplacementNode*>(gn.node.get()) != nullptr ||
                 dynamic_cast<ClothNode*>(gn.node.get()) != nullptr ||
+                dynamic_cast<RigidBodyNode*>(gn.node.get()) != nullptr ||
+                dynamic_cast<LSystemNode*>(gn.node.get()) != nullptr ||
                 dynamic_cast<JoinGeometryNode*>(gn.node.get()) != nullptr ||
                 dynamic_cast<WrapNode*>(gn.node.get()) != nullptr ||
                 dynamic_cast<Switcher3DNode*>(gn.node.get()) != nullptr ||

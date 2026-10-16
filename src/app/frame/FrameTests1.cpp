@@ -1701,7 +1701,7 @@ void FrameTest_MODDROPDOWNUNDOTEST(int frameId, GLFWwindow* window)
             sTypeParam = resolve(sFilterIdx, "type", false);
             sWaveParam = resolve(sOscIdx, "oscWave", false);
             sFmModeParam = resolve(sOscIdx, "oscFmMode", false);
-            sSyncParam = resolve(sDelayIdx, "sync to tempo##delaySync", true);
+            sSyncParam = resolve(sDelayIdx, "sync##delaySync", true);
             sRampModeParam = resolve(sRampIdx, "mode", false);
             sPickTypeParam = resolve(sPickFilterIdx, "type", false);
             if (sConstAIdx >= 0 && sConstBIdx >= 0)

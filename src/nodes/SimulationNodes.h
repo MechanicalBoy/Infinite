@@ -54,6 +54,8 @@ public:
    unsigned long long PointCloudRevision() override { return bypassed ? 0 : mRevision; }
 
    size_t AliveCount() const { return mAliveCount; }
+   // Threads used to step the particles: 0 picks from the machine (up to 8). Tests set it to compare.
+   static int sMaxThreads;
    void Reset();
 
    int maxParticles = 4000;
@@ -100,6 +102,7 @@ private:
    void Step(float dt);
    void Emit(int count);
 
+   void StepRange(size_t begin, size_t end, float dt);
    std::vector<Particle> mParticles;
    size_t mAliveCount = 0;
    unsigned long long mRevision = 0;

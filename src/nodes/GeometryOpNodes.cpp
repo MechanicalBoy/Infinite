@@ -19,7 +19,7 @@ namespace
       // still named here so a saved index still has a label, just not spawned
       // or offered in the operation dropdown (GeometryOpNode::IsSpawnable).
       "Select", "Delete Selected", "Transform Selected", "Extrude Selected",
-      "Delete", "Decimate"
+      "Delete", "Decimate", "Bevel", "Inset"
    };
    const std::vector<std::string> kSourceNames = { "Vertices", "Edges", "Faces" };
    const std::vector<std::string> kWrapModeNames = { "Cylindrical", "Spherical", "Nearest Surface" };
@@ -189,6 +189,8 @@ GeometryOpNode::Signature GeometryOpNode::CurrentSignature() const
    s.weldSeam = weldSeam;
    s.decimateRatio = decimateRatio;
    s.lockBorder = lockBorder;
+   s.bevelWidth = bevelWidth; s.bevelSegments = bevelSegments; s.bevelAngle = bevelAngle;
+   s.insetWidth = insetWidth; s.insetDepth = insetDepth;
    s.upstream = input;
    // The upstream's own revision stamp, not its triangle count: Select and
    // other mask-only operators leave the vertex/index count unchanged, so a
@@ -210,7 +212,14 @@ const Mesh& GeometryOpNode::GetMesh()
    if (mHasBuilt && sig == mBuilt)
       return mCache;
 
-   const Mesh& src = input->GetMesh();
+   const Mesh& rawSrc = input->GetMesh();
+   // A source may hand over a broken mesh (bad indices, NaN, a mask that no longer matches);
+   // drop what is unusable once, here, so no operator below has to defend itself.
+   const bool wellFormed = MeshOps::IsWellFormed(rawSrc);
+   Mesh sanitized;
+   if (!wellFormed)
+      sanitized = MeshOps::Sanitize(rawSrc);
+   const Mesh& src = wellFormed ? rawSrc : sanitized;
    // Per-face-independent operators (Explode, Triangulate, Normals, Solidify,
    // Wireframe) get `selectionOnly` by running on the selected faces alone
    // and stitching the untouched rest back on - see MeshOps::SplitBySelection.
@@ -316,6 +325,15 @@ const Mesh& GeometryOpNode::GetMesh()
       case kDecimate:
          // Connectivity-dependent - see kSubdivide. selectionOnly hidden.
          mCache = MeshOps::Decimate(src, decimateRatio, lockBorder);
+         break;
+      case kBevel:
+         // Connectivity-dependent - see kSubdivide. selectionOnly hidden.
+         mCache = MeshOps::BevelEdges(MeshOps::ClearSelection(src), bevelWidth, bevelSegments, bevelAngle);
+         break;
+      case kInset:
+         // Like Extrude: the incoming mask is honoured only with selectionOnly.
+         mCache = MeshOps::InsetFaces(selectionOnly ? src : MeshOps::ClearSelection(src),
+                                      insetWidth, insetDepth, bevelAngle);
          break;
       case kScrew:
          // Connectivity-dependent - see kSubdivide. selectionOnly hidden.
@@ -851,6 +869,9 @@ void InstanceOnPointsNode::Rebuild()
 {
    mTransforms.clear();
    mColors.clear();
+   mPoses.clear();
+   mScaleJitter.clear();
+   mPosesValid = false;
 
    mCookWarning = DescribeGeometryMismatch(cloudSource, GeometryRequirement::kCloud);
    if (mCookWarning.empty() && cloudSource == nullptr)
@@ -902,7 +923,8 @@ void InstanceOnPointsNode::Rebuild()
    const Mesh src = MeshOps::Transform(srcLocal, pointModel);
 
    const std::vector<MeshPoint> points = MeshOps::ToPoints(src, pointMode, maxPoints);
-   mTransforms.reserve(points.size());
+   mPoses.reserve(points.size());
+   mScaleJitter.reserve(points.size());
    mColors.reserve(points.size() * 3);
 
    for (size_t i = 0; i < points.size(); i++)
@@ -912,8 +934,8 @@ void InstanceOnPointsNode::Rebuild()
       const float r1 = Rand01(seed, (int)i * 3 + 1);
       const float r2 = Rand01(seed, (int)i * 3 + 2);
 
-      const float s = instanceScale * (1.0f + (r0 - 0.5f) * 2.0f * scaleRandom);
-      Mat4 m = Mat4::Scale(s, s, s);
+      mScaleJitter.push_back(1.0f + (r0 - 0.5f) * 2.0f * scaleRandom);
+      Mat4 m = Mat4::Identity();
 
       if (rotationRandom > 0.0f)
       {
@@ -946,10 +968,23 @@ void InstanceOnPointsNode::Rebuild()
       m = Mat4::Multiply(Mat4::Translation(p.px + p.nx * normalOffset,
                                            p.py + p.ny * normalOffset,
                                            p.pz + p.nz * normalOffset), m);
-      mTransforms.push_back(Mat4::Multiply(m, shapeModel));
+      mPoses.push_back(m);
       mColors.push_back(p.r);
       mColors.push_back(p.g);
       mColors.push_back(p.b);
+   }
+   mPoseShapeModel = shapeModel;
+   mPosesValid = true;
+   ApplyScale();
+}
+
+void InstanceOnPointsNode::ApplyScale()
+{
+   mTransforms.resize(mPoses.size());
+   for (size_t i = 0; i < mPoses.size(); i++)
+   {
+      const float s = instanceScale * mScaleJitter[i];
+      mTransforms[i] = Mat4::Multiply(Mat4::Multiply(mPoses[i], Mat4::Scale(s, s, s)), mPoseShapeModel);
    }
 }
 
@@ -980,20 +1015,24 @@ void InstanceOnPointsNode::CookIfNeeded(int frameId)
    // matrices baked into Rebuild() have to be compared directly to catch that.
    const Mat4 pointModel = pointSource ? pointSource->GetModelMatrix() : Mat4::Identity();
    const Mat4 shapeModel = instanceShape ? instanceShape->GetModelMatrix() : Mat4::Identity();
-   const bool dirty =
+   const bool poseDirty =
       mBuiltPointSource != pointSource || mBuiltShape != instanceShape ||
       mBuiltCloud != (const void*)cloudSource || mBuiltCloudRevision != cloudRevision ||
       mBuiltPointRevision != pointRevision || mBuiltShapeRevision != shapeRevision ||
       !(mBuiltPointModel == pointModel) || !(mBuiltShapeModel == shapeModel) ||
       mBuiltMode != pointMode || mBuiltMax != maxPoints ||
-      mBuiltScale != instanceScale || mBuiltScaleRand != scaleRandom ||
+      mBuiltScaleRand != scaleRandom ||
       mBuiltRotRand != rotationRandom || mBuiltSeed != seed ||
       mBuiltOffset != normalOffset || mBuiltAlign != alignToNormal;
 
-   if (!dirty)
+   const bool scaleDirty = mBuiltScale != instanceScale;
+   if (!poseDirty && !scaleDirty)
       return;
 
-   Rebuild();
+   if (!poseDirty && mPosesValid && cloudSource == nullptr)
+      ApplyScale();
+   else
+      Rebuild();
    mInstanceRevision = NextMeshRevision();
 
    mBuiltPointSource = pointSource;

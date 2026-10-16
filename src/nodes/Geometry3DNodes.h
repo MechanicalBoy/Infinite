@@ -578,6 +578,23 @@ public:
       return (slot >= 0 && slot < 9) ? kNames[slot] : nullptr;
    }
 
+   // The view of the last render and its depth buffer, for a node that draws into
+   // the same picture (Volume). Depth is a hardware depth value in 0..1. A
+   // multisampled render only resolves depth once someone asks for it, so the
+   // first frame after RequestDepth() has none (DepthValid() says so).
+   struct SceneCamera { Mat4 view, proj; float eye[3] = { 0, 0, 0 }; bool valid = false; };
+   const SceneCamera& LastCamera() const { return mLastCamera; }
+   unsigned int DepthTexture() const { return mDepthTex; }
+   bool DepthValid() const { return mDepthResolved; }
+   void RequestDepth()
+   {
+      if (!mDepthWanted)
+      {
+         mDepthWanted = true;
+         mHasSceneBuilt = false;   // draw again so depth is resolved
+      }
+   }
+
    size_t LastTriangleCount() const { return mLastTriangles; }
    size_t LastDrawCalls() const { return mLastDrawCalls; }
    // Slots that had to re-upload this frame; 0 means everything came from cache.
@@ -650,8 +667,30 @@ public:
    int tonemap = 1; // none / ACES / Reinhard
    int ActiveSamples() const { return mActiveSamples; }
 
+   // --- Render quality (v0.6 3.5). All off by default, so a patch saved before
+   // they existed renders exactly as it did.
+   // Ambient occlusion: darkens creases and contact points from the depth
+   // buffer (screen space, view-space hemisphere taps, depth-aware blur).
+   // `ao` is the strength 0..1, `aoRadius` the reach in world units.
+   float aoStrength = 0.0f;
+   float aoRadius = 0.5f;
+   // Depth of field: a thin-lens blur from the depth buffer. `dofAperture` 0
+   // is off; `focusDistance` is the distance from the camera that stays sharp.
+   float dofAperture = 0.0f;
+   float focusDistance = 4.0f;
+   // Keep the output texture as 16-bit float instead of 8-bit, so a 16-bit PNG
+   // or EXR carries real precision and, with tonemap off, light above 1.0.
+   bool floatOutput = false;
+   // Offline renders only (export, --frame, a take): draw this many sub-pixel
+   // jittered passes and average them, on top of the multisampling. 1 is one pass.
+   int supersample = 1;
+   bool PostActive() const { return renderPass == 0 && (aoStrength > 0.0f || dofAperture > 0.0f); }
+
    void VisitParams(ParamVisitor& v) override
    {
+      v.Float("ao", aoStrength); v.Float("aoRadius", aoRadius);
+      v.Float("dofAperture", dofAperture); v.Float("focusDistance", focusDistance);
+      v.Bool("floatOutput", floatOutput); v.Int("supersample", supersample);
       v.Float("width", width); v.Float("height", height);
       v.Int("renderPass", renderPass);
       v.Int("projection", projection); v.Float("fov", fov);
@@ -847,7 +886,23 @@ private:
    // Resolve target: a plain texture, and what the rest of the graph reads.
    unsigned int mFbo = 0;
    unsigned int mColorTex = 0;
-   unsigned int mDepthBuffer = 0;
+   unsigned int mDepthTex = 0; // a texture, so the post stage can sample it
+   SceneCamera mLastCamera;
+   bool mDepthWanted = false, mDepthResolved = false;
+   bool mFloatTarget = false;
+   // Post stage (AO, depth of field) and offline accumulation.
+   GLUtil::Fbo mPostAo[2], mPostOut;
+   unsigned int mProgAo = 0, mProgAoBlur = 0, mProgPost = 0;
+   bool mPostShadersTried = false;
+   GLUtil::Fbo mAccum[2];
+   unsigned int mProgAccum = 0, mProgAccumDone = 0;
+   int mJitterIndex = -1; // >= 0 while an offline pass is being accumulated
+   bool mInAccumulate = false;
+   bool EnsurePostShaders();
+   void RunPost(const Mat4& proj, bool ortho, int w, int h);
+   void ReleasePost();
+   void CookOnce(int frameId);
+   bool Accumulate(int frameId);
    // Multisampled draw target, blitted into the above. Unused when samples == 0.
    unsigned int mMsFbo = 0;
    unsigned int mMsColor = 0;

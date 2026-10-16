@@ -659,6 +659,7 @@ private:
    // exactly rather than tinting every part by whichever input materialFrom
    // happens to point at.
    bool mBakedPerInputColour = false;
+   bool mBooleanOver = false;   // the last rebuild's Boolean ran past its work budget
    int mLastCookFrame = -1;
    mutable unsigned long long mMaterialRevision = 0;
    mutable size_t mLastMaterialHash = 0;

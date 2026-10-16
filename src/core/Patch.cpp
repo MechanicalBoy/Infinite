@@ -465,8 +465,13 @@ static void WriteBody(std::ostream& file, const Data& data)
       // only written when non-zero (i.e. the clip is a split-off right
       // half) so an unsplit Sample's patch line stays exactly as it was.
       for (const ClipRecord& c : s.clips)
-         if (c.sampleDropped && c.sourceOffsetSeconds != 0.0f)
+         if ((c.sampleDropped || c.reverse) && c.sourceOffsetSeconds != 0.0f)
             file << "clipsrcoffset " << i << " " << c.id << " " << FloatToString(c.sourceOffsetSeconds) << "\n";
+      // Per-clip speed and direction: own tag, only written when not the
+      // default, so an ordinary clip's patch is unchanged.
+      for (const ClipRecord& c : s.clips)
+         if (c.speed != 1.0f || c.reverse)
+            file << "clipspeed " << i << " " << c.id << " " << FloatToString(c.speed) << " " << (c.reverse ? 1 : 0) << "\n";
    }
    for (const MarkerRecord& mk : data.markers)
       file << "marker " << mk.id << " " << mk.posTick << " " << mk.color << " " << EscapeLine(mk.name) << "\n";
@@ -1178,6 +1183,24 @@ bool ReadStream(std::istream& file, Data& outData, std::string& outError)
             for (ClipRecord& c : outData.streams[streamIdx].clips)
                if (c.id == clipId)
                   c.sourceOffsetSeconds = sourceOffsetSeconds;
+         }
+      }
+      else if (tag == "clipspeed")
+      {
+         int streamIdx = -1;
+         uint64_t clipId = 0;
+         float speed = 1.0f;
+         int reverse = 0;
+         if (in >> streamIdx >> clipId >> speed >> reverse &&
+             streamIdx >= 0 && streamIdx < (int)outData.streams.size() && clipId != 0)
+         {
+            if (!std::isfinite(speed) || speed < 0.1f || speed > 8.0f) speed = 1.0f;
+            for (ClipRecord& c : outData.streams[streamIdx].clips)
+               if (c.id == clipId)
+               {
+                  c.speed = speed;
+                  c.reverse = reverse != 0;
+               }
          }
       }
       else if (tag == "cliptick")

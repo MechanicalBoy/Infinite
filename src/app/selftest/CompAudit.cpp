@@ -20,6 +20,27 @@
 //   TRAILS    Trails decay after the input goes black: level at 10 frames
 //             against decay^10, and whether the trail ever reaches black
 //             (flag > 2/255 off, or a residual that never clears)
+//   FLOW      Optical Flow on a smooth pattern moved by a known amount (0.5 to 7 px a
+//             frame, sub-pixel): mean endpoint error over the interior (flag > 0.5 px),
+//             a still pattern reads zero, and ms per cook at 1080p (report)
+//   FLUID     Fluid: largest divergence left after projection (orbiting stirrer, with and
+//             without a disc obstacle, at 20 / 60 / 120 pressure iterations; flag > 1e-3 at
+//             120 iterations), a still picture with no stirring stays the picture (flag > 2/255),
+//             the output is finite after 60 frames, and ms per cook at 1080p (report, bar 3 ms)
+//   TIMEMACHINE  Time Machine fed flat frames whose grey is 3 x the frame number, a
+//             left-to-right ramp as the delay map: every pixel must read the frame
+//             the ramp asks for (mean error flag > 1 level, worst > 3), with and without
+//             a map, inverted, and at length 8; the first frame fills the ring; ms per cook
+//   PROXIMITY Proximity Lines: with caps that do not bind, the link set equals a brute
+//             force all-pairs search exactly (2000 random points); with caps it keeps the
+//             degree and total limits, every pair once; cook is stable on a second cook;
+//             ms to find links and to cook the whole node at 100k points (reported, not flagged,
+//             like the 1080p costs of FLOW)
+//   HAP       HAP movies: snappy decode, a hand-built .mov read back frame by frame (raw, snappy and
+//             chunked frames all give the same texture), a cut-off file is refused, and Video Source
+//             shows a DXT1 clip (red) and a HAP Q clip (grey) through the real upload path
+//   HAPGEN    writes a 4096x2160 Hap1 test clip (random DXT1 blocks, snappy-wrapped) for the 3.12 bench;
+//             only when named; INFINITE_HAPGEN_OUT = path, INFINITE_HAPGEN_FRAMES = count (default 90)
 //   STACK     Layer Stack with two layers against Blend with the same mode and
 //             opacity, random alpha (flag > 1/255)
 //   CURVES    default curve is identity; an inverted RGB curve gives 1-x; a Red
@@ -60,10 +81,22 @@
 #include "nodes/FeedbackNodes.h"
 #include "nodes/FitNode.h"
 #include "nodes/LayerStackNode.h"
+#include "nodes/OpticalFlowNode.h"
+#include "nodes/FluidNode.h"
+#include "nodes/TimeMachineNode.h"
+#include "nodes/ProximityLinesNode.h"
+#include <set>
 #include "nodes/SwitcherNode.h"
 
 #include <array>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include "core/ShareBundle.h"
+#include "core/HapReader.h"
+#include "nodes/VideoSourceNode.h"
+#include <thread>
 #include <cstring>
 #include <functional>
 
@@ -1018,6 +1051,931 @@ namespace
          f.Flag("COLOUR", "ramp interpolation is not in encoded space, offset (x/255)", rampMid * 255.0);
    }
 
+   // ----------------------------------------------------------------- FLOW
+   // A band-limited pattern (wavelengths 24 to 61 px) evaluated at (x - sx, y - sy), so the
+   // shift is exact at any sub-pixel amount; row index grows with v, so a positive sy is "up".
+   std::vector<unsigned char> FlowPattern(int w, int h, double sx, double sy)
+   {
+      struct Wave { double kx, ky, ph, a; };
+      static const Wave waves[5] = {
+         { 0.2618, 0.0914, 0.4, 0.22 }, { -0.1103, 0.1675, 1.9, 0.20 }, { 0.0731, -0.2205, 3.1, 0.18 },
+         { 0.1349, 0.1871, 5.2, 0.15 }, { -0.1917, -0.0427, 2.3, 0.14 } };
+      std::vector<unsigned char> px((size_t)w * h * 4);
+      for (int y = 0; y < h; y++)
+         for (int x = 0; x < w; x++)
+         {
+            double v = 0.5;
+            for (const Wave& wv : waves)
+               v += wv.a * std::sin(wv.kx * (x - sx) + wv.ky * (y - sy) + wv.ph);
+            const unsigned char c = (unsigned char)std::lround(std::clamp(v, 0.0, 1.0) * 255.0);
+            unsigned char* o = &px[((size_t)y * w + x) * 4];
+            o[0] = o[1] = o[2] = c;
+            o[3] = 255;
+         }
+      return px;
+   }
+
+   void AuditFlow(Flags& f, bool& ok)
+   {
+      const int w = 256, h = 192, margin = 24;
+      struct Case { double sx, sy; };
+      const Case cases[] = { { 0.0, 0.0 }, { 0.5, 0.0 }, { -0.7, 0.4 }, { 1.5, -1.0 }, { 3.2, 2.1 }, { 7.0, -4.5 } };
+      for (int res : { 0, 1, 2 })
+      {
+         double worst = 0.0;
+         for (const Case& c : cases)
+         {
+            TexSource src(w, h);
+            OpticalFlowNode fl;
+            fl.resolution = res;
+            fl.Input().Connect(&src);
+            src.Set(FlowPattern(w, h, 0.0, 0.0));
+            fl.CookIfNeeded(gFrame++);
+            src.Set(FlowPattern(w, h, c.sx, c.sy));
+            fl.CookIfNeeded(gFrame++);
+            std::vector<float> px;
+            if (fl.GetOutputTexture() == 0 || !ReadSized(fl.GetOutputTexture(), fl.GetOutputWidth(), fl.GetOutputHeight(), px))
+            {
+               ok = false;
+               printf("COMPAUDIT FLOW no output texture\n");
+               return;
+            }
+            const int ow = fl.GetOutputWidth(), oh = fl.GetOutputHeight();
+            const double to = (double)w / ow; // output pixels to input pixels, for the margin
+            double sum = 0.0, mx = 0.0, mean0 = 0.0, mean1 = 0.0;
+            long n = 0;
+            for (int y = (int)(margin / to); y < oh - (int)(margin / to); y++)
+               for (int x = (int)(margin / to); x < ow - (int)(margin / to); x++)
+               {
+                  const float* p = &px[((size_t)y * ow + x) * 4];
+                  const double ex = p[0] - c.sx, ey = p[1] - c.sy;
+                  const double e = std::sqrt(ex * ex + ey * ey);
+                  sum += e;
+                  mx = std::max(mx, e);
+                  mean0 += p[0];
+                  mean1 += p[1];
+                  n++;
+              }
+            const double epe = n > 0 ? sum / n : 1e9;
+            worst = std::max(worst, epe);
+            printf("COMPAUDIT FLOW %s move (%+.1f, %+.1f) px: mean (%+.3f, %+.3f), mean endpoint error %.3f px, worst pixel %.2f px\n",
+                   res == 0 ? "full " : res == 1 ? "half " : "quart", c.sx, c.sy, n ? mean0 / n : 0.0, n ? mean1 / n : 0.0, epe, mx);
+            if (epe > 0.5)
+               f.Flag("FLOW", std::string(res == 0 ? "full" : res == 1 ? "half" : "quarter") + " resolution, move " + std::to_string(c.sx) + "," + std::to_string(c.sy)
+                      + ": mean endpoint error (px)", epe);
+         }
+         printf("COMPAUDIT FLOW %s worst mean endpoint error %.3f px (bar 0.5)\n", res == 0 ? "full " : res == 1 ? "half " : "quart", worst);
+      }
+      for (int win : { 3, 4, 5 })
+         for (int it : { 2, 3 })
+            for (int lv : { 3, 4 })
+            {
+               TexSource src(w, h);
+               OpticalFlowNode fl;
+               fl.resolution = 0;
+               fl.window = win;
+               fl.iterations = it;
+               fl.levels = lv;
+               fl.Input().Connect(&src);
+               src.Set(FlowPattern(w, h, 0.0, 0.0));
+               fl.CookIfNeeded(gFrame++);
+               src.Set(FlowPattern(w, h, 3.2, 2.1));
+               fl.CookIfNeeded(gFrame++);
+               std::vector<float> px;
+               if (!ReadSized(fl.GetOutputTexture(), fl.GetOutputWidth(), fl.GetOutputHeight(), px))
+                  continue;
+               double sum = 0.0;
+               long n = 0;
+               for (int y = margin; y < h - margin; y++)
+                  for (int x = margin; x < w - margin; x++, n++)
+                     sum += std::hypot(px[((size_t)y * w + x) * 4] - 3.2, px[((size_t)y * w + x) * 4 + 1] - 2.1);
+               printf("COMPAUDIT FLOW sweep window %d iterations %d levels %d: error %.3f px\n", win, it, lv, sum / n);
+            }
+      // Cost at 1080p, one frame of motion per cook.
+      for (int res : { 0, 1, 2 })
+      {
+         const int W = 1920, H = 1080;
+         TexSource src(W, H);
+         OpticalFlowNode fl;
+         fl.resolution = res;
+         fl.Input().Connect(&src);
+         src.Set(FlowPattern(W, H, 0.0, 0.0));
+         fl.CookIfNeeded(gFrame++);
+         src.Set(FlowPattern(W, H, 2.0, 1.0));
+         fl.CookIfNeeded(gFrame++);
+         glFinish();
+         const int reps = 20;
+         const auto t0 = std::chrono::steady_clock::now();
+         for (int i = 0; i < reps; i++)
+            fl.CookIfNeeded(gFrame++);
+         glFinish();
+         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         printf("COMPAUDIT FLOW 1080p %s: %.2f ms per cook (bar 2 ms)\n", res == 0 ? "full   " : res == 1 ? "half   " : "quarter", ms);
+      }
+   }
+
+   // ----------------------------------------------------------- FLUID
+   void AuditVolume(Flags& f, bool& ok)
+   {
+      const int w = 320, h = 180;
+      std::vector<unsigned char> pic((size_t)w * h * 4, 255);
+      for (int y = 0; y < h; y++)
+         for (int x = 0; x < w; x++)
+         {
+            unsigned char* p = &pic[((size_t)y * w + x) * 4];
+            p[0] = (unsigned char)(x * 255 / (w - 1));
+            p[1] = (unsigned char)(y * 255 / (h - 1));
+            p[2] = 128;
+         }
+      TexSource src(w, h);
+      src.Set(pic);
+      auto cook = [&](VolumeNode& v, std::vector<float>& px)
+      {
+         v.Input().Connect(&src);
+         v.CookIfNeeded(gFrame++);
+         return ReadSized(v.GetOutputTexture(), v.GetOutputWidth(), v.GetOutputHeight(), px);
+      };
+      auto mean = [](const std::vector<float>& px)
+      {
+         double s = 0.0;
+         size_t n = 0;
+         for (size_t i = 0; i + 3 < px.size(); i += 4, n++)
+            s += (px[i] + px[i + 1] + px[i + 2]) / 3.0;
+         return n ? s / (double)n : 0.0;
+      };
+      for (int shape = 0; shape < VolumeNode::kShapeCount; shape++)
+      {
+         std::vector<float> a, b;
+         VolumeNode v1, v2;
+         v1.shape = v2.shape = shape;
+         v1.centerY = v2.centerY = shape == 0 ? -0.5f : 0.0f;
+         const bool okA = cook(v1, a), okB = cook(v2, b);
+         bool finite = okA && okB;
+         for (float x : a)
+            if (!std::isfinite(x))
+               finite = false;
+         if (!finite)
+            f.Flag("VOLUME", "non-finite output, shape " + std::to_string(shape), 1.0);
+         double diff = 0.0;
+         for (size_t i = 0; i < a.size() && i < b.size(); i++)
+            diff = std::max(diff, (double)std::fabs(a[i] - b[i]));
+         printf("COMPAUDIT VOLUME shape %d: mean %.4f, same-settings difference %.6f\n", shape, mean(a), diff);
+         if (diff > 1e-6)
+            f.Flag("VOLUME", "same settings differ, shape " + std::to_string(shape), diff);
+
+         VolumeNode zero;
+         zero.shape = shape;
+         zero.density = 0.0f;
+         std::vector<float> z;
+         cook(zero, z);
+         double zd = 0.0;
+         for (size_t i = 0; i + 3 < z.size(); i += 4)
+         {
+            const size_t px = i / 4;
+            const double r = pic[px * 4] / 255.0, g = pic[px * 4 + 1] / 255.0, bl = pic[px * 4 + 2] / 255.0;
+            zd = std::max(zd, std::max(std::fabs(z[i] - r), std::max(std::fabs(z[i + 1] - g), std::fabs(z[i + 2] - bl))));
+         }
+         printf("COMPAUDIT VOLUME shape %d: zero density vs backdrop, worst %.5f\n", shape, zd);
+         if (zd > 2e-3)
+            f.Flag("VOLUME", "zero density is not the backdrop, shape " + std::to_string(shape), zd);
+
+         // A dark backdrop shows transmittance: more density means less of it comes through.
+         double prev = 2.0;
+         for (float d : { 0.5f, 2.0f, 8.0f })
+         {
+            VolumeNode v;
+            v.shape = shape;
+            v.centerY = shape == 0 ? -0.5f : 0.0f;
+            v.density = d;
+            v.color[0] = v.color[1] = v.color[2] = 0.0f;
+            v.ambient = 0.0f;
+            std::vector<float> px;
+            cook(v, px);
+            const double m = mean(px);
+            printf("COMPAUDIT VOLUME shape %d: density %.1f gives mean %.4f (all-black haze)\n", shape, d, m);
+            if (m > prev + 1e-4)
+               f.Flag("VOLUME", "more density let more through, shape " + std::to_string(shape), m - prev);
+            prev = m;
+         }
+      }
+      for (int steps : { 24, 96 })
+      {
+         const int tw = 1920, th = 1080;
+         std::vector<unsigned char> big((size_t)tw * th * 4, 128);
+         TexSource bsrc(tw, th);
+         bsrc.Set(big);
+         VolumeNode v;
+         v.shape = VolumeNode::kCloud;
+         v.centerY = 0.0f;
+         v.steps = steps;
+         v.Input().Connect(&bsrc);
+         v.CookIfNeeded(gFrame++);
+         glFinish();
+         const auto t0 = std::chrono::steady_clock::now();
+         const int reps = 5;
+         for (int i = 0; i < reps; i++)
+            v.CookIfNeeded(gFrame++);
+         glFinish();
+         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         printf("COMPAUDIT VOLUME 1080p, %d steps: %.2f ms per frame\n", steps, ms);
+      }
+      (void)ok;
+   }
+
+
+   // --- HAP: the reader and decoder on hand-built QuickTime files, then the node showing them. ---
+   std::string HapAtom(const char* type, const std::string& body)
+   {
+      std::string s;
+      const uint32_t n = (uint32_t)(body.size() + 8);
+      for (int i = 3; i >= 0; i--)
+         s.push_back((char)((n >> (8 * i)) & 0xFF));
+      s.append(type, 4);
+      return s + body;
+   }
+   std::string HapU32(uint32_t v)
+   {
+      std::string s;
+      for (int i = 3; i >= 0; i--)
+         s.push_back((char)((v >> (8 * i)) & 0xFF));
+      return s;
+   }
+   std::string HapSection(uint8_t type, const std::string& body)
+   {
+      std::string s;
+      s.push_back((char)(body.size() & 0xFF));
+      s.push_back((char)((body.size() >> 8) & 0xFF));
+      s.push_back((char)((body.size() >> 16) & 0xFF));
+      s.push_back((char)type);
+      return s + body;
+   }
+   // The moov atom of one HAP track whose samples follow each other in one chunk at offset 8.
+   // Each sample lasts `delta` ticks of a `timescale` clock (default 0.5 s).
+   std::string HapMoov(const char* codec, int w, int h, const std::vector<uint32_t>& frameSizes,
+                       uint32_t timescale = 1000, uint32_t delta = 500)
+   {
+      std::string sizes;
+      for (uint32_t sz : frameSizes)
+         sizes += HapU32(sz);
+      const uint32_t n = (uint32_t)frameSizes.size();
+      std::string entry = HapU32(86) + std::string(codec, 4) + std::string(6, '\0') + std::string("\0\1", 2) +
+                          std::string(16, '\0') + std::string({ (char)(w >> 8), (char)(w & 255), (char)(h >> 8), (char)(h & 255) }) +
+                          std::string(50, '\0');
+      std::string stbl = HapAtom("stsd", HapU32(0) + HapU32(1) + entry) +
+                         HapAtom("stts", HapU32(0) + HapU32(1) + HapU32(n) + HapU32(delta)) +
+                         HapAtom("stsz", HapU32(0) + HapU32(0) + HapU32(n) + sizes) +
+                         HapAtom("stsc", HapU32(0) + HapU32(1) + HapU32(1) + HapU32(n) + HapU32(1)) +
+                         HapAtom("stco", HapU32(0) + HapU32(1) + HapU32(8));
+      std::string mdhd = HapU32(0) + HapU32(0) + HapU32(0) + HapU32(timescale) + HapU32(n * delta) + std::string(4, '\0');
+      std::string hdlr = HapU32(0) + HapU32(0) + "vide" + std::string(12, '\0') + std::string(1, '\0');
+      return HapAtom("moov", HapAtom("trak", HapAtom("mdia", HapAtom("mdhd", mdhd) + HapAtom("hdlr", hdlr) +
+                                                                  HapAtom("minf", HapAtom("stbl", stbl)))));
+   }
+   // A QuickTime file of one HAP track: samples at 0.5 s apart, one chunk.
+   bool WriteHapMov(const std::string& path, const char* codec, int w, int h, const std::vector<std::string>& frames)
+   {
+      std::string mdat;
+      std::vector<uint32_t> sizes;
+      for (const auto& fr : frames)
+      {
+         mdat += fr;
+         sizes.push_back((uint32_t)fr.size());
+      }
+      std::ofstream out(path, std::ios::binary);
+      const std::string file = HapAtom("mdat", mdat) + HapMoov(codec, w, h, sizes);
+      out.write(file.data(), (std::streamsize)file.size());
+      return (bool)out;
+   }
+
+   // --- HAPGEN: writes a 4096x2160 Hap1 test clip for the 3.12 bench (named explicitly, never in a full run). ---
+   // Frames are random DXT1 blocks wrapped in a literal-only snappy stream: the largest frames a Hap1 clip of
+   // this size can have, so decode and upload cost is the worst case. It tests throughput, not an encoder's output.
+   // INFINITE_HAPGEN_OUT = path (default hap4k.mov in the temp folder), INFINITE_HAPGEN_FRAMES = count (default 90).
+   void AuditHapGen(Flags& f)
+   {
+      const int w = 4096, h = 2160;
+      const char* outEnv = getenv("INFINITE_HAPGEN_OUT");
+      const std::string path = (outEnv && *outEnv) ? outEnv : (std::filesystem::temp_directory_path() / "hap4k.mov").string();
+      const char* nEnv = getenv("INFINITE_HAPGEN_FRAMES");
+      const int count = (nEnv && atoi(nEnv) > 0) ? atoi(nEnv) : 90;
+      const size_t texBytes = Hap::TextureBytes(Hap::Format::Dxt1, w, h);
+
+      // Snappy header: the length as a varint, then literal runs of up to 64 KB.
+      std::string head;
+      for (size_t v = texBytes;;)
+      {
+         uint8_t b = (uint8_t)(v & 0x7F);
+         v >>= 7;
+         if (v) b |= 0x80;
+         head.push_back((char)b);
+         if (!v) break;
+      }
+      const size_t run = 65536;
+      const size_t runs = (texBytes + run - 1) / run;
+      const size_t snapSize = head.size() + texBytes + runs * 3;
+      std::vector<uint8_t> tex(texBytes);
+      std::string frame;
+      frame.reserve(snapSize + 8);
+      std::vector<uint32_t> sizes;
+      const auto t0 = std::chrono::steady_clock::now();
+      std::ofstream out(path, std::ios::binary);
+      const uint64_t mdatBytes = (uint64_t)count * (snapSize + 4) + 8;
+      if (!out || mdatBytes > 0xFFFFFFFFull)
+      {
+         printf("COMPAUDIT HAPGEN cannot write %s (or the clip would pass 4 GB)\n", path.c_str());
+         f.Flag("HAPGEN", "cannot write the clip", 1.0);
+         return;
+      }
+      out.write(HapU32((uint32_t)mdatBytes).data(), 4);
+      out.write("mdat", 4);
+      uint64_t seed = 0x9E3779B97F4A7C15ull;
+      for (int i = 0; i < count; i++)
+      {
+         for (size_t p = 0; p + 8 <= texBytes; p += 8)
+         {
+            seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+            memcpy(&tex[p], &seed, 8);
+         }
+         frame = head;
+         for (size_t p = 0; p < texBytes; p += run)
+         {
+            const size_t n = std::min(run, texBytes - p);
+            frame.push_back((char)0xF4); // literal, length in the next two bytes
+            frame.push_back((char)((n - 1) & 0xFF));
+            frame.push_back((char)(((n - 1) >> 8) & 0xFF));
+            frame.append((const char*)&tex[p], n);
+         }
+         const std::string sec = HapSection(0xBB, frame);
+         // Frames here are over 16 MB only if the picture is far larger than 4K; the 3-byte length holds 4K.
+         out.write(sec.data(), (std::streamsize)sec.size());
+         sizes.push_back((uint32_t)sec.size());
+      }
+      const std::string moov = HapMoov("Hap1", w, h, sizes, 30000, 1000);
+      out.write(moov.data(), (std::streamsize)moov.size());
+      out.close();
+      const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+      // Read it back: the first and last frame must decode to the size the clip says.
+      Hap::Reader r;
+      std::string err;
+      std::vector<uint8_t> back;
+      const bool readable = r.Open(path, err) && r.Width() == w && r.Height() == h && r.FrameCount() == count &&
+                            r.ReadFrame(0, back, err) && back.size() == texBytes &&
+                            r.ReadFrame(count - 1, back, err) && back.size() == texBytes && memcmp(back.data(), tex.data(), texBytes) == 0;
+      printf("COMPAUDIT HAPGEN wrote %s: %d frames of %dx%d, %.1f MB, %.1f s; reads back %d (%s)\n", path.c_str(), count, w, h,
+             (double)(mdatBytes) / 1048576.0, sec, readable ? 1 : 0, err.c_str());
+      if (!readable)
+         f.Flag("HAPGEN", "clip does not read back", 1.0);
+   }
+
+   void AuditHap(Flags& f, bool& ok)
+   {
+      // Snappy: a literal then two kinds of back-reference, and a corrupt stream.
+      {
+         const uint8_t a[] = { 12, 0x0C, 'a', 'b', 'c', 'd', 0x1E, 4, 0 };
+         uint8_t out[12] = {};
+         const bool good = Hap::SnappyDecompress(a, sizeof(a), out, 12) && memcmp(out, "abcdabcdabcd", 12) == 0;
+         const uint8_t b[] = { 9, 0x08, 'x', 'y', 'z', 0x09, 3 };
+         uint8_t out2[9] = {};
+         const bool good2 = Hap::SnappyDecompress(b, sizeof(b), out2, 9) && memcmp(out2, "xyzxyzxyz", 9) == 0;
+         const uint8_t c[] = { 12, 0x0C, 'a', 'b', 'c', 'd', 0x1E, 9, 0 };
+         const bool refused = !Hap::SnappyDecompress(c, sizeof(c), out, 12);
+         printf("COMPAUDIT HAP snappy: two-byte offset %d, one-byte offset %d, bad offset refused %d\n", good ? 1 : 0, good2 ? 1 : 0,
+                refused ? 1 : 0);
+         if (!good || !good2 || !refused)
+            f.Flag("HAP", "snappy decode wrong", 1.0);
+      }
+
+      const std::string dir = AppPaths::AppSupportDir() + "/HapAudit";
+      AppPaths::EnsureDir(dir);
+
+      // DXT1, 16 x 8, solid red: raw, snappy and chunked frames must all give the same 64 bytes.
+      std::string red;
+      for (int b = 0; b < 8; b++)
+         red += std::string({ (char)0x00, (char)0xF8, (char)0x00, (char)0xF8, 0, 0, 0, 0 });
+      const std::string rawF = HapSection(0xAB, red);
+      const std::string snapF = HapSection(0xBB, std::string({ 0x40, (char)0xF0, 63 }) + red);
+      const std::string instr = HapSection(0x02, std::string({ 0x0A, 0x0A })) + HapSection(0x03, std::string({ 32, 0, 0, 0, 32, 0, 0, 0 }));
+      const std::string chunkF = HapSection(0xCB, HapSection(0x01, instr) + red);
+      const std::string red16 = dir + "/red.mov";
+      WriteHapMov(red16, "Hap1", 16, 8, { rawF, snapF, chunkF });
+
+      Hap::Reader r;
+      std::string error;
+      const bool probed = Hap::Reader::Probe(red16);
+      const bool opened = r.Open(red16, error);
+      printf("COMPAUDIT HAP file: probe %d, open %d, %dx%d, %d frames, %.2f s, format %d\n", probed ? 1 : 0, opened ? 1 : 0, r.Width(),
+             r.Height(), r.FrameCount(), r.Duration(), (int)r.TextureFormat());
+      if (!probed || !opened || r.Width() != 16 || r.Height() != 8 || r.FrameCount() != 3 || std::fabs(r.Duration() - 1.5) > 1e-6 ||
+          r.TextureFormat() != Hap::Format::Dxt1)
+         f.Flag("HAP", "the container was read wrong", 1.0);
+      else
+      {
+         const int i0 = r.FrameIndexAt(0.1), i1 = r.FrameIndexAt(0.6), i2 = r.FrameIndexAt(99.0), ineg = r.FrameIndexAt(-1.0);
+         printf("COMPAUDIT HAP index at 0.1 / 0.6 / 99 / -1 s: %d %d %d %d\n", i0, i1, i2, ineg);
+         if (i0 != 0 || i1 != 1 || i2 != 2 || ineg != 0)
+            f.Flag("HAP", "frame lookup by time is wrong", 1.0);
+         for (int i = 0; i < 3; i++)
+         {
+            std::vector<uint8_t> px;
+            const bool read = r.ReadFrame(i, px, error);
+            const bool same = read && px.size() == red.size() && memcmp(px.data(), red.data(), red.size()) == 0;
+            printf("COMPAUDIT HAP frame %d (%s): decoded %d, bytes match %d\n", i, i == 0 ? "raw" : i == 1 ? "snappy" : "chunked", read ? 1 : 0,
+                   same ? 1 : 0);
+            if (!same)
+               f.Flag("HAP", "frame " + std::to_string(i) + " does not decode to the texture", 1.0);
+         }
+      }
+
+      // A cut-off file must be refused, not crash.
+      {
+         std::ifstream in(red16, std::ios::binary);
+         std::ostringstream ss;
+         ss << in.rdbuf();
+         const std::string whole = ss.str();
+         std::ofstream cut(dir + "/cut.mov", std::ios::binary);
+         cut.write(whole.data(), (std::streamsize)(whole.size() - 40));
+         cut.close();
+         const bool refused = !Hap::Reader::Probe(dir + "/cut.mov");
+         printf("COMPAUDIT HAP cut-off file refused: %d\n", refused ? 1 : 0);
+         if (!refused)
+            f.Flag("HAP", "a cut-off file was accepted", 1.0);
+      }
+
+      // The node: show the DXT1 file, and a HAP Q file (grey), and read both back through a copy pass.
+      const char* copyFrag = "#version 150\nin vec2 vUv;\nout vec4 fragColor;\nuniform sampler2D uSrc;\nvoid main(){ fragColor = texture(uSrc, vUv); }\n";
+      const unsigned int copy = GLUtil::CompileProgram(copyFrag);
+      auto show = [&](const std::string& path, std::vector<float>& px, int& w) -> bool
+      {
+         VideoSourceNode n;
+         if (!n.Open(path))
+            return false;
+         bool got = false;
+         for (int i = 0; i < 600 && !got; i++)
+         {
+            n.SeekTo(0.0);
+            static int frameId = 1000;
+            n.CookIfNeeded(++frameId);
+            got = n.FrameUpdateCount() > 0;
+            if (!got)
+               std::this_thread::sleep_for(std::chrono::milliseconds(5));
+         }
+         if (!got)
+            return false;
+         w = n.GetOutputWidth();
+         GLUtil::Fbo out;
+         GLUtil::EnsureFbo(out, n.GetOutputWidth(), n.GetOutputHeight());
+         const unsigned int tex = n.GetOutputTexture();
+         GLUtil::RunShaderPass(out, copy, [&]()
+         {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glUniform1i(glGetUniformLocation(copy, "uSrc"), 0);
+         });
+         unsigned int scratch = 0;
+         const bool read = GLUtil::ReadTexturePixels(scratch, out.tex, out.w, out.h, px);
+         GLUtil::DestroyFbo(out);
+         if (scratch != 0)
+            glDeleteFramebuffers(1, &scratch);
+         return read;
+      };
+      {
+         std::vector<float> px;
+         int w = 0;
+         const bool shown = copy != 0 && show(red16, px, w);
+         const float rr = shown ? px[0] : -1.0f, gg = shown ? px[1] : -1.0f, bb = shown ? px[2] : -1.0f;
+         printf("COMPAUDIT HAP node, DXT1 red: shown %d, width %d, pixel %.3f %.3f %.3f\n", shown ? 1 : 0, w, rr, gg, bb);
+         if (!shown || w != 16 || rr < 0.95f || gg > 0.05f || bb > 0.05f)
+            f.Flag("HAP", "the node does not show the DXT1 clip", 1.0);
+      }
+      {
+         // HAP Q: one 4x4 block, Y = 128 in alpha, Co and Cg near the offset: a mid grey.
+         std::string blk = std::string({ (char)0x80, (char)0x80, 0, 0, 0, 0, 0, 0 }) + std::string({ (char)0x00, (char)0x84, (char)0x00, (char)0x84, 0, 0, 0, 0 });
+         const std::string q = dir + "/q.mov";
+         WriteHapMov(q, "HapY", 4, 4, { HapSection(0xAF, blk) });
+         std::vector<float> px;
+         int w = 0;
+         const bool shown = copy != 0 && show(q, px, w);
+         const float rr = shown ? px[0] : -1.0f, gg = shown ? px[1] : -1.0f, bb = shown ? px[2] : -1.0f;
+         printf("COMPAUDIT HAP node, HAP Q grey: shown %d, pixel %.3f %.3f %.3f\n", shown ? 1 : 0, rr, gg, bb);
+         if (!shown || std::fabs(rr - 0.5f) > 0.06f || std::fabs(gg - 0.5f) > 0.06f || std::fabs(bb - 0.5f) > 0.06f)
+            f.Flag("HAP", "the node does not show the HAP Q clip", 1.0);
+      }
+      if (copy != 0)
+         glDeleteProgram(copy);
+      std::filesystem::remove_all(dir);
+      if (f.n > 0)
+         ok = false;
+   }
+
+   // Share bundle: cleaning, the zip round trip, unsafe names, and a real bundle of a shipped template opening again.
+   void AuditShare(Flags& f)
+   {
+      const std::string text =
+         "node 1 Image Source\n  s path /Users/jane/Pictures/cat.png\n  f speed 1\n"
+         "node 2 Sound Player\n  s sampleFile C:\\\\Users\\\\bob\\\\kick.wav\n  s label from /Users/jane/x\n";
+      std::vector<std::string> blanked;
+      const std::string cleaned = ShareBundle::CleanPatchText(text, &blanked);
+      const bool noUser = cleaned.find("jane") == std::string::npos && cleaned.find("bob") == std::string::npos;
+      printf("COMPAUDIT SHARE clean: %zu media names, user names gone %d, keeps speed %d\n", blanked.size(), noUser ? 1 : 0,
+             cleaned.find("f speed 1") != std::string::npos ? 1 : 0);
+      if (!noUser)
+         f.Flag("SHARE", "a user name is still in the cleaned patch", 1.0);
+      if (blanked.size() != 2)
+         f.Flag("SHARE", "wrong number of blanked media names", (double)blanked.size());
+
+      const std::string dir = AppPaths::AppSupportDir() + "/ShareAudit";
+      AppPaths::EnsureDir(dir);
+      const std::string zip = dir + "/t.infshare";
+      std::string error;
+      if (!ShareBundle::WriteZip(zip, { { "patch.inf", cleaned }, { "share.json", "{}" } }, error))
+         f.Flag("SHARE", "zip write failed: " + error, 1.0);
+      const std::string out = dir + "/out";
+      std::filesystem::remove_all(out);
+      const bool extracted = ShareBundle::ExtractZip(zip, out, error);
+      std::ifstream back(out + "/patch.inf", std::ios::binary);
+      std::ostringstream ss;
+      ss << back.rdbuf();
+      printf("COMPAUDIT SHARE zip round trip: extracted %d, identical %d\n", extracted ? 1 : 0, ss.str() == cleaned ? 1 : 0);
+      if (!extracted || ss.str() != cleaned)
+         f.Flag("SHARE", "zip round trip changed the patch", 1.0);
+
+      const std::string evil = dir + "/evil.infshare";
+      ShareBundle::WriteZip(evil, { { "../escape.txt", "x" } }, error);
+      const bool refused = !ShareBundle::ExtractZip(evil, dir + "/evilout", error);
+      printf("COMPAUDIT SHARE unsafe path refused: %d\n", refused ? 1 : 0);
+      if (!refused)
+         f.Flag("SHARE", "an entry climbing out of the folder was extracted", 1.0);
+      std::filesystem::remove_all(dir);
+   }
+
+   // A real bundle of a shipped template, built through the app's own headless modes, unpacked, then validated.
+   void AuditBundle(Flags& f)
+   {
+      const std::string dir = AppPaths::AppSupportDir() + "/BundleAudit";
+      std::filesystem::remove_all(dir);
+      AppPaths::EnsureDir(dir);
+      const std::string src = BundledResourcePath("templates/compositing.inf");
+      std::string message;
+      const auto t0 = std::chrono::steady_clock::now();
+      const bool built = BuildShareBundleBlocking(src, dir + "/b.infshare", "Audit", dir + "/work", message);
+      const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+      printf("COMPAUDIT BUNDLE built %d in %.1f s: %s\n", built ? 1 : 0, sec, message.c_str());
+      std::string error;
+      const bool extracted = built && ShareBundle::ExtractZip(dir + "/b.infshare", dir + "/open", error);
+      auto size = [&](const char* n) { std::error_code ec; return extracted ? (long long)std::filesystem::file_size(dir + "/open/" + n, ec) : -1LL; };
+      printf("COMPAUDIT BUNDLE parts: patch %lld bytes, thumbnail %lld, preview %lld, meta %lld\n", size("patch.inf"),
+             size("thumbnail.png"), size("preview.mp4"), size("share.json"));
+      if (!built || size("patch.inf") <= 0 || size("thumbnail.png") <= 0 || size("share.json") <= 0)
+         f.Flag("BUNDLE", "bundle is missing a part", 1.0);
+      if (extracted)
+      {
+         const std::string cmd = "env -u INFINITE_COMPAUDIT -u INFINITE_COMPAUDIT_ONLY \"" + Platform::ExecutablePath() + "\" --validate \"" + dir + "/open/patch.inf\" >/dev/null 2>&1";
+         const int rc = std::system(cmd.c_str());
+         printf("COMPAUDIT BUNDLE unpacked patch validates: %d (exit %d)\n", rc == 0 ? 1 : 0, rc);
+         if (rc != 0)
+            f.Flag("BUNDLE", "unpacked patch does not validate", (double)rc);
+      }
+      std::filesystem::remove_all(dir);
+   }
+
+   void AuditFluid(Flags& f, bool& ok)
+   {
+      const int w = 256, h = 192;
+      std::vector<unsigned char> pic((size_t)w * h * 4, 255), disc((size_t)w * h * 4, 255);
+      for (int y = 0; y < h; y++)
+         for (int x = 0; x < w; x++)
+         {
+            unsigned char* p = &pic[((size_t)y * w + x) * 4];
+            p[0] = (unsigned char)(x * 255 / (w - 1));
+            p[1] = (unsigned char)(y * 255 / (h - 1));
+            p[2] = ((x / 16 + y / 16) & 1) ? 220 : 40;
+            const double dx = x - 150.0, dy = y - 90.0;
+            const unsigned char v = dx * dx + dy * dy < 20.0 * 20.0 ? 255 : 0;
+            disc[((size_t)y * w + x) * 4 + 0] = disc[((size_t)y * w + x) * 4 + 1] = disc[((size_t)y * w + x) * 4 + 2] = v;
+         }
+      for (int withObstacle = 0; withObstacle < 2; withObstacle++)
+         for (int iters : { 20, 60, 120 })
+         {
+            TexSource src(w, h), obs(w, h);
+            src.Set(pic);
+            obs.Set(disc);
+            FluidNode fl;
+            fl.resolution = 0;
+            fl.stirrer = 1;
+            fl.pressureIterations = iters;
+            fl.Input().Connect(&src);
+            if (withObstacle)
+               fl.Obstacles().Connect(&obs);
+            for (int i = 0; i < 30; i++)
+               fl.CookIfNeeded(gFrame++);
+            const float div = fl.MeasureDivergence();
+            printf("COMPAUDIT FLUID divergence after projection, %s, %d iterations: %.5f\n",
+                   withObstacle ? "disc obstacle" : "open", iters, div);
+            if (iters == 120 && div > 1e-3f)
+               f.Flag("FLUID", std::string("divergence after projection, ") + (withObstacle ? "obstacle" : "open") + ", 120 iterations", div);
+         }
+      {
+         TexSource src(w, h);
+         src.Set(pic);
+         FluidNode fl;
+         fl.resolution = 0;
+         fl.stirrer = 0;
+         fl.Input().Connect(&src);
+         for (int i = 0; i < 10; i++)
+            fl.CookIfNeeded(gFrame++);
+         std::vector<float> px;
+         double worst = 1e9;
+         if (ReadSized(fl.GetOutputTexture(), fl.GetOutputWidth(), fl.GetOutputHeight(), px))
+         {
+            worst = 0.0;
+            for (int y = 0; y < h; y++)
+               for (int x = 0; x < w; x++)
+                  for (int c = 0; c < 3; c++)
+                     worst = std::max(worst, std::fabs((double)px[((size_t)y * w + x) * 4 + c] - pic[((size_t)y * w + x) * 4 + c] / 255.0));
+         }
+         printf("COMPAUDIT FLUID still picture, no stirring: worst difference %.4f\n", worst);
+         if (worst > 2.0 / 255.0)
+            f.Flag("FLUID", "still picture drifts from the input", worst);
+      }
+      {
+         TexSource src(w, h);
+         src.Set(pic);
+         FluidNode fl;
+         fl.resolution = 0;
+         fl.stirrer = 1;
+         fl.refresh = 0.0f;
+         fl.Input().Connect(&src);
+         for (int i = 0; i < 60; i++)
+            fl.CookIfNeeded(gFrame++);
+         std::vector<float> px;
+         bool finite = ReadSized(fl.GetOutputTexture(), fl.GetOutputWidth(), fl.GetOutputHeight(), px);
+         double mean = 0.0;
+         for (float v : px)
+         {
+            if (!std::isfinite(v))
+               finite = false;
+            mean += v;
+         }
+         printf("COMPAUDIT FLUID 60 frames with no refresh: finite %s, mean level %.3f\n", finite ? "yes" : "NO", px.empty() ? 0.0 : mean / px.size());
+         if (!finite)
+            f.Flag("FLUID", "output has non-finite values after 60 frames", 1.0);
+      }
+      for (int res : { 0, 1, 2 })
+      {
+         const int W = 1920, H = 1080;
+         TexSource src(W, H);
+         src.Set(std::vector<unsigned char>((size_t)W * H * 4, 128));
+         FluidNode fl;
+         fl.resolution = res;
+         fl.Input().Connect(&src);
+         for (int i = 0; i < 3; i++)
+            fl.CookIfNeeded(gFrame++);
+         glFinish();
+         const int reps = 20;
+         const auto t0 = std::chrono::steady_clock::now();
+         for (int i = 0; i < reps; i++)
+            fl.CookIfNeeded(gFrame++);
+         glFinish();
+         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         printf("COMPAUDIT FLUID 1080p %s, 20 iterations: %.2f ms per cook (bar 3 ms)\n",
+                res == 0 ? "full   " : res == 1 ? "half   " : "quarter", ms);
+      }
+   }
+
+   // ----------------------------------------------------------- TIMEMACHINE
+   std::vector<unsigned char> FlatGrey(int w, int h, int v)
+   {
+      std::vector<unsigned char> px((size_t)w * h * 4, (unsigned char)v);
+      for (size_t i = 3; i < px.size(); i += 4)
+         px[i] = 255;
+      return px;
+   }
+
+   void AuditTimeMachine(Flags& f, bool& ok)
+   {
+      const int w = 128, h = 64;
+      struct Case { const char* name; int length; bool invert; bool useMap; };
+      const Case cases[] = { { "no map, length 60", 60, false, false }, { "ramp map, length 60", 60, false, true },
+                             { "ramp map, inverted", 60, true, true }, { "ramp map, length 8", 8, false, true } };
+      std::vector<unsigned char> ramp((size_t)w * h * 4, 255);
+      for (int y = 0; y < h; y++)
+         for (int x = 0; x < w; x++)
+            for (int c = 0; c < 3; c++)
+               ramp[((size_t)y * w + x) * 4 + c] = (unsigned char)std::lround(255.0 * (x + 0.5) / w);
+      for (const Case& c : cases)
+      {
+         TexSource src(w, h), map(w, h);
+         map.Set(ramp);
+         TimeMachineNode tm;
+         tm.resolution = 0;
+         tm.length = c.length;
+         tm.invert = c.invert;
+         tm.Input().Connect(&src);
+         if (c.useMap)
+            tm.DelayMap().Connect(&map);
+         const int frames = 70;
+         for (int k = 0; k < frames; k++)
+         {
+            src.Set(FlatGrey(w, h, 3 * k));
+            tm.CookIfNeeded(gFrame++);
+            if (k == 0)
+            {
+               std::vector<float> first;
+               if (tm.GetOutputTexture() != 0 && ReadSized(tm.GetOutputTexture(), tm.GetOutputWidth(), tm.GetOutputHeight(), first))
+               {
+                  double worst = 0.0;
+                  for (size_t i = 0; i < first.size(); i += 4)
+                     worst = std::max(worst, std::fabs(first[i] * 255.0));
+                  if (worst > 1.0)
+                     f.Flag("TIMEMACHINE", std::string(c.name) + ": first frame does not fill the ring, worst level", worst);
+               }
+            }
+         }
+         std::vector<float> px;
+         if (tm.GetOutputTexture() == 0 || !ReadSized(tm.GetOutputTexture(), tm.GetOutputWidth(), tm.GetOutputHeight(), px))
+         {
+            ok = false;
+            printf("COMPAUDIT TIMEMACHINE no output texture\n");
+            return;
+         }
+         const int ow = tm.GetOutputWidth(), oh = tm.GetOutputHeight();
+         double sum = 0.0, mx = 0.0;
+         long n = 0;
+         for (int y = 0; y < oh; y++)
+            for (int x = 0; x < ow; x++, n++)
+            {
+               double g = (x + 0.5) / ow;
+               if (c.invert)
+                  g = 1.0 - g;
+               const double expect = 3.0 * ((frames - 1) - g * (c.length - 1));
+               const double e = std::fabs(px[((size_t)y * ow + x) * 4] * 255.0 - expect);
+               sum += e;
+               mx = std::max(mx, e);
+            }
+         printf("COMPAUDIT TIMEMACHINE %-22s mean error %.2f levels, worst %.2f (bar 1 / 3)\n", c.name, sum / n, mx);
+         if (sum / n > 1.0 || mx > 3.0)
+            f.Flag("TIMEMACHINE", std::string(c.name) + ": mean error (levels of 255)", sum / n);
+      }
+      for (int res : { 0, 1, 2 })
+      {
+         const int W = 1920, H = 1080;
+         TexSource src(W, H);
+         TimeMachineNode tm;
+         tm.resolution = res;
+         tm.Input().Connect(&src);
+         src.Set(FlatGrey(W, H, 40));
+         for (int i = 0; i < 4; i++)
+            tm.CookIfNeeded(gFrame++);
+         glFinish();
+         const int reps = 20;
+         const auto t0 = std::chrono::steady_clock::now();
+         for (int i = 0; i < reps; i++)
+            tm.CookIfNeeded(gFrame++);
+         glFinish();
+         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+         printf("COMPAUDIT TIMEMACHINE 1080p %s: %.2f ms per cook, ring %.0f MB\n", res == 0 ? "full   " : res == 1 ? "half   " : "quarter", ms,
+                60.0 * (W / (res == 0 ? 1 : res == 1 ? 2 : 4)) * (H / (res == 0 ? 1 : res == 1 ? 2 : 4)) * 4 / 1048576.0);
+      }
+   }
+
+   // ------------------------------------------------------------- PROXIMITY
+   class CloudSource : public INode, public IGeometrySource
+   {
+   public:
+      std::vector<Particle> pts;
+      unsigned long long rev = 1;
+      unsigned int GetOutputTexture() override { return 0; }
+      int GetOutputWidth() const override { return 0; }
+      int GetOutputHeight() const override { return 0; }
+      void CookIfNeeded(int) override {}
+      const Mesh& GetMesh() override { return mEmpty; }
+      unsigned long long MeshRevision() override { return 0; }
+      Mat4 GetModelMatrix() const override { return Mat4::Identity(); }
+      Material GetMaterial() const override { return Material(); }
+      const std::vector<Particle>* GetPointCloud() override { return &pts; }
+      unsigned long long PointCloudRevision() override { return rev; }
+   private:
+      Mesh mEmpty;
+   };
+
+   void AuditProximity(Flags& f)
+   {
+      auto fill = [](size_t n, float extent, unsigned seed, std::vector<float>& xyz)
+      {
+         xyz.resize(n * 3);
+         unsigned s = seed;
+         for (float& v : xyz)
+         {
+            s = s * 1664525u + 1013904223u;
+            v = ((s >> 8) & 0xFFFFFF) / 16777216.0f * extent;
+         }
+      };
+      {
+         std::vector<float> xyz;
+         fill(2000, 10.0f, 7u, xyz);
+         const float r = 0.5f;
+         std::vector<std::pair<unsigned int, unsigned int>> links;
+         ProximityLinesNode::FindLinks(xyz.data(), 2000, r, 16, 1000000, links);
+         std::set<std::pair<unsigned int, unsigned int>> got(links.begin(), links.end()), want;
+         std::vector<int> deg(2000, 0);
+         for (unsigned int i = 0; i < 2000; i++)
+            for (unsigned int j = i + 1; j < 2000; j++)
+            {
+               const float dx = xyz[i * 3] - xyz[j * 3], dy = xyz[i * 3 + 1] - xyz[j * 3 + 1], dz = xyz[i * 3 + 2] - xyz[j * 3 + 2];
+               if (dx * dx + dy * dy + dz * dz <= r * r)
+               {
+                  want.insert({ i, j });
+                  deg[i]++;
+                  deg[j]++;
+               }
+            }
+         const int maxDeg = *std::max_element(deg.begin(), deg.end());
+         printf("COMPAUDIT PROXIMITY exact search: %zu links, brute force %zu, duplicates %zu, max degree %d (cap 16)\n",
+                links.size(), want.size(), links.size() - got.size(), maxDeg);
+         if (maxDeg > 16)
+            f.Flag("PROXIMITY", "test cloud is too dense for the exactness check, max degree", maxDeg);
+         else if (got != want || got.size() != links.size())
+            f.Flag("PROXIMITY", "link set differs from brute force, links found", (double)links.size());
+         // Reach: dense cloud, every point's 3 nearest inside the radius must be linked to it.
+         fill(2000, 3.0f, 11u, xyz);
+         ProximityLinesNode::FindLinks(xyz.data(), 2000, r, 3, 1000000, links);
+         std::set<std::pair<unsigned int, unsigned int>> uniq(links.begin(), links.end());
+         int missing = 0, outside = 0;
+         for (const auto& l : links)
+         {
+            const float dx = xyz[l.first * 3] - xyz[l.second * 3], dy = xyz[l.first * 3 + 1] - xyz[l.second * 3 + 1],
+                        dz = xyz[l.first * 3 + 2] - xyz[l.second * 3 + 2];
+            if (l.first >= l.second || dx * dx + dy * dy + dz * dz > r * r)
+               outside++;
+         }
+         for (unsigned int i = 0; i < 2000; i++)
+         {
+            std::vector<std::pair<float, unsigned int>> near;
+            for (unsigned int j = 0; j < 2000; j++)
+            {
+               const float dx = xyz[i * 3] - xyz[j * 3], dy = xyz[i * 3 + 1] - xyz[j * 3 + 1], dz = xyz[i * 3 + 2] - xyz[j * 3 + 2];
+               const float d = dx * dx + dy * dy + dz * dz;
+               if (j != i && d <= r * r)
+                  near.push_back({ d, j });
+            }
+            std::sort(near.begin(), near.end());
+            for (size_t m = 0; m < near.size() && m < 3; m++)
+               if (!uniq.count({ std::min(i, near[m].second), std::max(i, near[m].second) }))
+                  missing++;
+         }
+         printf("COMPAUDIT PROXIMITY reach: %zu links, unique %zu, outside radius or unordered %d, nearest-3 links missing %d\n",
+                links.size(), uniq.size(), outside, missing);
+         if (uniq.size() != links.size() || outside > 0 || missing > 0)
+            f.Flag("PROXIMITY", "reach, uniqueness or radius broken, missing nearest links", missing + outside);
+         ProximityLinesNode::FindLinks(xyz.data(), 2000, r, 3, 500, links);
+         if (links.size() > 500)
+            f.Flag("PROXIMITY", "total cap broken, links", (double)links.size());
+      }
+      // Cost at 100k points, roughly six neighbours inside the radius.
+      {
+         const size_t n = 100000;
+         const float extent = 40.0f, r = 1.0f;
+         std::vector<float> xyz;
+         fill(n, extent, 3u, xyz);
+         std::vector<std::pair<unsigned int, unsigned int>> links;
+         ProximityLinesNode::FindLinks(xyz.data(), n, r, 4, 200000, links);
+         // Median of 21 timed calls: one call is short enough that a background process
+         // waking up on a core moves it by a large fraction.
+         std::vector<double> times;
+         for (int i = 0; i < 21; i++)
+         {
+            const auto t0 = std::chrono::steady_clock::now();
+            ProximityLinesNode::FindLinks(xyz.data(), n, r, 4, 200000, links);
+            times.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+         }
+         std::sort(times.begin(), times.end());
+         const double msFind = times[times.size() / 2];
+         const double msFindBest = times.front();
+         CloudSource src;
+         src.pts.resize(n);
+         for (size_t i = 0; i < n; i++)
+         {
+            src.pts[i].px = xyz[i * 3]; src.pts[i].py = xyz[i * 3 + 1]; src.pts[i].pz = xyz[i * 3 + 2];
+         }
+         ProximityLinesNode node;
+         node.input = &src;
+         node.radius = r;
+         node.maxPerPoint = 4;
+         node.maxLinks = 200000;
+         auto t0 = std::chrono::steady_clock::now();
+         node.CookIfNeeded(gFrame++);
+         const double msCook = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+         const unsigned long long rev = node.MeshRevision();
+         node.CookIfNeeded(gFrame++);
+         const bool stable = node.MeshRevision() == rev;
+         printf("COMPAUDIT PROXIMITY 100k points: find links median %.2f ms, best %.2f ms (bar 4 ms), %zu links; whole node incl. mesh build %.1f ms; revision stable on a second cook: %s\n",
+                msFind, msFindBest, links.size(), msCook, stable ? "yes" : "NO");
+         if (!stable)
+            f.Flag("PROXIMITY", "revision changes on a second cook with nothing changed", 1.0);
+      }
+   }
+
    // ------------------------------------------------------------------- RES
    void AuditRes(Flags& f, bool& ok)
    {
@@ -1094,6 +2052,9 @@ namespace
          { "Color Ramp", [](TexSource& s) { auto* n = new ColorRampNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Fit", [](TexSource& s) { auto* n = new FitNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Trails", [](TexSource& s) { auto* n = new TrailsNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Optical Flow", [](TexSource& s) { auto* n = new OpticalFlowNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Time Machine", [](TexSource& s) { auto* n = new TimeMachineNode(); n->Input().Connect(&s); return (INode*)n; } },
+         { "Fluid", [](TexSource& s) { auto* n = new FluidNode(); n->Input().Connect(&s); return (INode*)n; } },
          { "Reaction Diffusion", [](TexSource& s) { auto* n = new ReactionDiffusionNode(); n->Input().Connect(&s); return (INode*)n; } },
       };
       items[1].name = "Box Blur";
@@ -1113,7 +2074,7 @@ namespace
          const bool got2 = n->GetOutputTexture() != 0 && ReadSized(n->GetOutputTexture(), n->GetOutputWidth(), n->GetOutputHeight(), again);
          const double d = (got1 && got2) ? MaxPixelDiff(first, again) : -1.0;
          // Stateful nodes (Trails, Reaction Diffusion) integrate over frames, so only the pass-through is asserted.
-         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Reaction Diffusion") == 0;
+         const bool stateful = strcmp(it.name, "Trails") == 0 || strcmp(it.name, "Optical Flow") == 0 || strcmp(it.name, "Time Machine") == 0 || strcmp(it.name, "Reaction Diffusion") == 0;
          printf("COMPAUDIT BYPASS %-18s pass-through is the input: %s | cook, bypass, un-bypass, cook: %s%s\n", it.name,
                 hasPass ? "yes" : "NO", d < 0 ? "no output" : d == 0.0 ? "identical" : "differs",
                 stateful ? " (stateful, not asserted)" : "");
@@ -1226,6 +2187,24 @@ bool RunCompAudit()
       AuditFeedback(flags);
    if (want("TRAILS"))
       AuditTrails(flags);
+   if (want("FLOW"))
+      AuditFlow(flags, ok);
+   if (want("FLUID"))
+      AuditFluid(flags, ok);
+   if (want("HAP"))
+      AuditHap(flags, ok);
+   if (only != nullptr && strstr(only, "HAPGEN") != nullptr)
+      AuditHapGen(flags);
+   if (want("SHARE"))
+      AuditShare(flags);
+   if (only != nullptr && strstr(only, "BUNDLE") != nullptr)
+      AuditBundle(flags);
+   if (want("VOLUME"))
+      AuditVolume(flags, ok);
+   if (want("TIMEMACHINE"))
+      AuditTimeMachine(flags, ok);
+   if (want("PROXIMITY"))
+      AuditProximity(flags);
    if (want("STACK"))
       AuditStack(flags, ok);
    if (want("CURVES"))

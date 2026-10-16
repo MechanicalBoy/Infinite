@@ -442,6 +442,84 @@ namespace app
    }
 
 
+   void DrawOpticalFlowParams(OpticalFlowNode* n)
+   {
+      static const std::vector<std::string> kViews = { "Vectors", "Colour" };
+      static const std::vector<std::string> kRes = { "Full", "Half", "Quarter" };
+      DropdownButton("view", kViews, n->view, [n](int i) { n->view = i; });
+      DropdownButton("resolution", kRes, n->resolution, [n](int i) { n->resolution = i; });
+      ModSlider("gain", &n->gain, 0.0f, 8.0f);
+      ModSliderInt("levels", &n->levels, 1, OpticalFlowNode::kMaxLevels);
+      ModSliderInt("window", &n->window, 1, 6);
+      ModSliderInt("iterations", &n->iterations, 1, 6);
+   }
+
+
+   void DrawTimeMachineParams(TimeMachineNode* n)
+   {
+      static const std::vector<std::string> kRes = { "Full", "Half", "Quarter" };
+      DropdownButton("resolution", kRes, n->resolution, [n](int i) { n->resolution = i; });
+      ModSliderInt("length", &n->length, 2, TimeMachineNode::kMaxLength);
+      ModCheckbox("invert", &n->invert);
+   }
+
+
+   void DrawFluidParams(FluidNode* n)
+   {
+      static const std::vector<std::string> kRes = { "Full", "Half", "Quarter" };
+      DropdownButton("view", FluidNode::ViewNames(), n->view, [n](int i) { n->view = i; });
+      DropdownButton("resolution", kRes, n->resolution, [n](int i) { n->resolution = i; });
+      DropdownButton("stirrer", FluidNode::StirrerNames(), n->stirrer, [n](int i) { n->stirrer = i; });
+      ModSlider("stirrer strength", &n->stirrerStrength, 0.0f, 4.0f);
+      ModSlider("stirrer size", &n->stirrerSize, 0.01f, 0.3f, "%.3f");
+      ModSlider("force gain", &n->forceGain, 0.0f, 8.0f);
+      ModSlider("swirl", &n->vorticity, 0.0f, 2.0f);
+      ModSlider("viscosity", &n->viscosity, 0.0f, 0.2f, "%.3f");
+      ModSlider("damping", &n->velocityDamping, 0.0f, 0.1f, "%.3f");
+      ModSlider("dye fade", &n->dyeFade, 0.0f, 0.1f, "%.3f");
+      ModSlider("image refresh", &n->refresh, 0.0f, 1.0f, "%.3f");
+      ModSliderInt("pressure iterations", &n->pressureIterations, 1, FluidNode::kMaxPressureIterations);
+      if (ActionButton::Draw("Reset", ImVec2(kPreviewSize, 0)))
+         n->Reset();
+   }
+
+
+   void DrawVolumeParams(VolumeNode* n)
+   {
+      DropdownButton("shape", VolumeNode::ShapeNames(), n->shape, [n](int i) { n->shape = i; });
+      ModSlider("density", &n->density, 0.0f, 8.0f);
+      ModSlider("size", &n->size, 0.05f, 6.0f);
+      ModSlider("height", &n->height, 0.1f, 10.0f);
+      ModSlider("center x", &n->centerX, -6.0f, 6.0f);
+      ModSlider("center y", &n->centerY, -6.0f, 6.0f);
+      ModSlider("center z", &n->centerZ, -6.0f, 6.0f);
+      ModSlider("noise scale", &n->noiseScale, 0.1f, 6.0f);
+      ModSlider("noise amount", &n->noiseAmount, 0.0f, 1.0f);
+      ModSlider("seed", &n->seed, 0.0f, 100.0f, "%.0f");
+      ModSlider("wind x", &n->windX, -2.0f, 2.0f);
+      ModSlider("wind y", &n->windY, -2.0f, 2.0f);
+      ModSlider("wind z", &n->windZ, -2.0f, 2.0f);
+      ModSlider("speed", &n->speed, 0.0f, 4.0f);
+      ColorSwatch("colour", n->color, n);
+      ColorSwatch("light colour", n->lightColor, n);
+      ModSlider("light azimuth", &n->lightAzimuth, -180.0f, 180.0f, "%.0f");
+      ModSlider("light elevation", &n->lightElevation, -90.0f, 90.0f, "%.0f");
+      ModSlider("light", &n->lightIntensity, 0.0f, 4.0f);
+      ModSlider("ambient", &n->ambient, 0.0f, 2.0f);
+      ModSlider("scatter", &n->scatter, 0.0f, 1.0f);
+      ModSlider("anisotropy", &n->anisotropy, -0.9f, 0.9f);
+      ModSliderInt("light steps", &n->lightSteps, 0, 16);
+      ModSliderInt("steps", &n->steps, 8, 256);
+      ModSliderInt("render steps", &n->renderSteps, 16, 512);
+      ModSlider("max distance", &n->maxDistance, 1.0f, 100.0f, "%.0f");
+      ImGui::TextDisabled("own camera (no Render 3D input):");
+      ModSlider("cam azimuth", &n->camAzimuth, -180.0f, 180.0f, "%.0f");
+      ModSlider("cam elevation", &n->camElevation, -89.0f, 89.0f, "%.0f");
+      ModSlider("cam distance", &n->camDistance, 0.5f, 30.0f);
+      ModSlider("fov", &n->fov, 10.0f, 120.0f, "%.0f");
+   }
+
+
    void DrawReactionDiffusionParams(ReactionDiffusionNode* n)
    {
       DropdownButton("preset", ReactionDiffusionNode::PresetNames(), n->preset,

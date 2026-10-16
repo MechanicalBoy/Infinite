@@ -4,6 +4,7 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <thread>
 
 #include "Transport.h"
 #include "GeometryOpNodes.h"
@@ -65,6 +66,9 @@ void ParticleSystemNode::Reset()
 void ParticleSystemNode::Emit(int count)
 {
    const int cap = std::max(0, std::min(maxParticles, 200000));
+   // Slots below the cursor are known to be alive, so each particle takes the
+   // lowest dead slot exactly as a scan from zero would, without rescanning.
+   size_t freeHint = 0;
    for (int i = 0; i < count; i++)
    {
       Particle p;
@@ -139,15 +143,18 @@ void ParticleSystemNode::Emit(int count)
       // Reuse a dead slot before growing: at steady state the array stops
       // reallocating entirely.
       bool placed = false;
-      for (size_t s = 0; s < mParticles.size(); s++)
+      for (size_t s = freeHint; s < mParticles.size(); s++)
       {
          if (!mParticles[s].alive)
          {
             mParticles[s] = p;
             placed = true;
+            freeHint = s + 1;
             break;
          }
       }
+      if (!placed)
+         freeHint = mParticles.size();
       if (!placed)
       {
          if ((int)mParticles.size() >= cap)
@@ -157,12 +164,15 @@ void ParticleSystemNode::Emit(int count)
    }
 }
 
-void ParticleSystemNode::Step(float dt)
+int ParticleSystemNode::sMaxThreads = 0;
+
+void ParticleSystemNode::StepRange(size_t begin, size_t end, float dt)
 {
    const float dragFactor = std::max(0.0f, 1.0f - drag * dt);
 
-   for (Particle& p : mParticles)
+   for (size_t i = begin; i < end; i++)
    {
+      Particle& p = mParticles[i];
       if (!p.alive)
          continue;
 
@@ -199,6 +209,30 @@ void ParticleSystemNode::Step(float dt)
       p.g = startColor[1] + (endColor[1] - startColor[1]) * t;
       p.b = startColor[2] + (endColor[2] - startColor[2]) * t;
    }
+}
+
+// Every particle moves on its own (the turbulence reads only that particle's
+// position), so slices of the array can step on separate threads and the result
+// is the same as one pass.
+void ParticleSystemNode::Step(float dt)
+{
+   const size_t n = mParticles.size();
+   constexpr size_t kMinPerThread = 16384;
+   const unsigned hw = sMaxThreads > 0 ? (unsigned)sMaxThreads : std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
+   const size_t threads = std::min<size_t>(hw, n / kMinPerThread);
+   if (threads < 2)
+   {
+      StepRange(0, n, dt);
+      return;
+   }
+   const size_t chunk = (n + threads - 1) / threads;
+   std::vector<std::thread> workers;
+   workers.reserve(threads - 1);
+   for (size_t t = 1; t < threads; t++)
+      workers.emplace_back([this, t, chunk, n, dt]() { StepRange(t * chunk, std::min(n, (t + 1) * chunk), dt); });
+   StepRange(0, std::min(n, chunk), dt);
+   for (std::thread& w : workers)
+      w.join();
 }
 
 void ParticleSystemNode::CookIfNeeded(int frameId)

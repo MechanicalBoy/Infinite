@@ -507,6 +507,8 @@ void DrawPopupsB(FrameCtx& fc)
          MenuParts::EndPopup();
       }
 
+      DrawSharePatchPopup();
+
       // Field build step 17: .infdev device Save name-prompt - same
       // deferred-popup discipline as "##dropdown" just above (opened from
       // inside a node body, rendered out here where the canvas transform

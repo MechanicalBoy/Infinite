@@ -1248,9 +1248,15 @@ namespace app
       ModSlider("width", &n->width, 16.0f, 4096.0f, "%.0f");
       ModSlider("height", &n->height, 16.0f, 4096.0f, "%.0f");
       ModSlider("scale", &n->scale, 0.5f, 60.0f);
+      // Octaves, lacunarity and gain only shape the fractal types (and the colour channels of the
+      // plain ones, which are fractal); the other types ignore them.
+      const int nt = n->noiseType;
+      const bool fractal = nt == 1 || nt == 2 || nt == 8 || nt == 9 || (n->colorNoise && nt <= 4);
+      ImGui::BeginDisabled(!fractal && !gParamRegisterOnly);
       ModSlider("octaves", &n->octaves, 1.0f, 8.0f, "%.0f");
       ModSlider("lacunarity", &n->lacunarity, 1.0f, 4.0f);
       ModSlider("gain", &n->gain, 0.1f, 0.9f);
+      ImGui::EndDisabled();
       ModSlider("warp", &n->warp, 0.0f, 2.0f);
       ModSlider("speed", &n->speed, -2.0f, 2.0f);
       ModSlider("contrast", &n->contrast, 0.1f, 4.0f);
@@ -1360,8 +1366,10 @@ namespace app
 
    void DrawSwitcherParams(SwitcherNode* n)
    {
+      ImGui::BeginDisabled(n->manual && !gParamRegisterOnly);   // manual pins the slot; the clock is unused
       DropdownButton("unit", SwitcherNode::UnitNames(), n->unit, [n](int i) { n->unit = i; });
       ModSlider("every", &n->interval, 0.05f, 32.0f);
+      ImGui::EndDisabled();
       ModSlider("crossfade", &n->crossfade, 0.0f, 0.99f);
       ModCheckbox("manual", &n->manual);
       if (n->manual)

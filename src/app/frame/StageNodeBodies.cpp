@@ -427,6 +427,8 @@ void DrawNodeBodies(FrameCtx& fc)
                   dynamic_cast<SetColorNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<ParticleSystemNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<ClothNode*>(gn.node.get()) != nullptr ||
+                  dynamic_cast<RigidBodyNode*>(gn.node.get()) != nullptr ||
+                  dynamic_cast<LSystemNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<JoinGeometryNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<WrapNode*>(gn.node.get()) != nullptr ||
                   dynamic_cast<Switcher3DNode*>(gn.node.get()) != nullptr ||
@@ -502,6 +504,10 @@ void DrawNodeBodies(FrameCtx& fc)
                snprintf(line, sizeof(line), T("showing input %c"), 'A' + sw3->ActiveSlot());
             else if (auto* grp = dynamic_cast<Group3DNode*>(gn.node.get()))
                snprintf(line, sizeof(line), T("%d in group"), grp->GroupChildCount());
+            else if (auto* ls = dynamic_cast<LSystemNode*>(gn.node.get()))
+               snprintf(line, sizeof(line), T("%zu segments, %zu tris"), ls->SegmentCount(), ls->TriangleCount());
+            else if (auto* rb = dynamic_cast<RigidBodyNode*>(gn.node.get()))
+               snprintf(line, sizeof(line), T("%zu bodies, %zu tris"), rb->BodyCount(), rb->TriangleCount());
             else if (auto* cl = dynamic_cast<ClothNode*>(gn.node.get()))
                snprintf(line, sizeof(line), T("%zu tris, %zu links"), cl->TriangleCount(), cl->ConstraintCount());
             else if (auto* mrs = dynamic_cast<MeshResynthNode*>(gn.node.get()))
@@ -913,6 +919,10 @@ void DrawNodeBodies(FrameCtx& fc)
                DrawParticleSystemParams(n);
             else if (auto* n = dynamic_cast<ClothNode*>(gn.node.get()))
                DrawClothParams(n);
+            else if (auto* n = dynamic_cast<RigidBodyNode*>(gn.node.get()))
+               DrawRigidBodyParams(n);
+            else if (auto* n = dynamic_cast<LSystemNode*>(gn.node.get()))
+               DrawLSystemParams(n);
             else if (auto* n = dynamic_cast<JoinGeometryNode*>(gn.node.get()))
                DrawJoinGeometryParams(n);
             else if (auto* n = dynamic_cast<MetaBallNode*>(gn.node.get()))
@@ -951,8 +961,14 @@ void DrawNodeBodies(FrameCtx& fc)
                   DrawDistributePointsOnFacesParams(n);
                else if (auto* n = dynamic_cast<PointsToVerticesNode*>(gn.node.get()))
                   DrawPointsToVerticesParams(n);
+               else if (auto* n = dynamic_cast<ProximityLinesNode*>(gn.node.get()))
+                  DrawProximityLinesParams(n);
                else if (auto* n = dynamic_cast<CurveOpsNode*>(gn.node.get()))
                   DrawCurveOpsParams(n);
+               else if (auto* n = dynamic_cast<SweepNode*>(gn.node.get()))
+                  DrawSweepParams(n);
+               else if (auto* n = dynamic_cast<RevolveNode*>(gn.node.get()))
+                  DrawRevolveParams(n);
                else if (auto* n = dynamic_cast<DelaunayMeshNode*>(gn.node.get()))
                   DrawDelaunayParams(n);
                else if (auto* n = dynamic_cast<DistributePointsInGridNode*>(gn.node.get()))
@@ -993,6 +1009,14 @@ void DrawNodeBodies(FrameCtx& fc)
                   DrawFeedbackParams(n);
                else if (auto* n = dynamic_cast<TrailsNode*>(gn.node.get()))
                   DrawTrailsParams(n);
+               else if (auto* n = dynamic_cast<OpticalFlowNode*>(gn.node.get()))
+                  DrawOpticalFlowParams(n);
+               else if (auto* n = dynamic_cast<TimeMachineNode*>(gn.node.get()))
+                  DrawTimeMachineParams(n);
+               else if (auto* n = dynamic_cast<FluidNode*>(gn.node.get()))
+                  DrawFluidParams(n);
+               else if (auto* n = dynamic_cast<VolumeNode*>(gn.node.get()))
+                  DrawVolumeParams(n);
                else if (auto* n = dynamic_cast<ReactionDiffusionNode*>(gn.node.get()))
                   DrawReactionDiffusionParams(n);
                else if (auto* n = dynamic_cast<SwitcherNode*>(gn.node.get()))

@@ -693,10 +693,16 @@ void DrawFrameTestsA(FrameCtx& fc)
                const double eff = Arrange::SampleSourceBpm(c->syncToTempo, c->sampleBpm, tempo);
                for (int k = 0; k * 60.0 / kFileBpm < kFileSeconds; k++)
                {
-                  const double srcSec = k * 60.0 / kFileBpm - c->sourceOffsetSeconds;
+                  // The clip's speed (negative = reversed) maps timeline
+                  // seconds to source seconds, so a click at source second s
+                  // sits (s - offset) / speed timeline-seconds past the start.
+                  const double srcSec = (k * 60.0 / kFileBpm - c->sourceOffsetSeconds) / Arrange::ClipSpeedFactor(*c);
                   if (srcSec < -1e-9) continue;
                   const double beat = Arrange::TicksToBeats(c->start) + srcSec * eff / 60.0;
-                  if (beat < Arrange::TicksToBeats(c->start) - 1e-9 || beat >= Arrange::TicksToBeats(c->End()) - 1e-6)
+                  // A reversed clip starts its last source click exactly on the box
+                  // end, where that click's first sample still lands inside.
+                  const double endSlack = c->reverse ? 1e-6 : -1e-6;
+                  if (beat < Arrange::TicksToBeats(c->start) - 1e-9 || beat >= Arrange::TicksToBeats(c->End()) + endSlack)
                      continue;
                   const double t = (beat - startBeat) * 60.0 / tempo;
                   if (t >= -1e-9 && t < seconds - 0.02)
@@ -785,6 +791,44 @@ void DrawFrameTestsA(FrameCtx& fc)
                check("synced @120, pitch +7 (timing unchanged)", x, expectedClicks(clipId, 0.0, 8.0), tol);
                Arrange::FindClip(gArrange, clipId)->pitch = 0.0f;
                gArrange.revision++;
+            }
+            // Clip speed: 2x halves the box and puts the clicks twice as
+            // close; reverse plays the same stretch backwards; undoing both
+            // restores the box and the offset exactly.
+            {
+               const Arrange::Tick lenBefore = Arrange::FindClip(gArrange, clipId)->length;
+               const float offBefore = Arrange::FindClip(gArrange, clipId)->sourceOffsetSeconds;
+               ArrangeSetClipSpeed(clipId, 2.0f);
+               {
+                  const Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+                  const bool ok = std::llabs(c->length - lenBefore / 2) <= 1;
+                  printf("arrange clip speed 2x halves the box: %s (%.3f -> %.3f beats)\n", ok ? "OK" : "FAIL",
+                         Arrange::TicksToBeats(lenBefore), Arrange::TicksToBeats(c->length));
+                  allOk = allOk && ok;
+               }
+               {
+                  auto x = render(0.0, 6.0, "speed_2x");
+                  check("clip speed 2x (stretched, pitch kept)", x, expectedClicks(clipId, 0.0, 6.0), tol);
+               }
+               ArrangeSetClipReverse(clipId, true);
+               {
+                  const Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+                  const bool ok = c->reverse && c->sourceOffsetSeconds > offBefore + 5.0f;
+                  printf("arrange clip reverse moves the read point to the far end: %s (offset %.3f s)\n",
+                         ok ? "OK" : "FAIL", (double)c->sourceOffsetSeconds);
+                  allOk = allOk && ok;
+                  auto x = render(0.0, 6.0, "speed_2x_reverse");
+                  check("clip speed 2x reversed", x, expectedClicks(clipId, 0.0, 6.0), tolDirect + 3.0);
+               }
+               ArrangeSetClipReverse(clipId, false);
+               ArrangeSetClipSpeed(clipId, 1.0f);
+               {
+                  const Arrange::Clip* c = Arrange::FindClip(gArrange, clipId);
+                  const bool ok = std::llabs(c->length - lenBefore) <= 1 &&
+                                  std::fabs(c->sourceOffsetSeconds - offBefore) < 1e-3f && c->speed == 1.0f && !c->reverse;
+                  printf("arrange clip speed and reverse undo cleanly: %s\n", ok ? "OK" : "FAIL");
+                  allOk = allOk && ok;
+               }
             }
             // Split at beat 6.5 (clone node for the right half, like the
             // blade tool), then a paste of the whole original at beat 20.

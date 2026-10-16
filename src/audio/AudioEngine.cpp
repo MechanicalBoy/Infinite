@@ -828,9 +828,10 @@ void AudioEngine::RunTopology(ProcessList* list, AudioBuffer& deviceBuffer, doub
          if (sw.startBeat < blockEndBeat && sw.endBeat > blockStartBeat)
          {
             const double effBpm = (sw.syncToTempo && sw.sampleBpm > 0.0f) ? (double)sw.sampleBpm : bpm;
+            const double clipSpeed = (double)sw.speed;
             const double sourceSeconds = (double)sw.sourceOffsetSeconds +
-               (blockStartBeat - sw.startBeat) * 60.0 / std::max(1.0, effBpm);
-            const double sourcePerSecond = bpm / std::max(1.0, effBpm);
+               (blockStartBeat - sw.startBeat) * 60.0 / std::max(1.0, effBpm) * clipSpeed;
+            const double sourcePerSecond = bpm / std::max(1.0, effBpm) * clipSpeed;
             terminal.sourceNode->SetClipSamplePosition(sourceSeconds, sourcePerSecond, sw.pitch, discontinuity);
          }
       }

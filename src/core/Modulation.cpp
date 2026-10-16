@@ -223,6 +223,9 @@ void Modulation::RegisterParam(const ParamRef& ref)
    frame.posToValue = ref.posToValue;
    frame.valueToPos = ref.valueToPos;
    frame.srcAddr = ref.srcAddr;
+   frame.shownValue = ref.value != nullptr ? *ref.value : 0.0f;
+   if (mStateProbe != nullptr)
+      mStateProbe(frame.disabled, frame.hidden);
 
    ParamRef& known = mKnownParams[Key(ref.nodeIndex, ref.paramIndex)];
    known.nodeIndex = ref.nodeIndex;

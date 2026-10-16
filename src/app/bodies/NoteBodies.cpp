@@ -163,11 +163,29 @@ namespace app
       // Channels param control
       {
          int ch = n->numChannels;
-         // Fixed width: the node's width follows this value, so a width taken from the node moves the slider under the drag.
-         if (AudioSliderInt("channels", &ch, 0, MixerNode::kMaxSlots, 130.0f))
+         // A stepper, not a modulatable slider: the channel count rebuilds the audio topology, so
+         // a cable driving it would rebuild it every block. The counter still advances so every
+         // later param keeps its modulation index.
+         gParamCounter++;
+         const float btnH = ImGui::GetFrameHeight();
+         const float gap = ImGui::GetStyle().ItemSpacing.x;
+         ImGui::AlignTextToFramePadding();
+         ImGui::TextDisabled("channels");
+         ImGui::SameLine();
+         int next = ch;
+         if (ActionButton::Draw("-##mixCh", ImVec2(btnH * 1.4f, btnH)))
+            next = ch - 1;
+         ImGui::SameLine(0.0f, gap);
+         ImGui::AlignTextToFramePadding();
+         ImGui::Text("%d", ch);
+         ImGui::SameLine(0.0f, gap);
+         if (ActionButton::Draw("+##mixCh", ImVec2(btnH * 1.4f, btnH)))
+            next = ch + 1;
+         next = std::clamp(next, 0, (int)MixerNode::kMaxSlots);
+         if (next != ch)
          {
             PushUndoCheckpoint();
-            n->numChannels = std::clamp(ch, 0, (int)MixerNode::kMaxSlots);
+            n->numChannels = next;
             RebuildAudioTopology();
          }
          ImGui::Dummy(ImVec2(0.0f, 4.0f));
@@ -235,12 +253,14 @@ namespace app
          }
 
          {
-            AudioKnobRow row(count, kKnobStd);
+            // A knob a size down: at kKnobStd the input dot sat on the ring in an 80 px cell.
+            const float panDia = std::min(kKnobStd, cellW - 36.0f);
+            AudioKnobRow row(count, panDia);
             for (int i = 0; i < count; i++)
             {
                char label[8];
                snprintf(label, sizeof(label), "pan %d", i + 1);
-               row.Knob(label, &n->pan[i], -1.0f, 1.0f, "%.2f", kKnobStd);
+               row.Knob(label, &n->pan[i], -1.0f, 1.0f, "%.2f", panDia);
             }
             row.End();
          }
@@ -411,14 +431,17 @@ namespace app
          row.Knob("velocity", &n->velocityScale, 0.0f, 2.0f, "%.2f", kKnobLarge);
          row.End();
       }
+      // MPE: each held note follows its own member channel's pitch bend.
+      BeginAudioSection("mpe");
       {
-         // MPE: each held note follows its own member channel's pitch bend.
-         AudioKnobRow row(3, kKnobLarge);
-         row.Checkbox("mpe##midiMpe", &n->mpe);
-         row.Knob("bend st", &n->mpeBendRange, 1.0f, 96.0f, "%.0f", kKnobLarge);
-         row.Skip();
-         row.End();
+         const float gap = ImGui::GetStyle().ItemSpacing.x;
+         const float checkW = 84.0f;
+         const ImVec2 at = ImGui::GetCursorScreenPos();
+         ModCheckbox("mpe##midiMpe", &n->mpe);
+         ImGui::SetCursorScreenPos(ImVec2(at.x + checkW + gap, at.y));
+         AudioSlider("bend st", &n->mpeBendRange, 1.0f, 96.0f, "%.0f", gAudioContentW - checkW - gap);
       }
+      EndAudioSection();
 
       BeginAudioSection("input");
       if (!Platform::MidiIsRunning())
@@ -2448,14 +2471,23 @@ namespace app
 
       // Hold at the peak, then each moving stage's bend: 0 straight,
       // positive fast first (a falling decay/release), negative slow first.
-      {
-         AudioKnobRow row1(4);
-         row1.Knob("hold", &n->holdMs, 0.0f, 4000.0f, "%.0f ms", kKnobSmall);
-         row1.Knob("attack curve", &n->attackCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
-         row1.Knob("decay curve", &n->decayCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
-         row1.Knob("release curve", &n->releaseCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
-         row1.End();
-      }
+      // Sliders, not knobs: the bends read as numbers to set, two to a row.
+      const float gap = ImGui::GetStyle().ItemSpacing.x;
+      const float rowH = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y;
+      auto pair = [&](auto&& left, auto&& right) {
+         const float halfW = (gAudioContentW - gap) * 0.5f;
+         const ImVec2 at = ImGui::GetCursorScreenPos();
+         left(halfW);
+         ImGui::SetCursorScreenPos(ImVec2(at.x + halfW + gap, at.y));
+         right(halfW);
+         ImGui::SetCursorScreenPos(ImVec2(at.x, at.y + rowH));
+      };
+      BeginAudioSection("shape");
+      pair([&](float w) { AudioSlider("hold", &n->holdMs, 0.0f, 4000.0f, "%.0f ms", w); },
+           [&](float w) { AudioSlider("attack curve", &n->attackCurve, -1.0f, 1.0f, "%.2f", w); });
+      pair([&](float w) { AudioSlider("decay curve", &n->decayCurve, -1.0f, 1.0f, "%.2f", w); },
+           [&](float w) { AudioSlider("release curve", &n->releaseCurve, -1.0f, 1.0f, "%.2f", w); });
+      EndAudioSection();
 
       // "in" is used only while nothing is patched into the modulator pin;
       // "threshold" is the gate line on the raw 0..1 input - rising through
@@ -2468,12 +2500,15 @@ namespace app
       // "per voice": cabled straight into an Analog or Wavetable knob, each
       // note gets its own envelope, gated by its own note-on and note-off
       // (ADSR output only; centred needs the shared input).
-      AudioKnobRow row2(4);
-      row2.Dropdown("output", kOutputs, n->output, [n](int i) { PushUndoCheckpoint(); n->output = i; });
-      row2.Knob("input", &n->constantIn, 0.0f, 1.0f, "%.2f", kKnobSmall);
-      row2.Knob("threshold", &n->threshold, 0.0f, 1.0f, "%.2f", kKnobSmall);
-      row2.Checkbox("per voice##envVoice", &n->voice);
-      row2.End();
+      BeginAudioSection("trigger");
+      pair([&](float w) {
+              DropdownButton("output", kOutputs, n->output,
+                             [n](int i) { PushUndoCheckpoint(); n->output = i; }, w);
+           },
+           [&](float w) { AudioSlider("input", &n->constantIn, 0.0f, 1.0f, "%.2f", w); });
+      pair([&](float w) { AudioSlider("threshold", &n->threshold, 0.0f, 1.0f, "%.2f", w); },
+           [&](float) { ModCheckbox("per voice##envVoice", &n->voice); });
+      EndAudioSection();
 
       EndAudioBody();
    }
