@@ -1,6 +1,6 @@
 # Prompt: mine indexopensource.com projects for ideas that improve Infinite
 
-You are working in the Infinite repo (/Users/namansoni/infinte). Read AGENTS.md first and follow its skill rules.
+You are working in the Infinite repo (<repo>). Read AGENTS.md first and follow its skill rules.
 Load `codebase-navigation`, `codebase-lenses`, `semi-brain` before starting. Create branch per `git-branch-workflow`.
 
 ## Goal

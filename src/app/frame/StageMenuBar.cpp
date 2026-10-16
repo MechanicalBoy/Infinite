@@ -164,6 +164,8 @@ void DrawMenuBar(FrameCtx& fc)
             MenuParts::BeginContent();
             if (MenuParts::Item(L("New"), MODKEY "+N"))
                GuardUnsavedChanges([]() { NewPatch(); });
+            if (MenuParts::Item(L("New Synth"), MODKEY "+Shift+N"))
+               SpawnPlayableSynth();
             if (MenuParts::Item(L("Template library...")))
                gTemplatesOpen = true;
             if (MenuParts::Item(L("Open..."), MODKEY "+O"))
@@ -379,6 +381,31 @@ void DrawMenuBar(FrameCtx& fc)
                ImGui::EndMenu();
             }
 
+            if (MenuParts::SubMenu(L("Show Set")))
+            {
+               MenuParts::Check(L("Show Set window"), &gShowSetOpen);
+               if (MenuParts::Item(L("Next patch"), "PgDn", false, ShowSetSize() > 0))
+                  ShowSetStep(+1);
+               if (MenuParts::Item(L("Previous patch"), "PgUp", false, ShowSetSize() > 0))
+                  ShowSetStep(-1);
+               ImGui::Separator();
+               if (MenuParts::Item(L("Show lock"), MODKEY "+Shift+L", gShowLock))
+                  ShowLockToggle();
+               if (ShowPanicLatched())
+               {
+                  if (MenuParts::Item(L("Resume after panic"), MODKEY "+.", true))
+                     ShowPanicToggle();
+               }
+               else if (MenuParts::Item(L("Panic"), MODKEY "+."))
+                  ShowPanicToggle();
+               if (MenuParts::Item(L("Pre-show check")))
+                  {
+                  gShowSetOpen = true;
+                  gShowCheckRequest = true;
+               }
+               ImGui::EndMenu();
+            }
+
             if (MenuParts::SubMenu(L("Nodes")))
             {
                if (MenuParts::Item(L("Show all params")))
@@ -491,7 +518,7 @@ void DrawMenuBar(FrameCtx& fc)
          // 1. Transport (Play, Rewind, Audio On/Off)
          if (ActionButton::Draw("##transportplay", ImVec2(tok::tile + 4.0f, 0),
                                 isTransportPlaying ? ActionButton::Kind::Go : ActionButton::Kind::Plain))
-            transport.TogglePlay();
+            LaunchRequestTogglePlay();
          {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             const ImVec2 bmin = ImGui::GetItemRectMin();
@@ -511,7 +538,7 @@ void DrawMenuBar(FrameCtx& fc)
 
          ImGui::SetCursorScreenPos(ImVec2(ImGui::GetItemRectMax().x + 4.0f, ImGui::GetItemRectMin().y));
          if (ActionButton::Draw("##transportrewind", ImVec2(tok::tile + 4.0f, 0)))
-            transport.Rewind();
+            LaunchRequestRewind();
          {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             const ImVec2 bmin = ImGui::GetItemRectMin();

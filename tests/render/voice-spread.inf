@@ -1,0 +1,26 @@
+infinite-patch 1
+# Voice Spread smoke (v0.6 2.13): Chorder plays chords into Analog; Voice Spread gives each note of
+# the chord its own cutoff (linear across 400 Hz..6 kHz), so the chord's top note is the brightest.
+node 1 Notes Chorder
+  id chords
+end
+node 2 Synths Analog
+  id synth
+end
+node 3 Modulators Voice Spread
+  id spread
+  i count 4
+end
+node 4 Utility Audio Out
+  id speakers
+end
+node 5 Source Shape
+  id picture
+end
+node 6 Utility Output
+  id out
+end
+note synth 0 chords
+aud speakers 0 synth
+cable out 0 picture
+mod synth cutoff spread 0 0 1 0.5

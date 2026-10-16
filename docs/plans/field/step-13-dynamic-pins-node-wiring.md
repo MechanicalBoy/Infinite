@@ -1,7 +1,7 @@
 # Field build step 13 — dynamic pins, Phase 2b: node, UI and save-format wiring
 
 You are implementing **build step 13 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). Self-
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). Self-
 contained brief; no prior context assumed beyond "Files to read first".
 Line numbers are from `src/` at the commit this was written against —
 re-grep the symbol if a number has drifted; the symbol wins, not the number.
@@ -388,7 +388,7 @@ step risks introducing.
 ## 7. Machine-checkable exit criterion
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 cmake --build build -j"$(sysctl -n hw.ncpu)"
 
 for v in FIELDTEST FIELDELEMENTTEST FIELDPARAMTEST FIELDSTATETEST FIELDSAMPLETEST \

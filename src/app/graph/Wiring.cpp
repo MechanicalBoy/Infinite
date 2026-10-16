@@ -1517,6 +1517,67 @@ namespace app
       return &gNodes.back();
    }
 
+   // First free input of the wanted kind, or -1. Slots are looked up, not assumed: a synth's notes-in
+   // and an effect's audio-in do not sit at the same slot on every node.
+   static int FirstInputSlot(GraphNode& gn, bool audio)
+   {
+      for (int slot = 0; slot < 8; slot++)
+         if ((audio ? (void*)gn.node->AudioInputSlot(slot) : (void*)gn.node->NoteInputSlot(slot)) != nullptr)
+            return slot;
+      return -1;
+   }
+
+   // Makes an audio node audible: a new Audio Out to its right, cabled, and the audio engine started
+   // if it is off. Used by New Synth and by a dropped sample, so "add it and hear it" is one action.
+   // Indices, not GraphNode*: SpawnNode can reallocate gNodes.
+   int HearNode(int srcIndex)
+   {
+      GraphNode* src = FindNodeByIndex(srcIndex);
+      if (src == nullptr)
+         return -1;
+      GraphNode* out = SpawnNode("Audio Out", "Utility", src->liveX + 520.0f, src->liveY);
+      if (out == nullptr)
+         return -1;
+      const int outIndex = out->index;
+      const int slot = FirstInputSlot(*out, true);
+      std::string err;
+      if (slot < 0 || !ConnectNodes(srcIndex, 0, outIndex, slot, err))
+      {
+         RemoveNodeByIndex(outIndex);
+         return -1;
+      }
+      if (AudioEngine::Instance().SampleRate() <= 0.0)
+      {
+         gAudioStartError.clear();
+         if (!StartAudioEngine(gAudioStartError))
+            fprintf(stderr, "audio device: %s\n", gAudioStartError.c_str());
+      }
+      gPatchDirty = true;
+      return outIndex;
+   }
+
+   // File > New Synth: Keyboard -> Analog -> Audio Out in the middle of the view, audio on, and the
+   // Keyboard selected so the letter keys play it straight away (a selected Keyboard owns them).
+   int SpawnPlayableSynth()
+   {
+      const ImVec2 at = FindFreeSpawnPosition(gViewCenterCanvas);
+      GraphNode* kb = SpawnNode("Keyboard", "Notes", at.x - 520.0f, at.y);
+      if (kb == nullptr)
+         return -1;
+      const int kbIndex = kb->index;
+      GraphNode* synth = SpawnNode("Analog", "Synths", at.x, at.y);
+      if (synth == nullptr)
+         return -1;
+      const int synthIndex = synth->index;
+      const int noteSlot = FirstInputSlot(*synth, false);
+      std::string err;
+      if (noteSlot >= 0)
+         ConnectNodes(kbIndex, 0, synthIndex, noteSlot, err);
+      HearNode(synthIndex);
+      gRequestSelectNodeIndex = kbIndex;
+      return kbIndex;
+   }
+
 
    // File-backed and compiled-from-text nodes keep derived state (a loaded
    // texture, a compiled GL program) that VisitParams deliberately does not
@@ -1552,6 +1613,8 @@ namespace app
          paul->ReloadFromPath();
       if (auto* molder = dynamic_cast<MolderNode*>(node))
          molder->ReloadFromPath();
+      if (auto* partials = dynamic_cast<PartialsNode*>(node))
+         partials->ReloadFromPath();
       if (auto* gm = dynamic_cast<GrainMolderNode*>(node))
          gm->ReloadFromPath();
       if (auto* gran = dynamic_cast<GranularNode*>(node))

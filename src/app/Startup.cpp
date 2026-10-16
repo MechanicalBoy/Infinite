@@ -1,4 +1,5 @@
 // Split out of main(): see docs/plans/main-split/README.md (Block C)
+#include "platform/PluginCrashGuard.h"
 #include "app/ui/design/UiType.h"
 #include "app/ui/design/Glyphs.gen.h"
 #include "app/frame/FrameCtx.h"
@@ -7,10 +8,12 @@
 namespace app
 {
 bool RunAliasTest(); // selftest/AliasTests.cpp
+bool RunOversampleTest(); // selftest/AliasTests.cpp
 bool RunPitchTest(); // selftest/PitchTests.cpp
 bool RunFxAudit(); // selftest/FxAudit.cpp
 bool RunModAudit(); // selftest/ModAudit.cpp
 bool RunSynthAudit(); // selftest/SynthAudit.cpp
+bool RunFactoryPresetTest(); // selftest/PresetTests.cpp
 bool RunNoteAudit(); // selftest/NoteAudit.cpp
 bool RunIoAudit(); // selftest/IoAudit.cpp
 bool RunGeoAudit(); // selftest/GeoAudit.cpp
@@ -330,6 +333,12 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // Installed before any of the INFINITE_*TEST branches below too, so a
    // crash in a headless CI fixture leaves a dump/log the same as a real run.
    Platform::InstallCrashHandler();
+   {
+      // The plugin the last run died inside, if any (see PluginCrashGuard.h).
+      const std::string crashed = PluginCrashGuard::Init(AppPaths::AppSupportDir());
+      if (!crashed.empty())
+         Platform::AppendLogLine("plugin crash: the last run ended inside " + crashed + "; it will not load in process again");
+   }
 
    if (getenv("INFINITE_CRASHTEST") != nullptr)
    {
@@ -487,6 +496,8 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       return RunPluginScanTest();
    if (getenv("INFINITE_MIDIBENDTEST") != nullptr)
       return RunMidiBendTest();
+   if (getenv("INFINITE_PLUGINCRASHTEST") != nullptr)
+      return RunPluginCrashTest();
    if (getenv("INFINITE_PLUGINNODETEST") != nullptr)
    {
       RegisterNodes(); // its latency-change case spawns real nodes; no GL involved
@@ -540,6 +551,33 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    if (getenv("INFINITE_SHAPERESONATORTEST") != nullptr)
       return RunShapeResonatorFixture() ? 0 : 1;
 
+   if (getenv("INFINITE_CONVOLUTIONTEST") != nullptr)
+      return RunConvolutionFixture() ? 0 : 1;
+
+   if (getenv("INFINITE_MSEGTEST") != nullptr)
+      return RunMSEGFixture() ? 0 : 1;
+
+   if (getenv("INFINITE_VOICEMODTEST") != nullptr)
+      return RunVoiceModFixture() ? 0 : 1;
+
+   if (getenv("INFINITE_SYNTHSIMDTEST") != nullptr)
+      return RunSynthSimdFixture() ? 0 : 1;
+
+   if (getenv("INFINITE_SATURATORTEST") != nullptr)
+      return RunSaturatorFixture() ? 0 : 1;
+
+   if (getenv("INFINITE_FMTEST") != nullptr)
+      return RunFMFixture() ? 0 : 1;
+
+   if (getenv("INFINITE_PARTIALSTEST") != nullptr)
+      return RunPartialsFixture() ? 0 : 1;
+
+   if (getenv("INFINITE_STRINGTEST") != nullptr)
+      return RunStringFixture() ? 0 : 1;
+
+   if (getenv("INFINITE_SPLITTERTEST") != nullptr)
+      return RunSplitterFixture() ? 0 : 1;
+
    if (getenv("INFINITE_SPATIALTEST") != nullptr)
       return RunSpatialFixture() ? 0 : 1;
 
@@ -550,6 +588,8 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // have anti-aliasing (src/app/selftest/AliasTests.cpp).
    if (getenv("INFINITE_ALIASTEST") != nullptr)
       return RunAliasTest() ? 0 : 1;
+   if (getenv("INFINITE_OVERSAMPLETEST") != nullptr)
+      return RunOversampleTest() ? 0 : 1;
 
    // Pitch Shifter quality: purity, chord, unity null, transients (selftest/PitchTests.cpp).
    if (getenv("INFINITE_PITCHTEST") != nullptr)
@@ -570,6 +610,11 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    // Synth audit: pitch, aliasing, level, rate, determinism, CPU (selftest/SynthAudit.cpp).
    if (getenv("INFINITE_SYNTHAUDIT") != nullptr)
       return RunSynthAudit() ? 0 : 1;
+   if (getenv("INFINITE_FACTORYPRESETTEST") != nullptr)
+   {
+      RegisterNodes(); // presets are applied to real nodes by type name; no GL involved
+      return RunFactoryPresetTest() ? 0 : 1;
+   }
    // Note audit: pair integrity, grid timing, swing, humanize, loop, CPU (selftest/NoteAudit.cpp).
    if (getenv("INFINITE_NOTEAUDIT") != nullptr)
       return RunNoteAudit() ? 0 : 1;
@@ -1298,6 +1343,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
    AudioEngine::Instance().SetRequestedSampleRate(gAudioSampleRate);
    AudioEngine::Instance().SetRequestedBufferFrames(gAudioBufferFrames);
    Platform::AudioSetOutputMode(gAudioOutputMode);
+   AudioEngine::Instance().SetAudioThreads(gAudioThreads);
    // The window was just created with vsync hardcoded on (above); apply the
    // persisted preference now that it's loaded. Headless test windows stay
    // uncapped regardless - they don't want to be paced by the display.
@@ -1351,6 +1397,14 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       if (const char* portEnv = getenv("INFINITE_CONTROL_PORT"))
          controlPort = atoi(portEnv);
       RemoteControl::Start(controlPort);
+
+      // The OSC control API (core/OscControl.h): loopback UDP, port 9100,
+      // INFINITE_OSC_PORT to move it, 0 to turn it off.
+      int oscPort = 9100;
+      if (const char* oscEnv = getenv("INFINITE_OSC_PORT"))
+         oscPort = atoi(oscEnv);
+      if (oscPort > 0)
+         OscControl::Start(oscPort);
    }
 
    // The audio engine no longer auto-starts at launch: someone opening the
@@ -1414,6 +1468,7 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
          getenv("INFINITE_CULLDRIVENTEST") != nullptr ||
          getenv("INFINITE_PREDBINDTEST") != nullptr ||
          getenv("INFINITE_MPCMODTEST") != nullptr ||
+         getenv("INFINITE_VOICEMODFRAMETEST") != nullptr ||
          getenv("INFINITE_LOOPERTRIGTEST") != nullptr ||
          getenv("INFINITE_MIDILEARNTEST") != nullptr ||
          getenv("INFINITE_KBCURSORTEST") != nullptr ||
@@ -1452,16 +1507,18 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
       }
       if (const char* gallery = getenv("INFINITE_FXGALLERY"); gallery != nullptr)
       {
-         // Review fixture: every AudioEffects node on a non-overlapping grid, 13 per page
+         // Review fixture: every AudioEffects node on a non-overlapping grid, 14 per page
          // (INFINITE_FXGALLERY=1 or 2), framed at frame 3 so a 3200x2000 shot reads at ~1:1.
          static const char* kFx[] = { "Audio Filter", "EQ", "Dynamics", "Limiter", "Delay", "Reverb", "Drive",
                                       "Stereo", "Pitch Shifter", "Chorus", "Flanger", "Phaser", "Bitcrush",
                                       "Transient Shaper", "Stutter", "Ring Mod", "Frequency Shifter", "Tremolo",
                                       "Formant Filter", "Wavetable Shaper", "Resonator Bank", "Cycle Shaper",
-                                      "Spec Blur", "Key-Snap", "Spectrum Slide", "Shape Resonator" };
+                                      "Spec Blur", "Key-Snap", "Spectrum Slide", "Shape Resonator",
+                                      "Convolution Reverb", "Saturator" };
+         const int kCount = (int)(sizeof(kFx) / sizeof(kFx[0]));
          const int page = atoi(gallery) == 2 ? 1 : 0;
-         for (int i = 0; i < 13; i++)
-            SpawnNode(kFx[page * 13 + i], "AudioEffects", (float)(i % 5) * 480.0f, (float)(i / 5) * 620.0f);
+         for (int i = 0; i < 14 && page * 14 + i < kCount; i++)
+            SpawnNode(kFx[page * 14 + i], "AudioEffects", (float)(i % 5) * 480.0f, (float)(i / 5) * 620.0f);
       }
       if (getenv("INFINITE_AUDIOUITEST") != nullptr)
       {
@@ -3920,6 +3977,14 @@ int InitApp(FrameCtx& fc, int argc, char** argv)
             SpawnNode("Range to Range", "Modulators", 60.0f, 500.0f); // gNodes[2]
             SpawnNode("MPC", "Synths", 400.0f, 500.0f);               // gNodes[3]
             gNodes[3].showParams = true;
+         }
+         if (getenv("INFINITE_VOICEMODFRAMETEST") != nullptr)
+         {
+            SpawnNode("LFO", "Modulators", 60.0f, 500.0f);
+            SpawnNode("Analog", "Synths", 400.0f, 500.0f);
+            for (GraphNode& gn : gNodes)
+               if (dynamic_cast<AnalogNode*>(gn.node.get()) != nullptr)
+                  gn.showParams = true; // params must be drawn for them to register
          }
 #ifndef NDEBUG
          if (getenv("INFINITE_PREDBINDTEST") != nullptr)

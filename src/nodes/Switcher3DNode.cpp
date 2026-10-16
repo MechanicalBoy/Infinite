@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Transport.h"
+#include "audio/MusicTime.h"
 
 namespace
 {
@@ -29,7 +30,9 @@ int Switcher3DNode::ComputeActiveSlot() const
 
    if (manual || count == 1)
    {
-      const int pick = manual ? std::max(0, std::min(manualSlot, kSlots - 1)) : connected[0];
+      const Transport& tr = Transport::Instance();
+      const int want = std::max(0, std::min(manualSlot, kSlots - 1));
+      const int pick = manual ? mLaunchedSlot.Resolve(want, tr.Beats(), tr.IsPlaying(), tr.LaunchQuantize()) : connected[0];
       return inputs[pick] != nullptr ? pick : connected[0];
    }
 

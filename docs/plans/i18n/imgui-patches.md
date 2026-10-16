@@ -10,5 +10,6 @@ Re-apply every row when upgrading ImGui. Marked `Infinite patch` in the source.
 | `external/imgui/imgui_widgets.cpp` | `SliderScalar`: double-click opens the typed-value box. | Type a value on any slider. |
 | `external/imgui/imconfig.h` | `IM_DEBUG_BREAK()` is a no-op. | The UI Debugger's Item Picker raised SIGTRAP in a shipped app. |
 | `external/imgui-node-editor/imgui_extra_math.inl` | Skip our `operator*(float, ImVec2)` when `IMGUI_DEFINE_MATH_OPERATORS` is set. | ImGui 1.92 defines it in `imgui.h`. |
+| `external/imgui-node-editor/imgui_node_editor.{h,cpp}` | `SetEditsLocked` / `AreEditsLocked`: while locked, `DragAction::Accept` and `CreateItemAction::Accept` refuse, so no node drag and no cable drag from a pin. | Show lock (v0.6 2.36): controls inside nodes keep working. |
 
 No longer patched: rounded `Selectable` highlights (1.92 has `style.SelectableRounding`, set in `Startup.cpp`).

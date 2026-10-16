@@ -12,6 +12,7 @@
 
 #include "../Platform.h"
 #include "../AppPaths.h"
+#include "../PluginCrashGuard.h"
 #include "WinCommon.h"
 
 #include <dbghelp.h>
@@ -128,6 +129,7 @@ namespace
 
    LONG WINAPI WriteCrashReport(EXCEPTION_POINTERS* info)
    {
+      PluginCrashGuard::NoteCrash(); // first: names the plugin this thread was inside, if any
       WriteReport(info, "unhandled exception", nullptr);
       return EXCEPTION_EXECUTE_HANDLER;
    }
@@ -146,6 +148,7 @@ namespace
    {
       if (!gFatalReported.exchange(true))
       {
+         PluginCrashGuard::NoteCrash();
          CONTEXT context{};
          RtlCaptureContext(&context);
          EXCEPTION_RECORD record{};

@@ -6,6 +6,7 @@
 #include "INode.h"
 #include "Geometry3DNodes.h"
 #include "Mesh.h"
+#include "audio/MusicTime.h"
 
 // Cycles between up to four connected IGeometrySource inputs on a fixed
 // interval, forwarding whichever one is active - the geometry-side
@@ -92,6 +93,8 @@ public:
    float crossfade = 0.0f;
    bool manual = false;      // ignore the clock and hold manualSlot
    int manualSlot = 0;
+   // v0.6 2.38: a manual slot change lands on the Transport launch grid while playing
+   mutable MusicTime::LaunchedInt mLaunchedSlot;
 
    void VisitParams(ParamVisitor& v) override
    {

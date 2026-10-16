@@ -166,10 +166,17 @@ private:
 // output buffer - each downstream node still reads its own buffer, so
 // there's no aliasing to protect against; the node exists for graph-level
 // visibility and the fan-out cap, not because copying is otherwise needed.
+//
+// Crossover mode (v0.6 2.18, `bands` 2-4): the pins become one per band,
+// low to high, split by Linkwitz-Riley 4th-order crossovers at split1..3.
+// Each lower band also passes the higher splits' allpasses, so the bands
+// sum to an allpass of the input: flat magnitude, no comb at the splits.
+// `bands` 1 is the plain copy, bit-identical to the node before 2.18.
 class SplitterNode : public INode, public IAudioSource
 {
 public:
    static constexpr int kMaxFanout = 4;
+   static constexpr int kMaxBands = 4;
 
    static INode* Create() { return new SplitterNode(); }
    SplitterNode();
@@ -179,13 +186,36 @@ public:
    int GetOutputWidth() const override { return 0; }
    int GetOutputHeight() const override { return 0; }
    void CookIfNeeded(int frameId) override;
+   void VisitParams(ParamVisitor& v) override;
+   std::vector<SweepParamPrereq> SweepPrerequisitesFor(const std::string& paramName) const override
+   {
+      if (paramName == "split1") return { { "bands", 2.0f } };
+      if (paramName == "split2") return { { "bands", 3.0f } };
+      if (paramName == "split3") return { { "bands", 4.0f } };
+      return {};
+   }
 
    INode* BypassSource() override { return input.GetSource(); }
    AudioNode* GetAudioNode() override;
    AudioCable* AudioInputSlot(int slot) override { return slot == 0 ? &input : nullptr; }
    const char* InputLabel(int slot) const override { return slot == 0 ? "audio" : nullptr; }
+   int OutputCount() const override { return Bands() > 1 ? Bands() : 1; }
+   const char* OutputLabel(int index) const override
+   {
+      static const char* kLabels[kMaxBands] = { "1", "2", "3", "4" };
+      if (Bands() <= 1)
+         return index == 0 ? "out" : nullptr;
+      return (index >= 0 && index < Bands()) ? kLabels[index] : nullptr;
+   }
+   int AudioOutputSlotForPin(int pinIndex) const override { return pinIndex; }
+
+   int Bands() const { return bands < 1 ? 1 : (bands > kMaxBands ? kMaxBands : bands); }
 
    AudioCable input;
+   int bands = 1;
+   float split1 = 250.0f;
+   float split2 = 2500.0f;
+   float split3 = 8000.0f;
 
 private:
    std::unique_ptr<AudioSplitterNode> mAudioNode;

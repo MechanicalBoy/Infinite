@@ -5,7 +5,7 @@ Paste this whole file into a fresh Claude Code session on Infinite.
 ---
 
 You are overhauling Infinite's **Arrangement Timeline** (C++/ImGui/OpenGL node
-compositor). Repo root: **`/Users/namansoni/infinte`** (that spelling is correct).
+compositor). Repo root: **`<repo>`**.
 The spec is `docs/plans/arrangement/README.md`. This prompt **replaces its
 phases 3, 4, 5, 7 and 8 as they were built**, and adds features the owner has
 asked for. Every design decision below is already made. Don't re-open them
@@ -35,7 +35,7 @@ WP0 181e1c1 ──► WP1 2dad7e7 ──► WP2 38443af ──► WP3 4bac3b2 �
 ```
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 git checkout feature/arrange-step-09-export-queue          # WP7 tip
 git checkout -b feature/arrange-step-10-thumbs-waves        # WP8 stacks on it
 cmake --build build -j"$(sysctl -n hw.ncpu)"               # must be clean before you touch anything
@@ -109,7 +109,7 @@ Each remaining branch stacks on the previous one's tip.
 > **DONE — `181e1c1`.** Reference only; skip.
 
 ```bash
-cd /Users/namansoni/infinte && git status --short
+cd <repo> && git status --short
 cmake --build build -j"$(sysctl -n hw.ncpu)"
 ```
 

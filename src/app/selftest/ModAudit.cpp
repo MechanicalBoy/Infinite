@@ -43,6 +43,7 @@
 // Only hard invariants fail the run (non-finite output, or a clamped node
 // leaving 0..1). Everything else is reported, with FLAG lines past the
 // success-metric thresholds, for a person to triage against the baseline.
+#include "core/ModShapes.h"
 #include "app/AppShared.h"
 #include "audio/AudioBuffer.h"
 #include "audio/DspMath.h"
@@ -952,21 +953,24 @@ namespace
    }
 
    // ======================================================================== ENV
-   // Analytic linear ADSR for a gate open on [on, off): attack from 0, decay
-   // to sustain, release from the level the gate closed at.
+   // Analytic AHDSR for a gate open on [on, off): attack from 0, hold, decay
+   // to sustain, release from the level the gate closed at, each stage on
+   // its own bend (MsegSegment's closed form; curve 0 is a straight line).
    double AdsrRef(const EnvelopeNode& e, double on, double off, double t)
    {
-      const double a = e.attackMs * 0.001, d = e.decayMs * 0.001, r = e.releaseMs * 0.001, sus = e.sustainLevel;
-      auto held = [&](double u) {
+      const double a = e.attackMs * 0.001, hd = e.holdMs * 0.001, d = e.decayMs * 0.001, r = e.releaseMs * 0.001;
+      const float sus = e.sustainLevel;
+      auto held = [&](double u) -> double {
          if (u < 0.0) return 0.0;
-         if (u < a) return u / a;
-         if (u < a + d) return 1.0 + (sus - 1.0) * (u - a) / d;
+         if (u < a) return ModShapes::MsegSegment(0.0f, 1.0f, e.attackCurve, (float)(u / a));
+         if (u < a + hd) return 1.0;
+         if (u < a + hd + d) return ModShapes::MsegSegment(1.0f, sus, e.decayCurve, (float)((u - a - hd) / d));
          return sus;
       };
       if (t < off)
          return held(t - on);
       const double from = held(off - on), u = t - off;
-      return u < r ? from * (1.0 - u / r) : 0.0;
+      return u < r ? ModShapes::MsegSegment((float)from, 0.0f, e.releaseCurve, (float)(u / r)) : 0.0;
    }
 
    void AuditEnvelope(Flags& flags)
@@ -1376,7 +1380,7 @@ namespace
          Reg<MathNode>("Math"), Reg<CompareNode>("Compare"), Reg<RangeToRangeNode>("Range to Range", false),
          Reg<SmoothNode>("Smooth"), Reg<CVRecorderNode>("CV Recorder"), Reg<ModDepthNode>("Mod Depth"),
          Reg<EnvelopeNode>("Envelope"), Reg<CVToPitchNode>("CV to Pitch"), Reg<NullModulatorNode>("Null"),
-         Reg<InvertNode>("Invert", false), Reg<ModCurveNode>("Mod Curve"), Reg<AudioToCVNode>("Audio to CV"),
+         Reg<InvertNode>("Invert", false), Reg<ModCurveNode>("Mod Curve"), Reg<MSEGNode>("MSEG"), Reg<VoiceSpreadNode>("Voice Spread"), Reg<NoteExpressionNode>("Note Expression"), Reg<AudioToCVNode>("Audio to CV"),
          Reg<VibratoNode>("Vibrato"), Reg<NoteToCVNode>("Note to CV"), Reg<VelocityToCVNode>("Velocity to CV"),
          Reg<MacroKnobNode>("Macro Knob"), Reg<MacroXYNode>("Macro XY"), Reg<MacroSliderNode>("Macro Slider"),
          Reg<MacroBipolarKnobNode>("Macro Bipolar"), Reg<MacroToggleNode>("Macro Toggle"), Reg<MacroTriggerNode>("Macro Trigger"),

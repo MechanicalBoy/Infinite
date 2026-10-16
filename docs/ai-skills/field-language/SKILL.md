@@ -111,6 +111,7 @@ P += vec2(1, 0)      # vec2 into vec3 — ERROR, no implicit fill
 | Trig | `sin cos tan asin acos atan atan2` |
 | Math utilities | `abs floor ceil fract clamp lerp` (`lerp(a, b, t)`) |
 | Advanced math | `smoothstep pow sqrt exp log min max` |
+| Phase shaping | `bend pinch mirror skew formant` take `(phase, amount)` and return a new 0..1 phase: `out = sin(skew(phase, 0.6) * 6.283185)` |
 | Vector math | `length normalize dot cross reflect` |
 | Randomness | `rand(t, seed)`, `noise(t, seed)` — pure, deterministic functions of time and seed, not stateful |
 

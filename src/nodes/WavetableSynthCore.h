@@ -11,11 +11,15 @@
 #include "audio/AudioVoice.h"
 #include "audio/DspMath.h"
 #include "audio/MeterRing.h"
+#include "audio/PhaseShape.h"
 #include "audio/NoteEventQueue.h"
 #include "audio/ParamMailbox.h"
 #include "audio/SynthModes.h"
+#include "audio/VoiceMod.h"
 #include "audio/Wavetable.h"
 #include "audio/dsp/BlepOscillator.h"
+#include "audio/dsp/SimdF4.h"
+#include "core/Transport.h"
 
 namespace WavetableSynthCore
 {
@@ -105,6 +109,19 @@ namespace WavetableSynthCore
       return p + w * p * (1.0 - p);
    }
 
+   // Sync's and formant's ratio, swept in from 1 by the warp amount.
+   inline double WarpBlendedRatio(float amount, float ratio)
+   {
+      return 1.0 + (double)amount * ((double)ratio - 1.0);
+   }
+
+   // Quantize's step count: 64 at the bottom of the amount, 2 at the top.
+   inline int QuantizeSteps(float amount)
+   {
+      const double inv = 1.0 - (double)amount;
+      return 2 + (int)(inv * inv * 62.0);
+   }
+
    // ------------------------------------------------------- warp, phase side
    // The part of a warp that acts before the table read. `mod` is the other
    // engine's previous sample (or the internal operator standing in for it -
@@ -136,36 +153,38 @@ namespace WavetableSynthCore
             return BendPhase(p, (double)(amount * mod));
 
          case SynthModes::kWarpSync:
-         {
             // Hard sync: the read phase runs at `ratio` times the voice's own
             // and wraps early, so the cycle restarts mid-waveform. `amount`
             // blends the ratio in from 1, so the knob sweeps sync in from
             // nothing rather than jumping to the full interval.
-            const double r = 1.0 + (double)amount * ((double)ratio - 1.0);
-            const double sp = p * (r > 0.01 ? r : 0.01);
-            return sp - floor(sp);
-         }
+            return PhaseShape::Apply(PhaseShape::Kind::Sync, p, WarpBlendedRatio(amount, ratio));
+
+         case SynthModes::kWarpFormant:
+            // The cycle plays `ratio` times faster and holds its end for the
+            // rest of the period: the table's spectrum moves up by the ratio
+            // while the pitch stays (Vital/Serum "formant"). Blended like sync.
+            return PhaseShape::Apply(PhaseShape::Kind::Formant, p, WarpBlendedRatio(amount, ratio));
 
          case SynthModes::kWarpBendPlus:  return BendPhase(p, (double)amount);
          case SynthModes::kWarpBendMinus: return BendPhase(p, -(double)amount);
 
          case SynthModes::kWarpAsymPlus:
-            // Power-law skew. exp(+/-1.6) at full depth is roughly a 5:1
-            // stretch of one half of the cycle against the other - past that
-            // the read spends so long on one sample that the result is a pulse
-            // rather than a warped table.
-            return pow(p, exp(-1.6 * (double)amount));
+            // Power-law skew, PhaseShape's bend: p^(4^-a), a 4:1 stretch of
+            // one half of the cycle against the other at full depth.
+            return PhaseShape::Apply(PhaseShape::Kind::Bend, p, (double)amount);
          case SynthModes::kWarpAsymMinus:
-            return pow(p, exp(1.6 * (double)amount));
+            return PhaseShape::Apply(PhaseShape::Kind::Bend, p, -(double)amount);
 
          case SynthModes::kWarpMirror:
-         {
             // Fold the cycle back on itself: the second half replays the first
             // in reverse, which halves the period of the fundamental and
             // leaves a waveform symmetric about its midpoint.
-            const double folded = 1.0 - fabs(2.0 * p - 1.0);
-            return p + (folded - p) * (double)amount;
-         }
+            return PhaseShape::Apply(PhaseShape::Kind::Mirror, p, (double)amount);
+
+         case SynthModes::kWarpPinch:
+            return PhaseShape::Apply(PhaseShape::Kind::Pinch, p, (double)amount);
+         case SynthModes::kWarpSkew:
+            return PhaseShape::Apply(PhaseShape::Kind::Skew, p, (double)amount);
 
          case SynthModes::kWarpQuantize:
          {
@@ -173,9 +192,7 @@ namespace WavetableSynthCore
             // the steps, the more high harmonics the edges add. 64 steps at
             // the bottom of the range down to 2 at the top, blended by the
             // same amount so the effect fades in continuously.
-            const double inv = 1.0 - (double)amount;
-            const int steps = 2 + (int)(inv * inv * 62.0);
-            const double q = floor(p * (double)steps) / (double)steps;
+            const double q = PhaseShape::Apply(PhaseShape::Kind::Quantize, p, (double)QuantizeSteps(amount));
             return p + (q - p) * (double)amount;
          }
 
@@ -251,6 +268,9 @@ namespace WavetableSynthCore
          case SynthModes::kWarpAsymMinus:
          case SynthModes::kWarpMirror:
          case SynthModes::kWarpQuantize:
+         case SynthModes::kWarpFormant:
+         case SynthModes::kWarpPinch:
+         case SynthModes::kWarpSkew:
             return true;
          default:
             return false;
@@ -278,7 +298,7 @@ namespace WavetableSynthCore
 
    // The base phases in (0, 1] at which a warp has a value or slope
    // discontinuity, in increasing order; returns how many.
-   inline int WarpBreakpoints(int mode, float amount, double* out, int maxOut)
+   inline int WarpBreakpoints(int mode, float amount, float ratio, double* out, int maxOut)
    {
       // FM's read is continuous across the wrap. The power-law skews are
       // continuous in value too, but asym+'s p^e (e < 1) has an unbounded
@@ -295,10 +315,18 @@ namespace WavetableSynthCore
       int n = 0;
       if (mode == SynthModes::kWarpMirror)
          out[n++] = 0.5;
+      if (mode == SynthModes::kWarpFormant)
+      {
+         // The read reaches the cycle's end at 1/r and holds: a corner.
+         const double r = WarpBlendedRatio(amount, ratio);
+         if (r > 1.0 + 1.0e-6)
+            out[n++] = 1.0 / std::min(r, 64.0);
+      }
+      if (mode == SynthModes::kWarpSkew)
+         out[n++] = 0.5 + 0.49 * (double)std::min(amount, 1.0f); // the moved half-way point
       if (mode == SynthModes::kWarpQuantize)
       {
-         const double inv = 1.0 - (double)amount;
-         const int steps = 2 + (int)(inv * inv * 62.0);
+         const int steps = QuantizeSteps(amount);
          for (int k = 1; k < steps && n < maxOut - 1; k++)
             out[n++] = (double)k / (double)steps;
       }
@@ -330,6 +358,26 @@ namespace WavetableSynthCore
    // frequencies and blows past Nyquist at high ones). Tuned so a full-scale
    // modulator at depth 1.0 drives roughly a 4x frequency excursion.
    constexpr float kFmLinScale = 4.0f;
+
+   // 2.16: a voice's pitch, pan and filter inputs sit still for most of a
+   // note, but each costs a powf / sincosf / tanf per sample. Memo keeps the
+   // last input and its result and recomputes only when the input moves, so
+   // the output is bit-identical to computing every sample. `on` false (the
+   // reference path, VoiceSimd::ForceScalar) always recomputes.
+   struct Memo
+   {
+      float x = NAN, y = 0.0f;
+      template <class F>
+      float Get(bool on, float in, F f)
+      {
+         if (!on || !(in == x))
+         {
+            x = in;
+            y = f(in);
+         }
+         return y;
+      }
+   };
 }
 
 // ------------------------------------------------------------- audio thread
@@ -346,7 +394,9 @@ public:
    {
       using namespace WavetableSynthCore;
       mSampleRate = sampleRate;
+      mFast = !VoiceSimd::ForceScalar().load(std::memory_order_relaxed);
       mMailbox.PrepareToPlay(sampleRate);
+      mVoiceMod.Prepare(sampleRate);
       for (int i = 0; i < kNumGlobalParams + kEngines * kNumEngineParams; i++)
          mMailbox.SetImmediate(i, mFloatAtomics[i].load(std::memory_order_relaxed));
       mMailbox.SetImmediate(kClipPitchParam, 0.0f);
@@ -372,6 +422,8 @@ public:
 
    // See WavetableNode::DebugMailboxSampleRate's comment - test-only.
    double DebugMailboxSampleRate() const { return mMailbox.SampleRate(); }
+   void PublishVoicePlan(const VoiceMod::Plan& plan) { mVoicePlan.Publish(plan); }
+   float DebugVoiceSource(int voice, int source) const { return mVoiceMod.Peek(voice, source); }
 
    // See WavetableNode::DebugFmMode's comment - test-only. mFmMode is a
    // plain atomic (mode switches skip the smoothed ParamMailbox), so this
@@ -431,6 +483,9 @@ public:
       if (noteDriven)
          numEvts = mNoteInbox->Pop(mNoteCursor, evts, 64);
 
+      mVoiceMod.BeginBlock(mVoicePlan, Transport::Instance().Tempo());
+      const bool perVoice = mVoiceMod.Active();
+
       int activeCount = 0;
       // Fixed rate, so hoisted out of the sample loop (unlike glide, which
       // tracks a smoothed param and has to be re-set per sample).
@@ -441,9 +496,9 @@ public:
          while (evtIdx < numEvts && evts[evtIdx].frameOffset <= i)
          {
             if (evts[evtIdx].isNoteOn)
-               NoteOn(evts[evtIdx].note, evts[evtIdx].velocity, evts[evtIdx].voiceId, evts[evtIdx].bendSemitones, eng);
+               NoteOn(evts[evtIdx].note, evts[evtIdx].velocity, evts[evtIdx].voiceId, evts[evtIdx].bendSemitones, eng, evts[evtIdx].pressure, evts[evtIdx].slide);
             else if (evts[evtIdx].bendUpdate)
-               BendUpdate(evts[evtIdx].voiceId, evts[evtIdx].bendSemitones);
+               BendUpdate(evts[evtIdx]);
             else
                NoteOff(evts[evtIdx].voiceId);
             evtIdx++;
@@ -532,14 +587,34 @@ public:
          else
          {
             int active = 0;
-            for (Voice& v : mVoices)
+            for (int vi = 0; vi < kMaxVoices; vi++)
             {
+               Voice& v = mVoices[vi];
                if (!v.active)
                   continue;
 
-               v.glide.SetTimeConstant(sm.glide, mSampleRate);
+               // Per-voice modulation (audio/VoiceMod.h): this voice's own
+               // copy of the smoothed params, with its routes written over it.
+               SmoothedBlock vsm;
+               float vMixA = mixA, vMixB = mixB, vFmPhase = fmPhaseOffset, vFmLin = fmLinRatio;
+               if (perVoice)
+               {
+                  vsm = sm;
+                  mVoiceMod.Apply(vi, [&vsm](int id, float x) { SetVoiceParam(vsm, id, x); });
+                  vMixA = cosf(vsm.mix * (float)M_PI * 0.5f);
+                  vMixB = sinf(vsm.mix * (float)M_PI * 0.5f);
+                  vFmPhase = (fmMode == 0) ? (extFm * vsm.fmDepth) : 0.0f;
+                  vFmLin = (fmMode == 1) ? (1.0f + extFm * vsm.fmDepth * kFmLinScale) : 1.0f;
+               }
+               const SmoothedBlock& vs = perVoice ? vsm : sm;
+
+               if (!mFast || !(vs.glide == v.glideSec))
+               {
+                  v.glideSec = vs.glide;
+                  v.glide.SetTimeConstant(vs.glide, mSampleRate);
+               }
                const float currentPitch = v.glide.Process((float)v.note);
-               const float base = NoteToHz(currentPitch);
+               const float base = v.baseHz.Get(mFast, currentPitch, NoteToHz);
                // Velocity always shapes level. It used to be a 0..1 "amount"
                // param, which is a control nobody reaches for: a synth that
                // ignores how hard you played is broken, and one that responds
@@ -571,19 +646,20 @@ public:
                   }
 
                   const float semitones = (float)(eng[e].octave * 12 + eng[e].semi) * 100.0f +
-                                          sm.eng[e].fine + eng[e].pitchAmount * pitchEnv * 100.0f +
-                                          sm.pitchBend * 100.0f + v.bend * 100.0f + sm.clipPitch * 100.0f;
+                                          vs.eng[e].fine + eng[e].pitchAmount * pitchEnv * 100.0f +
+                                          vs.pitchBend * 100.0f + v.bend * 100.0f + vs.clipPitch * 100.0f;
                   // Carrier pitch (pre-FM) clamped to its own sane range
                   // first, then linear FM applied and clamped separately -
                   // see the free-running path's identical comment above.
-                  const float carrierFreq = std::clamp(base * powf(2.0f, semitones / 1200.0f), 20.0f,
-                                                       (float)mSampleRate * 0.45f);
-                  const float freq = std::clamp(carrierFreq * fmLinRatio, -(float)mSampleRate * 0.45f,
+                  const float carrierFreq =
+                     std::clamp(base * v.eng[e].carrier.Get(mFast, semitones, [](float c) { return powf(2.0f, c / 1200.0f); }),
+                                20.0f, (float)mSampleRate * 0.45f);
+                  const float freq = std::clamp(carrierFreq * vFmLin, -(float)mSampleRate * 0.45f,
                                                 (float)mSampleRate * 0.45f);
                   float l = 0.0f, r = 0.0f;
-                  RenderEngine(eng[e], sm.eng[e], freq, carrierFreq, v.eng[e], eng[1 - e].on ? prevOut[1 - e] : 0.0f,
-                               eng[1 - e].on, filtEnv, fmPhaseOffset, l, r);
-                  const float g = (e == 0 ? mixA : mixB) * sm.eng[e].volume * ampEnv * velGain;
+                  RenderEngine(eng[e], vs.eng[e], freq, carrierFreq, v.eng[e], eng[1 - e].on ? prevOut[1 - e] : 0.0f,
+                               eng[1 - e].on, filtEnv, vFmPhase, l, r);
+                  const float g = (e == 0 ? vMixA : vMixB) * vs.eng[e].volume * ampEnv * velGain;
                   outL += l * g;
                   outR += r * g;
                }
@@ -749,6 +825,34 @@ private:
       SmoothedEngine eng[WavetableSynthCore::kEngines];
    };
 
+   // A per-voice route's value onto one voice's copy, clamped as the shared
+   // read is. Only the params VoiceParamFor hands out arrive here.
+   static void SetVoiceParam(SmoothedBlock& b, int id, float x)
+   {
+      using namespace WavetableSynthCore;
+      if (id == kMix)
+         b.mix = std::clamp(x, 0.0f, 1.0f);
+      else if (id == kFmDepth)
+         b.fmDepth = x;
+      if (id < kNumGlobalParams || id >= kNumGlobalParams + kEngines * kNumEngineParams)
+         return;
+      SmoothedEngine& se = b.eng[(id - kNumGlobalParams) / kNumEngineParams];
+      switch ((id - kNumGlobalParams) % kNumEngineParams)
+      {
+         case kEngPosition: se.position = std::clamp(x, 0.0f, 1.0f); break;
+         case kEngVolume: se.volume = x; break;
+         case kEngPan: se.pan = x; break;
+         case kEngDetune: se.detune = x; break;
+         case kEngStereoWidth: se.stereoWidth = x; break;
+         case kEngFine: se.fine = x; break;
+         case kEngWarpAmount: se.warpAmount = std::clamp(x, 0.0f, 1.0f); break;
+         case kEngWarpRatio: se.warpRatio = x; break;
+         case kEngCutoff: se.cutoff = x; break;
+         case kEngResonance: se.resonance = std::clamp(x, 0.0f, 1.0f); break;
+         default: break;
+      }
+   }
+
    // Everything one engine of one voice carries between samples. Free-running
    // mode uses the same struct, so the two paths cannot drift apart on what a
    // warp or a filter is allowed to remember.
@@ -764,6 +868,31 @@ private:
       DspMath::TptSvf filter[2][WavetableSynthCore::kMaxStages];
       DspMath::CombFilter comb[2];
 
+      // Input-keyed caches (WavetableSynthCore::Memo); never stale, so Reset
+      // leaves them alone.
+      WavetableSynthCore::Memo carrier;                          // 2^(cents/1200)
+      WavetableSynthCore::Memo detune[WavetableSynthCore::kMaxUnison]; // 2^(spread/1200)
+      WavetableSynthCore::Memo filterOctaves;                    // 2^(amount * env)
+      struct PanMemo
+      {
+         float pan = NAN, l = 0.0f, r = 0.0f;
+      } pan[WavetableSynthCore::kMaxUnison];
+      struct SvfMemo
+      {
+         float hz = NAN, q = NAN, g = 0.0f, k = 0.0f;
+      } svf;
+      struct MipMemo
+      {
+         double inc = NAN;
+         int level = 0;
+      } mip[WavetableSynthCore::kMaxUnison];
+      struct FrameMemo
+      {
+         int table = -1, frame = -1, mip = -1;
+         const float* lo = nullptr;
+         const float* hi = nullptr;
+      } frames[WavetableSynthCore::kMaxUnison];
+
       void Reset(double sampleRate)
       {
          for (int u = 0; u < WavetableSynthCore::kMaxUnison; u++)
@@ -774,6 +903,7 @@ private:
          }
          opPhase = 0.0;
          lastOut = 0.0f;
+         svf = SvfMemo {}; // its result depends on the sample rate
          for (int ch = 0; ch < 2; ch++)
          {
             for (int s = 0; s < WavetableSynthCore::kMaxStages; s++)
@@ -800,6 +930,8 @@ private:
       Envelope filt[WavetableSynthCore::kEngines];
       EngineState eng[WavetableSynthCore::kEngines];
       DspMath::OnePole glide;
+      WavetableSynthCore::Memo baseHz; // NoteToHz of the glided pitch
+      float glideSec = NAN;            // time constant `glide.coeff` was last set for
 
       void Reset(double sampleRate)
       {
@@ -809,6 +941,7 @@ private:
          voiceId = 0;
          velocity = 0.0f;
          bend = 0.0f;
+         glideSec = NAN; // the coefficient depends on the sample rate
          for (int e = 0; e < WavetableSynthCore::kEngines; e++)
          {
             amp[e].SetSampleRate(sampleRate);
@@ -847,7 +980,9 @@ private:
       float mod = 0.0f;
       {
          const double opInc = (double)(carrierFreq * std::max(0.01f, se.warpRatio)) / mSampleRate;
-         const float opOut = sinf(2.0f * (float)M_PI * (float)st.opPhase);
+         // Only read when a cross-mod warp has no other engine to read.
+         const bool needOp = !mFast || (crossMod && !otherOn);
+         const float opOut = needOp ? sinf(2.0f * (float)M_PI * (float)st.opPhase) : 0.0f;
          st.opPhase += opInc;
          st.opPhase -= floor(st.opPhase);
          if (crossMod)
@@ -862,7 +997,7 @@ private:
       const bool needHalf = WarpNeedsHalfCycle(eb.warpMode) && se.warpAmount > 0.0f;
       const bool phaseWarp = WarpIsPhaseDomain(eb.warpMode) && se.warpAmount > 0.0f;
       double breaks[72];
-      const int numBreaks = WarpBreakpoints(eb.warpMode, se.warpAmount, breaks, 72);
+      const int numBreaks = WarpBreakpoints(eb.warpMode, se.warpAmount, se.warpRatio, breaks, 72);
 
       float sumL = 0.0f, sumR = 0.0f, sumMono = 0.0f;
       for (int u = 0; u < eb.unison; u++)
@@ -873,7 +1008,7 @@ private:
          const float spread = (eb.unison > 1)
             ? se.detune * 0.5f * (2.0f * (float)u / (float)(eb.unison - 1) - 1.0f)
             : 0.0f;
-         const float voiceFreq = freq * powf(2.0f, spread / 1200.0f);
+         const float voiceFreq = freq * st.detune[u].Get(mFast, spread, [](float c) { return powf(2.0f, c / 1200.0f); });
          const double inc = (double)voiceFreq / mSampleRate;
 
          const double randOffset = (double)se.phaseRand * (double)kVoicePhaseSeed[u];
@@ -884,7 +1019,14 @@ private:
          // negative; aliasing risk is about magnitude) - exactly as before
          // for plain playback - or, under a phase warp, from the read's own
          // speed, crossfaded continuously one level on the safe side.
-         int mipLo = Wavetable::MipForPhaseInc(std::abs(inc));
+         EngineState::MipMemo& mm = st.mip[u];
+         const double absInc = std::abs(inc);
+         if (!mFast || !(absInc == mm.inc))
+         {
+            mm.inc = absInc;
+            mm.level = Wavetable::MipForPhaseInc(absInc);
+         }
+         int mipLo = mm.level;
          int mipHi = mipLo;
          float mipFrac = 0.0f;
          if (phaseWarp)
@@ -897,10 +1039,22 @@ private:
             mipHi = std::min(mipLo + 1, Wavetable::kMipLevels - 1);
             mipFrac = pos - (float)mipLo;
          }
-         const float* lo0 = Wavetable::Frame(eb.table, frameLo, mipLo);
-         const float* hi0 = Wavetable::Frame(eb.table, frameHi, mipLo);
-         const float* lo1 = Wavetable::Frame(eb.table, frameLo, mipHi);
-         const float* hi1 = Wavetable::Frame(eb.table, frameHi, mipHi);
+         // The bank never moves once built, so a frame pointer is a pure
+         // function of (table, frame, mip).
+         EngineState::FrameMemo& fm = st.frames[u];
+         if (!mFast || fm.table != eb.table || fm.frame != frameLo || fm.mip != mipLo)
+         {
+            fm.table = eb.table;
+            fm.frame = frameLo;
+            fm.mip = mipLo;
+            fm.lo = Wavetable::Frame(eb.table, frameLo, mipLo);
+            fm.hi = Wavetable::Frame(eb.table, frameHi, mipLo);
+         }
+         const float* lo0 = fm.lo;
+         const float* hi0 = fm.hi;
+         const bool oneMip = mFast && mipHi == mipLo;
+         const float* lo1 = oneMip ? lo0 : Wavetable::Frame(eb.table, frameLo, mipHi);
+         const float* hi1 = oneMip ? hi0 : Wavetable::Frame(eb.table, frameHi, mipHi);
          auto read = [&](double rp) {
             const float a = Wavetable::Sample(lo0, hi0, frameFrac, rp);
             return mipFrac > 0.0f ? a + (Wavetable::Sample(lo1, hi1, frameFrac, rp) - a) * mipFrac : a;
@@ -961,8 +1115,14 @@ private:
          const float spreadPan = (eb.unison > 1)
             ? se.stereoWidth * (2.0f * (float)u / (float)(eb.unison - 1) - 1.0f)
             : 0.0f;
-         float lg, rg;
-         DspMath::EqualPowerPan(std::clamp(se.pan + spreadPan, -1.0f, 1.0f), lg, rg);
+         EngineState::PanMemo& pm = st.pan[u];
+         const float panAt = std::clamp(se.pan + spreadPan, -1.0f, 1.0f);
+         if (!mFast || !(panAt == pm.pan))
+         {
+            pm.pan = panAt;
+            DspMath::EqualPowerPan(panAt, pm.l, pm.r);
+         }
+         const float lg = pm.l, rg = pm.r;
          sumL += s * lg;
          sumR += s * rg;
          sumMono += naive; // the other engine's cross-mod reads this sample now, uncorrected
@@ -982,7 +1142,7 @@ private:
          // Cutoff in octaves off the knob, matching the SVF path below, so
          // switching between comb and LP/HP/etc mid-patch doesn't jump the
          // envelope's perceived depth.
-         const float hz = se.cutoff * exp2f(eb.filterAmount * filtEnv);
+         const float hz = se.cutoff * st.filterOctaves.Get(mFast, eb.filterAmount * filtEnv, [](float o) { return exp2f(o); });
          float* chans[2] = { &sumL, &sumR };
          for (int ch = 0; ch < 2; ch++)
          {
@@ -995,13 +1155,19 @@ private:
       {
          // Cutoff in octaves off the knob, so the envelope moves the same
          // musical distance wherever the knob is parked.
-         const float hz = se.cutoff * exp2f(eb.filterAmount * filtEnv);
+         const float hz = se.cutoff * st.filterOctaves.Get(mFast, eb.filterAmount * filtEnv, [](float o) { return exp2f(o); });
          // Resonance stops just short of self-oscillation: Q beyond ~10 on a
          // cascade of three stages rings loudly enough to swamp the signal it
          // is filtering, and there is no drive stage here to tame it.
          const float q = 0.707f + se.resonance * se.resonance * 9.3f;
-         float g, k;
-         SvfCoeffs(hz, q, (float)mSampleRate, g, k);
+         EngineState::SvfMemo& cm = st.svf;
+         if (!mFast || !(hz == cm.hz) || !(q == cm.q))
+         {
+            cm.hz = hz;
+            cm.q = q;
+            SvfCoeffs(hz, q, (float)mSampleRate, cm.g, cm.k);
+         }
+         const float g = cm.g, k = cm.k;
 
          float* chans[2] = { &sumL, &sumR };
          for (int ch = 0; ch < 2; ch++)
@@ -1029,7 +1195,7 @@ private:
       outR = sumR;
    }
 
-   void NoteOn(int note, float velocity, int voiceId, float bendSemitones, const EngineBlock eng[WavetableSynthCore::kEngines])
+   void NoteOn(int note, float velocity, int voiceId, float bendSemitones, const EngineBlock eng[WavetableSynthCore::kEngines], float pressure = 0.0f, float slide = 0.0f)
    {
       using namespace WavetableSynthCore;
       // Retrigger an existing voice on the same note before allocating a new
@@ -1126,12 +1292,14 @@ private:
          v.pitch[e].NoteOn();
          v.filt[e].NoteOn();
       }
+      mVoiceMod.NoteOn(slot, pressure, slide);
    }
 
    void NoteOff(int voiceId)
    {
-      for (Voice& v : mVoices)
+      for (int i = 0; i < WavetableSynthCore::kMaxVoices; i++)
       {
+         Voice& v = mVoices[i];
          if (!v.active || v.voiceId != voiceId || !v.held)
             continue;
          v.held = false;
@@ -1141,6 +1309,7 @@ private:
             v.pitch[e].NoteOff();
             v.filt[e].NoteOff();
          }
+         mVoiceMod.NoteOff(i);
       }
    }
 
@@ -1149,21 +1318,27 @@ private:
    // bendUpdate field): a real note-on would restart envelopes and the
    // wavetable read phase, both audible artifacts a bend wheel must not
    // cause.
-   void BendUpdate(int voiceId, float bendSemitones)
+   void BendUpdate(const NoteEvent& e)
    {
-      for (Voice& v : mVoices)
+      for (int i = 0; i < (int)(sizeof(mVoices) / sizeof(mVoices[0])); i++)
       {
-         if (!v.active || v.voiceId != voiceId)
+         Voice& v = mVoices[i];
+         if (!v.active || v.voiceId != e.voiceId)
             continue;
-         v.bend = bendSemitones;
+         v.bend = e.bendSemitones;
+         if (e.hasExpression) // MPE pressure / slide for Note Expression (2.15)
+            mVoiceMod.Express(i, e.pressure, e.slide);
       }
    }
 
    double mSampleRate = 44100.0;
+   bool mFast = true; // input-keyed caches on (off: the 2.16 reference path)
    ParamMailbox mMailbox;
    MeterRing mScopeRing;
    NoteEventQueue* mNoteInbox = nullptr;
    int mNoteCursor = -1;
+   VoiceMod::PlanBox mVoicePlan;
+   VoiceMod::Runtime<WavetableSynthCore::kMaxVoices> mVoiceMod;
 
    Voice mVoices[WavetableSynthCore::kMaxVoices];
    uint64_t mNextAge = 1;

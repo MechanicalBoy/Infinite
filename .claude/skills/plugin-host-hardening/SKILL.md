@@ -161,6 +161,32 @@ Known plugin-side crashes on the owner's machine (2026-10-13): RC-20 Retro Color
 own code during creation; `auval` and `AUHostingServiceXPC` crash at the same frames; signed by someone
 other than the vendor) and ShaperBox 3 (signature invalid, killed by macOS). Both are Tier 3.
 
+**Tier 3, crash-only fallback (v0.6 2.6):** `src/platform/PluginCrashGuard.h`.
+Every dispatcher entry that runs plugin code (`PluginCreate`, `PluginPoll`,
+`PluginPrepare`, `PluginRender`, `PluginOpenEditor`, `PluginSaveState`,
+`PluginRestoreState`, plus the macOS VST3 main-queue create block) opens a
+`PluginCrashGuard::Scope` naming the plugin. The crash handlers on all three
+platforms call `NoteCrash()` first, which writes that name to
+`plugin-crash-marker.txt` in the app-support folder with open/write/close
+only. **Nothing is caught**: on macOS the handler is `SA_RESETHAND` and
+returns, so the fault runs again and the process dies with its normal report.
+The next start (`Startup.cpp`, `PluginCrashGuard::Init`) moves the name into
+`plugin-crashed.txt`. `AudioPluginNode::LoadPlugin` then:
+
+| Plugin on the list | What happens |
+|---|---|
+| AU | created with `kAudioComponentInstantiation_LoadOutOfProcess` (`PluginDesc::outOfProcess`); stays isolated |
+| VST3, brought back by a patch | not created; `mLoadFailed` + badge, identity and state kept |
+| VST3, picked by hand | removed from the list and loaded in process (the retry) |
+
+An isolated AU whose host process dies answers every render with an error;
+`PluginPoll` turns 24 failed renders in a row into `Failed`, the node (which
+polls every 8 cooks while isolated) unpublishes the handle and shows
+"stopped". With no handle the node is a wire. Regression:
+`INFINITE_PLUGINCRASHTEST` (media group). This is not sandboxing: the first
+crash still takes the app down, and a crash on a plugin's own thread is not
+attributed. A new dispatcher entry that calls plugin code needs a Scope.
+
 ## Still open
 
 - **EZkeys 2 `OSStatus -10875`** — never reproduced or diagnosed.

@@ -429,6 +429,29 @@ namespace Platform
       return res ? std::string(res) : std::string();
    }
 
+   std::string OpenShowSetDialog()
+   {
+      if (IsHeadlessOrExitAfter()) return "";
+      ScopedHostEnvironment hostEnv;
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = { "*.infshow" };
+      const char* res = tinyfd_openFileDialog("Open Show Set", "", 1, filterPatterns, "Show set (*.infshow)", 0);
+      return res ? std::string(res) : std::string();
+   }
+
+   std::string SaveShowSetDialog(const std::string& suggestedName)
+   {
+      if (IsHeadlessOrExitAfter()) return "";
+      ScopedHostEnvironment hostEnv;
+      EnsureDialogBackendChecked();
+      const char* const filterPatterns[] = { "*.infshow" };
+      std::string defaultPath = suggestedName.empty() ? "Untitled.infshow" : suggestedName;
+      defaultPath = AppendExtensionIfMissing(defaultPath, ".infshow");
+      const char* res = tinyfd_saveFileDialog("Save Show Set", defaultPath.c_str(), 1, filterPatterns, "Show set (*.infshow)");
+      if (!res) return "";
+      return AppendExtensionIfMissing(std::string(res), ".infshow");
+   }
+
    std::string SaveDeviceDialog(const std::string& suggestedName)
    {
       if (IsHeadlessOrExitAfter()) return "";

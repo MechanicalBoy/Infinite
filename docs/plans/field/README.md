@@ -1,6 +1,6 @@
 # Field — the master build plan
 
-**Repo:** `/Users/namansoni/infinte` (C++17, ImGui + OpenGL, **MIT**).
+**Repo:** `<repo>` (C++17, ImGui + OpenGL, **MIT**).
 **What Field is:** one expression language, five domains, one typed IR, three backends.
 It absorbs the four-and-a-bit incompatible mini-languages Infinite already carries
 and replaces them with a single primitive.

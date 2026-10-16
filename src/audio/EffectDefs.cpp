@@ -9,6 +9,7 @@
 #include "dsp/DelayKernel.h"
 #include "dsp/ReverbKernel.h"
 #include "dsp/DriveKernel.h"
+#include "dsp/SaturatorKernel.h"
 #include "dsp/StereoKernel.h"
 #include "dsp/PitchShiftKernel.h"
 #include "dsp/ChorusKernel.h"
@@ -27,6 +28,7 @@
 #include "dsp/SpecBlurKernel.h"
 #include "dsp/KeySnapKernel.h"
 #include "dsp/SpectrumSlideKernel.h"
+#include "dsp/ConvolutionKernel.h"
 #include "dsp/ShapeResonatorKernel.h"
 #include "MusicTime.h"
 
@@ -82,6 +84,10 @@ namespace
             { "rateDiv", 0.0f, (float)(MusicTime::kNumRateDivisions - 1), (float)MusicTime::kQuarter });
          def.params.push_back(
             { "rate", 0.02f, 5.0f, 0.5f, false, { { "sync", 0.0f }, { "envAmount", 1.0f } } });
+         // How hard the analogue model types (ladder/MS-20/diode) are driven
+         // into their stages; the SVF/biquad/comb types ignore it, so the
+         // sweep pins type to the ladder to hear it.
+         def.params.push_back({ "drive", 0.0f, 1.0f, 0.0f, false, { { "type", (float)AudioFilterDsp::kLadder } } });
          // The "cutoff mod" audio-rate sidechain input (modAmount + a second
          // audio pin) is removed per the redesign - envAmount now drives the
          // internal LFO above instead of an external modulator or an
@@ -238,6 +244,9 @@ namespace
          // Appended (saved patches' param order). Detector-only 90 Hz high-pass,
          // off by default so existing patches compress exactly as before.
          def.params.push_back({ "scHpf", 0.0f, 1.0f, 0.0f, false, kBelowProbe });
+         // v0.6 2.21: clean / bus / opto / FET (DynamicsDsp::Style). `analog`
+         // is now the warm switch that colours any of them.
+         def.params.push_back({ "style", 0.0f, (float)(DynamicsDsp::kNumStyles - 1), 0.0f, false, kBelowProbe });
          // mix is AudioEffectNode's universal field, not a second param here.
 
          def.makeKernel = []() { return std::make_unique<DynamicsKernel>(); };
@@ -335,6 +344,13 @@ namespace
          def.params.push_back({ "pan", -1.0f, 1.0f, 0.0f, false, kShortPathPrereq });
          def.params.push_back({ "ducking", 0.0f, 1.0f, 0.0f, false, kShortPathPrereq });
          def.params.push_back({ "analog", 0.0f, 1.0f, 0.0f, false, kShortPathPrereq });
+         // Tape mode (2.20): only heard with `analog` on, so they gate on it
+         // as well as on the short free-ms path.
+         static const std::vector<EffectParamPrereq> kTapePrereq = { { "sync", 0.0f }, { "analog", 1.0f } };
+         def.params.push_back({ "wow", 0.0f, 1.0f, 0.5f, false, kTapePrereq });
+         def.params.push_back({ "flutter", 0.0f, 1.0f, 0.2f, false, kTapePrereq });
+         def.params.push_back({ "saturation", 0.0f, 1.0f, 0.0f, false, kTapePrereq });
+         def.params.push_back({ "diffusion", 0.0f, 1.0f, 0.0f, false, kTapePrereq });
          // mix is AudioEffectNode's universal field (defaultMix above), not
          // a table row.
 
@@ -429,6 +445,38 @@ namespace
          // mix is AudioEffectNode's universal field, not a table row.
 
          def.makeKernel = []() { return std::make_unique<DriveKernel>(); };
+         defs.push_back(std::move(def));
+      }
+
+      // ------------------------------------------------------------ Saturator
+      // v0.6 2.17: three stages, a curve and an amount each, and a routing
+      // (serial / parallel / mid-side / 3-band / feedback). Drive stays the
+      // one-knob unit. See SaturatorKernel.h.
+      {
+         EffectDef def;
+         def.name = "Saturator";
+         def.linearMix = true; // wet is the dry signal processed - see EffectDef::linearMix
+         def.category = "AudioEffects";
+         def.bodyWidth = 440.0f;
+         def.visualizerId = EffectVisualizerId::kSaturatorCurves;
+
+         const float lastModel = (float)(SaturatorDsp::kNumModels - 1);
+         def.params.push_back({ "model1", 0.0f, lastModel, (float)SaturatorDsp::kTube });
+         def.params.push_back({ "amount1", 0.0f, 1.0f, 0.3f, false, { { "model1", (float)SaturatorDsp::kTube } } });
+         def.params.push_back({ "model2", 0.0f, lastModel, (float)SaturatorDsp::kOff });
+         def.params.push_back({ "amount2", 0.0f, 1.0f, 0.3f, false, { { "model2", (float)SaturatorDsp::kTube } } });
+         def.params.push_back({ "model3", 0.0f, lastModel, (float)SaturatorDsp::kOff });
+         def.params.push_back({ "amount3", 0.0f, 1.0f, 0.3f, false, { { "model3", (float)SaturatorDsp::kTube } } });
+         // With only stage 1 on (the default), serial and parallel sound
+         // the same, so the sweep tries 3-band, where stage 1 sees only the
+         // low band.
+         def.params.push_back({ "routing", 0.0f, (float)(SaturatorDsp::kNumRoutings - 1), (float)SaturatorDsp::kSerial,
+                                false, {}, { (float)SaturatorDsp::kBands } });
+         def.params.push_back({ "feedback", 0.0f, 0.95f, 0.5f, false, { { "routing", (float)SaturatorDsp::kFeedback } } });
+         def.params.push_back({ "output", -24.0f, 12.0f, 0.0f });
+         // mix is AudioEffectNode's universal field, not a table row.
+
+         def.makeKernel = []() { return std::make_unique<SaturatorKernel>(); };
          defs.push_back(std::move(def));
       }
 
@@ -878,6 +926,27 @@ namespace
          def.params.push_back({ "pos", 0.0f, 1.0f, 0.3f });
          def.params.push_back({ "modes", 1.0f, 32.0f, 16.0f });
          def.makeKernel = []() { return std::make_unique<ShapeResonatorKernel>(); };
+         defs.push_back(std::move(def));
+      }
+
+      // ---------------------------------------------------------- Convolution Reverb
+      {
+         EffectDef def;
+         def.name = "Convolution Reverb";
+         def.category = "AudioEffects";
+         def.bodyWidth = 440.0f;
+         def.visualizerId = EffectVisualizerId::kConvolutionSpace;
+         // The impulse response starts with the direct sound, so fully wet is
+         // already "the source, in the room"; mix below 1 brings it closer.
+         def.defaultMix = 1.0f;
+         def.hasFile = true;
+         def.params.push_back({ "size", 0.0f, 1.0f, 0.45f });
+         def.params.push_back({ "shape", 0.0f, (float)(ConvolutionKernel::kNumShapes - 1), 0.0f });
+         def.params.push_back({ "material", 0.0f, 1.0f, 0.5f });
+         def.params.push_back({ "distance", 0.0f, 1.0f, 0.5f });
+         def.params.push_back({ "decay", 0.1f, ConvolutionKernel::kMaxSeconds, 1.8f });
+         def.params.push_back({ "spread", 0.0f, 1.0f, 1.0f });
+         def.makeKernel = []() { return std::make_unique<ConvolutionKernel>(); };
          defs.push_back(std::move(def));
       }
 

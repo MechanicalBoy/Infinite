@@ -7,7 +7,7 @@ description: "Field domain transfer operators (reduce, map, broadcast, resample,
 
 Field's domain transfer operators — `reduce` (many to one), `map` (one per element), `broadcast` (one to many, implicit and never written), `resample` (read domain A while standing in domain B) and `downsample` (run at a fraction of the ambient rate) — when each is legal, what each costs per crossing, and worked examples taking audio into geometry and geometry into pixels. Use when a Field kernel needs data from a different rate, when audio must drive geometry or geometry must drive pixels, when the compiler reports an incomparable-domain join, when deciding whether a value should be computed per-frame or per-element, or when reviewing any use of reduce/map/resample/downsample.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 Read [`field-language`](../field-language/SKILL.md) §2–3 for the domains and
 rate inference, and [`field-compiler`](../field-compiler/SKILL.md) §5 for the

@@ -512,6 +512,28 @@ namespace app
             }
 #endif
 
+            {
+               // Multicore graph: independent tracks run side by side on
+               // every core; One thread runs the whole graph on the audio
+               // thread. Same sound either way. Applies at once.
+               const char* kThreadLabels[] = { T("Auto (all cores)"), T("One thread") };
+               gAudioThreads = std::clamp(gAudioThreads, 0, 1);
+               if (FormParts::BeginCombo(L("Audio threads"), kThreadLabels[gAudioThreads]))
+               {
+                  for (int i = 0; i < 2; i++)
+                     if (MenuParts::Choice(kThreadLabels[i], gAudioThreads == i))
+                     {
+                        gAudioThreads = i;
+                        AudioEngine::Instance().SetAudioThreads(gAudioThreads);
+                        SaveAudioSettings();
+                     }
+                  FormParts::EndCombo();
+               }
+               if (ImGui::IsItemHovered())
+                  HelpTip(T("Auto: tracks that do not feed each other render in parallel, %d threads on this machine.\nOne thread: everything on the audio thread, as before.\nThe sound is identical either way."),
+                          AudioEngine::Instance().AudioThreadsInUse());
+            }
+
             static const float kOversampleValues[] = { 1.0f, 2.0f, 4.0f };
             static const char* kOversampleLabels[] = { "1x", "2x", "4x" };
             int oversampleIdx = 0;

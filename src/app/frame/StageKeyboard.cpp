@@ -56,7 +56,7 @@ void DrawKeyboard(FrameCtx& fc)
       // for the mouse.
       if (!typing && !cmdOrCtrl && !io.KeyShift &&
           ImGui::IsKeyPressed(ImGuiKey_Space, false))
-         Transport::Instance().TogglePlay();
+         LaunchRequestTogglePlay();
 
       // ---- Shift+<letter> canvas shortcuts ----
       // One family, all reachable with the left hand while the right stays on
@@ -142,6 +142,19 @@ void DrawKeyboard(FrameCtx& fc)
             gViewportPanelOpen = !gViewportPanelOpen;
          }
       }
+
+      // Cmd+Shift+L: show lock. Cmd+Period: panic (v0.6 2.36). Both work with a text field
+      // focused: a performer must be able to stop the sound from anywhere.
+      if (cmdOrCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_L, false))
+         ShowLockToggle();
+      if (cmdOrCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Period, false))
+         ShowPanicToggle();
+
+      // PageDown / PageUp: next / previous patch of the show set (v0.6 2.35).
+      if (!typing && !cmdOrCtrl && ImGui::IsKeyPressed(ImGuiKey_PageDown, false))
+         ShowSetStep(+1);
+      if (!typing && !cmdOrCtrl && ImGui::IsKeyPressed(ImGuiKey_PageUp, false))
+         ShowSetStep(-1);
 
       // Shift+M: the docked modulation matrix, same panel the modulator
       // context menu's "Show modulation matrix" opens.
@@ -265,7 +278,7 @@ void DrawKeyboard(FrameCtx& fc)
       // click on a node can't silently take the node with it. Shift+X is the
       // broader "delete what's selected", handled by the Delete/Backspace
       // block below.
-      if (!typing && !cmdOrCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_X, false))
+      if (!typing && !cmdOrCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_X, false) && !ShowLockBlocks())
       {
          const int count = ed::GetSelectedObjectCount();
          if (count > 0)
@@ -318,11 +331,13 @@ void DrawKeyboard(FrameCtx& fc)
          gArrangeFocused = gArrangeClaimedKeys;
       }
 
-      const bool doDelete = gRequestDelete ||
+      bool doDelete = gRequestDelete ||
          (!typing && !gPerfMatrixFocused && !gArrangeFocused && (ImGui::IsKeyPressed(ImGuiKey_Delete, false) ||
                       ImGui::IsKeyPressed(ImGuiKey_Backspace, false) ||
                       (shiftOnly && ImGui::IsKeyPressed(ImGuiKey_X, false))));
       gRequestDelete = false;
+      if (doDelete && ShowLockBlocks())
+         doDelete = false;
       if (doDelete)
       {
          int count = ed::GetSelectedObjectCount();
@@ -867,7 +882,9 @@ void DrawKeyboard(FrameCtx& fc)
          ed::LinkId linkId;
          while (ed::QueryDeletedLink(&linkId))
          {
-            if (ed::AcceptDeletedItem())
+            if (ShowLockBlocks())
+               ed::RejectDeletedItem();
+            else if (ed::AcceptDeletedItem())
             {
                PushUndoCheckpoint();
                DisconnectLinkById((int)linkId.Get());
@@ -877,7 +894,9 @@ void DrawKeyboard(FrameCtx& fc)
          ed::NodeId nodeId;
          while (ed::QueryDeletedNode(&nodeId))
          {
-            if (ed::AcceptDeletedItem())
+            if (ShowLockBlocks())
+               ed::RejectDeletedItem();
+            else if (ed::AcceptDeletedItem())
                RemoveNodeByIndex((int)nodeId.Get() / GraphNode::kStride);
          }
       }

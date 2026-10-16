@@ -1,3 +1,4 @@
+#include "platform/PluginCrashGuard.h"
 #include "PluginVST3.h"
 
 #if INFINITE_ENABLE_VST3
@@ -1729,6 +1730,15 @@ namespace Platform
       std::atomic<bool> latencyChanged { false };
       bool processing = false;
 
+      // Sidechain: the plugin's second audio input bus. Activated only while
+      // the host has something patched into it (PluginVST3SetSidechainEnabled,
+      // applied at the next configure): some dynamics plugins key off the
+      // external input as soon as the bus is active and would stop reacting
+      // on silence.
+      bool sidechainWanted = false;
+      bool sidechainActive = false; // bus 1 is active and fed by PluginVST3Render
+      int sidechainChannels = 0;    // 0 when the plugin has no second input bus
+
       // Preallocated realtime process data
       Steinberg::Vst::ProcessData processData;
       // One AudioBusBuffers per bus the plugin declares - the spec requires
@@ -2159,6 +2169,7 @@ namespace Platform
          // dispatch_async), so it is a stable, owned snapshot safe to read
          // here no matter what the caller does to its own copy afterward.
          const PluginDesc& desc = h->desc;
+         PluginCrashGuard::Scope crashScope(desc.identifier.c_str());
          VST3Trace("resolve begin: name='%s' id='%s' path='%s'", desc.name.c_str(), desc.identifier.c_str(),
                    desc.path.c_str());
 
@@ -2400,6 +2411,12 @@ namespace Platform
             v->component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kOutput, 0, true);
          if (v->component->getBusCount(Steinberg::Vst::kEvent, Steinberg::Vst::kInput) > 0)
             v->component->activateBus(Steinberg::Vst::kEvent, Steinberg::Vst::kInput, 0, true);
+         v->sidechainChannels =
+            inBusCount > 1 ? std::max((int)Steinberg::Vst::SpeakerArr::getChannelCount(inArrs[1]), 0) : 0;
+         const bool wantSidechain = v->sidechainWanted && v->sidechainChannels > 0;
+         if (wantSidechain || v->sidechainActive)
+            v->component->activateBus(Steinberg::Vst::kAudio, Steinberg::Vst::kInput, 1, wantSidechain);
+         v->sidechainActive = wantSidechain;
 
          Steinberg::Vst::ProcessSetup setup = {};
          setup.processMode = Steinberg::Vst::kRealtime;
@@ -2465,7 +2482,8 @@ namespace Platform
             const int ch = Steinberg::Vst::SpeakerArr::getChannelCount(inArrs[(size_t)i]);
             v->inBuses[(size_t)i].numChannels = ch;
             v->inBuses[(size_t)i].channelBuffers32 = v->inChannelPtrs.data() + offset;
-            // Aux inputs (sidechain) are always fed silence - say so.
+            // Aux inputs are fed silence - say so. An active sidechain (bus
+            // 1) gets its flags from PluginVST3Render each block.
             v->inBuses[(size_t)i].silenceFlags = (i == 0 || ch <= 0) ? 0 : (ch >= 64 ? ~0ull : ((1ull << ch) - 1));
             offset += (size_t)std::max(ch, 0);
          }
@@ -2595,7 +2613,8 @@ namespace Platform
       const int frames = maxBlockFrames > 0 ? maxBlockFrames : h->maxBlockFrames;
       if (sampleRate <= 0.0)
          return true;
-      if (std::abs(sampleRate - h->sampleRate) < 1e-6 && frames == h->maxBlockFrames && h->vst3->active)
+      if (std::abs(sampleRate - h->sampleRate) < 1e-6 && frames == h->maxBlockFrames && h->vst3->active &&
+          h->vst3->sidechainWanted == h->vst3->sidechainActive)
          return true;
 
       h->sampleRate = sampleRate;
@@ -2705,7 +2724,8 @@ namespace Platform
 
    void PluginVST3Render(PluginHandle* h, const float* const* in, int inChannels,
                          float* const* out, int outChannels, int numFrames,
-                         const PluginTransport* transport)
+                         const PluginTransport* transport,
+                         const float* const* sidechain, int sidechainChannels)
    {
       if (h == nullptr || h->vst3 == nullptr || out == nullptr || numFrames <= 0)
          return;
@@ -2739,6 +2759,18 @@ namespace Platform
                                   : nullptr;
             v->inChannelPtrs[ch] = const_cast<float*>(src != nullptr ? src : v->zeroScratch.data());
          }
+      }
+      // Bus 1's channels follow bus 0's in the pointer storage.
+      if (v->sidechainActive && v->inBuses.size() > 1)
+      {
+         const int scCh = v->sidechainChannels;
+         const bool fed = (sidechain != nullptr && sidechainChannels > 0);
+         for (int ch = 0; ch < scCh; ch++)
+         {
+            const float* src = fed ? sidechain[ch < sidechainChannels ? ch : sidechainChannels - 1] : nullptr;
+            v->inChannelPtrs[(size_t)(pluginIn + ch)] = const_cast<float*>(src != nullptr ? src : v->zeroScratch.data());
+         }
+         v->inBuses[1].silenceFlags = fed ? 0 : (scCh >= 64 ? ~0ull : ((1ull << scCh) - 1));
       }
 
       // Outputs: direct if channel counts match, otherwise render to scratch
@@ -2787,6 +2819,17 @@ namespace Platform
       v->inputParamChanges.clear();
 
       v->inRender.store(false, std::memory_order_release);
+   }
+
+   int PluginVST3SidechainChannels(PluginHandle* h)
+   {
+      return (h != nullptr && h->vst3 != nullptr) ? h->vst3->sidechainChannels : 0;
+   }
+
+   void PluginVST3SetSidechainEnabled(PluginHandle* h, bool enabled)
+   {
+      if (h != nullptr && h->vst3 != nullptr)
+         h->vst3->sidechainWanted = enabled && h->vst3->sidechainChannels > 0;
    }
 
    bool PluginVST3HostClockSeen(PluginHandle* h, PluginTransport& out)

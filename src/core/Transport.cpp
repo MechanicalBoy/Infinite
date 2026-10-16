@@ -1,5 +1,7 @@
 #include "Transport.h"
 
+#include "audio/MusicTime.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -247,6 +249,10 @@ void Transport::Tick(float deltaSeconds)
    if (!mPlaying.load(std::memory_order_relaxed))
       return;
 
+   ResolveLaunch(mBeats, mBeats + deltaSeconds * (mBpm.load(std::memory_order_relaxed) / 60.0));
+   if (!mPlaying.load(std::memory_order_relaxed))
+      return;
+
    mSeconds += deltaSeconds;
    mBeats += deltaSeconds * (mBpm.load(std::memory_order_relaxed) / 60.0);
 
@@ -323,6 +329,17 @@ void Transport::NotifyAudioEngineStopped()
 
 void Transport::AdvanceAudioClock(int numFrames)
 {
+   // A launch waiting on the grid is applied first, so its seek or pause is
+   // what this very block renders: Beats() here is still this block's start.
+   if (mPendingLaunch.load(std::memory_order_acquire) != kLaunchNothing && mPlaying.load(std::memory_order_relaxed))
+   {
+      const double sr = mAudioSampleRate.load(std::memory_order_relaxed);
+      if (sr > 0.0)
+      {
+         const double b0 = Beats();
+         ResolveLaunch(b0, b0 + (double)numFrames * (Tempo() / (60.0 * sr)));
+      }
+   }
    const double pending = mPendingSeekSeconds.exchange(-1.0, std::memory_order_relaxed);
    if (pending >= 0.0)
    {
@@ -336,6 +353,62 @@ void Transport::AdvanceAudioClock(int numFrames)
       mAudioSampleCounter.fetch_add((uint64_t)numFrames, std::memory_order_relaxed);
    WrapLoopIfNeeded();
    AdvanceEngineClock(numFrames, mAudioSampleRate.load(std::memory_order_relaxed));
+}
+
+Transport::LaunchAction Transport::RequestTogglePlay()
+{
+   // A second press while one waits cancels it, whatever the grid is.
+   if (mPendingLaunch.load(std::memory_order_acquire) != kLaunchNothing)
+   {
+      CancelLaunch();
+      return kLaunchNothing;
+   }
+   const int q = mLaunchQuantize.load(std::memory_order_relaxed);
+   if (q <= 0 || !mPlaying.load(std::memory_order_relaxed) || mOfflineActive.load(std::memory_order_relaxed))
+   {
+      TogglePlay();
+      return kLaunchNothing;
+   }
+   mPendingLaunchBeat.store(MusicTime::NextLaunchBeat(Beats(), q), std::memory_order_relaxed);
+   mPendingLaunch.store(kLaunchPause, std::memory_order_release);
+   return kLaunchPause;
+}
+
+Transport::LaunchAction Transport::RequestRewind()
+{
+   const int q = mLaunchQuantize.load(std::memory_order_relaxed);
+   // Not playing: nothing is running off the bar, so the playhead goes home
+   // now. This also drops a restart that was waiting (it would restart a
+   // transport the user has since stopped).
+   if (q <= 0 || !mPlaying.load(std::memory_order_relaxed) || mOfflineActive.load(std::memory_order_relaxed))
+   {
+      CancelLaunch();
+      Rewind();
+      return kLaunchNothing;
+   }
+   // A pause that was waiting is replaced: the later press wins.
+   mPendingLaunchBeat.store(MusicTime::NextLaunchBeat(Beats(), q), std::memory_order_relaxed);
+   mPendingLaunch.store(kLaunchRestart, std::memory_order_release);
+   return kLaunchRestart;
+}
+
+void Transport::ResolveLaunch(double b0, double b1)
+{
+   int action = mPendingLaunch.load(std::memory_order_acquire);
+   if (action == kLaunchNothing)
+      return;
+   // Applied by the block that contains the grid line (or the first one after
+   // it, if the line has already gone by): up to one block early, never late.
+   // A target exactly on this block's end belongs to the next block.
+   const double target = mPendingLaunchBeat.load(std::memory_order_relaxed);
+   if (target >= b1 - 1e-9 && target > b0 + 1e-9)
+      return;
+   if (!mPendingLaunch.compare_exchange_strong(action, (int)kLaunchNothing, std::memory_order_acq_rel))
+      return; // cancelled or replaced between the load and here
+   if (action == kLaunchPause)
+      SetPlaying(false);
+   else if (action == kLaunchRestart)
+      Rewind();
 }
 
 void Transport::Rewind()
@@ -389,6 +462,7 @@ void Transport::SeekInternal(double seconds, double beats)
 void Transport::SetOfflineMode(bool active, double sampleRate)
 {
    DropFrameClock();
+   CancelLaunch(); // an offline take starts where it is told to, not on a live grid
    if (active)
    {
       mPendingSeekSeconds.store(-1.0, std::memory_order_relaxed);

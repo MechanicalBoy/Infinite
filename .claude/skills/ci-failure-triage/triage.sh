@@ -19,8 +19,8 @@ for j in $(gh run view "$run" --json jobs -q '.jobs[]|select(.conclusion=="failu
     last=$(grep -n "CL!RaiseException" "$log" | head -1 | cut -d: -f1)
     f=$(head -n "$last" "$log" | grep -E "^[0-9T:.Z-]+ +[A-Za-z0-9_+.-]+\.(cpp|c|cc)$" | tail -1 | awk '{print $2}')
     echo "COMPILER CRASH (CL.exe). File it was compiling: $f"
-    grep -n "$f" /Users/namansoni/infinte/CMakeLists.txt | head -3
-    grep -n "COMPILE_OPTIONS.*/Od" /Users/namansoni/infinte/CMakeLists.txt
+    grep -n "$f" "$(git rev-parse --show-toplevel)/CMakeLists.txt" | head -3
+    grep -n "COMPILE_OPTIONS.*/Od" "$(git rev-parse --show-toplevel)/CMakeLists.txt"
   fi
   echo "--- first errors:"
   grep -n -i "Performing Test\|HAVE_" -v "$log" | grep -i -m8 ": error \|fatal error\|error LNK\|FAILED\|##\[error\]\|AddressSanitizer\|runtime error:\|Assertion\|undefined reference" | cut -c1-240

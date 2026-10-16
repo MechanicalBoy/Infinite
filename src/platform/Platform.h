@@ -186,6 +186,10 @@ namespace Platform
    // Extension pack files (.infpack, a zip). Returns the chosen path, or "" if cancelled.
    std::string OpenExtensionPackDialog();
 
+   // Show set files (.infshow, one patch path per line). Same contract as the patch dialogs.
+   std::string OpenShowSetDialog();
+   std::string SaveShowSetDialog(const std::string& suggestedName = "Untitled.infshow");
+
    // ---- text outlines -----------------------------------------------------
    // Glyph outlines for a laid-out string, flattened to polygons in font units
    // normalised so cap height is roughly 1. Curves are subdivided here because
@@ -416,6 +420,18 @@ namespace Platform
                         int requestedBufferFrames = 0);
    void AudioDeviceClose();
 
+   // Audio graph worker threads (AudioWorkerPool). Called ON the worker:
+   // puts it in the same realtime class as the device's own IO thread -
+   // macOS joins the open output device's os_workgroup (with a
+   // time-constraint policy), Windows registers MMCSS "Pro Audio", Linux asks
+   // for SCHED_FIFO (best effort; refused without rtprio). Returns a token
+   // for AudioWorkerLeave, nullptr when nothing was joined (no device: an
+   // offline render needs no realtime class). AudioWorkerEpoch() changes on
+   // every device open and close, so a worker re-joins the new device.
+   void* AudioWorkerJoin();
+   void AudioWorkerLeave(void* token);
+   uint32_t AudioWorkerEpoch();
+
    // Actual buffer frame size CoreAudio reports for the given device right
    // now (0 = system default output device). Buffer size is a device-wide
    // property, not something AVAudioEngine hands back per-open, so this
@@ -604,6 +620,12 @@ namespace Platform
       // what PluginConfigure below uses to decide whether to expect an input
       // bus at all.
       bool acceptsNotes = false;
+
+      // Ask for the plugin to run outside Infinite's process, so its crash
+      // cannot be the app's. Only macOS Audio Units can (the system's AU
+      // hosting service); every other format ignores it. Set by
+      // AudioPluginNode for a plugin PluginCrashGuard remembers, never saved.
+      bool outOfProcess = false;
    };
 
    // Every installed effect/music-effect/instrument Audio Unit, via
@@ -780,9 +802,24 @@ namespace Platform
       double loopStartBeats = 0.0;
       double loopEndBeats = 0.0;
    };
+   // `sidechain` feeds the plugin's second audio input bus when
+   // PluginSetSidechainEnabled turned it on; ignored otherwise, and null
+   // means silence.
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
                      float* const* out, int outChannels, int numFrames,
-                     const PluginTransport* transport = nullptr);
+                     const PluginTransport* transport = nullptr,
+                     const float* const* sidechain = nullptr, int sidechainChannels = 0);
+
+   // Channel count of the plugin's sidechain input (its second audio input
+   // bus), 0 when it has none. Main thread, once the handle is Ready.
+   int PluginSidechainChannels(PluginHandle* handle);
+
+   // Turns the sidechain bus on or off. Main thread only, on an unpublished
+   // handle; takes effect at the next PluginPrepare (which reconfigures even
+   // at an unchanged rate). Off by default, and the host keeps it off while
+   // nothing is patched in: a plugin whose sidechain bus is active may key off
+   // it instead of its main input.
+   void PluginSetSidechainEnabled(PluginHandle* handle, bool enabled);
 
    // What `handle`'s plugin was last told about the host clock, read back
    // through the same channel the plugin reads: the AU's installed
@@ -863,6 +900,28 @@ namespace Platform
    // actually dispatched something.
    bool PumpPluginEditorEvents();
 
+   // Saves the calling thread's current GL context and puts it back when the
+   // scope ends. Wrap anything that can run a hosted plugin's UI code on the
+   // UI thread. On Windows an editor that draws with its own OpenGL context
+   // (Auto-Tune Pro, some iZotope / NI UIs) calls wglMakeCurrent while it
+   // paints and does not restore ours, so every later GL call of the main
+   // window lands in the plugin's context and Infinite looks frozen (R282).
+   // That includes glfwPollEvents(), which dispatches the editor's WM_PAINT
+   // and WM_TIMER. Does nothing on macOS and Linux (no plugin editor shares
+   // our GL thread there). Main thread only; cheap.
+   class PluginGlGuard
+   {
+   public:
+      PluginGlGuard();
+      ~PluginGlGuard();
+      PluginGlGuard(const PluginGlGuard&) = delete;
+      PluginGlGuard& operator=(const PluginGlGuard&) = delete;
+
+   private:
+      void* dc_ = nullptr;
+      void* rc_ = nullptr;
+   };
+
    // AUAudioUnit.fullState, keyed-archived and base64'd so it round-trips
    // through Patch.cpp's Text param (one backslash-escaped line, no length
    // cap). Returns false if the plugin publishes no state.
@@ -939,9 +998,70 @@ namespace Platform
       MidiChannelBendSlot(channel).store(bendMinus1To1, std::memory_order_relaxed);
    }
    inline float MidiChannelBend(int channel) { return MidiChannelBendSlot(channel).load(std::memory_order_relaxed); }
+   // The latest pressure and slide (CC74) per channel, 0..1, for MIDI Notes
+   // to stamp on the note playing there (2.15). Every channel is stored;
+   // only MPE mode reads them.
+   inline std::atomic<float>& MidiChannelPressureSlot(int channel)
+   {
+      static std::atomic<float> sPressure[16] = {};
+      return sPressure[channel & 15];
+   }
+   inline std::atomic<float>& MidiChannelSlideSlot(int channel)
+   {
+      static std::atomic<float> sSlide[16] = {};
+      return sSlide[channel & 15];
+   }
+   // The channel whose pressure or slide moved last: what a binding with no
+   // voices reads as "the note being played".
+   inline std::atomic<int>& MidiLastExpressionChannel()
+   {
+      static std::atomic<int> sChannel { 0 };
+      return sChannel;
+   }
+   inline void MidiStoreChannelPressure(int channel, float v01)
+   {
+      MidiChannelPressureSlot(channel).store(v01, std::memory_order_relaxed);
+      MidiLastExpressionChannel().store(channel & 15, std::memory_order_relaxed);
+   }
+   inline void MidiStoreChannelSlide(int channel, float v01)
+   {
+      MidiChannelSlideSlot(channel).store(v01, std::memory_order_relaxed);
+      MidiLastExpressionChannel().store(channel & 15, std::memory_order_relaxed);
+   }
+   inline float MidiChannelPressure(int channel) { return MidiChannelPressureSlot(channel).load(std::memory_order_relaxed); }
+   inline float MidiChannelSlide(int channel) { return MidiChannelSlideSlot(channel).load(std::memory_order_relaxed); }
    // Lower-zone member channels, zero-based. 0 is the master, 15 the upper-zone master.
    inline bool MidiIsMpeMemberChannel(int channel) { return channel >= 1 && channel <= 14; }
    inline float MidiBend14ToSigned(int lsb, int msb) { return (float)(((msb << 7) | lsb) - 8192) / 8192.0f; }
+
+   // The last Program Change from any input (v0.6 2.35: a show set picks
+   // its entry by program). One word: bits 11.. count messages, 7..10 the
+   // channel, 0..6 the program. Stored by every platform's MIDI reader.
+   inline std::atomic<uint32_t>& MidiProgramChangeSlot()
+   {
+      static std::atomic<uint32_t> sSlot { 0 };
+      return sSlot;
+   }
+   inline void MidiStoreProgramChange(int channel, int program)
+   {
+      std::atomic<uint32_t>& slot = MidiProgramChangeSlot();
+      uint32_t prev = slot.load(std::memory_order_relaxed);
+      uint32_t next;
+      do
+         next = (((prev >> 11) + 1u) << 11) | ((uint32_t)(channel & 15) << 7) | (uint32_t)(program & 127);
+      while (!slot.compare_exchange_weak(prev, next, std::memory_order_release, std::memory_order_relaxed));
+   }
+   // True once per new Program Change since `seen` (start it at 0).
+   inline bool MidiPollProgramChange(uint32_t& seen, int& channel, int& program)
+   {
+      const uint32_t now = MidiProgramChangeSlot().load(std::memory_order_acquire);
+      if ((now >> 11) == (seen >> 11))
+         return false;
+      seen = now;
+      channel = (int)((now >> 7) & 15);
+      program = (int)(now & 127);
+      return true;
+   }
 
    bool MidiStart(std::string& outError);
    void MidiStop();

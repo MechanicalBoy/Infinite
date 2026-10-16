@@ -1,6 +1,6 @@
 # Field build step 1 — restructure `Expression.cpp` into lexer → AST → typed IR → bytecode
 
-**Repo:** `/Users/namansoni/infinte` (C++17, ImGui + OpenGL, MIT).
+**Repo:** `<repo>` (C++17, ImGui + OpenGL, MIT).
 **Branch first** (`.claude/skills/git-branch-workflow`): `feature/field-step-01-expression-ir`.
 This is the **only** Field build step that touches existing code. Treat it as a
 refactor under a byte-identical public API, not as a language change.
@@ -547,7 +547,7 @@ Every command below must pass. Run them in this order. Paste the actual output
 into the commit message — do not paraphrase.
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 
 # 1. The three call sites are untouched. Must print exactly 3 lines,
 #    at the same line numbers as before the change.

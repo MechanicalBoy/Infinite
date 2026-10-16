@@ -217,6 +217,10 @@ namespace app
    // Persisted, but a no-op on macOS/Linux (their UI never shows it).
    int gAudioOutputMode = 0;
 
+   // Audio threads for the graph (AudioEngine::SetAudioThreads): 0 = Auto,
+   // one per core; 1 = the audio thread alone. Persisted.
+   int gAudioThreads = 0;
+
    // Placeholder only - no DSP node reads this yet. P3c's Drive/AudioFilter
    // kernels are the intended future consumer (see README.md's Effects
    // table); this phase just makes the setting exist and be visible.
@@ -316,6 +320,7 @@ bool gHeadlessNeedProbe = false;
    // canvas, so a feeder spawned off-screen for auto_wire_inputs never pulls
    // the view out to include it. -1 = no request pending.
    int gRequestFitViewNodeIndex = -1;
+   int gRequestSelectNodeIndex = -1;
 
    // Set by the Edit menu, consumed next to the matching keyboard shortcuts.
    // The menu bar draws outside ed::Begin/End, and grouping needs the live

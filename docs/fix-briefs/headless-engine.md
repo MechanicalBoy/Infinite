@@ -1,6 +1,6 @@
 # Brief: Infinite as a headless engine for Claude Code
 
-You are a fresh Claude Code session in `/Users/namansoni/infinte` (Infinite: C++/OpenGL/ImGui
+You are a fresh Claude Code session in `<repo>` (Infinite: C++/OpenGL/ImGui
 AV workstation, MIT). Nothing from the conversation that produced this brief is available to
 you; everything you need is below. Every file/line reference was checked on 2026-09-29 against
 `main` at `ba96ab1`. Line numbers in `src/main.cpp` (96,896 lines) drift, so grep the quoted

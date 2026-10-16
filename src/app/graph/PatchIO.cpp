@@ -465,6 +465,8 @@ namespace app
             gAudioOversample = std::strtof(val.c_str(), nullptr);
          else if (key == "outputMode")
             gAudioOutputMode = std::clamp(atoi(val.c_str()), 0, 2);
+         else if (key == "audioThreads")
+            gAudioThreads = std::clamp(atoi(val.c_str()), 0, 1);
       }
    }
 
@@ -481,6 +483,7 @@ namespace app
       file << "bufferFrames=" << gAudioBufferFrames << "\n";
       file << "oversample=" << gAudioOversample << "\n";
       file << "outputMode=" << gAudioOutputMode << "\n";
+      file << "audioThreads=" << gAudioThreads << "\n";
    }
 
 

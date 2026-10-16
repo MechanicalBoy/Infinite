@@ -1326,7 +1326,6 @@ node 62 Synths Sampler
   f position 0.62013346
   f decay 7.01247168
   f volume 0.800000012
-  f xfade 8
   b loop 1
   b reverse 0
   b pingpong 1

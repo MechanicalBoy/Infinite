@@ -10,6 +10,67 @@
 
 namespace app
 {
+// Spawns the node an audio drop was aimed at, loads the file(s) into it and, when it is one node, makes
+// it audible (HearNode: Audio Out + engine on). Several files into several nodes stay unwired: one Audio
+// Out takes one cable. Returns every node it added, so the caller can take them back.
+std::vector<int> SpawnAudioDropNodes(const std::string& name, const std::string& category,
+                                     const std::vector<std::string>& paths, const ImVec2& canvasPos)
+{
+   std::vector<int> added;
+   if (paths.empty())
+      return added;
+   if (name == "MPC" || name == "Drum Sequencer")
+   {
+      GraphNode* spawned = SpawnNode(name, category, canvasPos.x, canvasPos.y);
+      if (spawned == nullptr)
+         return added;
+      if (auto* mpc = dynamic_cast<MpcNode*>(spawned->node.get()))
+         for (int i = 0; i < (int)paths.size() && i < MpcNode::kPads; ++i)
+            mpc->LoadPad(i, paths[i]);
+      else if (auto* drum = dynamic_cast<DrumSequencerNode*>(spawned->node.get()))
+         for (int i = 0; i < (int)paths.size() && i < DrumSequencerNode::kNumLanes; ++i)
+            drum->LoadFileToLane(i, paths[i]);
+      spawned->showParams = true;
+      added.push_back(spawned->index);
+   }
+   else
+   {
+      float offset = 0.0f;
+      for (const std::string& path : paths)
+      {
+         GraphNode* spawned = SpawnNode(name, category, canvasPos.x + offset, canvasPos.y);
+         offset += 240.0f;
+         if (spawned == nullptr)
+            continue;
+         if (auto* s = dynamic_cast<SamplerNode*>(spawned->node.get()))
+            s->LoadFile(path);
+         else if (auto* af = dynamic_cast<AudioFileNode*>(spawned->node.get()))
+            af->Open(path);
+         else if (auto* sl = dynamic_cast<SlicerNode*>(spawned->node.get()))
+            sl->LoadFile(path);
+         else if (auto* ps = dynamic_cast<PaulStretchNode*>(spawned->node.get()))
+            ps->LoadFile(path);
+         else if (auto* gran = dynamic_cast<GranularNode*>(spawned->node.get()))
+            gran->LoadFile(path);
+         else if (auto* gm = dynamic_cast<GrainMolderNode*>(spawned->node.get()))
+            gm->LoadFile(path);
+         else if (auto* mol = dynamic_cast<MolderNode*>(spawned->node.get()))
+            mol->LoadFile(path);
+         spawned->showParams = true;
+         added.push_back(spawned->index);
+      }
+   }
+   gPatchDirty = true;
+   RebuildAudioTopology();
+   if (added.size() == 1)
+   {
+      const int out = HearNode(added[0]);
+      if (out >= 0)
+         added.push_back(out);
+   }
+   return added;
+}
+
 void DrawPopupsB(FrameCtx& fc)
 {
    auto& window = fc.window;
@@ -488,7 +549,11 @@ void DrawPopupsB(FrameCtx& fc)
          const ImVec2 popupPos = (gAudioDropPicker.screenPos.x != 0.0f || gAudioDropPicker.screenPos.y != 0.0f)
             ? gAudioDropPicker.screenPos
             : ed::CanvasToScreen(gAudioDropPicker.canvasPos);
-         ImGui::SetNextWindowPos(popupPos, ImGuiCond_Always);
+         // With the file already on the canvas at the drop point, the list opens to its left, not over it.
+         if (!gAudioDropPicker.autoNodes.empty())
+            ImGui::SetNextWindowPos(ImVec2(popupPos.x - 12.0f, popupPos.y), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+         else
+            ImGui::SetNextWindowPos(popupPos, ImGuiCond_Always);
       }
       else
       {
@@ -512,7 +577,7 @@ void DrawPopupsB(FrameCtx& fc)
                const size_t lastSlash = filename.find_last_of("/\\");
                if (lastSlash != std::string::npos)
                   filename = filename.substr(lastSlash + 1);
-               ImGui::TextDisabled(T("Load %s into:"), filename.c_str());
+               ImGui::TextDisabled(gAudioDropPicker.autoNodes.empty() ? T("Load %s into:") : T("Playing %s. Load into instead:"), filename.c_str());
             }
             else
             {
@@ -542,70 +607,11 @@ void DrawPopupsB(FrameCtx& fc)
             {
                if (MenuParts::Item(opt.name, opt.category))
                {
-                  if (std::string(opt.name) == "MPC")
-                  {
-                     GraphNode* spawned = SpawnNode(opt.name, opt.category, gAudioDropPicker.canvasPos.x,
-                                                    gAudioDropPicker.canvasPos.y);
-                     if (spawned != nullptr)
-                     {
-                        if (auto* mpc = dynamic_cast<MpcNode*>(spawned->node.get()))
-                           for (int i = 0; i < (int)gAudioDropPicker.paths.size() && i < MpcNode::kPads; ++i)
-                              mpc->LoadPad(i, gAudioDropPicker.paths[i]);
-                        spawned->showParams = true;
-                        gPatchDirty = true;
-                        RebuildAudioTopology();
-                     }
-                  }
-                  else if (std::string(opt.name) == "Drum Sequencer")
-                  {
-                     GraphNode* spawned = SpawnNode(opt.name, opt.category,
-                                                    gAudioDropPicker.canvasPos.x,
-                                                    gAudioDropPicker.canvasPos.y);
-                     if (spawned != nullptr)
-                     {
-                        auto* drum = dynamic_cast<DrumSequencerNode*>(spawned->node.get());
-                        if (drum != nullptr)
-                        {
-                           for (int i = 0; i < (int)gAudioDropPicker.paths.size() && i < DrumSequencerNode::kNumLanes; ++i)
-                              drum->LoadFileToLane(i, gAudioDropPicker.paths[i]);
-                        }
-                        spawned->showParams = true;
-                        gPatchDirty = true;
-                        RebuildAudioTopology();
-                     }
-                  }
-                  else
-                  {
-                     float offset = 0.0f;
-                     for (const std::string& path : gAudioDropPicker.paths)
-                     {
-                        GraphNode* spawned = SpawnNode(opt.name, opt.category,
-                                                       gAudioDropPicker.canvasPos.x + offset,
-                                                       gAudioDropPicker.canvasPos.y);
-                        if (spawned != nullptr)
-                        {
-                           if (auto* s = dynamic_cast<SamplerNode*>(spawned->node.get()))
-                              s->LoadFile(path);
-                           else if (auto* af = dynamic_cast<AudioFileNode*>(spawned->node.get()))
-                              af->Open(path);
-                           else if (auto* sl = dynamic_cast<SlicerNode*>(spawned->node.get()))
-                              sl->LoadFile(path);
-                           else if (auto* ps = dynamic_cast<PaulStretchNode*>(spawned->node.get()))
-                              ps->LoadFile(path);
-                           else if (auto* gran = dynamic_cast<GranularNode*>(spawned->node.get()))
-                              gran->LoadFile(path);
-                           else if (auto* gm = dynamic_cast<GrainMolderNode*>(spawned->node.get()))
-                              gm->LoadFile(path);
-                           else if (auto* mol = dynamic_cast<MolderNode*>(spawned->node.get()))
-                              mol->LoadFile(path);
-
-                           spawned->showParams = true;
-                           gPatchDirty = true;
-                           RebuildAudioTopology();
-                        }
-                        offset += 240.0f;
-                     }
-                  }
+                  // The dropped file is already playing through an Audio File; a pick replaces that.
+                  for (int idx : gAudioDropPicker.autoNodes)
+                     RemoveNodeByIndex(idx);
+                  gAudioDropPicker.autoNodes.clear();
+                  SpawnAudioDropNodes(opt.name, opt.category, gAudioDropPicker.paths, gAudioDropPicker.canvasPos);
                   gAudioDropPicker.paths.clear();
                   ImGui::CloseCurrentPopup();
                   break;
@@ -621,7 +627,10 @@ void DrawPopupsB(FrameCtx& fc)
       else
       {
          if (!gAudioDropPicker.paths.empty() && !gAudioDropPicker.justOpened)
+         {
             gAudioDropPicker.paths.clear();
+            gAudioDropPicker.autoNodes.clear(); // dismissed: the Audio File stays
+         }
       }
 
       // ---- trash button on a hovered cable ----
@@ -635,7 +644,7 @@ void DrawPopupsB(FrameCtx& fc)
          const ed::LinkId hovered = ed::GetHoveredLink();
          if (!hovered || (int)hovered.Get() != sTrashGone)
             sTrashGone = 0;
-         if (hovered && (int)hovered.Get() != sTrashGone && FindLink((int)hovered.Get()) != nullptr)
+         if (hovered && !gShowLock && (int)hovered.Get() != sTrashGone && FindLink((int)hovered.Get()) != nullptr)
          {
             sTrashLink = (int)hovered.Get();
             sTrashSeen = now;
@@ -746,6 +755,19 @@ void DrawPopupsB(FrameCtx& fc)
             ed::ClearSelection();
          }
          gRequestFitViewNodeIndex = -1;
+      }
+      // A node asked to be the selection (New Synth selects its Keyboard). The node has to have been
+      // drawn once before the editor knows it, so the request waits a frame if it is not there yet.
+      if (gRequestSelectNodeIndex >= 0)
+      {
+         GraphNode* sel = FindNodeByIndex(gRequestSelectNodeIndex);
+         if (sel == nullptr)
+            gRequestSelectNodeIndex = -1;
+         else if (ed::GetNodeSize(sel->NodeId()).x > 0.0f)
+         {
+            ed::SelectNode(sel->NodeId(), false);
+            gRequestSelectNodeIndex = -1;
+         }
       }
       if (getenv("INFINITE_PALETTETEST") != nullptr && frameId == 3)
          gRequestFitView = true; // dev screenshot: frame the whole fixture

@@ -18,6 +18,7 @@
 // Every function tolerates a null handle - AudioPluginNode's retire path can
 // hand us one while a topology swap is in flight.
 
+#include "platform/PluginCrashGuard.h"
 #include "../Platform.h"
 
 #include <string>
@@ -114,6 +115,7 @@ namespace Platform
 
    PluginHandle* PluginCreate(const PluginDesc& desc, double sampleRate, int maxBlockFrames)
    {
+      PluginCrashGuard::Scope crashScope(desc.identifier.c_str());
       if (desc.format == "vst3")
          return PluginVST3Create(desc, sampleRate, maxBlockFrames);
 
@@ -127,6 +129,7 @@ namespace Platform
 
    PluginLoadState PluginPoll(PluginHandle* handle, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       outError.clear();
       if (handle == nullptr)
       {
@@ -141,6 +144,7 @@ namespace Platform
 
    bool PluginPrepare(PluginHandle* handle, double sampleRate, int maxBlockFrames, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       outError.clear();
       if (handle == nullptr)
       {
@@ -175,13 +179,18 @@ namespace Platform
       return PluginVST3LatencySamples(handle);
    }
 
+   int PluginSidechainChannels(PluginHandle* handle) { return PluginVST3SidechainChannels(handle); }
+   void PluginSetSidechainEnabled(PluginHandle* handle, bool enabled) { PluginVST3SetSidechainEnabled(handle, enabled); }
+
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
                      float* const* out, int outChannels, int numFrames,
-                     const PluginTransport* transport)
+                     const PluginTransport* transport,
+                     const float* const* sidechain, int sidechainChannels)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       if (handle != nullptr && handle->vst3 != nullptr)
       {
-         PluginVST3Render(handle, in, inChannels, out, outChannels, numFrames, transport);
+         PluginVST3Render(handle, in, inChannels, out, outChannels, numFrames, transport, sidechain, sidechainChannels);
          return;
       }
       (void)in;
@@ -258,6 +267,7 @@ namespace Platform
 
    bool PluginOpenEditor(PluginHandle* handle, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       outError.clear();
       if (handle == nullptr || handle->vst3 == nullptr)
       {
@@ -290,12 +300,14 @@ namespace Platform
 
    bool PluginSaveState(PluginHandle* handle, std::string& outBase64)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       outBase64.clear();
       return (handle != nullptr && handle->vst3 != nullptr) && PluginVST3SaveState(handle, outBase64);
    }
 
    bool PluginRestoreState(PluginHandle* handle, const std::string& base64)
    {
+      PluginCrashGuard::Scope crashScope(handle != nullptr ? handle->desc.identifier.c_str() : nullptr);
       return (handle != nullptr && handle->vst3 != nullptr) && PluginVST3RestoreState(handle, base64);
    }
 
@@ -358,10 +370,24 @@ namespace Platform
       return 0;
    }
 
+   int PluginSidechainChannels(PluginHandle* handle)
+   {
+      (void)handle;
+      return 0;
+   }
+   void PluginSetSidechainEnabled(PluginHandle* handle, bool enabled)
+   {
+      (void)handle;
+      (void)enabled;
+   }
+
    void PluginRender(PluginHandle* handle, const float* const* in, int inChannels,
                      float* const* out, int outChannels, int numFrames,
-                     const PluginTransport* transport)
+                     const PluginTransport* transport,
+                     const float* const* sidechain, int sidechainChannels)
    {
+      (void)sidechain;
+      (void)sidechainChannels;
       (void)handle;
       (void)in;
       (void)inChannels;
@@ -492,4 +518,7 @@ namespace Platform
    }
 
 #endif // INFINITE_ENABLE_VST3
+
+   PluginGlGuard::PluginGlGuard() = default;
+   PluginGlGuard::~PluginGlGuard() = default;
 }

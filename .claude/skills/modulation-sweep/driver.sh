@@ -12,6 +12,9 @@ ASSERT=(
   "LOOPERTRIGTEST:30"   # a Macro Trigger on a Looper button presses on every trigger (momentary gate), a checkbox still toggles
   "MACROTEST:30"        # macro controls as modulation sources, across save/load
   "PERFMATRIXTEST:1"    # performance matrix patch round trip (headless, exit-code gated)
+  "MSEGTEST:1"          # MSEG: shape maths, save string, run with and without a trig cable (headless)
+  "VOICEMODTEST:1"      # per-voice modulation: kernel = node shape, per-note restarts, route shaping, Analog/Wavetable render (headless)
+  "VOICEMODFRAMETEST:30" # an LFO cable into Analog cutoff becomes a voice plan only while "per voice" is on
   "ROUNDTRIPTEST:35"    # every node type's params, incl. modulators, survive save/load
 )
 # No verdict line - these print a value trace to read, not an assertion.

@@ -442,10 +442,16 @@ namespace app
    // F11 toggles fullscreen; Escape leaves fullscreen and ONLY that - it
    // must never close the window (that's still "Close window" from the
    // context menu / the OS close button).
-   void ProjectorKeyCallback(GLFWwindow* window, int key, int /*scancode*/, int action, int /*mods*/)
+   void ProjectorKeyCallback(GLFWwindow* window, int key, int /*scancode*/, int action, int mods)
    {
       if (action != GLFW_PRESS)
          return;
+      // Panic works from the projector too (Cmd/Ctrl+Period).
+      if (key == GLFW_KEY_PERIOD && (mods & (GLFW_MOD_SUPER | GLFW_MOD_CONTROL)) != 0)
+      {
+         ShowPanicToggle();
+         return;
+      }
 
       ProjectorWindow* pw = nullptr;
       for (ProjectorWindow& p : gProjectorWindows)
@@ -461,6 +467,12 @@ namespace app
          ToggleProjectorFullscreen(*pw);
       else if (key == GLFW_KEY_ESCAPE && pw->fullscreen)
          SetProjectorFullscreen(*pw, pw->monitorIndex, false);
+      // The show set steps from the projector too, the window a performer
+      // has in front of them; the switch itself happens in the next frame.
+      else if (key == GLFW_KEY_PAGE_DOWN)
+         ShowSetStep(+1);
+      else if (key == GLFW_KEY_PAGE_UP)
+         ShowSetStep(-1);
    }
 
 

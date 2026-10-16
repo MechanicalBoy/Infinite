@@ -131,7 +131,11 @@ def bh4(n):
 
 
 def tone_metrics(seg, sr, f0):
-    """Fundamental power, THD (harmonics 2..10 below Nyquist), THD+N, non-harmonic (aliasing+noise)."""
+    """Fundamental power, THD (harmonics 2..10 below Nyquist), THD+N, non-harmonic (aliasing+noise).
+
+    Non-harmonic leaves out every harmonic below Nyquist, not only 2..10: a hard curve's own
+    11th..23rd harmonics of 1 kHz are distortion it means to make, and counting them read a
+    saturator's character as aliasing (Drive, -76.6 dB, 2026-10-12)."""
     n = len(seg)
     p = np.abs(np.fft.rfft(seg * bh4(n))) ** 2
     k0 = f0 * n / sr
@@ -145,13 +149,15 @@ def tone_metrics(seg, sr, f0):
     harm = 0.0
     mask = np.ones(len(p), bool)
     mask[:w + 4] = False  # DC
-    for h in range(1, 11):
+    h = 0
+    while True:
+        h += 1
         kh = h * k0
         if kh >= len(p) - w - 1:
             break
         lo, hi = int(round(kh)) - w, int(round(kh)) + w + 1
         mask[max(lo, 0):hi] = False
-        if h > 1:
+        if 1 < h <= 10:
             harm += band(kh)
     total = p[w + 4:].sum()
     nonharm = p[mask].sum()
@@ -623,6 +629,9 @@ def self_test():
     t.check(abs(thd + 40.0) < 0.5, "THD of 1%% third harmonic = -40 dB (got %.2f)" % thd)
     clean = tone_metrics(np.sin(2 * np.pi * 1000 * k / sr), sr, 1000)["thd_db"]
     t.check(clean < -120, "THD of a clean float sine below -120 dB (got %.1f)" % clean)
+    hard = np.tanh(1.78 * np.sin(2 * np.pi * 1000 * k / sr))
+    nh = tone_metrics(hard, sr, 1000)["nonharm_db"]
+    t.check(nh < -120, "a hard curve's own high harmonics are not counted as non-harmonic (got %.1f)" % nh)
     rng = np.random.default_rng(1)
     tt = np.arange(2 * sr) / sr
     rev = rng.standard_normal(2 * sr) * 10 ** (-3 * tt / 1.0)  # RT60 = 1.0 s

@@ -79,7 +79,7 @@ namespace app
             {
                const std::string& name = aen->Def().name;
                if (name == "Audio Filter") entry.stageId = kAudioStageFilter;
-               else if (name == "Wavetable Shaper" || name == "Drive" || name == "Bitcrush" || name == "Cycle Shaper" || name == "Transient Shaper") entry.stageId = kAudioStageShaper;
+               else if (name == "Wavetable Shaper" || name == "Drive" || name == "Saturator" || name == "Bitcrush" || name == "Cycle Shaper" || name == "Transient Shaper") entry.stageId = kAudioStageShaper;
                else if (name == "Delay") entry.stageId = kAudioStageDelay;
                else if (name == "Reverb") entry.stageId = kAudioStageReverb;
                else if (name == "Dynamics") entry.stageId = kAudioStageDynamics;
@@ -287,9 +287,39 @@ namespace app
    }
 
 
+   // Panic (v0.6 2.36): the audio graph is parked on an empty topology until resume.
+   static bool gAudioPanicked = false;
+
+   void AudioPanicSilence()
+   {
+      if (gAudioPanicked)
+         return;
+      gAudioPanicked = true;
+      // Held notes: hardware synths get CC 123 + 120 on every channel; plugins are asked to flush
+      // (SetNoteInbox(nullptr) is the request their audio half acts on at the top of its next block, which
+      // is still inside the fade below); every other node is re-prepared on resume.
+      for (GraphNode& gn : gNodes)
+         if (auto* midiOut = dynamic_cast<MidiOutNode*>(gn.node.get()))
+            midiOut->Panic();
+      ForEachGraphAudioNode([](AudioNode* an) { an->SetNoteInbox(nullptr, 0); });
+      AudioEngine& engine = AudioEngine::Instance();
+      const double sr = engine.SampleRate();
+      engine.ArmTail(-1.0, (int)std::lround(0.005 * (sr > 0.0 ? sr : 48000.0)));
+      engine.SetTopology(AudioTopology{});
+   }
+
+   void AudioPanicResume()
+   {
+      if (!gAudioPanicked)
+         return;
+      gAudioPanicked = false;
+      ForceAudioRepare(); // PrepareToPlay resets voices, tails and delay lines
+      RebuildAudioTopology();
+   }
+
    void RebuildAudioTopology()
    {
-      if (gDeferAudioRebuild)
+      if (gDeferAudioRebuild || gAudioPanicked)
          return;
       ScopedPerfTimer perfTimer("RebuildAudioTopology");
       std::vector<AudioTopologyEntry> order;

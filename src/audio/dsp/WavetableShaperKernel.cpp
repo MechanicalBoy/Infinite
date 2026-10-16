@@ -49,7 +49,7 @@ void WavetableShaperKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffe
          const float chPosition = (ch == 1) ? positionR : positionL;
          // Shape()'s zero reference, at the knob's own mip level.
          const float zeroRef = WavetableShaperDsp::ReadAtMip(phaseZero, table, chPosition, smoothMip);
-         float os[Oversampler::kMaxFactor];
+         float os[MinPhaseOversampler::kMaxFactor];
          mOversampler.Up(ch, in.channels[ch][i], os);
          for (int k = 0; k < mOversampler.Factor(); k++)
          {
@@ -69,4 +69,19 @@ void WavetableShaperKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffe
 
    const float payload[1] = { lastInput }; // visualizer's live operating-point dot
    mLevelMeter.Write(payload, 1);
+}
+
+bool WavetableShaperKernel::ProcessDry(const AudioBuffer& in, AudioBuffer& dry)
+{
+   const int numChannels = std::min(in.numChannels, std::min(dry.numChannels, kMaxChannels));
+   for (int ch = 0; ch < numChannels; ch++)
+      for (int i = 0; i < dry.numFrames; i++)
+      {
+         float os[MinPhaseOversampler::kMaxFactor];
+         mDryOversampler.Up(ch, in.channels[ch][i], os);
+         dry.channels[ch][i] = mDryOversampler.Down(ch, os);
+      }
+   for (int ch = numChannels; ch < dry.numChannels; ch++)
+      std::fill(dry.channels[ch], dry.channels[ch] + dry.numFrames, 0.0f);
+   return true;
 }

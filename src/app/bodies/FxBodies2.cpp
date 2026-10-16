@@ -3,6 +3,7 @@
 #include "app/AppShared.h"
 #include "app/ui/design/components/AudioViz.h"
 #include "app/ui/design/components/StepCell.h"
+#include "audio/dsp/ConvolutionKernel.h"
 
 namespace app
 {
@@ -2035,6 +2036,134 @@ namespace app
          AudioKnobRow row(3);
          row.Knob("pos", n->ParamPtr("pos"), 0.0f, 1.0f, "%.2f");
          row.Knob("modes", n->ParamPtr("modes"), 1.0f, 32.0f, "%.0f");
+         row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f");
+         row.End();
+      }
+
+      EndAudioBody();
+   }
+
+
+   // ---- Convolution Reverb -----------------------------------------------
+   // The impulse response actually in use (designed or loaded), as its peak
+   // level over time on a 0..-72 dB scale. Read from the kernel's main-thread
+   // copy, so it is the built response, not a sketch of the settings.
+   void DrawConvolutionSpaceVisualizer(AudioEffectNode* n)
+   {
+      const float w = gAudioBodyW;
+      const float h = kAudioTimeVizH;
+      const ImVec2 origin = ImGui::GetCursorScreenPos();
+      const ImVec2 br(origin.x + w, origin.y + h);
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const bool isLight = IsThemeLight();
+      const AudioViz::Frame vizFrame = AudioViz::Begin(origin, w, h);
+
+      float env[ConvolutionKernel::kEnvelopePoints];
+      float seconds = 0.0f;
+      bool building = false;
+      const int count = n->ReadImpulseEnvelope(env, ConvolutionKernel::kEnvelopePoints, &seconds, &building);
+
+      const float kFloorDb = -72.0f;
+      for (int i = 1; i < 4; i++)
+      {
+         const float y = origin.y + 3.0f + (float)i * 0.25f * (h - 6.0f);
+         dl->AddLine(ImVec2(origin.x, y), ImVec2(br.x, y), ScopeGridCol(), 1.0f);
+      }
+      if (count > 1 && seconds > 0.0f)
+      {
+         const float tick = seconds > 4.0f ? 1.0f : seconds > 1.5f ? 0.5f : 0.1f;
+         for (float t = tick; t < seconds; t += tick)
+         {
+            const float x = origin.x + t / seconds * w;
+            dl->AddLine(ImVec2(x, origin.y), ImVec2(x, br.y), ScopeGridCol(), 1.0f);
+         }
+         const ImU32 lineCol = isLight ? tok::U32(tok::pal::c_1E6EE6FF) : tok::U32(tok::pal::c_96D6FFF5);
+         dl->PathClear();
+         for (int i = 0; i < count; i++)
+         {
+            const float level = std::clamp(1.0f - env[i] / kFloorDb, 0.0f, 1.0f);
+            dl->PathLineTo(ImVec2(origin.x + ((float)i + 0.5f) / (float)count * w, br.y - 3.0f - level * (h - 6.0f)));
+         }
+         dl->PathStroke(lineCol, 0, 1.8f);
+      }
+      if (building || count == 0)
+         dl->AddText(ImVec2(origin.x + 8.0f, origin.y + 6.0f), isLight ? tok::U32(tok::pal::c_28283CA0) : tok::U32(tok::pal::c_FFFFFF96),
+                     "building space...");
+
+      AudioViz::End(vizFrame);
+      if (ImGui::IsMouseHoveringRect(origin, br))
+      {
+         char buf[64];
+         snprintf(buf, sizeof(buf), "%.2f s, 0 to -72 dB", seconds);
+         SetAudioReadout("impulse response", buf);
+      }
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+
+   void DrawConvolutionReverbBody(GraphNode& gn, AudioEffectNode* n)
+   {
+      float env[ConvolutionKernel::kEnvelopePoints];
+      float seconds = 0.0f;
+      bool building = false, usingFile = false;
+      const std::string* fileError = nullptr;
+      n->ReadImpulseEnvelope(env, ConvolutionKernel::kEnvelopePoints, &seconds, &building, &usingFile, &fileError);
+      const bool hasFile = !n->filePath.empty();
+      const int shape = std::clamp((int)(n->Param("shape") + 0.5f), 0, ConvolutionKernel::kNumShapes - 1);
+
+      char stat[96];
+      if (hasFile && fileError && !fileError->empty())
+         snprintf(stat, sizeof(stat), "file not loaded - designed %s", ConvolutionKernel::ShapeName(shape));
+      else if (hasFile)
+      {
+         const size_t slash = n->filePath.find_last_of("/\\");
+         snprintf(stat, sizeof(stat), "%s - %.1f s", n->filePath.substr(slash == std::string::npos ? 0 : slash + 1).c_str(), seconds);
+      }
+      else
+         snprintf(stat, sizeof(stat), "designed %s - %.1f s", ConvolutionKernel::ShapeName(shape), seconds);
+
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      DrawConvolutionSpaceVisualizer(n);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+      // A loaded file is used as it is: the design controls stay in place, greyed.
+      const bool designOff = hasFile && !(fileError && !fileError->empty());
+      {
+         AudioKnobRow row(4, kKnobLarge);
+         ImGui::BeginDisabled(designOff);
+         row.Dropdown("shape", { "Room", "Hall", "Chamber", "Tunnel" }, shape, [n](int i) {
+            PushUndoCheckpoint();
+            *n->ParamPtr("shape") = (float)i;
+         });
+         row.Knob("size", n->ParamPtr("size"), 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.Knob("decay", n->ParamPtr("decay"), 0.1f, ConvolutionKernel::kMaxSeconds, "%.2f s", kKnobLarge);
+         row.Knob("material", n->ParamPtr("material"), 0.0f, 1.0f, "%.2f");
+         ImGui::EndDisabled();
+         row.End();
+      }
+      {
+         AudioKnobRow row(4);
+         if (row.Button(hasFile ? "clear file" : "load file"))
+         {
+            if (hasFile)
+            {
+               PushUndoCheckpoint();
+               n->filePath.clear();
+            }
+            else
+            {
+               const std::string path = Platform::OpenAudioDialog();
+               if (!path.empty())
+               {
+                  PushUndoCheckpoint();
+                  n->filePath = path;
+               }
+            }
+         }
+         ImGui::BeginDisabled(designOff);
+         row.Knob("distance", n->ParamPtr("distance"), 0.0f, 1.0f, "%.2f");
+         row.Knob("spread", n->ParamPtr("spread"), 0.0f, 1.0f, "%.2f");
+         ImGui::EndDisabled();
          row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f");
          row.End();
       }

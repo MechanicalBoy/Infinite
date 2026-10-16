@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -161,6 +162,97 @@ namespace MusicTime
          return "Off";
       return RateDivisionName(gridIndex - 1);
    }
+
+   // Launch quantize (v0.6 2.35 show set, 2.38 sequencer starts): where a
+   // start, restart or switch lands. Index order is the dropdown order.
+   enum LaunchQuantize
+   {
+      kLaunchNone = 0,
+      kLaunchBeat,
+      kLaunchBar,
+      kLaunch2Bars,
+      kNumLaunchQuantize
+   };
+
+   inline const std::vector<std::string>& LaunchQuantizeList()
+   {
+      static const std::vector<std::string> list = { "none", "beat", "bar", "2 bars" };
+      return list;
+   }
+
+   inline double LaunchQuantizeBeats(int q)
+   {
+      switch (q)
+      {
+         case kLaunchBeat: return 1.0;
+         case kLaunchBar: return BarsToBeats(1.0);
+         case kLaunch2Bars: return BarsToBeats(2.0);
+         default: return 0.0;
+      }
+   }
+
+   // The first grid line of `q` at or after `beats + minLeadBeats`; `beats`
+   // itself with no grid. Bars count from beat 0, as the bar ruler does.
+   inline double NextLaunchBeat(double beats, int q, double minLeadBeats = 0.0)
+   {
+      const double grid = LaunchQuantizeBeats(q);
+      if (grid <= 0.0)
+         return beats;
+      const double from = beats + minLeadBeats;
+      double next = std::ceil(from / grid - 1e-9) * grid;
+      if (next < from - 1e-9)
+         next += grid;
+      return next;
+   }
+
+   // A value that changes on the launch grid (v0.6 2.38): the manual slot of
+   // a Switcher, 3D Switcher or Note Switcher. `Resolve` is called every
+   // cook / block with what the control says now and returns what is applied.
+   // With no grid, a stopped transport (no bar line is coming) or the first
+   // call it follows the control at once; otherwise a change waits for the
+   // next grid line. Changing the control again while waiting moves the
+   // request, and asking for what is already applied cancels it. A seek back
+   // by more than one grid step drops the wait (the line it waited for is
+   // not coming), as does turning the grid off.
+   struct LaunchedInt
+   {
+      int Resolve(int want, double beats, bool playing, int q)
+      {
+         const double grid = LaunchQuantizeBeats(q);
+         if (!mHasApplied || grid <= 0.0 || !playing)
+         {
+            mApplied = want;
+            mWanted = want;
+            mHasApplied = true;
+            mPending = false;
+            return mApplied;
+         }
+         if (want != mWanted)
+         {
+            mWanted = want;
+            mPending = (want != mApplied);
+            if (mPending)
+               mTarget = NextLaunchBeat(beats, q);
+         }
+         if (mPending && beats < mTarget - grid - 1e-9)
+            mTarget = NextLaunchBeat(beats, q); // sought backwards: wait for the next line from here
+         if (mPending && beats >= mTarget - 1e-9)
+         {
+            mApplied = mWanted;
+            mPending = false;
+         }
+         return mApplied;
+      }
+      bool Pending() const { return mPending; }
+      int Wanted() const { return mWanted; }
+
+   private:
+      int mApplied = 0;
+      int mWanted = 0;
+      double mTarget = 0.0;
+      bool mHasApplied = false;
+      bool mPending = false;
+   };
 
    // ------------------------------------------------------------------ scale
    // Name and interval set declared side by side, same reasoning as the rate

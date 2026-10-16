@@ -1,6 +1,6 @@
 """Append out_<lang>.txt (N¦text) to resources/lang/<lang>.tsv using keys_final.txt. Idempotent."""
 import sys, os
-ROOT = '/Users/namansoni/infinte'
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..'))
 sys.path.insert(0, ROOT + '/tools/i18n')
 import extract
 os.chdir(ROOT)

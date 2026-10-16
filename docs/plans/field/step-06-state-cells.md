@@ -1,7 +1,7 @@
 # Field build step 6 — `state` cells (a unit delay wearing an assignment's clothes)
 
 You are implementing **build step 6 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). This is a
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). This is a
 self-contained brief; you have no prior context on Field and do not need any
 beyond what is listed under "Files to read first".
 
@@ -690,7 +690,7 @@ deliberately, watch the fixture print `FAIL`, then fix it.
 Run all of these. Every one must pass.
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 
 # 1. builds clean
 cmake --build build -j"$(sysctl -n hw.ncpu)"

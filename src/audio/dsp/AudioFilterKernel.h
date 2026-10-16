@@ -11,6 +11,8 @@
 #include "audio/MeterRing.h"
 #include "audio/MusicTime.h"
 #include "audio/ParamMailbox.h"
+#include "audio/dsp/FilterModels.h"
+#include "audio/dsp/MinPhaseOversampler.h"
 #include "core/Transport.h"
 
 // Audio Filter's kernel: up to 4 bands in series, each one of 12 types.
@@ -31,6 +33,7 @@ namespace AudioFilterDsp
       kHP12, kHP24, kHP36,
       kBP, kNotch, kLowShelf, kHighShelf, kPeak, kAllpass,
       kCombPos, kCombNeg,
+      kLadder, kMs20, kDiode, // analogue models, FilterModels.h (v0.6 2.25)
       kNumFilterTypes
    };
 
@@ -40,7 +43,8 @@ namespace AudioFilterDsp
          "lp 12", "lp 24", "lp 36",
          "hp 12", "hp 24", "hp 36",
          "bp", "notch", "low shelf", "high shelf", "peak", "all-pass",
-         "comb +", "comb -"
+         "comb +", "comb -",
+         "ladder", "ms-20", "diode"
       };
       return kNames;
    }
@@ -101,6 +105,27 @@ namespace AudioFilterDsp
    inline bool IsComb(int type) { return type == kCombPos || type == kCombNeg; }
    inline bool CombIsNegative(int type) { return type == kCombNeg; }
 
+   // The analogue models: FilterModels::Model for one of them, else -1.
+   inline int ModelOf(int type)
+   {
+      switch (type)
+      {
+         case kLadder: return FilterModels::kModelLadder;
+         case kMs20: return FilterModels::kModelMs20;
+         case kDiode: return FilterModels::kModelDiode;
+         default: return -1;
+      }
+   }
+   inline bool IsModel(int type) { return ModelOf(type) >= 0; }
+
+   // q onto a model's resonance: the default 0.707 is none, q 10 is the
+   // self-oscillation threshold, and the top of the knob sings (1.1, the
+   // same ceiling Analog's resonance knob reaches).
+   inline float ModelResonance(float q) { return std::clamp((q - 0.70710678f) / (10.0f - 0.70710678f), 0.0f, 1.1f); }
+
+   // The models run at twice the device rate (MinPhaseOversampler), so their
+   // tanh stages and self-oscillation near the top keep clear of Nyquist.
+   constexpr int kModelOversample = 2;
    // Configures a scratch Biquad for one of the non-SVF types. Shared by the
    // kernel's main-thread coefficient push and by MagnitudeDb below, so the
    // two can never compute a different filter for the same params.
@@ -149,7 +174,20 @@ namespace AudioFilterDsp
       }
 
       double magSq = 1.0;
-      if (IsSvf(type))
+      if (IsModel(type))
+      {
+         // The small-signal response; the oversampler is flat below 20 kHz.
+         const int model = ModelOf(type);
+         const double osRate = sampleRate * kModelOversample;
+         const float g = FilterModels::CutoffToG(model, freqHz, osRate, 0.45f * (float)sampleRate);
+         const float res = ModelResonance(q);
+         const double W = tan(M_PI * std::min((double)evalHz, 0.4999 * osRate) / osRate) /
+                          std::max(1e-12, (double)g);
+         const double makeup = FilterModels::MakeupGain(model, res);
+         magSq = std::norm(FilterModels::LinearResponse(model, W, FilterModels::KFromResonance(model, res))) *
+                 makeup * makeup;
+      }
+      else if (IsSvf(type))
       {
          DspMath::TptSvf svf;
          svf.SetSampleRate(sampleRate);
@@ -201,6 +239,9 @@ public:
    // `sync` is off, same free-Hz-vs-tempo-synced split as Chorus/Flanger/
    // Phaser/Tremolo's own `rate` slot.
    static constexpr int kRateSlot = kEnvAmountSlot + 1;
+   // Input gain into the analogue models (1 + 15 drive), undone after them
+   // so the small-signal level stays where the response curve draws it.
+   static constexpr int kDriveSlot = kRateSlot + 1;
 
    void PrepareToPlay(double sampleRate, int /*maxBlockSize*/) override
    {
@@ -209,6 +250,7 @@ public:
       for (auto& stage : mSvf)
          for (auto& svf : stage)
             svf.SetSampleRate(sampleRate);
+      mOversampler.Prepare(AudioFilterDsp::kModelOversample, sampleRate);
       Reset();
    }
 
@@ -221,6 +263,9 @@ public:
          bq.Reset();
       for (auto& comb : mComb)
          comb.Reset();
+      for (auto& m : mModels)
+         m.Reset();
+      mOversampler.Reset();
       mLfoPhase = 0.0;
       mBiquadFreqSlew = 1000.0f;
       mEnvPrimed = false;
@@ -297,6 +342,33 @@ public:
                mComb[ch].SetParams(freqMod, fbAmount, negative, mSampleRate);
                const float s = in.channels[ch][i] + 1.0e-20f;
                out.channels[ch][i] = mComb[ch].Process(s) * outputGain;
+            }
+            continue;
+         }
+
+         // The analogue models solve their own coefficients from g and k each
+         // sample, at the oversampled rate.
+         if (AudioFilterDsp::IsModel(type))
+         {
+            const int model = AudioFilterDsp::ModelOf(type);
+            const float freq = mMailbox.SmoothedValue(kFreqSlot);
+            const float res = AudioFilterDsp::ModelResonance(mMailbox.SmoothedValue(kQSlot));
+            float freqMod = freq;
+            if (envActive)
+               freqMod = std::clamp(freq * powf(2.0f, envAmount * lfoOut * 4.0f), 20.0f, (float)mSampleRate * 0.45f);
+            const float g = FilterModels::CutoffToG(model, freqMod, mSampleRate * AudioFilterDsp::kModelOversample,
+                                                    (float)mSampleRate * 0.45f);
+            const float k = FilterModels::KFromResonance(model, res);
+            const float inGain = 1.0f + 15.0f * std::clamp(mMailbox.SmoothedValue(kDriveSlot), 0.0f, 1.0f);
+            const float outGain = DspMath::DbToLinear(mMailbox.SmoothedValue(kOutputGainSlot)) *
+                                  FilterModels::MakeupGain(model, res) / inGain;
+            for (int ch = 0; ch < numChannels; ch++)
+            {
+               float os[AudioFilterDsp::kModelOversample];
+               mOversampler.Up(ch, (in.channels[ch][i] + 1.0e-20f) * inGain, os);
+               for (float& v : os)
+                  v = mModels[ch].Process(model, v, g, k);
+               out.channels[ch][i] = mOversampler.Down(ch, os) * outGain;
             }
             continue;
          }
@@ -422,7 +494,12 @@ public:
       mLfoMeter.Write(&lastLfoOut, 1);
    }
 
-   int LatencySamples() const override { return 0; } // no lookahead/oversampling/FFT window
+   // The models' oversampler round trip; every other type has none.
+   int LatencySamples() const override
+   {
+      return AudioFilterDsp::IsModel(mType.load(std::memory_order_relaxed)) ? mOversampler.Latency() : 0;
+   }
+   int MaxLatencySamples() const override { return mOversampler.Latency(); }
 
    // Kernel-published LFO output (-1..1), read by DrawAudioFilterVisualizer
    // via AudioEffectNode::ExtraMeterValue(0) so the response curve can
@@ -442,6 +519,8 @@ private:
    DspMath::TptSvf mSvf[kStages][kMaxChannels];
    DspMath::Biquad mBiquad[kMaxChannels];
    DspMath::CombFilter mComb[kMaxChannels];
+   FilterModels::Bank<float> mModels[kMaxChannels];
+   MinPhaseOversampler mOversampler;
    // Free-running sweep LFO phase, 0..1 - see the `envAmount`/kRateSlot
    // comments above.
    double mLfoPhase = 0.0;

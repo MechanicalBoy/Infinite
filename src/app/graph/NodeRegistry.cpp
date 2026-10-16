@@ -147,6 +147,9 @@ namespace app
       REGISTER_NODE(InvertNode, Invert, "Modulators");
       REGISTER_NODE(ModDepthNode, Mod Depth, "Modulators");
       REGISTER_NODE(ModCurveNode, Mod Curve, "Modulators");
+      REGISTER_NODE(MSEGNode, MSEG, "Modulators");
+      REGISTER_NODE(VoiceSpreadNode, Voice Spread, "Modulators");
+      REGISTER_NODE(NoteExpressionNode, Note Expression, "Modulators");
       REGISTER_NODE(DriftNode, Drift, "Prediction");
       REGISTER_NODE(MovesNode, Moves, "Prediction");
       REGISTER_NODE(PredictiveModulatorNode, Predictive Modulator, "Prediction");
@@ -185,6 +188,9 @@ namespace app
       REGISTER_NODE(OscillatorNode, Oscillator, "Synths");
       REGISTER_NODE(WavetableNode, Wavetable, "Synths");
       REGISTER_NODE(AnalogNode, Analog, "Synths");
+      REGISTER_NODE(FMNode, FM, "Synths");
+      REGISTER_NODE(PartialsNode, Partials, "Synths");
+      REGISTER_NODE(StringNode, String, "Synths");
       REGISTER_NODE(WaveTerrainNode, Wave Terrain, "Synths");
       REGISTER_NODE(EquationNode, Equation Synth, "Synths");
       REGISTER_NODE(ImageSpectralSynthNode, Spectral Synth, "Synths");
@@ -525,6 +531,55 @@ namespace app
       gArrange.revision++;
       gPatchDirty = true;
       PublishArrangeLoop();
+   }
+
+   // Keyboard zoom and loop in/out (v0.6 2.3). Plain functions rather than
+   // code in the panel's key block so ARRANGEKEYSTEST can call them without
+   // a focused timeline.
+   void ArrangeZoomToFit(float rulerWidth)
+   {
+      Arrange::Tick end = ArrangeEndKeyTargetTick();
+      const Arrange::LoopRange& loop = gArrange.settings.loop;
+      if (loop.enabled)
+         end = std::max(end, loop.end);
+      if (end <= 0 || rulerWidth <= 0.0f)
+         return;
+      // 5% of air after the last clip so its right edge is not on the border.
+      const double beats = Arrange::TicksToBeats(end) * 1.05;
+      gArrangePixelsPerBeat = std::clamp((float)((double)rulerWidth / beats), kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
+      gArrangeScrollBeats = 0.0;
+   }
+
+   // Zooms around the playhead when it is on screen, else the view's centre.
+   void ArrangeZoomStep(float factor, float rulerWidth)
+   {
+      const float oldPpb = gArrangePixelsPerBeat;
+      const float newPpb = std::clamp(oldPpb * factor, kArrangeMinPixelsPerBeat, kArrangeMaxPixelsPerBeat);
+      if (oldPpb <= 0.0f || rulerWidth <= 0.0f)
+         return;
+      const double playBeat = Arrange::TicksToBeats(ArrangePlayTick());
+      double px = (playBeat - gArrangeScrollBeats) * (double)oldPpb;
+      double anchorBeat = playBeat;
+      if (px < 0.0 || px > (double)rulerWidth)
+      {
+         px = (double)rulerWidth * 0.5;
+         anchorBeat = gArrangeScrollBeats + px / (double)oldPpb;
+      }
+      gArrangeScrollBeats = std::max(0.0, anchorBeat - px / (double)newPpb);
+      gArrangePixelsPerBeat = newPpb;
+   }
+
+   // I / O: the loop region is the timeline's in/out range. An out point at
+   // or before the in point restarts the range from the timeline's start.
+   void ArrangeSetLoopEdgeAtPlayhead(bool isStart)
+   {
+      const Arrange::LoopRange loop = gArrange.settings.loop;
+      const Arrange::Tick t = ArrangePlayTick();
+      Arrange::Tick start = isStart ? t : loop.start;
+      Arrange::Tick end = isStart ? loop.end : t;
+      if (!isStart && end <= start)
+         start = 0;
+      ArrangeSetLoop(end - start > Arrange::kPPQ / 16, start, end);
    }
 
 

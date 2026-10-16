@@ -1,5 +1,6 @@
 // Per-frame self-test blocks moved verbatim out of the main loop in main.cpp.
 #include "app/AppShared.h"
+#include "audio/PhaseShape.h"
 
 namespace app
 {
@@ -1592,6 +1593,229 @@ void FrameTest_NAVTEST(int frameId, GLFWwindow* window)
       }
 }
 
+// v0.6 2.1: File > New Synth leaves a patch you can play at once. Keyboard -> Analog -> Audio Out are
+// cabled, and the letter keys play the Keyboard with the mouse nowhere near it, because New Synth
+// selects it and a selected Keyboard owns the letter keys.
+// v0.6 2.3: the timeline's shared keys (fit, zoom in/out, loop in/out). The
+// key block calls these same functions; the key-to-row contract is the
+// shortcuts-sweep check.
+void FrameTest_ARRANGEKEYSTEST(int frameId, GLFWwindow* window)
+{
+   if (getenv("INFINITE_ARRANGEKEYSTEST") == nullptr || frameId != 4)
+      return;
+   bool ok = true;
+   auto check = [&](bool good, const char* what) {
+      ok = ok && good;
+      printf("arrangekeys %-48s %s\n", what, good ? "ok" : "FAIL");
+   };
+   NewPatch();
+   Transport& tr = Transport::Instance();
+   tr.SetPlaying(false);
+   tr.SetTempo(120.0f);
+   tr.SeekBeats(0.0);
+   ArrangeEdit([&]() {
+      while (!gArrange.lanes.empty())
+         Arrange::RemoveLane(gArrange, gArrange.lanes.front().id);
+      Arrange::AddLane(gArrange, Arrange::kLaneAudio);
+      Arrange::Clip c;
+      c.start = Arrange::kTicksPerBar * 4;
+      c.length = Arrange::kTicksPerBar * 28; // ends at bar 32 = 128 beats
+      Arrange::PlaceOverwrite(gArrange, gArrange.lanes[0].id, c, nullptr);
+   });
+   ArrangeSetLoop(false, 0, 0);
+   const float w = 1000.0f;
+
+   // Fit: the whole 128 beats inside the ruler, starting at 0.
+   gArrangePixelsPerBeat = 200.0f;
+   gArrangeScrollBeats = 50.0;
+   ArrangeZoomToFit(w);
+   check(gArrangeScrollBeats == 0.0 && 128.0 * gArrangePixelsPerBeat <= w && 128.0 * gArrangePixelsPerBeat > w * 0.9f,
+         "fit shows the whole arrangement");
+   // An empty timeline leaves the view alone.
+   {
+      ArrangeEdit([&]() { Arrange::RemoveLane(gArrange, gArrange.lanes.front().id); });
+      const float ppb = gArrangePixelsPerBeat;
+      ArrangeZoomToFit(w);
+      check(gArrangePixelsPerBeat == ppb, "fit on an empty timeline does nothing");
+      Undo();
+   }
+
+   // Zoom step: the playhead stays on the same pixel while it is on screen.
+   gArrangePixelsPerBeat = 20.0f;
+   gArrangeScrollBeats = 10.0;
+   tr.SeekBeats(30.0);
+   const double px0 = (30.0 - gArrangeScrollBeats) * gArrangePixelsPerBeat;
+   ArrangeZoomStep(1.25f, w);
+   const double px1 = (30.0 - gArrangeScrollBeats) * gArrangePixelsPerBeat;
+   check(gArrangePixelsPerBeat == 25.0f && std::abs(px1 - px0) < 0.01, "zoom in keeps the playhead in place");
+   ArrangeZoomStep(0.8f, w);
+   check(std::abs(gArrangePixelsPerBeat - 20.0f) < 0.001f && std::abs(gArrangeScrollBeats - 10.0) < 0.001, "zoom out undoes zoom in");
+   // Playhead off screen: the view's centre stays put instead.
+   tr.SeekBeats(500.0);
+   const double mid0 = gArrangeScrollBeats + (w * 0.5) / gArrangePixelsPerBeat;
+   ArrangeZoomStep(1.25f, w);
+   const double mid1 = gArrangeScrollBeats + (w * 0.5) / gArrangePixelsPerBeat;
+   check(std::abs(mid1 - mid0) < 0.001, "zoom with the playhead off screen keeps the centre");
+   for (int i = 0; i < 60; i++) ArrangeZoomStep(1.25f, w);
+   check(gArrangePixelsPerBeat == kArrangeMaxPixelsPerBeat, "zoom in stops at the limit");
+   for (int i = 0; i < 60; i++) ArrangeZoomStep(0.8f, w);
+   check(gArrangePixelsPerBeat == kArrangeMinPixelsPerBeat && gArrangeScrollBeats >= 0.0, "zoom out stops at the limit");
+
+   // Loop in / out at the playhead.
+   const Arrange::Tick q = Arrange::kPPQ;
+   tr.SeekBeats(8.0);
+   ArrangeSetLoopEdgeAtPlayhead(true);
+   check(!gArrange.settings.loop.enabled && gArrange.settings.loop.start == q * 8, "in alone sets the start, loop stays off");
+   tr.SeekBeats(16.0);
+   ArrangeSetLoopEdgeAtPlayhead(false);
+   check(gArrange.settings.loop.enabled && gArrange.settings.loop.start == q * 8 && gArrange.settings.loop.end == q * 16 &&
+         tr.LoopEnabled() && std::abs(tr.LoopStartBeats() - 8.0) < 1e-6 && std::abs(tr.LoopEndBeats() - 16.0) < 1e-6,
+         "out closes the range and the transport loops it");
+   tr.SeekBeats(4.0);
+   ArrangeSetLoopEdgeAtPlayhead(false);
+   check(gArrange.settings.loop.enabled && gArrange.settings.loop.start == 0 && gArrange.settings.loop.end == q * 4,
+         "out before in restarts the range from 0");
+   tr.SeekBeats(2.0);
+   ArrangeSetLoopEdgeAtPlayhead(true);
+   check(gArrange.settings.loop.start == q * 2 && gArrange.settings.loop.end == q * 4, "in moves the start");
+   // Fit includes an enabled loop that runs past the last clip.
+   ArrangeSetLoop(true, 0, q * 160);
+   ArrangeZoomToFit(w);
+   check(160.0 * gArrangePixelsPerBeat <= w && gArrangePixelsPerBeat > kArrangeMinPixelsPerBeat, "fit includes the loop region");
+   ArrangeSetLoop(false, 0, 0);
+   tr.SeekBeats(0.0);
+   printf(ok ? "ARRANGEKEYS TEST OK\n" : "ARRANGEKEYS TEST FAIL\n");
+}
+
+void FrameTest_NEWSYNTHTEST(int frameId, GLFWwindow* window)
+{
+   if (getenv("INFINITE_NEWSYNTHTEST") == nullptr)
+      return;
+   ImGuiIO& tio = ImGui::GetIO();
+   tio.ConfigInputTrickleEventQueue = false;
+   static bool ok = true;
+   static int kbIndex = -1;
+   auto check = [&](bool good, const char* what) {
+      ok = ok && good;
+      printf("newsynth %-52s %s\n", what, good ? "ok" : "FAIL");
+   };
+   auto held = [&]() {
+      GraphNode* kb = FindNodeByIndex(kbIndex);
+      auto* n = kb != nullptr ? dynamic_cast<KeyboardNode*>(kb->node.get()) : nullptr;
+      bool keys[128] = {};
+      if (n != nullptr)
+         n->HeldKeys(keys);
+      int count = 0;
+      for (bool k : keys)
+         count += k ? 1 : 0;
+      return count;
+   };
+   if (frameId == 3)
+   {
+      NewPatch();
+      tio.AddFocusEvent(true);
+      tio.AddMousePosEvent(-FLT_MAX, -FLT_MAX); // over nothing: only the selection can arm the keys
+      kbIndex = SpawnPlayableSynth();
+      // The engine start is the action's job on a machine with a device; the test must stay silent.
+      AudioEngine::Instance().Stop();
+      GraphNode* synth = nullptr;
+      GraphNode* out = nullptr;
+      for (GraphNode& gn : gNodes)
+      {
+         if (gn.typeName == "Analog") synth = &gn;
+         if (gn.typeName == "Audio Out") out = &gn;
+      }
+      GraphNode* kb = FindNodeByIndex(kbIndex);
+      check(gNodes.size() == 3 && kb != nullptr && synth != nullptr && out != nullptr, "Keyboard, Analog and Audio Out are on the canvas");
+      bool notesWired = false, audioWired = false;
+      for (int slot = 0; slot < 8 && synth != nullptr && out != nullptr && kb != nullptr; slot++)
+      {
+         if (NoteCable* c = synth->node->NoteInputSlot(slot))
+            notesWired = notesWired || c->GetSource() == kb->node.get();
+         if (AudioCable* c = out->node->AudioInputSlot(slot))
+            audioWired = audioWired || c->GetSource() == synth->node.get();
+      }
+      check(notesWired, "the Keyboard's notes reach the synth");
+      check(audioWired, "the synth's audio reaches Audio Out");
+   }
+   if (frameId == 10)
+   {
+      check(held() == 0, "no key is down before typing");
+      tio.AddKeyEvent(ImGuiKey_Z, true);
+   }
+   if (frameId == 13)
+   {
+      check(held() == 1, "the Z key plays the selected Keyboard with no hover");
+      tio.AddKeyEvent(ImGuiKey_Z, false);
+   }
+   if (frameId == 16)
+   {
+      check(held() == 0, "releasing the key releases the note");
+      printf("%s\n", ok ? "NEWSYNTH TEST OK" : "NEWSYNTH TEST FAIL");
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+   }
+}
+
+// v0.6 2.2: one audio file dropped on the canvas plays through an Audio Out with nothing else to do,
+// and a pick from the "load into instead" list replaces that pair instead of adding to it.
+void FrameTest_DROPSOUNDTEST(int frameId, GLFWwindow* window)
+{
+   if (getenv("INFINITE_DROPSOUNDTEST") == nullptr)
+      return;
+   static bool ok = true;
+   static std::string wav;
+   auto check = [&](bool good, const char* what) {
+      ok = ok && good;
+      printf("dropsound %-56s %s\n", what, good ? "ok" : "FAIL");
+   };
+   // (source type, wired into an Audio Out) for a two-node patch.
+   auto wired = [&](const char* type) {
+      GraphNode* src = nullptr;
+      GraphNode* out = nullptr;
+      for (GraphNode& gn : gNodes)
+      {
+         if (gn.typeName == type) src = &gn;
+         if (gn.typeName == "Audio Out") out = &gn;
+      }
+      if (gNodes.size() != 2 || src == nullptr || out == nullptr)
+         return false;
+      AudioCable* c = out->node->AudioInputSlot(0);
+      return c != nullptr && c->GetSource() == src->node.get();
+   };
+   if (frameId == 3)
+   {
+      NewPatch();
+      // Silence, so the test makes no sound while the engine is briefly on.
+      std::error_code ec;
+      wav = (std::filesystem::temp_directory_path(ec) / "infinite_dropsound_test.wav").string();
+      std::vector<float> zeros(4800, 0.0f);
+      check(AudioRecordings::WriteWav(wav, zeros.data(), (int)zeros.size(), 48000.0), "a test WAV is written");
+      gDropPos = ImVec2(gGraphScreenTL.x + gGraphScreenSize.x * 0.5f, gGraphScreenTL.y + gGraphScreenSize.y * 0.5f);
+      gDroppedFiles.push_back(wav);
+   }
+   if (frameId == 6)
+   {
+      AudioEngine::Instance().Stop();
+      check(wired("Audio File"), "the dropped file is an Audio File cabled into an Audio Out");
+      check(gAudioDropPicker.autoNodes.size() == 2 && !gAudioDropPicker.paths.empty(), "the list is open and knows both nodes");
+      // What a click on "Sampler" in that list does.
+      for (int idx : gAudioDropPicker.autoNodes)
+         RemoveNodeByIndex(idx);
+      gAudioDropPicker.autoNodes.clear();
+      SpawnAudioDropNodes("Sampler", "Synths", gAudioDropPicker.paths, gAudioDropPicker.canvasPos);
+      gAudioDropPicker.paths.clear();
+      AudioEngine::Instance().Stop();
+      check(wired("Sampler"), "picking Sampler replaces the pair: Sampler cabled into an Audio Out");
+   }
+   if (frameId == 9)
+   {
+      std::error_code ec;
+      std::filesystem::remove(wav, ec);
+      printf("%s\n", ok ? "DROPSOUND TEST OK" : "DROPSOUND TEST FAIL");
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+   }
+}
+
 void FrameTest_THEMECONTRASTTEST(int frameId, GLFWwindow* window)
 {
    if (getenv("INFINITE_THEMECONTRASTTEST") != nullptr && frameId == 3)
@@ -1955,6 +2179,24 @@ void FrameTest_FIELDPIXELTEST(int frameId, GLFWwindow* window)
                      r = d;
                      g = 1.0 - d;
                      b = d * d;
+                  }
+               },
+               // 9. Phase shaping (v0.6 2.23)
+               {
+                  "col = vec3(bend(uv.x, 0.5), skew(uv.y, -0.4), mirror(uv.x, 0.7));",
+                  [](double u, double v, double& r, double& g, double& b) {
+                     r = PhaseShape::Apply(PhaseShape::Kind::Bend, u, 0.5);
+                     g = PhaseShape::Apply(PhaseShape::Kind::Skew, v, -0.4);
+                     b = PhaseShape::Apply(PhaseShape::Kind::Mirror, u, 0.7);
+                  }
+               },
+               // 10. Phase shaping, vector form
+               {
+                  "col = vec3(pinch(uv, vec2(0.6, -0.3)), formant(uv.x, 2.5));",
+                  [](double u, double v, double& r, double& g, double& b) {
+                     r = PhaseShape::Apply(PhaseShape::Kind::Pinch, u, 0.6);
+                     g = PhaseShape::Apply(PhaseShape::Kind::Pinch, v, -0.3);
+                     b = PhaseShape::Apply(PhaseShape::Kind::Formant, u, 2.5);
                   }
                }
             };

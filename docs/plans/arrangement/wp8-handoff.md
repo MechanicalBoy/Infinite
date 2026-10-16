@@ -7,7 +7,7 @@ built; nothing is merged.
 
 | | |
 |---|---|
-| Worktree | `/Users/namansoni/infinte/.claude/worktrees/arrange-step-07` |
+| Worktree | `<repo>/.claude/worktrees/arrange-step-07` |
 | Tip branch | `feature/arrange-step-11-main-sync` — WP8 + `main` merged in + two follow-ups (see *Post-WP8* below). **Merge this one** |
 | WP8 branch | `feature/arrange-step-10-thumbs-waves` — unchanged, for reference |
 | Authoritative plan | `docs/plans/arrangement/overhaul-prompt.md` — each WP's **"As built"** section beats its original brief wherever they disagree |

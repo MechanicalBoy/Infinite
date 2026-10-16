@@ -2,6 +2,7 @@
 #include "app/ui/design/UiType.h"
 #include "app/ui/design/TokenColors.h"
 #include "app/AppShared.h"
+#include "core/ModShapes.h"
 #include "app/ui/design/components/AudioViz.h"
 #include "app/ui/design/components/StepCell.h"
 
@@ -249,14 +250,65 @@ namespace app
    }
 
 
-   // No params - Splitter is a passthrough fan-out point, not a mixing
-   // decision (audio-graph-semantics.md §1). Narrow body: there is nothing
-   // here to spend 440px on.
-   void DrawSplitterBody(GraphNode& gn, SplitterNode*)
+   // A cable on a band pin that the new band count no longer has would point
+   // at a pin nobody draws, and the node editor drops links to undrawn pins.
+   // Disconnect those here, once per change, in the same undo step.
+   void DropSplitterCablesPast(SplitterNode* n, int pins)
    {
-      char stat[48];
-      snprintf(stat, sizeof(stat), "1 in \xE2\x86\x92 up to %d out", SplitterNode::kMaxFanout);
-      BeginAudioBody(gn.index, gn.category, kAudioNarrowWidth, stat);
+      bool dropped = false;
+      for (GraphNode& other : gNodes)
+      {
+         for (int slot = 0; slot < kMaxAudioSlots; slot++)
+         {
+            AudioCable* cable = other.node->AudioInputSlot(slot);
+            if (cable != nullptr && cable->GetSource() == n && cable->GetOutputSlot() >= pins)
+            {
+               cable->Disconnect();
+               dropped = true;
+            }
+         }
+      }
+      if (dropped)
+         RebuildAudioTopology();
+   }
+
+
+   // Copy mode is the plain fan-out point (audio-graph-semantics.md §1).
+   // Crossover mode turns the pins into bands; the split knobs past the band
+   // count grey rather than vanish, so no cell moves (P5).
+   void DrawSplitterBody(GraphNode& gn, SplitterNode* n)
+   {
+      const int bands = n->Bands();
+      char stat[64];
+      if (bands <= 1)
+         snprintf(stat, sizeof(stat), "1 in \xE2\x86\x92 up to %d out", SplitterNode::kMaxFanout);
+      else
+         snprintf(stat, sizeof(stat), "%d bands \xC2\xB7 LR4, sum flat", bands);
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      {
+         static const std::vector<std::string> kModes = { "copy", "2 bands", "3 bands", "4 bands" };
+         AudioKnobRow row(4);
+         row.Dropdown("bands", kModes, bands - 1, [n](int i) {
+            PushUndoCheckpoint();
+            n->bands = i + 1;
+            RebuildAudioTopology();
+         });
+         float* splits[3] = { &n->split1, &n->split2, &n->split3 };
+         static const char* kNames[3] = { "split1", "split2", "split3" };
+         for (int s = 0; s < 3; s++)
+         {
+            const bool grey = s + 2 > bands && !gParamRegisterOnly;
+            if (grey)
+               ImGui::BeginDisabled();
+            row.Knob(kNames[s], splits[s], 20.0f, 20000.0f, "%.0f Hz", kKnobSmall, /*dbTaper=*/false, /*freqTaper=*/true);
+            if (grey)
+               ImGui::EndDisabled();
+         }
+         row.End();
+      }
+      // A modulated or loaded band count lands here too, not just the dropdown.
+      DropSplitterCablesPast(n, n->OutputCount());
       EndAudioBody();
    }
 
@@ -527,7 +579,10 @@ namespace app
          n->mMouseNote = hit;
       }
 
-      const bool isHovered = ed::GetHoveredNode() == ed::NodeId(gn.NodeId());
+      // The letter keys play the Keyboard under the mouse, or the one Keyboard that is the whole
+      // selection (the armed-track rule: New Synth selects its Keyboard, so it plays with no hover).
+      const bool isHovered = ed::GetHoveredNode() == ed::NodeId(gn.NodeId()) ||
+                             (ed::GetSelectedObjectCount() == 1 && ed::IsNodeSelected(gn.NodeId()));
       if (n->computerKeyboardEnabled && isHovered)
          gComputerKeyboardHot = true; // letter keys belong to this node; canvas WASD/F/H/U stand down
       for (const TypingKey& tk : kTypingKeys)
@@ -541,7 +596,9 @@ namespace app
             n->SetKeyState(note, false);
          // !gArrangeFocused: the timeline owns the keyboard (its M marker
          // key would otherwise also play a note here).
+         // No Cmd/Ctrl/Alt: Cmd+Z, Cmd+S, Cmd+C... are shortcuts, not notes (Z, S and C are piano keys).
          else if (n->computerKeyboardEnabled && isHovered && !TextFocusClaimed() && !gArrangeFocused
+                  && !ImGui::GetIO().KeyCtrl && !ImGui::GetIO().KeySuper && !ImGui::GetIO().KeyAlt
                   && ImGui::IsKeyPressed(tk.key, false))
             n->SetKeyState(note, true);
       }
@@ -2383,10 +2440,22 @@ namespace app
       // envelope-editing look across the app instead of two that behave
       // differently. No `amount`: this node's whole output *is* the depth,
       // there's nothing else for a depth control to scale here.
+      const ::ModShapes::Ahdsr shape = n->Shape();
       DrawEnvelopePanel("envelope  -  drag the handles", "##envAdsr", &n->attackMs, &n->decayMs,
                         &n->sustainLevel, &n->releaseMs, nullptr, 0.0f, 0.0f, "%.2f",
-                        tok::U32(tok::pal::c_96D6FFF5));
+                        tok::U32(tok::pal::c_96D6FFF5), &shape);
       ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+      // Hold at the peak, then each moving stage's bend: 0 straight,
+      // positive fast first (a falling decay/release), negative slow first.
+      {
+         AudioKnobRow row1(4);
+         row1.Knob("hold", &n->holdMs, 0.0f, 4000.0f, "%.0f ms", kKnobSmall);
+         row1.Knob("attack curve", &n->attackCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
+         row1.Knob("decay curve", &n->decayCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
+         row1.Knob("release curve", &n->releaseCurve, -1.0f, 1.0f, "%.2f", kKnobSmall);
+         row1.End();
+      }
 
       // "in" is used only while nothing is patched into the modulator pin;
       // "threshold" is the gate line on the raw 0..1 input - rising through
@@ -2396,10 +2465,14 @@ namespace app
       // level); centred is the pre-v0.5 bipolar offset around 0.5 that
       // patches saved before it load with.
       static const std::vector<std::string> kOutputs = { "centred", "ADSR" };
-      AudioKnobRow row2(3);
+      // "per voice": cabled straight into an Analog or Wavetable knob, each
+      // note gets its own envelope, gated by its own note-on and note-off
+      // (ADSR output only; centred needs the shared input).
+      AudioKnobRow row2(4);
+      row2.Dropdown("output", kOutputs, n->output, [n](int i) { PushUndoCheckpoint(); n->output = i; });
       row2.Knob("input", &n->constantIn, 0.0f, 1.0f, "%.2f", kKnobSmall);
       row2.Knob("threshold", &n->threshold, 0.0f, 1.0f, "%.2f", kKnobSmall);
-      row2.Dropdown("output", kOutputs, n->output, [n](int i) { PushUndoCheckpoint(); n->output = i; });
+      row2.Checkbox("per voice##envVoice", &n->voice);
       row2.End();
 
       EndAudioBody();

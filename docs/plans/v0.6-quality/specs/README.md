@@ -7,7 +7,7 @@ An item's new or changed control should be on its "They have, we don't" list, or
 
 | Item | What | Our nodes | Their devices | Spec |
 |---|---|---|---|---|
-| 2.9 | Convolution reverb from designed spaces | Reverb | 6 | [2.9.md](2.9.md) |
+| 2.9 | Convolution reverb from designed spaces | Reverb, Convolution Reverb | 6 | [2.9.md](2.9.md) |
 | 2.11 | ADAA on Drive and Wavetable Shaper | Drive, Wavetable Shaper | 6 | [2.11.md](2.11.md) |
 | 2.14 | Envelope depth | Envelope | 4 | [2.14.md](2.14.md) |
 | 2.17 | Multi-stage saturator | Drive | 4 | [2.17.md](2.17.md) |

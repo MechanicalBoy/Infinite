@@ -754,6 +754,147 @@ void DrawSidePanels(FrameCtx& fc)
          EndEditorWindow(editorVisible);
       }
 
+      // Show set (v0.6 2.35): the list of patches a live set steps through.
+      if (gShowSetOpen)
+      {
+         ImGui::SetNextWindowSize(ImVec2(420, 460), ImGuiCond_FirstUseEver);
+         const bool visible = BeginEditorWindow(L("Show Set"), &gShowSetOpen);
+         if (visible)
+         {
+            static int sSelected = -1;
+            const int count = ShowSetSize();
+            if (sSelected >= count)
+               sSelected = count - 1;
+
+            SectionCard::Begin(T("Patches"));
+            if (count == 0)
+               EditorHint(T("Add patches in the order you play them. PageDown / PageUp or MIDI Program Change switch between them"));
+            for (int i = 0; i < count; i++)
+            {
+               std::string row = std::to_string(i + 1) + "  " + ShowSetName(i);
+               if (!ShowSetError(i).empty())
+                  row += std::string("  (") + T("can't read") + ")";
+               else if (!ShowSetReady(i))
+                  row += std::string("  (") + T("reading") + ")";
+               else if (i == ShowSetRequested())
+                  row += std::string("  (") + T("next") + ")";
+               row += "##showset" + std::to_string(i);
+               // The playing patch reads in the accent; the row picked for
+               // Remove / Up / Down / Go sits in a field well.
+               if (MenuParts::Choice(row.c_str(), i == ShowSetCurrent()))
+                  sSelected = i;
+               if (i == sSelected)
+                  FieldWell::Draw(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), false, false);
+               if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                  ShowSetGo(i);
+               if (ImGui::IsItemHovered() && !ShowSetError(i).empty())
+                  ImGui::SetTooltip("%s", ShowSetError(i).c_str());
+            }
+
+            SectionCard::Begin(T("Edit"));
+            if (FormParts::Button(L("Add current patch")))
+               ShowSetAddCurrent();
+            FormParts::Inline();
+            if (FormParts::Button(L("Add file...")))
+            {
+               const std::string path = Platform::OpenPatchDialog();
+               if (!path.empty())
+                  ShowSetAddFile(path);
+            }
+            const bool haveSel = sSelected >= 0 && sSelected < count;
+            ImGui::BeginDisabled(!haveSel);
+            if (FormParts::Button(L("Remove")))
+               ShowSetRemove(sSelected);
+            FormParts::Inline();
+            if (FormParts::Button(L("Up")) && sSelected > 0)
+            {
+               ShowSetMove(sSelected, -1);
+               sSelected--;
+            }
+            FormParts::Inline();
+            if (FormParts::Button(L("Down")) && sSelected + 1 < count)
+            {
+               ShowSetMove(sSelected, +1);
+               sSelected++;
+            }
+            FormParts::Inline();
+            if (FormParts::Button(L("Go")))
+               ShowSetGo(sSelected);
+            ImGui::EndDisabled();
+            if (FormParts::Button(L("Open set...")))
+            {
+               const std::string path = Platform::OpenShowSetDialog();
+               if (!path.empty())
+                  ShowSetOpenFile(path);
+            }
+            FormParts::Inline();
+            if (FormParts::Button(L("Save set...")))
+            {
+               const std::string path = Platform::SaveShowSetDialog();
+               if (!path.empty())
+                  ShowSetSaveFile(path);
+            }
+
+            SectionCard::Begin(T("Switch"));
+            if (FormParts::Button(L("Previous")))
+               ShowSetStep(-1);
+            FormParts::Inline();
+            if (FormParts::Button(L("Next")))
+               ShowSetStep(+1);
+            const std::vector<std::string>& qs = MusicTime::LaunchQuantizeList();
+            int& q = ShowSetQuantize();
+            if (FormParts::BeginCombo(L("Quantize"), T(qs[std::clamp(q, 0, (int)qs.size() - 1)].c_str())))
+            {
+               for (int i = 0; i < (int)qs.size(); i++)
+                  if (MenuParts::Choice(T(qs[i].c_str()), i == q))
+                     q = i;
+               FormParts::EndCombo();
+            }
+            FormParts::SliderFloat(L("Fade"), &ShowSetFadeMs(), 0.0f, 8000.0f, "%.0f ms");
+            EditorHint(T("A switch lands on the quantize grid; the old patch fades out over the fade time"));
+
+            SectionCard::Begin(T("Launch"));
+            {
+               Transport& tr = Transport::Instance();
+               int lq = tr.LaunchQuantize();
+               if (FormParts::BeginCombo(L("Pause and restart on"), T(qs[std::clamp(lq, 0, (int)qs.size() - 1)].c_str())))
+               {
+                  for (int i = 0; i < (int)qs.size(); i++)
+                     if (MenuParts::Choice(T(qs[i].c_str()), i == lq))
+                        tr.SetLaunchQuantize(i);
+                  FormParts::EndCombo();
+               }
+               EditorHint(T("With a grid set, Pause and Rewind wait for the next line while playing; Play starts at once. Sequencers, arps and MIDI files follow. Manual Switcher changes wait for the line too"));
+            }
+
+            SectionCard::Begin(T("Show safety"));
+            if (FormParts::Button(gShowLock ? L("Unlock") : L("Lock")))
+               ShowLockToggle();
+            FormParts::Inline();
+            if (FormParts::Button(ShowPanicLatched() ? L("Resume") : L("Panic")))
+               ShowPanicToggle();
+            static std::vector<ShowCheckItem> sCheck;
+            static bool sChecked = false;
+            FormParts::Inline();
+            if (FormParts::Button(L("Pre-show check")) || gShowCheckRequest)
+            {
+               sCheck = ShowPreCheck();
+               sChecked = true;
+               gShowCheckRequest = false;
+            }
+            if (sChecked && sCheck.empty())
+               EditorHint(T("Ready: nothing missing, every device and output in place"));
+            for (const ShowCheckItem& item : sCheck)
+            {
+               ImGui::PushStyleColor(ImGuiCol_Text, item.error ? ImVec4(0.92f, 0.36f, 0.32f, 1.0f) : ImVec4(0.95f, 0.72f, 0.28f, 1.0f));
+               ImGui::TextWrapped("%s", item.text.c_str());
+               ImGui::PopStyleColor();
+            }
+            EditorHint(T("Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume"));
+         }
+         EndEditorWindow(visible);
+      }
+
       if (gFieldElementEditorOpen && gFieldElementEditor != nullptr)
       {
          bool alive = false;

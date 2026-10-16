@@ -1,6 +1,6 @@
 # Field build step 2 — `rand` / `noise` / `sh` become pure functions of `(t, seed)`
 
-**Repo:** `/Users/namansoni/infinte` (C++17, ImGui + OpenGL, MIT).
+**Repo:** `<repo>` (C++17, ImGui + OpenGL, MIT).
 **Branch first** (`.claude/skills/git-branch-workflow`): `feature/field-step-02-pure-randomness`.
 
 Self-contained implementation prompt. Read the whole file before writing code.
@@ -725,7 +725,7 @@ Every command must pass. Run them in this order. Paste the **actual output** int
 the commit message; do not paraphrase.
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 
 # 0. Two commits, in the right order and with the right contents.
 git log --oneline -2

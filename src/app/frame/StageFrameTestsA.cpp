@@ -1335,6 +1335,9 @@ void DrawFrameTestsA(FrameCtx& fc)
       // Drives the same functions the panel's keys and gestures call.
       FrameTest_ARRANGEMARKERTEST(frameId, window);
 
+      // v0.6 2.3: timeline fit, zoom step and loop in/out.
+      FrameTest_ARRANGEKEYSTEST(frameId, window);
+
       // Overhaul WP7 (docs/plans/arrangement/overhaul-prompt.md): the export
       // queue. Checks the parts of a take that are decided before a single
       // frame or sample is written - the range a kind resolves to, the exact
@@ -1884,6 +1887,12 @@ void DrawFrameTestsA(FrameCtx& fc)
       // R571 slice 4: with the Shortcuts window open, Tab drives ImGui nav and Space must not reach the transport.
       FrameTest_NAVTEST(frameId, window);
 
+      // v0.6 2.1: New Synth is wired and plays from the letter keys at once.
+      FrameTest_NEWSYNTHTEST(frameId, window);
+
+      // v0.6 2.2: a dropped audio file is wired to an Audio Out at once.
+      FrameTest_DROPSOUNDTEST(frameId, window);
+
       // Cmd/Ctrl+F find on a 400-node patch.
       FrameTest_FINDTEST(frameId, window);
 
@@ -1922,6 +1931,8 @@ void DrawFrameTestsA(FrameCtx& fc)
 
       if (getenv("INFINITE_RPCBATCHTEST") != nullptr && frameId == 4)
          RunRpcBatchTest();
+      if (getenv("INFINITE_OSCCONTROLTEST") != nullptr && frameId == 4)
+         RunOscControlTest();
       if (getenv("INFINITE_HISTORYTEST") != nullptr && frameId == 4)
          RunHistoryTest();
       if (getenv("INFINITE_CLIPBOARDTEST") != nullptr && frameId == 4)

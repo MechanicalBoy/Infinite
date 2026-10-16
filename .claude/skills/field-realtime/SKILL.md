@@ -7,7 +7,7 @@ description: "Field real-time safety checklist and branching/GPU cost model. Use
 
 Field's real-time safety constraints as a checklist you can run against a diff — no heap allocation, no recursion, no unbounded loops, no strings/pointers/dynamic arrays/structs in v1, every value's size known at compile time, element and voice counts bounded and declared up front — plus the per-domain branching cost model including GPU predication and divergence. Use when reviewing any Field compiler diff, when generated code will run on the audio thread or in a fragment shader, when someone proposes a language feature that allocates or recurses, when a Field kernel causes an xrun or a frame-time spike, or when deciding whether a branch is affordable in a given domain.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 Read [`field-language`](../field-language/SKILL.md) for the syntax these
 constraints restrict and [`field-compiler`](../field-compiler/SKILL.md) §8 for

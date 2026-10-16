@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score answers_*.json from listening_test.html against key.json.
 
-usage: score_baseline.py [KIT_DIR]   (default ~/infinite-spatial-baseline)
+usage: score_baseline.py [KIT_DIR]   (default ~/Infinite/test-output/spatial-baseline)
 Writes KIT_DIR/scores.json and prints one row per condition. The first full
 run is the locked baseline (docs/plans/spatial/README.md, section 6).
 """
@@ -34,7 +34,7 @@ def score(key, cond, answers):
 
 
 def main():
-    kit = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else "~/infinite-spatial-baseline")
+    kit = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else "~/Infinite/test-output/spatial-baseline")
     key = json.load(open(os.path.join(kit, "key.json")))
     res = {}
     for path in sorted(glob.glob(os.path.join(kit, "answers_*.json"))):

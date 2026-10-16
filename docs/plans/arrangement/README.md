@@ -19,7 +19,7 @@ numbers marked **`~`** are from the older survey at `706fb43` (main.cpp has
 since grown ~+150–230 lines in the 24k–67k range) — **always re-grep by the
 symbol named next to the number**, never trust a bare line number.
 
-Repo root: `/Users/namansoni/infinte` (note the spelling).
+Repo root: `<repo>`.
 
 ---
 

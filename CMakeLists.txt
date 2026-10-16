@@ -462,6 +462,9 @@ set(COMMON_SOURCES
     src/app/graph/NodeClipboard.cpp
     src/app/graph/Projector.cpp
     src/app/graph/Rpc.cpp
+    src/app/graph/OscApi.cpp
+    src/app/graph/ShowSet.cpp
+    src/app/graph/ShowSafety.cpp
     src/app/graph/Wiring.cpp
     src/app/panels/ArrangePanel.cpp
     src/app/panels/ArrangeRender.cpp
@@ -493,6 +496,7 @@ set(COMMON_SOURCES
     src/app/selftest/AliasTests.cpp
     src/app/selftest/FxAudit.cpp
     src/app/selftest/ModAudit.cpp
+    src/app/selftest/PresetTests.cpp
     src/app/selftest/SynthAudit.cpp
     src/app/selftest/NoteAudit.cpp
     src/app/selftest/IoAudit.cpp
@@ -568,6 +572,8 @@ set(COMMON_SOURCES
     src/core/field/FieldGraphReconciler.cpp
     src/core/field/FieldGraphOwnership.cpp
     src/core/ExprGlobals.cpp
+    src/core/FactoryPresets.cpp
+    src/platform/PluginCrashGuard.cpp
     src/core/Palette.cpp
     src/core/Patch.cpp
     src/core/PatchLayout.cpp
@@ -576,6 +582,7 @@ set(COMMON_SOURCES
     src/core/RemoteControl.cpp
     src/core/PatchJson.cpp
     src/core/OscMessage.cpp
+    src/core/OscControl.cpp
     src/core/UpdateCheck.cpp
     src/core/SelfUpdate.cpp
     src/core/Extensions.cpp
@@ -590,6 +597,7 @@ set(COMMON_SOURCES
     src/core/AudioDecodeCache.cpp
     src/core/GltfImport.cpp
     src/audio/AudioEngine.cpp
+    src/audio/AudioWorkerPool.cpp
     src/audio/ParamMailbox.cpp
     src/audio/MeterRing.cpp
     src/audio/MidiFile.cpp
@@ -608,6 +616,7 @@ set(COMMON_SOURCES
     src/audio/dsp/ReverbKernel.cpp
     src/audio/dsp/ReverbKernelLegacy.cpp
     src/audio/dsp/DriveKernel.cpp
+    src/audio/dsp/SaturatorKernel.cpp
     src/audio/dsp/StereoKernel.cpp
     src/audio/dsp/PitchShiftKernel.cpp
     src/audio/dsp/SpectralPitchShifter.cpp
@@ -629,6 +638,7 @@ set(COMMON_SOURCES
     src/audio/dsp/KeySnapKernel.cpp
     src/audio/dsp/SpectrumSlideKernel.cpp
     src/audio/dsp/ShapeResonatorKernel.cpp
+    src/audio/dsp/ConvolutionKernel.cpp
     src/audio/dsp/MeshModalSolver.cpp
     src/nodes/ImageSourceNode.cpp
     src/nodes/SlideshowNode.cpp
@@ -725,6 +735,9 @@ set(COMMON_SOURCES
     src/audio/dsp/SlicerDsp.cpp
     src/nodes/OscillatorNode.cpp
     src/nodes/MetallicNode.cpp
+    src/nodes/FMNode.cpp
+    src/nodes/PartialsNode.cpp
+    src/nodes/StringNode.cpp
     src/nodes/AudioEffectNode.cpp
     src/nodes/SamplerNode.cpp
     src/nodes/LooperNode.cpp
@@ -1160,6 +1173,7 @@ if(WIN32)
         # hanging plugin only costs a dead child, never the app itself.
         add_executable(infinite-vst3-scanner
             src/scanner_main_win.cpp
+            src/platform/PluginCrashGuard.cpp
             src/platform/win/PluginVST3Win.cpp
             src/platform/win/PlatformWin.cpp
             # PlatformWin.cpp's matting entry points forward to OrtMatting,
@@ -1379,6 +1393,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         # way the Windows scanner target pulls in PlatformWin.cpp + ONNX.
         add_executable(infinite-vst3-scanner
             src/scanner_main_linux.cpp
+            src/platform/PluginCrashGuard.cpp
             src/platform/linux/PluginVST3Linux.cpp
             src/platform/linux/PlatformLinux.cpp
             src/platform/common/SubjectMaskOnnx.cpp
@@ -1462,6 +1477,7 @@ if(APPLE)
 
         add_executable(infinite-vst3-scanner
             src/scanner_main.mm
+            src/platform/PluginCrashGuard.cpp
             src/platform/PluginVST3.mm
             src/platform/Platform.mm
             ${SYPHON_SOURCES}

@@ -7,7 +7,7 @@ description: "Writing Field Modifier (geometry) presets: reserved P/N/Cd, mutati
 
 How to write a new Field Modifier preset (FieldElementNode::Presets(), src/nodes/FieldElementNode.cpp) - reserved element-domain names (P/N/Cd), the self-mutation ordering bug, declared outputs (output frame float) vs the legacy publish variable, and what makes a modifier preset actually look good on a mesh. Use BEFORE adding, editing, or debugging any Field Modifier preset string, and when a preset does nothing, mutates wrong, or a declared/publish output reads a frozen value.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 Field Modifier (`FieldElementNode`, display name "Field Modifier") runs its
 kernel once per mesh vertex/element through the bytecode VM

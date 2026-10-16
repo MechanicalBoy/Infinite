@@ -427,6 +427,9 @@ IMGUI_NODE_EDITOR_API PinId GetHoveredPin();
 IMGUI_NODE_EDITOR_API LinkId GetHoveredLink();
 // Canvas-space midpoint of a link's curve (pass through CanvasToScreen for screen space); false if the link is unknown.
 IMGUI_NODE_EDITOR_API bool GetLinkMidpoint(LinkId linkId, ImVec2* outCanvasPos);
+// Infinite patch: while locked, nodes cannot be dragged and no cable can be dragged out of a pin (show lock).
+IMGUI_NODE_EDITOR_API void SetEditsLocked(bool locked);
+IMGUI_NODE_EDITOR_API bool AreEditsLocked();
 IMGUI_NODE_EDITOR_API NodeId GetDoubleClickedNode();
 IMGUI_NODE_EDITOR_API PinId GetDoubleClickedPin();
 IMGUI_NODE_EDITOR_API LinkId GetDoubleClickedLink();

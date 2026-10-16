@@ -7,7 +7,7 @@ description: "Layout, widgets and visualizers for audio/note node bodies (knobs,
 
 Design and build the UI for Infinite's audio and note nodes (Wavetable, Filter, Delay, Reverb, Dynamics, Mixer, MIDI Notes, Envelope, Scope, ...) so they look and behave like a real instrument rather than a generic node — layout grammar, knob/slider/section widgets, visualizer catalogue, and the hardware/plugin conventions each rule comes from. Use when adding or restyling any audio or note node's body, when a node "looks bad / cramped / unfinished / not like a real plugin", when adding a knob, meter, scope, step grid, frequency-response curve or any inline audio visualizer, when a node is the wrong width or its params don't line up, or when asked how the audio nodes should look.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 ## Read first, in this order
 

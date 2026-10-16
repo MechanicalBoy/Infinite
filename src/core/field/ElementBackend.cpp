@@ -2,6 +2,7 @@
 #include "FieldRandom.h"
 #include "FieldState.h"
 #include "ReduceOps.h"
+#include "../../audio/PhaseShape.h"
 
 #include <cmath>
 #include <algorithm>
@@ -839,6 +840,7 @@ namespace Field
          dst.lanes = inst.lanes;
 
          const std::string& fn = inst.stringData;
+         PhaseShape::Kind shape;
          const size_t nArgs = inst.argRegs.size();
 
          auto lane = [&](size_t a, int l) -> double {
@@ -983,6 +985,7 @@ namespace Field
                r = (d != 0.0) ? std::fmod(lane(0, l), d) : 0.0;
             }
             else if (fn == "atan2") r = std::atan2(lane(0, l), lane(1, l));
+            else if (PhaseShape::FieldBuiltin(fn.c_str(), shape)) r = PhaseShape::Apply(shape, lane(0, l), lane(1, l));
             else if (fn == "clamp") r = std::max(lane(1, l), std::min(lane(2, l), lane(0, l)));
             else if (fn == "lerp" || fn == "mix")
             {

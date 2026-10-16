@@ -5,7 +5,7 @@
 Paste the relevant `phase-NN-*.md` into a fresh Claude Code session. This
 README is the shared context every phase assumes. Read it first, every time.
 
-Repo root: **`/Users/namansoni/infinte`** (that spelling is correct).
+Repo root: **`<repo>`**.
 Public issue: [n1m21n/Infinite#14](https://github.com/n1m21n/Infinite/issues/14).
 
 ---

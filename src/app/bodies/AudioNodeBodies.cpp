@@ -629,6 +629,12 @@ namespace app
          DrawImageSpectralSynthBody(gn, n);
       else if (auto* n = dynamic_cast<MetallicNode*>(gn.node.get()))
          DrawMetallicBody(gn, n);
+      else if (auto* n = dynamic_cast<FMNode*>(gn.node.get()))
+         DrawFMBody(gn, n);
+      else if (auto* n = dynamic_cast<PartialsNode*>(gn.node.get()))
+         DrawPartialsBody(gn, n);
+      else if (auto* n = dynamic_cast<StringNode*>(gn.node.get()))
+         DrawStringBody(gn, n);
       else if (auto* n = dynamic_cast<AudioPluginNode*>(gn.node.get()))
          DrawPluginBody(gn, n);
       else if (auto* n = dynamic_cast<SamplerNode*>(gn.node.get()))
@@ -757,6 +763,9 @@ namespace app
          case EffectVisualizerId::kDriveCurve:
             DrawDriveBody(gn, n);
             break;
+         case EffectVisualizerId::kSaturatorCurves:
+            DrawSaturatorBody(gn, n);
+            break;
          case EffectVisualizerId::kStereoGoniometer:
             DrawStereoBody(gn, n);
             break;
@@ -813,6 +822,9 @@ namespace app
             break;
          case EffectVisualizerId::kShapeResonator:
             DrawShapeResonatorBody(gn, n);
+            break;
+         case EffectVisualizerId::kConvolutionSpace:
+            DrawConvolutionReverbBody(gn, n);
             break;
          default:
             break;

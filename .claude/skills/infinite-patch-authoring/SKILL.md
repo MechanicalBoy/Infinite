@@ -128,7 +128,7 @@ Do not edit between the markers; run the script. Use the `node` line exactly as 
 first, then the type name), then `--describe "<type>"` for parameters.
 
 <!-- generated:begin -->
-319 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
+327 node types. `node <index> <category> <type>`; inputs are `slot name:kind`, outputs `label:kind`; `p` is the number of saved parameters; `bypass` marks single-input nodes that can be bypassed.
 
 
 ### 3D
@@ -226,13 +226,14 @@ first, then the type name), then `--describe "<type>"` for parameters.
 
 | Type | Inputs | Outputs | p | Notes |
 |---|---|---|---|---|
-| `Audio Filter` | audio:audio | out:audio | 10 | bypass |
+| `Audio Filter` | audio:audio | out:audio | 11 | bypass |
 | `Bitcrush` | audio:audio | out:audio | 5 | bypass |
 | `Chorus` | audio:audio | out:audio | 10 | bypass |
+| `Convolution Reverb` | audio:audio | out:audio | 8 | bypass |
 | `Cycle Shaper` | audio:audio | out:audio | 5 | bypass |
-| `Delay` | audio:audio | out:audio | 10 | bypass |
+| `Delay` | audio:audio | out:audio | 14 | bypass |
 | `Drive` | audio:audio | out:audio | 6 | bypass |
-| `Dynamics` | audio:audio, sidechain:audio | out:audio | 10 |  |
+| `Dynamics` | audio:audio, sidechain:audio | out:audio | 11 |  |
 | `EQ` | audio:audio | out:audio | 28 | bypass |
 | `Field Effect` | in:audio | out:audio | 10 | bypass |
 | `Flanger` | audio:audio | out:audio | 9 | bypass |
@@ -242,10 +243,11 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Limiter` | audio:audio | out:audio | 5 | bypass |
 | `Phaser` | audio:audio | out:audio | 9 | bypass |
 | `Pitch Shifter` | audio:audio | out:audio | 5 | bypass |
-| `Plugin` | in:audio | out:audio | 7 | bypass |
+| `Plugin` | in:audio | out:audio | 8 | bypass |
 | `Resonator Bank` | audio:audio | out:audio | 9 | bypass |
 | `Reverb` | audio:audio | out:audio | 7 | bypass |
 | `Ring Mod` | audio:audio | out:audio | 4 | bypass |
+| `Saturator` | audio:audio | out:audio | 10 | bypass |
 | `Shape Resonator` | audio:audio, shape:geometry | out:audio | 6 |  |
 | `Spec Blur` | audio:audio | out:audio | 6 | bypass |
 | `Spectrum Slide` | audio:audio, to:audio | out:audio | 2 |  |
@@ -355,29 +357,32 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `CV to Pitch` | in:modulator | out:modulator | 7 | bypass |
 | `Compare` | input:modulator, input_2:modulator | out:modulator | 4 |  |
 | `Constant` | none | out:modulator | 1 | bypass |
-| `Envelope` | in:modulator | out:modulator | 8 | bypass |
+| `Envelope` | in:modulator | out:modulator | 13 | bypass |
 | `Face Track` | input:image | present:modulator, head x:modulator, head y:modulator, yaw:modulator, pitch:modulator, roll:modulator, eye L:modulator, eye R:modulator, brows:modulator, mouth:modulator, smile:modulator, gaze x:modulator, gaze y:modulator | 3 | bypass |
 | `Geometry Table` | geo:geometry | cx:modulator, cy:modulator, cz:modulator, spread:modulator, x1:modulator, y1:modulator, z1:modulator, x2:modulator, y2:modulator, z2:modulator, x3:modulator, y3:modulator, z3:modulator, x4:modulator, y4:modulator, z4:modulator | 10 | bypass |
 | `Hand Track` | input:image | present:modulator, palm x:modulator, palm y:modulator, index x:modulator, index y:modulator, thumb x:modulator, thumb y:modulator, pinch:modulator, open:modulator, roll:modulator, size:modulator, fist:modulator, point:modulator, peace:modulator, thumbs up:modulator, ok:modulator, rock:modulator | 3 | bypass |
 | `Image Analyze` | input:image | result:modulator, bright:modulator, contrast:modulator, red:modulator, green:modulator, blue:modulator, sat:modulator, hue:modulator, motion:modulator, cx:modulator, cy:modulator | 14 | bypass |
 | `Invert` | in:modulator | out:modulator | 3 | bypass |
-| `LFO` | trig:modulator | out:modulator | 10 | bypass |
+| `LFO` | trig:modulator | out:modulator | 11 | bypass |
 | `MIDI CC` | none | out:modulator | 7 | hardware: refused headless, bypass |
 | `MIDI Trigger` | none | out:modulator | 6 | hardware: refused headless, bypass |
+| `MSEG` | trig:modulator | out:modulator | 8 | bypass |
 | `Math` | input:modulator, input_2:modulator | out:modulator | 6 |  |
 | `Mod Curve` | in:modulator | out:modulator | 3 | bypass |
 | `Mod Depth` | in:modulator | out:modulator | 2 | bypass |
+| `Note Expression` | none | out:modulator | 3 | bypass |
 | `Note to CV` | notes:note | out:modulator | 3 | bypass |
 | `Null Modulator` | in:modulator | out:modulator | 1 | bypass |
 | `Palette` | ref:image | out:palette | 14 | bypass |
 | `Path` | curve:geometry, geo:geometry | x:modulator, y:modulator, z:modulator, t:modulator | 14 |  |
 | `Pattern` | none | out:modulator | 24 | bypass |
 | `Pose Track` | input:image | present:modulator, body x:modulator, body y:modulator, head x:modulator, head y:modulator, wrist L x:modulator, wrist L y:modulator, wrist R x:modulator, wrist R y:modulator, arm L:modulator, arm R:modulator, spread:modulator, lean:modulator, size:modulator | 3 | bypass |
-| `Random` | none | out:modulator | 8 | bypass |
+| `Random` | none | out:modulator | 9 | bypass |
 | `Range to Range` | in:modulator | out:modulator | 6 | bypass |
 | `Smoothing` | in:modulator | out:modulator | 7 | bypass |
 | `Velocity to CV` | notes:note | out:modulator | 2 | bypass |
 | `Vibrato` | none | out:modulator | 1 | bypass |
+| `Voice Spread` | none | out:modulator | 4 | bypass |
 
 ### Notes
 
@@ -467,6 +472,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Analog` | notes:note | out:audio | 33 | bypass |
 | `Drum Sequencer` | none | out:audio, 1:audio, 2:audio, 3:audio, 4:audio, 5:audio, 6:audio, 7:audio, 8:audio | 372 | bypass |
 | `Equation Synth` | notes:note | out:audio | 31 | bypass |
+| `FM` | notes:note | out:audio | 35 | bypass |
 | `Field Synth` | notes:note, in:audio | out:audio | 13 | bypass |
 | `Grain Molder` | notes:note, record_in:audio | out:audio | 15 | bypass |
 | `Granular` | record_in:audio | out:audio | 21 | bypass |
@@ -475,10 +481,12 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Metallic` | notes:note | out:audio | 15 | bypass |
 | `Molder` | record_in:audio | out:audio | 17 | bypass |
 | `Oscillator` | notes:note, fm_in:audio | out:audio | 22 | bypass |
+| `Partials` | notes:note | out:audio | 11 | bypass |
 | `PaulStretch` | record_in:audio | out:audio | 15 | bypass |
 | `Sampler` | notes:note, record_in:audio | out:audio | 15 | bypass |
 | `Slicer` | notes:note, record_in:audio | out:audio | 13 | bypass |
 | `Spectral Synth` | image:image, note:note | out:audio | 33 | bypass |
+| `String` | notes:note | out:audio | 8 | bypass |
 | `Wave Terrain` | texture:image, note:note | out:audio | 35 | bypass |
 | `Wavetable` | notes:note, fm_in:audio | out:audio | 73 | bypass |
 
@@ -501,7 +509,7 @@ first, then the type name), then `--describe "<type>"` for parameters.
 | `Output` | in:image, audio:audio | out:image | 9 |  |
 | `Projection` | in:image | out:image | 135 | bypass |
 | `Spatial Mixer` | input:audio, input_2:audio, input_3:audio, input_4:audio, input_5:audio, input_6:audio, input_7:audio, input_8:audio, input_9:audio, input_10:audio, input_11:audio, input_12:audio | out:image | 107 |  |
-| `Splitter` | audio:audio | out:audio | 0 | bypass |
+| `Splitter` | audio:audio | out:audio | 4 | bypass |
 | `Syphon In` | none | out:image | 3 | hardware: refused headless, bypass |
 | `Syphon Out` | in:image | out:image | 1 | bypass |
 <!-- generated:end -->

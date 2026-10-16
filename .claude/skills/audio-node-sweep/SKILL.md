@@ -7,7 +7,7 @@ description: "Sweep every audio/note node for param save/load, audio-thread deli
 
 Generic sweeps across every Infinite audio/note node type, checking two invariants at once - that every param declared through VisitParams survives a save/load round trip and reaches the audio thread within one block of its own CookIfNeeded call (AUDIOPARAMSWEEPTEST), and that spawning, wiring, and deleting any audio/note node mid-playback never crashes and leaves no dangling cable (AUDIOTEARDOWNSWEEPTEST). Use when asked to "check the audio params", "sweep the audio nodes", "does deleting an audio node crash", "did I forget to wire this param into the mailbox", or after adding/touching any audio or note node.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`), not
+Paths below are relative to the repo root (`<repo>`), not
 this skill directory.
 
 ## Run this first

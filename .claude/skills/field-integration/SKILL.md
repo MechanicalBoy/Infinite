@@ -7,7 +7,7 @@ description: "Wiring a Field node into Infinite (INode, ParamRef, mailbox, save/
 
 How a Field node joins Infinite without breaking what already works — the INode contract, IAudioSource and IGeometrySource mix-ins, ParamRef registration through src/core/Modulation.h, ParamMailbox as the only main-to-audio path, GLUtil::CompileProgram as the pixel backend's target, the patch save/load line grammar in src/core/Patch.h, undo/redo, and the four incompatible mini-languages Field absorbs. Use when wiring a Field node into main.cpp, when a Field `param` must become a modulatable knob or reach the audio thread, when Field output must render or produce geometry, when a Field program must survive save/load/undo/copy-paste, or when reviewing any Field diff that touches existing Infinite source.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 This is the skill that keeps Field from breaking what already exists. Read
 [`field-language`](../field-language/SKILL.md) and

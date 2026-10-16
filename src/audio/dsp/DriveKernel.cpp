@@ -28,7 +28,7 @@ void DriveKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sidec
       const DriveDsp::ShapeParams shape(driveDb, bias, color);
       for (int ch = 0; ch < numChannels; ch++)
       {
-         float os[Oversampler::kMaxFactor];
+         float os[MinPhaseOversampler::kMaxFactor];
          mOversampler.Up(ch, in.channels[ch][i], os);
          for (int k = 0; k < mOversampler.Factor(); k++)
             os[k] = mAdaa[ch].Process(os[k], shape);
@@ -40,4 +40,21 @@ void DriveKernel::ProcessBlock(const AudioBuffer& in, const AudioBuffer* /*sidec
       for (int ch = numChannels; ch < out.numChannels; ch++)
          out.channels[ch][i] = 0.0f;
    }
+}
+
+// The input through the same up + down filters as the wet path, with no
+// curve between them: what the mix has to blend against (DriveKernel.h).
+bool DriveKernel::ProcessDry(const AudioBuffer& in, AudioBuffer& dry)
+{
+   const int numChannels = std::min(in.numChannels, std::min(dry.numChannels, kMaxChannels));
+   for (int ch = 0; ch < numChannels; ch++)
+      for (int i = 0; i < dry.numFrames; i++)
+      {
+         float os[MinPhaseOversampler::kMaxFactor];
+         mDryOversampler.Up(ch, in.channels[ch][i], os);
+         dry.channels[ch][i] = mDryOversampler.Down(ch, os);
+      }
+   for (int ch = numChannels; ch < dry.numChannels; ch++)
+      std::fill(dry.channels[ch], dry.channels[ch] + dry.numFrames, 0.0f);
+   return true;
 }

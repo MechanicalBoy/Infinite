@@ -3,6 +3,7 @@
 #include "app/ui/design/TokenColors.h"
 #include "app/ui/design/components/FieldWell.h"
 #include "app/AppShared.h"
+#include "core/ModShapes.h"
 #include "app/ui/design/components/AudioViz.h"
 
 namespace app
@@ -925,7 +926,8 @@ namespace app
    // Directly editable ADSR: interactive handles with proportional relative-time
    // display, analog exponential decay/release curves, and smooth responsive dragging.
    void DrawEditableADSR(const char* id, float* attackMs, float* decayMs, float* sustain,
-                         float* releaseMs, float maxTimeMs, float h, ImU32 color, float width)
+                         float* releaseMs, float maxTimeMs, float h, ImU32 color, float width,
+                         const ::ModShapes::Ahdsr* shape = nullptr)
    {
       const float w = width > 0.0f ? width : gAudioContentW;
       const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -1059,9 +1061,17 @@ namespace app
       }
 
       // Build multi-segment curve points (Attack rise, Decay, Sustain shelf,
-      // Release). Linear segments - both Envelope::Process (AudioVoice.h)
-      // and EnvelopeNode::Value01 (ModulatorNodes.cpp) step linearly, so a
-      // curved display would be drawing a shape the audio never makes.
+      // Release). Linear segments unless `shape` is given: the synth
+      // envelopes (AudioVoice.h) step linearly, so a curved display there
+      // would be drawing a shape the audio never makes. The Envelope node
+      // passes its hold and curves, drawn with the same ModShapes maths
+      // its output uses; hold takes the front of the decay's width.
+      const float aCurve = shape ? shape->attackCurve : 0.0f;
+      const float dCurve = shape ? shape->decayCurve : 0.0f;
+      const float rCurve = shape ? shape->releaseCurve : 0.0f;
+      const float holdMs = shape ? std::max(0.0f, shape->holdMs) : 0.0f;
+      const float holdFrac = holdMs > 0.0f ? holdMs / (holdMs + std::max(0.0f, *decayMs)) : 0.0f;
+      const float s01 = std::clamp(*sustain, 0.0f, 1.0f);
       std::vector<ImVec2> curvePts;
       curvePts.reserve(24);
 
@@ -1071,12 +1081,12 @@ namespace app
       curvePts.push_back(ImVec2(layout.x0, layout.baseY));
       if (layout.pA.x - layout.x0 >= 0.5f)
       {
-         const int kAttSteps = 6;
+         const int kAttSteps = shape ? 16 : 6;
          for (int i = 1; i < kAttSteps; i++)
          {
             const float u = (float)i / (float)kAttSteps;
             const float px = layout.x0 + u * (layout.pA.x - layout.x0);
-            const float py = layout.baseY - u * layout.spanY;
+            const float py = layout.baseY - ::ModShapes::MsegSegment(0.0f, 1.0f, aCurve, u) * layout.spanY;
             curvePts.push_back(ImVec2(px, py));
          }
       }
@@ -1085,12 +1095,13 @@ namespace app
       // 2. Decay.
       if (layout.pD.x - layout.pA.x >= 0.5f)
       {
-         const int kDecSteps = 10;
+         const int kDecSteps = shape ? 20 : 10;
          for (int i = 1; i < kDecSteps; i++)
          {
             const float u = (float)i / (float)kDecSteps;
             const float px = layout.pA.x + u * (layout.pD.x - layout.pA.x);
-            const float py = layout.topY + u * (layout.pD.y - layout.topY);
+            const float k = holdFrac >= 1.0f ? 0.0f : std::max(0.0f, (u - holdFrac) / (1.0f - holdFrac));
+            const float py = layout.baseY - ::ModShapes::MsegSegment(1.0f, s01, dCurve, k) * layout.spanY;
             curvePts.push_back(ImVec2(px, py));
          }
       }
@@ -1102,12 +1113,12 @@ namespace app
       // 4. Release.
       if (layout.pR.x - layout.pS.x >= 0.5f)
       {
-         const int kRelSteps = 10;
+         const int kRelSteps = shape ? 16 : 10;
          for (int i = 1; i < kRelSteps; i++)
          {
             const float u = (float)i / (float)kRelSteps;
             const float px = layout.pS.x + u * (layout.pR.x - layout.pS.x);
-            const float py = layout.pS.y + u * (layout.baseY - layout.pS.y);
+            const float py = layout.baseY - ::ModShapes::MsegSegment(s01, 0.0f, rCurve, u) * layout.spanY;
             curvePts.push_back(ImVec2(px, py));
          }
       }
@@ -1331,7 +1342,8 @@ namespace app
    // the note), the pitch and filter envelopes do.
    void DrawEnvelopePanel(const char* title, const char* curveId, float* attackMs, float* decayMs,
                           float* sustain, float* releaseMs, float* amount, float amountLo,
-                          float amountHi, const char* amountFmt, ImU32 color)
+                          float amountHi, const char* amountFmt, ImU32 color,
+                          const ::ModShapes::Ahdsr* shape)
    {
       BeginAudioSection(title);
 
@@ -1358,7 +1370,7 @@ namespace app
       const float curveH = rowH * kFieldRows - ImGui::GetStyle().ItemSpacing.y;
 
       const ImVec2 top = ImGui::GetCursorScreenPos();
-      DrawEditableADSR(curveId, attackMs, decayMs, sustain, releaseMs, 4000.0f, curveH, color, curveW);
+      DrawEditableADSR(curveId, attackMs, decayMs, sustain, releaseMs, 4000.0f, curveH, color, curveW, shape);
       PublishWtTestRect();
 
       // Every field is positioned explicitly: ImGui would otherwise wrap each
@@ -1945,6 +1957,256 @@ namespace app
       }
       EndAudioSection();
 
+      EndAudioBody();
+   }
+
+
+   void DrawFMScope(FMNode* n, float h)
+   {
+      const double now = ImGui::GetTime();
+      if (n->scopeCacheTime < 0.0 || now - n->scopeCacheTime > 1.0 / 30.0)
+      {
+         float buf[FMNode::kScopeCacheCapacity];
+         const int count = n->ReadScope(buf, FMNode::kScopeCacheCapacity);
+         if (count > 0)
+         {
+            std::copy(buf, buf + count, n->scopeCache);
+            n->scopeCacheCount = count;
+         }
+         n->scopeCacheTime = now;
+      }
+
+      const float w = gAudioContentW;
+      const AudioViz::Frame f = AudioViz::Begin(w, h);
+      const float midY = f.origin.y + h * 0.5f;
+      f.dl->AddLine(ImVec2(f.origin.x, midY), ImVec2(f.br.x, midY), ScopeMidLineCol(), 1.0f);
+      if (n->scopeCacheCount > 1 && n->ActiveVoices() > 0)
+      {
+         const int count = n->scopeCacheCount;
+         f.dl->PathClear();
+         for (int i = 0; i < count; i++)
+         {
+            const float t = (float)i / (float)(count - 1);
+            const float v = std::max(-1.0f, std::min(1.0f, n->scopeCache[i]));
+            f.dl->PathLineTo(ImVec2(f.origin.x + t * w, midY - v * h * 0.44f));
+         }
+         f.dl->PathStroke(IsThemeLight() ? tok::U32(tok::pal::c_D2780AFF) : tok::U32(tok::pal::c_FFD778F0), 0, 1.6f);
+      }
+      else
+      {
+         AudioViz::IdleLabel(f, "play notes");
+      }
+      AudioViz::End(f);
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+
+   void DrawFMBody(GraphNode& gn, FMNode* n)
+   {
+      const int voices = n->ActiveVoices();
+      const FMDsp::Algorithm& alg = FMDsp::AlgorithmAt(n->algorithm);
+      char stat[96];
+      snprintf(stat, sizeof(stat), "%s  -  %d voice%s", alg.name, voices, voices == 1 ? "" : "s");
+
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      DrawFMScope(n, 52.0f);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      {
+         AudioKnobRow row(3);
+         row.Dropdown("algorithm", FMDsp::AlgorithmList(), n->algorithm, [n](int i) {
+            PushUndoCheckpoint();
+            n->algorithm = i;
+         });
+         row.Knob("feedback", &n->feedback, 0.0f, 1.0f, "%.2f");
+         row.Knob("volume", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.End();
+      }
+
+      // One section per operator; a carrier's level is its loudness, a
+      // modulator's is how deep it bends what it feeds.
+      static const char* kTitle[FMDsp::kNumOps][2] = {
+         { "operator 1  -  carrier", "operator 1  -  modulator" },
+         { "operator 2  -  carrier", "operator 2  -  modulator" },
+         { "operator 3  -  carrier", "operator 3  -  modulator" },
+         { "operator 4  -  carrier", "operator 4  -  modulator" },
+      };
+      for (int o = 0; o < FMDsp::kNumOps; o++)
+      {
+         FMNode::Operator& op = n->ops[o];
+         const bool carrier = ((alg.carriers >> o) & 1) != 0;
+         ImGui::Dummy(ImVec2(0.0f, 4.0f));
+         ImGui::PushID(o);
+         // Each operator's "fixed" checkbox is a discrete param: without a
+         // scope all four hash to one pin id (PINDUPTEST).
+         DiscreteSlotScope discreteScope(o);
+         BeginAudioSection(kTitle[o][carrier ? 0 : 1]);
+         {
+            AudioKnobRow row(7);
+            if (op.fixed)
+               row.Knob("freq", &op.freq, 1.0f, 8000.0f, "%.0f Hz");
+            else
+               row.Knob("ratio", &op.ratio, 0.5f, 16.0f, "%.2f");
+            row.Checkbox("fixed", &op.fixed);
+            row.Knob("level", &op.level, 0.0f, 1.0f, "%.2f");
+            row.Knob("attack", &op.attack, 0.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                     AudioWidgetStyle::KnobSkewAttack100);
+            row.Knob("decay", &op.decay, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                     AudioWidgetStyle::KnobSkewDecay300);
+            row.Knob("sustain", &op.sustain, 0.0f, 1.0f, "%.2f");
+            row.Knob("release", &op.release, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                     AudioWidgetStyle::KnobSkewRelease400);
+            row.End();
+         }
+         EndAudioSection();
+         ImGui::PopID();
+      }
+
+      EndAudioBody();
+   }
+
+
+   // The main sample's partial levels at its loudest frame, dB-scaled; the
+   // bars past the partials knob are dimmed, since they are not heard.
+   void DrawPartialsBars(PartialsNode* n, float h)
+   {
+      const float w = gAudioContentW;
+      const AudioViz::Frame f = AudioViz::Begin(w, h);
+      const int count = n->barCount;
+      if (count > 0)
+      {
+         float peak = 1e-6f;
+         for (int i = 0; i < count; i++)
+            peak = std::max(peak, n->bars[i]);
+         const bool light = IsThemeLight();
+         const ImU32 on = light ? tok::U32(tok::pal::c_5A46C8C8) : tok::U32(tok::pal::c_B4A0FFC8);
+         const ImU32 off = light ? tok::U32(tok::pal::c_FFFFFF8C) : tok::U32(tok::pal::c_00000082);
+         const float barW = w / (float)PartialsNode::kBarCount;
+         for (int i = 0; i < count; i++)
+         {
+            const float db = 20.0f * std::log10(std::max(1e-6f, n->bars[i] / peak));
+            const float frac = std::clamp(1.0f + db / 60.0f, 0.0f, 1.0f);
+            const float x = f.origin.x + barW * (float)i;
+            const ImVec2 top(x, f.br.y - frac * h);
+            const ImVec2 bot(x + std::max(1.0f, barW - 1.0f), f.br.y);
+            f.dl->AddRectFilled(top, bot, on);
+            if ((float)i >= n->partials)
+               f.dl->AddRectFilled(top, bot, off);
+         }
+      }
+      else
+      {
+         AudioViz::IdleLabel(f, n->IsAnalyzing() ? "analyzing..." : "load a sample");
+      }
+      AudioViz::End(f);
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+
+   void DrawPartialsBody(GraphNode& gn, PartialsNode* n)
+   {
+      const int voices = n->ActiveVoices();
+      char stat[160];
+      if (n->HasSample(0))
+         snprintf(stat, sizeof(stat), "%s  -  %d voice%s", n->Status().c_str(), voices, voices == 1 ? "" : "s");
+      else
+         snprintf(stat, sizeof(stat), "%s", n->Status().c_str());
+
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      for (int which = 0; which < 2; which++)
+      {
+         if (which == 1)
+            ImGui::SameLine();
+         ImGui::PushID(which);
+         const std::string& name = n->FileName(which);
+         const char* label = which == 0 ? "sample" : "morph to";
+         char text[96];
+         snprintf(text, sizeof(text), "%s: %s", label, name.empty() ? "load..." : name.c_str());
+         if (ActionButton::Draw(text, ImVec2(AudioHalfWidth(), 0)))
+         {
+            const std::string path = Platform::OpenAudioDialog();
+            if (!path.empty())
+            {
+               PushUndoCheckpoint();
+               n->LoadFile(which, path);
+            }
+         }
+         ImGui::PopID();
+      }
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      DrawPartialsBars(n, 52.0f);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      {
+         AudioKnobRow row(5);
+         row.Knob("pitch", &n->pitch, -24.0f, 24.0f, "%+.1f st");
+         row.Knob("formant", &n->formant, -12.0f, 12.0f, "%+.1f st");
+         row.Knob("partials", &n->partials, 1.0f, 48.0f, "%.0f");
+         row.Knob("morph", &n->morph, 0.0f, 1.0f, "%.2f");
+         row.Checkbox("loop", &n->loop);
+         row.End();
+      }
+      {
+         AudioKnobRow row(4);
+         row.Knob("speed", &n->speed, 0.1f, 4.0f, "%.2fx");
+         row.Knob("noise", &n->noise, 0.0f, 2.0f, "%.2f");
+         row.Knob("release", &n->release, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                  AudioWidgetStyle::KnobSkewRelease400);
+         row.Knob("volume", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.End();
+      }
+      EndAudioBody();
+   }
+
+
+   // The string from nut (left) to bridge (right) with the exciter's point on it.
+   void DrawStringDiagram(StringNode* n, float h)
+   {
+      const float w = gAudioContentW;
+      const ImVec2 origin = ImGui::GetCursorScreenPos();
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const ImVec2 br(origin.x + w, origin.y + h);
+      AudioViz::Fill(dl, origin, br);
+      const float pad = 10.0f;
+      const float midY = origin.y + h * 0.5f;
+      const float x0 = origin.x + pad, x1 = br.x - pad;
+      const ImU32 line = ScopeMidLineCol();
+      const ImU32 trace = IsThemeLight() ? tok::U32(tok::pal::c_008CD2F0) : tok::U32(tok::pal::c_32F0FFF0);
+      dl->AddLine(ImVec2(x0, origin.y + 4.0f), ImVec2(x0, br.y - 4.0f), line, 2.0f);
+      dl->AddLine(ImVec2(x1, origin.y + 4.0f), ImVec2(x1, br.y - 4.0f), line, 2.0f);
+      dl->AddLine(ImVec2(x0, midY), ImVec2(x1, midY), trace, 1.5f);
+      const float px = x1 - std::clamp(n->position, 0.0f, 1.0f) * (x1 - x0);
+      dl->AddCircleFilled(ImVec2(px, midY), 4.0f, trace);
+      AudioViz::Border(dl, origin, br);
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+   void DrawStringBody(GraphNode& gn, StringNode* n)
+   {
+      const int voices = n->ActiveVoices();
+      char stat[64];
+      snprintf(stat, sizeof(stat), "%d voice%s", voices, voices == 1 ? "" : "s");
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      DrawStringDiagram(n, 28.0f);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+      {
+         AudioKnobRow row(4);
+         row.Dropdown("exciter##stringExciter", StringNode::ExciterNames(), n->exciter, [n](int i) {
+            PushUndoCheckpoint();
+            n->exciter = i;
+         });
+         row.Knob("position", &n->position, 0.02f, 0.5f, "%.2f");
+         row.Knob("tone", &n->tone, 0.0f, 1.0f, "%.2f");
+         row.Knob("stiffness", &n->stiffness, 0.0f, 1.0f, "%.2f");
+         row.End();
+      }
+      {
+         AudioKnobRow row(4);
+         row.Knob("decay", &n->decay, 0.05f, 20.0f, "%.2f s");
+         row.Knob("body", &n->body, 0.0f, 1.0f, "%.2f");
+         row.Knob("release", &n->release, 1.0f, 5000.0f, "%.0f ms", kKnobSmall, false, false,
+                  AudioWidgetStyle::KnobSkewRelease400);
+         row.Knob("volume", &n->volume, 0.0f, 1.0f, "%.2f", kKnobLarge);
+         row.End();
+      }
       EndAudioBody();
    }
 

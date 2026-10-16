@@ -1,7 +1,7 @@
 # Field build step 16 — "[Unpack to Canvas]" for FieldGraphNode
 
 You are implementing **build step 16 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). Self-
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). Self-
 contained brief; no prior context assumed beyond "Files to read first".
 Line numbers are from `src/` at the commit this was written against
 (`feature/field-step-14-dynamic-pins-graph-node` tip, commit `18ba50e`) —
@@ -300,7 +300,7 @@ not "a handful of lines."
 ## 7. Machine-checkable exit criterion
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 cmake --build build -j"$(sysctl -n hw.ncpu)"
 
 for v in FIELDGRAPHTEST FIELDGRAPHENCAPTEST FIELDGRAPHLIVEPARAMTEST FIELDGRAPHUNPACKTEST; do

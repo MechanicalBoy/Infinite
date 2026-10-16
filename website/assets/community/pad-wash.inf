@@ -177,7 +177,6 @@ end
 node 17 Notes Note Echo
   pos -380 -420
   flags 0 0 1 0
-  f delayMs 95.5498734
   i repeats 3
   f decay 28.5000076
   i transposePerRepeat 4
@@ -238,7 +237,6 @@ node 24 AudioEffects Audio Filter
   f gain 0
   f outputGainDb 0
   f envAmount 0
-  f modAmount 0
 end
 node 25 Modulators Random
   pos 1760 1100

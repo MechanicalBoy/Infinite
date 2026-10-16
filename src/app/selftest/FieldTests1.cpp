@@ -13,10 +13,14 @@ int RunFieldTest()
    printf("[FIELDTEST] Running Field regression harness...\n");
 
    // Attempt to open tests/field/corpus.txt from working directory or relative paths
+   // Third candidate: the source tree this file was compiled from (works from any working directory).
+   const std::string srcFile = __FILE__;
+   const size_t srcPos = srcFile.rfind("/src/app/selftest/");
    std::vector<std::string> candidatePaths = {
       "tests/field/corpus.txt",
       "../tests/field/corpus.txt",
-      "/Users/namansoni/infinte/tests/field/corpus.txt"
+      srcPos == std::string::npos ? std::string("tests/field/corpus.txt")
+                                  : srcFile.substr(0, srcPos) + "/tests/field/corpus.txt"
    };
 
    std::ifstream file;

@@ -446,6 +446,9 @@ namespace
             steady = std::max(steady, D2Peak(rL2, 0, (size_t)(0.05 * sr)));
          }
          const double c = Db(step / std::max({ pre, post, steady, 1e-5 }));
+         if (getenv("INFINITE_FXAUDIT_VERBOSE"))
+            printf("FXAUDIT CLICK %-18s %-10s step %.2e pre %.2e post %.2e steady %.2e -> %+.1f dB\n", fx.c_str(),
+                   p.name.c_str(), step, pre, post, steady, c);
          if (c > worstClick)
          {
             worstClick = c;

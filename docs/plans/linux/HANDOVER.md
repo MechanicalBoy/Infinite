@@ -102,7 +102,7 @@ step back to a bare `find` over the worktree.**
 
 ## Housekeeping the owner needs to action
 
-The **main worktree** `/Users/namansoni/infinte` is on
+The **main worktree** `<repo>` is on
 `feature/linux-step-01-desktop` and still holds the *same* Syphon/window-icon
 changes uncommitted (`M CMakeLists.txt`, `M src/main.cpp`). They were exported
 as a patch and are now committed here as `458da32`, cleaned up. Discard them

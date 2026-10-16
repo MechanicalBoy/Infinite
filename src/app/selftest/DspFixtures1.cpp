@@ -1183,6 +1183,9 @@ bool RunAudioFilterFixture()
       { AudioFilterDsp::kPeak, 1000.0f, 2.0f, 6.0f, 1000.0f, "peak @ centre" },
       { AudioFilterDsp::kBP, 1000.0f, 5.0f, 0.0f, 1000.0f, "BP @ centre" },
       { AudioFilterDsp::kBP, 1000.0f, 5.0f, 0.0f, 100.0f, "BP far below" },
+      { AudioFilterDsp::kLadder, 1000.0f, 0.707f, 0.0f, 1000.0f, "ladder @ cutoff" },
+      { AudioFilterDsp::kMs20, 1000.0f, 0.707f, 0.0f, 3000.0f, "ms-20 stopband" },
+      { AudioFilterDsp::kDiode, 1000.0f, 0.707f, 0.0f, 300.0f, "diode below cutoff" },
    };
    for (const Case& c : cases)
    {
@@ -1268,6 +1271,82 @@ bool RunAudioFilterFixture()
       printf("DSPTEST filter stability sweep: %d type x freq x Q combinations, no NaN/Inf  %s\n", checked,
              stableOk ? "OK" : "FAIL");
       all &= stableOk;
+   }
+
+   // 4) v0.6 2.25: at the top of Q each analogue model sings at its cutoff,
+   //    within 5 cents, through the real kernel (2x oversampled) - and the
+   //    same models at Analog's rate (4x oversampled, resonance 1 -> 1.1).
+   {
+      // Frequency of the last half of `y` from linearly interpolated rising
+      // zero crossings.
+      auto PitchHz = [](const std::vector<float>& y, double rate) {
+         double first = -1.0, last = -1.0;
+         int crossings = 0;
+         for (size_t i = y.size() / 2; i + 1 < y.size(); i++)
+         {
+            if (y[i] <= 0.0f && y[i + 1] > 0.0f)
+            {
+               const double t = (double)i + (double)(-y[i]) / (double)(y[i + 1] - y[i]);
+               if (first < 0.0)
+                  first = t;
+               else
+                  crossings++;
+               last = t;
+            }
+         }
+         return crossings > 0 ? rate * crossings / (last - first) : 0.0;
+      };
+      const int types[] = { AudioFilterDsp::kLadder, AudioFilterDsp::kMs20, AudioFilterDsp::kDiode };
+      const float cutoffs[] = { 100.0f, 300.0f, 1000.0f, 3000.0f, 8000.0f };
+      double worstNode = 0.0, worstAnalog = 0.0;
+      for (int type : types)
+      {
+         for (float fc : cutoffs)
+         {
+            std::unique_ptr<AudioEffectNode> node = MakeSingleBandNode(type, fc, 18.0f, 0.0f, sampleRate);
+            AudioNode* audioNode = node->GetAudioNode();
+            const int blockSize = 512, blocks = 120;
+            std::vector<float> inBuf(blockSize, 0.0f), outBuf(blockSize, 0.0f), y;
+            float* inPtr = inBuf.data();
+            float* outPtr = outBuf.data();
+            AudioBuffer inBuffer;
+            inBuffer.channels = &inPtr;
+            inBuffer.numChannels = 1;
+            inBuffer.numFrames = blockSize;
+            AudioBuffer outBuffer;
+            outBuffer.channels = &outPtr;
+            outBuffer.numChannels = 1;
+            outBuffer.numFrames = blockSize;
+            const AudioBuffer* inputs[1] = { &inBuffer };
+            for (int blk = 0; blk < blocks; blk++)
+            {
+               inBuf[0] = blk == 0 ? 0.1f : 0.0f;
+               audioNode->ProcessBlock(inputs, 1, outBuffer);
+               y.insert(y.end(), outBuf.begin(), outBuf.end());
+            }
+            const double hz = PitchHz(y, sampleRate);
+            const double cents = hz > 0.0 ? 1200.0 * log2(hz / fc) : 1.0e9;
+            worstNode = std::max(worstNode, fabs(cents));
+
+            const int model = AudioFilterDsp::ModelOf(type);
+            const double rate = sampleRate * 4.0;
+            FilterModels::Bank<float> bank;
+            const float g = FilterModels::CutoffToG(model, fc, rate, (float)sampleRate * 0.45f);
+            const float k = FilterModels::KFromResonance(model, 1.1f);
+            std::vector<float> ya((size_t)(rate * 2.0)); // 2 s: a 100 Hz ring builds slowly
+            for (size_t i = 0; i < ya.size(); i++)
+               ya[i] = bank.Process(model, i == 0 ? 0.1f : 0.0f, g, k);
+            const double hzA = PitchHz(ya, rate);
+            const double centsA = hzA > 0.0 ? 1200.0 * log2(hzA / fc) : 1.0e9;
+            worstAnalog = std::max(worstAnalog, fabs(centsA));
+            printf("DSPTEST filter model pitch (%s @ %.0f Hz): node %+.2f c  analog %+.2f c\n",
+                   AudioFilterDsp::TypeName(type), fc, cents, centsA);
+         }
+      }
+      const bool pitchOk = worstNode < 5.0 && worstAnalog < 5.0;
+      printf("DSPTEST filter model self-oscillation pitch: worst node %.2f c, analog %.2f c (limit 5)  %s\n",
+             worstNode, worstAnalog, pitchOk ? "OK" : "FAIL");
+      all &= pitchOk;
    }
 
    return all;
@@ -1443,6 +1522,55 @@ bool RunDynamicsFixture()
       all &= releaseOk;
    }
 
+   // v0.6 2.21: the same step through each style. Same knobs, so every
+   // style must land on the same steady reduction; the curves to get there
+   // are what tell them apart.
+   {
+      const float threshold = -20.0f, ratio = 4.0f, attackMs = 20.0f, releaseMs = 200.0f;
+      const float quietDb = -40.0f, loudDb = -6.0f;
+      const float quietAmp = DspMath::DbToLinear(quietDb), loudAmp = DspMath::DbToLinear(loudDb);
+      const float expectDb = loudDb - DynamicsDsp::GainComputerDb(loudDb, threshold, ratio);
+      float atk[DynamicsDsp::kNumStyles] = {}, rel[DynamicsDsp::kNumStyles] = {}, fin[DynamicsDsp::kNumStyles] = {};
+      for (int style = 0; style < DynamicsDsp::kNumStyles; style++)
+      {
+         auto node = MakeDynamicsNode(threshold, ratio, attackMs, releaseMs, 0.0f, sampleRate);
+         *node->ParamPtr("style") = (float)style;
+         node->CookIfNeeded(2);
+         RunSamples(*node, 4000, [&](int) { return quietAmp; }, nullptr);
+         std::vector<float> up, down;
+         RunSamples(*node, 44100, [&](int) { return loudAmp; }, &up);
+         fin[style] = loudDb - DspMath::LinearToDb(std::fabs(up.back()));
+         RunSamples(*node, 88200, [&](int) { return quietAmp; }, &down);
+         atk[style] = rel[style] = -1.0f;
+         for (size_t i = 0; i < up.size(); i++)
+            if (loudDb - DspMath::LinearToDb(std::fabs(up[i])) >= 0.632f * fin[style])
+            {
+               atk[style] = (float)i / (float)sampleRate * 1000.0f;
+               break;
+            }
+         for (size_t i = 0; i < down.size(); i++)
+            if (quietDb - DspMath::LinearToDb(std::fabs(down[i])) <= 0.368f * fin[style])
+            {
+               rel[style] = (float)i / (float)sampleRate * 1000.0f;
+               break;
+            }
+         printf("DSPTEST dynamics style %-5s: attack %.1f ms, release %.1f ms, settles at -%.2f dB (expect -%.2f)\n",
+                DynamicsDsp::StyleList()[style].c_str(), atk[style], rel[style], fin[style], expectDb);
+      }
+      using namespace DynamicsDsp;
+      bool ok = true;
+      for (int style = 0; style < kNumStyles; style++)
+         ok &= atk[style] > 0.0f && rel[style] > 0.0f && std::fabs(fin[style] - expectDb) < 0.5f;
+      ok &= std::fabs(atk[kClean] - attackMs) < attackMs * 0.1f + 0.5f;
+      ok &= std::fabs(rel[kClean] - releaseMs) < releaseMs * 0.1f + 0.5f;
+      ok &= rel[kBus] > rel[kClean] * 1.05f;         // release waits for the attack stage
+      ok &= atk[kOpto] > atk[kClean] * 1.3f;         // a dim cell is slow
+      ok &= std::fabs(rel[kOpto] - rel[kClean]) > rel[kClean] * 0.2f; // two-stage release
+      ok &= atk[kFet] < atk[kClean] * 0.5f;          // feedback grabs
+      printf("DSPTEST dynamics styles: one steady reduction, four curves  %s\n", ok ? "OK" : "FAIL");
+      all &= ok;
+   }
+
    return all;
 }
 
@@ -1563,6 +1691,50 @@ bool RunDelayFixture()
       printf("DSPTEST delay bounce alternation: tap1 L %.3f R %.3f, tap2 L %.3f R %.3f  %s\n", firstL, firstR,
              secondL, secondR, alternateOk ? "OK" : "FAIL");
       all &= alternateOk;
+   }
+
+   // 4) Tape mode (2.20): with diffusion all the way up the smeared repeat
+   //    still lands on the delay time (its tap reads early by the chain's
+   //    length), and saturation takes level off each pass.
+   {
+      Transport::Instance().SetTempo(120.0f);
+      const double beatSeconds = MusicTime::BeatsFor(MusicTime::kEighth) * 60.0 / 120.0;
+      const int repeatSamples = (int)std::lround(beatSeconds * sampleRate);
+      auto Render = [&](float diffusion, float saturation, int frame) {
+         auto node = MakeDelayNode(false, sampleRate);
+         *node->ParamPtr("sync") = 1.0f;
+         *node->ParamPtr("rateDiv") = (float)MusicTime::kEighth;
+         *node->ParamPtr("feedback") = 60.0f;
+         *node->ParamPtr("analog") = 1.0f;
+         *node->ParamPtr("wow") = 0.0f;
+         *node->ParamPtr("flutter") = 0.0f;
+         *node->ParamPtr("diffusion") = diffusion;
+         *node->ParamPtr("saturation") = saturation;
+         node->CookIfNeeded(frame);
+         std::vector<std::vector<float>> out;
+         RunSamples(*node, repeatSamples * 3 + 32, 1, [](int i, int) { return i < 48 ? 0.5f : 0.0f; }, &out);
+         return out[0];
+      };
+      auto Energy = [](const std::vector<float>& x, int from, int to) {
+         double e = 0.0;
+         for (int i = std::max(0, from); i < std::min(to, (int)x.size()); i++)
+            e += (double)x[i] * x[i];
+         return e;
+      };
+      const int ms = (int)(sampleRate * 0.001);
+      const std::vector<float> diffused = Render(1.0f, 0.0f, 5);
+      const double onTime = Energy(diffused, repeatSamples * 2 - 5 * ms, repeatSamples * 2 + 40 * ms);
+      const double between = Energy(diffused, repeatSamples + 50 * ms, repeatSamples * 3 - 50 * ms);
+      const float onTimeShare = between > 0.0 ? (float)(onTime / between) : 0.0f;
+      const std::vector<float> clean = Render(0.0f, 0.0f, 6);
+      const std::vector<float> hot = Render(0.0f, 1.0f, 7);
+      const double r2Clean = Energy(clean, repeatSamples * 2 - 5 * ms, repeatSamples * 2 + 10 * ms);
+      const double r2Hot = Energy(hot, repeatSamples * 2 - 5 * ms, repeatSamples * 2 + 10 * ms);
+      const float satDropDb = (float)(10.0 * std::log10((r2Clean + 1e-20) / (r2Hot + 1e-20)));
+      const bool tapeOk = onTimeShare > 0.8f && satDropDb > 1.0f && satDropDb < 12.0f;
+      printf("DSPTEST delay tape: diffused repeat %.0f%% on time, saturation takes %.1f dB off repeat 2  %s\n",
+             onTimeShare * 100.0f, satDropDb, tapeOk ? "OK" : "FAIL");
+      all &= tapeOk;
    }
 
    Transport::Instance().SetTempo(120.0f); // restore default for any fixture that runs after this one
@@ -2149,20 +2321,37 @@ bool RunWavetableShaperFixture()
          *node, testSamples, 1,
          [sweepHz](int i, int) { return sinf(2.0f * (float)M_PI * sweepHz * (float)i / (float)44100.0); }, &out);
 
+      // The reference, then the node's output read at a fractional delay:
+      // the minimum-phase oversampler's delay is `latency` rounded, not a
+      // whole number of samples, so the node must match the curve at some
+      // delay within a sample of what it reports.
       DcBlocker refBlocker; // starts zeroed, matching the node's post-warmup state
       refBlocker.SetSampleRate(sampleRate);
-      float maxErr = 0.0f;
-      for (int i = 0; i + latency < testSamples; i++)
+      std::vector<float> expected((size_t)testSamples);
+      for (int i = 0; i < testSamples; i++)
       {
          const float x = sinf(2.0f * (float)M_PI * sweepHz * (float)i / (float)44100.0);
-         const float shaped = WavetableShaperDsp::Shape(x, table, position, driveDb, bias, smooth);
-         const float expected = refBlocker.Process(shaped);
-         if (i >= 256) // past the oversampler's start-up transient
-            maxErr = std::max(maxErr, std::fabs(expected - out[0][(size_t)(i + latency)]));
+         expected[(size_t)i] = refBlocker.Process(WavetableShaperDsp::Shape(x, table, position, driveDb, bias, smooth));
+      }
+      float maxErr = 1.0e9f;
+      double bestDelay = 0.0;
+      for (double d = latency - 1.0; d <= latency + 1.0 + 1e-9; d += 0.01)
+      {
+         float err = 0.0f;
+         for (int i = 256; i + (int)std::ceil(d) + 1 < testSamples; i++) // past the oversampler's start-up transient
+         {
+            const double at = i + d;
+            const int k = (int)std::floor(at);
+            const float f = (float)(at - k);
+            const float y = out[0][(size_t)k] + (out[0][(size_t)k + 1] - out[0][(size_t)k]) * f;
+            err = std::max(err, std::fabs(expected[(size_t)i] - y));
+         }
+         if (err < maxErr)
+            maxErr = err, bestDelay = d;
       }
       const bool parityOk = latency > 0 && maxErr < 2.0e-3f;
-      printf("DSPTEST wavetable shaper node parity: latency %d, max error vs WavetableShaperDsp::Shape %.6f  %s\n",
-             latency, maxErr, parityOk ? "OK" : "FAIL");
+      printf("DSPTEST wavetable shaper node parity: latency %d (fits at %.2f), max error vs WavetableShaperDsp::Shape %.6f  %s\n",
+             latency, bestDelay, maxErr, parityOk ? "OK" : "FAIL");
       all &= parityOk;
    }
 

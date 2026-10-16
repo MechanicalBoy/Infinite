@@ -7,7 +7,7 @@ description: "Canonical tempo-sync/quantize divisions from src/audio/MusicTime.h
 
 Canonical rhythmic time division and quantization rules for Infinite nodes — whenever an audio, note, synth, or modulator node needs tempo sync, clock division, rate, or quantization options, it must use the standardized table in src/audio/MusicTime.h (4 bars to 1/32 with dotted and triplets, plus 1/64) rather than inventing a local list.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`).
+Paths below are relative to the repo root (`<repo>`).
 
 ## The Rule
 

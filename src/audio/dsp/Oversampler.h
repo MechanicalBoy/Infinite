@@ -4,6 +4,8 @@
 #include <cmath>
 #include <vector>
 
+#include "audio/FpContract.h"
+
 // Linear-phase oversampler for running a nonlinearity at F times the sample
 // rate (F = 2, 4 or 8), per channel, built as a cascade of 2x half-band
 // stages - the standard efficient structure: only the first stage, at the
@@ -103,13 +105,23 @@ public:
       return a[0];
    }
 
-private:
    // One 2x half-band stage, one channel. History buffers are mirrored
    // (every sample written twice, S apart) so each filter reads one
    // contiguous window - no per-tap index masking, so the loops vectorise.
+   // Public so the four-voice lane version (VoiceLanes.h) runs the very
+   // same taps.
    class HalfbandStage
    {
    public:
+      int GroupDelay() const { return mGd; }
+      float Centre() const { return mCentre; }
+      const std::vector<float>& OddTaps() const { return mOdd; }
+      const std::vector<int>& OddIndex() const { return mOddIndex; }
+      const std::vector<float>& UpTaps() const { return mUpOdd; }
+      int OddParity() const { return mOddParity; }
+      int UpSize() const { return mUpSize; }
+      int DownSize() const { return mDownSize; }
+
       void Prepare(int groupDelay, double beta)
       {
          mGd = groupDelay;
@@ -168,6 +180,7 @@ private:
       // out[r] = 2 * sum_j h[r + 2j] * x[n - j]
       void Up(float x, float* out)
       {
+         INFINITE_NO_FMA
          mUpHist[(size_t)mUpPos] = x;
          mUpHist[(size_t)(mUpPos + mUpSize)] = x;
          // newest at w[0], older at w[-1], w[-2], ...
@@ -185,6 +198,7 @@ private:
       // y = sum_i h[i] * v[2n - i], v[2n] = in[0], v[2n+1] = in[1].
       float Down(const float* in)
       {
+         INFINITE_NO_FMA
          // Push in[0] then in[1]; v[2n] then sits one behind the newest.
          Push(in[0]);
          Push(in[1]);
@@ -216,6 +230,10 @@ private:
       int mUpPos = 0, mDownPos = 0;
    };
 
+   int Stages() const { return mStages; }
+   const HalfbandStage& Stage(int s) const { return mStage[s][0]; }
+
+private:
    static double BesselI0(double x)
    {
       double sum = 1.0, term = 1.0;

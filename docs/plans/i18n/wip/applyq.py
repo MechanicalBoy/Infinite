@@ -1,7 +1,8 @@
 import sys,os,glob
-sys.path.insert(0,'/Users/namansoni/infinte/tools/i18n')
+ROOT=os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','..','..','..'))
+sys.path.insert(0,ROOT+'/tools/i18n')
 import extract
-os.chdir('/Users/namansoni/infinte')
+os.chdir(ROOT)
 S='/private/tmp/claude-501/-Users-namansoni-infinte/bb6fbb4f-a0cb-4962-beae-f4b1de38059f/scratchpad/tr'
 keys=[l.rstrip('\n') for l in open(S+'/missing3.txt',encoding='utf-8')]
 L=['es','de','zh','ja','ru']

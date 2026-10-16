@@ -1,5 +1,6 @@
 // Per-frame self-test blocks moved verbatim out of the main loop in main.cpp.
 #include "app/AppShared.h"
+#include "audio/MusicTime.h"
 
 namespace app
 {
@@ -2683,7 +2684,85 @@ void FrameTest_TRANSPORTTEST(int frameId, GLFWwindow* window)
             allOk = allOk && eOk;
          }
 
+         // --- G. v0.6 2.38: bar-quantized pause / restart -----------------------
+         {
+            bool gOk = true;
+            const double blockBeats = kBlockSec * 2.0; // 120 bpm
+            auto run = [&](int blocks) { for (int i = 0; i < blocks; i++) tr.AdvanceAudioClock(kBlock); };
+            auto fresh = [&](double startBeats) {
+               tr.SetLoop(false, 0.0, 0.0);
+               tr.SetTempo(120.0f);
+               tr.SetPlaying(true);
+               tr.SeekBeats(startBeats);
+               startFakeEngine();
+               tr.AdvanceAudioClock(0);
+            };
+            // Restart requested mid-bar lands on the next bar line, within one block.
+            tr.SetLaunchQuantize(2); // bar
+            fresh(0.0);
+            run(1);
+            double b = tr.Beats();
+            while (std::fmod(b, 4.0) < 1.0 || std::fmod(b, 4.0) > 3.0) { run(1); b = tr.Beats(); }
+            const double barLine = std::floor(b / 4.0) * 4.0 + 4.0;
+            const auto act = tr.RequestRewind();
+            bool restarted = false;
+            double blockStartAtRestart = -1.0;
+            double prev = tr.Beats();
+            for (int i = 0; i < 400 && !restarted; i++)
+            {
+               tr.AdvanceAudioClock(kBlock);
+               if (tr.Beats() < prev)
+               {
+                  restarted = true;
+                  blockStartAtRestart = prev; // the clock was here when the restart was applied
+               }
+               prev = tr.Beats();
+            }
+            const bool g1 = act == Transport::kLaunchRestart && restarted &&
+                            blockStartAtRestart >= barLine - blockBeats * 1.001 && blockStartAtRestart <= barLine + 1e-6;
+            printf("launch quantize restart on bar: %s (bar %.3f, applied from %.4f, budget %.4f)\n",
+                   g1 ? "OK" : "FAIL", barLine, blockStartAtRestart, blockBeats);
+            gOk = gOk && g1;
+            // A second press cancels it; nothing restarts.
+            fresh(1.0);
+            tr.RequestRewind();
+            const bool pend = tr.PendingLaunch() != Transport::kLaunchNothing;
+            tr.RequestRewind();
+            run(400);
+            const bool g2 = pend && tr.PendingLaunch() == Transport::kLaunchNothing && tr.Beats() > 4.0;
+            printf("launch quantize cancel: %s\n", g2 ? "OK" : "FAIL");
+            gOk = gOk && g2;
+            // Pause waits for the line, then stops.
+            fresh(0.5);
+            tr.RequestTogglePlay();
+            run(1);
+            const bool stillPlaying = tr.IsPlaying();
+            run(200);
+            const bool g3 = stillPlaying && !tr.IsPlaying();
+            printf("launch quantize pause: %s\n", g3 ? "OK" : "FAIL");
+            gOk = gOk && g3;
+            // Starting from stopped is immediate; with the grid off everything is immediate.
+            tr.SetPlaying(false);
+            const bool g4 = tr.RequestTogglePlay() == Transport::kLaunchNothing && tr.IsPlaying();
+            tr.SetLaunchQuantize(0);
+            const bool g5 = tr.RequestRewind() == Transport::kLaunchNothing && tr.PendingLaunch() == Transport::kLaunchNothing;
+            printf("launch quantize immediate cases: %s\n", (g4 && g5) ? "OK" : "FAIL");
+            gOk = gOk && g4 && g5;
+            // A switcher slot change waits for the line while playing, is immediate when stopped or grid none.
+            MusicTime::LaunchedInt li;
+            bool g6 = li.Resolve(0, 5.0, true, 2) == 0;
+            g6 = g6 && li.Resolve(2, 5.5, true, 2) == 0;   // wants 2, still 0
+            g6 = g6 && li.Resolve(2, 7.9, true, 2) == 0;
+            g6 = g6 && li.Resolve(2, 8.0, true, 2) == 2;   // bar line reached
+            g6 = g6 && li.Resolve(3, 8.5, false, 2) == 3;  // stopped: at once
+            g6 = g6 && li.Resolve(1, 8.6, true, 0) == 1;   // grid none: at once
+            printf("launch quantize switcher slot: %s\n", g6 ? "OK" : "FAIL");
+            gOk = gOk && g6;
+            allOk = allOk && gOk;
+         }
+
          // Leave the transport the way the rest of the session expects it.
+         tr.SetLaunchQuantize(0);
          tr.SetLoop(false, 0.0, 0.0);
          tr.SetTempo(120.0f);
          tr.Seek(0.0);

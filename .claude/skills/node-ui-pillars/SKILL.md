@@ -7,7 +7,7 @@ description: "Non-negotiable node-body UI rules (knob grid, mod-dot, `mix` slot,
 
 The non-negotiable symmetry, alignment and theming pillars for every Infinite node body — knob-row grid discipline, where a dropdown/checkbox/mod-dot is allowed to sit, the standard bottom-right `mix` slot, filter-mode naming, and the light/dark contrast budget for checkboxes and dropdowns. Use BEFORE editing any Draw*Body / Draw*Params function, before adding a knob, dropdown, checkbox or toggle to a node, before changing PushCheckboxStyle / PushDropdownStyle / DrawDiscreteParamPin / AudioKnobRow, and as the acceptance checklist after any node UI change. Complements audio-node-ui (which covers layout grammar and widget choice); this one is the regression contract that must survive every future edit.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 This skill exists because a full-app UI pass in 2026 found the same handful of
 defects repeated across a dozen node bodies: knob rows that didn't line up,

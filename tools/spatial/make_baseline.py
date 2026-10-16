@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Spatial audio baseline kit (docs/plans/spatial/README.md, section 6).
 
-Writes, into OUT_DIR (default ~/infinite-spatial-baseline):
+Writes, into OUT_DIR (default ~/Infinite/test-output/spatial-baseline):
   stimulus_objects_adm.wav  ADM BWF, 24 mono objects (8 azimuths x 3 heights);
                             import into Logic, bounce binaural -> logic_binaural.wav
   mixer_pan.wav             the same trials through Infinite's Mixer pan law
@@ -158,7 +158,7 @@ def chna(n):
 
 
 def main():
-    out = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else "~/infinite-spatial-baseline")
+    out = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else "~/Infinite/test-output/spatial-baseline")
     os.makedirs(out, exist_ok=True)
     rng = np.random.default_rng(20261008)
     stim = stimulus(rng)

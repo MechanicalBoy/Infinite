@@ -1,5 +1,9 @@
 // DSP self-test fixtures, part 2: sampler..granular (moved verbatim from main.cpp).
 #include "app/AppShared.h"
+#include "audio/dsp/ConvolutionKernel.h"
+#include "audio/dsp/SimdF4.h"
+
+#include <chrono>
 
 namespace app
 {
@@ -1409,6 +1413,49 @@ bool RunMpeFixture()
    feed({ 0xE1, 0x00, 0x20 });
    check(run() == 0, "MPE off: member-channel bend sends no per-note update (ordinary keyboard unchanged)");
    feed({ 0x81, 60, 0 });
+   run();
+
+   // 2.15: each note carries its own channel's pressure and slide, from the
+   // note-on (sent before it, as controllers do) and on every move.
+   node.mpe = true;
+   node.CookIfNeeded(frame++);
+   run();
+   feed({ 0xD3, 40 });
+   feed({ 0xB3, 74, 100 });
+   feed({ 0x93, 67, 100 });
+   feed({ 0xD4, 120 });
+   feed({ 0xB4, 74, 10 });
+   feed({ 0x94, 70, 100 });
+   n = run();
+   const NoteEvent* on67 = find(n, true, false, 67);
+   const NoteEvent* on70 = find(n, true, false, 70);
+   check(on67 && on67->hasExpression && std::fabs(on67->pressure - 40.0f / 127.0f) < 0.005f
+            && std::fabs(on67->slide - 100.0f / 127.0f) < 0.005f,
+         "note-on carries its channel's pressure and slide");
+   check(on70 && std::fabs(on70->pressure - 120.0f / 127.0f) < 0.005f && std::fabs(on70->slide - 10.0f / 127.0f) < 0.005f,
+         "a second note on another channel carries its own");
+   feed({ 0xD3, 90 });
+   n = run();
+   const NoteEvent* ex67 = find(n, false, true, 67);
+   check(ex67 && ex67->hasExpression && ex67->voiceId == on67->voiceId && std::fabs(ex67->pressure - 90.0f / 127.0f) < 0.005f
+            && std::fabs(ex67->slide - 100.0f / 127.0f) < 0.005f,
+         "pressure on channel 4 updates note 67 only, slide unchanged");
+   check(find(n, false, true, 70) == nullptr, "note 70 is not touched by channel 4's pressure");
+   feed({ 0xB4, 74, 80 });
+   n = run();
+   const NoteEvent* ex70 = find(n, false, true, 70);
+   check(ex70 && std::fabs(ex70->slide - 80.0f / 127.0f) < 0.005f && find(n, false, true, 67) == nullptr,
+         "slide on channel 5 updates note 70 only");
+   check(run() == 0, "steady pressure and slide send nothing");
+   node.mpe = false;
+   node.CookIfNeeded(frame++);
+   n = run();
+   ex67 = find(n, false, true, 67);
+   check(ex67 && ex67->pressure == 0.0f && ex67->slide == 0.0f, "switching MPE off releases a held note's pressure and slide");
+   feed({ 0xD3, 10 });
+   check(run() == 0, "MPE off: pressure sends no per-note update");
+   feed({ 0x83, 67, 0 });
+   feed({ 0x84, 70, 0 });
    run();
 
    // Pressure and slide exist only while an MPE node listens.
@@ -3182,6 +3229,2518 @@ bool RunGranularFixture()
 
    remove(path.c_str());
    printf("%s\n", ok ? "GRANULARTEST OK" : "GRANULARTEST FAIL");
+   return ok;
+}
+
+// Convolution Reverb (v0.6 2.9): the convolver against a direct convolution,
+// the swap between two impulse responses, the designed room against what its
+// controls promise, and the cost of a 5 s response.
+bool RunConvolutionFixture()
+{
+   bool ok = true;
+   const double sr = 48000.0;
+   auto verdict = [&](const char* what, bool pass, const char* fmt, double a, double b = 0.0) {
+      char num[160];
+      snprintf(num, sizeof(num), fmt, a, b);
+      printf("CONVOLUTIONTEST %s: %s %s\n", what, num, pass ? "OK" : "FAIL");
+      ok = ok && pass;
+   };
+   uint32_t seed = 0x1234567u;
+   auto noise = [&]() {
+      seed ^= seed << 13;
+      seed ^= seed >> 17;
+      seed ^= seed << 5;
+      return (float)(int32_t)seed * (1.0f / 2147483648.0f);
+   };
+   // Runs x (stereo) through the kernel in uneven blocks; `swapAt` >= 0 installs `swapTo` at that sample.
+   auto run = [&](ConvolutionKernel& k, const std::vector<float>& xL, const std::vector<float>& xR, std::vector<float>& yL,
+                  std::vector<float>& yR, int swapAt = -1, ConvolutionKernel::IrSet* swapTo = nullptr) {
+      static const int kSizes[] = { 64, 512, 37, 128, 1, 300, 256 };
+      const int n = (int)xL.size();
+      yL.assign(n, 0.0f);
+      yR.assign(n, 0.0f);
+      for (int pos = 0, b = 0; pos < n; b++)
+      {
+         const int frames = std::min(kSizes[b % 7], n - pos);
+         if (swapTo && pos >= swapAt)
+         {
+            k.InstallForTest(swapTo);
+            swapTo = nullptr;
+         }
+         float* iCh[2] = { const_cast<float*>(xL.data()) + pos, const_cast<float*>(xR.data()) + pos };
+         float* oCh[2] = { yL.data() + pos, yR.data() + pos };
+         AudioBuffer inBuf { iCh, 2, frames };
+         AudioBuffer outBuf { oCh, 2, frames };
+         k.ProcessBlock(inBuf, nullptr, outBuf);
+         pos += frames;
+      }
+   };
+   auto direct = [](const std::vector<float>& x, const std::vector<float>& h, std::vector<double>& y) {
+      const int n = (int)x.size(), len = (int)h.size();
+      y.assign(n, 0.0);
+      for (int i = 0; i < n; i++)
+      {
+         double acc = 0.0;
+         const int kMax = std::min(len - 1, i);
+         for (int k = 0; k <= kMax; k++)
+            acc += (double)h[k] * (double)x[i - k];
+         y[i] = acc;
+      }
+   };
+   auto errorDb = [](const std::vector<float>& y, const std::vector<double>& ref) {
+      double err = 0.0, sig = 0.0;
+      for (size_t i = 0; i < y.size(); i++)
+      {
+         err += ((double)y[i] - ref[i]) * ((double)y[i] - ref[i]);
+         sig += ref[i] * ref[i];
+      }
+      return 10.0 * log10((err + 1e-30) / (sig + 1e-30));
+   };
+
+   // --- 1. null against a direct convolution; every tier in play, no delay ---
+   const int irLen = 22000, sigLen = 30000;
+   std::vector<float> hL(irLen), hR(irLen), xL(sigLen), xR(sigLen);
+   for (int i = 0; i < irLen; i++)
+   {
+      const float env = expf(-(float)i / 6000.0f);
+      hL[i] = noise() * env;
+      hR[i] = noise() * env;
+   }
+   hL[0] = 1.0f; // the very first tap must come out on the very first sample
+   for (int i = 0; i < sigLen; i++)
+   {
+      xL[i] = noise();
+      xR[i] = noise();
+   }
+   std::vector<double> refL, refR;
+   direct(xL, hL, refL);
+   direct(xR, hR, refR);
+   std::vector<float> yL, yR;
+   {
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 512);
+      std::vector<float> a = hL, b = hR;
+      k.InstallForTest(ConvolutionKernel::BuildSet(a, b, sr, false));
+      run(k, xL, xR, yL, yR);
+      const double eL = errorDb(yL, refL), eR = errorDb(yR, refR);
+      verdict("null vs direct convolution", eL <= -90.0 && eR <= -90.0, "L %.1f dB, R %.1f dB (limit -90)", eL, eR);
+      verdict("latency", k.LatencySamples() == 0 && fabs((double)yL[0] - (double)xL[0]) < 1e-5, "%.0f samples, first sample error %.2g",
+              (double)k.LatencySamples(), fabs((double)yL[0] - (double)xL[0]));
+   }
+
+   // --- 2. swapping to an identical response changes nothing; to a different one, no click ---
+   {
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 512);
+      std::vector<float> a = hL, b = hR, c = hL, d = hR;
+      k.InstallForTest(ConvolutionKernel::BuildSet(a, b, sr, false));
+      std::vector<float> zL, zR;
+      run(k, xL, xR, zL, zR, 9000, ConvolutionKernel::BuildSet(c, d, sr, false));
+      const double e = errorDb(zL, refL);
+      verdict("swap to the same response", e <= -90.0, "%.1f dB (limit -90)", e);
+   }
+   {
+      const int n = 48000;
+      std::vector<float> sL(n), sR(n), zL, zR;
+      for (int i = 0; i < n; i++)
+         sL[i] = sR[i] = sinf(2.0f * (float)M_PI * 220.0f * (float)i / (float)sr);
+      ConvolutionKernel::Design small, large;
+      small.size = 0.2f;
+      small.decay = 0.4f;
+      large.size = 0.8f;
+      large.decay = 0.6f;
+      large.shape = 1;
+      std::vector<float> a, b, c, d;
+      ConvolutionKernel::DesignImpulse(small, sr, a, b);
+      ConvolutionKernel::DesignImpulse(large, sr, c, d);
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 512);
+      k.InstallForTest(ConvolutionKernel::BuildSet(a, b, sr));
+      run(k, sL, sR, zL, zR, 30000, ConvolutionKernel::BuildSet(c, d, sr));
+      // A 220 Hz sine through any linear system steps by at most peak * 2 pi f / sr per sample.
+      double peak = 0.0, step = 0.0;
+      for (int i = 24000; i < n; i++)
+      {
+         peak = std::max(peak, (double)fabsf(zL[i]));
+         step = std::max(step, (double)fabsf(zL[i] - zL[i - 1]));
+      }
+      const double smooth = peak * 2.0 * M_PI * 220.0 / sr;
+      verdict("swap to a different response", peak > 0.01 && step < 3.0 * smooth, "largest step %.5f, a click-free sine allows %.5f",
+              step, 3.0 * smooth);
+   }
+
+   // --- 3. the designed room ---
+   // Decay time of one band, from the backward-integrated energy between -5 and -25 dB.
+   auto decayTime = [&](const std::vector<float>& h, int band) {
+      std::vector<float> f(h.size());
+      DspMath::Biquad q1, q2;
+      if (band == 0)
+      {
+         q1.SetBandpass(700.0, 1.5, sr);
+         q2.SetBandpass(700.0, 1.5, sr);
+      }
+      else
+      {
+         q1.SetHighpass(7000.0, 0.7071, sr);
+         q2.SetHighpass(7000.0, 0.7071, sr);
+      }
+      for (size_t i = 0; i < h.size(); i++)
+         f[i] = q2.Process(q1.Process(h[i]));
+      std::vector<double> edc(f.size());
+      double acc = 0.0;
+      for (int i = (int)f.size() - 1; i >= 0; i--)
+      {
+         acc += (double)f[i] * (double)f[i];
+         edc[i] = acc;
+      }
+      int t5 = -1, t25 = -1;
+      for (int i = 0; i < (int)edc.size(); i++)
+      {
+         const double db = 10.0 * log10(edc[i] / (edc[0] + 1e-30) + 1e-30);
+         if (t5 < 0 && db <= -5.0)
+            t5 = i;
+         if (t25 < 0 && db <= -25.0)
+            t25 = i;
+      }
+      return (t5 >= 0 && t25 > t5) ? 3.0 * (double)(t25 - t5) / sr : 0.0;
+   };
+   for (float want : { 0.8f, 2.5f })
+   {
+      ConvolutionKernel::Design d;
+      d.decay = want;
+      std::vector<float> l, r;
+      ConvolutionKernel::DesignImpulse(d, sr, l, r);
+      const double got = decayTime(l, 0);
+      char what[48];
+      snprintf(what, sizeof(what), "decay %.1f s", want);
+      verdict(what, fabs(got / want - 1.0) < 0.2, "measured %.2f s at 700 Hz (within 20%%)", got);
+   }
+   {
+      ConvolutionKernel::Design soft, hard;
+      soft.material = 0.0f;
+      hard.material = 1.0f;
+      std::vector<float> sl, sr2, hl, hr;
+      ConvolutionKernel::DesignImpulse(soft, sr, sl, sr2);
+      ConvolutionKernel::DesignImpulse(hard, sr, hl, hr);
+      const double ts = decayTime(sl, 1), th = decayTime(hl, 1);
+      verdict("material", ts > 0.0 && ts < 0.7 * th, "highs ring %.2f s soft, %.2f s hard", ts, th);
+   }
+   {
+      ConvolutionKernel::Design mono, wide;
+      mono.spread = 0.0f;
+      wide.spread = 1.0f;
+      std::vector<float> ml, mr, wl, wr;
+      ConvolutionKernel::DesignImpulse(mono, sr, ml, mr);
+      ConvolutionKernel::DesignImpulse(wide, sr, wl, wr);
+      double diff = 0.0, lr = 0.0, ll = 0.0, rr = 0.0;
+      for (size_t i = 0; i < ml.size(); i++)
+         diff = std::max(diff, (double)fabsf(ml[i] - mr[i]));
+      for (size_t i = 4800; i < wl.size(); i++)
+      {
+         lr += (double)wl[i] * wr[i];
+         ll += (double)wl[i] * wl[i];
+         rr += (double)wr[i] * wr[i];
+      }
+      const double corr = lr / sqrt(ll * rr + 1e-30);
+      verdict("spread", diff == 0.0 && fabs(corr) < 0.2, "spread 0: L-R difference %.2g; spread 1: tail correlation %.2f", diff, corr);
+   }
+   {
+      // Direct sound against everything after it.
+      auto directShare = [&](float distance, float size) {
+         ConvolutionKernel::Design d;
+         d.distance = distance;
+         d.size = size;
+         std::vector<float> l, r;
+         ConvolutionKernel::DesignImpulse(d, sr, l, r);
+         double total = 0.0;
+         for (float v : l)
+            total += (double)v * v;
+         return ((double)l[0] * l[0] + (double)l[1] * l[1]) / total;
+      };
+      const double nearShare = directShare(0.1f, 0.45f), farShare = directShare(0.9f, 0.45f);
+      verdict("distance", nearShare > 4.0 * farShare, "direct sound is %.3f of the energy near, %.3f far", nearShare, farShare);
+      // First reflection arrives later in a larger room.
+      auto firstReflection = [&](float size, int shape = 0) {
+         ConvolutionKernel::Design d;
+         d.size = size;
+         d.shape = shape;
+         std::vector<float> l, r;
+         ConvolutionKernel::DesignImpulse(d, sr, l, r);
+         for (int i = 8; i < (int)l.size(); i++)
+            if (fabsf(l[i]) > 0.05f * fabsf(l[0]))
+               return (double)i / sr * 1000.0;
+         return 0.0;
+      };
+      const double smallMs = firstReflection(0.1f), largeMs = firstReflection(0.9f);
+      verdict("size", largeMs > 3.0 * smallMs && smallMs > 0.0, "first reflection after %.1f ms small, %.1f ms large", smallMs, largeMs);
+      // A tunnel's side walls are much closer than a room's of the same length.
+      const double roomMs = firstReflection(0.6f, 0), tunnelMs = firstReflection(0.6f, 3);
+      verdict("shape", tunnelMs > 0.0 && tunnelMs < 0.6 * roomMs, "first reflection after %.1f ms in a room, %.1f ms in a tunnel", roomMs,
+              tunnelMs);
+   }
+
+   // --- 4. a file at another rate keeps its pitch and length ---
+   {
+      const int frames = 44100;
+      std::vector<float> f(frames), l, r;
+      for (int i = 0; i < frames; i++)
+         f[i] = sinf(2.0f * (float)M_PI * 1000.0f * (float)i / 44100.0f);
+      ConvolutionKernel::ImpulseFromFile(f.data(), nullptr, frames, 44100.0, sr, l, r);
+      double dot = 0.0, a = 0.0, b = 0.0;
+      for (int i = 2000; i + 2000 < (int)l.size(); i++)
+      {
+         const double want = sin(2.0 * M_PI * 1000.0 * (double)i / sr);
+         dot += want * l[i];
+         a += want * want;
+         b += (double)l[i] * l[i];
+      }
+      const double corr = dot / sqrt(a * b + 1e-30);
+      verdict("file resampled 44.1 to 48 kHz", abs((int)l.size() - 48000) <= 1 && corr > 0.9999 && fabs(b / a - 1.0) < 0.01,
+              "%.0f samples, correlation %.6f", (double)l.size(), corr);
+   }
+
+   // --- 5. through the node: built in the background, rebuilt on a change, a bad file falls back ---
+   {
+      const EffectDef* def = nullptr;
+      for (const auto& d : GetEffectDefs())
+         if (d.name == "Convolution Reverb")
+            def = &d;
+      if (!def)
+      {
+         printf("CONVOLUTIONTEST def not found FAIL\n");
+         return false;
+      }
+      AudioEffectNode node(*def);
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 512);
+      auto settle = [&]() {
+         for (int tries = 0; tries < 1000; tries++)
+         {
+            k.PushParams(node, sr);
+            if (!k.Preparing())
+               break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+         }
+         k.PushParams(node, sr);
+      };
+      settle();
+      float envA[ConvolutionKernel::kEnvelopePoints], envB[ConvolutionKernel::kEnvelopePoints];
+      float secA = 0.0f, secB = 0.0f;
+      const int nA = k.Envelope(envA, ConvolutionKernel::kEnvelopePoints, &secA);
+      std::vector<float> iL(4800, 0.0f), zL, zR;
+      iL[0] = 1.0f;
+      run(k, iL, iL, zL, zR);
+      double energy = 0.0;
+      for (float v : zL)
+         energy += (double)v * v;
+      verdict("node builds its space", nA == ConvolutionKernel::kEnvelopePoints && !k.Preparing() && energy > 0.01,
+              "%.2f s response, impulse energy out %.3f", secA, energy);
+      *node.ParamPtr("decay") = 4.0f;
+      std::this_thread::sleep_for(std::chrono::milliseconds(80));
+      settle();
+      k.Envelope(envB, ConvolutionKernel::kEnvelopePoints, &secB);
+      verdict("node rebuilds on a change", secB > 2.0f * secA, "%.2f s -> %.2f s", secA, secB);
+      node.filePath = "/nonexistent/impulse.wav";
+      std::this_thread::sleep_for(std::chrono::milliseconds(80));
+      settle();
+      verdict("missing file", !k.FileError().empty() && !k.UsingFile() && !k.Preparing(), "falls back to the designed space, reason given in %.0f characters",
+              (double)k.FileError().size());
+   }
+
+   // --- 6. cost: a 5 s response at 48 kHz, stereo, 128-frame blocks ---
+   {
+      ConvolutionKernel::Design d;
+      d.decay = (5.0f - 0.05f) / 1.15f;
+      std::vector<float> l, r;
+      ConvolutionKernel::DesignImpulse(d, sr, l, r);
+      const double irSeconds = (double)l.size() / sr;
+      ConvolutionKernel k;
+      k.PrepareToPlay(sr, 128);
+      k.InstallForTest(ConvolutionKernel::BuildSet(l, r, sr));
+      const int frames = 128, blocks = (int)(10.0 * sr / frames);
+      std::vector<float> iL(frames), iR(frames), oL(frames), oR(frames);
+      float* iCh[2] = { iL.data(), iR.data() };
+      float* oCh[2] = { oL.data(), oR.data() };
+      AudioBuffer inBuf { iCh, 2, frames };
+      AudioBuffer outBuf { oCh, 2, frames };
+      double total = 0.0, worst = 0.0;
+      for (int b = 0; b < blocks; b++)
+      {
+         for (int i = 0; i < frames; i++)
+         {
+            iL[i] = noise();
+            iR[i] = noise();
+         }
+         const auto t0 = std::chrono::steady_clock::now();
+         k.ProcessBlock(inBuf, nullptr, outBuf);
+         const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+         total += dt;
+         worst = std::max(worst, dt);
+      }
+      const double blockSeconds = (double)frames / sr;
+      const double average = 100.0 * total / ((double)blocks * blockSeconds), peak = 100.0 * worst / blockSeconds;
+      printf("CONVOLUTIONTEST cost: %.2f s response, worst single block %.1f%% of its time slot\n", irSeconds, peak);
+      verdict("cost", irSeconds > 4.9 && average < 3.0, "%.2f%% of one core on average (limit 3%%)", average);
+   }
+
+   printf("CONVOLUTIONTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
+
+// MSEG (v0.6 2.10): the shape maths, the save string, and the run over time
+// with and without a trig cable. A straight 0 -> 1 ramp is the probe shape,
+// so the value read back is the position along the shape.
+bool RunMSEGFixture()
+{
+   bool all = true;
+   auto check = [&](const char* what, double got, double want, double tol) {
+      const bool ok = std::fabs(got - want) <= tol;
+      printf("MSEGTEST %-58s got %.4f want %.4f  %s\n", what, got, want, ok ? "OK" : "FAIL");
+      all &= ok;
+   };
+   struct Stub : IModulator
+   {
+      float level = 0.0f;
+      float Value01() override { return level; }
+   };
+
+   Transport& tr = Transport::Instance();
+   const float tempoBefore = (float)tr.Tempo();
+   tr.SetPlaying(false);
+   tr.Rewind();
+   tr.SetTempo(120.0f); // 2 beats a second: a 4-beat shape takes 2 s
+   tr.SetPlaying(true);
+   // The node under test is read every tick, as the app reads it every frame.
+   MSEGNode* live = nullptr;
+   auto advance = [&](double seconds) {
+      while (seconds > 1.0e-9)
+      {
+         const float step = (float)std::min(seconds, 0.005);
+         tr.Tick(step);
+         seconds -= step;
+         if (live != nullptr)
+            live->Value01();
+      }
+   };
+   auto ramp = [](MSEGNode& n) { n.points = { { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } }; };
+
+   // --- shape maths
+   check("segment straight, halfway", MSEGNode::Segment(0.0f, 1.0f, 0.0f, 0.5f), 0.5, 1e-6);
+   check("segment ends are exact (bend 1)", MSEGNode::Segment(0.2f, 0.9f, 1.0f, 1.0f), 0.9, 1e-6);
+   check("segment bend +1 halfway = 1/(1+e^-3)", MSEGNode::Segment(0.0f, 1.0f, 1.0f, 0.5f), 1.0 / (1.0 + std::exp(-3.0)), 1e-5);
+   check("segment bend -1 halfway = 1/(1+e^3)", MSEGNode::Segment(0.0f, 1.0f, -1.0f, 0.5f), 1.0 / (1.0 + std::exp(3.0)), 1e-5);
+   {
+      MSEGNode n;
+      n.points = { { 0.0f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } };
+      check("triangle at 0.25", n.Evaluate(0.25f), 0.5, 1e-6);
+      check("triangle at 0.5", n.Evaluate(0.5f), 1.0, 1e-6);
+      check("triangle at 0.75", n.Evaluate(0.75f), 0.5, 1e-6);
+      const int at = n.AddPoint(0.25f, 0.9f);
+      check("added point lands in order (index)", at, 1, 0);
+      n.MovePoint(1, 0.8f, 0.9f); // tries to pass the point at 0.5
+      check("a moved point stops at its neighbour", n.points[1].x, 0.5, 1e-6);
+      n.RemovePoint(0);
+      n.RemovePoint((int)n.points.size() - 1);
+      check("end points cannot be removed (count)", (double)n.points.size(), 4, 0);
+      n.points[1].curve = -0.35f;
+      MSEGNode back;
+      back.Decode(n.Encode());
+      bool same = back.points.size() == n.points.size();
+      for (size_t i = 0; same && i < n.points.size(); i++)
+         same = std::fabs(back.points[i].x - n.points[i].x) < 1e-5f && std::fabs(back.points[i].y - n.points[i].y) < 1e-5f &&
+                std::fabs(back.points[i].curve - n.points[i].curve) < 1e-5f;
+      check("save string round trip (points and bends)", same ? 1 : 0, 1, 0);
+      back.Decode("garbage");
+      check("a bad save string leaves the shape alone (count)", (double)back.points.size(), 4, 0);
+   }
+
+   // --- nothing patched: follows the transport
+   {
+      MSEGNode n;
+      ramp(n);
+      n.rateMode = LFONode::kRateSynced;
+      n.rateBeats = 4.0f;
+      advance(1.0);
+      check("unpatched, 4 beats at 120: 1 s in", n.Value01(), 0.5, 0.01);
+      float first = n.Value01();
+      bool steady = true;
+      for (int i = 0; i < 8; i++)
+         steady &= n.Value01() == first;
+      check("eight reads in one tick agree", steady ? 1 : 0, 1, 0);
+      advance(1.5);
+      check("unpatched, loop off repeats: 2.5 s in", n.Value01(), 0.25, 0.01);
+      n.loop = true;
+      n.loopStart = 0.25f;
+      n.loopEnd = 0.75f;
+      // 2.5 s = 1.25 lengths: 0.25 + fmod(1.25 - 0.25, 0.5) = 0.25
+      advance(0.5); // 3.0 s = 1.5 lengths -> 0.25 + fmod(1.25, 0.5) = 0.5
+      check("unpatched, loop 0.25-0.75: 3 s in", n.Value01(), 0.5, 0.01);
+      tr.SetPlaying(false);
+      const float held = n.Value01();
+      advance(0.5);
+      check("paused transport holds it", n.Value01(), held, 1e-6);
+      tr.SetPlaying(true);
+   }
+
+   // --- trig patched, loop off: one run, then the last value
+   {
+      MSEGNode n, twin;
+      Stub trig;
+      ramp(n);
+      ramp(twin);
+      n.trigger = twin.trigger = &trig;
+      live = &n;
+      n.rateBeats = twin.rateBeats = 4.0f;
+      check("at rest before any trig: last value", n.Value01(), 1.0, 1e-6);
+      twin.Value01();
+      trig.level = 1.0f;
+      double worst = 0.0;
+      for (int i = 0; i < 200; i++) // 1 s
+      {
+         tr.Tick(0.005f);
+         const float one = twin.Value01();
+         float many = 0.0f;
+         for (int k = 0; k < 8; k++)
+            many = n.Value01();
+         worst = std::max(worst, (double)std::fabs(one - many));
+      }
+      check("run read 8 times a tick = read once (max diff)", worst, 0.0, 1e-7);
+      check("trig, 1 s in", n.Value01(), 0.5, 0.01);
+      trig.level = 0.0f; // loop off: letting go changes nothing
+      advance(0.5);
+      check("loop off ignores trig dropping: 1.5 s in", n.Value01(), 0.75, 0.01);
+      advance(1.0);
+      check("loop off holds the last value after the run", n.Value01(), 1.0, 1e-6);
+      trig.level = 1.0f;
+      advance(0.25);
+      check("retrigger starts over: 0.25 s after the edge", n.Value01(), 0.125, 0.01);
+      advance(0.25);
+      trig.level = 0.0f;
+      advance(0.01);
+      trig.level = 1.0f;
+      advance(0.1);
+      check("retrigger in the middle of a run", n.Value01(), 0.05, 0.01);
+      live = nullptr;
+   }
+
+   // --- trig patched, loop on: loop while held, release to the end
+   {
+      MSEGNode n;
+      Stub trig;
+      ramp(n);
+      n.trigger = &trig;
+      live = &n;
+      n.rateBeats = 4.0f;
+      n.loop = true;
+      n.loopStart = 0.25f;
+      n.loopEnd = 0.75f;
+      n.Value01();
+      trig.level = 1.0f;
+      advance(3.0); // 1.5 lengths -> 0.5 inside the loop
+      check("held, loop 0.25-0.75: 3 s in", n.Value01(), 0.5, 0.012);
+      float lo = 1.0f, hi = 0.0f;
+      for (int i = 0; i < 400; i++)
+      {
+         tr.Tick(0.005f);
+         const float v = n.Value01();
+         lo = std::min(lo, v);
+         hi = std::max(hi, v);
+      }
+      check("held loop never leaves 0.25-0.75 (low)", lo, 0.25, 0.01);
+      check("held loop never leaves 0.25-0.75 (high)", hi, 0.75, 0.01);
+      const float atRelease = n.Value01();
+      trig.level = 0.0f;
+      advance(0.2); // 0.1 lengths on
+      check("release plays on from where it was", n.Value01(), atRelease + 0.1, 0.012);
+      advance(2.0);
+      check("release ends on the last value", n.Value01(), 1.0, 1e-6);
+
+      // Sustain point: loop start = loop end.
+      n.loopStart = n.loopEnd = 0.4f;
+      trig.level = 1.0f;
+      advance(3.0);
+      check("sustain point holds while trig is high", n.Value01(), 0.4, 0.005);
+      trig.level = 0.0f;
+      advance(0.4);
+      check("sustain point, 0.4 s after release", n.Value01(), 0.6, 0.012);
+      live = nullptr;
+   }
+
+   // --- rate: tempo and Hz
+   {
+      MSEGNode n;
+      Stub trig;
+      ramp(n);
+      n.trigger = &trig;
+      live = &n;
+      n.rateBeats = 4.0f;
+      n.Value01();
+      tr.SetTempo(240.0f);
+      trig.level = 1.0f;
+      advance(0.5);
+      check("tempo sync: 4 beats at 240, 0.5 s in", n.Value01(), 0.5, 0.012);
+      trig.level = 0.0f;
+      advance(0.01);
+      n.rateMode = LFONode::kRateHz;
+      n.rateHz = 2.0f;
+      n.Value01();
+      trig.level = 1.0f;
+      advance(0.25);
+      check("Hz: 2 Hz, 0.25 s in", n.Value01(), 0.5, 0.012);
+      n.points = { { 0.0f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } };
+      float lo = 1.0f, hi = 0.0f;
+      for (float x = 0.0f; x <= 1.0f; x += 0.01f)
+      {
+         lo = std::min(lo, n.Evaluate(x));
+         hi = std::max(hi, n.Evaluate(x));
+      }
+      check("output stays in 0..1 (low)", lo, 0.0, 1e-6);
+      check("output stays in 0..1 (high)", hi, 1.0, 0.02);
+      live = nullptr;
+   }
+
+   live = nullptr;
+   tr.SetPlaying(false);
+   tr.Rewind();
+   tr.SetTempo(tempoBefore);
+   printf("MSEGTEST %s\n", all ? "OK" : "FAIL");
+   return all;
+}
+// Per-voice modulation (docs/plans/modulation/per-voice.md): the audio-thread
+// kernel against the node it copies, note-on restarts per voice, the route's
+// shaping against CookFrame's, and a real synth taking a plan.
+bool RunVoiceModFixture()
+{
+   bool all = true;
+   auto check = [&](const char* what, double got, double want, double tol) {
+      const bool ok = std::fabs(got - want) <= tol;
+      printf("VOICEMODTEST %-58s got %.4f want %.4f  %s\n", what, got, want, ok ? "OK" : "FAIL");
+      all &= ok;
+   };
+   constexpr double kSr = 48000.0;
+   using Rt = VoiceMod::Runtime<8>;
+   auto box = std::make_unique<VoiceMod::PlanBox>();
+   auto plan = std::make_unique<VoiceMod::Plan>();
+   auto rt = std::make_unique<Rt>();
+   rt->Prepare(kSr);
+   auto oneRoute = [&](const VoiceMod::Spec& sp) {
+      *plan = VoiceMod::Plan();
+      plan->numSources = 1;
+      plan->sources[0] = sp;
+      plan->numRoutes = 1;
+      plan->routes[0] = VoiceMod::Route();
+      plan->routes[0].param = 0;
+      box->Publish(*plan);
+   };
+   float last = 0.0f;
+   auto run = [&](int voice, int samples) {
+      for (int i = 0; i < samples; i++)
+         rt->Apply(voice, [&](int, float x) { last = x; });
+   };
+
+   Transport& tr = Transport::Instance();
+   const float tempoBefore = (float)tr.Tempo();
+   tr.SetPlaying(false);
+   tr.Rewind();
+   tr.SetTempo(120.0f);
+   tr.SetPlaying(true);
+
+   // --- (a) the kernel plays the node's shape at the node's rate
+   {
+      LFONode lfo;
+      lfo.voice = true;
+      lfo.shape = 1; // triangle
+      lfo.rateMode = LFONode::kRateBeats;
+      lfo.rateBeats = 2.0f; // 1 cycle a second at 120
+      lfo.phase = 0.1f;
+      lfo.low = 0.2f;
+      lfo.high = 0.9f;
+      VoiceMod::Spec sp;
+      check("LFO with per voice on gives a spec", lfo.VoiceSpec(sp) ? 1 : 0, 1, 0);
+      oneRoute(sp);
+      rt->BeginBlock(*box, 120.0);
+      rt->NoteOn(0);
+      const double seconds = 0.37;
+      run(0, (int)std::lround(seconds * kSr));
+      for (int i = 0; i < 74; i++)
+         tr.Tick(0.005f);
+      check("kernel LFO = node LFO, 0.37 s from start", rt->Peek(0, 0), lfo.Value01(), 2e-4);
+      lfo.voice = false;
+      check("per voice off gives no spec", lfo.VoiceSpec(sp) ? 1 : 0, 0, 0);
+   }
+
+   // --- (b) Random: each note draws its own sequence, inside low..high
+   {
+      RandomNode rnd;
+      rnd.voice = true;
+      rnd.low = 0.25f;
+      rnd.high = 0.75f;
+      VoiceMod::Spec sp;
+      rnd.VoiceSpec(sp);
+      oneRoute(sp);
+      rt->BeginBlock(*box, 120.0);
+      rt->NoteOn(0);
+      rt->NoteOn(1);
+      bool inside = true, differ = false;
+      for (int step = 0; step < 16; step++)
+      {
+         run(0, 4000);
+         run(1, 4000);
+         const float a = rt->Peek(0, 0), b = rt->Peek(1, 0);
+         inside &= a >= 0.25f && a <= 0.75f && b >= 0.25f && b <= 0.75f;
+         differ |= std::fabs(a - b) > 1e-3f;
+      }
+      check("Random stays inside low..high", inside ? 1 : 0, 1, 0);
+      check("Random: two notes draw different values", differ ? 1 : 0, 1, 0);
+   }
+
+   // --- (c) MSEG: a ramp per voice, held loops, release plays out
+   {
+      MSEGNode env;
+      env.voice = true;
+      env.points = { { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } };
+      env.rateMode = LFONode::kRateHz;
+      env.rateHz = 1.0f; // one shape a second
+      env.loop = true;
+      env.loopStart = 0.25f;
+      env.loopEnd = 0.75f;
+      VoiceMod::Spec sp;
+      env.VoiceSpec(sp);
+      oneRoute(sp);
+      rt->BeginBlock(*box, 120.0);
+      rt->NoteOn(0);
+      run(0, 12000); // 0.25 s
+      rt->NoteOn(1);
+      run(0, 12000);
+      run(1, 12000);
+      check("MSEG voice 0 at 0.5 s", rt->Peek(0, 0), 0.5, 1e-3);
+      check("MSEG voice 1, started 0.25 s later, at 0.25", rt->Peek(1, 0), 0.25, 1e-3);
+      run(0, 24000); // 1.0 s held: 0.25 + fmod(0.75, 0.5) = 0.5
+      check("MSEG held 1 s loops 0.25-0.75", rt->Peek(0, 0), 0.5, 1e-3);
+      rt->NoteOff(0);
+      run(0, 48000);
+      check("MSEG released plays out to the end", rt->Peek(0, 0), 1.0, 1e-6);
+      check("MSEG voice 1 is untouched by voice 0's release", rt->Peek(1, 0), 0.25, 1e-3);
+   }
+
+   // --- (d) route shaping matches CookFrame: curve, lo/hi, step, clamp
+   {
+      MSEGNode flat;
+      flat.voice = true;
+      flat.points = { { 0.0f, 0.5f, 0.0f }, { 1.0f, 0.5f, 0.0f } };
+      VoiceMod::Spec sp;
+      flat.VoiceSpec(sp);
+      oneRoute(sp);
+      VoiceMod::Route& r = plan->routes[0];
+      r.curve = 1.0f / 3.0f; // pow(0.5, 2) = 0.25
+      r.lo = 0.0f;
+      r.hi = 1.0f;
+      r.minValue = 0.0f;
+      r.maxValue = 1.0f;
+      box->Publish(*plan);
+      rt->BeginBlock(*box, 120.0);
+      rt->NoteOn(2);
+      run(2, 1);
+      check("curve 1/3 bends 0.5 to 0.25", last, 0.25, 1e-5);
+      r.lo = 100.0f;
+      r.hi = 1000.0f;
+      r.maxValue = 2000.0f;
+      box->Publish(*plan);
+      rt->BeginBlock(*box, 120.0);
+      run(2, 1);
+      check("lo/hi 100..1000 maps 0.25 to 325", last, 325.0, 1e-3);
+      r.step = 50.0f;
+      box->Publish(*plan);
+      rt->BeginBlock(*box, 120.0);
+      run(2, 1);
+      check("step 50 snaps 325 to 350", last, 350.0, 1e-3);
+      r.maxValue = 300.0f;
+      box->Publish(*plan);
+      rt->BeginBlock(*box, 120.0);
+      run(2, 1);
+      check("the param's max clamps it to 300", last, 300.0, 1e-3);
+      r.lo = 0.0f;
+      r.maxValue = 2000.0f;
+      r.step = 0.0f;
+      r.curve = 0.0f;
+      r.smoothMs = 10.0f;
+      box->Publish(*plan);
+      rt->BeginBlock(*box, 120.0);
+      rt->NoteOn(3); // a note starts its smoothing on the value, not from 0
+      run(3, 1);
+      check("smoothing starts on the value at note-on", last, 500.0, 1e-3);
+      plan->sources[0].points[0].y = 1.0f;
+      plan->sources[0].points[1].y = 1.0f;
+      box->Publish(*plan);
+      rt->BeginBlock(*box, 120.0);
+      run(3, 480); // 10 ms = one tau: 1 - 1/e of the way from 500 to 1000
+      check("smoothing: one tau covers 1-1/e", last, 1000.0 - 500.0 * std::exp(-1.0), 1.5);
+      box->Publish(VoiceMod::Plan());
+      rt->BeginBlock(*box, 120.0);
+      check("an empty plan turns the runtime off", rt->Active() ? 1 : 0, 0, 0);
+   }
+
+   // --- (e) Analog: a real synth runs a plan per voice
+   {
+      AnalogNode syn;
+      check("Analog cutoff is a voice param", syn.VoiceParamFor(&syn.cutoff) >= 0 ? 1 : 0, 1, 0);
+      check("Analog volume is not a voice param", syn.VoiceParamFor(&syn.volume), -1, 0);
+      const int numFrames = 480;
+      auto render = [&](bool withPlan, std::vector<float>& out) {
+         AnalogNode n;
+         n.attack = 1.0f;
+         n.sustain = 1.0f;
+         AudioNode* audio = n.GetAudioNode();
+         audio->PrepareToPlay(kSr, numFrames);
+         n.CookIfNeeded(1);
+         if (withPlan)
+         {
+            LFONode lfo;
+            lfo.voice = true;
+            lfo.rateMode = LFONode::kRateHz;
+            lfo.rateHz = 2.0f;
+            VoiceMod::Plan p;
+            p.numSources = 1;
+            lfo.VoiceSpec(p.sources[0]);
+            p.sources[0].id = 77;
+            p.numRoutes = 1;
+            p.routes[0].param = n.VoiceParamFor(&n.cutoff);
+            p.routes[0].lo = 200.0f;
+            p.routes[0].hi = 4000.0f;
+            p.routes[0].minValue = 20.0f;
+            p.routes[0].maxValue = 20000.0f;
+            n.PublishVoicePlan(p);
+         }
+         NoteEventQueue inbox;
+         audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+         std::vector<float> c0(numFrames), c1(numFrames);
+         float* chans[2] = { c0.data(), c1.data() };
+         AudioBuffer buf;
+         buf.channels = chans;
+         buf.numChannels = 2;
+         buf.numFrames = numFrames;
+         auto blocks = [&](int count) {
+            for (int b = 0; b < count; b++)
+            {
+               audio->ProcessBlock(nullptr, 0, buf);
+               out.insert(out.end(), c0.begin(), c0.end());
+            }
+         };
+         NoteEvent on;
+         on.note = 48;
+         on.velocity = 1.0f;
+         on.isNoteOn = true;
+         on.voiceId = 1;
+         inbox.Push(on);
+         blocks(10); // 0.1 s
+         on.note = 55;
+         on.voiceId = 2;
+         inbox.Push(on);
+         blocks(20); // voice 0 is 0.3 s in, voice 1 0.2 s
+         if (withPlan)
+         {
+            // sine at 0.6 and 0.4 cycles
+            check("Analog voice 0 runs its own LFO (0.6 cycles)", n.DebugVoiceSource(0, 0),
+                  0.5 + 0.5 * std::sin(2.0 * M_PI * 0.6), 0.02);
+            check("Analog voice 1 runs its own LFO (0.4 cycles)", n.DebugVoiceSource(1, 0),
+                  0.5 + 0.5 * std::sin(2.0 * M_PI * 0.4), 0.02);
+         }
+      };
+      std::vector<float> plain, modded;
+      render(false, plain);
+      render(true, modded);
+      double diff = 0.0, energy = 0.0;
+      for (size_t i = 0; i < plain.size() && i < modded.size(); i++)
+      {
+         diff += (plain[i] - modded[i]) * (plain[i] - modded[i]);
+         energy += plain[i] * plain[i];
+      }
+      check("Analog with a plan sounds different (diff/energy > 0.05)", diff / std::max(1e-12, energy) > 0.05 ? 1 : 0, 1, 0);
+      bool finite = true;
+      for (float x : modded)
+         finite &= std::isfinite(x);
+      check("Analog with a plan stays finite", finite ? 1 : 0, 1, 0);
+   }
+
+   // --- (f) Wavetable: each engine's knobs are distinct voice params
+   {
+      WavetableNode wt;
+      const int e0 = wt.VoiceParamFor(&wt.engines[0].cutoff), e1 = wt.VoiceParamFor(&wt.engines[1].cutoff);
+      check("Wavetable engine cutoffs are voice params", e0 >= 0 && e1 >= 0 ? 1 : 0, 1, 0);
+      check("Wavetable engine 1's cutoff is its own param", e0 != e1 ? 1 : 0, 1, 0);
+      check("Wavetable master volume is not a voice param", wt.VoiceParamFor(&wt.volume), -1, 0);
+      // An engine's level driven per voice from a square LFO: the render
+      // goes through the per-voice SmoothedBlock copy, so it must differ
+      // from the shared render and stay finite.
+      auto render = [&](bool withPlan) {
+         WavetableNode n;
+         n.engines[0].on = true;
+         n.engines[0].ampAttack = 1.0f;
+         n.engines[0].ampSustain = 1.0f;
+         n.engines[1].on = false;
+         AudioNode* audio = n.GetAudioNode();
+         audio->PrepareToPlay(kSr, 480);
+         n.CookIfNeeded(1);
+         if (withPlan)
+         {
+            LFONode lfo;
+            lfo.voice = true;
+            lfo.shape = 4; // square
+            lfo.rateMode = LFONode::kRateHz;
+            lfo.rateHz = 5.0f;
+            VoiceMod::Plan p;
+            p.numSources = 1;
+            lfo.VoiceSpec(p.sources[0]);
+            p.sources[0].id = 78;
+            p.numRoutes = 1;
+            p.routes[0].param = n.VoiceParamFor(&n.engines[0].volume);
+            p.routes[0].lo = 0.0f;
+            p.routes[0].hi = 0.05f;
+            p.routes[0].maxValue = 1.0f;
+            n.PublishVoicePlan(p);
+         }
+         NoteEventQueue inbox;
+         audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+         std::vector<float> c0(480), c1(480), out;
+         float* chans[2] = { c0.data(), c1.data() };
+         AudioBuffer buf;
+         buf.channels = chans;
+         buf.numChannels = 2;
+         buf.numFrames = 480;
+         NoteEvent on;
+         on.note = 57;
+         on.velocity = 1.0f;
+         on.isNoteOn = true;
+         on.voiceId = 1;
+         inbox.Push(on);
+         for (int b = 0; b < 30; b++)
+         {
+            audio->ProcessBlock(nullptr, 0, buf);
+            out.insert(out.end(), c0.begin(), c0.end());
+         }
+         return out;
+      };
+      const std::vector<float> plain = render(false), modded = render(true);
+      double diff = 0.0, energy = 0.0;
+      bool finite = true;
+      for (size_t i = 0; i < plain.size() && i < modded.size(); i++)
+      {
+         diff += (plain[i] - modded[i]) * (plain[i] - modded[i]);
+         energy += plain[i] * plain[i];
+         finite &= std::isfinite(modded[i]);
+      }
+      check("Wavetable sounds (shared render energy > 0)", energy > 1e-6 ? 1 : 0, 1, 0);
+      check("Wavetable with a plan sounds different", diff / std::max(1e-12, energy) > 0.05 ? 1 : 0, 1, 0);
+      check("Wavetable with a plan stays finite", finite ? 1 : 0, 1, 0);
+   }
+
+   // --- (h) Voice Spread (2.13): the four spreads, and a chord's notes
+   //     each taking their place among the held keys
+   {
+      using namespace ModShapes;
+      check("spread linear, 4: note 2 at 2/3", Spread(kSpreadLinear, 2, 4), 2.0 / 3.0, 1e-6);
+      check("spread linear wraps after count (note 5 of 4 = note 1)", Spread(kSpreadLinear, 5, 4), 1.0 / 3.0, 1e-6);
+      check("spread golden: note 1 at 0.618", Spread(kSpreadGolden, 1, 8), 0.6180340, 1e-6);
+      check("spread golden: note 2 at 0.236", Spread(kSpreadGolden, 2, 8), 0.2360680, 1e-6);
+      check("spread primes, 4: note 2 = (5-2)/(7-2)", Spread(kSpreadPrimes, 2, 4), 0.6, 1e-6);
+      check("spread primes, 4: last note at 1", Spread(kSpreadPrimes, 3, 4), 1.0, 1e-6);
+      check("spread alternate, 4: note 0 left of centre", Spread(kSpreadAlternate, 0, 4), 0.25, 1e-6);
+      check("spread alternate, 4: note 1 right of centre", Spread(kSpreadAlternate, 1, 4), 0.75, 1e-6);
+      check("spread alternate, 4: note 3 at the right edge", Spread(kSpreadAlternate, 3, 4), 1.0, 1e-6);
+      check("spread of one note is the centre", Spread(kSpreadGolden, 3, 1), 0.5, 1e-6);
+      bool inside = true;
+      for (int m = 0; m < 4; m++)
+         for (int c = 1; c <= kSpreadMaxCount; c++)
+            for (int i = 0; i < 40; i++)
+            {
+               const float v = Spread(m, i, c);
+               inside &= v >= 0.0f && v <= 1.0f;
+            }
+      check("every spread stays in 0..1", inside ? 1 : 0, 1, 0);
+
+      VoiceSpreadNode sp;
+      sp.mode = kSpreadLinear;
+      sp.count = 3;
+      sp.low = 0.2f;
+      sp.high = 0.8f;
+      VoiceMod::Spec spec;
+      check("Voice Spread is always per voice", sp.VoiceSpec(spec) ? 1 : 0, 1, 0);
+      check("Voice Spread shared value = first note's", sp.Value01(), 0.2, 1e-6);
+      oneRoute(spec);
+      auto rs = std::make_unique<Rt>();
+      rs->Prepare(kSr);
+      rs->BeginBlock(*box, 120.0);
+      rs->NoteOn(5); // a chord lands on whatever slots are free
+      rs->NoteOn(2);
+      rs->NoteOn(7);
+      check("chord note 1 (slot 5) at low", rs->Peek(5, 0), 0.2, 1e-6);
+      check("chord note 2 (slot 2) in the middle", rs->Peek(2, 0), 0.5, 1e-6);
+      check("chord note 3 (slot 7) at high", rs->Peek(7, 0), 0.8, 1e-6);
+      rs->NoteOff(2);
+      rs->NoteOn(0); // two keys held: the new one is the third
+      check("a note played over two held keys is third", rs->Peek(0, 0), 0.8, 1e-6);
+      check("held notes keep their place", rs->Peek(5, 0), 0.2, 1e-6);
+      rs->NoteOn(5); // the same key again, still held by itself only: two others held
+      check("a retriggered key counts the others, not itself", rs->Peek(5, 0), 0.8, 1e-6);
+   }
+
+   // --- (i) Envelope (2.14): AHDSR with per-stage curves. Hold 0 and
+   // curves 0 is the straight ADSR the node had; per voice, each voice is
+   // gated by its own note-on and note-off.
+   {
+      ModShapes::Ahdsr e;
+      e.attackMs = 10.0f;
+      e.holdMs = 0.0f;
+      e.decayMs = 40.0f;
+      e.sustain = 0.5f;
+      e.releaseMs = 20.0f;
+      auto at = [&](const ModShapes::Ahdsr& env, double sec) {
+         int stage = ModShapes::kEnvAttack;
+         double start = 0.0;
+         float from = 0.0f;
+         return ModShapes::AhdsrLevel(env, stage, start, from, sec);
+      };
+      check("straight attack halfway", at(e, 0.005), 0.5, 1e-5);
+      check("straight decay halfway", at(e, 0.030), 0.75, 1e-5);
+      check("sustain", at(e, 0.5), 0.5, 1e-6);
+      e.holdMs = 15.0f;
+      check("hold keeps the peak", at(e, 0.020), 1.0, 1e-6);
+      check("decay starts after the hold", at(e, 0.045), 0.75, 1e-5);
+      e.decayCurve = 0.5f;
+      check("curved decay = MsegSegment's bend", at(e, 0.045), ModShapes::MsegSegment(1.0f, 0.5f, 0.5f, 0.5f), 1e-6);
+      check("positive decay curve falls fast first", at(e, 0.045) < 0.75 ? 1 : 0, 1, 0);
+      {
+         int stage = ModShapes::kEnvRelease;
+         double start = 0.0;
+         float from = 0.8f;
+         e.releaseCurve = -0.5f;
+         check("release starts from its level, curved",
+               ModShapes::AhdsrLevel(e, stage, start, from, 0.010), ModShapes::MsegSegment(0.8f, 0.0f, -0.5f, 0.5f), 1e-6);
+      }
+
+      EnvelopeNode env;
+      VoiceMod::Spec spec;
+      check("Envelope shared by default", env.VoiceSpec(spec) ? 1 : 0, 0, 0);
+      env.voice = true;
+      env.output = EnvelopeNode::kOutCentred;
+      check("centred output stays shared", env.VoiceSpec(spec) ? 1 : 0, 0, 0);
+      env.output = EnvelopeNode::kOutAdsr;
+      env.attackMs = 10.0f;
+      env.holdMs = 5.0f;
+      env.decayMs = 50.0f;
+      env.sustainLevel = 0.5f;
+      env.releaseMs = 20.0f;
+      env.attackCurve = env.decayCurve = env.releaseCurve = 0.0f;
+      check("Envelope per voice with ADSR output", env.VoiceSpec(spec) ? 1 : 0, 1, 0);
+      EnvelopeNode fresh;
+      check("a new Envelope's decay falls fast first", fresh.decayCurve > 0.0f ? 1 : 0, 1, 0);
+      fresh.BeforeLoadParams();
+      check("an older patch loads straight", fresh.decayCurve + fresh.releaseCurve + fresh.holdMs, 0.0, 0.0);
+
+      oneRoute(spec);
+      auto re = std::make_unique<Rt>();
+      re->Prepare(kSr);
+      re->BeginBlock(*box, 120.0);
+      auto runOn = [&](Rt& r, int voice, double ms) {
+         for (int i = 0, n = (int)std::lround(ms * kSr / 1000.0); i < n; i++)
+            r.Apply(voice, [&](int, float x) { last = x; });
+      };
+      re->NoteOn(3);
+      runOn(*re, 3, 5.0);
+      check("voice 3 attack halfway at 5 ms", re->Peek(3, 0), 0.5, 2e-3);
+      check("voice 0, never played, at rest", re->Peek(0, 0), 0.0, 0.0);
+      runOn(*re, 3, 7.0);
+      check("voice 3 holds at 12 ms", re->Peek(3, 0), 1.0, 1e-6);
+      runOn(*re, 3, 28.0);
+      check("voice 3 decay halfway at 40 ms", re->Peek(3, 0), 0.75, 2e-3);
+      runOn(*re, 3, 60.0);
+      check("voice 3 sustains", re->Peek(3, 0), 0.5, 1e-6);
+      re->NoteOn(6);
+      runOn(*re, 6, 5.0);
+      check("voice 6 starts its own attack", re->Peek(6, 0), 0.5, 2e-3);
+      check("voice 3 still sustains", re->Peek(3, 0), 0.5, 1e-6);
+      re->NoteOff(3);
+      runOn(*re, 3, 10.0);
+      check("voice 3 release halfway after its note-off", re->Peek(3, 0), 0.25, 2e-3);
+      const float before = re->Peek(3, 0);
+      re->NoteOn(3);
+      check("a retrigger starts the attack where release was", re->Peek(3, 0), before, 2e-3);
+      re->NoteOff(3);
+      runOn(*re, 3, 30.0);
+      check("released to rest", re->Peek(3, 0), 0.0, 1e-6);
+   }
+
+   // --- (j) Note Expression (2.15): each voice follows its own note's MPE
+   // pressure or slide, from the note-on and through Express, smoothed.
+   {
+      NoteExpressionNode ne;
+      ne.low = 0.2f;
+      ne.high = 0.8f;
+      VoiceMod::Spec spec;
+      check("Note Expression is always per voice", ne.VoiceSpec(spec) ? 1 : 0, 1, 0);
+      oneRoute(spec);
+      auto rx = std::make_unique<Rt>();
+      rx->Prepare(kSr);
+      rx->BeginBlock(*box, 120.0);
+      auto runOn = [&](Rt& r, int voice, double ms) {
+         for (int i = 0, n = (int)std::lround(ms * kSr / 1000.0); i < n; i++)
+            r.Apply(voice, [&](int, float x) { last = x; });
+      };
+      rx->NoteOn(1, 0.5f, 0.1f);
+      rx->NoteOn(4, 1.0f, 0.9f);
+      check("voice 1 starts at its note's pressure (no glide in)", rx->Peek(1, 0), 0.2 + 0.6 * 0.5, 1e-6);
+      check("voice 4 starts at its own", rx->Peek(4, 0), 0.8, 1e-6);
+      runOn(*rx, 1, 1.0);
+      rx->Express(1, 0.0f, 0.1f);
+      runOn(*rx, 1, 5.0);
+      check("a pressure move is smoothed: one time constant in (e^-1 left)", rx->Peek(1, 0),
+            0.2 + 0.6 * 0.5 * std::exp(-1.0), 0.01);
+      runOn(*rx, 1, 50.0);
+      check("and settles", rx->Peek(1, 0), 0.2, 1e-3);
+      check("voice 4 does not move with voice 1", rx->Peek(4, 0), 0.8, 1e-6);
+      rx->NoteOn(1, 0.9f, 0.0f);
+      check("a new note on the slot starts at its own value", rx->Peek(1, 0), 0.2 + 0.6 * 0.9, 1e-6);
+
+      ne.source = VoiceMod::kExprSlide;
+      ne.VoiceSpec(spec);
+      oneRoute(spec);
+      auto rs2 = std::make_unique<Rt>();
+      rs2->Prepare(kSr);
+      rs2->BeginBlock(*box, 120.0);
+      rs2->NoteOn(2, 1.0f, 0.25f);
+      check("slide source reads slide, not pressure", rs2->Peek(2, 0), 0.2 + 0.6 * 0.25, 1e-6);
+
+      // Analog end to end: two notes with their own pressure; a Pitch Bend
+      // style bendUpdate (no expression) leaves pressure where it was.
+      AnalogNode syn;
+      syn.attack = 1.0f;
+      syn.sustain = 1.0f;
+      AudioNode* audio = syn.GetAudioNode();
+      audio->PrepareToPlay(kSr, 480);
+      syn.CookIfNeeded(1);
+      VoiceMod::Plan p;
+      p.numSources = 1;
+      NoteExpressionNode press;
+      press.VoiceSpec(p.sources[0]);
+      p.sources[0].id = 91;
+      p.numRoutes = 1;
+      p.routes[0].param = syn.VoiceParamFor(&syn.cutoff);
+      p.routes[0].lo = 200.0f;
+      p.routes[0].hi = 4000.0f;
+      p.routes[0].minValue = 20.0f;
+      p.routes[0].maxValue = 20000.0f;
+      syn.PublishVoicePlan(p);
+      NoteEventQueue inbox;
+      audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+      std::vector<float> c0(480), c1(480);
+      float* chans[2] = { c0.data(), c1.data() };
+      AudioBuffer buf;
+      buf.channels = chans;
+      buf.numChannels = 2;
+      buf.numFrames = 480;
+      bool finite = true;
+      auto blocks = [&](int count) {
+         for (int b = 0; b < count; b++)
+         {
+            audio->ProcessBlock(nullptr, 0, buf);
+            for (float x : c0)
+               finite &= std::isfinite(x);
+         }
+      };
+      NoteEvent on;
+      on.isNoteOn = true;
+      on.velocity = 1.0f;
+      on.hasExpression = true;
+      on.note = 48;
+      on.voiceId = 1;
+      on.pressure = 0.25f;
+      inbox.Push(on);
+      on.note = 55;
+      on.voiceId = 2;
+      on.pressure = 0.75f;
+      inbox.Push(on);
+      blocks(2);
+      check("Analog voice 0 follows its note's pressure", syn.DebugVoiceSource(0, 0), 0.25, 1e-3);
+      check("Analog voice 1 follows its own", syn.DebugVoiceSource(1, 0), 0.75, 1e-3);
+      NoteEvent ex;
+      ex.bendUpdate = true;
+      ex.hasExpression = true;
+      ex.voiceId = 1;
+      ex.note = 48;
+      ex.pressure = 1.0f;
+      inbox.Push(ex);
+      blocks(5); // 50 ms: ten time constants
+      check("an expression update moves voice 0 only", syn.DebugVoiceSource(0, 0), 1.0, 1e-3);
+      check("voice 1 unchanged", syn.DebugVoiceSource(1, 0), 0.75, 1e-3);
+      NoteEvent bend;
+      bend.bendUpdate = true;
+      bend.voiceId = 2;
+      bend.note = 55;
+      bend.bendSemitones = 2.0f;
+      inbox.Push(bend);
+      blocks(2);
+      check("a bendUpdate with no expression keeps the note's pressure", syn.DebugVoiceSource(1, 0), 0.75, 1e-3);
+      check("Analog with Note Expression stays finite", finite ? 1 : 0, 1, 0);
+   }
+
+   // --- (g) the switch saves
+   {
+      struct BoolGrab : ParamVisitor
+      {
+         bool* target = nullptr;
+         bool set = false;
+         bool value = false;
+         void Float(const char*, float&) override {}
+         void Int(const char*, int&) override {}
+         void Text(const char*, std::string&) override {}
+         void Color(const char*, float*) override {}
+         void Bool(const char* name, bool& v) override
+         {
+            if (std::strcmp(name, "voice") != 0)
+               return;
+            if (set)
+               v = value;
+            else
+               value = v;
+         }
+      };
+      LFONode a, b;
+      a.voice = true;
+      BoolGrab g;
+      a.VisitParams(g);
+      g.set = true;
+      b.VisitParams(g);
+      check("LFO per voice survives save/load", b.voice ? 1 : 0, 1, 0);
+      MSEGNode m;
+      BoolGrab gm;
+      m.VisitParams(gm);
+      check("MSEG per voice defaults off", gm.value ? 1 : 0, 0, 0);
+   }
+
+   tr.SetTempo(tempoBefore);
+   printf("VOICEMODTEST %s\n", all ? "OK" : "FAIL");
+   return all;
+}
+
+// ============================================== INFINITE_SYNTHSIMDTEST
+// 2.16: each synth has a fast voice path - Analog runs four voices to a SIMD
+// lane group, Wavetable caches its per-sample math on exact inputs - and a
+// reference path (VoiceSimd::ForceScalar). Renders an 8-note chord through
+// each synth's audio half both ways and checks (1) the two agree to -120 dB
+// and (2) the render cost per voice (ms of CPU per second of audio, chord
+// minus idle) against the reference.
+namespace
+{
+   template <class N>
+   double SynthRenderMsPerSecond(int voices, double seconds, bool scalar, std::vector<float>* capture,
+                                 void (*setup)(N&) = nullptr)
+   {
+      VoiceSimd::ForceScalar().store(scalar, std::memory_order_relaxed);
+      N n;
+      if (setup)
+         setup(n);
+      AudioNode* audio = n.GetAudioNode();
+      const int block = 256;
+      audio->PrepareToPlay(48000.0, block);
+      n.CookIfNeeded(1);
+      NoteEventQueue inbox;
+      audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+      static const int kChord[8] = { 48, 52, 55, 59, 60, 64, 67, 71 };
+      for (int v = 0; v < voices; v++)
+      {
+         NoteEvent on;
+         on.note = kChord[v];
+         on.velocity = 0.7f;
+         on.isNoteOn = true;
+         on.voiceId = 100 + v;
+         inbox.Push(on);
+      }
+      std::vector<float> l(block), r(block);
+      float* chans[2] = { l.data(), r.data() };
+      AudioBuffer buf;
+      buf.channels = chans;
+      buf.numChannels = 2;
+      buf.numFrames = block;
+      const int blocks = (int)(seconds * 48000.0 / block);
+      const auto t0 = std::chrono::steady_clock::now();
+      for (int b = 0; b < blocks; b++)
+      {
+         audio->ProcessBlock(nullptr, 0, buf);
+         if (capture)
+            for (int i = 0; i < block; i++)
+            {
+               capture->push_back(l[(size_t)i]);
+               capture->push_back(r[(size_t)i]);
+            }
+      }
+      const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+      VoiceSimd::ForceScalar().store(false, std::memory_order_relaxed);
+      return ms / seconds;
+   }
+
+   // Lanes and scalar render the same 8-note chord; the difference, relative
+   // to the signal, must sit at or below -120 dB.
+   template <class N>
+   bool SynthSimdClose(const char* name, const char* variant, void (*setup)(N&))
+   {
+      std::vector<float> lanes, scalar;
+      SynthRenderMsPerSecond<N>(8, 2.0, false, &lanes, setup);
+      SynthRenderMsPerSecond<N>(8, 2.0, true, &scalar, setup);
+      double err = 0.0, ref = 0.0;
+      for (size_t i = 0; i < lanes.size() && i < scalar.size(); i++)
+      {
+         err += ((double)lanes[i] - scalar[i]) * ((double)lanes[i] - scalar[i]);
+         ref += (double)scalar[i] * scalar[i];
+      }
+      const double db = 10.0 * std::log10(std::max(1e-30, err) / std::max(1e-30, ref));
+      const bool close = db <= -120.0 && ref > 0.0 && lanes.size() == scalar.size();
+      printf("SYNTHSIMDTEST %-9s %-28s fast vs reference %.1f dB (<= -120) %s\n", name, variant, db, close ? "OK" : "FAIL");
+      return close;
+   }
+
+   template <class N>
+   bool SynthSimdCase(const char* name, double maxRatio)
+   {
+      bool ok = SynthSimdClose<N>(name, "default", nullptr);
+      // Best of three, so a busy machine reads its quietest run.
+      double best[2] = { 1e30, 1e30 };
+      for (int pass = 0; pass < 3; pass++)
+         for (int s = 0; s < 2; s++)
+         {
+            const double idle = SynthRenderMsPerSecond<N>(0, 2.0, s == 1, nullptr);
+            const double busy = SynthRenderMsPerSecond<N>(8, 2.0, s == 1, nullptr);
+            best[s] = std::min(best[s], (busy - idle) / 8.0);
+         }
+      const double ratio = best[0] / std::max(1e-9, best[1]);
+      const bool fast = ratio <= maxRatio;
+      printf("SYNTHSIMDTEST %-9s per voice %.2f ms/s fast path, %.2f reference (x%.2f, limit x%.2f) %s\n", name, best[0],
+             best[1], ratio, maxRatio, fast ? "OK" : "FAIL");
+      ok = ok && fast;
+      return ok;
+   }
+}
+
+bool RunSynthSimdFixture()
+{
+   bool ok = true;
+   // INFINITE_SYNTHSIMDTEST=Wavetable (or Analog) runs that synth only, for profiling.
+   const char* only = getenv("INFINITE_SYNTHSIMDTEST");
+   const bool all = only == nullptr || strcmp(only, "1") == 0;
+   const bool analog = all || strcmp(only, "Analog") == 0;
+   const bool wavetable = all || strcmp(only, "Wavetable") == 0;
+   // INFINITE_SYNTHSIMDPROFILE=<seconds>: just render that much of the chord
+   // on the lane path, for `sample` / Instruments, and exit.
+   if (const char* prof = getenv("INFINITE_SYNTHSIMDPROFILE"))
+   {
+      const double seconds = std::max(1.0, atof(prof));
+      if (analog)
+         printf("SYNTHSIMDTEST Analog %.2f ms/s\n", SynthRenderMsPerSecond<AnalogNode>(8, seconds, false, nullptr));
+      if (wavetable)
+         printf("SYNTHSIMDTEST Wavetable %.2f ms/s\n", SynthRenderMsPerSecond<WavetableNode>(8, seconds, false, nullptr));
+      return true;
+   }
+   if (analog)
+   {
+   // Speed is gated as fast path / reference path on the same machine, so it
+   // holds on any CI box. The 2.16 target (-50% per voice) is measured by
+   // synth_probe on the whole app: 2026-10-14, Analog 18.82 -> 6.49 ms/s,
+   // Wavetable 3.37 -> 1.37. Here (audio half alone, idle subtracted) Analog
+   // reads about x0.44 and Wavetable about x0.52, so the limits catch a lost
+   // fast path without flaking on a noisy run.
+   ok = SynthSimdCase<AnalogNode>("Analog", 0.6) && ok;
+   // The paths where lanes and scalar could drift apart: a self-oscillating
+   // driven ladder on a wide stack (both sides), and each SVF shape.
+   ok = SynthSimdClose<AnalogNode>("Analog", "ladder res 1 drive wide", [](AnalogNode& n) {
+      n.resonance = 1.0f;
+      n.drive = 0.7f;
+      n.cutoff = 2000.0f;
+      n.voices = 4.0f;
+      n.spread = 0.9f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "svf lp 36 res 0.8", [](AnalogNode& n) {
+      n.filterType = kAFilterSvfLP36;
+      n.resonance = 0.8f;
+      n.cutoff = 1500.0f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "svf hp 24 wide", [](AnalogNode& n) {
+      n.filterType = kAFilterSvfHP24;
+      n.resonance = 0.5f;
+      n.voices = 2.0f;
+      n.spread = 1.0f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "svf bp 24", [](AnalogNode& n) {
+      n.filterType = kAFilterSvfBP24;
+      n.resonance = 0.6f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "svf notch 12", [](AnalogNode& n) { n.filterType = kAFilterSvfNotch12; }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "filter off", [](AnalogNode& n) { n.filterType = kAFilterOff; }) && ok;
+   // v0.6 2.25: the MS-20 and diode models, self-oscillating and driven.
+   ok = SynthSimdClose<AnalogNode>("Analog", "ms-20 res 1 drive wide", [](AnalogNode& n) {
+      n.filterType = kAFilterMs20;
+      n.resonance = 1.0f;
+      n.drive = 0.7f;
+      n.voices = 4.0f;
+      n.spread = 0.9f;
+   }) && ok;
+   ok = SynthSimdClose<AnalogNode>("Analog", "diode res 1 drive", [](AnalogNode& n) {
+      n.filterType = kAFilterDiode;
+      n.resonance = 1.0f;
+      n.drive = 0.7f;
+      n.cutoff = 1200.0f;
+   }) && ok;
+   }
+   if (wavetable)
+   {
+      ok = SynthSimdCase<WavetableNode>("Wavetable", 0.7) && ok;
+      // Each cache keyed on an input that moves here: a wide unison stack
+      // (detune, pan, frames), a filter swept by its envelope, a pitch
+      // envelope (carrier), a phase warp (mip crossfade), engine B with a
+      // cross-mod warp (the operator sine), a comb filter, and glide.
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "unison 6 wide moving", [](WavetableNode& n) {
+         n.engines[0].unison = 6;
+         n.engines[0].detune = 30.0f;
+         n.engines[0].stereoWidth = 1.0f;
+         n.engines[0].position = 0.37f;
+         n.engines[0].phaseRandomize = 0.5f;
+      }) && ok;
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "lp 24 env sweep + pitch env", [](WavetableNode& n) {
+         n.engines[0].filterType = SynthModes::kFilterLP24;
+         n.engines[0].cutoff = 400.0f;
+         n.engines[0].resonance = 0.7f;
+         n.engines[0].filterAmount = 5.0f;
+         n.engines[0].pitchAmount = 12.0f;
+      }) && ok;
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "sync warp", [](WavetableNode& n) {
+         n.engines[0].warpMode = SynthModes::kWarpSync;
+         n.engines[0].warpAmount = 0.6f;
+         n.engines[0].unison = 3;
+      }) && ok;
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "engine b fm + mix", [](WavetableNode& n) {
+         n.engines[1].on = true;
+         n.engines[1].octave = 1;
+         n.engines[0].warpMode = SynthModes::kWarpFM;
+         n.engines[0].warpAmount = 0.4f;
+         n.engines[1].warpMode = SynthModes::kWarpRM;
+         n.engines[1].warpAmount = 0.5f;
+         n.mix = 0.4f;
+      }) && ok;
+      ok = SynthSimdClose<WavetableNode>("Wavetable", "operator fm, comb, glide", [](WavetableNode& n) {
+         n.engines[1].on = false;
+         n.engines[0].warpMode = SynthModes::kWarpPD;
+         n.engines[0].warpAmount = 0.5f;
+         n.engines[0].warpRatio = 2.0f;
+         n.engines[0].filterType = SynthModes::kFilterCombPos;
+         n.engines[0].resonance = 0.5f;
+         n.engines[0].filterAmount = -2.0f;
+         n.glide = 0.05f;
+      }) && ok;
+   }
+   printf("SYNTHSIMDTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
+
+// ============================================== INFINITE_SATURATORTEST
+// 2.17: Saturator's routing graph, against facts that follow from it:
+//   - every stage off is the dry path plus the wet DC blocker (the null
+//     test), in each routing but
+//     feedback - 3-band included, whose bands sum back to the same allpass
+//     the dry path runs;
+//   - the 3-band split is flat (it is an allpass) from 40 Hz to 16 kHz,
+//     measured against serial so the shared DC blocker (-0.17 dB at 40 Hz)
+//     and oversampler drop out;
+//   - mid-side keeps a mono input mono, curves on;
+//   - feedback changes the sound and stays bounded at its maximum with every
+//     stage at full amount;
+//   - at amount 0 and -40 dBFS each shaping curve is close to linear
+//     (rectify is excluded: it is not linear at any level).
+namespace
+{
+   const EffectDef* SaturatorDef()
+   {
+      for (const EffectDef& d : GetEffectDefs())
+         if (d.name == "Saturator")
+            return &d;
+      return nullptr;
+   }
+
+   std::unique_ptr<AudioEffectNode> MakeSaturator(const std::vector<std::pair<const char*, float>>& params, float mix,
+                                                  double sampleRate)
+   {
+      auto node = std::make_unique<AudioEffectNode>(*SaturatorDef());
+      node->mix = mix;
+      for (const auto& [name, v] : params)
+         *node->ParamPtr(name) = v;
+      node->GetAudioNode()->PrepareToPlay(sampleRate, 512);
+      node->CookIfNeeded(1);
+      return node;
+   }
+
+   std::vector<std::vector<float>> RenderSaturator(AudioEffectNode& node, int frames, int channels,
+                                                    const std::function<float(int, int)>& in)
+   {
+      std::vector<std::vector<float>> out;
+      DelayTest::RunSamples(node, frames, channels, in, &out);
+      return out;
+   }
+
+   // Energy of a - b over energy of b, from `from` on, in dB.
+   double DiffDb(const std::vector<float>& a, const std::vector<float>& b, int from)
+   {
+      double e = 0.0, r = 0.0;
+      for (size_t i = (size_t)from; i < a.size() && i < b.size(); i++)
+      {
+         e += (double)(a[i] - b[i]) * (a[i] - b[i]);
+         r += (double)b[i] * b[i];
+      }
+      return 10.0 * std::log10(std::max(e, 1e-30) / std::max(r, 1e-30));
+   }
+
+   // Level of a sine of `hz` in x (from `from` on), by projection.
+   double ToneAmp(const std::vector<float>& x, double hz, double sampleRate, int from)
+   {
+      double c = 0.0, s = 0.0;
+      int n = 0;
+      for (size_t i = (size_t)from; i < x.size(); i++, n++)
+      {
+         const double ph = 2.0 * M_PI * hz * (double)i / sampleRate;
+         c += x[i] * std::cos(ph);
+         s += x[i] * std::sin(ph);
+      }
+      return 2.0 * std::sqrt(c * c + s * s) / (double)std::max(1, n);
+   }
+}
+
+bool RunSaturatorFixture()
+{
+   using namespace SaturatorDsp;
+   const double sr = 48000.0;
+   bool ok = true;
+   if (SaturatorDef() == nullptr)
+   {
+      printf("SATURATORTEST no Saturator effect  FAIL\n");
+      return false;
+   }
+   const int frames = 24000, warm = 4800;
+   auto noise = [](int i, int ch) {
+      uint32_t h = (uint32_t)i * 2654435761u + (uint32_t)ch * 40503u;
+      h ^= h >> 13;
+      h *= 0x5bd1e995u;
+      h ^= h >> 15;
+      return 0.5f * ((float)(h & 0xffff) / 32768.0f - 1.0f);
+   };
+
+   // 1. Null: stages off, wet (mix 1) against the kernel's own dry (mix 0).
+   for (int routing : { (int)kSerial, (int)kParallel, (int)kMidSide, (int)kBands })
+   {
+      const std::vector<std::pair<const char*, float>> p = { { "model1", 0.0f }, { "routing", (float)routing } };
+      auto wet = MakeSaturator(p, 1.0f, sr);
+      auto dry = MakeSaturator(p, 0.0f, sr);
+      const auto w = RenderSaturator(*wet, frames, 2, noise);
+      auto d = RenderSaturator(*dry, frames, 2, noise);
+      // The wet path ends in a DC blocker and the dry does not (mix 0 gives
+      // the input back whole), so the reference gets the same blocker.
+      for (auto& ch : d)
+      {
+         DspMath::DcBlocker blocker;
+         blocker.SetSampleRate(sr);
+         for (float& v : ch)
+            v = blocker.Process(v);
+      }
+      const double db = std::max(DiffDb(w[0], d[0], warm), DiffDb(w[1], d[1], warm));
+      const bool pass = db <= -100.0;
+      ok &= pass;
+      printf("SATURATORTEST null, stages off, %-9s wet vs dry %7.1f dB (<= -100)  %s\n",
+             RoutingList()[(size_t)routing].c_str(), db, pass ? "OK" : "FAIL");
+   }
+
+   // 2. 3-band split flat.
+   {
+      double worst = 0.0;
+      for (double hz : { 40.0, 150.0, 250.0, 600.0, 1500.0, 2500.0, 6000.0, 16000.0 })
+      {
+         auto tone = [hz, sr](int i, int) { return 0.25f * (float)std::sin(2.0 * M_PI * hz * (double)i / sr); };
+         auto node = MakeSaturator({ { "model1", 0.0f }, { "routing", (float)kBands } }, 1.0f, sr);
+         auto serial = MakeSaturator({ { "model1", 0.0f } }, 1.0f, sr);
+         const auto y = RenderSaturator(*node, frames, 1, tone);
+         const auto ref = RenderSaturator(*serial, frames, 1, tone);
+         const double bandsDb = 20.0 * std::log10(ToneAmp(y[0], hz, sr, warm) / 0.25);
+         const double serialDb = 20.0 * std::log10(ToneAmp(ref[0], hz, sr, warm) / 0.25);
+         worst = std::max(worst, std::fabs(bandsDb - serialDb));
+      }
+      const bool pass = worst <= 0.05;
+      ok &= pass;
+      printf("SATURATORTEST 3-band, stages off, 40 Hz-16 kHz within %.4f dB (<= 0.05)  %s\n", worst, pass ? "OK" : "FAIL");
+   }
+
+   // 3. Mid-side keeps mono mono.
+   {
+      auto node = MakeSaturator({ { "routing", (float)kMidSide },
+                                  { "model1", (float)kTube }, { "amount1", 0.7f },
+                                  { "model2", (float)kFold }, { "amount2", 0.7f },
+                                  { "model3", (float)kDiode }, { "amount3", 0.5f } },
+                                1.0f, sr);
+      const auto y = RenderSaturator(*node, frames, 2, [&](int i, int) { return noise(i, 0); });
+      const double db = DiffDb(y[1], y[0], warm);
+      const bool pass = db <= -120.0;
+      ok &= pass;
+      printf("SATURATORTEST mid-side, mono in, left vs right %7.1f dB (<= -120)  %s\n", db, pass ? "OK" : "FAIL");
+   }
+
+   // 4. Feedback: changes the sound; bounded at the top of its range.
+   {
+      const std::vector<std::pair<const char*, float>> base = { { "model1", (float)kTube }, { "amount1", 0.3f } };
+      auto serial = MakeSaturator(base, 1.0f, sr);
+      auto fbBase = base;
+      fbBase.push_back({ "routing", (float)kFeedback });
+      fbBase.push_back({ "feedback", 0.5f });
+      auto fb = MakeSaturator(fbBase, 1.0f, sr);
+      const auto a = RenderSaturator(*serial, frames, 1, noise);
+      const auto b = RenderSaturator(*fb, frames, 1, noise);
+      const double db = DiffDb(b[0], a[0], warm);
+      const bool pass = db >= -20.0;
+      ok &= pass;
+      printf("SATURATORTEST feedback 0.5 vs serial %7.1f dB apart (>= -20)  %s\n", db, pass ? "OK" : "FAIL");
+
+      std::vector<std::pair<const char*, float>> hot = { { "routing", (float)kFeedback }, { "feedback", 0.95f } };
+      const int models[3] = { kTube, kFold, kTape };
+      static const char* kM[3] = { "model1", "model2", "model3" };
+      static const char* kA[3] = { "amount1", "amount2", "amount3" };
+      for (int s = 0; s < 3; s++)
+      {
+         hot.push_back({ kM[s], (float)models[s] });
+         hot.push_back({ kA[s], 1.0f });
+      }
+      auto node = MakeSaturator(hot, 1.0f, sr);
+      const auto y = RenderSaturator(*node, 4 * frames, 1, [](int i, int) {
+         return (float)std::sin(2.0 * M_PI * 110.0 * (double)i / 48000.0);
+      });
+      float peak = 0.0f;
+      bool finite = true;
+      for (float v : y[0])
+      {
+         finite &= std::isfinite(v);
+         peak = std::max(peak, std::fabs(v));
+      }
+      const bool stable = finite && peak < 8.0f;
+      ok &= stable;
+      printf("SATURATORTEST feedback 0.95, three stages at full: peak %.2f, %s (< 8)  %s\n", peak,
+             finite ? "finite" : "NOT finite", stable ? "OK" : "FAIL");
+   }
+
+   // 5. Amount 0 at -40 dBFS: near linear.
+   for (int model : { (int)kTube, (int)kTape, (int)kDiode, (int)kFold, (int)kCrush })
+   {
+      auto shaped = MakeSaturator({ { "model1", (float)model }, { "amount1", 0.0f } }, 1.0f, sr);
+      auto off = MakeSaturator({ { "model1", 0.0f } }, 1.0f, sr);
+      auto in = [](int i, int) { return 0.01f * (float)std::sin(2.0 * M_PI * 1000.0 * (double)i / 48000.0); };
+      const auto a = RenderSaturator(*shaped, frames, 1, in);
+      const auto b = RenderSaturator(*off, frames, 1, in);
+      const double db = DiffDb(a[0], b[0], warm);
+      // Diode's two sides have different knees (1 and 0.5), so its second
+      // order term is the largest at small levels: about 2 dB more
+      // distortion than the symmetric curves. Its gate is -35, not -40.
+      const double gate = model == kDiode ? -35.0 : -40.0;
+      const bool pass = db <= gate;
+      ok &= pass;
+      printf("SATURATORTEST %-7s amount 0, -40 dBFS: off by %7.1f dB (<= %.0f)  %s\n", ModelList()[(size_t)model].c_str(),
+             db, gate, pass ? "OK" : "FAIL");
+   }
+
+   printf("SATURATORTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
+// ============================================== INFINITE_SPLITTERTEST
+// 2.18: Splitter's crossover mode, against facts that follow from LR4:
+//   - bands 1 is the plain copy, bit for bit;
+//   - the bands sum to an allpass of the input: each tone from 20 Hz to
+//     20 kHz comes back within 0.1 dB, for 2, 3 and 4 bands;
+//   - each band carries its own range: a tone an octave inside a band is
+//     loudest in that band;
+//   - two channels split independently (a left-only tone leaves right silent).
+namespace
+{
+   std::vector<std::vector<float>> RenderSplitter(SplitterNode& node, int frames, double sr,
+                                                   const std::function<float(int, int)>& in)
+   {
+      AudioNode* an = node.GetAudioNode();
+      an->PrepareToPlay(sr, 512);
+      node.CookIfNeeded(1);
+      const int bands = SplitterNode::kMaxBands;
+      std::vector<std::vector<float>> out((size_t)bands * 2, std::vector<float>((size_t)frames, 0.0f));
+      const int block = 256;
+      std::vector<float> inL(block), inR(block);
+      std::vector<std::vector<float>> o((size_t)bands * 2, std::vector<float>(block));
+      for (int start = 0; start < frames; start += block)
+      {
+         const int n = std::min(block, frames - start);
+         for (int i = 0; i < n; i++)
+         {
+            inL[(size_t)i] = in(start + i, 0);
+            inR[(size_t)i] = in(start + i, 1);
+         }
+         float* inCh[2] = { inL.data(), inR.data() };
+         AudioBuffer inBuf;
+         inBuf.channels = inCh;
+         inBuf.numChannels = 2;
+         inBuf.numFrames = n;
+         const AudioBuffer* ins[1] = { &inBuf };
+         float* chans[SplitterNode::kMaxBands][2];
+         AudioBuffer outBuf[SplitterNode::kMaxBands];
+         AudioBuffer* outs[SplitterNode::kMaxBands];
+         for (int b = 0; b < bands; b++)
+         {
+            chans[b][0] = o[(size_t)b * 2].data();
+            chans[b][1] = o[(size_t)b * 2 + 1].data();
+            outBuf[b].channels = chans[b];
+            outBuf[b].numChannels = 2;
+            outBuf[b].numFrames = n;
+            outs[b] = &outBuf[b];
+         }
+         an->ProcessBlockMulti(ins, 1, outs, bands);
+         for (size_t c = 0; c < out.size(); c++)
+            std::copy(o[c].begin(), o[c].begin() + n, out[c].begin() + start);
+      }
+      return out;
+   }
+}
+
+bool RunSplitterFixture()
+{
+   bool ok = true;
+   const double sr = 48000.0;
+   const int frames = 48000;
+   const int warm = 24000;
+
+   // 1. Copy mode is bit-identical.
+   {
+      SplitterNode node;
+      auto in = [](int i, int ch) { return (float)std::sin(0.0123 * i + ch) * 0.7f + 0.01f * (float)(i % 7); };
+      const auto out = RenderSplitter(node, 4096, sr, in);
+      bool same = true, restSilent = true;
+      for (int i = 0; i < 4096; i++)
+      {
+         same &= out[0][(size_t)i] == in(i, 0) && out[1][(size_t)i] == in(i, 1);
+         for (size_t c = 2; c < out.size(); c++)
+            restSilent &= out[c][(size_t)i] == 0.0f;
+      }
+      const bool pass = same && restSilent;
+      ok &= pass;
+      printf("SPLITTERTEST copy: out bit-identical %s, band pins silent %s  %s\n", same ? "yes" : "no",
+             restSilent ? "yes" : "no", pass ? "OK" : "FAIL");
+   }
+
+   // 2. The sum of the bands is flat, 20 Hz - 20 kHz.
+   const double tones[] = { 20.0, 40.0, 100.0, 200.0, 250.0, 315.0, 1000.0, 2500.0, 4000.0, 8000.0, 12000.0, 20000.0 };
+   for (int bands = 2; bands <= SplitterNode::kMaxBands; bands++)
+   {
+      double worst = 0.0;
+      for (double hz : tones)
+      {
+         SplitterNode node;
+         node.bands = bands;
+         auto in = [hz, sr](int i, int) { return 0.5f * (float)std::sin(2.0 * M_PI * hz * (double)i / sr); };
+         const auto out = RenderSplitter(node, frames, sr, in);
+         std::vector<float> sum((size_t)frames, 0.0f), ref((size_t)frames);
+         for (int b = 0; b < bands; b++)
+            for (int i = 0; i < frames; i++)
+               sum[(size_t)i] += out[(size_t)b * 2][(size_t)i];
+         for (int i = 0; i < frames; i++)
+            ref[(size_t)i] = in(i, 0);
+         const double db = 20.0 * std::log10(ToneAmp(sum, hz, sr, warm) / ToneAmp(ref, hz, sr, warm));
+         worst = std::max(worst, std::fabs(db));
+      }
+      const bool pass = worst <= 0.1;
+      ok &= pass;
+      printf("SPLITTERTEST %d bands: sum within %.4f dB of input, 20 Hz-20 kHz (<= 0.1)  %s\n", bands, worst,
+             pass ? "OK" : "FAIL");
+   }
+
+   // 3. Each band carries its own range (4 bands, 250 / 2500 / 8000 Hz).
+   {
+      const double probes[SplitterNode::kMaxBands] = { 80.0, 800.0, 4500.0, 16000.0 };
+      bool all = true;
+      for (int want = 0; want < SplitterNode::kMaxBands; want++)
+      {
+         SplitterNode node;
+         node.bands = SplitterNode::kMaxBands;
+         const double hz = probes[want];
+         auto in = [hz, sr](int i, int) { return 0.5f * (float)std::sin(2.0 * M_PI * hz * (double)i / sr); };
+         const auto out = RenderSplitter(node, frames, sr, in);
+         int loudest = 0;
+         double best = -1.0;
+         for (int b = 0; b < SplitterNode::kMaxBands; b++)
+         {
+            const double a = ToneAmp(out[(size_t)b * 2], hz, sr, warm);
+            if (a > best)
+            {
+               best = a;
+               loudest = b;
+            }
+         }
+         all &= loudest == want;
+         printf("SPLITTERTEST %6.0f Hz loudest in band %d (want %d)  %s\n", hz, loudest + 1, want + 1,
+                loudest == want ? "OK" : "FAIL");
+      }
+      ok &= all;
+   }
+
+   // 4. Channels split independently.
+   {
+      SplitterNode node;
+      node.bands = 3;
+      auto in = [sr](int i, int ch) { return ch == 0 ? 0.5f * (float)std::sin(2.0 * M_PI * 1000.0 * (double)i / sr) : 0.0f; };
+      const auto out = RenderSplitter(node, 8192, sr, in);
+      float right = 0.0f;
+      for (int b = 0; b < 3; b++)
+         for (float v : out[(size_t)b * 2 + 1])
+            right = std::max(right, std::fabs(v));
+      const bool pass = right == 0.0f;
+      ok &= pass;
+      printf("SPLITTERTEST left-only tone: right peak %g (== 0)  %s\n", right, pass ? "OK" : "FAIL");
+   }
+
+   printf("SPLITTERTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
+// INFINITE_FMTEST (v0.6 2.22): FM through the real node. A lone carrier
+// is in tune and pure; one 1:3 modulator puts the first sidebands where
+// Bessel says, at the level J1/J0 says; a fixed operator ignores the note;
+// all 11 algorithms sound and stay finite; a released note ends.
+bool RunFMFixture()
+{
+   const double sr = 48000.0;
+   const int block = 256;
+   bool ok = true;
+
+   struct Rig
+   {
+      std::unique_ptr<FMNode> node;
+      NoteEventQueue inbox;
+      AudioNode* audio = nullptr;
+      int frame = 0;
+   };
+   auto make = [&](Rig& r, const std::function<void(FMNode&)>& set) {
+      r.node.reset(static_cast<FMNode*>(FMNode::Create()));
+      for (auto& op : r.node->ops)
+      {
+         op.attack = 0.0f;
+         op.sustain = 1.0f;
+         op.release = 20.0f;
+      }
+      set(*r.node);
+      r.node->CookIfNeeded(r.frame++);
+      r.audio = r.node->GetAudioNode();
+      r.audio->PrepareToPlay(sr, block);
+      r.audio->SetNoteInbox(&r.inbox, r.inbox.RegisterConsumer());
+   };
+   auto note = [](Rig& r, int n, bool on) {
+      NoteEvent e;
+      e.note = n;
+      e.velocity = on ? 1.0f : 0.0f;
+      e.isNoteOn = on;
+      e.voiceId = 7;
+      r.inbox.Push(e);
+   };
+   auto render = [&](Rig& r, int frames) {
+      std::vector<float> out((size_t)frames);
+      std::vector<float> l(block), rr(block);
+      for (int done = 0; done < frames; done += block)
+      {
+         float* ch[2] = { l.data(), rr.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         r.audio->ProcessBlock(nullptr, 0, buf);
+         for (int i = 0; i < block && done + i < frames; i++)
+            out[(size_t)(done + i)] = l[(size_t)i];
+      }
+      return out;
+   };
+   // Amplitude of one frequency (Hann-windowed DFT bin), and the pitch
+   // from interpolated rising zero crossings.
+   auto amp = [&](const std::vector<float>& x, double hz) {
+      double re = 0.0, im = 0.0, wsum = 0.0;
+      const size_t n = x.size();
+      for (size_t i = 0; i < n; i++)
+      {
+         const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * (double)i / (double)(n - 1));
+         const double ph = 2.0 * M_PI * hz * (double)i / sr;
+         re += w * x[i] * std::cos(ph);
+         im += w * x[i] * std::sin(ph);
+         wsum += w;
+      }
+      return 2.0 * std::sqrt(re * re + im * im) / wsum;
+   };
+   auto pitchHz = [&](const std::vector<float>& x) {
+      double first = -1.0, last = -1.0;
+      int crossings = 0;
+      for (size_t i = 1; i < x.size(); i++)
+         if (x[i - 1] < 0.0f && x[i] >= 0.0f)
+         {
+            const double t = (double)(i - 1) + (double)(-x[i - 1] / (x[i] - x[i - 1]));
+            if (first < 0.0)
+               first = t;
+            else
+               crossings++;
+            last = t;
+         }
+      return crossings > 0 ? sr * crossings / (last - first) : 0.0;
+   };
+   auto tail = [](const std::vector<float>& x, size_t from) { return std::vector<float>(x.begin() + (long)from, x.end()); };
+
+   // 1. A lone carrier (algorithm "4, 3, 2, 1", only operator 1 up).
+   {
+      Rig r;
+      make(r, [](FMNode& n) {
+         n.algorithm = 10;
+         for (int o = 1; o < FMDsp::kNumOps; o++)
+            n.ops[o].level = 0.0f;
+      });
+      note(r, 69, true);
+      const std::vector<float> x = tail(render(r, (int)sr), 4800);
+      const double hz = pitchHz(x);
+      const double cents = 1200.0 * std::log2(hz / 440.0);
+      const double a1 = amp(x, 440.0);
+      double worst = 0.0;
+      for (int h = 2; h <= 8; h++)
+         worst = std::max(worst, amp(x, 440.0 * h));
+      const double puritydB = 20.0 * std::log10(worst / a1 + 1e-12);
+      const bool good = std::fabs(cents) < 0.5 && puritydB < -90.0;
+      printf("FMTEST carrier: %.3f Hz (%+.3f c), harmonics %.1f dB  %s\n", hz, cents, puritydB, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   // 2. Operator 2 at 3x into operator 1: the first sidebands sit at 1760 and
+   // 880 Hz at J1(b)/J0(b) of the carrier, b = 2 pi * level.
+   {
+      const float level = 0.2f;
+      Rig r;
+      make(r, [&](FMNode& n) {
+         n.algorithm = 0;
+         n.ops[1].ratio = 3.0f;
+         n.ops[1].level = level;
+         n.ops[2].level = 0.0f;
+         n.ops[3].level = 0.0f;
+      });
+      note(r, 69, true);
+      const std::vector<float> x = tail(render(r, (int)sr), 4800);
+      const double b = 2.0 * M_PI * level;
+      auto besselJ = [](int n, double x) { // power series; libc++ has no cyl_bessel_j
+         double sum = 0.0, term = std::pow(x / 2.0, n) / std::tgamma(n + 1.0);
+         for (int k = 0; k < 30; k++)
+         {
+            sum += term;
+            term *= -(x * x / 4.0) / ((k + 1.0) * (k + 1.0 + n));
+         }
+         return sum;
+      };
+      const double want = 20.0 * std::log10(besselJ(1, b) / besselJ(0, b));
+      const double up = 20.0 * std::log10(amp(x, 1760.0) / amp(x, 440.0));
+      const double down = 20.0 * std::log10(amp(x, 880.0) / amp(x, 440.0));
+      const bool good = std::fabs(up - want) < 0.3 && std::fabs(down - want) < 0.3;
+      printf("FMTEST sidebands: 1760 Hz %.2f dB, 880 Hz %.2f dB (Bessel %.2f)  %s\n", up, down, want,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   // 3. A fixed carrier plays its own frequency whatever the note.
+   {
+      Rig r;
+      make(r, [](FMNode& n) {
+         n.algorithm = 10;
+         n.ops[0].fixed = true;
+         n.ops[0].freq = 1000.0f;
+         for (int o = 1; o < FMDsp::kNumOps; o++)
+            n.ops[o].level = 0.0f;
+      });
+      note(r, 40, true);
+      const double hz = pitchHz(tail(render(r, (int)(sr / 2)), 4800));
+      const bool good = std::fabs(hz - 1000.0) < 0.1;
+      printf("FMTEST fixed: note 40 plays %.3f Hz  %s\n", hz, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   // 4. Every algorithm at the default operators, with feedback: sounds, finite, bounded.
+   {
+      bool good = true;
+      for (int a = 0; a < FMDsp::kNumAlgorithms; a++)
+      {
+         Rig r;
+         make(r, [a](FMNode& n) {
+            n.algorithm = a;
+            n.feedback = 1.0f;
+         });
+         note(r, 60, true);
+         const std::vector<float> x = render(r, (int)(sr / 4));
+         float peak = 0.0f;
+         bool finite = true;
+         for (float v : x)
+         {
+            finite = finite && std::isfinite(v);
+            peak = std::max(peak, std::fabs(v));
+         }
+         const bool fine = finite && peak > 0.05f && peak < 1.5f;
+         if (!fine)
+            printf("FMTEST algorithm %d (%s): peak %.3f finite %d  FAIL\n", a, FMDsp::AlgorithmAt(a).name, peak,
+                   (int)finite);
+         good = good && fine;
+      }
+      printf("FMTEST algorithms: %d sound, finite and under 1.5  %s\n", FMDsp::kNumAlgorithms, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   // 5. A released note ends within its release, and frees its voice.
+   {
+      Rig r;
+      make(r, [](FMNode&) {});
+      note(r, 60, true);
+      render(r, 4800);
+      note(r, 60, false);
+      const std::vector<float> x = render(r, 4800);
+      float late = 0.0f;
+      for (size_t i = 2400; i < x.size(); i++)
+         late = std::max(late, std::fabs(x[i]));
+      const int voices = r.node->ActiveVoices();
+      const bool good = late < 1e-4f && voices == 0;
+      printf("FMTEST release: peak %.2g after 50 ms of a 20 ms release, %d voices  %s\n", late, voices,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   printf("FMTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
+
+// INFINITE_PARTIALSTEST (v0.6 2.32): resynthesis through the real node. A
+// sample played at its own pitch comes back within 1 dB per harmonic; a
+// note an octave up is in tune and keeps the sample's formants (formant
+// moves them on purpose); partials thins from the top; morph reaches the
+// second sample's spectrum; speed and loop decide when a note ends;
+// nothing is synthesised above Nyquist; the residual carries a noise
+// sample's level.
+bool RunPartialsFixture()
+{
+   const double sr = 48000.0;
+   const int block = 256;
+   bool ok = true;
+
+   // 220 Hz, 12 harmonics at 0.5/h (or only the odd ones), short fades.
+   auto harmonic = [&](float hz, bool oddOnly) {
+      std::vector<float> x(48000, 0.0f);
+      for (size_t i = 0; i < x.size(); i++)
+      {
+         float s = 0.0f;
+         for (int h = 1; h <= 12; h++)
+            if (!oddOnly || (h & 1))
+               s += 0.5f / (float)h * std::sin(2.0f * (float)M_PI * hz * (float)h * (float)i / (float)sr);
+         const float fade = std::min(1.0f, std::min((float)i, (float)(x.size() - 1 - i)) / 1440.0f);
+         x[i] = s * fade;
+      }
+      return x;
+   };
+   const std::vector<float> src = harmonic(220.0f, false);
+
+   PartialsNode node;
+   node.LoadMono(0, src, sr);
+   node.LoadMono(1, harmonic(330.0f, true), sr);
+   node.WaitIdle();
+   NoteEventQueue inbox;
+   int frame = 0;
+   AudioNode* audio = node.GetAudioNode();
+   audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+
+   auto play = [&](int noteNum, int frames, int offAt) {
+      node.CookIfNeeded(frame++);
+      audio->PrepareToPlay(sr, block);
+      NoteEvent on;
+      on.note = noteNum;
+      on.velocity = 1.0f;
+      on.isNoteOn = true;
+      on.voiceId = 3;
+      inbox.Push(on);
+      std::vector<float> out((size_t)frames);
+      std::vector<float> l(block), r(block);
+      for (int done = 0; done < frames; done += block)
+      {
+         if (offAt >= 0 && done >= offAt && done - block < offAt)
+         {
+            NoteEvent off = on;
+            off.isNoteOn = false;
+            off.velocity = 0.0f;
+            inbox.Push(off);
+         }
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         audio->ProcessBlock(nullptr, 0, buf);
+         for (int i = 0; i < block && done + i < frames; i++)
+            out[(size_t)(done + i)] = l[(size_t)i];
+      }
+      return out;
+   };
+   // Hann-windowed DFT amplitude of one frequency over [from, to).
+   auto amp = [&](const std::vector<float>& x, double hz, size_t from, size_t to) {
+      double re = 0.0, im = 0.0, wsum = 0.0;
+      const size_t n = to - from;
+      for (size_t i = 0; i < n; i++)
+      {
+         const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * (double)i / (double)(n - 1));
+         const double ph = 2.0 * M_PI * hz * (double)i / sr;
+         re += w * x[from + i] * std::cos(ph);
+         im += w * x[from + i] * std::sin(ph);
+         wsum += w;
+      }
+      return 2.0 * std::sqrt(re * re + im * im) / wsum;
+   };
+   auto db = [](double a, double b) { return 20.0 * std::log10(std::max(1e-12, a) / std::max(1e-12, b)); };
+   const size_t w0 = 9600, w1 = 28800; // 0.2 .. 0.6 s, inside the sustained part
+
+   node.pitch = node.formant = node.morph = 0.0f;
+   node.partials = 48.0f;
+   node.speed = 1.0f;
+   node.noise = 1.0f;
+   node.release = 20.0f;
+   node.volume = 1.0f;
+   node.loop = false;
+
+   // 1. At its own pitch the sample comes back.
+   {
+      const std::vector<float> y = play(57, 33600, -1);
+      double worst = 0.0;
+      for (int h = 1; h <= 12; h++)
+         worst = std::max(worst, std::fabs(db(amp(y, 220.0 * h, w0, w1), amp(src, 220.0 * h, w0, w1))));
+      const bool good = worst <= 1.0;
+      printf("PARTIALSTEST root: worst harmonic error %.3f dB over 12 (<= 1 dB), f0 %.2f Hz  %s\n", worst,
+             node.AnalyzedF0(0), good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 2. An octave up, one partial: a pure 440 Hz.
+   {
+      node.partials = 1.0f;
+      const std::vector<float> y = play(69, 33600, -1);
+      double first = -1.0, last = -1.0;
+      int crossings = 0;
+      for (size_t i = w0 + 1; i < w1; i++)
+         if (y[i - 1] < 0.0f && y[i] >= 0.0f)
+         {
+            const double t = (double)(i - 1) + (double)(-y[i - 1] / (y[i] - y[i - 1]));
+            if (first < 0.0)
+               first = t;
+            else
+               crossings++;
+            last = t;
+         }
+      const double hz = crossings > 0 ? sr * crossings / (last - first) : 0.0;
+      const double cents = 1200.0 * std::log2(std::max(1e-9, hz) / 440.0);
+      const double second = db(amp(y, 880.0, w0, w1), amp(y, 440.0, w0, w1));
+      const bool good = std::fabs(cents) < 1.0 && second < -60.0;
+      printf("PARTIALSTEST pitch + partials 1: %.3f Hz (%+.3f c), 2nd harmonic %.1f dB  %s\n", hz, cents, second,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+      node.partials = 48.0f;
+   }
+   // 3. Formants stay put an octave up; formant +12 moves them with it.
+   {
+      const std::vector<float> up = play(69, 33600, -1);
+      const double held = db(amp(up, 440.0, w0, w1), amp(src, 440.0, w0, w1)); // source level at 440
+      node.formant = 12.0f;
+      const std::vector<float> shifted = play(57, 33600, -1);
+      const double moved = db(amp(shifted, 440.0, w0, w1), amp(src, 220.0, w0, w1)); // 220's level, now at 440
+      node.formant = 0.0f;
+      const bool good = std::fabs(held) < 1.5 && std::fabs(moved) < 1.5;
+      printf("PARTIALSTEST formants: octave up %+.2f dB from the source at 440, formant +12 %+.2f dB from 220  %s\n",
+             held, moved, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 4. Nothing above Nyquist: harmonic 9 of note 103 would alias to 19776 Hz.
+   // formant follows the note here so the stack keeps its level up there.
+   {
+      node.formant = 46.0f;
+      const std::vector<float> y = play(103, 33600, -1);
+      node.formant = 0.0f;
+      const double fund = amp(y, 3136.0, w0, w1);
+      const double alias = db(amp(y, 48000.0 - 9.0 * 3136.0, w0, w1), fund);
+      bool finite = true;
+      for (float v : y)
+         finite = finite && std::isfinite(v);
+      const bool good = alias < -100.0 && finite && fund > 0.3;
+      printf("PARTIALSTEST alias: fundamental %.3f, 19776 Hz %.1f dB below it  %s\n", fund, alias, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 5. Speed 2 ends a held note at half the length; loop keeps it going.
+   {
+      node.speed = 2.0f;
+      const std::vector<float> once = play(57, 72000, -1);
+      node.loop = true;
+      const std::vector<float> looped = play(57, 72000, -1);
+      node.loop = false;
+      node.speed = 1.0f;
+      float lateOnce = 0.0f, lateLoop = 0.0f;
+      for (size_t i = 33600; i < 72000; i++)
+      {
+         lateOnce = std::max(lateOnce, std::fabs(once[i]));
+         lateLoop = std::max(lateLoop, std::fabs(looped[i]));
+      }
+      const bool good = lateOnce < 1e-4f && lateLoop > 0.1f;
+      printf("PARTIALSTEST speed 2: peak after 0.7 s %.2g one-shot, %.2f looped  %s\n", lateOnce, lateLoop,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 6. Morph 1 plays the odd-harmonic sample's spectrum at the note.
+   {
+      node.morph = 1.0f;
+      const std::vector<float> y = play(57, 33600, -1);
+      node.morph = 0.0f;
+      const double even = db(amp(y, 440.0, w0, w1), amp(y, 660.0, w0, w1));
+      const bool good = even < -30.0;
+      printf("PARTIALSTEST morph 1: 440 Hz %.1f dB below 660 Hz (odd harmonics only)  %s\n", even,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 7. A noise sample is carried by the residual.
+   {
+      std::vector<float> noiseSrc(48000);
+      uint32_t rng = 0x2468ACEu;
+      for (float& v : noiseSrc)
+      {
+         rng = rng * 1664525u + 1013904223u;
+         v = 0.2f * ((float)(rng >> 8) / 8388608.0f - 1.0f);
+      }
+      PartialsNode noisy;
+      noisy.LoadMono(0, noiseSrc, sr);
+      noisy.WaitIdle();
+      noisy.release = 20.0f;
+      noisy.volume = 1.0f;
+      NoteEventQueue nInbox;
+      AudioNode* na = noisy.GetAudioNode();
+      na->SetNoteInbox(&nInbox, nInbox.RegisterConsumer());
+      auto rms = [&](float noiseLevel) {
+         noisy.noise = noiseLevel;
+         noisy.CookIfNeeded(frame++);
+         na->PrepareToPlay(sr, block);
+         NoteEvent on;
+         on.note = 57;
+         on.velocity = 1.0f;
+         on.isNoteOn = true;
+         nInbox.Push(on);
+         std::vector<float> l(block), r(block);
+         double sum = 0.0;
+         int n = 0;
+         for (int done = 0; done < 28800; done += block)
+         {
+            float* ch[2] = { l.data(), r.data() };
+            AudioBuffer buf;
+            buf.channels = ch;
+            buf.numChannels = 2;
+            buf.numFrames = block;
+            na->ProcessBlock(nullptr, 0, buf);
+            if (done >= 9600)
+               for (float v : l)
+               {
+                  sum += (double)v * v;
+                  n++;
+               }
+         }
+         return std::sqrt(sum / std::max(1, n));
+      };
+      double srcRms = 0.0;
+      for (size_t i = 9600; i < 28800; i++)
+         srcRms += (double)noiseSrc[i] * noiseSrc[i];
+      srcRms = std::sqrt(srcRms / 19200.0);
+      const double full = db(rms(1.0f), srcRms);
+      const double none = db(rms(0.0f), srcRms);
+      const bool good = std::fabs(full) < 3.0 && none < full - 1.0;
+      printf("PARTIALSTEST residual: noise 1 %+.2f dB from the source, noise 0 %+.2f dB  %s\n", full, none,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   printf("PARTIALSTEST %s\n", ok ? "OK" : "FAIL");
+   return ok;
+}
+
+// INFINITE_STRINGTEST: the String synth plays in tune across the keyboard
+// (the tuning allpass is solved at the fundamental), stiffness stretches the
+// partials while the fundamental stays put, the bow sustains, decay and
+// release set the fundamental's T60, position notches the harmonic it sits on.
+bool RunStringFixture()
+{
+   const double sr = 48000.0;
+   const int block = 256;
+   bool ok = true;
+
+   StringNode node;
+   NoteEventQueue inbox;
+   int frame = 0;
+   AudioNode* audio = node.GetAudioNode();
+   audio->SetNoteInbox(&inbox, inbox.RegisterConsumer());
+
+   auto play = [&](int noteNum, float vel, int frames, int offAt) {
+      node.CookIfNeeded(frame++);
+      audio->PrepareToPlay(sr, block);
+      {
+         // Let the smoothed knobs land first, as they have by the time anyone plays.
+         std::vector<float> l(block), r(block);
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         for (int k = 0; k < 16; k++)
+            audio->ProcessBlock(nullptr, 0, buf);
+      }
+      NoteEvent on;
+      on.note = noteNum;
+      on.velocity = vel;
+      on.isNoteOn = true;
+      on.voiceId = 3;
+      inbox.Push(on);
+      std::vector<float> out((size_t)frames);
+      std::vector<float> l(block), r(block);
+      for (int done = 0; done < frames; done += block)
+      {
+         if (offAt >= 0 && done >= offAt && done - block < offAt)
+         {
+            NoteEvent off = on;
+            off.isNoteOn = false;
+            off.velocity = 0.0f;
+            inbox.Push(off);
+         }
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         audio->ProcessBlock(nullptr, 0, buf);
+         for (int i = 0; i < block && done + i < frames; i++)
+            out[(size_t)(done + i)] = l[(size_t)i];
+      }
+      return out;
+   };
+   auto amp = [&](const std::vector<float>& x, double hz, size_t from, size_t to) {
+      double re = 0.0, im = 0.0, wsum = 0.0;
+      const size_t n = to - from;
+      for (size_t i = 0; i < n; i++)
+      {
+         const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * (double)i / (double)(n - 1));
+         const double ph = 2.0 * M_PI * hz * (double)i / sr;
+         re += w * x[from + i] * std::cos(ph);
+         im += w * x[from + i] * std::sin(ph);
+         wsum += w;
+      }
+      return 2.0 * std::sqrt(re * re + im * im) / wsum;
+   };
+   // The spectral peak near `hz` (within +-60 cents), to a hundredth of a cent.
+   auto peak = [&](const std::vector<float>& x, double hz, size_t from, size_t to) {
+      double best = hz, bestA = -1.0;
+      for (int c = -60; c <= 60; c += 2)
+      {
+         const double f = hz * std::exp2((double)c / 1200.0);
+         const double a = amp(x, f, from, to);
+         if (a > bestA)
+         {
+            bestA = a;
+            best = f;
+         }
+      }
+      double lo = best * std::exp2(-2.0 / 1200.0), hi = best * std::exp2(2.0 / 1200.0);
+      for (int it = 0; it < 40; it++)
+      {
+         const double m1 = lo + (hi - lo) / 3.0, m2 = hi - (hi - lo) / 3.0;
+         if (amp(x, m1, from, to) < amp(x, m2, from, to))
+            lo = m1;
+         else
+            hi = m2;
+      }
+      return 0.5 * (lo + hi);
+   };
+   auto cents = [](double f, double ref) { return 1200.0 * std::log2(f / ref); };
+   auto noteHz = [](int n) { return 440.0 * std::exp2((n - 69) / 12.0); };
+   auto db = [](double a, double b) { return 20.0 * std::log10(std::max(1e-12, a) / std::max(1e-12, b)); };
+   auto rms = [](const std::vector<float>& x, size_t from, size_t to) {
+      double s = 0.0;
+      for (size_t i = from; i < to; i++)
+         s += (double)x[i] * x[i];
+      return std::sqrt(s / (double)std::max<size_t>(1, to - from));
+   };
+   auto reset = [&]() {
+      node.exciter = StringNode::kPluck;
+      node.position = 0.13f;
+      node.tone = 0.5f;
+      node.decay = 3.0f;
+      node.stiffness = 0.0f;
+      node.body = 0.0f;
+      node.release = 150.0f;
+      node.volume = 1.0f;
+   };
+
+   // 1. In tune across the keyboard, for every exciter.
+   for (int ex = 0; ex < StringNode::kExciterCount; ex++)
+   {
+      reset();
+      node.exciter = ex;
+      double worst = 0.0;
+      int worstNote = 0;
+      for (int n = 24; n <= 108; n += 6)
+      {
+         const double f = noteHz(n);
+         // A bowed note is measured once its stick-slip motion has settled.
+         const size_t from = ex == StringNode::kBow ? 48000 : 4800;
+         const size_t len = (size_t)std::max(24000.0, 60.0 * sr / f);
+         const std::vector<float> y = play(n, 0.8f, (int)(from + len), -1);
+         const double c = cents(peak(y, f, from, from + len), f);
+         if (std::fabs(c) > std::fabs(worst))
+         {
+            worst = c;
+            worstNote = n;
+         }
+      }
+      const double gate = 2.0;
+      const bool good = std::fabs(worst) <= gate;
+      printf("STRINGTEST pitch %s: worst %+.3f c at MIDI %d over 24..108 (<= %.0f c)  %s\n",
+             StringNode::ExciterNames()[(size_t)ex].c_str(), worst, worstNote, gate, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 2. Stiffness stretches the upper partials; the fundamental stays in tune.
+   {
+      reset();
+      node.stiffness = 1.0f;
+      node.tone = 1.0f;
+      double worst = 0.0, stretch = 1e9;
+      for (int n : { 36, 48, 60, 72 })
+      {
+         const double f = noteHz(n);
+         const size_t from = 4800, len = 24000;
+         const std::vector<float> y = play(n, 0.8f, (int)(from + len), -1);
+         worst = std::max(worst, std::fabs(cents(peak(y, f, from, from + len), f)));
+         stretch = std::min(stretch, cents(peak(y, 6.0 * f, from, from + len), 6.0 * f));
+      }
+      const bool good = worst <= 2.0 && stretch >= 5.0;
+      printf("STRINGTEST stiffness 1: fundamental worst %.3f c (<= 2), 6th partial at least %+.1f c sharp (>= +5)  %s\n",
+             worst, stretch, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 3. Decay is the fundamental's T60 while held; release is the damper's.
+   {
+      reset();
+      node.decay = 1.0f;
+      const double f = noteHz(45);
+      const std::vector<float> y = play(45, 0.8f, 48000, -1);
+      const double slope = db(amp(y, f, 33600, 43200), amp(y, f, 9600, 19200)) / 0.5; // dB per second
+      const double t60 = -60.0 / slope;
+      const bool good = std::fabs(t60 - 1.0) <= 0.1;
+      printf("STRINGTEST decay 1 s: fundamental T60 %.3f s (within 10%%)  %s\n", t60, good ? "OK" : "FAIL");
+      ok = ok && good;
+
+      reset();
+      node.release = 100.0f;
+      const std::vector<float> z = play(45, 0.8f, 48000, 24000);
+      const double drop = db(rms(z, 31200, 33600), rms(z, 21600, 24000));
+      const bool good2 = drop <= -40.0;
+      printf("STRINGTEST release 100 ms: %.1f dB 150 ms after note-off (<= -40)  %s\n", drop, good2 ? "OK" : "FAIL");
+      ok = ok && good2;
+   }
+   // 4. The bow sustains while held and lets go on release.
+   {
+      reset();
+      node.exciter = StringNode::kBow;
+      const std::vector<float> y = play(50, 0.8f, 96000, 72000);
+      const double early = rms(y, 19200, 38400), late = rms(y, 57600, 72000), after = rms(y, 86400, 96000);
+      // Sustained: a held bow never fades (it may still be swelling in).
+      const bool good = early > 0.01 && db(late, early) >= -3.0 && db(late, early) <= 6.0 && db(after, late) <= -40.0;
+      printf("STRINGTEST bow: held level %+.1f dB from 0.4-0.8 s to 1.2-1.5 s (-3..+6), %.1f dB after release  %s\n",
+             db(late, early), db(after, late), good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 5. Position: plucking a quarter of the way from the bridge notches the 4th harmonic.
+   {
+      reset();
+      node.position = 0.25f;
+      node.tone = 1.0f;
+      const double f = noteHz(40);
+      const std::vector<float> y = play(40, 0.8f, 28800, -1);
+      const double h3 = amp(y, 3 * f, 4800, 28800), h4 = amp(y, 4 * f, 4800, 28800), h5 = amp(y, 5 * f, 4800, 28800);
+      const double depth = db(h4, 0.5 * (h3 + h5));
+      const bool good = depth <= -15.0;
+      printf("STRINGTEST position 1/4: 4th harmonic %.1f dB under its neighbours (<= -15)  %s\n", depth,
+             good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+   // 6. Strike is darker than pluck at a soft hit, and the body keeps the level.
+   {
+      reset();
+      const double f = noteHz(48);
+      auto bright = [&](const std::vector<float>& y) {
+         double lo = 0.0, hi = 0.0;
+         for (int h = 1; h <= 3; h++)
+            lo += amp(y, h * f, 2400, 12000);
+         for (int h = 8; h <= 16; h++)
+            hi += amp(y, h * f, 2400, 12000);
+         return db(hi, lo);
+      };
+      const double pluck = bright(play(48, 0.4f, 12000, -1));
+      node.exciter = StringNode::kStrike;
+      const double strike = bright(play(48, 0.4f, 12000, -1));
+      const bool good = strike <= pluck - 6.0;
+      printf("STRINGTEST strike vs pluck: upper partials %.1f dB vs %.1f dB (strike >= 6 dB darker)  %s\n", strike,
+             pluck, good ? "OK" : "FAIL");
+      ok = ok && good;
+
+      reset();
+      const std::vector<float> dryY = play(48, 1.0f, 48000, -1);
+      node.body = 1.0f;
+      const std::vector<float> wetY = play(48, 1.0f, 48000, -1);
+      float pk = 0.0f;
+      for (float s : dryY)
+         pk = std::max(pk, std::fabs(s));
+      const double change = db(rms(wetY, 0, 48000), rms(dryY, 0, 48000));
+      const bool good2 = std::fabs(change) <= 6.0 && pk > 0.1f && pk < 1.0f;
+      printf("STRINGTEST body 1: level %+.1f dB vs dry (within 6); full-velocity pluck peak %.2f (0.1..1)  %s\n", change,
+             pk, good2 ? "OK" : "FAIL");
+      ok = ok && good2;
+   }
+   // 7. Eight bowed voices at once stay finite and bounded.
+   {
+      reset();
+      node.exciter = StringNode::kBow;
+      node.body = 1.0f;
+      node.CookIfNeeded(frame++);
+      audio->PrepareToPlay(sr, block);
+      for (int k = 0; k < 8; k++)
+      {
+         NoteEvent on;
+         on.note = 36 + k * 7;
+         on.velocity = 1.0f;
+         on.isNoteOn = true;
+         on.voiceId = 10 + k;
+         inbox.Push(on);
+      }
+      std::vector<float> l(block), r(block);
+      bool finite = true;
+      float pk = 0.0f;
+      for (int done = 0; done < 96000; done += block)
+      {
+         float* ch[2] = { l.data(), r.data() };
+         AudioBuffer buf;
+         buf.channels = ch;
+         buf.numChannels = 2;
+         buf.numFrames = block;
+         audio->ProcessBlock(nullptr, 0, buf);
+         for (float s : l)
+         {
+            finite = finite && std::isfinite(s);
+            pk = std::max(pk, std::fabs(s));
+         }
+      }
+      const bool good = finite && pk < 4.0f;
+      printf("STRINGTEST 8 bowed voices: finite %s, peak %.2f  %s\n", finite ? "yes" : "no", pk, good ? "OK" : "FAIL");
+      ok = ok && good;
+   }
+
+   printf("STRINGTEST %s\n", ok ? "OK" : "FAIL");
    return ok;
 }
 }

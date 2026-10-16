@@ -1,7 +1,7 @@
 # Field build step 18 — device faceplate polish for Field node bodies
 
 You are implementing **build step 18 of the Field language** in Infinite
-(`/Users/namansoni/infinte`, C++17, ImGui + OpenGL, MIT licensed). Self-
+(`<repo>`, C++17, ImGui + OpenGL, MIT licensed). Self-
 contained brief; no prior context assumed beyond "Files to read first".
 Line numbers are from `src/` at the commit this was written against
 (`feature/field-step-15-fieldgraph-encapsulation` tip, commit `f59820c`) —
@@ -316,7 +316,7 @@ in-place variant.
 ## 6. Machine-checkable exit criterion
 
 ```bash
-cd /Users/namansoni/infinte
+cd <repo>
 cmake --build build -j"$(sysctl -n hw.ncpu)"
 
 .claude/skills/run-infinite-hygiene/driver.sh

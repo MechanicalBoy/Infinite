@@ -7,7 +7,7 @@ description: "Procedure for adding a Source node (procedural, file, live device)
 
 The standard procedure for adding a Source node to Infinite - a node that generates an image from nothing (procedural, file-backed, or live-device) rather than transforming one. Covers the INode/GLUtil::Fbo pattern, the per-frame cook memo, resolution ownership, the Transport clock rule for anything animated, TextureRevision and what it costs to skip it, and the machine-checkable exit criterion. Use when implementing a generator/loader/capture node (noise, gradient, text, shape, video, camera, file image), when writing the prompt for a fresh session that will implement one, or when a source node renders black, never animates, animates while paused, or forces everything downstream to re-render every frame.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 Sibling of `new-effect-node` (which transforms an image) and
 `new-compositing-node` (which combines several). A **Source has no image

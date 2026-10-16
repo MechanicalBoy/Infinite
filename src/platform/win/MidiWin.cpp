@@ -274,6 +274,8 @@ namespace
             std::lock_guard<std::mutex> lock(gState.mutex);
             const MidiCC14::Event ev = gState.cc14.OnCC(dev, channel, d1, d2, MidiCC14::NowMs());
             const float value01 = ev.value01;
+            if ((int)d1 == Platform::kMidiSlideCC)
+               Platform::MidiStoreChannelSlide(channel, value01);
             gState.values[{ dev, channel, ev.controller, false }] = value01;
             gState.lastTouched.device = dev;
             gState.lastTouched.channel = channel;
@@ -289,6 +291,9 @@ namespace
             }
             break;
          }
+         case 0xC0: // Program Change (a show set picks its entry by it)
+            Platform::MidiStoreProgramChange(channel, (int)d1);
+            break;
          case 0xE0: // Pitch bend (14-bit) and 0xD0 channel aftertouch (7-bit),
          case 0xD0: // stored as virtual controllers 128 / 129, see Platform.h
          {
@@ -297,6 +302,8 @@ namespace
             const float value01 = bend ? (float)((int)d1 | ((int)d2 << 7)) / 16383.0f : (float)d1 / 127.0f;
             if (bend)
                Platform::MidiStoreChannelBend(channel, Platform::MidiBend14ToSigned((int)d1, (int)d2));
+            else
+               Platform::MidiStoreChannelPressure(channel, value01);
             std::lock_guard<std::mutex> lock(gState.mutex);
             gState.values[{ dev, channel, controller, false }] = value01;
             gState.lastTouched.device = dev;

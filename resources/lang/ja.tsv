@@ -597,7 +597,7 @@ A UV sphere - latitude/longitude subdivision.	UV球。緯度／経度で分割�
 A cascade of allpass stages (order, 2-8) sweeping around cutoff at rate/depth - each pair of stages adds one more notch to the comb. Spread offsets the right channel's sweep phase for width.	オールパスステージのカスケード（次数2〜8）が、レート／深さでカットオフ周辺をスイープします。ステージ2つごとにコムのノッチが1つ増えます。Spread で右チャンネルのスイープ位相をずらして広がりを出します。
 A centre-detent knob running -1 to +1, exposed as a modulator - the right control for anything that has a natural middle (pan, detune, tilt). Its 0..1 output puts the detent at exactly 0.5, which is also where a bipolar modulation binding reads as 'no modulation'.	-1〜+1 の範囲でセンターにデテントがあるノブ。モジュレーターとして出力されます。パン、デチューン、ティルトなど、自然な中央がある対象に最適です。0..1 の出力ではデテントがちょうど 0.5 に来ます。バイポーラのモジュレーションバインディングが「モジュレーションなし」と読むのもこの位置です。
 A circular wedge / pie-slice - Inner Ratio controls how much of the circle is cut away.	円のくさび形（パイ）。Inner Ratio で円をどれだけ切り取るかを決めます。
-A classic polyphonic virtual-analog synth voice with two analog-style oscillators (osc1 unison stack, osc2 tuning/detune/sync, sub osc one octave down, white noise, pre-filter drive stage, nonlinear ZDF Moog-ladder or SVF filter, and amplitude ADSR across up to 8 voices). Detune reads as the stack's true total width in cents, distributed unevenly across the stack the way separately mistuned circuits sit. Spread is stereo width: it splits the stack across two independent drive/filter chains and places each voice card in the image, so the sides carry different oscillators rather than one panned copy.	2つのアナログ風オシレーター（osc1 はユニゾンスタック、osc2 はチューニング／デチューン／シンク、1オクターブ下のサブオシレーター、ホワイトノイズ、フィルター前のドライブ段、非線形 ZDF ムーグラダーまたは SVF フィルター、最大8ボイスにわたるアンプ ADSR）を備えた、クラシックなポリフォニック・バーチャルアナログシンセのボイス。Detune はスタック全体の実際の幅をセント単位で示し、別々にずれた回路のようにスタック内に不均等に配分されます。Spread はステレオ幅で、スタックを2つの独立したドライブ／フィルターチェーンに分け、各ボイスをイメージ内に配置します。左右が同じ音をパンしたコピーではなく、異なるオシレーターを担当します。
+A classic polyphonic virtual-analog synth voice with two analog-style oscillators (osc1 unison stack, osc2 tuning/detune/sync, sub osc one octave down, white noise, pre-filter drive stage, nonlinear ZDF filter (Moog ladder, MS-20, diode ladder or SVF), and amplitude ADSR across up to 8 voices). Detune reads as the stack's true total width in cents, distributed unevenly across the stack the way separately mistuned circuits sit. Spread is stereo width: it splits the stack across two independent drive/filter chains and places each voice card in the image, so the sides carry different oscillators rather than one panned copy.	2つのアナログ風オシレーター（osc1 はユニゾンスタック、osc2 はチューニング／デチューン／シンク、1オクターブ下のサブオシレーター、ホワイトノイズ、フィルター前のドライブ段、非線形 ZDF フィルター（ムーグラダー、MS-20、ダイオードラダー、SVF）、最大8ボイスにわたるアンプ ADSR）を備えた、クラシックなポリフォニック・バーチャルアナログシンセのボイス。Detune はスタック全体の実際の幅をセント単位で示し、別々にずれた回路のようにスタック内に不均等に配分されます。Spread はステレオ幅で、スタックを2つの独立したドライブ／フィルターチェーンに分け、各ボイスをイメージ内に配置します。左右が同じ音をパンしたコピーではなく、異なるオシレーターを担当します。
 A cloth simulation over an input mesh - stiffness, iterations, damping, mass and shape retention, plus gravity, wind and optional ground collision. 'Reset' re-drops the cloth from its rest pose.	入力メッシュ上の布シミュレーション。剛性、反復回数、減衰、質量、形状保持に加え、重力、風、任意の地面衝突を設定できます。「Reset」で布を静止ポーズから再び落とします。
 A cogwheel silhouette - Sides sets tooth count.	歯車のシルエット。Sides で歯の数を決めます。
 A compressor with peak or RMS detection, threshold, ratio, attack, release, makeup and an external sidechain input, over a live static transfer curve. Limiter is its own separate node.	ピークまたは RMS 検出、スレッショルド、レシオ、アタック、リリース、メイクアップ、外部サイドチェイン入力を備えたコンプレッサー。ライブの静的トランスファーカーブを表示します。Limiter は別のノードです。
@@ -865,7 +865,7 @@ Learns what 'graded' footage looks like for you and grades incoming frames towar
 Learns what 'graded' footage looks like for you and grades incoming frames toward it. Press Learn on already-graded footage to build a target profile (or leave self normalize on to auto-level/contrast without one); mix blends the grade in. Wander makes the grade gently drift among looks the profile has actually seen instead of solving to the exact same answer every frame.	あなたにとって「グレーディング済み」の映像がどう見えるかを学習し、入ってくるフレームをそれに寄せてグレーディングします。すでにグレーディング済みの映像で Learn を押してターゲットプロファイルを作ります（プロファイルなしで自動的にレベル／コントラストを整えたい場合は self normalize をオンのままにします）。mix でグレードのブレンド量を決めます。Wander は、毎フレーム同じ答えに解くのではなく、プロファイルが実際に見たルックの間でグレードを穏やかにさまよわせます。
 Learns where you leave a knob and how you move it, then continues, settles and wanders like you. Shift-drag a driven knob to correct it.	ノブをどこに置き、どう動かすかを学習し、あなたのようにその後も動かし続け、落ち着き、さまよいます。駆動中のノブを Shift+ドラッグして修正できます。
 Learns where you leave each knob and how fast you move it, then keeps the knob going after you let go, settles it into your usual places and wanders between them at your pace. Speed scales the learned pace, Stray widens or narrows the wandering, Momentum is how long a release carries on, Link lets your live hand activity stir it: quiet knobs wake up while you play and settle when you stop. Shift-drag a driven knob to take over; the dot on the knob shows how much history backs it and the faint marks show where it is likely to go next. Freeze stores the learned profile in the patch.	各ノブをどこに置き、どれくらいの速さで動かすかを学習し、手を離した後もそのノブを動かし続け、あなたがよく使う位置に落ち着かせ、あなたのペースでそれらの間をさまよいます。Speed は学習したペースを拡縮し、Stray はさまよいの幅を広げたり狭めたりし、Momentum は手を離した後の持続時間で、Link はあなたのライブの手の動きがそれを揺さぶるようにします。演奏中は静かなノブが目覚め、止めると落ち着きます。駆動中のノブを Shift+ドラッグすると引き継げます。ノブ上のドットはどれだけの履歴に裏打ちされているかを示し、薄いマークは次に向かいそうな場所を示します。Freeze は学習したプロファイルをパッチに保存します。
-Listens on a UDP port for Open Sound Control messages matching an address pattern, and reports the last received value as a modulator (remapped through low/high). Behaves like LFO/Random - patch its output onto any slider's modulation pin.	UDP ポートでアドレスパターンに一致する Open Sound Control メッセージを待ち受け、最後に受信した値をモジュレーターとして出力します（low/high で再マップ）。LFO/Random と同様に動作し、出力を任意のスライダーのモジュレーションピンにパッチします。
+Listens on a UDP port for Open Sound Control messages matching an address pattern, and reports the last received value as a modulator (remapped through low/high). Behaves like LFO/Random - patch its output onto any slider's modulation pin. To drive the patch itself from a script or controller instead - set, query or listen to any param, add, remove or connect nodes - send OSC to 127.0.0.1:9100 (/infinite/node/<index>/<param>); no node needed.	UDP ポートでアドレスパターンに一致する Open Sound Control メッセージを待ち受け、最後に受信した値をモジュレーターとして出力します（low/high で再マップ）。LFO/Random と同様に動作し、出力を任意のスライダーのモジュレーションピンにパッチします。 パッチそのものをスクリプトやコントローラーから操作するには（任意のパラメーターの設定・取得・リッスン、ノードの追加・削除・接続）、127.0.0.1:9100 に OSC を送信します（/infinite/node/<index>/<param>）。ノードは不要です。
 Live audio looper: record, play, overdub and clear with tempo-synced take lengths and interface latency compensation.	ライブオーディオルーパー：録音、再生、オーバーダブ、クリアが可能で、テイクの長さはテンポ同期、インターフェースのレイテンシー補正付きです。
 Live camera or capture input through AVFoundation - pick a device and a resolution from the node. macOS asks for camera permission the first time. Frames arrive on the device's own clock, so this one source does not pause with the transport.	AVFoundation を通じたライブカメラまたはキャプチャ入力です。ノード上でデバイスと解像度を選びます。初回は macOS がカメラの許可を求めます。フレームはデバイス自身のクロックで届くため、このソースだけはトランスポートと一緒に一時停止しません。
 Live camera or capture input through Media Foundation - pick a device and a resolution from the node. Frames arrive on the device's own clock, so this one source does not pause with the transport.	Media Foundation を通じたライブカメラまたはキャプチャ入力です。ノード上でデバイスと解像度を選びます。フレームはデバイス自身のクロックで届くため、このソースだけはトランスポートと一緒に一時停止しません。
@@ -902,7 +902,7 @@ Move the selected clips one grid step; with nothing selected, step the playhead	
 Moves every spectral peak of the sound to the nearest note of a scale, so chords and layered sources stay in key. Snap blends between untouched and fully in tune, glide sets how fast a peak slides to its new note, and global key follows the transport's key and scale. Latency is 42.7 ms (2048 samples).	音のすべてのスペクトルピークをスケール上の最も近い音に移動し、コードや重ねたソースがキーに収まるようにします。Snap は手つかずと完全にチューニングされた状態の間をブレンドし、glide はピークが新しい音へスライドする速さを決め、global key はトランスポートのキーとスケールに従います。レイテンシーは 42.7 ms（2048サンプル）です。
 Moves, rotates and scales only the faces marked by an upstream Select op, optionally sliding them along their own normals instead of a fixed direction.	上流の Select オペレーションでマークされた面だけを移動・回転・スケールします。固定方向ではなく、各面自身の法線に沿ってスライドさせることもできます。
 Moves, rotates and scales the input mesh by a fixed offset - the geometry equivalent of the 2D Transform effect.	入力メッシュを固定のオフセットで移動・回転・スケールします。2D の Transform エフェクトのジオメトリ版です。
-Multi-mode state-variable & ladder filter (LP12/24/36, HP, BP, Notch, Peak) with drive and resonance control.	ドライブとレゾナンスを制御できる、マルチモードのステートバリアブル／ラダーフィルター（LP12/24/36、HP、BP、Notch、Peak）。
+Multi-mode filter: state-variable (LP12/24/36, HP), BP, Notch, Peak, comb, and driven ladder, MS-20 and diode models with self-oscillating resonance.	マルチモードフィルター：ステートバリアブル（LP12/24/36、HP）、BP、Notch、Peak、コム、そしてドライブ付きで自己発振するレゾナンスを持つラダー、MS-20、ダイオードのモデル。
 Multi-voice polyphonic wavetable oscillator (up to 8 voices) with two independent A/B wavetable engines crossfaded against each other, wavetable position morphing, detuned unison, and integrated stereo spread.	マルチボイスのポリフォニック・ウェーブテーブルオシレーター（最大8ボイス）。互いにクロスフェードできる独立した A/B 2つのウェーブテーブルエンジン、ウェーブテーブル位置のモーフィング、デチューンされたユニゾン、内蔵のステレオスプレッドを備えます。
 Multiplies brightness by powers of two, like a camera's exposure stop (compare Levels' linear/gamma remap).	明るさを2のべき乗倍します。カメラの露出ストップと同じです（Levels の線形／ガンマリマップと比較してください）。
 Multiplies the input by an oscillator (freq, waveform) - true ring modulation, not amplitude modulation, so the original frequencies are replaced by sum/difference sidebands rather than just scaled.	入力にオシレーター（freq、waveform）を掛け合わせます。振幅変調ではなく本物のリング変調なので、元の周波数は単にスケールされるのではなく、和／差のサイドバンドに置き換わります。
@@ -924,7 +924,7 @@ On-device segmentation via Apple Vision - no model download, no network, no key.
 On-device segmentation via the OS - no model download, no network, no key. Subject mode needs macOS 14, Person mode macOS 12. Segmentation is expensive, so the mask is computed on this interval rather than every frame; for video, raise the interval or use auto-refresh.	OS によるデバイス上でのセグメンテーションです。モデルのダウンロード、ネットワーク、キーは不要です。Subject モードは macOS 14、Person モードは macOS 12 が必要です。セグメンテーションは負荷が高いため、マスクは毎フレームではなくこの間隔で計算されます。ビデオでは間隔を上げるか auto-refresh を使ってください。
 On-device segmentation with no network access and no API key: Windows has no Vision equivalent, so a small model (u2netp) ships with the build and runs through ONNX Runtime on the DirectML GPU provider, falling back to CPU when DirectML does not register - the node's header line says which. Both Subject and Person modes use the same model. Segmentation is expensive, so the mask is computed on this interval rather than every frame.	ネットワークアクセスも API キーも不要のデバイス上セグメンテーションです。Windows には Vision に相当するものがないため、小さなモデル（u2netp）をビルドに同梱し、ONNX Runtime の DirectML GPU プロバイダーで実行し、DirectML が登録されない場合は CPU にフォールバックします。どちらを使っているかはノードのヘッダー行に表示されます。Subject モードと Person モードは同じモデルを使います。セグメンテーションは負荷が高いため、マスクは毎フレームではなくこの間隔で計算されます。
 On-device segmentation with no network access and no API key: a small model (u2netp) ships with the build and runs through ONNX Runtime on the CPU provider. Both Subject and Person modes use the same model. Segmentation is expensive, and CPU inference more so, so raise the interval for video rather than computing a mask every frame.	ネットワークアクセスも API キーも不要のデバイス上セグメンテーションです。小さなモデル（u2netp）をビルドに同梱し、ONNX Runtime の CPU プロバイダーで実行します。Subject モードと Person モードは同じモデルを使います。セグメンテーションは負荷が高く、CPU 推論はなおさらなので、ビデオでは毎フレームマスクを計算するのではなく間隔を上げてください。
-One filter, one of 12 types (LP/HP at 12/24/36 dB, BP, notch, shelves, peak, all-pass). Drag the handle on the response curve to set frequency and gain, Shift-drag to set Q - the picture is the control.	1つのフィルターで、12種類のタイプから選べます（12/24/36 dB の LP/HP、BP、ノッチ、シェルフ、ピーク、オールパス）。周波数特性カーブ上のハンドルをドラッグして周波数とゲインを設定し、Shift+ドラッグで Q を設定します。絵そのものがコントロールです。
+One filter, one of 17 types (LP/HP at 12/24/36 dB, BP, notch, shelves, peak, all-pass, comb, and ladder, MS-20 and diode models that sing at the top of Q). Drag the handle on the response curve to set frequency and gain, Shift-drag to set Q - the picture is the control.	1つのフィルターで、17種類のタイプから選べます（12/24/36 dB の LP/HP、BP、ノッチ、シェルフ、ピーク、オールパス、コム、そして Q の最大で自己発振するラダー、MS-20、ダイオードのモデル）。周波数特性カーブ上のハンドルをドラッグして周波数とゲインを設定し、Shift+ドラッグで Q を設定します。絵そのものがコントロールです。
 One short modulated delay line with feedback - the jet-swoosh comb filter. Feedback past zero flips the comb's polarity for a hollower sound; the right channel reads a quarter-cycle ahead of the left for width.	フィードバック付きの短いモジュレーション・ディレイライン、つまりジェット機のようなスウッシュを生むコムフィルターです。フィードバックをゼロより下げるとコムの極性が反転して、より空洞的な音になります。右チャンネルは幅を出すため左より4分の1周期先を読み取ります。
 Open Patch	パッチを開く
 Open an existing .inf patch file	既存の .inf パッチファイルを開く
@@ -1152,7 +1152,7 @@ Using Feedback	Using Feedback
 Utility node: audio routing, terminal/output nodes (shows, exports or records the final result), Syphon and OSC I/O.	ユーティリティノード：オーディオルーティング、ターミナル／出力ノード（最終結果を表示、書き出し、録画）、Syphon と OSC の I/O。
 Video tracks composite back to front, each clip with its own blend mode, opacity and brightness/contrast/saturation grade. Audio clips carry gain, pan, pitch and fades, summed per track. A clip's waveform is drawn from what was actually played, so a clip you have not played yet shows a flat line until the playhead has crossed it once.	ビデオトラックは奥から手前に合成され、各クリップに独自のブレンドモード、不透明度、明るさ／コントラスト／彩度のグレードがあります。オーディオクリップには gain、pan、ピッチ、フェードがあり、トラックごとに加算されます。クリップの波形は実際に再生された内容から描かれるため、まだ再生していないクリップは、再生ヘッドが一度通過するまで平らな線で表示されます。
 Viewport Panel	ビューポートパネル
-Virtual-analog polyphonic synth with dual oscillators, unevenly detuned unison stacking, osc hard sync, sub-oscillator, noise, pre-filter drive, nonlinear ZDF Moog ladder and SVF filters, dual-path stereo spread, and amp ADSR.	バーチャルアナログのポリフォニックシンセ。デュアルオシレーター、不均等にデチューンしたユニゾンスタック、osc ハードシンク、サブオシレーター、ノイズ、プリフィルタードライブ、非線形 ZDF Moog ラダーと SVF フィルター、デュアルパスのステレオスプレッド、アンプ ADSR を備えます。
+Virtual-analog polyphonic synth with dual oscillators, unevenly detuned unison stacking, osc hard sync, sub-oscillator, noise, pre-filter drive, nonlinear ZDF Moog ladder, MS-20, diode ladder and SVF filters, dual-path stereo spread, and amp ADSR.	バーチャルアナログのポリフォニックシンセ。デュアルオシレーター、不均等にデチューンしたユニゾンスタック、osc ハードシンク、サブオシレーター、ノイズ、プリフィルタードライブ、非線形 ZDF の Moog ラダー、MS-20、ダイオードラダー、SVF フィルター、デュアルパスのステレオスプレッド、アンプ ADSR を備えます。
 Walk Params	パラメータを巡回
 Warp, corner-pin and perspective-correct an image for projectors, flat walls, or curved screens, with built-in alignment test patterns and custom resolution target.	プロジェクター、平らな壁、曲面スクリーン向けに、画像をワープ、コーナーピン、パースペクティブ補正します。内蔵のアライメントテストパターンとカスタム解像度ターゲットがあります。
 Wave terrain synthesis: an image patched in is read as a height field z = T(u,v), and the oscillator's waveform is whatever a closed orbit traced across that terrain reads back. Orbit type/centre/radius/ratio decide the path, so moving the orbit is a timbre control rather than a pitch one - and because the terrain is an ordinary image input, a Noise, Draw, Video or Reaction Diffusion node upstream reshapes the sound live. Each cycle is band-limited through a 10-level mip pyramid, so it stays alias-free however sharp the source image is.	ウェーブテレイン合成：パッチした画像を高さフィールド z = T(u,v) として読み取り、オシレーターの波形は、そのテレイン上を描く閉じた軌道が読み返す値になります。Orbit の type/centre/radius/ratio が経路を決めるため、軌道を動かすことはピッチではなく音色のコントロールになります。テレインは通常の画像入力なので、上流の Noise、Draw、Video、Reaction Diffusion ノードでサウンドをライブに再形成できます。各サイクルは10レベルのミップピラミッドで帯域制限されるため、ソース画像がどれだけシャープでもエイリアスは生じません。
@@ -1178,3 +1178,66 @@ Sort	並べ替え
 Filter	フィルター
 Descending	降順
 Ascending	昇順
+Audio threads	オーディオスレッド
+Auto (all cores)	自動（全コア）
+One thread	1スレッド
+Auto: tracks that do not feed each other render in parallel, %d threads on this machine.\nOne thread: everything on the audio thread, as before.\nThe sound is identical either way.	自動: 互いに接続されていないトラックを並列で処理します（このマシンでは%dスレッド）。\n1スレッド: 従来どおりすべてをオーディオスレッドで処理します。\nどちらでも音は同一です。
+Playable resynthesis: a loaded sample is analysed once into tracked partials plus the noise they leave behind, then every note plays it back additively at the note's pitch. Transposing keeps the sample's formants where they were, so a voice an octave up still sounds like the same voice; formant moves them on purpose. partials thins the stack from the top, morph crossfades partial by partial into a second sample, speed walks through the sample faster or slower without changing pitch, noise sets the residual, and loop repeats the sample while the note is held. 8 voices, note-driven; analysis runs on a background thread.	演奏できるリシンセシス：読み込んだサンプルを一度だけ解析して、追跡したパーシャルと残りのノイズに分け、各ノートがそれを加算合成でそのピッチで再生します。移調してもサンプルのフォルマントは元の位置に残るので、1オクターブ上の声も同じ声に聞こえます。formant は意図的にフォルマントを動かします。partials は上から順にパーシャルを減らし、morph はパーシャルごとに2つ目のサンプルへクロスフェードし、speed はピッチを変えずにサンプルを速く・遅く進み、noise は残差のレベルを決め、loop はノートを押している間サンプルを繰り返します。8ボイス、ノート駆動。解析はバックグラウンドスレッドで動きます。
+Playable resynthesis: a sample becomes tracked partials plus noise, played at any pitch with its formants kept, thinned, sped up or morphed into a second sample.	演奏できるリシンセシス：サンプルを追跡したパーシャルとノイズに変え、フォルマントを保ったまま任意のピッチで演奏し、間引き、速度変更、2つ目のサンプルへのモーフができます。
+Physically modelled string: every note is a waveguide string tuned exactly to its pitch, on a shared wooden body. exciter plucks it, bows it (the bow keeps it sounding while the note is held) or strikes it with a felt hammer that gets brighter the harder you hit. position is where along the string it is excited, measured from the bridge (a quarter of the way in silences every 4th harmonic, as on a real string). tone sets how bright it stays as it rings, decay how long the note rings while held, stiffness stretches the upper partials sharp like a piano or a metal string, body blends from the bare string into the body's resonances, and release is how fast the damper stops it after note-off. 8 voices, note-driven.	物理モデリングの弦：各ノートはピッチに正確にチューニングされたウェーブガイド弦で、共有の木製ボディに張られています。exciter で弾く、弓で弾く（ノートを押している間、弓が音を持続させます）、フェルトのハンマーで打つ（強く打つほど明るくなります）を選びます。position は弦を励振する位置で、ブリッジから測ります（4分の1の位置では実際の弦と同じく4倍音ごとに消えます）。tone は響きながらどれだけ明るさを保つか、decay は押している間ノートがどれだけ鳴り続けるか、stiffness はピアノや金属弦のように上の倍音を高めに伸ばし、body はむき出しの弦からボディの共鳴へとブレンドし、release はノートを離した後にダンパーが止める速さです。8ボイス、ノート駆動。
+Physically modelled string: pluck, bow or strike a waveguide string on a wooden body, always in tune; position, tone, decay and stiffness shape it.	物理モデリングの弦：木製ボディ上のウェーブガイド弦を弾く・弓で弾く・打つ。常に正確なピッチで、position、tone、decay、stiffness で形を変えます。
+A switch lands on the quantize grid; the old patch fades out over the fade time	切り替えはクオンタイズのグリッドで行われ、前のパッチはフェード時間をかけて消えます
+Add current patch	現在のパッチを追加
+Add file...	ファイルを追加...
+Add patches in the order you play them. PageDown / PageUp or MIDI Program Change switch between them	演奏する順にパッチを追加します。PageDown / PageUp または MIDI プログラムチェンジで切り替えます
+Down	下へ
+Fade	フェード
+Go	実行
+Next	次へ
+Next / Previous Show Patch	次 / 前のショーパッチ
+Next patch	次のパッチ
+Open set...	セットを開く...
+Patches	パッチ
+Previous	前へ
+Previous patch	前のパッチ
+Quantize	クオンタイズ
+Save set...	セットを保存...
+Save the patch before adding it to the show set	ショーセットに追加する前にパッチを保存してください
+Show Set	ショーセット
+Show Set window	ショーセットウィンドウ
+Show set	ショーセット
+Switch	切り替え
+Switch to the next or previous patch of the show set, on its launch grid. Works in a projector window too	ショーセットの次または前のパッチへ、ローンチグリッドに合わせて切り替えます。プロジェクターウィンドウでも使えます
+Up	上へ
+can't read	読み込めません
+next	次
+none	なし
+reading	読み込み中
+2 bars	2小節
+unsaved edits to the last patch were discarded	前のパッチの未保存の変更は破棄されました
+Couldn't open the show set	ショーセットを開けませんでした
+Couldn't save the show set	ショーセットを保存できませんでした
+Show lock on: nodes and cables stay where they are. Press again to edit	ショーロック オン: ノードとケーブルは動きません。もう一度押すと編集できます
+Show lock off	ショーロック オフ
+Show is locked	ショーはロックされています
+PANIC: sound off, projectors holding. Press again to resume	パニック: 音を停止、プロジェクターは最後の映像を保持。もう一度押すと再開
+Resumed after panic	パニックから再開しました
+The audio device is not open	オーディオデバイスが開いていません
+the MIDI device	MIDIデバイス
+is not connected	は接続されていません
+its controller is not connected	コントローラーが接続されていません
+nothing is cabled into in, so it shows no picture	in に何も接続されていないため映像は出ません
+A projector window lost its display	プロジェクターウィンドウのディスプレイが失われました
+There are audio nodes but no Audio Out, so nothing is heard	オーディオノードはありますが Audio Out がないため音は出ません
+Show lock	ショーロック
+Resume after panic	パニック後に再開
+Panic	パニック
+Pre-show check	ショー前チェック
+Show safety	ショーの安全
+Unlock	ロック解除
+Lock	ロック
+Resume	再開
+Ready: nothing missing, every device and output in place	準備完了: 欠けているものはなく、すべてのデバイスと出力が揃っています
+Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume	ロック: ドラッグ・削除・取り消しは無効、ノブは操作できます。パニックは即座に音を止め、もう一度押すと再開します
+Lock the canvas for a live show: no node drag, cable drag, delete or undo. Knobs, sliders and the keyboard keep working	ライブショー用にキャンバスをロック: ノード/ケーブルのドラッグ、削除、取り消しを無効に。ノブ、スライダー、キーボードは使えます
+Silence everything now: notes off on every MIDI Out and plugin, the sound fades in 5 ms, the transport stops and each projector holds its last frame. Press again to resume	すべてを即座に無音化: 全MIDI Outとプラグインのノートをオフ、音は5 msでフェードアウト、トランスポート停止、各プロジェクターは最後のフレームを保持。もう一度押すと再開

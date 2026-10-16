@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio/FpContract.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -68,6 +69,7 @@ namespace DspMath
 
       float Process(float x)
       {
+         INFINITE_NO_FMA
          const float y = x - prevIn + r * prevOut;
          prevIn = x;
          prevOut = y;
@@ -126,6 +128,7 @@ namespace DspMath
    // audio-rate soft clipping and much cheaper than the libm transcendental.
    inline float FastTanh(float x)
    {
+      INFINITE_NO_FMA
       if (x < -3.0f)
          return -1.0f;
       if (x > 3.0f)
@@ -416,6 +419,7 @@ namespace DspMath
 
       Outputs Process(float in)
       {
+         INFINITE_NO_FMA
          const float a1 = 1.0f / (1.0f + g * (g + k));
          const float a2 = g * a1;
          const float band = a1 * s1 + a2 * (in - s2);

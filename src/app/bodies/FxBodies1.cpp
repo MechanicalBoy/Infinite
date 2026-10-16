@@ -427,6 +427,10 @@ namespace app
                          float rateLo, float rateHi);
 
 
+   // Ordinal of Audio Filter's drive knob (v0.6 2.25): above the six
+   // auto-numbered controls (freq, Q, gain, mix, env, rate).
+   const int kAudioFilterDriveParam = 16;
+
    void DrawAudioFilterBody(GraphNode& gn, AudioEffectNode* n)
    {
       const int type = (int)(n->Param("type") + 0.5f);
@@ -454,12 +458,25 @@ namespace app
          row.Knob("freq", n->ParamPtr("freq"), 20.0f, 20000.0f, "%.0f Hz", kKnobLarge);
          row.Knob("Q", n->ParamPtr("q"), 0.1f, 18.0f, "%.2f", kKnobLarge);
 
-         const bool gainLive = AudioFilterDsp::UsesGain(type);
-         if (!gainLive)
-            ImGui::BeginDisabled();
-         row.Knob("gain", n->ParamPtr("gain"), -24.0f, 24.0f, "%.1f dB", kKnobLarge);
-         if (!gainLive)
-            ImGui::EndDisabled();
+         // The analogue models have no gain; their cell is drive instead.
+         // Drive has its own ordinal past every auto-numbered control here,
+         // so swapping the cell never moves a binding between the two.
+         if (AudioFilterDsp::IsModel(type))
+         {
+            row.Knob("drive", n->ParamPtr("drive"), 0.0f, 1.0f, "%.2f", kKnobLarge, /*dbTaper=*/false,
+                     /*freqTaper=*/false, AudioWidgetStyle::Knob, nullptr, nullptr, kAudioFilterDriveParam,
+                     "drive");
+            gParamCounter++; // gain's ordinal, kept so mix/env/rate keep theirs
+         }
+         else
+         {
+            const bool gainLive = AudioFilterDsp::UsesGain(type);
+            if (!gainLive)
+               ImGui::BeginDisabled();
+            row.Knob("gain", n->ParamPtr("gain"), -24.0f, 24.0f, "%.1f dB", kKnobLarge);
+            if (!gainLive)
+               ImGui::EndDisabled();
+         }
          row.End();
       }
 
@@ -1010,7 +1027,7 @@ namespace app
    // The gain-computer picture shared by Dynamics and Limiter (a limiter is the same curve with an
    // infinite ratio): transfer curve + threshold marker + live operating point + slim GR meter.
    void DrawGainComputerVisualizer(const char* readoutKey, float threshold, float ratio, float makeupDb,
-                                   float inGainDb, const GainVizLive& live)
+                                   float inGainDb, const GainVizLive& live, float kneeDb = 6.0f)
    {
       const float w = gAudioBodyW;
       const float h = kAudioTimeVizH;
@@ -1062,7 +1079,7 @@ namespace app
       {
          const float x = origin.x + (float)i * (curveW / (float)(kNumPoints - 1));
          const float xDb = DynVizXToDb(x, origin.x, curveW);
-         const float yDb = DynamicsDsp::GainComputerDb(xDb + inGainDb, threshold, ratio) + makeupDb;
+         const float yDb = DynamicsDsp::GainComputerDb(xDb + inGainDb, threshold, ratio, kneeDb) + makeupDb;
          dl->PathLineTo(ImVec2(x, DynVizDbToY(yDb, origin.y, h)));
       }
       dl->PathStroke(isLight ? tok::U32(tok::pal::c_1E6EE6FF) : tok::U32(tok::pal::c_96D6FFF5), 0, 1.8f);
@@ -1139,28 +1156,32 @@ namespace app
    void DrawDynamicsBody(GraphNode& gn, AudioEffectNode* n)
    {
       const bool analog = n->Param("analog") != 0.0f;
+      const int style = std::clamp((int)std::lround(n->Param("style")), 0, DynamicsDsp::kNumStyles - 1);
       char stat[96];
-      snprintf(stat, sizeof(stat), "compress %.0f:1 @ %.0f dB%s", n->Param("ratio"), n->Param("threshold"),
-               analog ? " - analog" : "");
+      snprintf(stat, sizeof(stat), "%s %.0f:1 @ %.0f dB%s", DynamicsDsp::StyleList()[style].c_str(),
+               n->Param("ratio"), n->Param("threshold"), analog ? " - warm" : "");
 
       BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
       DrawGainComputerVisualizer("dynamics", n->Param("threshold"), n->Param("ratio"), n->Param("makeup"), 0.0f,
-                                 { n->ExtraMeterValue(0), n->ExtraMeterValue(1) });
+                                 { n->ExtraMeterValue(0), n->ExtraMeterValue(1) }, DynamicsDsp::KneeDb(style));
       ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
-      // KHS Audio Compressor's control surface: threshold, ratio, attack,
-      // release, makeup, mix - two rows of three so every knob (mix
-      // included) reads as one of the same row instead of mix living apart
-      // in its own slider section.
+      // Style, threshold, ratio, attack on top; release, makeup, mix under
+      // them, the style's slot empty below it so the knobs line up.
       {
-         AudioKnobRow row(3, kKnobLarge);
+         AudioKnobRow row(4, kKnobLarge);
+         row.Dropdown("style", DynamicsDsp::StyleList(), style, [n](int i) {
+            PushUndoCheckpoint();
+            *n->ParamPtr("style") = (float)i;
+         });
          row.Knob("threshold", n->ParamPtr("threshold"), -60.0f, 0.0f, "%.1f dB", kKnobLarge);
          row.Knob("ratio", n->ParamPtr("ratio"), 1.0f, 20.0f, "%.1f:1", kKnobLarge);
          row.Knob("attack", n->ParamPtr("attack"), 0.05f, 200.0f, "%.2f ms", kKnobLarge);
          row.End();
       }
       {
-         AudioKnobRow row(3, kKnobLarge);
+         AudioKnobRow row(4, kKnobLarge);
+         row.index++; // under the style dropdown
          row.Knob("release", n->ParamPtr("release"), 5.0f, 2000.0f, "%.0f ms", kKnobLarge);
          row.Knob("makeup", n->ParamPtr("makeup"), -12.0f, 24.0f, "%.1f dB", kKnobLarge);
          row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f", kKnobLarge);
@@ -1186,7 +1207,7 @@ namespace app
          }
          bool analogBool = analog;
          bool analogBoolUserChanged = false;
-         if (row.Checkbox("analog##dynAnalog", &analogBool, &analogBoolUserChanged))
+         if (row.Checkbox("warm##dynAnalog", &analogBool, &analogBoolUserChanged))
          {
             if (analogBoolUserChanged) // a cable flip writes the value but never checkpoints
                PushUndoCheckpoint();
@@ -1321,10 +1342,10 @@ namespace app
       if (sync)
          snprintf(stat, sizeof(stat), "%s - %.0f%% fb - %.0f%% wet%s",
                   MusicTime::RateDivisionName((int)(n->Param("rateDiv") + 0.5f)), n->Param("feedback"),
-                  n->mix * 100.0f, analog ? " - analog" : "");
+                  n->mix * 100.0f, analog ? " - tape" : "");
       else
          snprintf(stat, sizeof(stat), "%.0f ms - %.0f%% fb - %.0f%% wet%s", n->Param("timeMs"), n->Param("feedback"),
-                  n->mix * 100.0f, analog ? " - analog" : "");
+                  n->mix * 100.0f, analog ? " - tape" : "");
 
       BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
       DrawDelayVisualizer(n);
@@ -1353,6 +1374,22 @@ namespace app
          row.Knob("tone", n->ParamPtr("tone"), -1.0f, 1.0f, "%.2f", kKnobLarge);
          row.Knob("feedback", n->ParamPtr("feedback"), 0.0f, 110.0f, "%.0f%%", kKnobLarge);
          row.End();
+      }
+      {
+         // Tape (2.20): the loop's wow, flutter, saturation and diffusion,
+         // greyed while tape is off rather than dropped (P5), so mix stays
+         // bottom-right (P4).
+         const bool grey = !analog && !gParamRegisterOnly;
+         if (grey)
+            ImGui::BeginDisabled();
+         AudioKnobRow row(4);
+         row.Knob("wow", n->ParamPtr("wow"), 0.0f, 1.0f, "%.2f");
+         row.Knob("flutter", n->ParamPtr("flutter"), 0.0f, 1.0f, "%.2f");
+         row.Knob("saturation", n->ParamPtr("saturation"), 0.0f, 1.0f, "%.2f");
+         row.Knob("diffusion", n->ParamPtr("diffusion"), 0.0f, 1.0f, "%.2f");
+         row.End();
+         if (grey)
+            ImGui::EndDisabled();
       }
       {
          AudioKnobRow row(3);
@@ -1387,7 +1424,7 @@ namespace app
          }
          bool analogBool = analog;
          bool analogBoolUserChanged = false;
-         if (row.Checkbox("analog##delayAnalog", &analogBool, &analogBoolUserChanged))
+         if (row.Checkbox("tape##delayAnalog", &analogBool, &analogBoolUserChanged))
          {
             if (analogBoolUserChanged) // a cable flip writes the value but never checkpoints
                PushUndoCheckpoint();
@@ -1518,8 +1555,8 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("analog") = analogBool ? 1.0f : 0.0f;
          }
-         row.Skip();
-         row.Skip();
+         row.index++; // under the style dropdown
+         row.index++; // under the style dropdown
          row.End();
       }
 
@@ -1614,6 +1651,129 @@ namespace app
          row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f", kKnobLarge);
          row.End();
       }
+
+      EndAudioBody();
+   }
+
+
+   // ---- Saturator ----------------------------------------------------------
+   // One transfer curve per stage, side by side, at the stage's amount - the
+   // same main-thread-from-params rule as Drive's curve. A stage that is off
+   // shows the dim 1:1 line alone.
+   void DrawSaturatorVisualizer(AudioEffectNode* n)
+   {
+      const float w = gAudioBodyW;
+      const float h = kAudioTimeVizH;
+      const ImVec2 origin = ImGui::GetCursorScreenPos();
+      const ImVec2 br(origin.x + w, origin.y + h);
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const bool isLight = IsThemeLight();
+      const AudioViz::Frame vizFrame = AudioViz::Begin(origin, w, h);
+
+      static const char* kModel[3] = { "model1", "model2", "model3" };
+      static const char* kAmount[3] = { "amount1", "amount2", "amount3" };
+      const float gap = 8.0f;
+      const float panelW = (w - 4.0f * gap) / 3.0f;
+      const float panelH = h - 2.0f * gap;
+      const ImU32 curveCol = isLight ? tok::U32(tok::pal::c_1E6EE6FF) : tok::U32(tok::pal::c_96D6FFF5);
+      for (int s = 0; s < 3; s++)
+      {
+         const int model = std::clamp((int)(n->Param(kModel[s]) + 0.5f), 0, SaturatorDsp::kNumModels - 1);
+         const float amount = n->Param(kAmount[s]);
+         const ImVec2 p0(origin.x + gap + (float)s * (panelW + gap), origin.y + gap);
+         const ImVec2 p1(p0.x + panelW, p0.y + panelH);
+         dl->AddLine(ImVec2(0.5f * (p0.x + p1.x), p0.y), ImVec2(0.5f * (p0.x + p1.x), p1.y), ScopeGridCol(), 1.0f);
+         dl->AddLine(ImVec2(p0.x, 0.5f * (p0.y + p1.y)), ImVec2(p1.x, 0.5f * (p0.y + p1.y)), ScopeGridCol(), 1.0f);
+         dl->AddLine(ImVec2(p0.x, p1.y), ImVec2(p1.x, p0.y), ScopeMidLineCol(), 1.0f);
+         if (model != SaturatorDsp::kOff)
+         {
+            dl->PathClear();
+            const int kNumPoints = 64;
+            for (int i = 0; i < kNumPoints; i++)
+            {
+               const float xIn = -1.0f + 2.0f * (float)i / (float)(kNumPoints - 1);
+               const float yOut = std::clamp(SaturatorDsp::Transfer(model, amount, xIn), -1.0f, 1.0f);
+               dl->PathLineTo(ImVec2(p0.x + (0.5f + 0.5f * xIn) * panelW, p0.y + (0.5f - 0.5f * yOut) * panelH));
+            }
+            dl->PathStroke(curveCol, 0, 1.6f);
+         }
+         char cap[24];
+         snprintf(cap, sizeof(cap), "%d %s", s + 1, SaturatorDsp::ModelList()[(size_t)model].c_str());
+         dl->AddText(ImVec2(p0.x + 3.0f, p0.y + 2.0f), ScopeTextCol(), cap);
+      }
+
+      AudioViz::End(vizFrame);
+
+      if (ImGui::IsMouseHoveringRect(origin, br))
+      {
+         const int routing = std::clamp((int)(n->Param("routing") + 0.5f), 0, SaturatorDsp::kNumRoutings - 1);
+         SetAudioReadout("routing", SaturatorDsp::RoutingList()[(size_t)routing].c_str());
+      }
+
+      ImGui::Dummy(ImVec2(w, h));
+   }
+
+   void DrawSaturatorBody(GraphNode& gn, AudioEffectNode* n)
+   {
+      const int routing = std::clamp((int)(n->Param("routing") + 0.5f), 0, SaturatorDsp::kNumRoutings - 1);
+      char stat[80];
+      snprintf(stat, sizeof(stat), "%s - %.0f%% wet", SaturatorDsp::RoutingList()[(size_t)routing].c_str(),
+               n->mix * 100.0f);
+
+      BeginAudioBody(gn.index, gn.category, kAudioNodeWidth, stat);
+      DrawSaturatorVisualizer(n);
+      ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+      // One column per stage: its curve over its amount.
+      static const char* kModel[3] = { "model1", "model2", "model3" };
+      static const char* kAmount[3] = { "amount1", "amount2", "amount3" };
+      static const char* kStageLabel[3] = { "stage 1", "stage 2", "stage 3" };
+      static const char* kAmountLabel[3] = { "amount 1", "amount 2", "amount 3" };
+      {
+         AudioKnobRow row(3);
+         for (int s = 0; s < 3; s++)
+         {
+            const char* key = kModel[s];
+            const int model = std::clamp((int)(n->Param(key) + 0.5f), 0, SaturatorDsp::kNumModels - 1);
+            row.Dropdown(kStageLabel[s], SaturatorDsp::ModelList(), model, [n, key](int i) {
+               PushUndoCheckpoint();
+               *n->ParamPtr(key) = (float)i;
+            });
+         }
+         row.End();
+      }
+      {
+         AudioKnobRow row(3);
+         for (int s = 0; s < 3; s++)
+         {
+            const bool on = n->Param(kModel[s]) > 0.5f;
+            if (!on)
+               ImGui::BeginDisabled();
+            row.Knob(kAmountLabel[s], n->ParamPtr(kAmount[s]), 0.0f, 1.0f, "%.2f", kKnobLarge);
+            if (!on)
+               ImGui::EndDisabled();
+         }
+         row.End();
+      }
+
+      BeginAudioSection("routing");
+      {
+         AudioKnobRow row(4);
+         row.Dropdown("routing", SaturatorDsp::RoutingList(), routing, [n](int i) {
+            PushUndoCheckpoint();
+            *n->ParamPtr("routing") = (float)i;
+         });
+         const bool fbLive = routing == SaturatorDsp::kFeedback;
+         if (!fbLive)
+            ImGui::BeginDisabled();
+         row.Knob("feedback", n->ParamPtr("feedback"), 0.0f, 0.95f, "%.2f");
+         if (!fbLive)
+            ImGui::EndDisabled();
+         row.Knob("output", n->ParamPtr("output"), -24.0f, 12.0f, "%.1f dB");
+         row.Knob("mix", &n->mix, 0.0f, 1.0f, "%.2f");
+         row.End();
+      }
+      EndAudioSection();
 
       EndAudioBody();
    }
@@ -1967,7 +2127,7 @@ namespace app
                PushUndoCheckpoint();
             *n->ParamPtr("spectral") = spectralBool ? 1.0f : 0.0f;
          }
-         row.Skip();
+         row.index++; // under the style dropdown
          row.End();
       }
 

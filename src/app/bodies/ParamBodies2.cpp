@@ -229,6 +229,170 @@ namespace app
    }
 
 
+   // The MSEG's shape: drag a point, click empty space to add one, right-click
+   // a point to remove it (empty space: reset). The small ring on each segment
+   // bends it; drag it up or down. Loop on shades the looped part, and the
+   // vertical line is where the shape is now.
+   static void DrawMSEGEditor(MSEGNode* n, ImU32 lineCol)
+   {
+      const float width = kPreviewSize, height = 120.0f;
+      ImVec2 origin = ImGui::GetCursorScreenPos();
+      ImGui::PushID(n);
+      ImGui::InvisibleButton("##mseg", ImVec2(width, height));
+      ImGui::PopID();
+      const bool hovered = ImGui::IsItemHovered();
+      const bool active = ImGui::IsItemActive();
+
+      const float pad = 6.0f;
+      const float innerW = width - 2.0f * pad, innerH = height - 2.0f * pad;
+      auto toScreen = [&](float x, float y) {
+         return ImVec2(origin.x + pad + x * innerW, origin.y + pad + (1.0f - y) * innerH);
+      };
+      auto toShape = [&](ImVec2 p) {
+         return ImVec2(std::clamp((p.x - origin.x - pad) / innerW, 0.0f, 1.0f),
+                       std::clamp(1.0f - (p.y - origin.y - pad) / innerH, 0.0f, 1.0f));
+      };
+      std::vector<MSEGNode::Point>& pts = n->points;
+      auto bendHandle = [&](int i) {
+         const float xm = 0.5f * (pts[i].x + pts[i + 1].x);
+         return toScreen(xm, MSEGNode::Segment(pts[i].y, pts[i + 1].y, pts[i].curve, 0.5f));
+      };
+
+      static MSEGNode* sDragNode = nullptr;
+      static int sDragIndex = -1;
+      static bool sDragBend = false;
+      static float sDragStartY = 0.0f, sDragStartCurve = 0.0f;
+
+      const ImVec2 mouse = ImGui::GetIO().MousePos;
+      auto dist = [&](ImVec2 p) { return std::sqrt((p.x - mouse.x) * (p.x - mouse.x) + (p.y - mouse.y) * (p.y - mouse.y)); };
+      int nearPoint = -1, nearBend = -1;
+      float best = 10.0f;
+      for (int i = 0; i < (int)pts.size(); i++)
+         if (dist(toScreen(pts[i].x, pts[i].y)) < best)
+         {
+            best = dist(toScreen(pts[i].x, pts[i].y));
+            nearPoint = i;
+         }
+      if (nearPoint < 0)
+      {
+         best = 8.0f;
+         for (int i = 0; i + 1 < (int)pts.size(); i++)
+            if (pts[i + 1].x - pts[i].x > 0.02f && dist(bendHandle(i)) < best)
+            {
+               best = dist(bendHandle(i));
+               nearBend = i;
+            }
+      }
+
+      if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+      {
+         PushUndoCheckpoint();
+         sDragNode = n;
+         sDragBend = false;
+         if (nearPoint >= 0)
+            sDragIndex = nearPoint;
+         else if (nearBend >= 0)
+         {
+            sDragIndex = nearBend;
+            sDragBend = true;
+            sDragStartY = mouse.y;
+            sDragStartCurve = pts[nearBend].curve;
+         }
+         else
+         {
+            const ImVec2 c = toShape(mouse);
+            sDragIndex = n->AddPoint(c.x, c.y);
+         }
+      }
+      if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+      {
+         PushUndoCheckpoint();
+         if (nearPoint >= 0)
+            n->RemovePoint(nearPoint);
+         else if (nearBend >= 0)
+            pts[nearBend].curve = 0.0f;
+         else
+            n->Reset();
+      }
+      if (active && sDragNode == n && sDragIndex >= 0 && sDragIndex < (int)pts.size())
+      {
+         if (sDragBend && sDragIndex + 1 < (int)pts.size())
+         {
+            const float rising = pts[sDragIndex + 1].y >= pts[sDragIndex].y ? 1.0f : -1.0f;
+            pts[sDragIndex].curve = std::clamp(sDragStartCurve + rising * (sDragStartY - mouse.y) / 50.0f, -1.0f, 1.0f);
+         }
+         else if (!sDragBend)
+         {
+            const ImVec2 c = toShape(mouse);
+            n->MovePoint(sDragIndex, c.x, c.y);
+         }
+      }
+      if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+      {
+         sDragNode = nullptr;
+         sDragIndex = -1;
+      }
+
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      const ImVec2 br(origin.x + width, origin.y + height);
+      const bool isLight = IsThemeLight();
+      const ImU32 ring = isLight ? tok::U32(tok::pal::c_F0F2F8FF) : tok::U32(tok::pal::c_12121AFF);
+      AudioViz::Fill(dl, origin, br);
+      for (int i = 1; i < 4; i++)
+      {
+         const float f = (float)i / 4.0f;
+         dl->AddLine(ImVec2(origin.x + pad + innerW * f, origin.y), ImVec2(origin.x + pad + innerW * f, br.y), ScopeGridCol());
+         dl->AddLine(ImVec2(origin.x, origin.y + pad + innerH * f), ImVec2(br.x, origin.y + pad + innerH * f), ScopeGridCol());
+      }
+      if (n->loop)
+      {
+         const float a = std::clamp(std::min(n->loopStart, n->loopEnd), 0.0f, 1.0f);
+         const float b = std::clamp(std::max(n->loopStart, n->loopEnd), 0.0f, 1.0f);
+         dl->AddRectFilled(ImVec2(toScreen(a, 0).x, origin.y), ImVec2(toScreen(b, 0).x, br.y), (lineCol & 0x00FFFFFF) | 0x1E000000);
+         dl->AddLine(ImVec2(toScreen(a, 0).x, origin.y), ImVec2(toScreen(a, 0).x, br.y), ScopeMidLineCol());
+         dl->AddLine(ImVec2(toScreen(b, 0).x, origin.y), ImVec2(toScreen(b, 0).x, br.y), ScopeMidLineCol());
+      }
+      const int kSteps = 96;
+      for (int i = 1; i <= kSteps; i++)
+      {
+         const float x0 = (float)(i - 1) / kSteps, x1 = (float)i / kSteps;
+         dl->AddLine(toScreen(x0, n->Evaluate(x0)), toScreen(x1, n->Evaluate(x1)), lineCol, 1.8f);
+      }
+      for (int i = 0; i + 1 < (int)pts.size(); i++)
+         if (pts[i + 1].x - pts[i].x > 0.02f)
+            dl->AddCircle(bendHandle(i), i == nearBend ? 4.5f : 3.0f, lineCol, 0, 1.2f);
+      for (int i = 0; i < (int)pts.size(); i++)
+      {
+         const ImVec2 sp = toScreen(pts[i].x, pts[i].y);
+         dl->AddCircleFilled(sp, i == nearPoint ? 6.0f : 4.5f, lineCol);
+         dl->AddCircle(sp, i == nearPoint ? 6.0f : 4.5f, ring, 0, 1.5f);
+      }
+      const float px = n->Position();
+      const ImU32 liveCol = isLight ? tok::U32(tok::pal::c_DC8214FF) : tok::U32(tok::pal::c_FFC83CFF);
+      dl->AddLine(ImVec2(toScreen(px, 0).x, origin.y), ImVec2(toScreen(px, 0).x, br.y), (liveCol & 0x00FFFFFF) | 0x80000000);
+      dl->AddCircleFilled(toScreen(px, n->Evaluate(px)), 4.0f, liveCol);
+      dl->AddCircle(toScreen(px, n->Evaluate(px)), 4.0f, ring, 0, 1.5f);
+      AudioViz::Border(dl, origin, br);
+   }
+
+
+   void DrawMSEGParams(MSEGNode* n)
+   {
+      const bool isLight = IsThemeLight();
+      DrawMSEGEditor(n, isLight ? tok::U32(tok::pal::c_1E6EE6FF) : tok::U32(tok::pal::c_E6EBFAFF));
+      DrawModRateControls(&n->rateMode, &n->rateBeats, &n->rateHz, 3);
+      PushCheckboxStyle();
+      ModCheckbox("loop", &n->loop);
+      PopCheckboxStyle();
+      // Drawn either way so the two keep their slots; they do nothing with loop off.
+      ImGui::BeginDisabled(!n->loop);
+      ModSlider("loop start", &n->loopStart, 0.0f, 1.0f);
+      ModSlider("loop end", &n->loopEnd, 0.0f, 1.0f);
+      ImGui::EndDisabled();
+      DrawPerVoiceCheckbox(&n->voice);
+   }
+
+
    void DrawRemoveBgParams(RemoveBgNode* n)
    {
       DropdownButton("detect", RemoveBgNode::ModeNames(), n->mode, [n](int i) { n->mode = i; });

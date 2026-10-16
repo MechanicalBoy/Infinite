@@ -12,6 +12,8 @@
 #include "app/graph/NodeClipboard.h"
 #include "miniz.h"
 #include <filesystem>
+#include "platform/PluginCrashGuard.h"
+#include <signal.h>
 #include <fstream>
 
 namespace app
@@ -993,6 +995,114 @@ static void RunPluginLatencyChangeCase(const std::vector<Platform::PluginDesc>& 
           after, wantBefore, wantAfter, ok ? "OK" : "FAIL");
 }
 
+// A plugin's sidechain bus is a second audio input on the node (v0.6 2.5).
+// Fixture: FabFilter Pro-C 2 with "Side Chain Input" set to external. A quiet
+// tone under the threshold passes untouched; the same tone with a loud key on
+// the sidechain pin is turned down. Unpatching the pin gives the first level
+// back and the key buffer is ignored. Pro-C 2 also takes notes, so its
+// sidechain pin sits at slot 2 (after "in" and "notes"). SKIPs where the
+// plugin is not installed (no Apple effect has a sidechain bus).
+static void RunPluginSidechainCase(const std::vector<Platform::PluginDesc>& plugins, const char* label)
+{
+   const std::string name = "Pro-C 2";
+   const Platform::PluginDesc* comp = nullptr;
+   for (const Platform::PluginDesc& d : plugins)
+      if (d.name == name || d.name == "FabFilter " + name)
+         comp = &d;
+   if (comp == nullptr)
+   {
+      printf("PLUGINNODETEST sidechain %s (%s not installed) SKIP\n", label, name.c_str());
+      return;
+   }
+   AudioPluginNode node;
+   AudioPluginNode keySource; // only its address is used, as the cable's source
+   AudioNode* audio = node.GetAudioNode();
+   const double rate = 48000.0;
+   audio->PrepareToPlay(rate, 512);
+   node.LoadPlugin(*comp);
+   int frame = 5000;
+   for (int i = 0; i < 1500 && !node.IsReady(); i++)
+   {
+      Platform::PumpPluginEditorEvents(); // a VST3 loads on the main dispatch queue
+      node.CookIfNeeded(++frame);
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+   }
+   const int sc = node.SidechainSlot();
+   const int wantSlot = node.AcceptsNotes() ? 2 : 1;
+   // Both switches: Pro-C 2 ignores "Side Chain Input" outside its expert
+   // side chain mode and keeps keying off the main input.
+   int extParam = -1, expertParam = -1;
+   for (const Platform::PluginParamInfo& p : node.AvailableParams())
+   {
+      const bool ext = p.displayName == "Side Chain Input", expert = p.displayName == "Side Chain Expert Mode";
+      if (!ext && !expert)
+         continue;
+      const int slot = node.MapParameter(p.address);
+      if (slot >= 0)
+         node.mappings[slot].value = p.maxValue;
+      (ext ? extParam : expertParam) = slot;
+   }
+   if (!node.IsReady() || sc != wantSlot || node.AudioInputSlot(sc) == nullptr || extParam < 0 || expertParam < 0)
+   {
+      printf("PLUGINNODETEST sidechain %s: ready=%d slot=%d (want %d) ext-param=%d  FAIL\n", label,
+             node.IsReady() ? 1 : 0, sc, wantSlot, extParam);
+      return;
+   }
+   node.CookIfNeeded(++frame);
+
+   double phase = 0.0;
+   // RMS (dB) of the last quarter second of one second of the quiet tone.
+   auto level = [&](float keyAmp)
+   {
+      std::vector<float> l(512), r(512), ol(512), orr(512), kl(512), kr(512);
+      float* inCh[2] = { l.data(), r.data() };
+      float* outCh[2] = { ol.data(), orr.data() };
+      float* keyCh[2] = { kl.data(), kr.data() };
+      AudioBuffer in, key, out;
+      in.channels = inCh;
+      key.channels = keyCh;
+      out.channels = outCh;
+      in.numChannels = key.numChannels = out.numChannels = 2;
+      in.numFrames = key.numFrames = out.numFrames = 512;
+      const AudioBuffer* ins[3] = { &in, nullptr, nullptr };
+      ins[sc] = &key;
+      const int blocks = (int)(rate / 512.0);
+      double sum = 0.0;
+      long counted = 0;
+      for (int b = 0; b < blocks; b++)
+      {
+         for (int i = 0; i < 512; i++)
+         {
+            const float s = (float)std::sin(phase);
+            phase += 2.0 * 3.14159265358979 * 1000.0 / rate;
+            l[i] = r[i] = 0.03f * s;
+            kl[i] = kr[i] = keyAmp * s;
+         }
+         std::fill(ol.begin(), ol.end(), 0.0f);
+         std::fill(orr.begin(), orr.end(), 0.0f);
+         audio->ProcessBlock(ins, 3, out);
+         if (b >= blocks * 3 / 4)
+            for (int i = 0; i < 512; i++, counted++)
+               sum += (double)ol[i] * ol[i];
+      }
+      return 10.0 * std::log10(sum / (double)std::max(1L, counted) + 1e-20);
+   };
+
+   const double open = level(0.9f); // pin unpatched: the key buffer must be ignored
+   node.AudioInputSlot(sc)->Connect(&keySource);
+   node.CookIfNeeded(++frame);
+   const double keyed = level(0.9f);
+   const double quietKey = level(0.0f);
+   node.AudioInputSlot(sc)->Disconnect();
+   node.CookIfNeeded(++frame);
+   const double after = level(0.9f);
+   const bool ok = node.IsReady() && open > -60.0 && keyed < open - 3.0 && quietKey > keyed + 3.0
+                   && std::fabs(after - open) < 1.0;
+   printf("PLUGINNODETEST sidechain %s: pin at slot %d; unpatched %.1f dB, loud key %.1f dB, silent key %.1f dB, "
+          "unpatched again %.1f dB  %s\n",
+          label, sc, open, keyed, quietKey, after, ok ? "OK" : "FAIL");
+}
+
 int RunPluginNodeHandleTest()
 {
    setvbuf(stdout, nullptr, _IONBF, 0);
@@ -1077,7 +1187,213 @@ int RunPluginNodeHandleTest()
    printf("PLUGINNODETEST %d re-prepares, %ld blocks rendered, ready at end=%d  %s\n", reprepares, blocks.load(),
           readyAtEnd ? 1 : 0, (ok && readyAtEnd && audioRan) ? "OK" : "FAIL");
    RunPluginLatencyChangeCase(plugins);
+   RunPluginSidechainCase(plugins, "AU");
+#if INFINITE_ENABLE_VST3
+   {
+      // The same plugin through the VST3 host. Scanning every installed
+      // bundle takes a child process each, so only this one is scanned, from
+      // a folder holding a link to it.
+      namespace fs = std::filesystem;
+      std::error_code ec;
+      fs::path bundle;
+      for (const std::string& folder : PluginScanner::DefaultVST3Folders())
+         if (fs::exists(fs::path(folder) / "FabFilter Pro-C 2.vst3", ec))
+            bundle = fs::path(folder) / "FabFilter Pro-C 2.vst3";
+      std::vector<Platform::PluginDesc> vst3;
+      const fs::path dir = fs::temp_directory_path(ec) / "infinite_pluginnodetest_vst3";
+      fs::remove_all(dir, ec);
+      if (!bundle.empty())
+      {
+         fs::create_directories(dir, ec);
+         fs::create_directory_symlink(bundle, dir / bundle.filename(), ec);
+         Platform::EnumerateVST3Plugins({ dir.string() }, vst3);
+      }
+      RunPluginSidechainCase(vst3, "VST3"); // loads through the link, so it goes after
+      fs::remove_all(dir, ec);
+   }
+#endif
    return 0;
+}
+
+// ===================================================== INFINITE_PLUGINCRASHTEST
+//
+// Crash-only plugin fallback (PluginCrashGuard). Three cases:
+//  1. A child copy of this binary dies inside a plugin call (a null write
+//     while a PluginCrashGuard::Scope is open - what a crashing plugin looks
+//     like to the host). The next start must name that plugin.
+//  2. An Audio Unit on the crashed list loads out of process and still
+//     renders. Its host process is then killed: the app stays up, the node
+//     stops processing (sound passes through) and reports an issue.
+//  3. A VST3 on the list is not loaded when a patch brings it back, and
+//     keeps its identity so the badge can say why.
+// macOS only: the fixture is Apple's AUDelay and the AU hosting service.
+#ifdef __APPLE__
+static std::vector<int> AuHostPids()
+{
+   std::vector<int> pids;
+   if (FILE* p = popen("pgrep -f AUHostingService 2>/dev/null", "r"))
+   {
+      int pid = 0;
+      while (fscanf(p, "%d", &pid) == 1)
+         pids.push_back(pid);
+      pclose(p);
+   }
+   return pids;
+}
+#endif
+
+int RunPluginCrashTest()
+{
+   setvbuf(stdout, nullptr, _IONBF, 0);
+#ifndef __APPLE__
+   printf("PLUGINCRASHTEST (macOS fixture) SKIP\n");
+   return 0;
+#else
+   static const char* kId = "au:aufx:dely:appl";
+   if (const char* dir = getenv("INFINITE_PLUGINCRASHTEST_CHILD"))
+   {
+      PluginCrashGuard::Init(dir);
+      PluginCrashGuard::Scope scope(kId);
+      volatile int* nothing = nullptr;
+      *nothing = 1; // the crash
+      return 0;
+   }
+
+   namespace fs = std::filesystem;
+   std::error_code ec;
+   const fs::path dir = fs::temp_directory_path(ec) / "infinite_plugincrashtest";
+   fs::remove_all(dir, ec);
+   fs::create_directories(dir, ec);
+   bool allOk = true;
+
+   // 1. the crash is attributed
+   {
+      const std::string cmd = "INFINITE_PLUGINCRASHTEST_CHILD='" + dir.string() + "' '" + Platform::ExecutablePath() +
+                              "' </dev/null >/dev/null 2>&1";
+      const int status = std::system(cmd.c_str());
+      const std::string named = PluginCrashGuard::Init(dir.string());
+      const bool ok = status != 0 && named == kId && PluginCrashGuard::CrashedBefore(kId) &&
+                      !PluginCrashGuard::CrashedBefore("au:aufx:lmtr:appl");
+      // A second start has no marker left but still remembers the plugin.
+      const std::string again = PluginCrashGuard::Init(dir.string());
+      const bool remembered = again.empty() && PluginCrashGuard::CrashedBefore(kId);
+      printf("PLUGINCRASHTEST child died inside the plugin (status %d), next start names '%s', remembered after=%d  %s\n",
+             status, named.c_str(), remembered ? 1 : 0, (ok && remembered) ? "OK" : "FAIL");
+      allOk = allOk && ok && remembered;
+   }
+
+   // 3. a crashed VST3 stays unloaded on patch load, and a pick by hand retries
+   {
+      { std::ofstream list(dir / "plugin-crashed.txt", std::ios::app); list << "vst3:crash-test-fixture\n"; }
+      PluginCrashGuard::Init(dir.string());
+      AudioPluginNode node;
+      node.pluginFormat = "vst3";
+      node.pluginId = "vst3:crash-test-fixture";
+      node.pluginName = "Crash Fixture";
+      node.ReloadFromIdentity();
+      const NodeIssue issue = node.Issue();
+      const bool kept = !node.IsReady() && !node.IsLoading() && node.HasPlugin() && (bool)issue &&
+                        issue.reason.find("crashed") != std::string::npos;
+      Platform::PluginDesc pick;
+      pick.format = "vst3";
+      pick.identifier = "vst3:crash-test-fixture";
+      pick.name = "Crash Fixture";
+      node.LoadPlugin(pick);
+      const bool retried = !PluginCrashGuard::CrashedBefore("vst3:crash-test-fixture");
+      node.Unload();
+      printf("PLUGINCRASHTEST crashed VST3 on patch load: left unloaded with its badge=%d, picking it again retries=%d  %s\n",
+             kept ? 1 : 0, retried ? 1 : 0, (kept && retried) ? "OK" : "FAIL");
+      allOk = allOk && kept && retried;
+   }
+
+   // 2. a crashed AU runs in its own process, and losing that process is survivable
+   std::vector<Platform::PluginDesc> plugins;
+   Platform::EnumerateAudioUnits(plugins);
+   const Platform::PluginDesc* chosen = nullptr;
+   for (const Platform::PluginDesc& d : plugins)
+      if (d.identifier == kId)
+         chosen = &d;
+   if (chosen == nullptr)
+   {
+      printf("PLUGINCRASHTEST isolated AU (AUDelay not installed) SKIP\n");
+   }
+   else
+   {
+      const std::vector<int> before = AuHostPids();
+      AudioPluginNode node;
+      AudioNode* audio = node.GetAudioNode();
+      audio->PrepareToPlay(48000.0, 512);
+      std::vector<float> inL(512), inR(512), l(512, 0.0f), r(512, 0.0f);
+      for (int i = 0; i < 512; i++)
+         inL[i] = inR[i] = 0.5f * std::sin(6.2831853f * 440.0f * (float)i / 48000.0f);
+      float* inCh[2] = { inL.data(), inR.data() };
+      float* outCh[2] = { l.data(), r.data() };
+      AudioBuffer in, out;
+      in.channels = inCh;
+      in.numChannels = 2;
+      in.numFrames = 512;
+      out.channels = outCh;
+      out.numChannels = 2;
+      out.numFrames = 512;
+      const AudioBuffer* ins[1] = { &in };
+      int frame = 0;
+      auto run = [&](int blocks)
+      {
+         float peak = 0.0f;
+         for (int b = 0; b < blocks; b++)
+         {
+            node.CookIfNeeded(++frame);
+            std::fill(l.begin(), l.end(), 0.0f);
+            std::fill(r.begin(), r.end(), 0.0f);
+            audio->ProcessBlock(ins, 1, out);
+            if (b >= blocks / 2)
+               for (float s : l)
+                  peak = std::max(peak, std::fabs(s));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+         }
+         return peak;
+      };
+
+      node.LoadPlugin(*chosen);
+      for (int i = 0; i < 1500 && node.IsLoading(); i++)
+      {
+         node.CookIfNeeded(++frame);
+         std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      }
+      const bool isolated = node.IsReady() && node.IsIsolated();
+      const float alive = run(60);
+      const bool rendered = isolated && alive > 0.05f;
+      printf("PLUGINCRASHTEST crashed AU re-opened: ready=%d isolated=%d, output peak %.3f  %s\n", node.IsReady() ? 1 : 0,
+             node.IsIsolated() ? 1 : 0, alive, rendered ? "OK" : "FAIL");
+      allOk = allOk && rendered;
+
+      std::vector<int> mine;
+      for (int pid : AuHostPids())
+         if (std::find(before.begin(), before.end(), pid) == before.end())
+            mine.push_back(pid);
+      if (!rendered || mine.size() != 1)
+      {
+         printf("PLUGINCRASHTEST isolated AU dies (%d new host processes, need exactly 1) SKIP\n", (int)mine.size());
+      }
+      else
+      {
+         kill(mine[0], SIGKILL);
+         const float dead = run(400);
+         const NodeIssue issue = node.Issue();
+         // With no plugin the node is a wire, like any plugin that did not load.
+         const bool ok = !node.IsReady() && (bool)issue && issue.reason.find("stopped") != std::string::npos &&
+                         std::fabs(dead - 0.5f) < 0.01f;
+         printf("PLUGINCRASHTEST isolated AU's process killed: app alive, node ready=%d, output peak %.3f, badge '%s'  %s\n",
+                node.IsReady() ? 1 : 0, dead, issue.reason.c_str(), ok ? "OK" : "FAIL");
+         allOk = allOk && ok;
+      }
+      node.Unload();
+   }
+
+   PluginCrashGuard::Init(AppPaths::AppSupportDir());
+   fs::remove_all(dir, ec);
+   return allOk ? 0 : 1;
+#endif
 }
 
 #if INFINITE_ENABLE_VST3
@@ -1700,6 +2016,151 @@ void RunRpcBatchTest()
                                                      e.find("no Output") != std::string::npos);
 
    printf("RPCBATCHTEST %s\n", ok ? "OK" : "FAIL");
+}
+
+// ====================================================== INFINITE_OSCCONTROLTEST
+//
+// v0.6 2.31: an external script drives a patch over the OSC control API -
+// real UDP packets on loopback, through OscControl's socket and queue and
+// HandleOscRequest, exactly as a controller would.
+void RunOscControlTest()
+{
+   using OscMessage::Arg;
+   bool ok = true;
+   auto Check = [&](const char* label, bool pass)
+   {
+      printf("  [%s] %s\n", pass ? "pass" : "FAIL", label);
+      if (!pass)
+         ok = false;
+   };
+   const bool startedHere = OscControl::BoundPort() < 0;
+   if (startedHere && !OscControl::Start(9199))
+   {
+      printf("OSCCONTROLTEST FAIL (cannot bind 127.0.0.1:9199)\n");
+      return;
+   }
+   OscControl::Client client;
+   if (!client.Open(OscControl::BoundPort()))
+   {
+      printf("OSCCONTROLTEST FAIL (no client socket)\n");
+      return;
+   }
+
+   struct Msg
+   {
+      std::string address;
+      std::vector<Arg> args;
+   };
+   // Sends one message (if any), then pumps the server the way the frame loop
+   // does until a reply on `want` arrives (or ~1 s passes). Returns every
+   // reply received on the way.
+   auto Exchange = [&](const std::string& address, const std::vector<Arg>& args, const std::string& want)
+   {
+      std::vector<Msg> got;
+      if (!address.empty())
+         client.Send(address, args);
+      for (int t = 0; t < 200; t++)
+      {
+         OscControl::DrainPending(HandleOscRequest);
+         PollOscListeners();
+         bool done = false;
+         Msg m;
+         while (client.Receive(m.address, m.args))
+         {
+            done |= m.address == want;
+            got.push_back(m);
+         }
+         if (done)
+            break;
+      }
+      return got;
+   };
+   auto Last = [](const std::vector<Msg>& got, const std::string& want) -> const Msg*
+   {
+      for (auto it = got.rbegin(); it != got.rend(); ++it)
+         if (it->address == want)
+            return &*it;
+      return nullptr;
+   };
+
+   NewPatch();
+   std::vector<Msg> got = Exchange("/infinite/create", { OscMessage::StringArg("Shape"), OscMessage::FloatArg(100.0f) }, "/infinite/created");
+   const Msg* created = Last(got, "/infinite/created");
+   const int shape = created != nullptr && !created->args.empty() ? created->args[0].i : -1;
+   got = Exchange("/infinite/create", { OscMessage::StringArg("Output") }, "/infinite/created");
+   created = Last(got, "/infinite/created");
+   const int output = created != nullptr && !created->args.empty() ? created->args[0].i : -1;
+   Check("create replies with the new node's index", shape >= 0 && output >= 0 && gNodes.size() == 2);
+
+   got = Exchange("/infinite/connect", { OscMessage::IntArg(shape), OscMessage::IntArg(0), OscMessage::IntArg(output), OscMessage::IntArg(0) }, "/infinite/error");
+   for (const Msg& m : got)
+      if (m.address == "/infinite/error")
+         printf("  connect error: %s\n", m.args[0].s.c_str());
+   auto Cables = []() { const Patch::Data d = BuildPatchData(); return d.cables.size() + d.geometry.size(); };
+   Check("connect makes a cable", Cables() == 1);
+
+   got = Exchange("/infinite/nodes", {}, "/infinite/nodes/end");
+   const Msg* end = Last(got, "/infinite/nodes/end");
+   Check("nodes lists both", end != nullptr && end->args[0].i == 2 && got.size() == 3);
+
+   const std::string base = "/infinite/node/" + std::to_string(shape) + "/";
+   got = Exchange("/infinite/node/" + std::to_string(shape), {}, base + "end");
+   std::string floatParam;
+   for (const Msg& m : got)
+      if (floatParam.empty() && m.address != base + "end" && !m.args.empty() && m.args[0].type == OscMessage::ArgType::Float)
+         floatParam = m.address;
+   Check("a node replies with all its params", Last(got, base + "end") != nullptr && !floatParam.empty());
+
+   const size_t undoBefore = gUndoStack.size();
+   Exchange(floatParam, { OscMessage::FloatArg(0.37f) }, "");
+   got = Exchange(floatParam, {}, floatParam);
+   const Msg* q = Last(got, floatParam);
+   Check("set then query reads the new value", q != nullptr && q->args[0].type == OscMessage::ArgType::Float &&
+                                                std::fabs(q->args[0].f - 0.37f) < 1e-6f);
+   Check("a param set is not an undo step", gUndoStack.size() == undoBefore);
+
+   got = Exchange("/infinite/listen", { OscMessage::StringArg(floatParam) }, floatParam);
+   Check("listen sends the current value", Last(got, floatParam) != nullptr);
+   // Change it inside the app, as a knob would: the listener hears it.
+   {
+      GraphNode* gn = FindNodeByIndex(shape);
+      const std::string name = floatParam.substr(base.size());
+      std::vector<std::pair<std::string, std::string>> raw;
+      Patch::SaveParams(gn->node.get(), raw);
+      for (auto& kv : raw)
+      {
+         std::string real = kv.first.substr(kv.first.find(' ') + 1);
+         std::replace(real.begin(), real.end(), ' ', '_');
+         if (real == name)
+            Patch::LoadParams(gn->node.get(), { { kv.first, "0.61" } });
+      }
+   }
+   got = Exchange("", {}, floatParam);
+   q = Last(got, floatParam);
+   Check("listen sends a change made in the app", q != nullptr && std::fabs(q->args[0].f - 0.61f) < 1e-6f);
+   got = Exchange("", {}, floatParam);
+   Check("an unchanged value is not resent", Last(got, floatParam) == nullptr);
+
+   got = Exchange("/infinite/nope", {}, "/infinite/error");
+   Check("an unknown address replies an error", Last(got, "/infinite/error") != nullptr);
+   got = Exchange(base + "no_such_param", { OscMessage::FloatArg(1.0f) }, "/infinite/error");
+   Check("an unknown param replies an error", Last(got, "/infinite/error") != nullptr);
+
+   Exchange("/infinite/disconnect", { OscMessage::IntArg(output), OscMessage::IntArg(0) }, "");
+   Check("disconnect removes the cable", Cables() == 0);
+   got = Exchange("/infinite/disconnect", { OscMessage::IntArg(output), OscMessage::IntArg(0) }, "/infinite/error");
+   Check("disconnecting an empty slot replies an error", Last(got, "/infinite/error") != nullptr);
+   got = Exchange("/infinite/delete", { OscMessage::IntArg(shape) }, "/infinite/error");
+   Check("delete removes the node", FindNodeByIndex(shape) == nullptr && gNodes.size() == 1);
+   Check("a listener on a deleted node is told and dropped", Last(got, "/infinite/error") != nullptr);
+   Undo();
+   Check("delete is one undo step", FindNodeByIndex(shape) != nullptr);
+
+   ClearOscListeners();
+   if (startedHere)
+      OscControl::Stop();
+   NewPatch();
+   printf("OSCCONTROLTEST %s\n", ok ? "OK" : "FAIL");
 }
 
 // ====================================================== INFINITE_PATCHWATCHTEST

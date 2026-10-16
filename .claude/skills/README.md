@@ -1,6 +1,6 @@
 # Infinite skills
 
-Project skills for Infinite (`/Users/namansoni/infinte`). Each directory holds a
+Project skills for Infinite (`<repo>`). Each directory holds a
 `SKILL.md`; Claude Code selects one by its frontmatter `description`, so the
 description says *when* to load it, not what it contains.
 

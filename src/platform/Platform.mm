@@ -1,3 +1,5 @@
+#include <signal.h>
+#include "platform/PluginCrashGuard.h"
 #include "Platform.h"
 #include "BenchMediaIo.h"
 #include "PluginVST3.h"
@@ -41,6 +43,9 @@
 #include <cstring>
 #include <mach-o/dyld.h> // _NSGetExecutablePath, for ExecutablePath()
 #include <mach/mach.h> // task_info, for Platform::ProcessRssMb()
+#include <mach/mach_time.h> // mach_timebase_info, for AudioWorkerJoin's time constraint
+#include <mach/thread_policy.h>
+#include <os/workgroup.h> // AudioWorkerJoin
 #include <sys/sysctl.h> // sysctlbyname, for Platform::HwModelString()
 #include <cmath>
 #include <algorithm>
@@ -256,11 +261,25 @@ namespace Platform
       return gPendingTrackpadMagnification.exchange(0.0, std::memory_order_relaxed);
    }
 
-   // No-op on macOS: the crashreporter daemon writes a `.ips` report for any
-   // unhandled exception without app-side setup, so there is nothing for
-   // this process to install.
+   // The crashreporter daemon writes the `.ips` report without app-side
+   // setup. The one thing installed here names the plugin the crashing thread
+   // was inside (PluginCrashGuard), then steps aside: SA_RESETHAND puts the
+   // default action back, the faulting instruction runs again on return, and
+   // the process dies exactly as it would have, report included. Nothing is
+   // caught or resumed.
+   static void PluginCrashSignal(int)
+   {
+      PluginCrashGuard::NoteCrash();
+   }
+
    void InstallCrashHandler()
    {
+      struct sigaction sa = {};
+      sa.sa_handler = PluginCrashSignal;
+      sa.sa_flags = SA_RESETHAND;
+      sigemptyset(&sa.sa_mask);
+      for (int sig : { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP })
+         sigaction(sig, &sa, nullptr);
    }
 
    // stderr still reaches a terminal or Console.app; the same line also goes to the app-support log so
@@ -1377,6 +1396,48 @@ namespace Platform
             if (tInfdev != nil) [types addObject:tInfdev];
             if ([types count] > 0)
                [panel setAllowedContentTypes:types];
+         }
+         if ([panel runModal] != NSModalResponseOK)
+            return std::string();
+         NSURL* url = [panel URL];
+         return url ? std::string([[url path] UTF8String]) : std::string();
+      }
+   }
+
+   std::string OpenShowSetDialog()
+   {
+      @autoreleasepool
+      {
+         NSOpenPanel* panel = [NSOpenPanel openPanel];
+         [panel setCanChooseFiles:YES];
+         [panel setCanChooseDirectories:NO];
+         [panel setAllowsMultipleSelection:NO];
+         [panel setTitle:@"Open show set"];
+         if (@available(macOS 11.0, *))
+         {
+            UTType* t = [UTType typeWithFilenameExtension:@"infshow"];
+            if (t != nil) [panel setAllowedContentTypes:@[ t ]];
+         }
+         if ([panel runModal] != NSModalResponseOK)
+            return std::string();
+         NSURL* url = [[panel URLs] firstObject];
+         return url ? std::string([[url path] UTF8String]) : std::string();
+      }
+   }
+
+   std::string SaveShowSetDialog(const std::string& suggestedName)
+   {
+      @autoreleasepool
+      {
+         NSSavePanel* panel = [NSSavePanel savePanel];
+         [panel setTitle:@"Save show set"];
+         [panel setNameFieldStringValue:
+            [NSString stringWithUTF8String:suggestedName.empty() ? "Untitled.infshow"
+                                                                 : suggestedName.c_str()]];
+         if (@available(macOS 11.0, *))
+         {
+            UTType* t = [UTType typeWithFilenameExtension:@"infshow"];
+            if (t != nil) [panel setAllowedContentTypes:@[ t ]];
          }
          if ([panel runModal] != NSModalResponseOK)
             return std::string();
@@ -4064,6 +4125,40 @@ namespace Platform
       AudioRenderCallback gDeviceCallback = nullptr;
       void* gDeviceUserData = nullptr;
 
+      // The open output device's realtime workgroup, for AudioWorkerJoin.
+      // Guarded by gWorkgroupMutex: a worker can join while the main thread
+      // is closing the device. gWorkerEpoch moves on every change.
+      std::mutex gWorkgroupMutex;
+      os_workgroup_t gWorkgroup = nil;
+      AudioObjectID gWorkgroupDevice = 0;
+      std::atomic<uint32_t> gWorkerEpoch { 1 };
+
+      void SetDeviceWorkgroup(AudioObjectID device)
+      {
+         os_workgroup_t wg = nil;
+         if (device != 0)
+         {
+            AudioObjectPropertyAddress addr { kAudioDevicePropertyIOThreadOSWorkgroup, kAudioObjectPropertyScopeGlobal,
+                                              kAudioObjectPropertyElementMain };
+            void* raw = nullptr;
+            UInt32 size = sizeof(raw);
+            if (AudioObjectGetPropertyData(device, &addr, 0, nullptr, &size, &raw) == noErr && raw != nullptr)
+               wg = (__bridge_transfer os_workgroup_t)raw; // the HAL hands back a retained object
+         }
+         {
+            std::lock_guard<std::mutex> lock(gWorkgroupMutex);
+            gWorkgroup = wg;
+            gWorkgroupDevice = wg != nil ? device : 0;
+         }
+         gWorkerEpoch.fetch_add(1, std::memory_order_release);
+      }
+
+      struct WorkerJoin
+      {
+         os_workgroup_t wg = nil;
+         os_workgroup_join_token_s token {};
+      };
+
       // AVAudioSourceNode hands us AudioBufferList, not a float**; cap the
       // channel count so unpacking it into the C-callback shape needs no
       // heap allocation on the audio thread.
@@ -4807,6 +4902,7 @@ namespace Platform
 
          gDeviceHandle = h;
          outSampleRate = sampleRate;
+         SetDeviceWorkgroup(targetDevice);
          // The rate AudioInputCaptureRead will be drained at - see
          // gRenderSampleRate's comment for why the capture tap needs it.
          gRenderSampleRate.store(sampleRate, std::memory_order_relaxed);
@@ -4821,6 +4917,7 @@ namespace Platform
          return;
       AudioDeviceHandle* h = gDeviceHandle;
       gDeviceHandle = nullptr;
+      SetDeviceWorkgroup(0);
       @autoreleasepool
       {
          // Remove before the engine goes away - see AudioDeviceHandle's
@@ -4875,6 +4972,61 @@ namespace Platform
       gDeviceCallback = nullptr;
       gDeviceUserData = nullptr;
       delete h;
+   }
+
+   void* AudioWorkerJoin()
+   {
+      WorkerJoin* j = new WorkerJoin();
+      AudioObjectID device = 0;
+      {
+         std::lock_guard<std::mutex> lock(gWorkgroupMutex);
+         j->wg = gWorkgroup;
+         device = gWorkgroupDevice;
+      }
+      if (j->wg == nil || os_workgroup_join(j->wg, &j->token) != 0)
+      {
+         // No device (an offline render): no realtime class to join, but the
+         // highest QoS keeps the scheduler from parking the worker on an
+         // efficiency core while the render waits on it.
+         delete j;
+         pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+         return nullptr;
+      }
+      // A workgroup member should also be a realtime thread: the same
+      // time-constraint class CoreAudio gives its IO thread, sized to one
+      // device period (Apple's "Adding parallel real-time threads to audio
+      // workgroups").
+      const double rate = gRenderSampleRate.load(std::memory_order_relaxed);
+      const uint32_t frames = AudioDeviceBufferFrames(device);
+      if (rate > 0.0 && frames > 0)
+      {
+         mach_timebase_info_data_t tb;
+         mach_timebase_info(&tb);
+         const double periodNs = 1e9 * (double)frames / rate;
+         const double ticksPerNs = (double)tb.denom / (double)tb.numer;
+         thread_time_constraint_policy_data_t policy;
+         policy.period = (uint32_t)(periodNs * ticksPerNs);
+         policy.computation = (uint32_t)(periodNs * 0.5 * ticksPerNs);
+         policy.constraint = policy.period;
+         policy.preemptible = 1;
+         thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_TIME_CONSTRAINT_POLICY,
+                           (thread_policy_t)&policy, THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+      }
+      return j;
+   }
+
+   void AudioWorkerLeave(void* token)
+   {
+      WorkerJoin* j = static_cast<WorkerJoin*>(token);
+      if (j == nullptr)
+         return;
+      os_workgroup_leave(j->wg, &j->token);
+      delete j;
+   }
+
+   uint32_t AudioWorkerEpoch()
+   {
+      return gWorkerEpoch.load(std::memory_order_acquire);
    }
 
    // ---------------------------------------------------------- file players
@@ -5329,6 +5481,11 @@ namespace Platform
          const unsigned char hiNibble = status & 0xF0;
          const int channel = status & 0x0F;
 
+         if (hiNibble == 0xC0)
+         {
+            MidiStoreProgramChange(channel, (int)data[1]);
+            return;
+         }
          if (hiNibble == 0xB0 && len >= 3)
          {
             // Control Change
@@ -5336,6 +5493,8 @@ namespace Platform
             const MidiCC14::Event ev = gMidiState.cc14.OnCC(device, channel, (int)data[1], (int)data[2], MidiCC14::NowMs());
             MidiKey key{ device, channel, ev.controller, false };
             const float v = ev.value01;
+            if ((int)data[1] == kMidiSlideCC)
+               MidiStoreChannelSlide(channel, v);
             gMidiState.values[key] = v;
             gMidiState.lastTouched = MidiCCValue{ device, channel, ev.controller, false, v };
             gMidiState.lastTouchedPending = true;
@@ -5355,6 +5514,8 @@ namespace Platform
                                  : (float)data[1] / 127.0f;
             if (bend)
                MidiStoreChannelBend(channel, MidiBend14ToSigned((int)data[1], (int)data[2]));
+            else
+               MidiStoreChannelPressure(channel, v);
             std::lock_guard<std::mutex> lock(gMidiState.mutex);
             gMidiState.values[MidiKey{ device, channel, controller, false }] = v;
             gMidiState.lastTouched = MidiCCValue{ device, channel, controller, false, v };
@@ -6027,6 +6188,7 @@ namespace Platform
 
    PluginHandle* PluginCreate(const PluginDesc& desc, double sampleRate, int maxBlockFrames)
    {
+      PluginCrashGuard::Scope crashScope(desc.identifier.c_str());
       if (desc.format == "vst3")
       {
 #if INFINITE_ENABLE_VST3
@@ -6079,7 +6241,12 @@ namespace Platform
       // briefly blocks the caller instead of returning Pending immediately -
       // same real tradeoff as every other compliant AU/VST3 host makes.
       NSError* error = nil;
-      AUAudioUnit* au = [[AUAudioUnit alloc] initWithComponentDescription:cd options:0 error:&error];
+      // A plugin that crashed the app before runs in the system's AU hosting
+      // service instead (desc.outOfProcess, see PluginCrashGuard): slower per
+      // block, but its next crash is the service's, not ours.
+      const AudioComponentInstantiationOptions options =
+         desc.outOfProcess ? kAudioComponentInstantiation_LoadOutOfProcess : 0;
+      AUAudioUnit* au = [[AUAudioUnit alloc] initWithComponentDescription:cd options:options error:&error];
       {
          std::lock_guard<std::mutex> lock(h->arrivalMutex);
          h->arrivedUnit = au;
@@ -6156,6 +6323,35 @@ namespace Platform
             }
             h->pluginInChannels = negotiatedIn;
             h->pluginOutChannels = negotiatedOut;
+
+            // Sidechain bus. Left exactly as the AU has it unless the host
+            // asked for it (or has to turn it back off): its format is only
+            // set, and the bus only enabled, while a cable feeds it.
+            h->sidechainChannels = 0;
+            if (negotiatedIn > 0 && au.inputBusses.count > 1)
+            {
+               AUAudioUnitBus* scBus = [au.inputBusses objectAtIndexedSubscript:1];
+               h->sidechainChannels = std::min(std::max((int)scBus.format.channelCount, 1), 2);
+               bool on = false;
+               if (h->sidechainWanted)
+               {
+                  for (int channels = 2; channels >= 1 && !on; channels--)
+                  {
+                     AVAudioFormat* format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:rate
+                                                                                             channels:(AVAudioChannelCount)channels];
+                     if (format != nil && [scBus setFormat:format error:nil])
+                     {
+                        h->sidechainChannels = channels;
+                        on = true;
+                     }
+                  }
+               }
+               if (on || h->sidechainActive)
+                  scBus.enabled = on ? YES : NO;
+               h->sidechainActive = on;
+            }
+            else
+               h->sidechainActive = false;
 
             au.maximumFramesToRender = (AUAudioFrameCount)frames;
 
@@ -6252,6 +6448,7 @@ namespace Platform
             }
             h->inScratch.assign((size_t)kPluginMaxChannels * (size_t)frames, 0.0f);
             h->outScratch.assign((size_t)kPluginMaxChannels * (size_t)frames, 0.0f);
+            h->sidechainScratch.assign(h->sidechainActive ? (size_t)kPluginMaxChannels * (size_t)frames : 0, 0.0f);
             h->renderSampleTime = 0.0;
 
             if (h->learnToken == nullptr && au.parameterTree != nil)
@@ -6272,8 +6469,11 @@ namespace Platform
       }
    }
 
+   static const int kPluginDeadAfterFailedRenders = 24;
+
    PluginLoadState PluginPoll(PluginHandle* h, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr)
       {
          outError = "null plugin handle";
@@ -6290,6 +6490,14 @@ namespace Platform
 #endif
       }
 
+      // An out-of-process AU whose host process died: every render since has
+      // failed (about a quarter second of blocks is not a glitch).
+      if (h->state == PluginLoadState::Ready && h->desc.outOfProcess &&
+          h->renderFailures.load(std::memory_order_relaxed) > kPluginDeadAfterFailedRenders)
+      {
+         h->state = PluginLoadState::Failed;
+         h->loadError = "it crashed again, this time in its own process, so Infinite kept running";
+      }
       if (h->state != PluginLoadState::Pending)
       {
          outError = h->loadError;
@@ -6337,6 +6545,7 @@ namespace Platform
 
    bool PluginPrepare(PluginHandle* h, double sampleRate, int maxBlockFrames, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr)
       {
          outError = "null plugin handle";
@@ -6361,7 +6570,8 @@ namespace Platform
       const int frames = maxBlockFrames > 0 ? maxBlockFrames : h->maxBlockFrames;
       if (sampleRate <= 0.0)
          return true; // no device yet - keep whatever we configured with
-      if (std::abs(sampleRate - h->sampleRate) < 1e-6 && frames == h->maxBlockFrames && h->resourcesAllocated)
+      if (std::abs(sampleRate - h->sampleRate) < 1e-6 && frames == h->maxBlockFrames && h->resourcesAllocated &&
+          h->sidechainWanted == h->sidechainActive)
          return true;
 
       h->sampleRate = sampleRate;
@@ -6394,6 +6604,31 @@ namespace Platform
       if (h->resourcesAllocated && h->unit != nil && h->sampleRate > 0.0)
          h->latencySamples = (int)std::lround(h->unit.latency * h->sampleRate);
       return h->latencySamples;
+   }
+
+   int PluginSidechainChannels(PluginHandle* h)
+   {
+      if (h == nullptr)
+         return 0;
+#if INFINITE_ENABLE_VST3
+      if (h->desc.format == "vst3")
+         return PluginVST3SidechainChannels(h);
+#endif
+      return h->sidechainChannels;
+   }
+
+   void PluginSetSidechainEnabled(PluginHandle* h, bool enabled)
+   {
+      if (h == nullptr)
+         return;
+#if INFINITE_ENABLE_VST3
+      if (h->desc.format == "vst3")
+      {
+         PluginVST3SetSidechainEnabled(h, enabled);
+         return;
+      }
+#endif
+      h->sidechainWanted = enabled && h->sidechainChannels > 0;
    }
 
    void PluginDestroy(PluginHandle* h)
@@ -6472,17 +6707,21 @@ namespace Platform
 
    void PluginRender(PluginHandle* h, const float* const* in, int inChannels,
                      float* const* out, int outChannels, int numFrames,
-                     const PluginTransport* transport)
+                     const PluginTransport* transport,
+                     const float* const* sidechain, int sidechainChannels)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr)
          return;
 
       if (h->desc.format == "vst3")
       {
 #if INFINITE_ENABLE_VST3
-         PluginVST3Render(h, in, inChannels, out, outChannels, numFrames, transport);
+         PluginVST3Render(h, in, inChannels, out, outChannels, numFrames, transport, sidechain, sidechainChannels);
 #else
          (void)transport;
+         (void)sidechain;
+         (void)sidechainChannels;
 #endif
          return;
       }
@@ -6535,6 +6774,7 @@ namespace Platform
       }
 
       float* inScratchBase = h->inScratch.empty() ? nullptr : h->inScratch.data();
+      float* sidechainScratchBase = h->sidechainScratch.empty() ? nullptr : h->sidechainScratch.data();
       const int maxFrames = h->maxBlockFrames;
 
       // Stack block, and __unsafe_unretained on purpose: assigning a block
@@ -6548,10 +6788,14 @@ namespace Platform
                                                         AudioBufferList* inputData) {
          (void)flags;
          (void)timestamp;
-         (void)bus;
          if (inputData == nullptr)
             return noErr;
          const int n = (int)frameCount;
+         // Bus 1 is the sidechain; every other bus reads the main input.
+         const bool isSidechain = (bus == 1);
+         const float* const* busIn = isSidechain ? sidechain : in;
+         const int busInChannels = isSidechain ? sidechainChannels : inChannels;
+         float* scratchBase = isSidechain ? sidechainScratchBase : inScratchBase;
          for (UInt32 i = 0; i < inputData->mNumberBuffers; i++)
          {
             float* dst = (float*)inputData->mBuffers[i].mData;
@@ -6559,17 +6803,17 @@ namespace Platform
             {
                // The AU handed us an empty buffer to fill in - point it at our
                // own pre-allocated scratch, as the pull-block contract allows.
-               if (inScratchBase == nullptr || (int)i >= kPluginMaxChannels)
+               if (scratchBase == nullptr || (int)i >= kPluginMaxChannels)
                   return kAudioUnitErr_InvalidParameter;
-               dst = inScratchBase + (size_t)i * (size_t)maxFrames;
+               dst = scratchBase + (size_t)i * (size_t)maxFrames;
                inputData->mBuffers[i].mData = dst;
                inputData->mBuffers[i].mDataByteSize = (UInt32)(n * (int)sizeof(float));
             }
             // Fewer upstream channels than the plugin wants: repeat the last
             // one (mono source into a stereo effect), rather than leaving a
             // silent right channel.
-            const float* src = (in != nullptr && inChannels > 0)
-                                  ? in[(int)i < inChannels ? (int)i : inChannels - 1]
+            const float* src = (busIn != nullptr && busInChannels > 0)
+                                  ? busIn[(int)i < busInChannels ? (int)i : busInChannels - 1]
                                   : nullptr;
             if (src != nullptr)
                std::memcpy(dst, src, (size_t)n * sizeof(float));
@@ -6600,9 +6844,12 @@ namespace Platform
          for (int ch = 0; ch < outChannels; ch++)
             if (out[ch] != nullptr)
                std::memset(out[ch], 0, (size_t)frames * sizeof(float));
+         if (h->renderFailures.load(std::memory_order_relaxed) < 1000000)
+            h->renderFailures.fetch_add(1, std::memory_order_relaxed);
          h->inRender.store(false, std::memory_order_release);
          return;
       }
+      h->renderFailures.store(0, std::memory_order_relaxed);
 
       if (!direct)
       {
@@ -6975,6 +7222,7 @@ namespace Platform
 
    bool PluginOpenEditor(PluginHandle* h, std::string& outError)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr)
       {
          outError = "null plugin handle";
@@ -7095,8 +7343,12 @@ namespace Platform
       }
    }
 
+   PluginGlGuard::PluginGlGuard() = default;
+   PluginGlGuard::~PluginGlGuard() = default;
+
    bool PluginSaveState(PluginHandle* h, std::string& outBase64)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       outBase64.clear();
       if (h == nullptr)
          return false;
@@ -7133,6 +7385,7 @@ namespace Platform
 
    bool PluginRestoreState(PluginHandle* h, const std::string& base64)
    {
+      PluginCrashGuard::Scope crashScope(h != nullptr ? h->desc.identifier.c_str() : nullptr);
       if (h == nullptr || base64.empty())
          return false;
 

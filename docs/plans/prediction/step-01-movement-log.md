@@ -1,6 +1,6 @@
 # Prediction step 1: the movement log
 
-You are building **step 1 of the Prediction modulator** in Infinite (`/Users/namansoni/infinte`,
+You are building **step 1 of the Prediction modulator** in Infinite (`<repo>`,
 C++17, ImGui + OpenGL). The design is [README.md](README.md). Read §2.4, §2.5, §3.1 and §3.2 first.
 This step writes **no model and no node**. It only records param movement to disk, correctly and cheaply.
 

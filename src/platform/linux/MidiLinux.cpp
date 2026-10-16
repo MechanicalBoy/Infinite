@@ -298,6 +298,8 @@ namespace
             const MidiCC14::Event cc = gState.cc14.OnCC(dev, channel, controller,
                                                         std::clamp((int)ev.data.control.value, 0, 127), MidiCC14::NowMs());
             const float value01 = cc.value01;
+            if (controller == Platform::kMidiSlideCC)
+               Platform::MidiStoreChannelSlide(channel, value01);
             gState.values[{ dev, channel, cc.controller, false }] = value01;
             gState.lastTouched.device = dev;
             gState.lastTouched.channel = channel;
@@ -325,6 +327,8 @@ namespace
                                        : (float)std::clamp((int)ev.data.control.value, 0, 127) / 127.0f;
             if (bend)
                Platform::MidiStoreChannelBend(channel, (float)std::clamp((int)ev.data.control.value, -8192, 8191) / 8192.0f);
+            else
+               Platform::MidiStoreChannelPressure(channel, value01);
             std::lock_guard<std::mutex> lock(gState.mutex);
             gState.values[{ dev, channel, controller, false }] = value01;
             gState.lastTouched.device = dev;
@@ -341,6 +345,9 @@ namespace
             }
             break;
          }
+         case SND_SEQ_EVENT_PGMCHANGE: // a show set picks its entry by it
+            Platform::MidiStoreProgramChange(ev.data.control.channel, (int)ev.data.control.value);
+            break;
          case SND_SEQ_EVENT_CLOCK:
             gClock.Pulse();
             break;

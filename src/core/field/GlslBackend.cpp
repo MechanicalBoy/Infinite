@@ -1,5 +1,6 @@
 #include "GlslBackend.h"
 #include "GlslHelpers.h"
+#include "../../audio/PhaseShape.h"
 #include <iomanip>
 #include <sstream>
 #include <unordered_map>
@@ -9,6 +10,12 @@ namespace Field
 {
    namespace
    {
+      bool IsGlslPhaseShape(const std::string& name)
+      {
+         PhaseShape::Kind k;
+         return PhaseShape::FieldBuiltin(name.c_str(), k);
+      }
+
       std::string FormatFloat(double val)
       {
          std::ostringstream ss;
@@ -368,6 +375,10 @@ namespace Field
                {
                   ctx.EmitLine("   " + typeStr + " " + resTemp + " = fld_lerp(" + bc(0) + ", " + bc(1) + ", " + bc(2) + ");");
                }
+               else if (IsGlslPhaseShape(name))
+               {
+                  ctx.EmitLine("   " + typeStr + " " + resTemp + " = fld_" + name + "(" + bc(0) + ", " + bc(1) + ");");
+               }
                else if (name == "smoothstep")
                {
                   ctx.EmitLine("   " + typeStr + " " + resTemp + " = fld_smoothstep(" + bc(0) + ", " + bc(1) + ", " + bc(2) + ");");
@@ -585,6 +596,7 @@ namespace Field
 
       // 5. Helper prelude
       ctx.EmitLine(kFieldHelperPrelude);
+      ctx.EmitLine(PhaseShape::kGlslPrelude);
 
       // 6. Hoisted uniforms from prologue
       if (!program.prologue.empty())

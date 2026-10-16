@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "core/AudioCable.h"
@@ -114,6 +115,13 @@ public:
    // ringing; *solving is set while a mesh solve is still running. 0 for any
    // other effect.
    int ReadModeFrequencies(float* out, int maxCount, bool* solving = nullptr);
+   // Main thread only. Convolution Reverb: the impulse response now sounding
+   // as peak levels in dB over *seconds; 0 before the first one is built or
+   // for any other effect. *building is set while a new one is being made,
+   // *usingFile when it came from filePath, and *fileError (may be null)
+   // points at why a set file could not be used, or at an empty string.
+   int ReadImpulseEnvelope(float* outDb, int maxCount, float* seconds, bool* building = nullptr,
+                           bool* usingFile = nullptr, const std::string** fileError = nullptr);
    // Main thread only. See IEffectKernel::Preparing.
    bool KernelPreparing() const;
    // Kernel-published extra meter values beyond AudioEffectRuntime's own
@@ -130,6 +138,7 @@ public:
    AudioCable input;
    IGeometrySource* geometry = nullptr; // only wired when mDef.hasGeometryInput
    AudioCable sidechainInput; // only wired to a pin when mDef.hasSidechain
+   std::string filePath; // only saved and read when mDef.hasFile
 
 private:
    const EffectDef& mDef;

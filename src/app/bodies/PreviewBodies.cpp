@@ -749,6 +749,8 @@ namespace app
             rawCount = n->ReadScope(raw, OscillatorNode::kScopeCacheCapacity);
          else if (auto* n = dynamic_cast<MetallicNode*>(audioTerminal))
             rawCount = n->ReadScope(raw, MetallicNode::kScopeCacheCapacity);
+         else if (auto* n = dynamic_cast<FMNode*>(audioTerminal))
+            rawCount = n->ReadScope(raw, FMNode::kScopeCacheCapacity);
          else if (auto* n = dynamic_cast<WaveTerrainNode*>(audioTerminal))
             rawCount = n->ReadScope(raw, WaveTerrainNode::kScopeCapacity);
          else if (auto* n = dynamic_cast<ImageSpectralSynthNode*>(audioTerminal))

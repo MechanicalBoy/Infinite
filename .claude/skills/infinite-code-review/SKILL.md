@@ -7,7 +7,7 @@ description: "Review code against Infinite's four standards (accuracy, experimen
 
 Review code written for Infinite — by another AI, a human collaborator, or an earlier session — against this codebase's four standards: accuracy (is the math right), experimentality (is it worth having), design (does it look and feel like an instrument), and quality (efficiency, performance, and the real-time/threading rules). Use when asked to "review this code", "review this node", "check what the other AI built", "is this up to standard", "did they do this right", "review the diff", or before merging any node someone else wrote. Not the same as the generic /code-review skill — this one knows Infinite's invariants and the bugs that have actually happened here.
 
-Paths are relative to the repo root (`/Users/namansoni/infinte`).
+Paths are relative to the repo root (`<repo>`).
 
 ## What this skill is for
 

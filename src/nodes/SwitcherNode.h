@@ -6,6 +6,7 @@
 #include "INode.h"
 #include "ImageCable.h"
 #include "GLUtil.h"
+#include "audio/MusicTime.h"
 
 // Cycles between its connected inputs on a fixed interval, with an optional
 // crossfade. The interval is expressed in beats or seconds and read from the
@@ -34,6 +35,8 @@ public:
    float crossfade = 0.0f;   // fade duration as a fraction of the interval
    bool manual = false;      // ignore the clock and hold manualSlot
    int manualSlot = 0;
+   // v0.6 2.38: a manual slot change lands on the Transport launch grid while playing
+   MusicTime::LaunchedInt mLaunchedSlot;
 
    void VisitParams(ParamVisitor& v) override
    {

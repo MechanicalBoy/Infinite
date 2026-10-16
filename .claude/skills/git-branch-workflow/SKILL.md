@@ -7,7 +7,7 @@ description: "Branch-per-feature: feature/ or bugfix/ off main, commit per step,
 
 The standard branching workflow for this repo — every feature or bug fix request gets its own branch off main (feature/<slug> or bugfix/<slug>), work happens there, and it merges directly back into main (no PR, solo repo) once done. Use whenever the user asks for a new feature, a bug fix, or says "start work on X" — before writing any code — and when a piece of work is done and ready to land on main.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`),
+Paths below are relative to the repo root (`<repo>`),
 not this skill directory.
 
 ## The rule

@@ -1,5 +1,6 @@
 #pragma once
 // Shared declarations for the code split out of main.cpp.
+#include "core/ModShapes.h"
 #include "app/ui/design/TokenColors.h"
 #include "app/AppCommon.h"
 #include "app/ui/design/components/ActionButton.h"
@@ -47,7 +48,7 @@ extern float gViewportPanelHeight;
    // lays rows out to fit it rather than letting them set it.
    //
    // Two sanctioned widths, nothing else: a full node, and a narrow one for
-   // a node with <=2 params (Gain, Splitter, Audio Out) so §7's "a one-param
+   // a node with <=2 params (Gain, Audio Out) so §7's "a one-param
    // node is visually smaller" is true instead of aspirational.
    inline const float kAudioNodeWidth = 440.0f;
 
@@ -386,6 +387,9 @@ extern std::vector<std::pair<std::string, std::string>> gLinkDragSuggestions;
       ImVec2 canvasPos{ 0.0f, 0.0f };
       ImVec2 screenPos{ 0.0f, 0.0f };
       std::vector<std::string> paths;
+      // One dropped file plays at once through an Audio File and an Audio Out; these are those nodes,
+      // kept while the list is open so a pick can replace them.
+      std::vector<int> autoNodes;
    };
 
 extern AudioDropPickerState gAudioDropPicker;
@@ -411,6 +415,7 @@ bool FieldOutputPinHasLiveCable(int nodeIndex, int outputIndex);
 bool CheckFieldLiveCableBridge(int nodeIndex, int slot, bool isOutput);
 
 void DisconnectLinkById(int id);
+void DisconnectDstPin(int dstPin);
 
 void DisconnectFieldPinBridge(int nodeIndex, int slot, bool isOutput);
 
@@ -428,6 +433,7 @@ extern double gAudioSampleRate;
 extern int gAudioBufferFrames;
 
 extern int gAudioOutputMode;
+extern int gAudioThreads;
 
 extern float gAudioOversample;
 
@@ -658,6 +664,7 @@ extern bool gVsync;
 extern bool gRequestFitView;
 
 extern int gRequestFitViewNodeIndex;
+extern int gRequestSelectNodeIndex; // select this node alone on the next canvas frame (-1 = none)
 
 extern bool gRequestGroup;
 
@@ -2339,6 +2346,9 @@ bool ArrangeGestureEnd();
 void PublishArrangeLoop();
 
 void ArrangeSetLoop(bool enabled, Arrange::Tick start, Arrange::Tick end);
+void ArrangeZoomToFit(float rulerWidth);
+void ArrangeZoomStep(float factor, float rulerWidth);
+void ArrangeSetLoopEdgeAtPlayhead(bool isStart);
 
 
 
@@ -2605,6 +2615,11 @@ std::vector<std::pair<std::string, std::string>> RecommendedNodeTypesForOutput(G
 
 ImVec2 FindFreeSpawnPosition(const ImVec2& center);
 
+int HearNode(int srcIndex);
+std::vector<int> SpawnAudioDropNodes(const std::string& name, const std::string& category,
+                                     const std::vector<std::string>& paths, const ImVec2& canvasPos);
+int SpawnPlayableSynth();
+
 GraphNode* SpawnNode(const std::string& typeName, const std::string& category,
                         float x = 0.0f, float y = 0.0f);
 
@@ -2778,6 +2793,8 @@ void DrawProjectionParams(ProjectionNode* n);
 void DrawLFOParams(LFONode* n);
 
 void DrawRandomParams(RandomNode* n);
+void DrawVoiceSpreadParams(VoiceSpreadNode* n);
+void DrawNoteExpressionParams(NoteExpressionNode* n);
 
 
 
@@ -2860,6 +2877,9 @@ void DrawCurvesParams(CurvesNode* n);
 void DrawPredictiveColoringParams(PredictiveColoringNode* n);
 
 void DrawModCurveParams(ModCurveNode* n);
+void DrawMSEGParams(MSEGNode* n);
+void DrawModRateControls(int* rateMode, float* rateBeats, float* rateHz, int hzOrdinal);
+void DrawPerVoiceCheckbox(bool* voice);
 
 void DrawRemoveBgParams(RemoveBgNode* n);
 
@@ -3540,15 +3560,20 @@ void AudioBareDropdown(const char* id, const std::vector<std::string>& options, 
                           const std::vector<std::string>& categories = {},
                           bool focusSearch = false);
 
+// `shape` (optional): draw its hold and stage curves; times and sustain still come from the pointers.
 void DrawEnvelopePanel(const char* title, const char* curveId, float* attackMs, float* decayMs,
                           float* sustain, float* releaseMs, float* amount, float amountLo,
-                          float amountHi, const char* amountFmt, ImU32 color);
+                          float amountHi, const char* amountFmt, ImU32 color,
+                          const ::ModShapes::Ahdsr* shape = nullptr);
 
 void DrawWavetableBody(GraphNode& gn, WavetableNode* n);
 
 void DrawOscillatorBody(GraphNode& gn, OscillatorNode* n);
 
 void DrawMetallicBody(GraphNode& gn, MetallicNode* n);
+void DrawFMBody(GraphNode& gn, FMNode* n);
+void DrawPartialsBody(GraphNode& gn, PartialsNode* n);
+void DrawStringBody(GraphNode& gn, StringNode* n);
 
 void DrawWaveTerrainBody(GraphNode& gn, WaveTerrainNode* n);
 
@@ -3864,6 +3889,7 @@ void DrawDelayBody(GraphNode& gn, AudioEffectNode* n);
 void DrawReverbBody(GraphNode& gn, AudioEffectNode* n);
 
 void DrawDriveBody(GraphNode& gn, AudioEffectNode* n);
+void DrawSaturatorBody(GraphNode& gn, AudioEffectNode* n);
 
 void DrawWavetableShaperBody(GraphNode& gn, AudioEffectNode* n);
 
@@ -3933,6 +3959,7 @@ extern std::unordered_map<AudioEffectNode*, KeySnapSpectrumState> sSpectrumSlide
 void DrawSpectrumSlideBody(GraphNode& gn, AudioEffectNode* n);
 
 void DrawShapeResonatorBody(GraphNode& gn, AudioEffectNode* n);
+void DrawConvolutionReverbBody(GraphNode& gn, AudioEffectNode* n);
 
 extern std::string gPatchPath;
 
@@ -4688,6 +4715,7 @@ void DrawPerfPanelDocked(const char* id, const ImVec2& size);
 void DrawModulatorMeter(IModulator* mod, int nodeIndex);
 
 void DisconnectLinkById(int id);
+void DisconnectDstPin(int dstPin);
 
 const char* NodeHelpText(const GraphNode& gn);
 const char* NodeHelpTextFor(const std::string& typeName, const std::string& category);
@@ -5533,6 +5561,69 @@ void Redo();
 bool HandleRpcCommand(const std::string& method, const nlohmann::json& params,
                          nlohmann::json& outResult, std::string& outError);
 
+// The OSC control API's address map (graph/OscApi.cpp, v0.6 2.31).
+void HandleOscRequest(const OscControl::Request& req);
+void PollOscListeners();
+
+// Show set (v0.6 2.35, graph/ShowSet.cpp): patches played in order in a live
+// set, switched on the launch grid with an audio crossfade and a held picture.
+extern bool gShowSetOpen;
+int ShowSetSize();
+const std::string& ShowSetName(int i);
+const std::string& ShowSetEntryPath(int i);
+const std::string& ShowSetError(int i);
+bool ShowSetReady(int i);
+int ShowSetCurrent();
+int ShowSetRequested();
+int& ShowSetQuantize(); // MusicTime::LaunchQuantize
+// v0.6 2.38: what the Play / Pause and Rewind buttons, Space and the menu call. With a launch grid set
+// (Show Set window > Launch) a pause or restart while playing waits for the next beat, bar or 2 bars and
+// says so in the status line; otherwise it acts at once. Pressing again while it waits cancels it.
+void LaunchRequestTogglePlay();
+void LaunchRequestRewind();
+float& ShowSetFadeMs();
+const std::string& ShowSetPath();
+void ShowSetAddFile(const std::string& path);
+bool ShowSetAddCurrent();
+void ShowSetRemove(int i);
+void ShowSetMove(int i, int dir);
+void ShowSetClear();
+bool ShowSetOpenFile(const std::string& path);
+bool ShowSetSaveFile(const std::string& path);
+void ShowSetGo(int index);
+void ShowSetStep(int dir);
+void ShowSetTick(int frameId, GLFWwindow* window);
+// Projector loop hooks (StageTestsB.cpp).
+bool ShowSetDrawHeldProjector(size_t i);
+void ShowSetNoteProjectorTexture(size_t i, unsigned int tex, int w, int h);
+void ShowSetProbeProjector(size_t i);
+
+// Show safety (v0.6 2.36, graph/ShowSafety.cpp).
+// Show lock: nodes cannot be dragged or cabled, nothing is deleted, undo and redo stand still; controls inside
+// nodes keep working. ShowLockBlocks() is the guard for an edit path: true (and says so in the status line) while locked.
+extern bool gShowLock;
+void ShowLockToggle();
+bool ShowLockBlocks();
+// Panic latches: notes off on every MIDI Out and plugin, the sound fades out in 5 ms and stays out, the transport stops,
+// each projector holds its last frame. Toggling again resumes (transport back to what it was).
+bool ShowPanicLatched();
+void ShowPanicToggle();
+void ShowSetPanicHold(bool on, GLFWwindow* mainWindow); // ShowSet.cpp: hold/release the projector frames
+// Pre-show check: what would go wrong on stage. One line per issue; empty = ready.
+struct ShowCheckItem
+{
+   bool error = false;
+   std::string text;
+};
+std::vector<ShowCheckItem> ShowPreCheck();
+extern bool gShowCheckRequest; // menu item: open the Show Set window and run the check
+void ShowSafetyTick(int frameId, GLFWwindow* window); // SHOWSAFETYTEST / QUITSTALLTEST harness
+void StartQuitWatchdog(int seconds);
+// AudioTopology.cpp: the audio half of panic.
+void AudioPanicSilence();
+void AudioPanicResume();
+void ClearOscListeners();
+
 void DrawMinimap();
 
 // Find on the canvas (Cmd/Ctrl+F), src/app/panels/FindOverlay.cpp.
@@ -5895,6 +5986,15 @@ bool RunMidiFileFixture();
 bool RunMpeFixture();
 
 bool RunShapeResonatorFixture();
+bool RunConvolutionFixture();
+bool RunMSEGFixture();
+bool RunVoiceModFixture();
+bool RunSynthSimdFixture();
+bool RunSaturatorFixture();
+bool RunFMFixture();
+bool RunPartialsFixture();
+bool RunStringFixture();
+bool RunSplitterFixture();
 bool RunSpatialFixture();
 
 bool RunSpectrumSlideFixture();
@@ -5968,6 +6068,7 @@ int RunPluginScanTest();
 int RunMidiBendTest();
 
 int RunPluginNodeHandleTest();
+int RunPluginCrashTest();
 
 #if INFINITE_ENABLE_VST3
 int RunVST3ScanTest();
@@ -5986,6 +6087,7 @@ int RunVST3BlocklistTest();
 #endif
 
 void RunRpcBatchTest();
+void RunOscControlTest();
 void RunHistoryTest();
 void RunClipboardTest();
 

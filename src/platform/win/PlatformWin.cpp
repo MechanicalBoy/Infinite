@@ -504,6 +504,27 @@ namespace Platform
                            false, std::string(), err);
    }
 
+   std::string OpenShowSetDialog()
+   {
+      std::string err;
+      return RunOpenDialog(L"Open Show Set",
+                           {
+                              { L"Show set (*.infshow)", L"*.infshow" },
+                              { L"All files", L"*.*" },
+                           },
+                           false, std::string(), err);
+   }
+
+   std::string SaveShowSetDialog(const std::string& suggestedName)
+   {
+      std::string err;
+      return RunSaveDialog(L"Save Show Set",
+                           {
+                              { L"Show set (*.infshow)", L"*.infshow" },
+                           },
+                           suggestedName.empty() ? "Untitled.infshow" : suggestedName, err);
+   }
+
    std::string SaveDeviceDialog(const std::string& suggestedName)
    {
       std::string err;

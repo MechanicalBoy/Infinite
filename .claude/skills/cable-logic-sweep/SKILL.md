@@ -7,7 +7,7 @@ description: "Connection rules: what can patch into what, and why a cable is ref
 
 Checks Infinite's connection rules - what can be patched into what, what must be refused, and whether a new node's pins are reachable at all. Cross-checks the four hand-maintained wiring chains in main.cpp against the cable members nodes actually declare (static, no build), and runs the fixtures that exercise connect/disconnect/delete. Use when asked "can this connect to that", "why won't this cable attach", "why does my node's pin do nothing", "check the connection logic", after adding any node with an input, or when a link is accepted and then silently lost on save.
 
-Paths below are relative to the repo root (`/Users/namansoni/infinte`).
+Paths below are relative to the repo root (`<repo>`).
 
 ## Run this first
 

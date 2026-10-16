@@ -49,6 +49,9 @@
 
 #include "miniaudio.h"
 
+#include <pthread.h>
+#include <sched.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -952,5 +955,33 @@ namespace Platform
    bool AudioDidWake()
    {
       return false;
+   }
+}
+
+namespace Platform
+{
+   // SCHED_FIFO is per thread and device independent, so a worker asks once
+   // (the epoch never moves). Refused without rtprio (most desktops), which
+   // leaves the worker at normal priority - still parallel, just not realtime.
+   void* AudioWorkerJoin()
+   {
+      sched_param param {};
+      param.sched_priority = std::max(1, sched_get_priority_max(SCHED_FIFO) / 2);
+      if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0)
+         return nullptr;
+      return (void*)1;
+   }
+
+   void AudioWorkerLeave(void* token)
+   {
+      if (token == nullptr)
+         return;
+      sched_param param {};
+      pthread_setschedparam(pthread_self(), SCHED_OTHER, &param);
+   }
+
+   uint32_t AudioWorkerEpoch()
+   {
+      return 1;
    }
 }

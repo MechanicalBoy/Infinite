@@ -597,7 +597,7 @@ A UV sphere - latitude/longitude subdivision.	UV 球体——按纬度/经度细
 A cascade of allpass stages (order, 2-8) sweeping around cutoff at rate/depth - each pair of stages adds one more notch to the comb. Spread offsets the right channel's sweep phase for width.	一串全通级联（阶数 2-8），以速率/深度围绕截止频率扫动——每一对级为梳状响应再增加一个陷波。Spread 会偏移右声道的扫动相位以增加宽度。
 A centre-detent knob running -1 to +1, exposed as a modulator - the right control for anything that has a natural middle (pan, detune, tilt). Its 0..1 output puts the detent at exactly 0.5, which is also where a bipolar modulation binding reads as 'no modulation'.	中心有定位点的旋钮，范围 -1 到 +1，作为调制器输出——适用于任何有天然中点的参数（声像、失谐、倾斜）。它的 0..1 输出把定位点放在正好 0.5 处，双极性调制绑定在此处读作“无调制”。
 A circular wedge / pie-slice - Inner Ratio controls how much of the circle is cut away.	圆形扇面 / 饼图切片——Inner Ratio 控制圆被切掉的比例。
-A classic polyphonic virtual-analog synth voice with two analog-style oscillators (osc1 unison stack, osc2 tuning/detune/sync, sub osc one octave down, white noise, pre-filter drive stage, nonlinear ZDF Moog-ladder or SVF filter, and amplitude ADSR across up to 8 voices). Detune reads as the stack's true total width in cents, distributed unevenly across the stack the way separately mistuned circuits sit. Spread is stereo width: it splits the stack across two independent drive/filter chains and places each voice card in the image, so the sides carry different oscillators rather than one panned copy.	经典的复音虚拟模拟合成器声部，带两个模拟风格振荡器（osc1 为齐奏叠加，osc2 带调谐/失谐/同步，另有低一个八度的副振荡器、白噪声、滤波器前的失真驱动级、非线性 ZDF Moog 梯形或 SVF 滤波器，以及最多 8 个声部的振幅 ADSR）。Detune 读数为叠加的真实总宽度（单位音分），在叠加中不均匀分布，就像各自失调的电路那样。Spread 是立体声宽度：它把叠加拆分到两条独立的驱动/滤波链上，并把每个声部放置在声像中，使两侧承载不同的振荡器，而不是同一份声像偏移的副本。
+A classic polyphonic virtual-analog synth voice with two analog-style oscillators (osc1 unison stack, osc2 tuning/detune/sync, sub osc one octave down, white noise, pre-filter drive stage, nonlinear ZDF filter (Moog ladder, MS-20, diode ladder or SVF), and amplitude ADSR across up to 8 voices). Detune reads as the stack's true total width in cents, distributed unevenly across the stack the way separately mistuned circuits sit. Spread is stereo width: it splits the stack across two independent drive/filter chains and places each voice card in the image, so the sides carry different oscillators rather than one panned copy.	经典的复音虚拟模拟合成器声部，带两个模拟风格振荡器（osc1 为齐奏叠加，osc2 带调谐/失谐/同步，另有低一个八度的副振荡器、白噪声、滤波器前的失真驱动级、非线性 ZDF 滤波器（Moog 梯形、MS-20、二极管梯形或 SVF），以及最多 8 个声部的振幅 ADSR）。Detune 读数为叠加的真实总宽度（单位音分），在叠加中不均匀分布，就像各自失调的电路那样。Spread 是立体声宽度：它把叠加拆分到两条独立的驱动/滤波链上，并把每个声部放置在声像中，使两侧承载不同的振荡器，而不是同一份声像偏移的副本。
 A cloth simulation over an input mesh - stiffness, iterations, damping, mass and shape retention, plus gravity, wind and optional ground collision. 'Reset' re-drops the cloth from its rest pose.	基于输入网格的布料模拟——刚度、迭代次数、阻尼、质量和形状保持，另有重力、风和可选的地面碰撞。“Reset”会让布料从静止姿态重新落下。
 A cogwheel silhouette - Sides sets tooth count.	齿轮轮廓——Sides 设置齿数。
 A compressor with peak or RMS detection, threshold, ratio, attack, release, makeup and an external sidechain input, over a live static transfer curve. Limiter is its own separate node.	压缩器，支持峰值或 RMS 检测、阈值、比率、启动、释放、补偿增益和外部侧链输入，并带有实时静态传输曲线。Limiter 是独立的节点。
@@ -865,7 +865,7 @@ Learns what 'graded' footage looks like for you and grades incoming frames towar
 Learns what 'graded' footage looks like for you and grades incoming frames toward it. Press Learn on already-graded footage to build a target profile (or leave self normalize on to auto-level/contrast without one); mix blends the grade in. Wander makes the grade gently drift among looks the profile has actually seen instead of solving to the exact same answer every frame.	学习“已调色”的素材对你而言是什么样子，并把输入帧向该观感调色。在已调色的素材上按 Learn 来建立目标档案（或者保持 self normalize 开启，在没有档案时自动调整电平/对比度）；mix 控制调色的混合量。Wander 使调色在档案实际见过的观感之间轻柔漂移，而不是每一帧都解出完全相同的答案。
 Learns where you leave a knob and how you move it, then continues, settles and wanders like you. Shift-drag a driven knob to correct it.	学习你把旋钮留在哪里以及如何移动它，然后像你一样继续、稳定并游移。Shift+拖动被驱动的旋钮可进行修正。
 Learns where you leave each knob and how fast you move it, then keeps the knob going after you let go, settles it into your usual places and wanders between them at your pace. Speed scales the learned pace, Stray widens or narrows the wandering, Momentum is how long a release carries on, Link lets your live hand activity stir it: quiet knobs wake up while you play and settle when you stop. Shift-drag a driven knob to take over; the dot on the knob shows how much history backs it and the faint marks show where it is likely to go next. Freeze stores the learned profile in the patch.	学习你把每个旋钮留在哪里以及移动它的快慢，然后在你松手后继续驱动该旋钮，让它稳定在你常用的位置，并以你的节奏在这些位置之间游移。Speed 缩放所学的节奏，Stray 放宽或收窄游移范围，Momentum 是松手后继续运动的时长，Link 让你实时的手部操作来搅动它：安静的旋钮在你演奏时苏醒，停下后又稳定下来。Shift+拖动被驱动的旋钮可接管；旋钮上的圆点显示有多少历史支撑它，淡淡的标记显示它接下来可能去往何处。Freeze 把所学的档案存入补丁。
-Listens on a UDP port for Open Sound Control messages matching an address pattern, and reports the last received value as a modulator (remapped through low/high). Behaves like LFO/Random - patch its output onto any slider's modulation pin.	在 UDP 端口上监听与地址模式匹配的 Open Sound Control 消息，并把最后收到的值作为调制器输出（通过 low/high 重新映射）。行为与 LFO/Random 类似——把它的输出接到任意滑块的调制引脚上。
+Listens on a UDP port for Open Sound Control messages matching an address pattern, and reports the last received value as a modulator (remapped through low/high). Behaves like LFO/Random - patch its output onto any slider's modulation pin. To drive the patch itself from a script or controller instead - set, query or listen to any param, add, remove or connect nodes - send OSC to 127.0.0.1:9100 (/infinite/node/<index>/<param>); no node needed.	在 UDP 端口上监听与地址模式匹配的 Open Sound Control 消息，并把最后收到的值作为调制器输出（通过 low/high 重新映射）。行为与 LFO/Random 类似——把它的输出接到任意滑块的调制引脚上。 若要从脚本或控制器直接控制补丁本身（设置、查询或监听任意参数，添加、删除或连接节点），请向 127.0.0.1:9100 发送 OSC（/infinite/node/<index>/<param>），无需任何节点。
 Live audio looper: record, play, overdub and clear with tempo-synced take lengths and interface latency compensation.	实时音频循环器：录制、播放、叠录和清除，带与速度同步的录音长度及接口延迟补偿。
 Live camera or capture input through AVFoundation - pick a device and a resolution from the node. macOS asks for camera permission the first time. Frames arrive on the device's own clock, so this one source does not pause with the transport.	通过 AVFoundation 的实时摄像头或采集输入——在节点中选择设备和分辨率。macOS 首次会请求摄像头权限。帧按设备自己的时钟到达，因此这个来源不会随传输暂停。
 Live camera or capture input through Media Foundation - pick a device and a resolution from the node. Frames arrive on the device's own clock, so this one source does not pause with the transport.	通过 Media Foundation 的实时摄像头或采集输入——在节点中选择设备和分辨率。帧按设备自己的时钟到达，因此这个来源不会随传输暂停。
@@ -902,7 +902,7 @@ Move the selected clips one grid step; with nothing selected, step the playhead	
 Moves every spectral peak of the sound to the nearest note of a scale, so chords and layered sources stay in key. Snap blends between untouched and fully in tune, glide sets how fast a peak slides to its new note, and global key follows the transport's key and scale. Latency is 42.7 ms (2048 samples).	把声音的每个频谱峰值移到某音阶中最近的音，使和弦和叠加的来源保持在调内。Snap 在未触及和完全合调之间混合，glide 设定峰值滑向新音的速度，global key 跟随传输的调性和音阶。延迟为 42.7 ms（2048 个采样）。
 Moves, rotates and scales only the faces marked by an upstream Select op, optionally sliding them along their own normals instead of a fixed direction.	只移动、旋转和缩放上游 Select 操作标记的面，可选择沿其自身法线而不是固定方向滑动。
 Moves, rotates and scales the input mesh by a fixed offset - the geometry equivalent of the 2D Transform effect.	按固定偏移移动、旋转和缩放输入网格——相当于 2D Transform 效果的几何体版本。
-Multi-mode state-variable & ladder filter (LP12/24/36, HP, BP, Notch, Peak) with drive and resonance control.	多模式状态变量与梯形滤波器（LP12/24/36、HP、BP、Notch、Peak），带驱动和共振控制。
+Multi-mode filter: state-variable (LP12/24/36, HP), BP, Notch, Peak, comb, and driven ladder, MS-20 and diode models with self-oscillating resonance.	多模式滤波器：状态变量（LP12/24/36、HP）、BP、Notch、Peak、梳状，以及带驱动和自激共振的梯形、MS-20 和二极管模型。
 Multi-voice polyphonic wavetable oscillator (up to 8 voices) with two independent A/B wavetable engines crossfaded against each other, wavetable position morphing, detuned unison, and integrated stereo spread.	多声部复音波表振荡器（最多 8 个声部），带两个独立的 A/B 波表引擎并可相互交叉渐变，具备波表位置变形、失谐齐奏和内置立体声展宽。
 Multiplies brightness by powers of two, like a camera's exposure stop (compare Levels' linear/gamma remap).	把亮度乘以 2 的幂，就像相机的曝光档（对比 Levels 的线性/gamma 重映射）。
 Multiplies the input by an oscillator (freq, waveform) - true ring modulation, not amplitude modulation, so the original frequencies are replaced by sum/difference sidebands rather than just scaled.	将输入与振荡器（freq、waveform）相乘——真正的环形调制，而不是调幅，因此原有频率被和/差边带取代，而不是仅仅被缩放。
@@ -924,7 +924,7 @@ On-device segmentation via Apple Vision - no model download, no network, no key.
 On-device segmentation via the OS - no model download, no network, no key. Subject mode needs macOS 14, Person mode macOS 12. Segmentation is expensive, so the mask is computed on this interval rather than every frame; for video, raise the interval or use auto-refresh.	通过操作系统在设备上进行分割——无需下载模型、无需网络、无需密钥。Subject 模式需要 macOS 14，Person 模式需要 macOS 12。分割开销很大，因此遮罩按此间隔计算，而不是每一帧都计算；处理视频时请调大间隔或使用 auto-refresh。
 On-device segmentation with no network access and no API key: Windows has no Vision equivalent, so a small model (u2netp) ships with the build and runs through ONNX Runtime on the DirectML GPU provider, falling back to CPU when DirectML does not register - the node's header line says which. Both Subject and Person modes use the same model. Segmentation is expensive, so the mask is computed on this interval rather than every frame.	在设备上分割，无需网络访问也无需 API 密钥：Windows 没有 Vision 的等价物，因此随构建附带一个小模型（u2netp），通过 ONNX Runtime 在 DirectML GPU 提供程序上运行，DirectML 未能注册时回退到 CPU——节点的标题行会说明用的是哪个。Subject 和 Person 模式使用同一个模型。分割开销很大，因此遮罩按此间隔计算，而不是每一帧都计算。
 On-device segmentation with no network access and no API key: a small model (u2netp) ships with the build and runs through ONNX Runtime on the CPU provider. Both Subject and Person modes use the same model. Segmentation is expensive, and CPU inference more so, so raise the interval for video rather than computing a mask every frame.	在设备上分割，无需网络访问也无需 API 密钥：随构建附带一个小模型（u2netp），通过 ONNX Runtime 在 CPU 提供程序上运行。Subject 和 Person 模式使用同一个模型。分割开销很大，CPU 推理更甚，因此处理视频时请调大间隔，而不是每一帧都计算遮罩。
-One filter, one of 12 types (LP/HP at 12/24/36 dB, BP, notch, shelves, peak, all-pass). Drag the handle on the response curve to set frequency and gain, Shift-drag to set Q - the picture is the control.	一个滤波器，12 种类型之一（12/24/36 dB 的 LP/HP、BP、陷波、架式、峰值、全通）。拖动响应曲线上的手柄设置频率和增益，Shift+拖动设置 Q——图形本身就是控制。
+One filter, one of 17 types (LP/HP at 12/24/36 dB, BP, notch, shelves, peak, all-pass, comb, and ladder, MS-20 and diode models that sing at the top of Q). Drag the handle on the response curve to set frequency and gain, Shift-drag to set Q - the picture is the control.	一个滤波器，17 种类型之一（12/24/36 dB 的 LP/HP、BP、陷波、架式、峰值、全通、梳状，以及在 Q 最大时自激振荡的梯形、MS-20 和二极管模型）。拖动响应曲线上的手柄设置频率和增益，Shift+拖动设置 Q——图形本身就是控制。
 One short modulated delay line with feedback - the jet-swoosh comb filter. Feedback past zero flips the comb's polarity for a hollower sound; the right channel reads a quarter-cycle ahead of the left for width.	一条带反馈的短调制延迟线——喷气式“嗖嗖”梳状滤波器。反馈越过零会翻转梳状的极性，声音更空洞；右声道比左声道提前四分之一周期读取，以增加宽度。
 Open Patch	打开补丁
 Open an existing .inf patch file	打开已有的 .inf 补丁文件
@@ -1152,7 +1152,7 @@ Using Feedback	Using Feedback
 Utility node: audio routing, terminal/output nodes (shows, exports or records the final result), Syphon and OSC I/O.	工具节点：音频路由、终端/输出节点（显示、导出或录制最终结果）、Syphon 和 OSC I/O。
 Video tracks composite back to front, each clip with its own blend mode, opacity and brightness/contrast/saturation grade. Audio clips carry gain, pan, pitch and fades, summed per track. A clip's waveform is drawn from what was actually played, so a clip you have not played yet shows a flat line until the playhead has crossed it once.	视频轨道从后向前合成，每个片段有自己的混合模式、不透明度和亮度/对比度/饱和度调色。音频片段带有增益、声像、音高和淡入淡出，按轨道叠加。片段的波形根据实际播放的内容绘制，因此尚未播放过的片段会显示一条平线，直到播放头越过它一次。
 Viewport Panel	Viewport Panel
-Virtual-analog polyphonic synth with dual oscillators, unevenly detuned unison stacking, osc hard sync, sub-oscillator, noise, pre-filter drive, nonlinear ZDF Moog ladder and SVF filters, dual-path stereo spread, and amp ADSR.	虚拟模拟复音合成器，带双振荡器、不均匀失谐的 unison 叠加、振荡器硬同步、副振荡器、噪声、滤波前驱动、非线性 ZDF Moog 梯形和 SVF 滤波器、双路径立体声展宽以及音量 ADSR。
+Virtual-analog polyphonic synth with dual oscillators, unevenly detuned unison stacking, osc hard sync, sub-oscillator, noise, pre-filter drive, nonlinear ZDF Moog ladder, MS-20, diode ladder and SVF filters, dual-path stereo spread, and amp ADSR.	虚拟模拟复音合成器，带双振荡器、不均匀失谐的 unison 叠加、振荡器硬同步、副振荡器、噪声、滤波前驱动、非线性 ZDF Moog 梯形、MS-20、二极管梯形和 SVF 滤波器、双路径立体声展宽以及音量 ADSR。
 Walk Params	遍历参数
 Warp, corner-pin and perspective-correct an image for projectors, flat walls, or curved screens, with built-in alignment test patterns and custom resolution target.	为投影仪、平整墙面或弧形屏幕对图像进行变形、四角定位和透视校正，内置对齐测试图案和自定义分辨率目标。
 Wave terrain synthesis: an image patched in is read as a height field z = T(u,v), and the oscillator's waveform is whatever a closed orbit traced across that terrain reads back. Orbit type/centre/radius/ratio decide the path, so moving the orbit is a timbre control rather than a pitch one - and because the terrain is an ordinary image input, a Noise, Draw, Video or Reaction Diffusion node upstream reshapes the sound live. Each cycle is band-limited through a 10-level mip pyramid, so it stays alias-free however sharp the source image is.	波形地形合成：接入的图像被读作高度场 z = T(u,v)，振荡器的波形就是沿该地形描出的闭合轨道读回的内容。Orbit 的类型/中心/半径/比例决定路径，因此移动轨道是音色控制而非音高控制——而且由于地形只是普通的图像输入，上游的 Noise、Draw、Video 或 Reaction Diffusion 节点可实时重塑声音。每个周期通过 10 级 mip 金字塔进行带限，因此无论源图像多锐利都不会混叠。
@@ -1178,3 +1178,66 @@ Sort	排序
 Filter	筛选
 Descending	降序
 Ascending	升序
+Audio threads	音频线程
+Auto (all cores)	自动（全部核心）
+One thread	单线程
+Auto: tracks that do not feed each other render in parallel, %d threads on this machine.\nOne thread: everything on the audio thread, as before.\nThe sound is identical either way.	自动：互不连接的轨道并行渲染，本机 %d 个线程。\n单线程：全部在音频线程上运行，与以前相同。\n两种方式的声音完全相同。
+Playable resynthesis: a loaded sample is analysed once into tracked partials plus the noise they leave behind, then every note plays it back additively at the note's pitch. Transposing keeps the sample's formants where they were, so a voice an octave up still sounds like the same voice; formant moves them on purpose. partials thins the stack from the top, morph crossfades partial by partial into a second sample, speed walks through the sample faster or slower without changing pitch, noise sets the residual, and loop repeats the sample while the note is held. 8 voices, note-driven; analysis runs on a background thread.	可演奏的重合成：载入的采样只分析一次，分解为跟踪的分音及其留下的噪声，然后每个音符以自己的音高加法回放。移调时采样的共振峰保持原位，所以高八度的人声听起来仍是同一个声音；formant 有意移动共振峰。partials 从上往下减少分音，morph 逐个分音交叉淡入第二个采样，speed 在不改变音高的情况下更快或更慢地走过采样，noise 设定残差电平，loop 在按住音符时重复采样。8 个复音，由音符驱动；分析在后台线程运行。
+Playable resynthesis: a sample becomes tracked partials plus noise, played at any pitch with its formants kept, thinned, sped up or morphed into a second sample.	可演奏的重合成：采样变为跟踪的分音加噪声，以任意音高演奏并保留共振峰，可减少分音、加速或变形到第二个采样。
+Physically modelled string: every note is a waveguide string tuned exactly to its pitch, on a shared wooden body. exciter plucks it, bows it (the bow keeps it sounding while the note is held) or strikes it with a felt hammer that gets brighter the harder you hit. position is where along the string it is excited, measured from the bridge (a quarter of the way in silences every 4th harmonic, as on a real string). tone sets how bright it stays as it rings, decay how long the note rings while held, stiffness stretches the upper partials sharp like a piano or a metal string, body blends from the bare string into the body's resonances, and release is how fast the damper stops it after note-off. 8 voices, note-driven.	物理建模琴弦：每个音符都是一根精确调到其音高的波导琴弦，装在一个共享的木质琴身上。exciter 选择拨弦、拉弓（按住音符时弓会让它持续发声）或用毛毡琴槌敲击（敲得越重越明亮）。position 是激励琴弦的位置，从琴码量起（在四分之一处，每个第 4 次谐波都会消失，和真实琴弦一样）。tone 决定余音中保持多少明亮度，decay 决定按住时音符响多久，stiffness 像钢琴或金属弦那样把高次分音拉高，body 从裸弦混合到琴身的共鸣，release 是松开音符后制音器止住它的速度。8 个声部，由音符驱动。
+Physically modelled string: pluck, bow or strike a waveguide string on a wooden body, always in tune; position, tone, decay and stiffness shape it.	物理建模琴弦：在木质琴身上拨、拉或敲击一根波导琴弦，始终准确；position、tone、decay 和 stiffness 塑造它。
+A switch lands on the quantize grid; the old patch fades out over the fade time	切换落在量化网格上；旧补丁在淡出时间内淡出
+Add current patch	添加当前补丁
+Add file...	添加文件...
+Add patches in the order you play them. PageDown / PageUp or MIDI Program Change switch between them	按演奏顺序添加补丁。PageDown / PageUp 或 MIDI 程序变更在它们之间切换
+Down	下移
+Fade	淡变
+Go	切换
+Next	下一个
+Next / Previous Show Patch	下一个 / 上一个演出补丁
+Next patch	下一个补丁
+Open set...	打开曲目单...
+Patches	补丁
+Previous	上一个
+Previous patch	上一个补丁
+Quantize	量化
+Save set...	保存曲目单...
+Save the patch before adding it to the show set	请先保存补丁再加入演出曲目单
+Show Set	演出曲目单
+Show Set window	演出曲目单窗口
+Show set	演出曲目单
+Switch	切换
+Switch to the next or previous patch of the show set, on its launch grid. Works in a projector window too	按启动网格切换到演出曲目单的下一个或上一个补丁。在投影窗口中同样可用
+Up	上移
+can't read	无法读取
+next	下一个
+none	无
+reading	读取中
+2 bars	2小节
+unsaved edits to the last patch were discarded	上一个补丁未保存的修改已丢弃
+Couldn't open the show set	无法打开演出曲目单
+Couldn't save the show set	无法保存演出曲目单
+Show lock on: nodes and cables stay where they are. Press again to edit	演出锁定已开启：节点和线缆保持不动。再按一次即可编辑
+Show lock off	演出锁定已关闭
+Show is locked	演出已锁定
+PANIC: sound off, projectors holding. Press again to resume	紧急静音：声音已关，投影保持最后画面。再按一次恢复
+Resumed after panic	已从紧急静音恢复
+The audio device is not open	音频设备未打开
+the MIDI device	MIDI 设备
+is not connected	未连接
+its controller is not connected	其控制器未连接
+nothing is cabled into in, so it shows no picture	in 没有接入任何内容，因此没有画面
+A projector window lost its display	投影窗口失去了它的显示器
+There are audio nodes but no Audio Out, so nothing is heard	有音频节点但没有 Audio Out，因此听不到声音
+Show lock	演出锁定
+Resume after panic	从紧急静音恢复
+Panic	紧急静音
+Pre-show check	演出前检查
+Show safety	演出安全
+Unlock	解锁
+Lock	锁定
+Resume	恢复
+Ready: nothing missing, every device and output in place	就绪：没有缺失，所有设备和输出都在
+Lock: no drag, delete or undo, knobs still play. Panic stops the sound now; press again to resume	锁定：不能拖动、删除或撤销，旋钮仍可操作。紧急静音立即停声；再按一次恢复
+Lock the canvas for a live show: no node drag, cable drag, delete or undo. Knobs, sliders and the keyboard keep working	为现场演出锁定画布：不能拖动节点或线缆，不能删除或撤销。旋钮、滑块和键盘仍可使用
+Silence everything now: notes off on every MIDI Out and plugin, the sound fades in 5 ms, the transport stops and each projector holds its last frame. Press again to resume	立即全部静音：所有 MIDI Out 和插件的音符关闭，声音在 5 毫秒内淡出，走带停止，每个投影保持最后一帧。再按一次恢复
