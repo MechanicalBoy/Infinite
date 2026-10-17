@@ -2,6 +2,14 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://infinitedevices.org/</loc><lastmod>2026-10-17</lastmod><priority>1.0</priority></url>
   <url><loc>https://infinitedevices.org/library.html</loc><lastmod>2026-10-17</lastmod><priority>0.8</priority></url>
+  <url><loc>https://infinitedevices.org/blog/</loc><lastmod>2026-10-17</lastmod><priority>0.8</priority></url>
+  <url><loc>https://infinitedevices.org/blog/field-language-write-what-a-node-does.html</loc><lastmod>2026-10-17</lastmod><priority>0.7</priority></url>
+  <url><loc>https://infinitedevices.org/blog/free-touchdesigner-alternative-for-audio-reactive-visuals.html</loc><lastmod>2026-10-17</lastmod><priority>0.7</priority></url>
+  <url><loc>https://infinitedevices.org/blog/make-your-first-audio-reactive-visual.html</loc><lastmod>2026-10-17</lastmod><priority>0.7</priority></url>
+  <url><loc>https://infinitedevices.org/blog/modulate-vst3-plugins-with-visuals-and-lfos.html</loc><lastmod>2026-10-17</lastmod><priority>0.7</priority></url>
+  <url><loc>https://infinitedevices.org/blog/motion-tracking-hand-face-pose-modulators.html</loc><lastmod>2026-10-17</lastmod><priority>0.7</priority></url>
+  <url><loc>https://infinitedevices.org/blog/one-graph-for-sound-and-pictures.html</loc><lastmod>2026-10-17</lastmod><priority>0.7</priority></url>
+  <url><loc>https://infinitedevices.org/blog/render-video-and-audio-from-a-text-file.html</loc><lastmod>2026-10-17</lastmod><priority>0.7</priority></url>
   <url><loc>https://infinitedevices.org/extensions.html</loc><lastmod>2026-10-17</lastmod><priority>0.6</priority></url>
   <url><loc>https://infinitedevices.org/benchmarks.html</loc><lastmod>2026-10-17</lastmod><priority>0.7</priority></url>
   <url><loc>https://infinitedevices.org/artworks.html</loc><lastmod>2026-10-17</lastmod><priority>0.6</priority></url>

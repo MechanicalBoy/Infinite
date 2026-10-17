@@ -15,6 +15,7 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Benchmarks](https://infinitedevices.org/benchmarks.html): measured CPU, latency, memory and video quality for Infinite against Ableton Live, Bitwig, Logic, Vital, VCV Rack, Blender, TouchDesigner and more, with method and limits stated
 - [Benchmark Report (PDF)](https://infinitedevices.org/assets/Infinite_Benchmark_Report.pdf): the same report as a branded PDF
 - [Benchmark data (JSON)](https://infinitedevices.org/assets/benchmarks.json): machine-readable results for the same tests
+- [Blog](https://infinitedevices.org/blog/): guides on audio-reactive visuals, headless rendering, Field language, plugin modulation and motion tracking (feed: https://infinitedevices.org/blog/feed.xml)
 - [Art Gallery](https://infinitedevices.org/artworks.html): visuals and motion made with Infinite
 - [Download](https://github.com/n1m21n/Infinite/releases/latest): installers for macOS, Windows and Linux
 - [Source code](https://github.com/n1m21n/Infinite): MIT licensed
