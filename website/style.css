@@ -789,10 +789,12 @@ html.over-bird body { cursor: pointer; }
 :root[data-mode="paper"] [data-mode-toggle] .ic-moon { display: block; }
 .stage-model::part(default-progress-bar) { display: none; }
 
-/* Docs grid: manuals as cards, 1 column on phones, 2 on tablets, 4 on desktop */
-.docs-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 26px; }
-@media (min-width: 560px) { .docs-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 980px) { .docs-grid { grid-template-columns: repeat(4, 1fr); } }
+/* Docs grid: manuals as cards, one swipeable row on phones and tablets, 4 across on desktop */
+.docs-grid { display: flex; gap: 14px; margin-top: 26px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 2px 10px; scrollbar-width: none; }
+.docs-grid::-webkit-scrollbar { display: none; }
+.docs-grid .doc-card { flex: 0 0 78%; scroll-snap-align: start; }
+@media (min-width: 560px) { .docs-grid .doc-card { flex-basis: 44%; } }
+@media (min-width: 980px) { .docs-grid { overflow: visible; } .docs-grid .doc-card { flex: 1 1 0; } }
 .doc-card { display: grid; grid-template-columns: 40px 1fr; column-gap: 14px; row-gap: 4px; align-items: start; padding: 18px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); color: var(--ink); text-decoration: none; transition: transform .2s, border-color .2s; }
 .doc-card:hover, .doc-card:focus-visible { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .doc-card svg { grid-row: 1 / span 3; width: 40px; height: 40px; padding: 9px; border-radius: var(--r-sm); background: var(--inner); color: var(--accent); }
