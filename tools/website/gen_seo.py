@@ -116,12 +116,12 @@ def main():
         s = s.replace("  </main>", "  </main>\n\n  " + blk, 1)
     open(p, "w").write(s)
     today = datetime.date.today().isoformat()
-    pages = [("", 1.0), ("library.html", 0.8), ("extensions.html", 0.6), ("artworks.html", 0.6), ("assets/library/catalog.json", 0.3)]
+    pages = [("", 1.0), ("library.html", 0.8), ("extensions.html", 0.6), ("benchmarks.html", 0.7), ("artworks.html", 0.6), ("assets/library/catalog.json", 0.3), ("assets/benchmarks.json", 0.3)]
     open(os.path.join(W, "sitemap.xml"), "w").write('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
         "".join(f"  <url><loc>{BASE}{u}</loc><lastmod>{today}</lastmod><priority>{pr}</priority></url>\n" for u, pr in pages + [(f"library/{i['id']}.html", 0.5) for i in its]) + "</urlset>\n")
     open(os.path.join(W, "robots.txt"), "w").write(
         "# Everyone is welcome, search engines and AI agents included.\nUser-agent: *\nAllow: /\n\n" +
-        "".join(f"User-agent: {b}\nAllow: /\n\n" for b in ("GPTBot", "ChatGPT-User", "OAI-SearchBot", "ClaudeBot", "Claude-User", "Claude-SearchBot", "PerplexityBot", "Google-Extended", "Applebot-Extended")) +
+        "".join(f"User-agent: {b}\nAllow: /\n\n" for b in ("GPTBot", "ChatGPT-User", "OAI-SearchBot", "ClaudeBot", "Claude-User", "Claude-SearchBot", "PerplexityBot", "Google-Extended", "Applebot-Extended", "Applebot", "CCBot", "Amazonbot", "Meta-ExternalAgent", "meta-externalagent", "cohere-ai", "DuckAssistBot", "Bytespider", "YouBot", "MistralAI-User", "Perplexity-User", "Googlebot", "Bingbot")) +
         f"Sitemap: {BASE}sitemap.xml\n# Plain-text summary for language models: {BASE}llms.txt\n")
     byc = {}
     for i in its: byc.setdefault(i["category"] or "Other", []).append(i)
@@ -134,6 +134,9 @@ def main():
          f"- [Library]({BASE}library.html): free templates, community patches and Field devices to download",
          f"- [Extensions]({BASE}extensions.html): optional packs (hand, face and pose tracking), installed live from Settings, Extensions",
          f"- [Library catalog (JSON)]({BASE}assets/library/catalog.json): every library item with description, category and file URL",
+         f"- [Benchmarks]({BASE}benchmarks.html): measured CPU, latency, memory and video quality for Infinite against Ableton Live, Bitwig, Logic, Vital, VCV Rack, Blender, TouchDesigner and more, with method and limits stated",
+         f"- [Benchmark Report (PDF)]({BASE}assets/Infinite_Benchmark_Report.pdf): the same report as a branded PDF",
+         f"- [Benchmark data (JSON)]({BASE}assets/benchmarks.json): machine-readable results for the same tests",
          f"- [Art Gallery]({BASE}artworks.html): visuals and motion made with Infinite",
          "- [Download](https://github.com/n1m21n/Infinite/releases/latest): installers for macOS, Windows and Linux",
          "- [Source code](https://github.com/n1m21n/Infinite): MIT licensed",
