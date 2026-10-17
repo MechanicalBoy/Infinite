@@ -324,7 +324,7 @@ SITE_CSS = """/* Benchmarks page (made by tools/website/gen_benchmarks.py): the 
 .bm-wrap { max-width: 960px; margin: 0 auto; }
 .bm-wrap .lead { color: var(--ink2); font-size: 1.15rem; line-height: 1.5; }
 .bm-wrap h2 { font-size: var(--fs-h3); font-weight: 700; letter-spacing: -0.02em; margin: 56px 0 12px; scroll-margin-top: 90px; }
-.bm-wrap h3 { font-size: 1.05rem; font-weight: 650; margin: 28px 0 8px; }
+.bm-wrap h3 { font-size: 1.05rem; font-weight: 600; margin: 28px 0 8px; }
 .bm-wrap p, .bm-wrap li { color: var(--ink2); line-height: 1.6; }
 .bm-wrap li { margin: 4px 0; }
 .bm-wrap code { font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.85em; background: var(--card); padding: 1px 6px; border-radius: 4px; }
@@ -337,7 +337,7 @@ SITE_CSS = """/* Benchmarks page (made by tools/website/gen_benchmarks.py): the 
 .bm-n { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); }
 .bm-scroll { overflow-x: auto; margin: 12px 0 20px; border-radius: 12px; }
 table.t { width: 100%; border-collapse: collapse; font-size: 0.88rem; background: var(--card); }
-table.t th { text-align: left; font-weight: 650; color: var(--ink); padding: 10px 12px; border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent); white-space: nowrap; }
+table.t th { text-align: left; font-weight: 600; color: var(--ink); padding: 10px 12px; border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent); white-space: nowrap; }
 table.t td { padding: 9px 12px; color: var(--ink2); border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent); vertical-align: top; }
 table.t td:first-child { color: var(--ink); font-weight: 600; }
 .bm-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 8px; }
