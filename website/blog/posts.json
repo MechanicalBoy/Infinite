@@ -18,6 +18,15 @@
   "url": "https://infinitedevices.org/blog/free-touchdesigner-alternative-for-audio-reactive-visuals.html"
  },
  {
+  "slug": "infinite-v0-6-benchmarks",
+  "title": "Infinite v0.6 benchmarks: where it is fast and where it is not",
+  "description": "Infinite benchmarks on a base MacBook Air M2 against Blender, Vital, Serum 2 and popular DAWs, with the results published, including where Infinite is slower.",
+  "date": "2026-10-17",
+  "updated": "2026-10-17",
+  "category": "product",
+  "url": "https://infinitedevices.org/blog/infinite-v0-6-benchmarks.html"
+ },
+ {
   "slug": "make-your-first-audio-reactive-visual",
   "title": "Make your first audio-reactive visual in Infinite",
   "description": "A beginner walkthrough from a free template to a shape that moves with your music, using the Audio Analyze node and a single cable.",
