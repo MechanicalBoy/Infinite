@@ -366,4 +366,7 @@ CHAPTERS = [
     },
 ]
 
+from cards_v06 import CHAPTERS_V06  # noqa: E402
+CHAPTERS += CHAPTERS_V06
+
 ALL_CARDS = sum(len(c["cards"]) for c in CHAPTERS)

@@ -116,6 +116,8 @@ A patch can validate and still be the wrong patch, which is why step 4 exists.
 | `--wav out.wav` | audio-summary | Also write the audio as a WAV |
 | `--stems id,id --stems-dir dir` | audio-summary | Write one WAV per named node |
 | `--notes events.json --note-map map.json` | audio-summary | Play your own note events into the patch |
+| `--timeline` | audio-summary | Play the arrangement's audio lanes instead of the node graph alone |
+| `--plugin-params` | render, audio-summary | List every loaded plugin's parameters (address, name, real range, default) in the `plugins` block of the result |
 | `--contact-sheet sheet.png` | frame | One image holding every requested frame |
 | `--png-level 0-9` | frame, frames-dir | PNG compression |
 | `--lenient` | all | Treat unknown keys and removed nodes as warnings, not errors |
@@ -124,7 +126,7 @@ A patch can validate and still be the wrong patch, which is why step 4 exists.
 
 ### 4.3 Reading the result
 
-The **last line printed** is always one JSON object with these fields: `ok`, `mode`, `frames`, `fps`, `size`, `audio`, `elapsed_ms`, `files`, `warnings`, `errors`. Frame renders add `frame_stats` (brightness, black and white percentages, a histogram per frame). Audio summaries add `audio_summary`. Each issue is `{code, message, line, node, hint}`.
+The **last line printed** is always one JSON object with these fields: `ok`, `mode`, `frames`, `fps`, `size`, `audio`, `elapsed_ms`, `files`, `warnings`, `errors`. Renders of a patch with plugins add a `plugins` block saying which loaded and which did not. Frame renders add `frame_stats` (brightness, black and white percentages, a histogram per frame). Audio summaries add `audio_summary`. Each issue is `{code, message, line, node, hint}`.
 
 ### 4.4 Exit codes
 
@@ -205,6 +207,9 @@ Three ways, from simplest to most flexible.
 | Black frame, `W_BLACK_FRAME` | Is the Output wired (`W_OUTPUT_EMPTY`)? Is a source's size or colour zero? Is a node upstream bypassed? |
 | Silent audio, `W_SILENT` | Is an Audio Out reachable from a synth? Do notes reach the synth? Is a volume at 0? |
 | `W_UNUSED_NODE` | The node reaches no Output or Audio Out. Wire it in or delete it |
+| `E_FIELD_COMPILE` | A Field node's code does not compile. `--validate` compiles Formula and Equation formulas, expressions and globs too, so you find out before rendering. The message gives the line |
+| `W_PLUGIN_NOT_LOADED` | A plugin in the patch could not be loaded (missing, or it crashed the app before). The node passes the sound through. Check `plugins` in the result |
+| `W_NOTE_FANOUT` | One note output feeds more than 64 consumers; the extra ones get no notes |
 | `W_CLIPPING` | Samples hit full scale. Lower a gain, or add a Limiter |
 | `E_KIND_MISMATCH` | You wired the wrong kind of signal (image into an audio slot). `--describe` lists each slot's kind |
 | `E_BAD_KEY` or `E_BAD_VALUE` | Misspelled control or dropdown option. The hint names the nearest valid one |
@@ -220,9 +225,20 @@ Three ways, from simplest to most flexible.
 - Use `--set` to try a value without editing the file.
 - Use `--node` to look at one stage of a long chain.
 - Quote the command line when a patch lives in a folder with spaces.
-- The output is deterministic, so a patch that renders correctly once renders the same way again.
+- The output is deterministic, so a patch that renders correctly once renders the same way again. Frame renders hold the clock at zero from the first tick, so history nodes such as Time Machine render the same every run, and headless runs never read or write the learned prediction profiles. One known exception: a patch with Field Notes and any modulation cable can differ slightly between audio runs (about 0.1 dB in loudness in the case we measured).
 
-## 10. Where to go next
+## 10. Documentation screenshots
+
+Headless renders pictures of a patch, but the nodes themselves (their panels, knobs and dropdowns) can only be photographed in the real app. Infinite ships a screenshot tool for that, so the manuals always match the build. It launches the app, drives it over the local control port, and saves one PNG per node at 2x.
+
+| Want | Run |
+|---|---|
+| One node | `python3 scripts/node_screenshot.py "Wavetable"` |
+| Every node type | `python3 scripts/screenshot_all_nodes.py --out docs/node_screenshots --settle-seconds 0.6` |
+
+Both need a Mac that is unlocked and awake, because the app must have a real window; they write the control token to `~/Library/Application Support/Infinite/control_token`. The Node Field Guide pulls its pictures from `docs/node_screenshots/`, and the brand screenshot standard (2x, real values, no personal paths) is in `docs/brand/BRAND.md` section 10.1.
+
+## 11. Where to go next
 
 | Want | Look at |
 |---|---|
