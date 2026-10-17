@@ -395,8 +395,6 @@ def page(body, n):
     nav_start = rest.index("<body")
     header = rest[nav_start:rest.index("<main>")]
     header = header.replace('class="extensions-page"', 'class="benchmarks-page"').replace(' aria-current="page"', "")
-    if "benchmarks.html" not in header:
-        header = header.replace('<a href="extensions.html">Extensions</a>', '<a href="extensions.html">Extensions</a>\n        <a href="benchmarks.html" aria-current="page">Benchmarks</a>')
     # wrap tables in a scroller so phones scroll the table, not the page
     body_w = re.sub(r"(<table class=\"t.*?</table>)", r'<div class="bm-scroll">\1</div>', body, flags=re.S)
     qa = "".join(f"<h3>{esc(q)}</h3><p>{esc(a)}</p>" for q, a in faq())
