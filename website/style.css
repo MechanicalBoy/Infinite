@@ -788,3 +788,14 @@ html.over-bird body { cursor: pointer; }
 :root[data-mode="midnight"] [data-mode-toggle] .ic-moon { display: none; }
 :root[data-mode="paper"] [data-mode-toggle] .ic-moon { display: block; }
 .stage-model::part(default-progress-bar) { display: none; }
+
+/* Docs grid: manuals as cards, 1 column on phones, 2 on tablets, 4 on desktop */
+.docs-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 26px; }
+@media (min-width: 560px) { .docs-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 980px) { .docs-grid { grid-template-columns: repeat(4, 1fr); } }
+.doc-card { display: grid; grid-template-columns: 40px 1fr; column-gap: 14px; row-gap: 4px; align-items: start; padding: 18px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); color: var(--ink); text-decoration: none; transition: transform .2s, border-color .2s; }
+.doc-card:hover, .doc-card:focus-visible { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.doc-card svg { grid-row: 1 / span 3; width: 40px; height: 40px; padding: 9px; border-radius: var(--r-sm); background: var(--inner); color: var(--accent); }
+.doc-t { font-weight: 650; font-size: var(--fs-h3); }
+.doc-d { color: var(--ink2); font-size: var(--fs-small); line-height: 1.45; }
+.doc-m { font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
