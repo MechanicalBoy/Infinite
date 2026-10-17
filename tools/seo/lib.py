@@ -59,6 +59,8 @@ def load_posts(include_drafts=False):
         meta["url"] = f"{BASE}blog/{meta['slug']}.html"
         meta["words"] = len(re.findall(r"\w+", body))
         meta["minutes"] = max(1, round(meta["words"] / 220))
+        if not include_drafts and meta.get("date", "") > today():
+            continue  # scheduled: appears on its date
         if include_drafts or meta["status"] == "published":
             out.append(meta)
     out.sort(key=lambda p: p.get("date", ""), reverse=True)
