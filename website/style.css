@@ -789,11 +789,21 @@ html.over-bird body { cursor: pointer; }
 :root[data-mode="paper"] [data-mode-toggle] .ic-moon { display: block; }
 .stage-model::part(default-progress-bar) { display: none; }
 
-/* Docs: four compact cards (icon + title) in one row at every width */
+/* Docs cards. Phones: four equal icon+title squares in one row. 700px and up: full cards with description. */
 .docs-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 26px; }
 .doc-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; aspect-ratio: 1 / 1; padding: 8px 2px; min-width: 0; text-align: center; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); color: var(--ink); text-decoration: none; transition: transform .2s, border-color .2s; }
 .doc-card:hover, .doc-card:focus-visible { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .doc-card svg { width: 40px; height: 40px; padding: 9px; border-radius: var(--r-sm); background: var(--inner); color: var(--accent); }
 .doc-t { font-weight: 650; font-size: .7rem; line-height: 1.2; white-space: nowrap; }
-.doc-d, .doc-m { display: none; }
-@media (min-width: 560px) { .docs-grid { gap: 14px; } .doc-t { font-size: var(--fs-small); } }
+.doc-f, .doc-d, .doc-m { display: none; }
+@media (min-width: 700px) {
+  .docs-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .doc-card { display: grid; grid-template-columns: 40px 1fr; column-gap: 14px; row-gap: 4px; align-items: start; justify-content: stretch; aspect-ratio: auto; padding: 18px; text-align: left; border-radius: var(--r-lg); }
+  .doc-card svg { grid-row: 1 / span 3; }
+  .doc-t { font-size: var(--fs-h3); white-space: normal; }
+  .doc-s { display: none; }
+  .doc-f { display: inline; }
+  .doc-d { display: block; color: var(--ink2); font-size: var(--fs-small); line-height: 1.45; }
+  .doc-m { display: block; font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+}
+@media (min-width: 980px) { .docs-grid { grid-template-columns: repeat(4, 1fr); } }
