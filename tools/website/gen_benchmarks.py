@@ -380,8 +380,8 @@ def jsonld(n):
 def page(body, n):
     tpl = open(os.path.join(W, "extensions.html")).read()
     head, rest = tpl.split("</head>", 1)
-    head = re.sub(r"<title>.*?</title>", "<title>Infinite benchmarks: audio, video and speed against Vital, Blender, Ableton and more</title>", head, flags=re.S)
-    desc = "Open, reproducible benchmarks of Infinite against Vital, Serum 2, Diva, Blender, Ableton, Bitwig, Logic and TouchDesigner on a base MacBook Air M2, including where Infinite is slower."
+    head = re.sub(r"<title>.*?</title>", "<title>Infinite benchmarks: audio, video and speed against Vital, Blender and more</title>", head, flags=re.S)
+    desc = "Open, reproducible benchmarks of Infinite against Vital, Serum 2, Blender, Ableton and TouchDesigner on a MacBook Air M2, including where it is slower."
     head = re.sub(r'(<meta name="description" content=")[^"]*', lambda m: m.group(1) + desc, head)
     head = head.replace("https://infinitedevices.org/extensions.html", BASE + "benchmarks.html")
     head = re.sub(r'(<meta (?:property="og:title"|name="twitter:title") content=")[^"]*', lambda m: m.group(1) + "Infinite benchmarks", head)
@@ -399,7 +399,7 @@ def page(body, n):
     body_w = re.sub(r"(<table class=\"t.*?</table>)", r'<div class="bm-scroll">\1</div>', body, flags=re.S)
     qa = "".join(f"<h3>{esc(q)}</h3><p>{esc(a)}</p>" for q, a in faq())
     main = (f'<main>\n    <section class="section lib-hero">\n      <div class="container bm-wrap">\n        <div class="section-head">\n'
-            '          <p class="lib-hand hand">measured, not claimed</p>\n          <h1 class="slab">Infinite benchmarks</h1>\n'
+            '          <p class="lib-hand hand">measured</p>\n          <h1 class="slab">Infinite benchmarks</h1>\n'
             '          <p class="section-sub">How Infinite v0.6 compares with the instruments, effects and creative tools you already use, on a base MacBook Air. Including the parts where it is slower.</p>\n'
             f'          <div class="bm-actions"><a class="btn btn-primary" href="assets/{PDF_NAME}" download>Download the PDF</a>'
             '<a class="btn btn-ghost" href="assets/benchmarks.json">Raw data (JSON)</a>'

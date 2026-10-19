@@ -140,8 +140,8 @@ def check_links():
         for sl, _ in a["start"]:
             if not os.path.exists(os.path.join(W, "library", sl + ".html")):
                 bad.append("library/" + sl + ".html")
-        need = [a["extra"][0], "assets/3d/%s.webp" % a["hero"]["img"]]
-        need += ["assets/nodes/%s.png" % n for n, _, _ in a.get("bench", {}).get("items", [])]
+        need = [a["extra"][0]]
+        need += ["assets/nodes/%s.webp" % n for n, _, _ in a.get("bench", {}).get("items", [])]
         need += [r[0] for r in a.get("reel", {}).get("items", [])]
         for f in need:
             if not os.path.exists(os.path.join(W, f)):
@@ -194,20 +194,28 @@ def lab_html(a):
           <div class="lab-view"><canvas aria-label="A contact sheet of twelve frames filling in one by one" role="img"></canvas></div></div>'''
 
 
+def png_size(n):
+    from PIL import Image   # the shots are 2x captures: width and height are CSS pixels, half the file
+    with Image.open(os.path.join(W, "assets", "nodes", n + ".webp")) as im:
+        w, h = im.size
+    return f' width="{w // 2}" height="{h // 2}"'
+
+
 def main_html(a, rel):
+    float3d = ""
+    if a["hero"]["img"] == "brand_ball":
+        float3d = f'          <span class="vstage-float"><img class="vstage-3d" src="assets/3d/brand_ball.webp" alt="{e(a["hero"]["alt"])}" width="700" height="700" decoding="async"></span>\n'
     facts = "".join(f"<li>{e(f)}</li>" for f in a["facts"])
-    h3 = {"brand_ball": 700, "logo_3d": 394, "node_field_pixel": 525, "node_hero": 438, "node_lfo": 525, "patch": 394}[a["hero"]["img"]]
     cards = "\n".join(f'          <article class="aud-card reveal" style="--i:{n}"><span class="num">{n + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></article>' for n, (t, d) in enumerate(a["cards"]))
     bench = ""
     if a.get("bench"):
         B = a["bench"]
-        figs = "".join(f'<figure class="bn"><img src="assets/nodes/{n}.png" alt="The {e(t)} node as it looks in Infinite" loading="lazy" decoding="async"><figcaption><b>{e(t)}</b><span>{e(d)}</span></figcaption></figure>' for n, t, d in B["items"])
+        figs = "".join(f'<figure class="bn"><img src="assets/nodes/{n}.webp" alt="The {e(t)} node as it looks in Infinite"{png_size(n)} loading="lazy" decoding="async"><figcaption><b>{e(t)}</b><span>{e(d)}</span></figcaption></figure>' for n, t, d in B["items"])
         bench = f'''
       <section class="aud-section reveal">
         <h2>{e(B["title"])}</h2>
         <p class="sec-sub">{e(B["sub"])}</p>
-        <div class="bench"><div class="bench-row{" few" if len(B["items"]) < 4 else ""}">{figs}</div>
-          <p class="bench-note">screenshots from the app, shown at their own size</p></div>
+        <div class="bench"><div class="bench-row{" few" if len(B["items"]) < 4 else ""}">{figs}</div></div>
       </section>'''
     reel = ""
     if a.get("reel"):
@@ -228,7 +236,6 @@ def main_html(a, rel):
         <div class="aud-start">
 {links}
         </div>
-        <p class="aud-note">Each one is a free patch you can download and open.</p>
       </section>'''
     body = ""
     if a.get("body"):
@@ -251,8 +258,7 @@ def main_html(a, rel):
         </div>
         <div class="vstage">
           <canvas data-shader="{a["hero"]["shader"]}" aria-hidden="true"></canvas>
-          <span class="vstage-float"><img class="vstage-3d" src="assets/3d/{a["hero"]["img"]}.webp" alt="{e(a["hero"]["alt"])}" width="700" height="{h3}" decoding="async"></span>
-          <span class="vstage-tag">live shader · move the pointer</span>
+{float3d}          <span class="vstage-tag">live shader · move the pointer</span>
         </div>
       </div>
     </section>
@@ -292,6 +298,9 @@ def shell(rel, title, desc, lds, main, extra_head="", extra_js=""):
     """The whole document around a page's <main>: head, one header, one footer, reveal-on-scroll. Shared with gen_philosophy.py."""
     url = BASE + rel
     ldtags = "\n  ".join(f'<script type="application/ld+json">{json.dumps(x, ensure_ascii=False)}</script>' for x in lds)
+    faq = os.path.join(os.path.dirname(os.path.abspath(__file__)), "faq_%s.html" % rel.replace(".html", ""))
+    if os.path.exists(faq):   # FAQPage schema kept as a file per audience page, so a regenerate does not drop it
+        ldtags += "\n" + open(faq, encoding="utf-8").read().rstrip("\n")
     return f'''<!DOCTYPE html>
 <html lang="en" data-mode="paper">
 <head>
@@ -321,7 +330,7 @@ def shell(rel, title, desc, lds, main, extra_head="", extra_js=""):
   <link rel="stylesheet" href="style.css?v={chrome.CSS_VERSION}">
   <link rel="stylesheet" href="glass.css?v=4">
   <link rel="stylesheet" href="blog.css?v=2">
-  <link rel="stylesheet" href="audience.css?v=7">
+  <link rel="stylesheet" href="audience.css?v=8">
   {ldtags}{extra_head}
   <script>document.documentElement.classList.add('js-reveal')</script>
 </head>
@@ -333,7 +342,7 @@ def shell(rel, title, desc, lds, main, extra_head="", extra_js=""):
 
   {chrome.footer_html(rel)}
   <script src="site.js?v={chrome.JS_VERSION}" defer></script>
-  <script src="audience.js?v=5" defer></script>{extra_js}
+  <script src="audience.js?v=6" defer></script>{extra_js}
   <script>
     (function () {{
       var els = document.querySelectorAll('.reveal');

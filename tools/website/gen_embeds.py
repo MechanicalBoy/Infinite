@@ -138,7 +138,7 @@ def build_gallery(items):
   <script>window.INFINITE_DEFAULT_MODE = 'paper';</script>
   <script src="../theme.js?v=2"></script>
   <title>Infinite embeds: {len(items)} audio-reactive visuals for any page</title>
-  <meta name="description" content="{len(items)} free audio-reactive WebGL visuals made in Infinite. Copy one iframe into a portfolio, blog or landing page. They react to the microphone if the visitor allows it.">
+  <meta name="description" content="Free audio-reactive WebGL visuals made in Infinite. Copy one iframe into a portfolio, blog or landing page.">
   <link rel="canonical" href="{BASE}embeds/">
   <meta property="og:title" content="Infinite embeds: audio-reactive visuals for any page">
   <meta property="og:description" content="Copy one iframe into any page. Free, made in Infinite.">
@@ -157,7 +157,7 @@ def build_gallery(items):
   <link rel="stylesheet" href="../brand.css?v=3">
   <link rel="stylesheet" href="../style.css?v=81">
   <link rel="stylesheet" href="../glass.css?v=4">
-  <link rel="stylesheet" href="../blog.css?v=2">
+  <link rel="stylesheet" href="../blog.css?v=4">
   <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>
 <body class="blog-page">
@@ -169,14 +169,11 @@ def build_gallery(items):
         <header class="section-head center">
           <span class="blog-hand hand">live</span>
           <h1 class="slab">Audio-reactive visuals for any page</h1>
-          <p class="lead">{len(items)} WebGL visuals made in Infinite. Copy the code under a card into a portfolio, a blog or a landing page. Each one listens to the microphone when the visitor allows it, and moves on its own when they do not.</p>
         </header>
 
         <div class="post-grid embed-grid">
 {cards}
         </div>
-
-        <p class="blog-feed">Building with an AI agent? It can read the same list in <a href="../llms.txt">llms.txt</a>, or call the <a href="../developers.html">Python SDK and MCP server</a> to make its own.</p>
       </div>
     </section>
   </main>
