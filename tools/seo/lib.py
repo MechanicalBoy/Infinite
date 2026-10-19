@@ -145,16 +145,29 @@ def render_md(body):
             out.append(t)
         elif re.match(r"^---+$", ln.strip()):
             out.append("<hr>"); i += 1
+        elif ln.strip().startswith(("<figure", "<div", "<details")):
+            tag = re.match(r"^<([a-z0-9]+)", ln.strip()).group(1)
+            end_tag = f"</{tag}>"
+            buf = []
+            while i < len(lines):
+                buf.append(lines[i])
+                if end_tag in lines[i]:
+                    i += 1
+                    break
+                i += 1
+            out.append("\n".join(buf))
         elif not ln.strip():
             i += 1
         else:
             buf = []
-            while i < len(lines) and lines[i].strip() and not re.match(r"^(#{2,4} |```|>|\s*[-*] |\s*\d+\. )", lines[i]):
+            while i < len(lines) and lines[i].strip() and not re.match(r"^(#{2,4} |```|>|\s*[-*] |\s*\d+\. |<(?:figure|div|details))", lines[i]):
                 buf.append(lines[i].strip()); i += 1
             para = " ".join(buf)
             m = re.fullmatch(r"!\[([^\]]*)\]\(([^)\s]+)\)", para)
             if m:
-                out.append(f'<figure><img src="{m.group(2)}" alt="{html.escape(m.group(1))}" loading="lazy" decoding="async"></figure>')
+                alt = html.escape(m.group(1))
+                cap = f"<figcaption>{alt}</figcaption>" if alt else ""
+                out.append(f'<figure><img src="{m.group(2)}" alt="{alt}" loading="lazy" decoding="async">{cap}</figure>')
             else:
                 out.append(f"<p>{inline(para)}</p>")
     return "\n".join(out), heads
