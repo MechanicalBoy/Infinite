@@ -171,7 +171,7 @@ def build_gallery(items):
   <link rel="stylesheet" href="../style.css?v=dba6d460">
   <link rel="stylesheet" href="../glass.css?v=c25dae44">
   <link rel="stylesheet" href="../blog.css?v=e5fec6e7">
-  <link rel="stylesheet" href="../reels.css?v=1d89dfcc">
+  <link rel="stylesheet" href="../reels.css?v=faea6d9a">
   <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>
 <body class="blog-page reels-page">
@@ -184,11 +184,10 @@ def build_gallery(items):
     </div>
   </main>
 
-  {footer}
   <script src="../site.js?v=11" defer></script>
   <script>
     (function () {{
-      var slides = [].slice.call(document.querySelectorAll('.reel-slide'));
+      var reels = document.getElementById('reels'), base = [].slice.call(reels.querySelectorAll('.reel-slide')), loops = 0;
       /* only the slide on screen and its neighbours keep a live WebGL context */
       var io = new IntersectionObserver(function (es) {{
         es.forEach(function (en) {{
@@ -197,15 +196,37 @@ def build_gallery(items):
           else if (f.getAttribute('src')) f.removeAttribute('src');
         }});
       }}, {{ rootMargin: '60% 0px' }});
-      slides.forEach(function (s) {{ io.observe(s); }});
-      document.querySelectorAll('[data-copy]').forEach(function (b) {{
-        var label = b.querySelector('span'), text = label.textContent;
+      /* the reel never ends: when the last slide comes near, the list is added again */
+      var more = new IntersectionObserver(function (es) {{
+        if (es.some(function (en) {{ return en.isIntersecting; }})) add();
+      }}, {{ rootMargin: '150% 0px' }});
+      function wire(s) {{
+        io.observe(s);
+        var b = s.querySelector('[data-copy]'), label = b.querySelector('span'), text = label.textContent;
         b.addEventListener('click', function () {{
           var t = document.getElementById(b.getAttribute('data-copy'));
           var done = function () {{ label.textContent = 'Copied'; b.classList.add('is-done'); setTimeout(function () {{ label.textContent = text; b.classList.remove('is-done'); }}, 1800); }};
           if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(done, function () {{ t.select(); }});
           else {{ t.select(); document.execCommand('copy'); done(); }}
         }});
+      }}
+      function add() {{
+        loops += 1; more.disconnect();
+        var last;
+        base.forEach(function (s) {{
+          var c = s.cloneNode(true), f = c.querySelector('iframe'), t = c.querySelector('textarea'), b = c.querySelector('[data-copy]');
+          f.removeAttribute('src'); t.id += '-' + loops; b.setAttribute('data-copy', t.id);
+          reels.appendChild(c); wire(c); last = c;
+        }});
+        more.observe(last.previousElementSibling || last);
+      }}
+      base.forEach(wire);
+      add();
+      document.addEventListener('keydown', function (e) {{
+        var d = {{ ArrowDown: 1, PageDown: 1, ArrowUp: -1, PageUp: -1 }}[e.key];
+        if (!d || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+        var all = [].slice.call(reels.children), y = window.innerHeight / 2, i = all.findIndex(function (s) {{ var r = s.getBoundingClientRect(); return r.top <= y && r.bottom > y; }});
+        if (all[i + d]) {{ e.preventDefault(); all[i + d].scrollIntoView({{ behavior: 'smooth', block: 'start' }}); }}
       }});
     }})();
   </script>

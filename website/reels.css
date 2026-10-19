@@ -1,17 +1,17 @@
 /* Embeds as a reel (made for tools/website/gen_embeds.py): one live visual per screen, swipe or scroll to the next. */
-html:has(.reels) { scroll-snap-type: y proximity; }
-.reels-page main { padding: 0; }
-.reel-slide { box-sizing: border-box; min-height: calc(100dvh - var(--header-h)); scroll-snap-align: start; display: flex; justify-content: center; align-items: center; padding: 12px 12px 16px; }
-.reel-wrap { position: relative; width: min(100%, 420px); }
-.reel-card { position: relative; width: 100%; height: calc(100dvh - var(--header-h) - 32px); max-height: 800px; border-radius: 20px; overflow: hidden; background: #0D1020; box-shadow: var(--shadow-2); isolation: isolate; }
+html:has(.reels) { scroll-snap-type: y mandatory; scroll-padding-top: 0; }
+.reels-page main { padding: 0; margin-top: calc(-1 * var(--header-h)); }   /* the header floats over the first screen */
+.reel-slide { box-sizing: border-box; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; display: flex; justify-content: center; align-items: center; }
+.reel-wrap { position: relative; width: 100%; height: 100%; }
+.reel-card { position: relative; width: 100%; height: 100%; border-radius: 0; overflow: hidden; background: #0D1020; box-shadow: var(--shadow-2); isolation: isolate; }
 .reel-card iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
 /* the caption, the counter and a scrim over the foot of the picture */
 .reel-card::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 40%; background: linear-gradient(to top, rgba(13, 16, 32, 0.72), transparent); pointer-events: none; z-index: 1; }
-.reel-count { position: absolute; top: 12px; left: 12px; z-index: 2; display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: var(--r-pill); background: rgba(21, 25, 48, 0.66); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: #EEF1FA; font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace; letter-spacing: 0.04em; }
+.reel-count { position: absolute; top: calc(var(--header-h) + 12px); left: 12px; z-index: 2; display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: var(--r-pill); background: rgba(21, 25, 48, 0.66); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: #EEF1FA; font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace; letter-spacing: 0.04em; }
 .reel-meta { position: absolute; left: 16px; right: 80px; bottom: 80px; z-index: 2; pointer-events: none; }
 .reel-meta h2 { margin: 0; color: #EEF1FA; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; text-shadow: 0 1px 12px rgba(4, 5, 14, 0.5); }
 /* the action rail: icon over a one-word label, like a reel */
-.reel-rail { position: absolute; right: 12px; bottom: 80px; z-index: 3; display: grid; gap: 16px; justify-items: center; }
+.reel-rail { position: absolute; right: 12px; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 3; display: grid; gap: 16px; justify-items: center; }
 .rail-btn { display: grid; justify-items: center; gap: 4px; width: 56px; padding: 0; background: none; border: 0; color: #EEF1FA; font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace; text-decoration: none; cursor: pointer; }
 .rail-btn .ic { box-sizing: content-box; width: 20px; height: 20px; padding: 14px; border-radius: 50%; background: rgba(21, 25, 48, 0.66); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); transition: transform var(--dur-small) var(--ease-out), background-color var(--dur-small) var(--ease-out); }
 .rail-btn:active .ic { transform: scale(0.94); }
@@ -21,10 +21,15 @@ html:has(.reels) { scroll-snap-type: y proximity; }
 .reels .snippet { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; opacity: 0; pointer-events: none; overflow: hidden; resize: none; }
 /* touch: a swipe on the picture scrolls the reel; the mic corner of the widget stays tappable */
 @media (hover: none) { .reel-swipe { position: absolute; inset: 0; z-index: 1; clip-path: polygon(0 0, 100% 0, 100% 100%, 88px 100%, 88px calc(100% - 88px), 0 calc(100% - 88px)); } }
-@media (min-width: 601px) { .reel-card { border-radius: 24px; } }
+
 /* wide screens: the rail sits beside the card on the page, not on the picture */
+@media (min-width: 601px) {
+  .reel-slide { padding: calc(var(--header-h) + 8px) 0 24px; }
+  .reel-wrap { width: min(100%, 420px); }
+  .reel-card { border-radius: 24px; }
+  .reel-count { top: 12px; }
+}
 @media (min-width: 900px) {
-  .reel-card { height: calc(100dvh - var(--header-h) - 48px); }
   .reel-meta { bottom: 24px; right: 16px; }
   .reel-rail { right: auto; left: calc(100% + 16px); bottom: 0; }
   .rail-btn { color: var(--ink); }
