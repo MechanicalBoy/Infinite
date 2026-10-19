@@ -83,7 +83,8 @@
 .ctl input[type=range]:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: var(--r-pill); }
 .lab-note { font-size: 0.8438rem !important; color: var(--muted) !important; }
 
-.aud-code { position: relative; margin: 0; background: var(--deep); color: var(--ink); border-radius: var(--r-md); padding: 16px 16px; overflow-x: auto; font: 500 0.8438rem/1.65 'Geist Mono', ui-monospace, monospace; }
+.lab > *, .lab-side, .term-panel { min-width: 0; }
+.aud-code { position: relative; max-width: 100%; margin: 0; background: var(--deep); color: var(--ink); border-radius: var(--r-md); padding: 16px 16px; overflow-x: auto; font: 500 0.8438rem/1.65 'Geist Mono', ui-monospace, monospace; }
 .aud-code .k { color: var(--signal); }
 .aud-code .c { color: var(--muted); }
 .aud-code code { font: inherit; white-space: pre; }
@@ -172,3 +173,19 @@
 .ah-text .blog-hand { margin-bottom: 8px; position: relative; }
 .ah-text h1.slab { margin-top: 0; padding-top: 4px; }
 .bn img { height: auto; }
+
+/* The bench is one landscape strip of the nodes, named by pills beneath; no per-node captions */
+.bench { display: grid; gap: 16px; padding: clamp(16px, 3vw, 32px); }
+.bench-img { display: block; width: auto; max-width: 100%; height: auto; max-height: 420px; margin-inline: auto; }
+.bench-names { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bench-names li { display: inline-flex; align-items: center; min-height: 32px; padding: 0 16px; border-radius: var(--r-pill); background: var(--mid); color: var(--mid-ink); font: 500 0.84375rem/1 Geist, system-ui, sans-serif; white-space: nowrap; }
+@media (max-width: 600px) {
+  .bench { padding: 16px; border-radius: 20px; }
+  .bench-names li { min-height: 28px; padding: 0 12px; font-size: 0.71875rem; }
+}
+@media (max-width: 600px) {
+  .bench { overflow-x: auto; scrollbar-width: none; }
+  .bench::-webkit-scrollbar { display: none; }
+  .bench-img { width: auto; max-width: none; height: 220px; }
+  .bench-names { position: sticky; left: 0; }
+}

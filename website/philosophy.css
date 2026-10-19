@@ -107,3 +107,13 @@
 }
 @media (min-width: 900px) { .split { gap: 64px; } }
 .faq-item p { max-width: 56ch; }
+
+/* Phone grid: the audience cards become compact rows (glyph left, name and one line right) */
+@media (max-width: 600px) {
+  .who-grid { gap: 8px; }
+  .who-card { display: grid; grid-template-columns: 24px 1fr; column-gap: 16px; row-gap: 0; align-items: center; padding: 16px; border-radius: 16px; }
+  .who-card .ic { grid-row: 1 / span 2; align-self: center; }
+  .who-card b { font-size: 1rem; }
+  .who-card span:last-child { font-size: 0.84375rem; }
+}
+.vstage-3d, .bench-img { height: auto; }

@@ -54,11 +54,13 @@ SHELL_HEAD = """<!DOCTYPE html>
       -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5); box-shadow: 0 6px 16px var(--shadow);
       transition: transform var(--dur-small) var(--ease-out), background-color var(--dur-small) var(--ease-out);
     }
-    .badge { right: 14px; }
+    .badge { right: 14px; width: 44px; padding: 0; justify-content: center; }
     .badge strong { font-weight: 700; }
-    .badge-icon { width: 12px; height: 12px; border-radius: 50%; background: linear-gradient(135deg, var(--ember), var(--signal)); }
+    .badge-icon { width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(135deg, var(--ember), var(--signal)); }
     .controls { position: absolute; left: 14px; bottom: 14px; z-index: 10; }
-    .controls .btn { position: static; border: 0; cursor: pointer; font-family: inherit; min-height: 44px; }
+    .controls .btn { position: static; border: 0; cursor: pointer; font-family: inherit; min-height: 44px; width: 44px; padding: 0; justify-content: center; }
+    .controls .btn.on { background: var(--ember); color: #151930; }
+    .controls .btn.off { color: var(--muted, #8A93B5); }
     .badge:hover, .btn:hover { transform: translateY(-2px); background: rgba(52, 59, 94, 0.9); }
     .badge:focus-visible, .btn:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { .badge, .btn { transition: none; } .badge:hover, .btn:hover { transform: none; } }
@@ -72,18 +74,20 @@ SHELL_HEAD = """<!DOCTYPE html>
     <canvas id="gl" role="img" aria-label="@@TITLE@@, an audio-reactive visual"></canvas>
 
   <div class="controls">
-    <button class="btn" id="btn-audio" type="button" aria-live="polite">Enable microphone</button>
+    <button class="btn" id="btn-audio" type="button" aria-label="Enable microphone" title="Enable microphone"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></svg></button>
   </div>
 
   <a href="https://infinitedevices.org/" target="_blank" rel="noopener" class="badge" title="Infinite, a DAW for you">
     <span class="badge-icon" aria-hidden="true"></span>
-    <span>made in <strong>infinite</strong></span>
+    <span class="sr-only">made in infinite</span>
   </a>
   </main>
 
   """
 
 SCRIPT_FIXES = [
+    ('document.getElementById("btn-audio").innerText = "Microphone on";', 'document.getElementById("btn-audio").classList.add("on");document.getElementById("btn-audio").setAttribute("aria-label","Microphone on");'),
+    ('document.getElementById("btn-audio").innerText = "Microphone blocked";', 'document.getElementById("btn-audio").classList.add("off");document.getElementById("btn-audio").setAttribute("aria-label","Microphone blocked");'),
     ('"mic active"', '"Microphone on"'), ('"mic denied"', '"Microphone blocked"'),
     ('document.body.innerHTML = "webgl not supported";', 'document.body.innerHTML = \'<p class="fallback">This visual needs WebGL, which this browser does not offer.</p>\';'),
 ]
@@ -161,9 +165,9 @@ def build_gallery(items):
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../brand.css?v=e96b24bf">
-  <link rel="stylesheet" href="../style.css?v=dcf8eb52">
+  <link rel="stylesheet" href="../style.css?v=8edf4baf">
   <link rel="stylesheet" href="../glass.css?v=c25dae44">
-  <link rel="stylesheet" href="../blog.css?v=ed850f83">
+  <link rel="stylesheet" href="../blog.css?v=7d072fe5">
   <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>
 <body class="blog-page">

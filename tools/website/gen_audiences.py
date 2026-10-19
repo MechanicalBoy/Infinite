@@ -209,6 +209,25 @@ def png_size(n):
     return f' width="{w // 2}" height="{h // 2}"'
 
 
+def bench_image(slug, items):
+    """One landscape strip of the node shots, equal height, on a transparent ground (the card supplies midnight)."""
+    from PIL import Image
+    H, GAP, PAD = 380, 32, 8
+    ims = []
+    for n, _, _ in items:
+        with Image.open(os.path.join(W, "assets", "nodes", n + ".webp")) as im:
+            im = im.convert("RGBA")
+            ims.append(im.resize((round(im.width * H / im.height), H), Image.LANCZOS))
+    width = sum(i.width for i in ims) + GAP * (len(ims) - 1) + 2 * PAD
+    out = Image.new("RGBA", (width, H + 2 * PAD), (0, 0, 0, 0))
+    x = PAD
+    for i in ims:
+        out.paste(i, (x, PAD), i)
+        x += i.width + GAP
+    out.save(os.path.join(W, "assets", "nodes", f"bench-{slug}.webp"), "WEBP", quality=82, method=6)
+    return out.size
+
+
 def main_html(a, rel):
     float3d = ""
     if a["hero"]["img"] == "brand_ball":
@@ -218,17 +237,19 @@ def main_html(a, rel):
     bench = ""
     if a.get("bench"):
         B = a["bench"]
-        figs = "".join(f'<figure class="bn"><img src="assets/nodes/{n}.webp" alt="The {e(t)} node as it looks in Infinite"{png_size(n)} loading="lazy" decoding="async"><figcaption><b>{e(t)}</b><span>{e(d)}</span></figcaption></figure>' for n, t, d in B["items"])
+        w, h = bench_image(a["slug"], B["items"])
+        names = "".join(f"<li>{e(t)}</li>" for _, t, _ in B["items"])
+        alt = "; ".join(f"{t}: {d}" for _, t, d in B["items"])
         bench = f'''
       <section class="aud-section reveal">
         <h2>{e(B["title"])}</h2>
         <p class="sec-sub">{e(B["sub"])}</p>
-        <div class="bench"><div class="bench-row{" few" if len(B["items"]) < 4 else ""}">{figs}</div></div>
+        <div class="bench"><img class="bench-img" src="assets/nodes/bench-{a["slug"]}.webp" alt="{e(alt)}" width="{w}" height="{h}" decoding="async"><ul class="bench-names">{names}</ul></div>
       </section>'''
     reel = ""
     if a.get("reel"):
         R = a["reel"]
-        figs = "".join(f'<figure><a class="frame" style="--ar:{w} / {h}" href="{R["href"]}"><img src="{src}" alt="{e(c)}" width="{w}" height="{h}" loading="lazy" decoding="async"></a><figcaption>{e(c)}</figcaption></figure>' for src, w, h, c in R["items"])
+        figs = "".join(f'<figure><a class="frame" style="--ar:{w} / {h}" href="{R["href"]}"><img src="{src}" alt="{e(c)}" width="{w}" height="{h}" decoding="async"></a><figcaption>{e(c)}</figcaption></figure>' for src, w, h, c in R["items"])
         reel = f'''
       <section class="aud-section reveal">
         <div class="sec-head"><div><h2>{e(R["title"])}</h2><p class="sec-sub">{e(R["sub"])}</p></div>
@@ -337,8 +358,8 @@ def shell(rel, title, desc, lds, main, extra_head="", extra_js=""):
   <link rel="stylesheet" href="brand.css?v=e96b24bf">
   <link rel="stylesheet" href="style.css?v={chrome.CSS_VERSION}">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
-  <link rel="stylesheet" href="blog.css?v=ed850f83">
-  <link rel="stylesheet" href="audience.css?v=ca118bc4">
+  <link rel="stylesheet" href="blog.css?v=7d072fe5">
+  <link rel="stylesheet" href="audience.css?v=b0b3e498">
   {ldtags}{extra_head}
   <script>document.documentElement.classList.add('js-reveal')</script>
 </head>

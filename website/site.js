@@ -120,7 +120,6 @@
       header.classList.toggle('nav-open', open);
       btn.setAttribute('aria-expanded', String(open));
       btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-      document.documentElement.classList.toggle('nav-locked', open);   // the page behind must not scroll under the sheet
     };
     initMenuGroups(header, set);
     btn.addEventListener('click', () => set(!header.classList.contains('nav-open')));

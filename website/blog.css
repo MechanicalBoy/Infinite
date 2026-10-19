@@ -142,3 +142,13 @@ body.blog-page { overflow-x: clip; }
 .embed-card .snippet { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; opacity: 0; pointer-events: none; overflow: hidden; resize: none; }
 .embed-card { position: relative; }
 .embed-actions .chip { white-space: nowrap; }
+
+/* Phone grid: the post list is rows (square thumb, kicker and title), not full-width pictures */
+@media (max-width: 600px) {
+  .post-grid { gap: 8px; }
+  .post-grid .post-link { display: grid; grid-template-columns: 96px 1fr; column-gap: 16px; align-items: center; padding: 8px; }
+  .post-grid .post-media { aspect-ratio: 1; }
+  .post-grid .post-body { padding: 0; gap: 4px; }
+  .post-grid .post-card h2 { font-size: 1rem; line-height: 1.25; }
+  .post-grid .post-desc { display: none; }
+}

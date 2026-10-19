@@ -168,7 +168,7 @@ strong { font-weight: 600; color: var(--ink); }
   max-width: none; padding: 0 max(clamp(24px, 2.4vw, 32px), env(safe-area-inset-left));
 }
 .brand { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; }
-.brand-icon { width: 30px; height: 30px; border-radius: 8px; box-shadow: var(--shadow-1); }
+.brand-icon { width: 30px; height: 30px; border-radius: 8px; }
 .brand-name { font-weight: 700; letter-spacing: -0.03em; font-size: 1.125rem; }
 
 .nav-links { display: flex; gap: 2px; margin-left: auto; }
@@ -178,7 +178,7 @@ strong { font-weight: 600; color: var(--ink); }
   transition: background-color var(--dur-small) var(--ease-out), color var(--dur-small) var(--ease-out);
 }
 .nav-links > a:hover { color: var(--ink); background: color-mix(in srgb, var(--shadow) 5%, transparent); }
-.nav-sheet-social, .nav-sheet-cta { display: none; }
+.nav-sheet-social { display: none; }
 
 /* menu groups: Learn, Create, Build. Desktop opens a panel; phones show every group open in the sheet. */
 .nav-group { position: relative; }
@@ -744,7 +744,6 @@ html.over-bird body { cursor: pointer; }
     transition: transform var(--spring-slab-ms) var(--spring-slab), opacity var(--dur-small) var(--ease-out), visibility 0s 0.4s var(--ease-out);
   }
   .nav-open .nav-links { transform: none; opacity: 1; visibility: visible; transition: transform var(--spring-slab-ms) var(--spring-slab), opacity var(--dur-small) var(--ease-out), visibility 0s var(--ease-out); }
-  html.nav-locked { overflow: hidden; }
   .nav-links > a { padding: 16px 8px; font-size: 1.125rem; color: var(--ink); font-weight: 600; }
   .nav-links > a:hover { background: none; }
   .nav-group { border-bottom: 1px solid var(--line-soft); }
@@ -764,9 +763,7 @@ html.over-bird body { cursor: pointer; }
   .nav-menu a { min-height: 48px; padding: 0 16px; font-size: 1rem; font-weight: 500; color: var(--ink2); border-radius: var(--r-sm); }
   .nav-menu a:active { background: var(--deep); }
   .nav-links > .nav-group:last-of-type { margin-bottom: 20px; }
-  .nav-links > a.nav-sheet-cta { padding: 0 20px; font-size: 1rem; color: var(--paper); }
-  .nav-sheet-cta { display: inline-flex; width: 100%; margin-top: auto; justify-content: center; min-height: 52px; }
-  .nav-sheet-social { display: flex; justify-content: center; gap: 12px; padding-top: 20px; }
+  .nav-sheet-social { display: flex; justify-content: center; gap: 12px; margin-top: auto; padding-top: 24px; }
   .nav-sheet-social a { width: 48px; height: 48px; border-radius: var(--r-pill); display: grid; place-items: center; background: var(--deep); color: var(--ink2); transition: transform var(--spring-slab-ms) var(--spring-slab), color var(--dur-small) var(--ease-out), background-color var(--dur-small) var(--ease-out); }
   .nav-sheet-social a:active { transform: scale(0.94); color: var(--ink); }
   .nav-sheet-social svg { width: 22px; height: 22px; }
@@ -901,7 +898,6 @@ body .chip, body .aud-start a, body .aud-others a, body .embed-actions .chip, bo
 body .copy { min-height: 36px; }
 .ic { width: 16px; height: 16px; flex: none; }
 .chip-ic { width: 16px; height: 16px; }
-.nav-sheet-cta .ic { display: none; }
 
 /* System pass: one counter size, mono at a scale step */
 p.mono { font-size: 0.84375rem; }
