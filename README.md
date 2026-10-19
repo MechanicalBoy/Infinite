@@ -98,6 +98,41 @@ Any element/pixel/sample kernel can also declare **dynamic pins** right in its c
 
 ---
 
+## Model Context Protocol (MCP) Server
+
+Infinite includes a native Model Context Protocol (MCP) stdio server implementation located in [`tools/npm/infinite-engine`](tools/npm/infinite-engine) (Node.js / npm: `infinite-engine`) and [`tools/mcp/infinite_mcp.py`](tools/mcp/infinite_mcp.py) (Python), allowing AI coding assistants and autonomous agents (Claude Desktop, Cursor, Windsurf, Claude Code) to compose audio, render visuals, and inspect node graphs headlessly.
+
+### One-Command Setup
+
+```bash
+# Automatically configure Claude Desktop, Cursor, and Windsurf:
+npx -y infinite-engine init
+
+# Or via Smithery registry:
+npx -y @smithery/cli install infinite-engine --client claude
+npx -y @smithery/cli install infinite-engine --client cursor
+```
+
+### Implemented MCP Tools
+
+The server implements nine native MCP tools adhering to the Model Context Protocol specification:
+
+| MCP Tool | Description |
+|---|---|
+| `infinite_synthesize_field_synth` | Synthesise WAV audio from an inline Field DSP kernel |
+| `infinite_synthesize_field_notes` | Generate algorithmic MIDI sequences and Euclidean rhythms into audio |
+| `infinite_process_field_effect` | Process audio through an inline Field per-sample DSP filter or wavefolder kernel |
+| `infinite_render_video` | Render 60fps MP4 video with synchronized audio from GLSL or JavaScript sketches |
+| `infinite_render_frame` | Render a still PNG frame from a shader, sketch, or `.inf` patch file |
+| `infinite_validate_patch` | Validate a `.inf` patch file and return structural diagnostics and syntax checks |
+| `infinite_sketch_3d` | Generate procedural 3D meshes from a JavaScript sketch |
+| `infinite_field_primitive` | Generate parametric 3D point surfaces from Field UV equations |
+| `infinite_field_modifier` | Deform, normalise, and shade a 3D mesh via Field vertex modifiers |
+
+For full tool schemas, architecture details, and custom prompts, see [`tools/npm/infinite-engine/README.md`](tools/npm/infinite-engine/README.md) and [`AGENT.md`](AGENT.md).
+
+---
+
 ## Installation & Quick Start
 
 ### Pre-built App (macOS, Windows & Linux)
