@@ -28,4 +28,24 @@ assert.equal(await readToken("wrong", t), null); assert.equal(await readToken("s
 assert.equal(await readToken("s3cret", await makeToken("s3cret", { email: "x", exp: 1 })), null, "expired rejected");
 assert.match(await (await get(await unsubscribeLink(env, "c@d.co", "artists"))).text(), /unsubscribed/); assert.equal(rows.get("c@d.co|artists").status, "unsubscribed");
 assert.match(await (await get("https://x.test/api/unsubscribe?t=" + encodeURIComponent(t))).text(), /not valid/, "confirm token cannot unsubscribe");
+
+// MCP HTTP endpoint tests
+const mcpGet = await get("https://x.test/api/mcp");
+assert.equal(mcpGet.status, 200);
+const mcpInfo = await mcpGet.json();
+assert.equal(mcpInfo.name, "infinite-engine");
+
+const mcpInit = await worker.fetch(new Request("https://x.test/api/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }) }), env);
+assert.equal(mcpInit.status, 200);
+const initRes = await mcpInit.json();
+assert.equal(initRes.result.serverInfo.name, "infinite-engine");
+
+const mcpList = await worker.fetch(new Request("https://x.test/api/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }) }), env);
+const listRes = await mcpList.json();
+assert.equal(listRes.result.tools.length, 4);
+
+const mcpCall = await worker.fetch(new Request("https://x.test/api/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "infinite_get_embed_snippet", arguments: { slug: "cyber-tunnel" } } }) }), env);
+const callRes = await mcpCall.json();
+assert.match(callRes.result.content[0].text, /cyber-tunnel/);
+
 console.log("ok");

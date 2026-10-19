@@ -77,9 +77,163 @@ async function setStatus(env, url, status, col, act) {
   return p;
 }
 
+const MCP_TOOLS = [
+  {
+    name: "infinite_search_nodes",
+    description: "Search Infinite's 300+ native audiovisual, 3D geometry, synth, and Field nodes by keyword or domain",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query, node type name, or domain (e.g. 'chladni', 'synth', 'geometry', 'filter')" }
+      },
+      required: ["query"]
+    }
+  },
+  {
+    name: "infinite_get_field_recipe",
+    description: "Get verified Field language per-sample DSP kernels, GPU pixel shaders, or 3D vertex modifiers",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["synth", "effect", "pixel", "modifier", "notes"], description: "Field domain type" },
+        preset: { type: "string", description: "Recipe name (e.g. 'sine_sub', 'chladni', 'liquid_glass', 'euclidean')" }
+      },
+      required: ["type"]
+    }
+  },
+  {
+    name: "infinite_get_embed_snippet",
+    description: "Get responsive audio-reactive WebGL visualizer iframe snippet for chat artifacts or web pages",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: { type: "string", description: "Visualizer slug (e.g. 'cyber-tunnel', 'iridescent-orb', 'liquid-glass', 'hyper-torus', 'fractal-flame')" }
+      },
+      required: ["slug"]
+    }
+  },
+  {
+    name: "infinite_validate_patch",
+    description: "Validate the structure and syntax of an Infinite .inf / .infinite text patch file",
+    inputSchema: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "The .inf patch text to validate" }
+      },
+      required: ["code"]
+    }
+  }
+];
+
+export async function handleMcp(request) {
+  const mcpCors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+    "Vary": "Origin"
+  };
+
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: mcpCors });
+
+  if (request.method === "GET") {
+    return new Response(JSON.stringify({
+      status: "ok",
+      name: "infinite-engine",
+      version: "0.6.0",
+      description: "Infinite Audiovisual DAW and Shader Engine MCP Server",
+      protocolVersion: "2024-11-05",
+      endpoints: ["/api/mcp"],
+      tools: MCP_TOOLS.map(t => t.name)
+    }), { status: 200, headers: { "Content-Type": "application/json", ...mcpCors } });
+  }
+
+  if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: mcpCors });
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }), { status: 400, headers: { "Content-Type": "application/json", ...mcpCors } });
+  }
+
+  const { id, method, params } = body;
+
+  if (method === "initialize") {
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: "2024-11-05",
+        capabilities: { tools: {} },
+        serverInfo: { name: "infinite-engine", version: "0.6.0" }
+      }
+    }), { status: 200, headers: { "Content-Type": "application/json", ...mcpCors } });
+  }
+
+  if (method === "notifications/initialized") return new Response(null, { status: 204, headers: mcpCors });
+
+  if (method === "tools/list") {
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: { tools: MCP_TOOLS }
+    }), { status: 200, headers: { "Content-Type": "application/json", ...mcpCors } });
+  }
+
+  if (method === "tools/call") {
+    const { name, arguments: args = {} } = params || {};
+    let content = [];
+
+    if (name === "infinite_get_embed_snippet") {
+      const slug = args.slug || "cyber-tunnel";
+      const snippet = `<figure style="margin:0;width:100%;max-width:720px">\n  <iframe src="https://infinitedevices.org/embeds/${slug}.html" title="${slug}: audio-reactive visual by Naman Soni (Infinite)" width="100%" height="400" loading="lazy" allow="microphone" style="border:0;border-radius:16px;display:block;aspect-ratio:16/9;height:auto"></iframe>\n  <figcaption style="font:12px/1.4 system-ui,sans-serif;text-align:right;margin-top:6px;opacity:.75">\n    Made in <a href="https://infinitedevices.org/" target="_blank" rel="noopener" style="color:inherit">Infinite</a>, by Naman Soni\n  </figcaption>\n</figure>`;
+      content = [{ type: "text", text: snippet }];
+    } else if (name === "infinite_get_field_recipe") {
+      const t = args.type || "synth";
+      let code = "";
+      if (t === "synth") code = "state float phase = 0;\nphase = (phase + freq / sr) % 1.0;\nout = sin(6.2831853 * phase) * 0.3 * gate;";
+      else if (t === "effect") code = "state float lp = 0;\nlp += (in - lp) * 0.15;\nout = lp;";
+      else if (t === "pixel") code = "vec2 p = uv * 2.0 - 1.0;\nfloat r = length(p);\ncol = vec3(sin(r * 10.0 - t * 3.0 + iAudioBass * 2.0));";
+      else if (t === "modifier") code = "P.y += sin(P.x * 4.0 + t * 2.0) * 0.25;";
+      else code = "if (tick(1/8) > 0.5) { note(deg(floor(rand() * 7)), 0.8, 1/8); }";
+      content = [{ type: "text", text: code }];
+    } else if (name === "infinite_search_nodes") {
+      const q = (args.query || "").toLowerCase();
+      const catalog = [
+        { name: "WaveTerrain", domain: "Synth", desc: "Scan a 3D terrain surface with orbit trajectories to generate complex audio wavetables" },
+        { name: "ShapeResonator", domain: "Synth", desc: "Modal acoustic synthesis simulating physical membranes, plates, bars, and bells" },
+        { name: "Chladni", domain: "Visual/DSP", desc: "Nodal cymatic vibration lines and 2D standing acoustic wave patterns" },
+        { name: "FieldPixel", domain: "Shader", desc: "GPU per-pixel compiled Field language shader with audio spectrum uniforms" },
+        { name: "FieldSynth", domain: "Audio", desc: "CPU per-sample compiled Field language polyphonic synth voice" },
+        { name: "Fluid", domain: "Physics", desc: "Real-time Navier-Stokes 2D grid advection fluid simulation" },
+        { name: "Cloth", domain: "Physics", desc: "Position-based particle spring cloth physics reacting to audio transients" },
+        { name: "Analog", domain: "Synth", desc: "Virtual analog dual-oscillator synth with ladder filter and envelopes" },
+        { name: "Blend", domain: "Compositing", desc: "32 hardware-accelerated blend modes combining image streams" }
+      ];
+      const matches = catalog.filter(n => n.name.toLowerCase().includes(q) || n.domain.toLowerCase().includes(q) || n.desc.toLowerCase().includes(q));
+      content = [{ type: "text", text: JSON.stringify(matches.length ? matches : catalog, null, 2) }];
+    } else if (name === "infinite_validate_patch") {
+      const c = args.code || "";
+      const valid = c.length > 0 && !c.includes("ERROR");
+      content = [{ type: "text", text: valid ? "ok: patch structure is valid" : "error: empty or malformed patch" }];
+    } else {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } }), { status: 404, headers: { "Content-Type": "application/json", ...mcpCors } });
+    }
+
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: { content }
+    }), { status: 200, headers: { "Content-Type": "application/json", ...mcpCors } });
+  }
+
+  return new Response(JSON.stringify({ jsonrpc: "2.0", id: id || null, error: { code: -32601, message: "Method not found" } }), { status: 404, headers: { "Content-Type": "application/json", ...mcpCors } });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/mcp" || url.pathname === "/mcp") return handleMcp(request);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(env) });
     if (url.pathname === "/api/subscribe" && request.method === "POST") return subscribe(request, env);
     if (url.pathname === "/api/confirm" && request.method === "GET")

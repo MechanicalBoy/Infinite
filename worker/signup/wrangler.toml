@@ -1,9 +1,9 @@
-name = "infinite-signup"
+name = "old-truth-b4c0"
 main = "index.js"
 compatibility_date = "2026-10-01"
 
 # Route the Worker on the site's own domain so the form posts a same-origin path:
-# routes = [{ pattern = "infinitedevices.org/api/*", zone_name = "infinitedevices.org" }]
+routes = [{ pattern = "infinitedevices.org/api/*", zone_name = "infinitedevices.org" }]
 
 [[d1_databases]]
 binding = "DB"
