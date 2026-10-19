@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Infinite Interactive Embeds Gallery</title>
-  <meta name="description" content="Embeddable, responsive WebGL and WebAudio shaders powered by Infinite (free, open-source modular audiovisual DAW).">
+  <meta name="description" content="Embeddable, responsive WebGL and WebAudio shaders powered by Infinite by Naman Soni.">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0b0d17; color: #f0f0f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px 20px; line-height: 1.6; }
-    .container { max-width: 1200px; margin: 0 auto; }
+    .container { max-width: 1240px; margin: 0 auto; }
     header { text-align: center; margin-bottom: 50px; }
     h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 12px; letter-spacing: -0.02em; }
-    p.sub { font-size: 1.1rem; color: #8f9bb3; max-width: 650px; margin: 0 auto 20px; }
+    p.sub { font-size: 1.1rem; color: #8f9bb3; max-width: 680px; margin: 0 auto 20px; }
     .badge-top { display: inline-block; background: rgba(245, 127, 102, 0.15); color: #f57f66; padding: 4px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; margin-bottom: 16px; border: 1px solid rgba(245, 127, 102, 0.3); }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 30px; }
     .card { background: #131728; border: 1px solid #1f253d; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.2s, border-color 0.2s; }
@@ -20,9 +20,9 @@
     iframe { width: 100%; height: 100%; border: none; }
     .card-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
     .card-title { font-size: 1.2rem; font-weight: 600; text-transform: capitalize; }
-    .card-code { background: #080a12; border: 1px solid #1c2033; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 0.8rem; color: #a0aec0; word-break: break-all; user-select: all; }
-    .card-actions { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 10px; }
-    .btn { background: #222944; color: #fff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: background 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+    .card-code { background: #080a12; border: 1px solid #1c2033; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 0.75rem; color: #a0aec0; word-break: break-all; max-height: 80px; overflow-y: auto; user-select: all; }
+    .card-actions { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 10px; gap: 10px; }
+    .btn { background: #222944; color: #fff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: background 0.2s; display: inline-flex; align-items: center; gap: 6px; border: none; cursor: pointer; }
     .btn:hover { background: #323b61; }
     .btn-primary { background: #f57f66; color: #0b0d17; font-weight: 600; }
     .btn-primary:hover { background: #ff9179; }
@@ -36,17 +36,19 @@
     <header>
       <div class="badge-top">Interactive Embeds</div>
       <h1>Infinite WebGL & WebAudio Widgets</h1>
-      <p class="sub">Audio-reactive shaders and visualizers running in real time with microphone reactivity. Embed them in your portfolio, documentation, or blog.</p>
+      <p class="sub">Audio-reactive shaders and visualizers running in real time with microphone reactivity. Embed them in your portfolio, documentation, or landing page with one click.</p>
       <a href="https://infinitedevices.org" class="btn">Explore Infinite DAW</a>
     </header>
 
     <div class="grid">
+
       <div class="card">
         <div class="iframe-wrap"><iframe src="cyber-tunnel.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Cyber Tunnel</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/cyber-tunnel.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-cyber-tunnel">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/cyber-tunnel.html&quot; title=&quot;Cyber Tunnel — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-cyber-tunnel', this)">Copy Embed Code</button>
             <a href="cyber-tunnel.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -56,8 +58,9 @@
         <div class="iframe-wrap"><iframe src="iridescent-orb.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Iridescent Orb</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/iridescent-orb.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-iridescent-orb">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/iridescent-orb.html&quot; title=&quot;Iridescent Orb — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-iridescent-orb', this)">Copy Embed Code</button>
             <a href="iridescent-orb.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -67,8 +70,9 @@
         <div class="iframe-wrap"><iframe src="hyperspace-tunnel.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Hyperspace Tunnel</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/hyperspace-tunnel.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-hyperspace-tunnel">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/hyperspace-tunnel.html&quot; title=&quot;Hyperspace Tunnel — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-hyperspace-tunnel', this)">Copy Embed Code</button>
             <a href="hyperspace-tunnel.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -78,8 +82,9 @@
         <div class="iframe-wrap"><iframe src="liquid-glass.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Liquid Glass</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/liquid-glass.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-liquid-glass">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/liquid-glass.html&quot; title=&quot;Liquid Glass — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-liquid-glass', this)">Copy Embed Code</button>
             <a href="liquid-glass.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -89,8 +94,9 @@
         <div class="iframe-wrap"><iframe src="hex-lattice.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Hex Lattice</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/hex-lattice.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-hex-lattice">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/hex-lattice.html&quot; title=&quot;Hex Lattice — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-hex-lattice', this)">Copy Embed Code</button>
             <a href="hex-lattice.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -100,8 +106,9 @@
         <div class="iframe-wrap"><iframe src="phyllotaxis-bloom.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Phyllotaxis Bloom</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/phyllotaxis-bloom.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-phyllotaxis-bloom">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/phyllotaxis-bloom.html&quot; title=&quot;Phyllotaxis Bloom — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-phyllotaxis-bloom', this)">Copy Embed Code</button>
             <a href="phyllotaxis-bloom.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -111,8 +118,9 @@
         <div class="iframe-wrap"><iframe src="metaball-lens.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Metaball Lens</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/metaball-lens.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-metaball-lens">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/metaball-lens.html&quot; title=&quot;Metaball Lens — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-metaball-lens', this)">Copy Embed Code</button>
             <a href="metaball-lens.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -122,8 +130,9 @@
         <div class="iframe-wrap"><iframe src="ordered-dither.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Ordered Dither</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/ordered-dither.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-ordered-dither">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/ordered-dither.html&quot; title=&quot;Ordered Dither — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-ordered-dither', this)">Copy Embed Code</button>
             <a href="ordered-dither.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -133,8 +142,9 @@
         <div class="iframe-wrap"><iframe src="pixel-plate.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Pixel Plate</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/pixel-plate.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-pixel-plate">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/pixel-plate.html&quot; title=&quot;Pixel Plate — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-pixel-plate', this)">Copy Embed Code</button>
             <a href="pixel-plate.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -144,8 +154,9 @@
         <div class="iframe-wrap"><iframe src="harmonic-warp.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Harmonic Warp</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/harmonic-warp.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-harmonic-warp">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/harmonic-warp.html&quot; title=&quot;Harmonic Warp — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-harmonic-warp', this)">Copy Embed Code</button>
             <a href="harmonic-warp.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
@@ -155,17 +166,37 @@
         <div class="iframe-wrap"><iframe src="hyper-torus.html" loading="lazy"></iframe></div>
         <div class="card-body">
           <div class="card-title">Hyper Torus</div>
-          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/hyper-torus.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-code" id="code-hyper-torus">&lt;figure style=&quot;margin:0;width:100%;max-width:720px;&quot;&gt;&lt;iframe src=&quot;https://infinitedevices.org/embeds/hyper-torus.html&quot; title=&quot;Hyper Torus — Audio-Reactive Visualizer by Naman Soni (Infinite)&quot; width=&quot;100%&quot; height=&quot;400&quot; frameborder=&quot;0&quot; allow=&quot;microphone&quot; style=&quot;border-radius:12px;border:none;display:block;&quot;&gt;&lt;/iframe&gt;&lt;figcaption style=&quot;font-family:sans-serif;font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;&quot;&gt;powered by &lt;a href=&quot;https://infinitedevices.org&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; style=&quot;color:#f57f66;text-decoration:none;&quot;&gt;infinite by naman soni&lt;/a&gt;&lt;/figcaption&gt;&lt;/figure&gt;</div>
           <div class="card-actions">
+            <button class="btn btn-primary" onclick="copySnippet('code-hyper-torus', this)">Copy Embed Code</button>
             <a href="hyper-torus.html" target="_blank" class="btn">Full Screen</a>
           </div>
         </div>
       </div>
+
     </div>
 
     <footer>
       <p>Powered by <a href="https://infinitedevices.org">Infinite</a> &bull; Created by Naman Soni &bull; Open Source under MIT</p>
     </footer>
   </div>
+
+  <script>
+    function copySnippet(id, btn) {
+      const el = document.getElementById(id);
+      const text = el.innerText || el.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const original = btn.innerText;
+        btn.innerText = "Copied!";
+        btn.style.background = "#48bb78";
+        btn.style.color = "#0b0d17";
+        setTimeout(() => {
+          btn.innerText = original;
+          btn.style.background = "";
+          btn.style.color = "";
+        }, 2000);
+      });
+    }
+  </script>
 </body>
 </html>
