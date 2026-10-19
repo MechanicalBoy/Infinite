@@ -75,7 +75,7 @@ def synthesize_audio(patch_path, out_wav="/tmp/audio.wav", duration=5):
     ], check=True, stdout=subprocess.DEVNULL)
     with open(summary_path) as f:
         data = json.load(f)
-    return {**data, "audio_wav": out_wav, **ATTRIBUTION}
+    return {"ok": True, **data, "audio_wav": out_wav, **ATTRIBUTION}
 
 
 def render_video(glsl=None, sketch_js=None, out_mp4="/tmp/infinite.mp4", duration=5, fps=30, synth="wavetable"):
@@ -165,11 +165,116 @@ cable out 0 visuals
     else:
         shutil.copy(raw_video, out_mp4)
 
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    return {
-        "ok": True,
-        "video_path": out_mp4,
-        "duration": duration,
-        "fps": fps,
-        **ATTRIBUTION
-    }
+def field_synth(code, out_wav="/tmp/field_synth.wav", duration=5):
+    bin_path = find_binary()
+    if not bin_path:
+        raise RuntimeError("Infinite binary not found.")
+    tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+    esc = code.replace('\\', '\\\\').replace('\n', '\\n')
+    patch = f"""infinite-patch 1
+node 1 Notes Random Note Generator
+  id notes
+end
+node 2 Synths Field Synth
+  id fsynth
+  s code {esc}
+end
+node 3 Utility Audio Out
+  id speaker
+end
+note fsynth 0 notes
+aud speaker 0 fsynth
+"""
+    tmp.write(patch.encode())
+    tmp.close()
+    res = synthesize_audio(tmp.name, out_wav, duration)
+    os.remove(tmp.name)
+    return res
+
+
+def field_notes(code, synth_type="wavetable", out_wav="/tmp/field_notes.wav", duration=5):
+    bin_path = find_binary()
+    if not bin_path:
+        raise RuntimeError("Infinite binary not found.")
+    tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+    esc = code.replace('\\', '\\\\').replace('\n', '\\n')
+    synth_node = "Synths Wavetable" if synth_type == "wavetable" else "Synths FM"
+    patch = f"""infinite-patch 1
+node 1 Notes Field Notes
+  id fnotes
+  s code {esc}
+end
+node 2 {synth_node}
+  id synth
+end
+node 3 Utility Audio Out
+  id speaker
+end
+note synth 0 fnotes
+aud speaker 0 synth
+"""
+    tmp.write(patch.encode())
+    tmp.close()
+    res = synthesize_audio(tmp.name, out_wav, duration)
+    os.remove(tmp.name)
+    return res
+
+
+def sketch_3d(js_code, out_png="/tmp/sketch3d.png", time_sec=1.0):
+    bin_path = find_binary()
+    if not bin_path:
+        raise RuntimeError("Infinite binary not found.")
+    tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+    esc = js_code.replace('\\', '\\\\').replace('\n', '\\n')
+    patch = f"""infinite-patch 1
+node 1 3D Sketch 3D
+  id sk3d
+  s code {esc}
+end
+node 2 3D Render 3D
+  id r3d
+  f width 720
+  f height 720
+end
+node 3 Utility Output
+  id out
+end
+geo r3d 0 sk3d
+cable out 0 r3d
+"""
+    tmp.write(patch.encode())
+    tmp.close()
+    res = render_frame(tmp.name, out_png, time_sec)
+    os.remove(tmp.name)
+    return res
+
+
+def field_primitive(code, topology_int=0, out_png="/tmp/field_primitive.png", time_sec=1.0):
+    bin_path = find_binary()
+    if not bin_path:
+        raise RuntimeError("Infinite binary not found.")
+    tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+    esc = code.replace('\\', '\\\\').replace('\n', '\\n')
+    patch = f"""infinite-patch 1
+node 1 3D Field Primitive
+  id fprim
+  i topology {topology_int}
+  s code {esc}
+end
+node 2 3D Render 3D
+  id r3d
+  f width 720
+  f height 720
+end
+node 3 Utility Output
+  id out
+end
+geo r3d 0 fprim
+cable out 0 r3d
+"""
+    tmp.write(patch.encode())
+    tmp.close()
+    res = render_frame(tmp.name, out_png, time_sec)
+    os.remove(tmp.name)
+    return res
+
