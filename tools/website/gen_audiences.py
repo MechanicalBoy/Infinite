@@ -177,10 +177,10 @@ def ctl(c):
 
 def lab_html(a):
     L = a["lab"]; k = L["kind"]
-    side = f'<h3>{e(L["title"])}</h3><p>{e(L["text"])}</p>'
+    side = f'<h3>{e(L["title"])}</h3>'
     ctls = "".join(ctl(c) for c in L.get("ctl", []))
     code = f'<pre class="aud-code"><code>{hl(L["code"])}</code></pre>' if L.get("code") else ""
-    note = f'<p class="lab-note">{e(L["note"])}</p>' if L.get("note") else ""
+    note = ""
     if k == "shader":
         return f'''<div class="lab" data-lab="shader" data-shader="{L["shader"]}" data-s="{L.get("s", 0)}">
           <div class="lab-view"><canvas aria-label="A live shader you can change with the sliders" role="img"></canvas></div>
@@ -244,7 +244,7 @@ def main_html(a, rel):
       <section class="aud-section reveal">
         <h2>{e(B["title"])}</h2>
         <p class="sec-sub">{e(B["sub"])}</p>
-        <div class="bench"><img class="bench-img" src="assets/nodes/bench-{a["slug"]}.webp" alt="{e(alt)}" width="{w}" height="{h}" decoding="async"><ul class="bench-names">{names}</ul></div>
+        <div class="bench"><img class="bench-img" src="assets/nodes/bench-{a["slug"]}.webp" alt="{e(alt)}" width="{w}" height="{h}" decoding="async"></div>
       </section>'''
     reel = ""
     if a.get("reel"):
@@ -359,7 +359,7 @@ def shell(rel, title, desc, lds, main, extra_head="", extra_js=""):
   <link rel="stylesheet" href="style.css?v={chrome.CSS_VERSION}">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
   <link rel="stylesheet" href="blog.css?v=7d072fe5">
-  <link rel="stylesheet" href="audience.css?v=b0b3e498">
+  <link rel="stylesheet" href="audience.css?v=15dcf2d9">
   {ldtags}{extra_head}
   <script>document.documentElement.classList.add('js-reveal')</script>
 </head>

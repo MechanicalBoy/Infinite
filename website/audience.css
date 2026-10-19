@@ -189,3 +189,12 @@
   .bench-img { width: auto; max-width: none; height: 220px; }
   .bench-names { position: sticky; left: 0; }
 }
+
+/* v3: demos carry a title and the control, nothing else. Status text stays for screen readers only. */
+.bar-state, .pad small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.pad { border-radius: var(--r-pill); min-height: 44px; }
+.bench-names { display: none; }
+@media (max-width: 600px) {
+  .bench { overflow: visible; padding: 12px; }
+  .bench-img { width: 100%; max-width: 100%; height: auto; max-height: none; }
+}

@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="style.css?v=8edf4baf">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
   <link rel="stylesheet" href="blog.css?v=7d072fe5">
-  <link rel="stylesheet" href="audience.css?v=b0b3e498">
+  <link rel="stylesheet" href="audience.css?v=15dcf2d9">
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "name": "Infinite for developers: headless CLI, Python SDK and MCP server", "url": "https://infinitedevices.org/developers.html", "description": "Run Infinite without a window. Render video and audio from a text patch, call it from Python, or give an AI agent the nine MCP tools. Free and open source.", "isPartOf": {"@type": "WebSite", "name": "Infinite", "url": "https://infinitedevices.org/"}, "about": {"@type": "SoftwareApplication", "name": "Infinite", "applicationCategory": "MultimediaApplication", "operatingSystem": "macOS, Windows, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}}</script>
   <script>document.documentElement.classList.add('js-reveal')</script>
 </head>
@@ -131,7 +131,7 @@
 
       <section class="aud-section reveal">
         <div class="lab" data-lab="term">
-          <div class="lab-side"><h3>Three ways in</h3><p>Pick a way to call the same engine. The sheet on the right shows the idea: a patch rendered to frames, one after another.</p><div class="cmd-tabs" role="tablist" aria-label="Ways to call Infinite"><button role="tab" type="button" id="t0" aria-controls="p0" aria-selected="true">Command line</button><button role="tab" type="button" id="t1" aria-controls="p1" aria-selected="false">Python</button><button role="tab" type="button" id="t2" aria-controls="p2" aria-selected="false">MCP</button></div><div role="tabpanel" id="p0" aria-labelledby="t0" class="term-panel"><div style="position:relative"><pre class="aud-code"><code>Infinite --validate hello.inf
+          <div class="lab-side"><h3>Three ways in</h3><div class="cmd-tabs" role="tablist" aria-label="Ways to call Infinite"><button role="tab" type="button" id="t0" aria-controls="p0" aria-selected="true">Command line</button><button role="tab" type="button" id="t1" aria-controls="p1" aria-selected="false">Python</button><button role="tab" type="button" id="t2" aria-controls="p2" aria-selected="false">MCP</button></div><div role="tabpanel" id="p0" aria-labelledby="t0" class="term-panel"><div style="position:relative"><pre class="aud-code"><code>Infinite --validate hello.inf
 Infinite --explain hello.inf
 Infinite --frame hello.inf 0,1,2 pics/ --contact-sheet sheet.png
 Infinite --render hello.inf hello.mp4 --duration 4 --fps 30
@@ -148,7 +148,7 @@ python3
       &quot;args&quot;: [&quot;-y&quot;, &quot;infinite-engine&quot;, &quot;serve&quot;]
     }
   }
-}</code></pre><button class="copy" type="button">Copy</button></div><p>One command configures Claude Desktop, Cursor and Windsurf. <a href="https://www.npmjs.com/package/infinite-engine" target="_blank" rel="noopener">npm package</a> and <a href="https://smithery.ai" target="_blank" rel="noopener">Smithery registry</a>.</p></div><button class="run" type="button">Render again</button><p class="lab-note">Illustration of the flow; the guide lists the real output files.</p></div>
+}</code></pre><button class="copy" type="button">Copy</button></div><p>One command configures Claude Desktop, Cursor and Windsurf. <a href="https://www.npmjs.com/package/infinite-engine" target="_blank" rel="noopener">npm package</a> and <a href="https://smithery.ai" target="_blank" rel="noopener">Smithery registry</a>.</p></div><button class="run" type="button">Render again</button></div>
           <div class="lab-view"><canvas aria-label="A contact sheet of twelve frames filling in one by one" role="img"></canvas></div></div>
       </section>
 

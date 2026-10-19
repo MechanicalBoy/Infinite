@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="style.css?v=8edf4baf">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
   <link rel="stylesheet" href="blog.css?v=7d072fe5">
-  <link rel="stylesheet" href="audience.css?v=b0b3e498">
+  <link rel="stylesheet" href="audience.css?v=15dcf2d9">
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "name": "Infinite for VJs: live visuals that follow the music", "url": "https://infinitedevices.org/vjs.html", "description": "Sound-driven visuals with Syphon, Spout and NDI out, Show Set patch switching on the bar, a show lock and a panic key. Free.", "isPartOf": {"@type": "WebSite", "name": "Infinite", "url": "https://infinitedevices.org/"}, "about": {"@type": "SoftwareApplication", "name": "Infinite", "applicationCategory": "MultimediaApplication", "operatingSystem": "macOS, Windows, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}}</script>
   <script>document.documentElement.classList.add('js-reveal')</script>
 </head>
@@ -132,13 +132,13 @@
       <section class="aud-section reveal">
         <h2>A rig in five nodes</h2>
         <p class="sec-sub">Pictures in, sound to drive them, effects, then out to the projector.</p>
-        <div class="bench"><img class="bench-img" src="assets/nodes/bench-vjs.webp" alt="Video: Hardware-accelerated video in.; Audio Analyze: Turns sound into numbers a knob can follow.; Trails: A fading trail on every beat.; Syphon Out: Send the picture to another app on macOS.; NDI Out: Send it over the network." width="1148" height="396" decoding="async"><ul class="bench-names"><li>Video</li><li>Audio Analyze</li><li>Trails</li><li>Syphon Out</li><li>NDI Out</li></ul></div>
+        <div class="bench"><img class="bench-img" src="assets/nodes/bench-vjs.webp" alt="Video: Hardware-accelerated video in.; Audio Analyze: Turns sound into numbers a knob can follow.; Trails: A fading trail on every beat.; Syphon Out: Send the picture to another app on macOS.; NDI Out: Send it over the network." width="1148" height="396" decoding="async"></div>
       </section>
       <section class="aud-section reveal">
         <div class="lab" data-lab="show">
           <div class="lab-view"><canvas aria-label="Beat-driven visuals that switch scene on the bar" role="img"></canvas></div>
-          <div class="lab-side"><h3>Switch on the bar</h3><p>Tap a scene while the beat runs. It waits for the next bar and then fades in, the way Show Set switches patches. Change the tempo and the visuals follow.</p><div class="ctl"><label for="c-bpm">Tempo</label><output for="c-bpm"></output><input id="c-bpm" type="range" min="0" max="1000" step="1" value="500" data-fmt="1" data-lo="60" data-hi="180" data-dp="0" data-unit=" BPM"></div><div class="pads"><button class="pad live" type="button"><span>Tunnel</span><small>scene 1</small></button><button class="pad" type="button"><span>Kaleidoscope</span><small>scene 2</small></button><button class="pad" type="button"><span>Grid</span><small>scene 3</small></button></div>
-            <div class="beats" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i><span class="bar-state" aria-live="polite">Playing scene 1</span></div><p class="lab-note">A browser demo of the idea. In the app each scene is a whole patch.</p></div></div>
+          <div class="lab-side"><h3>Switch on the bar</h3><div class="ctl"><label for="c-bpm">Tempo</label><output for="c-bpm"></output><input id="c-bpm" type="range" min="0" max="1000" step="1" value="500" data-fmt="1" data-lo="60" data-hi="180" data-dp="0" data-unit=" BPM"></div><div class="pads"><button class="pad live" type="button"><span>Tunnel</span><small>scene 1</small></button><button class="pad" type="button"><span>Kaleidoscope</span><small>scene 2</small></button><button class="pad" type="button"><span>Grid</span><small>scene 3</small></button></div>
+            <div class="beats" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i><span class="bar-state" aria-live="polite">Playing scene 1</span></div></div></div>
       </section>
 
       <section class="aud-section reveal">

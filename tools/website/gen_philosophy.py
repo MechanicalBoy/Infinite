@@ -176,7 +176,7 @@ def main_html():
 
       <section class="aud-section reveal" id="flow">
         <div class="split flip">
-          <figure class="loop-fig">{loop_svg()}<figcaption>Two ends, one loop. Ember is the person acting, Signal is the structure that answers, and Midnight is the space between.</figcaption></figure>
+          <figure class="loop-fig">{loop_svg()}</figure>
           <div class="split-text">
             <h2>Flow, and what breaks it</h2>
             <div class="ptext">
@@ -224,7 +224,7 @@ def ld():
 
 
 def build():
-    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=945e702e">', extra_js='\n  <script src="philosophy.js?v=3" defer></script>')
+    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=a8bd4d1f">', extra_js='\n  <script src="philosophy.js?v=3" defer></script>')
 
 
 def main():

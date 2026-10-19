@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="style.css?v=8edf4baf">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
   <link rel="stylesheet" href="blog.css?v=7d072fe5">
-  <link rel="stylesheet" href="audience.css?v=b0b3e498">
+  <link rel="stylesheet" href="audience.css?v=15dcf2d9">
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "name": "Infinite for creative coders and technologists: Field, sketches and shaders", "url": "https://infinitedevices.org/creative-coders.html", "description": "Write shaders, per-sample audio kernels, 3D surfaces and JavaScript sketches in one node graph with live feedback. Free and open source.", "isPartOf": {"@type": "WebSite", "name": "Infinite", "url": "https://infinitedevices.org/"}, "about": {"@type": "SoftwareApplication", "name": "Infinite", "applicationCategory": "MultimediaApplication", "operatingSystem": "macOS, Windows, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}}</script>
   <script>document.documentElement.classList.add('js-reveal')</script>
 </head>
@@ -132,17 +132,17 @@
       <section class="aud-section reveal">
         <h2>Where your code runs</h2>
         <p class="sec-sub">Each of these nodes takes a few lines of Field or JavaScript.</p>
-        <div class="bench"><img class="bench-img" src="assets/nodes/bench-creative-coders.webp" alt="Field Pixel: A shader in a few lines.; Field Synth: A per-sample audio kernel.; Field Modifier: Deform and shade a mesh.; Sketch: Draw from JavaScript.; Render 3D: Lights, materials and shadows." width="965" height="396" decoding="async"><ul class="bench-names"><li>Field Pixel</li><li>Field Synth</li><li>Field Modifier</li><li>Sketch</li><li>Render 3D</li></ul></div>
+        <div class="bench"><img class="bench-img" src="assets/nodes/bench-creative-coders.webp" alt="Field Pixel: A shader in a few lines.; Field Synth: A per-sample audio kernel.; Field Modifier: Deform and shade a mesh.; Sketch: Draw from JavaScript.; Render 3D: Lights, materials and shadows." width="965" height="396" decoding="async"></div>
       </section>
       <section class="aud-section reveal">
         <div class="lab" data-lab="shader" data-shader="dots" data-s="1">
           <div class="lab-view"><canvas aria-label="A live shader you can change with the sliders" role="img"></canvas></div>
-          <div class="lab-side"><h3>Change two numbers</h3><p>This is the Phyllotaxis Bloom preset from the library: each seed sits at the golden angle from the last. Change the seed count and the turn, the two params the preset exposes.</p><div class="ctl"><label for="c-turn">turn</label><output for="c-turn"></output><input id="c-turn" type="range" min="0" max="1000" step="1" value="544" data-fmt="1" data-lo="-90" data-hi="90" data-dp="0" data-unit=" deg/s"></div><div class="ctl"><label for="c-seeds">seeds</label><output for="c-seeds"></output><input id="c-seeds" type="range" min="0" max="1000" step="1" value="250" data-fmt="1" data-lo="60" data-hi="1500" data-dp="0" data-unit=""></div><pre class="aud-code"><code><span class="k">param float</span> seeds = 420.0 [60.0, 1500.0];
+          <div class="lab-side"><h3>Change two numbers</h3><div class="ctl"><label for="c-turn">turn</label><output for="c-turn"></output><input id="c-turn" type="range" min="0" max="1000" step="1" value="544" data-fmt="1" data-lo="-90" data-hi="90" data-dp="0" data-unit=" deg/s"></div><div class="ctl"><label for="c-seeds">seeds</label><output for="c-seeds"></output><input id="c-seeds" type="range" min="0" max="1000" step="1" value="250" data-fmt="1" data-lo="60" data-hi="1500" data-dp="0" data-unit=""></div><pre class="aud-code"><code><span class="k">param float</span> seeds = 420.0 [60.0, 1500.0];
 <span class="k">param float</span> turn = 8.0 [-90.0, 90.0];
 <span class="c">// ...</span>
 sc = 0.46 / sqrt(seeds);
 rot = turn * 0.0174533 * t;
-sa0 = kk0 * 2.399963 + rot;   <span class="c">// golden angle</span></code></pre><p class="lab-note">Abridged Field source from the Phyllotaxis Bloom preset. The canvas is the same formula as WebGL.</p></div></div>
+sa0 = kk0 * 2.399963 + rot;   <span class="c">// golden angle</span></code></pre></div></div>
       </section>
 
       <section class="aud-section reveal">
