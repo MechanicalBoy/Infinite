@@ -1,12 +1,21 @@
 {
   "queries": [
-    {"q": "touchdesigner alternative", "track": "A", "match": ["touchdesigner", "alternative"]},
-    {"q": "audio reactive visuals", "track": "A", "match": ["audio", "reactive", "visual"]},
-    {"q": "open source vj software", "track": "B", "match": ["vj", "visual", "open source"]},
-    {"q": "vst3 host modular", "track": "B", "match": ["vst", "modular", "host"]},
-    {"q": "node based daw", "track": "B", "match": ["node", "daw", "modular"]},
-    {"q": "generative visuals live performance", "track": "B", "match": ["generative", "visual", "live"]},
-    {"q": "headless render video from script", "track": "A", "match": ["headless", "render", "cli"]},
-    {"q": "linux daw", "track": "B", "match": ["linux", "daw"]}
+    {"q": "touchdesigner alternative", "track": "A", "persona": "creative_coding", "match": ["touchdesigner", "alternative"]},
+    {"q": "audio reactive visuals", "track": "A", "persona": "vj", "match": ["audio", "reactive", "visual"]},
+    {"q": "open source vj software", "track": "B", "persona": "vj", "match": ["vj", "visual", "open source"]},
+    {"q": "vst3 host modular", "track": "B", "persona": "engineering", "match": ["vst", "modular", "host"]},
+    {"q": "node based daw", "track": "B", "persona": "electronic_musicians", "match": ["node", "daw", "modular"]},
+    {"q": "generative visuals live performance", "track": "B", "persona": "vj", "match": ["generative", "visual", "live"]},
+    {"q": "headless render video from script", "track": "A", "persona": "ai_agents", "match": ["headless", "render", "cli"]},
+    {"q": "linux daw", "track": "B", "persona": "electronic_musicians", "match": ["linux", "daw"]},
+    {"q": "paulstretch free mac", "track": "A", "persona": "sound_design", "match": ["paulstretch", "ambient", "mac"]},
+    {"q": "procedural 3d geometry real time", "track": "A", "persona": "cg_artists", "match": ["procedural", "geometry", "3d"]},
+    {"q": "mcp server audio synthesis", "track": "A", "persona": "ai_agents", "match": ["mcp", "audio", "agent"]},
+    {"q": "interactive webgl audio visualizer embed", "track": "A", "persona": "web_dev", "match": ["webgl", "embed", "visualizer"]},
+    {"q": "per sample dsp kernel register machine", "track": "B", "persona": "engineering", "match": ["dsp", "kernel", "audio"]},
+    {"q": "euclidean rhythm sequencer algorithm", "track": "B", "persona": "electronic_musicians", "match": ["euclidean", "sequencer", "rhythm"]},
+    {"q": "automatic visuals for dj set", "track": "B", "persona": "dj", "match": ["dj", "visuals", "set"]},
+    {"q": "lorenz attractor interactive simulation", "track": "B", "persona": "science", "match": ["lorenz", "attractor", "simulation"]}
   ]
 }
+
