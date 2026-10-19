@@ -36,6 +36,15 @@
   "url": "https://infinitedevices.org/blog/hardware-midi-and-controller-mapping-in-infinite.html"
  },
  {
+  "slug": "original-audiovisual-nodes-wave-terrain-shape-resonator-cymatics",
+  "title": "Unique nodes in Infinite: Wave Terrain, Shape Resonator, and Cymatics",
+  "description": "Explore Infinite original nodes: convert images to sound with Wave Terrain, ring 3D geometry with Shape Resonator, and simulate Chladni cymatics.",
+  "date": "2026-10-19",
+  "updated": "2026-10-19",
+  "category": "creative",
+  "url": "https://infinitedevices.org/blog/original-audiovisual-nodes-wave-terrain-shape-resonator-cymatics.html"
+ },
+ {
   "slug": "per-sample-dsp-audio-kernels-in-field-language",
   "title": "Writing 48kHz audio DSP kernels in Field language",
   "description": "Breakdown of Infinite register machine for Field Synth and Effect nodes, compiling per-sample audio DSP kernels at 48kHz.",
