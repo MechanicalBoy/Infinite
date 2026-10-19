@@ -4,7 +4,7 @@ description: why infinite's audio engine is written in modern c++ without a fram
 date: 2026-10-19
 category: engineering
 tags: [c++, dsp, audio, architecture]
-image: assets/nodegraph.png
+image: assets/nodegraph.webp
 image_alt: infinite modular audio graph canvas and node dsp architecture
 keywords: c++ audio dsp without juce, real-time audio thread allocations, spsc lock-free audio queue, vst3 hosting architecture, field dsp language
 status: published
@@ -35,7 +35,7 @@ instead of relying on framework wrappers, infinite speaks directly to plugin api
 - **vst3**: loads the component bundle, queries `IComponent` and `IAudioProcessor`, maps parameters to continuous modulation arrays, and schedules sample-accurate note events.
 - **audio unit (au)**: interacts directly with the coreaudio audio unit v2 and v3 c-api on macos.
 
-parameters on third-party plugins can be modulated in real time by any signal on the canvas—whether an audio lfo, an envelope follower, or a generative javascript sketch.
+parameters on third-party plugins can be modulated in real time by any signal on the canvas, whether an audio lfo, an envelope follower, or a generative javascript sketch.
 
 ![infinite modular canvas](../assets/product_canvas_1400.webp)
 
@@ -52,7 +52,7 @@ z += (in - z) * cutoff
 out = z
 ```
 
-the compiler translates this directly into optimized vector loops evaluated per-sample on the audio thread.
+the compiler translates this directly into optimised vector loops evaluated per-sample on the audio thread.
 
 - try infinite: [infinitedevices.org](https://infinitedevices.org)
 - read the codebase: [github.com/n1m21n/infinite](https://github.com/n1m21n/infinite)
