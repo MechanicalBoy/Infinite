@@ -4,8 +4,8 @@ description: Guide to modular sound design in Infinite DAW: subtractive sub bass
 date: 2026-10-19
 category: creative
 tags: [sound design, synth, electronic music, sub bass, dsp]
-image: assets/howto_visual.webp
-image_alt: modular sound design canvas in infinite daw
+image: assets/blog_sound_design_synth.png
+image_alt: 3d audio spectrum and modular sound design synthesis in infinite
 keywords: sound design daw, sub bass patch, synth pluck tutorial, ambient pad sound design, modular synth linux mac windows
 status: published
 ---

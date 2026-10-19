@@ -4,8 +4,8 @@ description: Connect hardware synthesizers, MIDI controllers, and DMX lighting t
 date: 2026-10-19
 category: product
 tags: [hardware, midi, controller mapping, live performance, dsp]
-image: assets/howto_visual.webp
-image_alt: hardware midi controller mapping interface in infinite daw
+image: assets/blog_hardware_midi.png
+image_alt: hardware midi routing and modulation matrix in infinite
 keywords: midi controller daw, hardware synth routing, low latency midi, live electronic music setup, modular daw
 status: published
 ---
