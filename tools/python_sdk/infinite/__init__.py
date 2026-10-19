@@ -278,3 +278,73 @@ cable out 0 r3d
     os.remove(tmp.name)
     return res
 
+
+def field_effect(code, out_wav="/tmp/field_effect.wav", duration=4, synth_type="wavetable"):
+    bin_path = find_binary()
+    if not bin_path:
+        raise RuntimeError("Infinite binary not found.")
+    tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+    esc = code.replace('\\', '\\\\').replace('\n', '\\n')
+    synth_node = "Synths Wavetable" if synth_type == "wavetable" else "Synths FM"
+    patch = f"""infinite-patch 1
+node 1 Notes Random Note Generator
+  id notes
+end
+node 2 {synth_node}
+  id synth
+end
+node 3 AudioEffects Field Effect
+  id fx
+  s code {esc}
+end
+node 4 Utility Audio Out
+  id speaker
+end
+note synth 0 notes
+aud fx 0 synth
+aud speaker 0 fx
+"""
+    tmp.write(patch.encode())
+    tmp.close()
+    res = synthesize_audio(tmp.name, out_wav, duration)
+    os.remove(tmp.name)
+    return res
+
+
+def field_modifier(mod_code, topology_int=0, out_png="/tmp/field_modifier.png", time_sec=1.0):
+    bin_path = find_binary()
+    if not bin_path:
+        raise RuntimeError("Infinite binary not found.")
+    tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+    esc_mod = mod_code.replace('\\', '\\\\').replace('\n', '\\n')
+    raw_prim = """x = (uv.x - 0.5) * 2.0\nz = (uv.y - 0.5) * 2.0\nP = vec3(x, 0.0, z)\nN = vec3(0.0, 1.0, 0.0)\nCd = vec3(0.8, 0.2, 0.5)\n"""
+    esc_prim = raw_prim.replace('\\', '\\\\').replace('\n', '\\n')
+    patch = f"""infinite-patch 1
+node 1 3D Field Primitive
+  id fprim
+  i topology {topology_int}
+  s code {esc_prim}
+end
+node 2 3D Field Modifier
+  id fmod
+  s code {esc_mod}
+end
+node 3 3D Render 3D
+  id r3d
+  f width 720
+  f height 720
+end
+node 4 Utility Output
+  id out
+end
+geo fmod 0 fprim
+geo r3d 0 fmod
+cable out 0 r3d
+"""
+    tmp.write(patch.encode())
+    tmp.close()
+    res = render_frame(tmp.name, out_png, time_sec)
+    os.remove(tmp.name)
+    return res
+
+

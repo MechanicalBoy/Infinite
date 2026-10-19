@@ -104,3 +104,19 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Scale-Free Network](https://infinitedevices.org/library/scale-free-network.html): A network that grows by preferential attachment: the rich get richer, hubs emerge, and the graph breathes. (file: https://infinitedevices.org/assets/library/sketch/scale-free-network.js)
 - [Rule 110](https://infinitedevices.org/library/rule-110.html): A one-dimensional cellular automaton that is Turing-complete. Gliders scroll down the page, one generation at a time. (file: https://infinitedevices.org/assets/library/sketch/rule-110.js)
 - [Clifford Attractor](https://infinitedevices.org/library/clifford-attractor.html): A strange attractor drawn as a cloud of 20,000 points. Slowly drifting parameters keep reshaping the lace. (file: https://infinitedevices.org/assets/library/sketch/clifford-attractor.js)
+
+## Embeds & Interactive Widgets
+
+- [Embed Directory](https://infinitedevices.org/embeds/): Gallery of 11 live audio-reactive WebGL widgets ready for one-click iframe embedding.
+- [Cyber Tunnel](https://infinitedevices.org/embeds/cyber-tunnel.html): Neon geometric tunnel with audio pulse.
+- [Iridescent Orb](https://infinitedevices.org/embeds/iridescent-orb.html): Holographic floating sphere with iridescent rim lighting.
+- [Metaball Lens](https://infinitedevices.org/embeds/metaball-lens.html): Liquid refracting metaball field.
+- [Ordered Dither](https://infinitedevices.org/embeds/ordered-dither.html): 4x4 Bayer monochrome halftone aesthetic.
+- [Neon Matrix](https://infinitedevices.org/embeds/neon-matrix.html): Grid distortion wave responsive to sound.
+
+## AI Agent Tools & SDK
+
+- [Model Context Protocol (MCP)](https://github.com/n1m21n/Infinite/tree/main/tools/mcp): Native stdio MCP server (`python3 tools/mcp/infinite_mcp.py`) providing tools for audio DSP, 3D procedural meshes, MIDI sequencing, and video rendering.
+- [Python SDK](https://github.com/n1m21n/Infinite/tree/main/tools/python_sdk): Headless Python wrapper (`infinite.field_synth`, `infinite.field_effect`, `infinite.field_notes`, `infinite.sketch_3d`, `infinite.field_primitive`, `infinite.render_video`).
+- [Agent Specification](https://github.com/n1m21n/Infinite/blob/main/AGENT.md): Detailed instruction manual for AI coding assistants.
+

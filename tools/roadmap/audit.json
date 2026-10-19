@@ -1,16 +1,16 @@
 {
  "merges": [
-  406,
-  441
+  408,
+  443
  ],
  "direct": [
   500,
-  626
+  627
  ],
  "notes_total": 389,
  "evidence": [
-  615,
-  707
+  617,
+  709
  ],
  "per_release": {
   "v0.1": {
@@ -123,6 +123,7 @@
   }
  },
  "loose": [
+  "2026-10-16 f8eda85 notes sync: NOW, HISTORY, roadmap data",
   "2026-10-14 9b57324 agent-language: record T4 pass on dev and held-out, correct the T4 diagnosis, release clai",
   "2026-10-14 ed5d97f agentlang: ship nodefacts (ask returns keys), SPEC output/ask/Field Notes rules, option na",
   "2026-10-14 94bacf1 agentlang: fix t4dev output path",

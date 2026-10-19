@@ -126,6 +126,62 @@ cable out 0 r3d
 """
 
 
+def build_field_effect_patch(code, synth_type="wavetable"):
+    esc = escape_code(code)
+    synth_node = "Synths Wavetable" if synth_type == "wavetable" else "Synths FM"
+    return f"""infinite-patch 1
+node 1 Notes Random Note Generator
+  id notes
+end
+node 2 {synth_node}
+  id synth
+end
+node 3 AudioEffects Field Effect
+  id fx
+  s code {esc}
+end
+node 4 Utility Audio Out
+  id speaker
+end
+note synth 0 notes
+aud fx 0 synth
+aud speaker 0 fx
+"""
+
+
+def build_field_modifier_patch(mod_code, topology_int=0):
+    esc_mod = escape_code(mod_code)
+    raw_prim = """x = (uv.x - 0.5) * 2.0
+z = (uv.y - 0.5) * 2.0
+P = vec3(x, 0.0, z)
+N = vec3(0.0, 1.0, 0.0)
+Cd = vec3(0.8, 0.2, 0.5)
+"""
+    prim_code = escape_code(raw_prim)
+    return f"""infinite-patch 1
+node 1 3D Field Primitive
+  id fprim
+  i topology {topology_int}
+  s code {prim_code}
+end
+node 2 3D Field Modifier
+  id fmod
+  s code {esc_mod}
+end
+node 3 3D Render 3D
+  id r3d
+  f width 720
+  f height 720
+end
+node 4 Utility Output
+  id out
+end
+geo fmod 0 fprim
+geo r3d 0 fmod
+cable out 0 r3d
+"""
+
+
 def build_sketch2d_patch(js_code):
     esc = escape_code(js_code)
     return f"""infinite-patch 1
@@ -183,6 +239,33 @@ if (tick(1/16) > 0.5) {
 """.strip(),
         "builder": build_field_notes_patch
     },
+    "field_effect_moog": {
+        "family": "field_effect",
+        "title": "moog 4-pole ladder filter with resonance and saturation",
+        "code": """param float cutoff = 2200.0 [80.0, 14000.0]
+param float res = 0.70 [0.0, 0.98]
+param float drive = 1.50 [1.0, 4.0]
+param float mix = 1.0 [0.0, 1.0]
+state float s1 = 0
+state float s2 = 0
+state float s3 = 0
+state float s4 = 0
+
+f = clamp((cutoff / sr) * 2.2, 0.005, 0.42)
+feedback = (s4 * res * 3.6) / (1.0 + abs(s4) * 0.8)
+u = (in * drive) - feedback
+sat = u / (1.0 + abs(u) * 0.3)
+
+s1 = s1 + f * (sat - s1)
+s2 = s2 + f * (s1 - s2)
+s3 = s3 + f * (s2 - s3)
+s4 = s4 + f * (s3 - s4)
+
+wet = s4
+out = in * (1.0 - mix) + wet * mix
+""".strip(),
+        "builder": build_field_effect_patch
+    },
     "sketch3d_rotating_torus": {
         "family": "sketch3d",
         "title": "procedural 3d torus mesh in javascript",
@@ -213,6 +296,17 @@ N = normalize(vec3(0.0, 1.0, 0.0))
 Cd = vec3(0.2 + 0.4 * (y + 0.5), 0.6, 0.9)
 """.strip(),
         "builder": lambda code: build_field_primitive_patch(code, 0)
+    },
+    "field_modifier_wave": {
+        "family": "field_modifier",
+        "title": "parametric mesh wave ripple deformer",
+        "code": """param float speed = 2.0 [0, 10]
+param float height = 0.3 [0, 2]
+dist = length(P.xz)
+P.y += sin(dist * 4.0 - t * speed) * height
+Cd = vec3(0.5 + 0.5 * sin(P.y * 5.0), 0.4, 0.8)
+""".strip(),
+        "builder": lambda code: build_field_modifier_patch(code, 0)
     }
 }
 
@@ -241,7 +335,7 @@ def test_preset(name, out_dir="/tmp/infinite_nodes"):
     print(f"ok: validated {preset['title']} ({preset['family']})")
 
     # 2. test render if visual or audio
-    if preset["family"] in ["field_synth", "field_notes"]:
+    if preset["family"] in ["field_synth", "field_notes", "field_effect"]:
         wav_path = os.path.join(out_dir, f"{name}.wav")
         sum_path = os.path.join(out_dir, f"{name}_summary.json")
         subprocess.run([

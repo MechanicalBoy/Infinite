@@ -3080,3 +3080,9 @@
 {"ts": "2026-10-15T02:34:29+00:00", "event": "add", "id": "R791", "after": [], "user": false, "src": "plan:image-fx", "track": "engine", "kind": "feature", "horizon": "later", "title": "Plan: Image effects to industry grade", "why": "docs/plans/image-fx"}
 {"ts": "2026-10-15T02:34:29+00:00", "event": "add", "id": "R792", "after": [], "user": false, "src": "plan:metal-compute.md", "track": "engine", "kind": "feature", "horizon": "later", "title": "Plan: Metal compute for particles and simulations (R556): design, scope and gates", "why": "docs/plans/metal-compute.md"}
 {"ts": "2026-10-15T02:34:29+00:00", "event": "add", "id": "R793", "after": [], "user": false, "src": "plan:v0.6-quality", "track": "engine", "kind": "feature", "horizon": "later", "title": "Plan: v0.6 plan: quality lead", "why": "docs/plans/v0.6-quality"}
+{"ts": "2026-10-14T06:43:55+05:30", "event": "add", "id": "R794", "after": [], "user": false, "src": "merge:ade6778", "track": "nodes", "kind": "feature", "horizon": "later", "title": "Feature/v06-sound (v0.6 Block 2)", "why": "merged into main (ade6778)", "origin": "merge"}
+{"ts": "2026-10-16T08:30:46+05:30", "event": "done", "id": "R794", "why": "merged into main (ade6778)"}
+{"ts": "2026-10-16T08:30:46+05:30", "event": "edit", "id": "R794", "opened": "2026-10-14T06:43:55+05:30", "closed": "2026-10-16T08:30:46+05:30", "release": "", "commits": ["ade6778"]}
+{"ts": "2026-10-15T08:14:15+05:30", "event": "add", "id": "R795", "after": [], "user": false, "src": "merge:d2ab9cb", "track": "nodes", "kind": "feature", "horizon": "later", "title": "Feature/v06-3.7-bevel-inset (v0.6 Block 3)", "why": "merged into main (d2ab9cb)", "origin": "merge"}
+{"ts": "2026-10-16T08:30:51+05:30", "event": "done", "id": "R795", "why": "merged into main (d2ab9cb)"}
+{"ts": "2026-10-16T08:30:51+05:30", "event": "edit", "id": "R795", "opened": "2026-10-15T08:14:15+05:30", "closed": "2026-10-16T08:30:51+05:30", "release": "", "commits": ["d2ab9cb"]}

@@ -86,7 +86,81 @@ function draw(t) {
 
 ---
 
-## 5. Model Context Protocol (MCP) Server
+## 5. Model Context Protocol (MCP) Server & Python SDK
 
-To use Infinite as a native tool in your agent context, launch:
-`python3 tools/mcp/infinite_mcp.py`
+Infinite exposes native headless capabilities to AI coding agents via MCP stdio and Python:
+
+### MCP Server (`tools/mcp/infinite_mcp.py`):
+Launch via JSON-RPC over stdio or configure in Claude Desktop / Cursor:
+- `infinite_render_video`: synthesize audio & render real-time mp4 video (glsl / sketch 2d)
+- `infinite_render_frame`: render single still png frame from patch, glsl, or 2d js sketch
+- `infinite_validate_patch`: validate any .inf patch file
+- `infinite_field_synth`: synthesize audio using a per-sample Field DSP audio kernel (writes `out`, reads `freq`, `gate`, `sr`)
+- `infinite_field_effect`: process incoming audio using a sample-domain Field audio effect kernel (reads `in`, `sr`, writes `out`)
+- `infinite_field_notes`: generate algorithmic MIDI notes using a Field Notes sequencer kernel (`tick()`, `note()`, `deg()`)
+- `infinite_sketch_3d`: generate procedural 3D meshes using JavaScript p5-webgl code (`box`, `torus`, `sphere`)
+- `infinite_field_primitive`: generate parametric procedural 3D surfaces (`uv` -> `P`, `N`, `Cd`)
+- `infinite_field_modifier`: deform and shade 3D meshes with Field vertex shaders (`P`, `N`, `Cd`)
+
+### Python SDK (`tools/python_sdk/infinite`):
+```python
+import infinite
+
+# 1. Per-sample DSP audio synthesis (Field Synth)
+infinite.field_synth("""
+state float phase = 0
+phase = (phase + freq / sr) % 1.0
+out = sin(6.28318 * phase) * 0.4 * gate
+""", out_wav="synth.wav", duration=3)
+
+# 2. Audio processing & filters (Field Effect)
+infinite.field_effect("""
+param float cutoff = 2200.0 [80.0, 14000.0]
+state float z = 0
+z += (in - z) * 0.1
+out = z
+""", out_wav="filtered.wav", duration=3)
+
+# 3. Algorithmic Euclidean MIDI sequencing (Field Notes)
+infinite.field_notes("""
+param float hits = 5 [1, 16]
+state float step = 0
+if (tick(1/16) > 0.5) {
+   on = floor((step + 1) * hits / 16 + 0.001) - floor(step * hits / 16 + 0.001)
+   note(deg(0), 0.9 * on, 1/16)
+   step = (step + 1) % 16
+}
+""", out_wav="rhythm.wav", duration=4)
+
+# 4. Procedural 3D JavaScript geometry (Sketch 3D)
+infinite.sketch_3d("""
+function draw(t) {
+  rotateY(t * 0.8);
+  fill(0.2, 0.6, 0.9);
+  torus(1.2, 0.4, 24, 24);
+}
+""", out_png="torus.png")
+
+# 5. Parametric 3D surfaces (Field Primitive)
+infinite.field_primitive("""
+param float freq = 3.0 [0.5, 8.0]
+x = (uv.x - 0.5) * 3.0; z = (uv.y - 0.5) * 3.0; dist = sqrt(x * x + z * z);
+P = vec3(x, sin(dist * freq - 2.0) * 0.3 * exp(-dist * 0.4), z);
+N = normalize(vec3(0, 1, 0)); Cd = vec3(0.2, 0.6, 0.9);
+""", out_png="terrain.png")
+
+# 6. Audio-reactive video rendering
+infinite.render_video(
+    glsl="p = (uv - 0.5) * aspect; col = vec3(sin(length(p) * 12.0 - t * 2.0));",
+    out_mp4="visuals.mp4",
+    duration=5
+)
+```
+
+---
+
+## 6. Embed Showcase & Live Visuals
+Pre-built interactive WebGL/audio visualizer widgets ready for one-click iframe embedding:
+- Directory: `https://infinitedevices.org/embeds/`
+- Example: `<iframe src="https://infinitedevices.org/embeds/cyber-tunnel.html" width="720" height="720" frameborder="0"></iframe>`
+

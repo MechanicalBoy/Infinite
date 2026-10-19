@@ -25,18 +25,56 @@ ATTRIBUTION = {
 }
 
 
+sys.path.insert(0, os.path.join(ROOT, "tools", "spread"))
+from node_tool_engine import (
+    build_field_synth_patch,
+    build_field_notes_patch,
+    build_field_effect_patch,
+    build_sketch3d_patch,
+    build_field_primitive_patch,
+    build_field_modifier_patch,
+    build_sketch2d_patch,
+    build_field_pixel_patch
+)
+
+
 def find_infinite():
     candidates = [
         "/Applications/Infinite.app/Contents/MacOS/Infinite",
         os.path.join(ROOT, "build", "Infinite.app", "Contents", "MacOS", "Infinite"),
         os.path.join(ROOT, "build-check", "Infinite.app", "Contents", "MacOS", "Infinite"),
         os.path.join(ROOT, "build", "Infinite"),
+        os.path.expanduser("~/Infinite/worktrees/main/build/Infinite.app/Contents/MacOS/Infinite"),
+        os.path.expanduser("~/Infinite/repo/build/Infinite.app/Contents/MacOS/Infinite"),
         shutil.which("Infinite") or "",
+        shutil.which("infinite") or "",
     ]
     for c in candidates:
         if c and os.path.exists(c) and os.access(c, os.X_OK):
             return c
     return None
+
+
+def run_synthesize_audio(patch_path, out_wav="/tmp/infinite.wav", duration=4):
+    binary = find_infinite()
+    if not binary:
+        return {"ok": False, "error": "infinite binary not found", **ATTRIBUTION}
+    summary_json = out_wav + ".summary.json"
+    os.makedirs(os.path.dirname(os.path.abspath(out_wav)), exist_ok=True)
+    r = subprocess.run([
+        binary, "--audio-summary", patch_path, summary_json,
+        "--wav", out_wav, "--duration", str(duration)
+    ], capture_output=True, text=True)
+    if os.path.exists(summary_json):
+        try:
+            with open(summary_json) as f:
+                data = json.load(f)
+            os.remove(summary_json)
+            return {"ok": True, **data, "audio_wav": out_wav, **ATTRIBUTION}
+        except Exception:
+            pass
+    return {"ok": r.returncode == 0, "audio_wav": out_wav, "raw": r.stdout, **ATTRIBUTION}
+
 
 
 def run_validate(patch_path):
@@ -203,6 +241,88 @@ TOOLS = [
             },
             "required": ["patch_file"]
         }
+    },
+    {
+        "name": "infinite_field_synth",
+        "description": "synthesize polyphonic audio using a per-sample Field DSP audio kernel (writes `out`, reads `freq`, `gate`, `sr`) via infinite by naman soni.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "field synth kernel code (e.g. state float phase = 0; phase = (phase + freq/sr)%1.0; out = sin(6.28*phase)*gate;)"},
+                "out_wav": {"type": "string", "default": "/tmp/field_synth.wav", "description": "path to output wav file"},
+                "duration": {"type": "integer", "default": 3, "description": "synthesis duration in seconds"}
+            },
+            "required": ["code"]
+        }
+    },
+    {
+        "name": "infinite_field_effect",
+        "description": "process incoming audio using a sample-domain Field audio effect kernel (reads `in`, `sr`, writes `out`) via infinite by naman soni.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "field effect kernel code (e.g. 1-pole filter, moog ladder filter, waveshaper)"},
+                "out_wav": {"type": "string", "default": "/tmp/field_effect.wav", "description": "path to output wav file"},
+                "duration": {"type": "integer", "default": 3, "description": "synthesis duration in seconds"},
+                "synth_type": {"type": "string", "enum": ["wavetable", "fm"], "default": "wavetable", "description": "source audio synth"}
+            },
+            "required": ["code"]
+        }
+    },
+    {
+        "name": "infinite_field_notes",
+        "description": "generate algorithmic MIDI notes and Euclidean rhythms using a Field Notes sequencer kernel via infinite by naman soni.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "field notes sequencer code (uses `tick()`, `note()`, `deg()`)"},
+                "out_wav": {"type": "string", "default": "/tmp/field_notes.wav", "description": "path to output wav file"},
+                "duration": {"type": "integer", "default": 3, "description": "synthesis duration in seconds"},
+                "synth_type": {"type": "string", "enum": ["wavetable", "fm"], "default": "wavetable", "description": "sound generator synth"}
+            },
+            "required": ["code"]
+        }
+    },
+    {
+        "name": "infinite_sketch_3d",
+        "description": "generate procedural 3D meshes using JavaScript p5-webgl code (`box`, `torus`, `rotateY`, `fill`) and render to PNG via infinite by naman soni.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "js_code": {"type": "string", "description": "3d javascript code with draw(t) and geometry calls"},
+                "out_png": {"type": "string", "default": "/tmp/sketch_3d.png", "description": "path to output png frame"},
+                "time": {"type": "number", "default": 1.0, "description": "render timestamp in seconds"}
+            },
+            "required": ["js_code"]
+        }
+    },
+    {
+        "name": "infinite_field_primitive",
+        "description": "generate parametric procedural 3D surfaces (`uv` -> `P`, `N`, `Cd`) and render to PNG via infinite by naman soni.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "field primitive code mapping uv to P, N, Cd"},
+                "topology_int": {"type": "integer", "default": 0, "description": "mesh topology (0=plane, 1=sphere, 2=torus, 3=box)"},
+                "out_png": {"type": "string", "default": "/tmp/field_primitive.png", "description": "path to output png frame"},
+                "time": {"type": "number", "default": 1.0, "description": "render timestamp in seconds"}
+            },
+            "required": ["code"]
+        }
+    },
+    {
+        "name": "infinite_field_modifier",
+        "description": "deform and color 3D meshes with Field vertex shaders (`P`, `N`, `Cd`) and render to PNG via infinite by naman soni.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "mod_code": {"type": "string", "description": "field modifier code altering P, N, Cd"},
+                "topology_int": {"type": "integer", "default": 0, "description": "base primitive mesh topology (0=plane, 1=sphere, 2=torus, 3=box)"},
+                "out_png": {"type": "string", "default": "/tmp/field_modifier.png", "description": "path to output png frame"},
+                "time": {"type": "number", "default": 1.0, "description": "render timestamp in seconds"}
+            },
+            "required": ["mod_code"]
+        }
     }
 ]
 
@@ -213,7 +333,7 @@ def handle_tool_call(name, args):
         return run_validate(patch_file)
 
     elif name == "infinite_render_frame":
-        out_path = args.get("out_path")
+        out_path = args.get("out_path", "/tmp/infinite_frame.png")
         time_sec = args.get("time", 1.0)
         patch_file = args.get("patch_file")
         tmp_patch = None
@@ -234,7 +354,7 @@ def handle_tool_call(name, args):
         return res
 
     elif name == "infinite_render_video":
-        out_path = args.get("out_path")
+        out_path = args.get("out_path", "/tmp/infinite.mp4")
         duration = args.get("duration", 4)
         synth_type = args.get("synth_type", "wavetable")
         tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
@@ -250,6 +370,83 @@ def handle_tool_call(name, args):
         if os.path.exists(tmp_patch):
             os.remove(tmp_patch)
         return res
+
+    elif name == "infinite_field_synth":
+        code = args.get("code", "")
+        out_wav = args.get("out_wav", "/tmp/field_synth.wav")
+        duration = args.get("duration", 3)
+        tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+        tmp.write(build_field_synth_patch(code).encode())
+        tmp.close()
+        res = run_synthesize_audio(tmp.name, out_wav, duration)
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+        return res
+
+    elif name == "infinite_field_effect":
+        code = args.get("code", "")
+        out_wav = args.get("out_wav", "/tmp/field_effect.wav")
+        duration = args.get("duration", 3)
+        synth_type = args.get("synth_type", "wavetable")
+        tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+        tmp.write(build_field_effect_patch(code, synth_type).encode())
+        tmp.close()
+        res = run_synthesize_audio(tmp.name, out_wav, duration)
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+        return res
+
+    elif name == "infinite_field_notes":
+        code = args.get("code", "")
+        out_wav = args.get("out_wav", "/tmp/field_notes.wav")
+        duration = args.get("duration", 3)
+        synth_type = args.get("synth_type", "wavetable")
+        tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+        tmp.write(build_field_notes_patch(code, synth_type).encode())
+        tmp.close()
+        res = run_synthesize_audio(tmp.name, out_wav, duration)
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+        return res
+
+    elif name == "infinite_sketch_3d":
+        js_code = args.get("js_code", "")
+        out_png = args.get("out_png", "/tmp/sketch_3d.png")
+        time_sec = args.get("time", 1.0)
+        tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+        tmp.write(build_sketch3d_patch(js_code).encode())
+        tmp.close()
+        res = run_render_frame(tmp.name, time_sec, out_png)
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+        return res
+
+    elif name == "infinite_field_primitive":
+        code = args.get("code", "")
+        topology_int = args.get("topology_int", 0)
+        out_png = args.get("out_png", "/tmp/field_primitive.png")
+        time_sec = args.get("time", 1.0)
+        tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+        tmp.write(build_field_primitive_patch(code, topology_int).encode())
+        tmp.close()
+        res = run_render_frame(tmp.name, time_sec, out_png)
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+        return res
+
+    elif name == "infinite_field_modifier":
+        mod_code = args.get("mod_code", "")
+        topology_int = args.get("topology_int", 0)
+        out_png = args.get("out_png", "/tmp/field_modifier.png")
+        time_sec = args.get("time", 1.0)
+        tmp = tempfile.NamedTemporaryFile(suffix=".inf", delete=False)
+        tmp.write(build_field_modifier_patch(mod_code, topology_int).encode())
+        tmp.close()
+        res = run_render_frame(tmp.name, time_sec, out_png)
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+        return res
+
 
     return {"ok": False, "error": f"unknown tool {name}", **ATTRIBUTION}
 
