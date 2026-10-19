@@ -16,8 +16,8 @@ import json, os, re, sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 W = os.path.join(ROOT, "website")
 GH = "https://github.com/n1m21n/Infinite"
-CSS_VERSION = "81"   # style.css cache key; bump when the menu or footer CSS changes
-JS_VERSION = "11"    # site.js cache key; bump when the menu script changes
+CSS_VERSION = "85"   # style.css cache key; bump when the menu or footer CSS changes
+JS_VERSION = "13"    # site.js cache key; bump when the menu script changes
 
 # (group id, label, [(page path, label, hint, external)])
 GROUPS = [
@@ -37,6 +37,7 @@ GROUPS = [
     ]),
     ("learn", "Learn", [
         ("index.html#learn", "Get started", "Make a first sound and picture"),
+        ("philosophy.html", "Philosophy", "Why Infinite is built this way"),
         ("blog/", "Blog", "Guides and how things work"),
         ("assets/Infinite_Node_Reference_Manual.pdf", "Node reference", "Every node, PDF"),
         ("assets/Field_Language_Manual.pdf", "Field language", "Write what a node does, PDF"),
@@ -56,7 +57,7 @@ FOOTER_COLS = [
         ("index.html#listen", "Listen"), ("index.html#nodes", "Node library"),
     ]),
     ("Learn", [
-        ("index.html#learn", "Get started"), ("blog/", "Blog"),
+        ("index.html#learn", "Get started"), ("philosophy.html", "Philosophy"), ("blog/", "Blog"),
         ("assets/Infinite_Node_Reference_Manual.pdf", "Node reference manual (PDF)"),
         ("assets/Field_Language_Manual.pdf", "Field language manual (PDF)"),
         ("assets/Infinite_Headless_User_Guide.pdf", "Headless guide (PDF)"), ("llms.txt", "llms.txt"),
@@ -111,14 +112,15 @@ def nav_html(rel):
         out.append(f'        <div class="nav-menu" id="nav-menu-{gid}">')
         for path, text, hint in items:
             c = ' aria-current="page"' if is_current(path, rel) else ""
-            out.append(f'          <a href="{href(path, p)}"{link_attrs(path)}{c}>{text}<span>{hint}</span></a>')
+            out.append(f'          <a href="{href(path, p)}"{link_attrs(path)}{c}>{text}</a>')
         out.append("        </div>")
         out.append("      </div>")
     out.append(f'      <a href="{p}index.html#setup" class="nav-sheet-only">Download</a>')
     out.append('      <div class="nav-sheet-social">')
     out.append(f'        <a href="{GH}" target="_blank" rel="noopener">GitHub</a>')
     out.append('        <a href="https://discord.gg/7cpQfCxnx" target="_blank" rel="noopener">Discord</a>')
-    out.append('        <a href="https://www.youtube.com/watch?v=vXRjrDhSq24" target="_blank" rel="noopener">YouTube tutorial</a>')
+    for name, url, _ in SOCIAL:
+        out.append(f'        <a href="{url}" target="_blank" rel="noopener">{name}</a>')
     out.append("      </div>")
     out.append("    </nav>")
     return "\n".join(out)

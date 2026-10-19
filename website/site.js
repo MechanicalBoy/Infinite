@@ -86,8 +86,7 @@
     const setOpen = (g, open) => trig(g).setAttribute('aria-expanded', String(open));
     const closeAll = (except) => groups.forEach((g) => { if (g !== except) setOpen(g, false); });
     const sync = () => groups.forEach((g) => {
-      trig(g).tabIndex = phone.matches ? -1 : 0;
-      if (phone.matches) setOpen(g, true); else setOpen(g, false);
+      setOpen(g, phone.matches && g === groups[0]);   // phone: the first group starts open, the rest fold away
     });
     sync();
     (phone.addEventListener ? phone.addEventListener('change', sync) : phone.addListener(sync));
@@ -95,12 +94,12 @@
       const t = trig(g);
       let enteredAt = 0;   // a click right after the pointer arrived must not close the panel the hover just opened
       t.addEventListener('click', () => {
-        if (phone.matches) return;
-        const open = Date.now() - enteredAt < 600 ? true : t.getAttribute('aria-expanded') !== 'true';
+        const open = !phone.matches && Date.now() - enteredAt < 600 ? true : t.getAttribute('aria-expanded') !== 'true';
         closeAll(g); setOpen(g, open);
       });
-      g.addEventListener('mouseenter', () => { if (!phone.matches && hover.matches) { enteredAt = Date.now(); closeAll(g); setOpen(g, true); } });
-      g.addEventListener('mouseleave', () => { if (!phone.matches && hover.matches) setOpen(g, false); });
+      let closeTimer = 0;   // a short grace period so a pointer drifting off the edge can still reach a link
+      g.addEventListener('mouseenter', () => { clearTimeout(closeTimer); if (!phone.matches && hover.matches) { enteredAt = Date.now(); closeAll(g); setOpen(g, true); } });
+      g.addEventListener('mouseleave', () => { if (!phone.matches && hover.matches) { clearTimeout(closeTimer); closeTimer = setTimeout(() => setOpen(g, false), 180); } });
       g.addEventListener('focusout', (e) => { if (!phone.matches && !g.contains(e.relatedTarget)) setOpen(g, false); });
       g.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !phone.matches) { setOpen(g, false); t.focus(); e.stopPropagation(); } });
     });
@@ -121,11 +120,12 @@
       header.classList.toggle('nav-open', open);
       btn.setAttribute('aria-expanded', String(open));
       btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      document.documentElement.classList.toggle('nav-locked', open);   // the page behind must not scroll under the sheet
     };
     initMenuGroups(header, set);
     btn.addEventListener('click', () => set(!header.classList.contains('nav-open')));
     $$('a', links).forEach((a) => a.addEventListener('click', () => set(false)));
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && header.classList.contains('nav-open')) { set(false); btn.focus(); } });
     document.addEventListener('click', (e) => {
       if (header.classList.contains('nav-open') && !header.contains(e.target)) set(false);
     });
