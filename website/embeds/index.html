@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Infinite Interactive Embeds Gallery</title>
+  <meta name="description" content="Embeddable, responsive WebGL and WebAudio shaders powered by Infinite (free, open-source modular audiovisual DAW).">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0b0d17; color: #f0f0f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px 20px; line-height: 1.6; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 50px; }
+    h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 12px; letter-spacing: -0.02em; }
+    p.sub { font-size: 1.1rem; color: #8f9bb3; max-width: 650px; margin: 0 auto 20px; }
+    .badge-top { display: inline-block; background: rgba(245, 127, 102, 0.15); color: #f57f66; padding: 4px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; margin-bottom: 16px; border: 1px solid rgba(245, 127, 102, 0.3); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 30px; }
+    .card { background: #131728; border: 1px solid #1f253d; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.2s, border-color 0.2s; }
+    .card:hover { transform: translateY(-4px); border-color: #3b4568; }
+    .iframe-wrap { width: 100%; height: 260px; background: #000; position: relative; }
+    iframe { width: 100%; height: 100%; border: none; }
+    .card-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+    .card-title { font-size: 1.2rem; font-weight: 600; text-transform: capitalize; }
+    .card-code { background: #080a12; border: 1px solid #1c2033; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 0.8rem; color: #a0aec0; word-break: break-all; user-select: all; }
+    .card-actions { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 10px; }
+    .btn { background: #222944; color: #fff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: background 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn:hover { background: #323b61; }
+    .btn-primary { background: #f57f66; color: #0b0d17; font-weight: 600; }
+    .btn-primary:hover { background: #ff9179; }
+    footer { text-align: center; margin-top: 60px; color: #5a6682; font-size: 0.9rem; }
+    footer a { color: #8f9bb3; text-decoration: none; }
+    footer a:hover { color: #f57f66; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge-top">Interactive Embeds</div>
+      <h1>Infinite WebGL & WebAudio Widgets</h1>
+      <p class="sub">Audio-reactive shaders and visualizers running in real time with microphone reactivity. Embed them in your portfolio, documentation, or blog.</p>
+      <a href="https://infinitedevices.org" class="btn">Explore Infinite DAW</a>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="cyber-tunnel.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Cyber Tunnel</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/cyber-tunnel.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="cyber-tunnel.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="iridescent-orb.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Iridescent Orb</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/iridescent-orb.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="iridescent-orb.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="hyperspace-tunnel.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Hyperspace Tunnel</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/hyperspace-tunnel.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="hyperspace-tunnel.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="liquid-glass.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Liquid Glass</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/liquid-glass.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="liquid-glass.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="hex-lattice.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Hex Lattice</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/hex-lattice.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="hex-lattice.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="phyllotaxis-bloom.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Phyllotaxis Bloom</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/phyllotaxis-bloom.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="phyllotaxis-bloom.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="metaball-lens.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Metaball Lens</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/metaball-lens.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="metaball-lens.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="ordered-dither.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Ordered Dither</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/ordered-dither.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="ordered-dither.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="pixel-plate.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Pixel Plate</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/pixel-plate.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="pixel-plate.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="harmonic-warp.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Harmonic Warp</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/harmonic-warp.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="harmonic-warp.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="iframe-wrap"><iframe src="hyper-torus.html" loading="lazy"></iframe></div>
+        <div class="card-body">
+          <div class="card-title">Hyper Torus</div>
+          <div class="card-code">&lt;iframe src="https://infinitedevices.org/embeds/hyper-torus.html" width="640" height="400" frameborder="0" allow="microphone"&gt;&lt;/iframe&gt;</div>
+          <div class="card-actions">
+            <a href="hyper-torus.html" target="_blank" class="btn">Full Screen</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Powered by <a href="https://infinitedevices.org">Infinite</a> &bull; Created by Naman Soni &bull; Open Source under MIT</p>
+    </footer>
+  </div>
+</body>
+</html>
