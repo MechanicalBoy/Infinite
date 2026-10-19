@@ -115,25 +115,28 @@ def icon(name):
     return svg.replace("<svg ", '<svg class="ic" aria-hidden="true" ', 1).replace("\n", "")
 
 
-CARD = """      <article class="post-card embed-card">
-        <div class="embed-frame"><iframe src="{slug}.html" title="{title}: audio-reactive visual" loading="lazy" allow="microphone"></iframe></div>
-        <div class="post-body">
-          <h2>{title}</h2>
-          <p class="post-desc">{desc}</p>
-          <div class="embed-actions">
-            <button type="button" class="chip is-on" data-copy="snip-{slug}">{ic_copy}Copy code</button>
-            <a class="chip" href="{slug}.html" target="_blank" rel="noopener">{ic_full}Full screen</a>
+CARD = """      <section class="reel-slide" aria-label="{title}">
+        <div class="reel-wrap">
+          <div class="reel-card">
+            <iframe data-src="{slug}.html" title="{title}: audio-reactive visual" allow="microphone"></iframe>
+            <div class="reel-swipe" aria-hidden="true"></div>
+            <span class="reel-count mono" aria-hidden="true">{n:02d} / {total:02d}</span>
+            <div class="reel-meta"><h2>{title}</h2></div>
+          </div>
+          <div class="reel-rail">
+            <button type="button" class="rail-btn" data-copy="snip-{slug}" aria-label="Copy embed code for {title}">{ic_copy}<span>Copy</span></button>
+            <a class="rail-btn" href="{slug}.html" target="_blank" rel="noopener" aria-label="Open {title} full screen">{ic_full}<span>Open</span></a>
           </div>
           <textarea id="snip-{slug}" class="snippet mono" readonly rows="6" aria-label="Embed code for {title}">{code}</textarea>
         </div>
-      </article>"""
+      </section>"""
 
 
 def build_gallery(items):
     rel = "embeds/index.html"
     header = chrome.header_html(rel)
     footer = chrome.footer_html(rel)
-    cards = "\n".join(CARD.format(ic_copy=icon("capture"), ic_full=icon("viewport"), slug=i["slug"], title=e(i["title"]), desc=e(i["description"]), code=e(snippet(i))) for i in items)
+    cards = "\n".join(CARD.format(ic_copy=icon("capture"), ic_full=icon("viewport"), slug=i["slug"], title=e(i["title"]), code=e(snippet(i)), n=n + 1, total=len(items)) for n, i in enumerate(items))
     ld = {"@context": "https://schema.org", "@type": "CollectionPage", "name": "Infinite embeds", "url": BASE + "embeds/",
           "description": "Audio-reactive WebGL visuals you can put on any page with one iframe.",
           "isPartOf": {"@type": "WebSite", "url": BASE},
@@ -165,42 +168,45 @@ def build_gallery(items):
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../brand.css?v=e96b24bf">
-  <link rel="stylesheet" href="../style.css?v=16bb298e">
+  <link rel="stylesheet" href="../style.css?v=dba6d460">
   <link rel="stylesheet" href="../glass.css?v=c25dae44">
-  <link rel="stylesheet" href="../blog.css?v=8d522b1a">
+  <link rel="stylesheet" href="../blog.css?v=e5fec6e7">
+  <link rel="stylesheet" href="../reels.css?v=1d89dfcc">
   <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>
-<body class="blog-page">
+<body class="blog-page reels-page">
   {header}
 
   <main>
-    <section class="section blog-hero">
-      <div class="container">
-        <header class="section-head center">
-          <span class="blog-hand hand">live</span>
-          <h1 class="slab">Audio-reactive visuals for any page</h1>
-        </header>
-
-        <div class="post-grid embed-grid">
+    <h1 class="sr-only">Audio-reactive visuals for any page</h1>
+    <div class="reels" id="reels">
 {cards}
-        </div>
-      </div>
-    </section>
+    </div>
   </main>
 
   {footer}
   <script src="../site.js?v=11" defer></script>
   <script>
     (function () {{
+      var slides = [].slice.call(document.querySelectorAll('.reel-slide'));
+      /* only the slide on screen and its neighbours keep a live WebGL context */
+      var io = new IntersectionObserver(function (es) {{
+        es.forEach(function (en) {{
+          var f = en.target.querySelector('iframe'), s = f.getAttribute('data-src');
+          if (en.isIntersecting) {{ if (!f.getAttribute('src')) f.setAttribute('src', s); }}
+          else if (f.getAttribute('src')) f.removeAttribute('src');
+        }});
+      }}, {{ rootMargin: '60% 0px' }});
+      slides.forEach(function (s) {{ io.observe(s); }});
       document.querySelectorAll('[data-copy]').forEach(function (b) {{
+        var label = b.querySelector('span'), text = label.textContent;
         b.addEventListener('click', function () {{
-          var t = document.getElementById(b.getAttribute('data-copy')), label = b.textContent;
-          var done = function () {{ b.textContent = 'Copied'; setTimeout(function () {{ b.textContent = label; }}, 1800); }};
+          var t = document.getElementById(b.getAttribute('data-copy'));
+          var done = function () {{ label.textContent = 'Copied'; b.classList.add('is-done'); setTimeout(function () {{ label.textContent = text; b.classList.remove('is-done'); }}, 1800); }};
           if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(done, function () {{ t.select(); }});
           else {{ t.select(); document.execCommand('copy'); done(); }}
         }});
       }});
-      document.querySelectorAll('.snippet').forEach(function (t) {{ t.addEventListener('focus', function () {{ t.select(); }}); }});
     }})();
   </script>
 </body>

@@ -24,10 +24,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="brand.css?v=e96b24bf">
-  <link rel="stylesheet" href="style.css?v=16bb298e">
+  <link rel="stylesheet" href="style.css?v=dba6d460">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
-  <link rel="stylesheet" href="blog.css?v=8d522b1a">
-  <link rel="stylesheet" href="audience.css?v=89fe9bae">
+  <link rel="stylesheet" href="blog.css?v=e5fec6e7">
+  <link rel="stylesheet" href="audience.css?v=56776286">
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "name": "Infinite for musicians: synths, effects and plugins in one graph", "url": "https://infinitedevices.org/musicians.html", "description": "Wavetable, FM, analog and string synths, tape delay, convolution reverb, VST3 and AU hosting, and modulation on every knob.", "isPartOf": {"@type": "WebSite", "name": "Infinite", "url": "https://infinitedevices.org/"}, "about": {"@type": "SoftwareApplication", "name": "Infinite", "applicationCategory": "MultimediaApplication", "operatingSystem": "macOS, Windows, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}}</script>
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is Infinite a full digital audio workstation (DAW)?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Infinite is an open-source, modular digital audio workstation (DAW) and sound design environment combining polyphonic synthesis, VST3 and AU plugin hosting, mixing effects, and real-time visual generation on a single unified execution graph."}}, {"@type": "Question", "name": "Can I use VST3 and AU plugins in Infinite?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Infinite hosts 64-bit VST3 and Audio Unit (AU) plugins with low latency, full sidechain routing, MPE polyphonic expression, and external modulation on any plugin parameter."}}, {"@type": "Question", "name": "How does Infinite compare to Ableton Live and Bitwig?", "acceptedAnswer": {"@type": "Answer", "text": "Infinite is lightweight and modular: 45 MB download size (compared to 8 GB for Ableton Suite), 342 ms cold launch time, and 244 MB idle memory footprint. Furthermore, audio signals and visual shaders share the same execution graph for seamless audio-reactive visuals."}}, {"@type": "Question", "name": "Can I write custom synths and audio DSP in Infinite?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Infinite features the Field language, which lets you write per-sample DSP audio code, custom oscillators, and filters with live feedback and instant audio rate execution."}}, {"@type": "Question", "name": "Is Infinite free for music production?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Infinite is free to download for macOS, Windows, and Linux. The core source code is MIT licensed, and the binary release is GPLv3 due to bundled VST3 hosting."}}]}</script>
   <script>document.documentElement.classList.add('js-reveal')</script>
@@ -70,9 +70,6 @@
           <a href="index.html#learn">Get started</a>
           <a href="philosophy.html">Philosophy</a>
           <a href="blog/">Blog</a>
-          <a href="assets/Infinite_Node_Reference_Manual.pdf" target="_blank" rel="noopener">Node reference</a>
-          <a href="assets/Field_Language_Manual.pdf" target="_blank" rel="noopener">Field language</a>
-          <a href="assets/Infinite_Headless_User_Guide.pdf" target="_blank" rel="noopener">Headless guide</a>
         </div>
       </div>
       <div class="nav-sheet-social">
@@ -133,7 +130,7 @@
       <section class="aud-section reveal">
         <h2>A signal chain, node by node</h2>
         <p class="sec-sub">Notes in, a voice, colour, then out. Each node is one job, and each knob can be modulated.</p>
-        <div class="bench"><img class="bench-img" src="assets/nodes/bench-musicians.webp" alt="MIDI Notes: Notes go into the graph from here.; Analog: Oscillators, a filter and an envelope in one voice.; FM: Four operators.; Delay: Tape delay with wow and flutter.; Dynamics: Clean, bus, opto and FET styles.; LFO: Moves any knob in the patch." width="1757" height="396" decoding="async"></div>
+        <div class="bench"><img class="bench-img" src="assets/nodes/bench-musicians.webp" alt="MIDI Notes: Notes go into the graph from here.; Analog: Oscillators, a filter and an envelope in one voice.; FM: Four operators.; Delay: Tape delay with wow and flutter.; Dynamics: Clean, bus, opto and FET styles.; LFO: Moves any knob in the patch." width="1757" height="396" loading="lazy" decoding="async"></div>
       </section>
       <section class="aud-section reveal">
         <div class="lab" data-lab="synth">
@@ -147,7 +144,7 @@ out = saw * 0.4 * gate</code></pre></div></div>
       <section class="aud-section reveal">
         <div class="sec-head"><div><h2>Patches to open</h2><p class="sec-sub">Each is a free patch with a picture of the graph.</p></div>
           <div class="reel-ctl"><button class="reel-btn reel-prev" type="button" aria-label="Scroll back">&#8592;</button><button class="reel-btn reel-next" type="button" aria-label="Scroll forward">&#8594;</button></div></div>
-        <div class="reel-wrap"><div class="reel"><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/pad-wash.webp" alt="Pad wash" width="960" height="600" decoding="async"></a><figcaption>Pad wash</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/delay-wash.webp" alt="Delay wash" width="960" height="600" decoding="async"></a><figcaption>Delay wash</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/drum-reverb.webp" alt="Drum reverb" width="960" height="600" decoding="async"></a><figcaption>Drum reverb</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/stretched-sampler.webp" alt="Stretched sampler" width="960" height="600" decoding="async"></a><figcaption>Stretched sampler</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/oscillator-reverb.webp" alt="Oscillator reverb" width="960" height="600" decoding="async"></a><figcaption>Oscillator reverb</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/filtered-mixer.webp" alt="Filtered mixer" width="960" height="600" decoding="async"></a><figcaption>Filtered mixer</figcaption></figure></div></div>
+        <div class="reel-wrap"><div class="reel"><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/pad-wash.webp" alt="Pad wash" width="960" height="600" loading="lazy" decoding="async"></a><figcaption>Pad wash</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/delay-wash.webp" alt="Delay wash" width="960" height="600" loading="lazy" decoding="async"></a><figcaption>Delay wash</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/drum-reverb.webp" alt="Drum reverb" width="960" height="600" loading="lazy" decoding="async"></a><figcaption>Drum reverb</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/stretched-sampler.webp" alt="Stretched sampler" width="960" height="600" loading="lazy" decoding="async"></a><figcaption>Stretched sampler</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/oscillator-reverb.webp" alt="Oscillator reverb" width="960" height="600" loading="lazy" decoding="async"></a><figcaption>Oscillator reverb</figcaption></figure><figure><a class="frame" style="--ar:960 / 600" href="library.html"><img src="assets/community/filtered-mixer.webp" alt="Filtered mixer" width="960" height="600" loading="lazy" decoding="async"></a><figcaption>Filtered mixer</figcaption></figure></div></div>
       </section>
 
       <section class="aud-section reveal">
@@ -218,18 +215,12 @@ out = saw * 0.4 * gate</code></pre></div></div>
           <a href="embeds/">Embeds</a>
           <a href="extensions.html">Extensions</a>
           <a href="benchmarks.html">Benchmarks</a>
-          <a href="assets/Infinite_Benchmark_Report.pdf" target="_blank" rel="noopener">Benchmark report (PDF)</a>
-          <a href="index.html#listen">Listen</a>
-          <a href="index.html#nodes">Node library</a>
         </div>
         <div class="footer-col">
           <p class="footer-h">Learn</p>
           <a href="index.html#learn">Get started</a>
           <a href="philosophy.html">Philosophy</a>
           <a href="blog/">Blog</a>
-          <a href="assets/Infinite_Node_Reference_Manual.pdf" target="_blank" rel="noopener">Node reference manual (PDF)</a>
-          <a href="assets/Field_Language_Manual.pdf" target="_blank" rel="noopener">Field language manual (PDF)</a>
-          <a href="assets/Infinite_Headless_User_Guide.pdf" target="_blank" rel="noopener">Headless guide (PDF)</a>
         </div>
         <div class="footer-col">
           <p class="footer-h">Open source</p>
@@ -237,11 +228,7 @@ out = saw * 0.4 * gate</code></pre></div></div>
           <a href="https://github.com/n1m21n/Infinite/releases" target="_blank" rel="noopener">Releases</a>
           <a href="https://github.com/n1m21n/Infinite/tree/main/tools/mcp" target="_blank" rel="noopener">MCP server</a>
           <a href="https://github.com/n1m21n/Infinite/tree/main/tools/python_sdk" target="_blank" rel="noopener">Python SDK</a>
-          <a href="https://github.com/n1m21n/Infinite/blob/main/AGENT.md" target="_blank" rel="noopener">Agent guide</a>
-          <a href="https://github.com/n1m21n/Infinite/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture guide</a>
-          <a href="https://github.com/n1m21n/Infinite/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
           <a href="https://discord.gg/7cpQfCxnx" target="_blank" rel="noopener">Discord</a>
-          <a href="https://www.youtube.com/watch?v=vXRjrDhSq24" target="_blank" rel="noopener">YouTube tutorial</a>
           <a href="https://paypal.me/namansoniii" target="_blank" rel="noopener">Donate</a>
         </div>
       </div>

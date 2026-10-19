@@ -143,19 +143,36 @@ body.blog-page { overflow-x: clip; }
 .embed-card { position: relative; }
 .embed-actions .chip { white-space: nowrap; }
 
-/* Phone grid: the post list is rows (square thumb, kicker and title), not full-width pictures */
-@media (max-width: 600px) {
-  .post-grid { gap: 8px; }
-  .post-grid:not(.embed-grid) .post-link { display: grid; grid-template-columns: 96px minmax(0, 1fr); column-gap: 16px; align-items: center; padding: 8px; }
-  .post-grid:not(.embed-grid) .post-media { aspect-ratio: 1; }
-  .post-grid:not(.embed-grid) .post-body { padding: 0; gap: 4px; min-width: 0; }
-  .post-grid:not(.embed-grid) .post-meta, .post-grid:not(.embed-grid) .post-kicker { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .embed-grid .post-body { padding: 16px; }
-  .embed-grid .post-desc { display: none; }
-  .post-grid:not(.embed-grid) .post-card h2 { font-size: 1rem; line-height: 1.25; }
-  .post-grid:not(.embed-grid) .post-desc { display: none; }
-}
-
 /* touch screens have no hover: no lift on tap, so the first tap always follows the link (iOS holds a tap that changes :hover state) */
 @media (hover: none) { .post-card:hover, .rel-card:hover { transform: none; box-shadow: var(--shadow-1); } }
 @media (max-width: 600px) { .post-kicker .kd { display: none; } }
+
+/* v3, Substack-like reading: the archive is one column of unboxed rows (text left, small picture right); a post is a byline, a big title and a 680px column */
+.post-grid:not(.embed-grid) { display: block; max-width: 720px; margin-inline: auto; }
+.post-grid:not(.embed-grid) .post-card { background: none; box-shadow: none; border-radius: 0; overflow: visible; transform: none; border-top: 1px solid var(--line-soft); }
+.post-grid:not(.embed-grid) .post-card:first-child { border-top: 0; }
+.post-grid:not(.embed-grid) .post-card:hover { transform: none; box-shadow: none; }
+.post-grid:not(.embed-grid) .post-link { display: grid; grid-template-columns: minmax(0, 1fr) 112px; column-gap: 16px; align-items: start; height: auto; padding: 24px 0; }
+.post-grid:not(.embed-grid) .post-media { order: 2; aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; margin: 0; }
+.post-grid:not(.embed-grid) .post-media img { width: 100%; height: 100%; object-fit: cover; }
+.post-grid:not(.embed-grid) .post-body { order: 1; padding: 0; gap: 8px; min-width: 0; }
+.post-grid:not(.embed-grid) .post-card h2 { font-size: 1.25rem; line-height: 1.25; letter-spacing: -0.02em; }
+.post-grid:not(.embed-grid) .post-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; color: var(--ink2); font-size: 1rem; line-height: 1.5; }
+.post-grid:not(.embed-grid) .post-kicker { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 601px) {
+  .post-grid:not(.embed-grid) .post-link { grid-template-columns: minmax(0, 1fr) 160px; column-gap: 24px; }
+  .post-grid:not(.embed-grid) .post-media { aspect-ratio: 4 / 3; }
+  .post-grid:not(.embed-grid) .post-card h2 { font-size: 1.5rem; }
+}
+@media (max-width: 600px) { .post-kicker .kd { display: none; } .post-grid:not(.embed-grid) .post-desc { -webkit-line-clamp: 2; font-size: 0.8438rem; } }
+.post-wrap { max-width: 720px; }
+.post-head .post-kicker { color: var(--signal); text-transform: uppercase; letter-spacing: 0.08em; }
+.post-lede { font-size: 1.25rem; line-height: 1.45; color: var(--ink2); margin: 0 0 24px; }
+.post-by { display: flex; align-items: center; gap: 12px; margin: 0 0 32px; }
+.by-av { width: 40px; height: 40px; border-radius: 50%; }
+.by-text { display: grid; gap: 2px; font-weight: 600; }
+.by-text a { color: var(--ink); text-decoration: none; }
+.by-meta { font: 500 0.7188rem/1.3 'Geist Mono', ui-monospace, monospace; color: var(--muted); letter-spacing: 0.02em; }
+.post-hero img { box-shadow: none; }
+.toc ol { list-style: none; padding-left: 0; }
+@media (max-width: 600px) { .crumbs { display: none; } }

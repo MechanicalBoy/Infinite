@@ -759,7 +759,8 @@ html.over-bird body { cursor: pointer; }
     transition: max-height var(--dur-medium) cubic-bezier(0.16, 1, 0.3, 1), visibility 0s 333ms var(--ease-out);
   }
   .nav-menu::before { display: none; }
-  .nav-trigger[aria-expanded="true"] + .nav-menu { max-height: 520px; visibility: visible; padding-bottom: 12px; transition: max-height var(--dur-medium) cubic-bezier(0.16, 1, 0.3, 1), visibility 0s var(--ease-out); animation: none; }
+  .site-header:not(.nav-open) .nav-links, .site-header:not(.nav-open) .nav-links * { pointer-events: none; }   /* a closed sheet must never catch a tap meant for the page */
+  .nav-open .nav-trigger[aria-expanded="true"] + .nav-menu { max-height: 520px; visibility: visible; padding-bottom: 12px; transition: max-height var(--dur-medium) cubic-bezier(0.16, 1, 0.3, 1), visibility 0s var(--ease-out); animation: none; }
   .nav-menu a { min-height: 48px; padding: 0 16px; font-size: 1rem; font-weight: 500; color: var(--ink2); border-radius: var(--r-sm); }
   .nav-menu a:active { background: var(--deep); }
   .nav-links > .nav-group:last-of-type { margin-bottom: 20px; }

@@ -175,7 +175,7 @@
 .bn img { height: auto; }
 
 /* The bench is one landscape strip of the nodes, named by pills beneath; no per-node captions */
-.bench { display: grid; gap: 16px; padding: clamp(16px, 3vw, 32px); }
+.bench { display: grid; gap: 16px; padding: round(clamp(16px, 3vw, 32px), 8px); }
 .bench-img { display: block; width: auto; max-width: 100%; height: auto; max-height: 420px; margin-inline: auto; }
 .bench-names { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .bench-names li { display: inline-flex; align-items: center; min-height: 32px; padding: 0 16px; border-radius: var(--r-pill); background: var(--mid); color: var(--mid-ink); font: 500 0.84375rem/1 Geist, system-ui, sans-serif; white-space: nowrap; }

@@ -244,12 +244,12 @@ def main_html(a, rel):
       <section class="aud-section reveal">
         <h2>{e(B["title"])}</h2>
         <p class="sec-sub">{e(B["sub"])}</p>
-        <div class="bench"><img class="bench-img" src="assets/nodes/bench-{a["slug"]}.webp" alt="{e(alt)}" width="{w}" height="{h}" decoding="async"></div>
+        <div class="bench"><img class="bench-img" src="assets/nodes/bench-{a["slug"]}.webp" alt="{e(alt)}" width="{w}" height="{h}" loading="lazy" decoding="async"></div>
       </section>'''
     reel = ""
     if a.get("reel"):
         R = a["reel"]
-        figs = "".join(f'<figure><a class="frame" style="--ar:{w} / {h}" href="{R["href"]}"><img src="{src}" alt="{e(c)}" width="{w}" height="{h}" decoding="async"></a><figcaption>{e(c)}</figcaption></figure>' for src, w, h, c in R["items"])
+        figs = "".join(f'<figure><a class="frame" style="--ar:{w} / {h}" href="{R["href"]}"><img src="{src}" alt="{e(c)}" width="{w}" height="{h}" loading="lazy" decoding="async"></a><figcaption>{e(c)}</figcaption></figure>' for src, w, h, c in R["items"])
         reel = f'''
       <section class="aud-section reveal">
         <div class="sec-head"><div><h2>{e(R["title"])}</h2><p class="sec-sub">{e(R["sub"])}</p></div>
@@ -358,8 +358,8 @@ def shell(rel, title, desc, lds, main, extra_head="", extra_js=""):
   <link rel="stylesheet" href="brand.css?v=e96b24bf">
   <link rel="stylesheet" href="style.css?v={chrome.CSS_VERSION}">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
-  <link rel="stylesheet" href="blog.css?v=8d522b1a">
-  <link rel="stylesheet" href="audience.css?v=89fe9bae">
+  <link rel="stylesheet" href="blog.css?v=e5fec6e7">
+  <link rel="stylesheet" href="audience.css?v=56776286">
   {ldtags}{extra_head}
   <script>document.documentElement.classList.add('js-reveal')</script>
 </head>

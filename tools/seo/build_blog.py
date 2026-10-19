@@ -124,9 +124,9 @@ def head(title, desc, url, image, extra="", kind="website", depth="../"):
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{depth}brand.css?v=e96b24bf">
-  <link rel="stylesheet" href="{depth}style.css?v=16bb298e">
+  <link rel="stylesheet" href="{depth}style.css?v=dba6d460">
   <link rel="stylesheet" href="{depth}glass.css?v=c25dae44">
-  <link rel="stylesheet" href="{depth}blog.css?v=8d522b1a">
+  <link rel="stylesheet" href="{depth}blog.css?v=e5fec6e7">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-ZC4TYX1WCL"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -252,10 +252,10 @@ def build_post(p, posts, header, footer):
       <div class="container post-wrap">
         <nav class="crumbs mono" aria-label="Breadcrumb"><a href="../index.html">Infinite</a> / <a href="./">Blog</a></nav>
         <header class="post-head">
-          <p class="post-kicker mono">{e(CATS.get(p['category'], p['category']))} · {e(fmt_date(p['date']))} · {p['minutes']} min read</p>
+          <p class="post-kicker mono">{e(CATS.get(p['category'], p['category']))}</p>
           <h1>{e(p['title'])}</h1>
           <p class="post-lede">{e(p['description'])}</p>
-          <p class="post-by">By <a href="https://github.com/n1m21n" rel="noopener">Naman Soni</a>{(' · updated ' + e(fmt_date(p['updated']))) if p.get('updated') else ''}</p>
+          <p class="post-by"><img class="by-av" src="../assets/icon-96.png" alt="" width="40" height="40" decoding="async"><span class="by-text"><a href="https://github.com/n1m21n" rel="noopener">Naman Soni</a><span class="by-meta">{e(fmt_date(p['date']))} · {p['minutes']} min read{(' · updated ' + e(fmt_date(p['updated']))) if p.get('updated') else ''}</span></span></p>
         </header>
         {hero}
         {toc}

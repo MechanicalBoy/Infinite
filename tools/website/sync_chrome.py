@@ -39,9 +39,6 @@ GROUPS = [
         ("index.html#learn", "Get started", "Make a first sound and picture"),
         ("philosophy.html", "Philosophy", "Why Infinite is built this way"),
         ("blog/", "Blog", "Guides and how things work"),
-        ("assets/Infinite_Node_Reference_Manual.pdf", "Node reference", "Every node, PDF"),
-        ("assets/Field_Language_Manual.pdf", "Field language", "Write what a node does, PDF"),
-        ("assets/Infinite_Headless_User_Guide.pdf", "Headless guide", "Run Infinite without a window, PDF"),
     ]),
 ]
 
@@ -52,21 +49,15 @@ FOOTER_COLS = [
     ]),
     ("Explore", [
         ("library.html", "Library"), ("artworks.html", "Art gallery"), ("embeds/", "Embeds"), ("extensions.html", "Extensions"),
-        ("benchmarks.html", "Benchmarks"), ("assets/Infinite_Benchmark_Report.pdf", "Benchmark report (PDF)"),
-        ("index.html#listen", "Listen"), ("index.html#nodes", "Node library"),
+        ("benchmarks.html", "Benchmarks"),
     ]),
     ("Learn", [
         ("index.html#learn", "Get started"), ("philosophy.html", "Philosophy"), ("blog/", "Blog"),
-        ("assets/Infinite_Node_Reference_Manual.pdf", "Node reference manual (PDF)"),
-        ("assets/Field_Language_Manual.pdf", "Field language manual (PDF)"),
-        ("assets/Infinite_Headless_User_Guide.pdf", "Headless guide (PDF)"),
     ]),
     ("Open source", [
         (GH, "GitHub"), (GH + "/releases", "Releases"), (GH + "/tree/main/tools/mcp", "MCP server"),
-        (GH + "/tree/main/tools/python_sdk", "Python SDK"), (GH + "/blob/main/AGENT.md", "Agent guide"),
-        (GH + "/blob/main/ARCHITECTURE.md", "Architecture guide"), (GH + "/blob/main/LICENSE", "License"),
-        ("https://discord.gg/7cpQfCxnx", "Discord"), ("https://www.youtube.com/watch?v=vXRjrDhSq24", "YouTube tutorial"),
-        ("https://paypal.me/namansoniii", "Donate"),
+        (GH + "/tree/main/tools/python_sdk", "Python SDK"),
+        ("https://discord.gg/7cpQfCxnx", "Discord"), ("https://paypal.me/namansoniii", "Donate"),
     ]),
 ]
 
