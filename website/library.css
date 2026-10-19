@@ -1,6 +1,6 @@
 /* Library page: extends style.css. Each device is drawn as an Infinite node card.
    One spacing scale for the whole page: 8 / 12 / 16 / 24 / 32. */
-.lib-hero { padding-top: clamp(24px, 4vw, 48px); --gap: 24px; --pad: 12px; }
+.lib-hero { padding-top: round(clamp(24px, 4vw, 48px), 8px); --gap: 24px; --pad: 12px; }
 .lib-hand { display: block; font-size: 2rem; line-height: 1; margin-bottom: 8px; transform: rotate(-2deg); }
 .lib-hero h1.slab { font-size: clamp(2rem, 5vw, 3.2rem); }
 
@@ -114,3 +114,4 @@ body:has(.lib-hero) { overflow-x: clip; }
 .lib-opt-n { font: 0.72rem var(--font-mono); color: var(--ink-3); }
 @media (max-width: 720px) { .lib-chips { width: auto; margin: 0; padding: 0; max-width: none; } .lib-menu { min-width: min(260px, calc(100vw - 32px)); } }
 .lib-grid:empty { min-height: 1600px; }   /* reserve the grid before the index loads, so the footer does not jump */
+@media (max-width: 600px) { .lib-dl, .lib-copy { min-width: 40px; min-height: 40px; } }

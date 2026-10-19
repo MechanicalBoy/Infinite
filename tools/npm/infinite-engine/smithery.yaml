@@ -1,0 +1,18 @@
+# smithery configuration for infinite-engine
+# see https://smithery.ai/docs/config
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      infiniteBin:
+        type: string
+        description: "optional path to the infinite binary (e.g. /Applications/Infinite.app/Contents/MacOS/Infinite). if omitted, standard install paths and PATH are searched automatically."
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'infinite-engine', 'serve'],
+      env: config && config.infiniteBin ? { INFINITE_BIN: config.infiniteBin } : {}
+    })
+  exampleConfig:
+    infiniteBin: ""

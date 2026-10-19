@@ -15,6 +15,7 @@
 @media (min-width: 1000px) { .who-grid { grid-template-columns: repeat(5, 1fr); } }
 .who-card { display: flex; flex-direction: column; gap: 8px; padding: 24px; border-radius: var(--r-lg); background: var(--card); box-shadow: var(--shadow-1); color: var(--ink); text-decoration: none; transition: transform var(--dur-medium) var(--ease-out, ease) var(--ease-out), box-shadow var(--dur-medium) var(--ease-out); }
 .who-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-2); }
+.who-card .ic { width: 24px; height: 24px; color: var(--accent-ink); }
 .who-card .hand { font: 500 0.7188rem/1 var(--font-mono); letter-spacing: 0.06em; color: var(--accent-ink); }
 .who-card b { font-size: 1rem; letter-spacing: -0.02em; }
 .who-card span:last-child { color: var(--ink2); font-size: 0.8438rem; line-height: 1.45; }
@@ -25,7 +26,7 @@
 .split-text h2 { margin: 0 0 18px; font-size: var(--fs-h2); font-weight: 750; letter-spacing: -0.03em; }
 
 /* the mind that becomes a patch */
-.mind { margin: 0; position: relative; background: #0D1020; border-radius: var(--r-lg); box-shadow: var(--shadow-2); padding: clamp(16px, 2.4vw, 32px); color: #EEF1FA; }
+.mind { margin: 0; position: relative; background: #0D1020; border-radius: var(--r-lg); box-shadow: var(--shadow-2); padding: round(clamp(16px, 2.4vw, 32px), 8px); color: #EEF1FA; }
 @media (max-width: 600px) { .mind { border-radius: 20px; } }
 .seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: var(--r-pill); background: #151930; margin-bottom: 8px; }
 .seg button { min-height: 40px; padding: 0 16px; border-radius: var(--r-pill); background: transparent; color: rgba(238, 241, 250, 0.7); font: 600 0.8438rem 'Geist', system-ui, sans-serif; cursor: pointer; transition: background-color var(--dur-small) var(--ease-out), color var(--dur-small) var(--ease-out); }
@@ -48,7 +49,7 @@
 .mind-cap { margin: 8px 2px 0; height: 6em; overflow: hidden; font: 500 0.7188rem/1.5 'Geist Mono', ui-monospace, monospace; color: rgba(167, 177, 255, 0.9); letter-spacing: 0.02em; }
 
 /* the loop from the mark */
-.loop-fig { margin: 0; background: #0D1020; border-radius: var(--r-lg); box-shadow: var(--shadow-2); padding: clamp(16px, 3vw, 32px); color: rgba(238, 241, 250, 0.8); }
+.loop-fig { margin: 0; background: #0D1020; border-radius: var(--r-lg); box-shadow: var(--shadow-2); padding: round(clamp(16px, 3vw, 32px), 8px); color: rgba(238, 241, 250, 0.8); }
 @media (max-width: 600px) { .loop-fig { border-radius: 20px; } }
 .loop-svg { display: block; width: 100%; height: auto; overflow: visible; }
 .loop-line { fill: none; stroke: #A7B1FF; stroke-width: 3; stroke-linejoin: round; opacity: 0.85; }
@@ -64,7 +65,7 @@
 @media (min-width: 760px) { .principles li { grid-template-columns: 12rem 1fr; align-items: baseline; gap: 24px; } }
 .principles b { font-size: 1.125rem; letter-spacing: -0.02em; }
 .principles span { color: var(--ink2); line-height: 1.55; }
-.springs-card { display: grid; gap: 24px; margin-top: 20px; padding: clamp(24px, 3vw, 32px); border-radius: var(--r-lg); background: var(--card); box-shadow: var(--shadow-1); }
+.springs-card { display: grid; gap: 24px; margin-top: 20px; padding: round(clamp(24px, 3vw, 32px), 8px); border-radius: var(--r-lg); background: var(--card); box-shadow: var(--shadow-1); }
 @media (min-width: 900px) { .springs-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: center; } }
 .springs-card h3 { margin: 0 0 8px; font-size: 1.25rem; letter-spacing: -0.02em; }
 .springs-card p { margin: 0; color: var(--ink2); line-height: 1.55; font-size: 1rem; }
@@ -94,7 +95,7 @@
 @media (max-width: 600px) { .faq-item, .principles li, .springs-card { border-radius: 20px; } }
 @media (prefers-reduced-motion: reduce) { .mind-svg *, .spring-dot, .faq-item summary::after { transition: none !important; } }
 
-.pull { margin: 0; padding: clamp(24px, 4vw, 48px); border-radius: var(--r-lg); background: #0D1020; color: #EEF1FA; box-shadow: var(--shadow-2); }
+.pull { margin: 0; padding: round(clamp(24px, 4vw, 48px), 8px); border-radius: var(--r-lg); background: #0D1020; color: #EEF1FA; box-shadow: var(--shadow-2); }
 .pull p { margin: 0 0 20px; font-size: clamp(1.6rem, 3.2vw, 2.4rem); font-weight: 750; letter-spacing: -0.035em; line-height: 1.12; }
 .pull ul { margin: 0 0 24px; padding: 0; list-style: none; display: grid; gap: 8px; color: #A7B1FF; font: 500 0.8438rem/1.4 'Geist Mono', ui-monospace, monospace; }
 .pull cite { font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace; letter-spacing: 0.06em; color: rgba(238, 241, 250, 0.6); font-style: normal; text-transform: lowercase; }

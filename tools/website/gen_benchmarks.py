@@ -390,7 +390,7 @@ def page(body, n):
     head = re.sub(r'(og:image" content=")[^"]*', lambda m: m.group(1) + BASE + "assets/og-image.jpg", head)
     head = re.sub(r'(twitter:image" content=")[^"]*', lambda m: m.group(1) + BASE + "assets/og-image.jpg", head)
     head = head.replace('  <link rel="alternate" type="application/json" href="assets/extensions/extensions.json" title="Extensions">\n', "")
-    head = head.replace("extensions.css?v=cb2bbbb0", "benchmarks.css?v=70dc99be")
+    head = head.replace("extensions.css?v=e791dc75", "benchmarks.css?v=70dc99be")
     head += f'  <link rel="alternate" type="application/json" href="assets/benchmarks.json" title="Benchmark data">\n  <link rel="alternate" type="application/pdf" href="assets/{PDF_NAME}" title="Benchmark report (PDF)">\n'
     head += f'  <script type="application/ld+json">\n{jsonld(n)}\n  </script>\n'
     nav_start = rest.index("<body")

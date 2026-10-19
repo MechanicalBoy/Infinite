@@ -91,7 +91,7 @@ def loop_svg():
 
 
 def main_html():
-    who = "\n".join(f'          <a class="who-card reveal" style="--i:{i}" href="{s}.html"><span class="hand">{h}</span><b>{e(n)}</b><span>{e(d)}</span></a>' for i, (s, h, n, d) in enumerate(AUD))
+    who = "\n".join(f'          <a class="who-card reveal" style="--i:{i}" href="{s}.html">{ga.icon(ga.AUD_ICON[s])}<b>{e(n)}</b><span>{e(d)}</span></a>' for i, (s, h, n, d) in enumerate(AUD))
     protect = [("Nothing between you and the result", "Controls stay live while a patch plays. You change a value and you see or hear it change."),
                ("One canvas", "Pictures, sound, 3D and code are nodes in one graph, so nothing is exported from one tool to be imported into another."),
                ("Hands before menus", "Any knob can be moved by a controller, an LFO, an envelope or the audio itself, so the instrument is played, not configured."),
@@ -224,7 +224,7 @@ def ld():
 
 
 def build():
-    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=57dcd6ad">', extra_js='\n  <script src="philosophy.js?v=3" defer></script>')
+    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=17640c7e">', extra_js='\n  <script src="philosophy.js?v=3" defer></script>')
 
 
 def main():

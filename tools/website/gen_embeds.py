@@ -49,7 +49,7 @@ SHELL_HEAD = """<!DOCTYPE html>
     html, body { width: 100%; height: 100%; overflow: hidden; background: var(--ground); font-family: Geist, system-ui, -apple-system, "Segoe UI", sans-serif; }
     canvas { width: 100%; height: 100%; display: block; }
     .badge, .btn {
-      position: absolute; bottom: 14px; z-index: 10; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 16px;
+      position: absolute; bottom: 14px; z-index: 10; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px;
       border-radius: 999px; background: var(--glass); color: var(--ink); font-size: 11.5px; font-weight: 500; text-decoration: none;
       -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5); box-shadow: 0 6px 16px var(--shadow);
       transition: transform var(--dur-small) var(--ease-out), background-color var(--dur-small) var(--ease-out);
@@ -105,14 +105,20 @@ def build_widget(it):
     return head + body
 
 
+def icon(name):
+    """Brand glyph from art/icons/src, inlined so a pill needs no request."""
+    svg = open(os.path.join(chrome.ROOT, "art", "icons", "src", name + "-20.svg"), encoding="utf-8").read().strip()
+    return svg.replace("<svg ", '<svg class="ic" aria-hidden="true" ', 1).replace("\n", "")
+
+
 CARD = """      <article class="post-card embed-card">
         <div class="embed-frame"><iframe src="{slug}.html" title="{title}: audio-reactive visual" loading="lazy" allow="microphone"></iframe></div>
         <div class="post-body">
           <h2>{title}</h2>
           <p class="post-desc">{desc}</p>
           <div class="embed-actions">
-            <button type="button" class="chip is-on" data-copy="snip-{slug}">Copy embed code</button>
-            <a class="chip" href="{slug}.html" target="_blank" rel="noopener">Full screen</a>
+            <button type="button" class="chip is-on" data-copy="snip-{slug}">{ic_copy}Copy code</button>
+            <a class="chip" href="{slug}.html" target="_blank" rel="noopener">{ic_full}Full screen</a>
           </div>
           <textarea id="snip-{slug}" class="snippet mono" readonly rows="6" aria-label="Embed code for {title}">{code}</textarea>
         </div>
@@ -123,7 +129,7 @@ def build_gallery(items):
     rel = "embeds/index.html"
     header = chrome.header_html(rel)
     footer = chrome.footer_html(rel)
-    cards = "\n".join(CARD.format(slug=i["slug"], title=e(i["title"]), desc=e(i["description"]), code=e(snippet(i))) for i in items)
+    cards = "\n".join(CARD.format(ic_copy=icon("capture"), ic_full=icon("viewport"), slug=i["slug"], title=e(i["title"]), desc=e(i["description"]), code=e(snippet(i))) for i in items)
     ld = {"@context": "https://schema.org", "@type": "CollectionPage", "name": "Infinite embeds", "url": BASE + "embeds/",
           "description": "Audio-reactive WebGL visuals you can put on any page with one iframe.",
           "isPartOf": {"@type": "WebSite", "url": BASE},
@@ -155,9 +161,9 @@ def build_gallery(items):
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../brand.css?v=e96b24bf">
-  <link rel="stylesheet" href="../style.css?v=77ae7f4c">
+  <link rel="stylesheet" href="../style.css?v=dcf8eb52">
   <link rel="stylesheet" href="../glass.css?v=c25dae44">
-  <link rel="stylesheet" href="../blog.css?v=41425334">
+  <link rel="stylesheet" href="../blog.css?v=ed850f83">
   <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>
 <body class="blog-page">

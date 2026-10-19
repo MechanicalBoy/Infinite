@@ -5,7 +5,7 @@
 @media (max-width: 600px) { .ah, .aud-section, .vstage, .lab, .bench, .reel-wrap { --card-r: 20px; } }
 
 /* ---- hero: words on the left, a live stage on the right ---- */
-.ah { padding-top: clamp(24px, 4vw, 64px); }
+.ah { padding-top: round(clamp(24px, 4vw, 64px), 8px); }
 .ah-grid { display: grid; gap: 24px; align-items: center; }
 @media (min-width: 900px) { .ah-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); } }
 .ah-text { text-align: left; }
@@ -40,15 +40,15 @@
 /* ---- what you get ---- */
 .aud-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
 @media (min-width: 760px) { .aud-grid { grid-template-columns: repeat(3, 1fr); gap: 24px; } }
-.aud-card { background: var(--card); border-radius: var(--card-r); box-shadow: var(--shadow-1); padding: clamp(24px, 2.6vw, 32px); display: flex; flex-direction: column; gap: 12px; }
+.aud-card { background: var(--card); border-radius: var(--card-r); box-shadow: var(--shadow-1); padding: round(clamp(24px, 2.6vw, 32px), 8px); display: flex; flex-direction: column; gap: 12px; }
 .aud-card .num { font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace; color: var(--signal); letter-spacing: 0.08em; }
 .aud-card h3 { margin: 0; font-size: 1.125rem; font-weight: 700; letter-spacing: -0.02em; }
 .aud-card p { margin: 0; color: var(--ink2); line-height: 1.55; font-size: 1rem; }
 .aud-card code, .sec-sub code { font: 500 0.8438em 'Geist Mono', ui-monospace, monospace; }
 
 /* ---- the bench: real nodes at the size they are in the app ---- */
-.bench { background: var(--mid-deep); border-radius: var(--card-r); padding: clamp(16px, 3vw, 32px); box-shadow: var(--shadow-2); color: var(--mid-ink); }
-.bench-row { display: flex; gap: clamp(16px, 2.4vw, 32px); align-items: flex-start; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 8px; scrollbar-width: thin; scrollbar-color: rgba(167, 177, 255, 0.35) transparent; -webkit-overflow-scrolling: touch; }
+.bench { background: var(--mid-deep); border-radius: var(--card-r); padding: round(clamp(16px, 3vw, 32px), 8px); box-shadow: var(--shadow-2); color: var(--mid-ink); }
+.bench-row { display: flex; gap: round(clamp(16px, 2.4vw, 32px), 8px); align-items: flex-start; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 8px; scrollbar-width: thin; scrollbar-color: rgba(167, 177, 255, 0.35) transparent; -webkit-overflow-scrolling: touch; }
 .bench-row.few { justify-content: center; }
 .bn { flex: 0 0 auto; margin: 0; scroll-snap-align: start; min-width: 168px; max-width: 260px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .bn img { display: block; width: auto; height: auto; max-width: 100%; border-radius: var(--r-md); box-shadow: 0 12px 28px rgba(4, 5, 14, 0.5); }
@@ -63,7 +63,7 @@
 .bench-note { margin: 16px 0 0; font: 500 0.7188rem/1.4 'Geist Mono', ui-monospace, monospace; color: rgba(167, 177, 255, 0.8); letter-spacing: 0.03em; }
 
 /* ---- lab: turn something and watch it move ---- */
-.lab { display: grid; gap: clamp(16px, 2.4vw, 32px); background: var(--card); border-radius: var(--card-r); box-shadow: var(--shadow-1); padding: clamp(16px, 2.6vw, 32px); }
+.lab { display: grid; gap: round(clamp(16px, 2.4vw, 32px), 8px); background: var(--card); border-radius: var(--card-r); box-shadow: var(--shadow-1); padding: round(clamp(16px, 2.6vw, 32px), 8px); }
 @media (min-width: 900px) { .lab { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; } }
 .lab-view { position: relative; aspect-ratio: 16 / 10; border-radius: var(--r-md); overflow: hidden; background: var(--mid-deep); }
 .lab-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -147,3 +147,28 @@
   .js-reveal .reveal { opacity: 1; transform: none; transition: none; }
 }
 @media (min-width: 900px) { .ah-grid { gap: 64px; } }
+
+/* ---- v2 pass: plain display headline, unboxed cards, phone-sized node shots ---- */
+.ah-text h1.slab { display: block; padding: 0; background: none; box-shadow: none; border-radius: 0; text-align: left; font-size: clamp(2.5rem, 6.4vw, 4.4rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 800; margin: 4px 0 20px; }
+.ah-text h1.slab::before, .ah-text h1.slab::after { display: none; }
+.ah-text .blog-hand { display: block; line-height: 1; margin-bottom: 4px; }
+.aud-card { background: none; box-shadow: none; padding: 0; gap: 8px; }
+.aud-card h3 { font-size: 1.25rem; }
+.aud-grid { gap: 24px; }
+@media (min-width: 760px) { .aud-grid { gap: 40px; } }
+@media (max-width: 600px) {
+  .aud-section { margin-top: 48px; }
+  .ah-text .lead { font-size: 1rem; }
+  .aud-cta .btn { flex: 1 1 100%; }
+  .bench { padding: 16px; }
+  .bn { min-width: 0; width: 176px; }
+  .bn img { width: 100%; }
+  .bn span { font-size: 0.84375rem; }
+  .lab { padding: 12px; }
+  .lab-side { padding: 4px 8px 8px; }
+}
+@media (min-width: 601px) { .bn { width: auto; max-width: 240px; } .bn img { width: auto; max-height: 340px; } }
+@media (max-width: 600px) { .copy, .run, .play { min-height: 44px; } .cmd-tabs [role=tab] { min-height: 44px; } }
+.ah-text .blog-hand { margin-bottom: 8px; position: relative; }
+.ah-text h1.slab { margin-top: 0; padding-top: 4px; }
+.bn img { height: auto; }

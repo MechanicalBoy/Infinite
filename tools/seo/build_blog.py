@@ -124,9 +124,9 @@ def head(title, desc, url, image, extra="", kind="website", depth="../"):
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{depth}brand.css?v=e96b24bf">
-  <link rel="stylesheet" href="{depth}style.css?v=77ae7f4c">
+  <link rel="stylesheet" href="{depth}style.css?v=dcf8eb52">
   <link rel="stylesheet" href="{depth}glass.css?v=c25dae44">
-  <link rel="stylesheet" href="{depth}blog.css?v=41425334">
+  <link rel="stylesheet" href="{depth}blog.css?v=ed850f83">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-ZC4TYX1WCL"></script>
   <script>
     window.dataLayer = window.dataLayer || [];

@@ -124,14 +124,21 @@ AUDIENCES = [
              "text": "Pick a way to call the same engine. The sheet on the right shows the idea: a patch rendered to frames, one after another.",
              "tabs": [("Command line", 'Infinite --validate hello.inf\nInfinite --explain hello.inf\nInfinite --frame hello.inf 0,1,2 pics/ --contact-sheet sheet.png\nInfinite --render hello.inf hello.mp4 --duration 4 --fps 30\nInfinite --audio-summary hello.inf hello.json',
                        'The <a href="assets/Infinite_Headless_User_Guide.pdf" target="_blank" rel="noopener">headless guide (PDF)</a> covers every flag and exit code.'),
-                      ("Python", 'git clone https://github.com/n1m21n/Infinite\ncd Infinite/tools/python_sdk\npython3\n>>> import infinite\n>>> infinite.field_synth("state float phase = 0\\nphase = (phase + freq / sr) % 1.0\\nout = sin(6.28318 * phase) * 0.4 * gate", out_wav="synth.wav", duration=3)',
-                       'A thin wrapper over the same command line. <a href="https://github.com/n1m21n/Infinite/tree/main/tools/python_sdk" target="_blank" rel="noopener">Source and README</a>.'),
-                      ("MCP", '{\n  "mcpServers": {\n    "infinite": {\n      "command": "python3",\n      "args": ["/path/to/Infinite/tools/mcp/infinite_mcp.py"]\n    }\n  }\n}',
-                       'Add this to Claude Desktop, Cursor or any MCP client, with the path to your checkout. <a href="https://github.com/n1m21n/Infinite/tree/main/tools/mcp" target="_blank" rel="noopener">Source and README</a>.')],
+                      ("Python", 'pip install infinite-daw\npython3\n>>> import infinite\n>>> infinite.field_synth("state float phase = 0\\nphase = (phase + freq / sr) % 1.0\\nout = sin(6.28318 * phase) * 0.4 * gate", out_wav="synth.wav", duration=3)',
+                       'Available on PyPI. <a href="https://pypi.org/project/infinite-daw/" target="_blank" rel="noopener">PyPI package</a> and <a href="https://github.com/n1m21n/Infinite/tree/main/tools/python_sdk" target="_blank" rel="noopener">source</a>.'),
+                      ("MCP", 'npx -y infinite-engine init\n\n# Or manual mcp.json:\n{\n  "mcpServers": {\n    "infinite": {\n      "command": "npx",\n      "args": ["-y", "infinite-engine", "serve"]\n    }\n  }\n}',
+                       'One command configures Claude Desktop, Cursor and Windsurf. <a href="https://www.npmjs.com/package/infinite-engine" target="_blank" rel="noopener">npm package</a> and <a href="https://smithery.ai" target="_blank" rel="noopener">Smithery registry</a>.')],
              "note": "Illustration of the flow; the guide lists the real output files."},
      "start": [], "extra": ("assets/Infinite_Headless_User_Guide.pdf", "Headless guide (PDF)")},
 ]
 ALL = [(a["slug"] + ".html", a["name"]) for a in AUDIENCES]
+AUD_ICON = {"artists": "family-compositing", "musicians": "family-notes", "vjs": "perform", "creative-coders": "edit", "developers": "cube"}
+
+
+def icon(name):
+    """Brand glyph from art/icons/src, inlined so a pill needs no request (BRAND.md section 7: icon beside a label)."""
+    svg = open(os.path.join(chrome.ROOT, "art", "icons", "src", name + "-20.svg"), encoding="utf-8").read().strip()
+    return svg.replace("<svg ", '<svg class="ic" aria-hidden="true" ', 1).replace("\n", "")
 
 
 def check_links():
@@ -163,8 +170,9 @@ def hl(code):
 
 def ctl(c):
     cid, label, val, lo, hi, dp, unit = c
+    fmt = "" if cid == "cut" else ' data-fmt="1"'
     return (f'<div class="ctl"><label for="c-{cid}">{e(label)}</label><output for="c-{cid}"></output>'
-            f'<input id="c-{cid}" type="range" min="0" max="1000" step="1" value="{val}"{"" if cid == "cut" else " data-fmt=\"1\""} data-lo="{lo}" data-hi="{hi}" data-dp="{dp}" data-unit="{e(unit)}"></div>')
+            f'<input id="c-{cid}" type="range" min="0" max="1000" step="1" value="{val}"{fmt} data-lo="{lo}" data-hi="{hi}" data-dp="{dp}" data-unit="{e(unit)}"></div>')
 
 
 def lab_html(a):
@@ -229,7 +237,7 @@ def main_html(a, rel):
       </section>'''
     start = ""
     if a["start"]:
-        links = "\n".join(f'          <a href="library/{sl}.html">{e(t)}</a>' for sl, t in a["start"])
+        links = "\n".join(f'          <a href="library/{sl}.html">{icon("play")}{e(t)}</a>' for sl, t in a["start"])
         start = f'''
       <section class="aud-section reveal">
         <h2>Start with</h2>
@@ -241,7 +249,7 @@ def main_html(a, rel):
     if a.get("body"):
         body = '      <section class="aud-section reveal dev-body">\n' + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), a["body"]), encoding="utf-8").read() + "      </section>"
     lab = lab_html(a)
-    others = "\n".join(f'          <a href="{h}">{e(n)}</a>' for h, n in ALL if h != rel)
+    others = "\n".join(f'          <a href="{h}">{icon(AUD_ICON[h[:-5]])}{e(n)}</a>' for h, n in ALL if h != rel)
     return f'''
   <main>
     <section class="ah">
@@ -329,8 +337,8 @@ def shell(rel, title, desc, lds, main, extra_head="", extra_js=""):
   <link rel="stylesheet" href="brand.css?v=e96b24bf">
   <link rel="stylesheet" href="style.css?v={chrome.CSS_VERSION}">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
-  <link rel="stylesheet" href="blog.css?v=41425334">
-  <link rel="stylesheet" href="audience.css?v=68a69cd7">
+  <link rel="stylesheet" href="blog.css?v=ed850f83">
+  <link rel="stylesheet" href="audience.css?v=ca118bc4">
   {ldtags}{extra_head}
   <script>document.documentElement.classList.add('js-reveal')</script>
 </head>

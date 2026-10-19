@@ -1,6 +1,6 @@
 /* Extensions page (made by tools/website/gen_extensions.py): one card per pack, built on the site's own tokens. */
 .ext-list { display: grid; gap: var(--gap, 24px); max-width: 900px; margin: 0 auto; }
-.ext-card { background: var(--card); border-radius: var(--radius-card); box-shadow: var(--shadow-1); padding: clamp(24px, 4vw, 32px); min-width: 0; }
+.ext-card { background: var(--card); border-radius: var(--radius-card); box-shadow: var(--shadow-1); padding: round(clamp(24px, 4vw, 32px), 8px); min-width: 0; }
 .ext-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
 .ext-head h2 { font-size: var(--fs-h3); font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 .ext-install summary { list-style: none; cursor: pointer; display: inline-flex; }

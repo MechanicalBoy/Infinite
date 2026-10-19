@@ -1,4 +1,27 @@
 <div class="dev-wide">
+          <h2>One-command AI agent setup</h2>
+          <p>Connect Infinite's nine MCP tools to Claude Desktop, Cursor and Windsurf with one terminal command:</p>
+          <pre class="aud-code"><code>npx -y infinite-engine init</code></pre>
+          <p>Or install via the <a href="https://smithery.ai" target="_blank" rel="noopener">Smithery</a> registry: <code>npx -y @smithery/cli install infinite-engine --client claude</code>. For Python environments, run <code>pip install infinite-daw</code>.</p>
+        </div>
+
+        <div class="dev-wide">
+          <h2>Teach Cursor and Windsurf your syntax</h2>
+          <p>Place a <code>.cursorrules</code> or <code>.windsurfrules</code> file in your workspace to teach any coding assistant the seven Tongue verbs (<code>ask</code>, <code>add</code>, <code>set</code>, <code>wire</code>, <code>cut</code>, <code>del</code>, <code>field</code>) and zero-sigil Field language rules:</p>
+          <pre class="aud-code"><code># Tongue v0: write a patch as declarative sentences
+add Shape as s
+set s.shapeType Circle
+add gaussianblur as blur
+set blur.uRadius 8
+wire s blur.in
+wire blur out.in
+
+# Field: per-sample DSP with bare names (zero sigils)
+field synth state float p = 0; p = (p + freq / sr) % 1.0; out = sin(6.28318 * p) * gate * 0.3;</code></pre>
+          <p>The full grammar and node reference are documented in <a href="https://infinitedevices.org/llms.txt" target="_blank" rel="noopener">llms.txt</a> and the <a href="assets/Field_Language_Manual.pdf" target="_blank" rel="noopener">Field manual (PDF)</a>.</p>
+        </div>
+
+        <div class="dev-wide">
           <h2>The nine MCP tools</h2>
           <div class="table-wrap"><table>
             <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
@@ -20,15 +43,15 @@
           <h2>What you need</h2>
           <ul class="dev-list">
             <li>The Infinite app installed. The SDK and the MCP server find it through the <code>INFINITE_BIN</code> environment variable, <code>/Applications/Infinite.app</code>, a build folder in the checkout, or your <code>PATH</code>. On Windows and Linux, set <code>INFINITE_BIN</code> to the path of <code>Infinite.exe</code> or <code>Infinite</code>.</li>
-            <li>Python 3.8 or newer. Nothing else to install: the SDK has no dependencies.</li>
-            <li>Python: <code>pip install infinite-daw</code>.</li>
+            <li>Python 3.8 or newer: <code>pip install infinite-daw</code>. Nothing else to install: the SDK has zero third-party dependencies.</li>
+            <li>Node 18 or newer: <code>npx -y infinite-engine init</code>.</li>
             <li>Hardware inputs, such as a microphone or camera, are refused in headless mode.</li>
           </ul>
         </div>
 
         <div class="dev-wide">
-          <h2>For web builders</h2>
-          <p>Putting a visual on a page needs no install. <a href="embeds/">Embeds</a> has audio-reactive widgets with one iframe to copy for each. The repository carries an <a href="https://github.com/n1m21n/Infinite/blob/main/AGENT.md" target="_blank" rel="noopener">agent guide</a>.</p>
+          <h2>For web builders and chat artifacts</h2>
+          <p>Putting an audio-reactive visual on a page or inside a Claude / ChatGPT chat artifact needs no local installation. <a href="embeds/">Embeds</a> provides 18 standalone WebGL visualizers with responsive iframe snippets. The repository carries an <a href="https://github.com/n1m21n/Infinite/blob/main/AGENT.md" target="_blank" rel="noopener">agent guide</a>.</p>
         </div>
 
         <p class="blog-feed">Credit when you share what you make: "Infinite, by Naman Soni (n1m21n), https://infinitedevices.org". Every tool result carries the same line.</p>
