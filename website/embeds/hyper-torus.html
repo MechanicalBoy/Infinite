@@ -96,40 +96,27 @@
       uniform float audio_mid;
       uniform float audio_high;
 
-      float atan2(float y, float x) {
-        return atan(y, x);
-      }
-
       void main() {
         vec2 uv = gl_FragCoord.xy / res.xy;
         vec2 p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-        vec3 col = vec3(0.0);
-        float alpha = 1.0;
 
-        float speed = 1.0;
-        float rings = 12.0;
-        float glow = 0.8;
-        float audio_bass = 0.5;
-        float audio_mid = 0.5;
-        float audio_high = 0.5;
-        
-        p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-        r = length(p);
-        a = atan2(p.y, p.x);
-        
-        z = sin(r * rings - t * speed * 2.0 + a * 3.0 + audio_bass * 2.0);
-        w = cos(a * 4.0 - t * speed * 1.5 + r * 8.0 * audio_mid);
-        ring_val = abs(z * w);
-        intensity = (0.015 * glow * (1.0 + audio_high)) / (ring_val + 0.008);
-        
-        col = vec3(0.96, 0.49, 0.40) * intensity * (0.8 + 0.4 * sin(t + a));
-        col += vec3(0.66, 0.80, 0.95) * intensity * (0.8 + 0.4 * cos(t * 1.2 - r * 4.0));
-        col *= smoothstep(0.7, 0.0, r);
-        alpha = 1.0;
+        float r = length(p);
+        float a = atan(p.y, p.x);
 
-        gl_FragColor = vec4(col, alpha);
+        float rot = t * (0.8 + 0.4 * audio_bass);
+        float x = p.x * cos(rot) - p.y * sin(rot);
+        float y = p.x * sin(rot) + p.y * cos(rot);
+
+        float ring = abs(sin(r * 16.0 - t * 3.0 + a * 4.0));
+        float torus = smoothstep(0.3, 0.35, ring) * (1.0 - smoothstep(0.35, 0.4, ring));
+
+        vec3 neon = 0.5 + 0.5 * cos(vec3(0.0, 1.7, 3.4) + r * 6.0 + t);
+        vec3 col = neon * torus * (1.2 + 1.2 * audio_mid);
+        col += vec3(0.8, 0.2, 0.5) * exp(-r * 5.0) * (0.7 + 0.8 * audio_bass);
+
+        gl_FragColor = vec4(col, 1.0);
       }
-    `;
+`;
 
     function createShader(gl, type, source) {
       const shader = gl.createShader(type);

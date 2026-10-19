@@ -96,35 +96,42 @@
       uniform float audio_mid;
       uniform float audio_high;
 
-      float atan2(float y, float x) {
-        return atan(y, x);
+      float hexDist(vec2 p) {
+        p = abs(p);
+        float c = dot(p, normalize(vec2(1.0, 1.73205)));
+        c = max(c, p.x);
+        return c;
+      }
+
+      vec4 hexCoords(vec2 uv) {
+        vec2 r = vec2(1.0, 1.73205);
+        vec2 h = r * 0.5;
+        vec2 a = mod(uv, r) - h;
+        vec2 b = mod(uv - h, r) - h;
+        vec2 gv = dot(a, a) < dot(b, b) ? a : b;
+        vec2 id = uv - gv;
+        return vec4(gv.x, gv.y, id.x, id.y);
       }
 
       void main() {
         vec2 uv = gl_FragCoord.xy / res.xy;
-        vec2 p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-        vec3 col = vec3(0.0);
-        float alpha = 1.0;
+        vec2 p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5) * 8.0;
 
-        float audio_bass = 0.5;
-        float scale = 12.0;
-        
-        p = (uv - 0.5) * scale;
-        h = vec2(1.7320508, 1.0);
-        a = mod(p, h) - h * 0.5;
-        b = mod(p - h * 0.5, h) - h * 0.5;
-        g = if(dot(a, a) < dot(b, b), a, b);
-        
-        edge = abs(max(abs(g.x) * 0.866025 + abs(g.y) * 0.5, abs(g.y)) - 0.45);
-        pulse = smoothstep(0.08, 0.02, edge);
-        
-        rings = sin(length(uv - 0.5) * 16.0 - t * 3.0);
-        col = vec3(pulse) * (0.5 + 0.5 * sin(vec3(0.2, 0.7, 1.2) + rings));
-        col = col * (0.8 + 0.5 * audio_bass);
+        vec4 hc = hexCoords(p);
+        float c = hexDist(hc.xy);
+        float dCenter = length(hc.zw * 0.12);
 
-        gl_FragColor = vec4(col, alpha);
+        float wave = sin(dCenter * 6.0 - t * 3.0) * 0.5 + 0.5;
+        float edge = smoothstep(0.48, 0.44, c) * smoothstep(0.38, 0.42, c);
+
+        vec3 col = vec3(0.04, 0.05, 0.1);
+        vec3 neon = 0.5 + 0.5 * cos(vec3(0.0, 1.5, 3.0) + dCenter * 2.0 + t + wave);
+        col += neon * edge * (1.2 + 1.5 * audio_bass);
+        col += neon * (1.0 - c * 2.0) * wave * 0.3 * (0.8 + audio_mid);
+
+        gl_FragColor = vec4(col, 1.0);
       }
-    `;
+`;
 
     function createShader(gl, type, source) {
       const shader = gl.createShader(type);

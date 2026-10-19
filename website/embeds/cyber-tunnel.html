@@ -96,36 +96,27 @@
       uniform float audio_mid;
       uniform float audio_high;
 
-      float atan2(float y, float x) {
-        return atan(y, x);
-      }
-
       void main() {
         vec2 uv = gl_FragCoord.xy / res.xy;
         vec2 p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-        vec3 col = vec3(0.0);
-        float alpha = 1.0;
 
-        float audio_bass = 0.5;
-        float speed = 2.0;
+        float r = length(p);
+        float a = atan(p.y, p.x);
         
-        p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-        r = length(p);
-        a = atan2(p.y, p.x);
+        float u_coord = a / 3.14159265;
+        float v_coord = 1.0 / (r + 0.001) + t * (1.5 + 1.2 * audio_bass);
         
-        u_coord = a / 3.14159265;
-        v_coord = 1.0 / (r + 0.001) + t * speed;
+        float grid_u = abs(fract(u_coord * 4.0) - 0.5);
+        float grid_v = abs(fract(v_coord * 2.0) - 0.5);
+        float lines = smoothstep(0.42, 0.49, max(grid_u, grid_v));
         
-        grid_u = abs(fract(u_coord * 4.0) - 0.5);
-        grid_v = abs(fract(v_coord * 2.0) - 0.5);
-        lines = smoothstep(0.45, 0.48, max(grid_u, grid_v));
-        
-        col = vec3(lines) * vec3(0.1, 0.8, 1.0) + vec3(0.9, 0.1, 0.6) * (1.0 - smoothstep(0.0, 0.8, r));
-        col = col * (0.7 + 0.6 * audio_bass);
+        vec3 wire = vec3(lines) * vec3(0.1, 0.85, 1.0) * (0.8 + 0.6 * audio_mid);
+        vec3 centerGlow = vec3(0.95, 0.2, 0.6) * (1.0 - smoothstep(0.0, 0.6, r)) * (0.8 + 0.8 * audio_bass);
+        vec3 col = (wire + centerGlow) * (0.7 + 0.5 * audio_bass) * (1.0 - smoothstep(0.7, 1.2, r));
 
-        gl_FragColor = vec4(col, alpha);
+        gl_FragColor = vec4(col, 1.0);
       }
-    `;
+`;
 
     function createShader(gl, type, source) {
       const shader = gl.createShader(type);

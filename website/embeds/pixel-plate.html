@@ -96,48 +96,30 @@
       uniform float audio_mid;
       uniform float audio_high;
 
-      float atan2(float y, float x) {
-        return atan(y, x);
-      }
-
       void main() {
         vec2 uv = gl_FragCoord.xy / res.xy;
         vec2 p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-        vec3 col = vec3(0.0);
-        float alpha = 1.0;
 
-        float cells = 36.0;
-        float grow = 1.0;
-        float seed = 2.0;
-        float gap = 0.06;
-        float margin = 4.0;
-        float inkR = 0.953;
-        float inkG = 0.929;
-        float inkB = 0.875;
-        float paperR = 0.082;
-        float paperG = 0.098;
-        float paperB = 0.188;
-        cs = vec2(cells * aspect, cells);
-        g = floor(uv * cs);
-        cols = floor(cs.x);
-        rows = floor(cs.y);
-        hl = floor(3.0 * fract(sin(g.y * 12.9898 + seed * 78.233) * 43758.5453));
-        hr = floor(3.0 * fract(sin(g.y * 39.346 + seed * 11.135 + 5.0) * 43758.5453));
-        ht = floor(3.0 * fract(sin(g.x * 27.619 + seed * 53.211 + 9.0) * 43758.5453));
-        hb = floor(3.0 * fract(sin(g.x * 63.725 + seed * 31.337 + 3.0) * 43758.5453));
-        okx = step(hl + margin, g.x) * step(g.x + 1.0, cols - hr - margin);
-        oky = step(ht + margin, g.y) * step(g.y + 1.0, rows - hb - margin);
-        dist = length(vec2((g.x - cols * 0.5) / cols, (g.y - rows * 0.5) / rows));
-        inside = 1.0 - step(grow * 0.75, dist);
-        fc = fract(uv * cs);
-        tile = step(gap, fc.x) * step(gap, fc.y);
-        on = okx * oky * inside * tile;
-        col = mix(vec3(paperR, paperG, paperB), vec3(inkR, inkG, inkB), on);
-        alpha = 1.0;
+        float blockSize = 24.0;
+        vec2 blockCoord = floor(gl_FragCoord.xy / blockSize) * blockSize / res.xy;
+        vec2 bp = vec2((blockCoord.x - 0.5) * aspect, blockCoord.y - 0.5);
 
-        gl_FragColor = vec4(col, alpha);
+        float r = length(bp);
+        float a = atan(bp.y, bp.x);
+
+        float wave = sin(r * 12.0 - t * 2.5 + a * 2.0) * 0.5 + 0.5;
+        wave += 0.3 * audio_bass * sin(r * 20.0 - t * 4.0);
+
+        vec3 col = 0.5 + 0.5 * cos(vec3(0.0, 1.6, 3.2) + wave * 3.0 + t * 0.5);
+
+        vec2 sub = fract(gl_FragCoord.xy / blockSize);
+        float border = step(0.08, sub.x) * step(sub.x, 0.92) * step(0.08, sub.y) * step(sub.y, 0.92);
+
+        col = col * border + vec3(0.05, 0.06, 0.1) * (1.0 - border);
+
+        gl_FragColor = vec4(col, 1.0);
       }
-    `;
+`;
 
     function createShader(gl, type, source) {
       const shader = gl.createShader(type);

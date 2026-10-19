@@ -96,68 +96,44 @@
       uniform float audio_mid;
       uniform float audio_high;
 
-      float atan2(float y, float x) {
-        return atan(y, x);
-      }
-
       void main() {
         vec2 uv = gl_FragCoord.xy / res.xy;
         vec2 p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-        vec3 col = vec3(0.0);
-        float alpha = 1.0;
 
-        input pixel image img;
-        float cx = 0.5;
-        float cy = 0.5;
-        float size = 0.22;
-        float spread = 0.12;
-        float speed = 1.0;
-        float roam = 0.12;
-        float bend = 0.06;
-        float rimGlow = 0.8;
-        float tint = 0.25;
-        p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-        c0 = vec2((cx - 0.5) * aspect, cy - 0.5) + roam * vec2(1.4 * sin(t * speed * 0.5), 0.7 * cos(t * speed * 0.37));
-        ph = t * speed * 1.8;
-        a0 = ph;
-        a1 = ph + 2.094395;
-        a2 = ph + 4.18879;
-        d0 = spread * (1.0 + 0.27 * sin(2.2 * t * speed));
-        d1 = spread * (1.0 + 0.27 * sin(2.2 * t * speed + 1.0));
-        d2 = spread * (1.0 + 0.27 * sin(2.2 * t * speed + 2.0));
-        l0 = c0 + vec2(cos(a0), 0.8 * sin(a0)) * d0;
-        l1 = c0 + vec2(cos(a1), 0.8 * sin(a1)) * d1;
-        l2 = c0 + vec2(cos(a2), 0.8 * sin(a2)) * d2;
-        r0 = size * (0.6 + 0.1 * sin(3.1 * t * speed));
-        r1 = size * (0.6 + 0.1 * sin(3.1 * t * speed + 2.0));
-        r2 = size * (0.6 + 0.1 * sin(3.1 * t * speed + 4.0));
-        va = p - l0;
-        vb = p - l1;
-        vc = p - l2;
-        da = dot(va, va) + 0.00002;
-        db = dot(vb, vb) + 0.00002;
-        dc = dot(vc, vc) + 0.00002;
-        f = r0 * r0 / da + r1 * r1 / db + r2 * r2 / dc;
-        g = -2.0 * (r0 * r0 * va / (da * da) + r1 * r1 * vb / (db * db) + r2 * r2 * vc / (dc * dc));
-        glen = length(g) + 0.0001;
-        sd = (f - 1.0) / glen;
-        n = g / glen;
-        depth = (1.0 - smoothstep(0.0, 0.1, sd)) * (1.0 - smoothstep(1.15, 1.9, f));
-        sh = n * bend * depth;
-        inside = img(uv + vec2(sh.x / aspect, sh.y)).rgb;
-        rgb = mix(inside, vec3(0.12, 0.145, 0.27), tint);
-        rim = (1.0 - smoothstep(0.0, 0.0075, sd)) * (1.0 - smoothstep(1.08, 1.5, f));
-        lit = clamp(dot(-n, normalize(vec2(-0.6, 0.8))) * 0.5 + 0.5, 0.0, 1.0);
-        rgb = rgb + vec3(1.0, 0.8, 0.72) * rim * (0.25 + 0.75 * lit) * rimGlow;
-        aa = 1.5 / res.y;
-        cover = smoothstep(-aa, aa, sd) * step(0.5, f);
-        back = img(uv);
-        col = mix(back.rgb, rgb, cover);
-        alpha = back.a;
+        vec2 c1 = vec2(sin(t * 1.2), cos(t * 0.9)) * 0.18;
+        vec2 c2 = vec2(cos(t * 1.5 + 2.0), sin(t * 1.1 + 1.0)) * 0.22;
+        vec2 c3 = vec2(sin(t * 0.8 - 1.5), cos(t * 1.4 - 0.5)) * 0.15;
 
-        gl_FragColor = vec4(col, alpha);
+        float r1 = 0.025 * (1.0 + 0.6 * audio_bass) / (dot(p - c1, p - c1) + 0.001);
+        float r2 = 0.022 * (1.0 + 0.6 * audio_mid) / (dot(p - c2, p - c2) + 0.001);
+        float r3 = 0.020 * (1.0 + 0.6 * audio_high) / (dot(p - c3, p - c3) + 0.001);
+
+        float field = r1 + r2 + r3;
+
+        vec3 bg = vec3(0.04, 0.05, 0.09) + vec3(0.1, 0.12, 0.2) * (1.0 - length(p));
+        float edge = smoothstep(0.9, 1.1, field);
+
+        float eps = 0.005;
+        float fX = (0.025 / (dot(p + vec2(eps,0.0) - c1, p + vec2(eps,0.0) - c1) + 0.001) +
+                    0.022 / (dot(p + vec2(eps,0.0) - c2, p + vec2(eps,0.0) - c2) + 0.001) +
+                    0.020 / (dot(p + vec2(eps,0.0) - c3, p + vec2(eps,0.0) - c3) + 0.001));
+        float fY = (0.025 / (dot(p + vec2(0.0,eps) - c1, p + vec2(0.0,eps) - c1) + 0.001) +
+                    0.022 / (dot(p + vec2(0.0,eps) - c2, p + vec2(0.0,eps) - c2) + 0.001) +
+                    0.020 / (dot(p + vec2(0.0,eps) - c3, p + vec2(0.0,eps) - c3) + 0.001));
+        vec2 grad = vec2(fX - field, fY - field);
+        vec3 norm = normalize(vec3(-grad, 0.1));
+
+        vec3 lightDir = normalize(vec3(0.5, 0.8, 1.0));
+        float spec = pow(max(dot(norm, lightDir), 0.0), 16.0);
+        float rim = pow(1.0 - max(norm.z, 0.0), 2.5);
+
+        vec3 blobCol = 0.5 + 0.5 * cos(vec3(0.0, 1.5, 3.0) + field * 0.3 + t);
+        blobCol += vec3(spec * 0.8) + vec3(0.4, 0.7, 1.0) * rim;
+
+        vec3 col = mix(bg, blobCol, edge);
+        gl_FragColor = vec4(col, 1.0);
       }
-    `;
+`;
 
     function createShader(gl, type, source) {
       const shader = gl.createShader(type);
