@@ -124,9 +124,9 @@ def head(title, desc, url, image, extra="", kind="website", depth="../"):
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{depth}brand.css?v=e96b24bf">
-  <link rel="stylesheet" href="{depth}style.css?v=8edf4baf">
+  <link rel="stylesheet" href="{depth}style.css?v=16bb298e">
   <link rel="stylesheet" href="{depth}glass.css?v=c25dae44">
-  <link rel="stylesheet" href="{depth}blog.css?v=7d072fe5">
+  <link rel="stylesheet" href="{depth}blog.css?v=8d522b1a">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-ZC4TYX1WCL"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -159,7 +159,7 @@ def card(p, i):
           <a class="post-link" href="{p['slug']}.html">
             {media}
             <div class="post-body">
-              <p class="post-kicker mono">{e(CATS.get(p['category'], p['category']))} · {e(fmt_date(p['date']))} · {p['minutes']} min</p>
+              <p class="post-kicker mono">{e(CATS.get(p['category'], p['category']))}<span class="kd"> · {e(fmt_date(p['date']))}</span> · {p['minutes']} min</p>
               <h2>{e(p['title'])}</h2>
               <p class="post-desc">{e(p['description'])}</p>
             </div>

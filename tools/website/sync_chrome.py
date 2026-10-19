@@ -219,6 +219,10 @@ def sync(rel, text):
     s = re.sub(r'<nav class="nav-links" id="nav-links".*?</nav>', lambda m: nav_html(rel), s, count=1, flags=re.S)
     if '<footer class="site-footer">' in s:
         s = re.sub(r'<footer class="site-footer">.*?</footer>', lambda m: footer_html(rel), s, count=1, flags=re.S)
+    elif '</main>' in s:
+        s = s.replace('</main>', '</main>\n\n  ' + footer_html(rel).lstrip(), 1)
+    elif re.search(r'\n\s*<script[^>]*src=', s):
+        s = re.sub(r'\n(\s*<script[^>]*src=)', lambda m: '\n  ' + footer_html(rel).lstrip() + '\n\n' + m.group(1), s, count=1)
     s = re.sub(r'(style\.css\?v=)[A-Za-z0-9]+', r"\g<1>" + CSS_VERSION, s)
     s = re.sub(r'(site\.js\?v=)\d+', r"\g<1>" + JS_VERSION, s)
     # the brand link goes home from any page

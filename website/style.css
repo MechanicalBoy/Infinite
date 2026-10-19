@@ -902,3 +902,5 @@ body .copy { min-height: 36px; }
 /* System pass: one counter size, mono at a scale step */
 p.mono { font-size: 0.84375rem; }
 @media (max-width: 640px) { .counter { min-height: 44px; display: inline-flex; align-items: center; } }
+
+@media (hover: none) { .btn:hover, .node:hover, .doc-card:hover, .ticker-pill:hover, .footer-social a:hover { transform: none; } .play-btn:hover, .yt-poster:hover img, .yt-poster:hover .yt-play { transform: none; } }

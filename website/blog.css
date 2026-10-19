@@ -146,9 +146,16 @@ body.blog-page { overflow-x: clip; }
 /* Phone grid: the post list is rows (square thumb, kicker and title), not full-width pictures */
 @media (max-width: 600px) {
   .post-grid { gap: 8px; }
-  .post-grid .post-link { display: grid; grid-template-columns: 96px 1fr; column-gap: 16px; align-items: center; padding: 8px; }
-  .post-grid .post-media { aspect-ratio: 1; }
-  .post-grid .post-body { padding: 0; gap: 4px; }
-  .post-grid .post-card h2 { font-size: 1rem; line-height: 1.25; }
-  .post-grid .post-desc { display: none; }
+  .post-grid:not(.embed-grid) .post-link { display: grid; grid-template-columns: 96px minmax(0, 1fr); column-gap: 16px; align-items: center; padding: 8px; }
+  .post-grid:not(.embed-grid) .post-media { aspect-ratio: 1; }
+  .post-grid:not(.embed-grid) .post-body { padding: 0; gap: 4px; min-width: 0; }
+  .post-grid:not(.embed-grid) .post-meta, .post-grid:not(.embed-grid) .post-kicker { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .embed-grid .post-body { padding: 16px; }
+  .embed-grid .post-desc { display: none; }
+  .post-grid:not(.embed-grid) .post-card h2 { font-size: 1rem; line-height: 1.25; }
+  .post-grid:not(.embed-grid) .post-desc { display: none; }
 }
+
+/* touch screens have no hover: no lift on tap, so the first tap always follows the link (iOS holds a tap that changes :hover state) */
+@media (hover: none) { .post-card:hover, .rel-card:hover { transform: none; box-shadow: var(--shadow-1); } }
+@media (max-width: 600px) { .post-kicker .kd { display: none; } }

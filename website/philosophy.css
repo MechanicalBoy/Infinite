@@ -118,3 +118,5 @@
 }
 .vstage-3d, .bench-img { height: auto; }
 .mind-cap { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); }
+
+@media (hover: none) { .who-card:hover { transform: none; } }

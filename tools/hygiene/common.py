@@ -138,6 +138,7 @@ class _Quiet(http.server.SimpleHTTPRequestHandler):
 
 def serve():
     h = functools.partial(_Quiet, directory=WEB)
+    socketserver.ThreadingTCPServer.request_queue_size = 256  # the default of 5 drops requests when a page opens many at once
     srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), h)
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()

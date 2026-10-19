@@ -198,3 +198,11 @@
   .bench { overflow: visible; padding: 12px; }
   .bench-img { width: 100%; max-width: 100%; height: auto; max-height: none; }
 }
+@media (max-width: 600px) {
+  .reel { gap: 12px; padding-bottom: 0; }
+  .reel figure { flex: 0 0 86%; }
+  .reel .frame { width: 100%; height: auto; aspect-ratio: 4 / 3; }
+  .reel figcaption { display: none; }
+}
+
+@media (hover: none) { .pad:hover, .play:hover, .run:hover, .reel a.frame:hover, .reel-btn:hover:not(:disabled), .aud-start a:hover { transform: none; } }

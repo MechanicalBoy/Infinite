@@ -115,3 +115,5 @@ body:has(.lib-hero) { overflow-x: clip; }
 @media (max-width: 720px) { .lib-chips { width: auto; margin: 0; padding: 0; max-width: none; } .lib-menu { min-width: min(260px, calc(100vw - 32px)); } }
 .lib-grid:empty { min-height: 1600px; }   /* reserve the grid before the index loads, so the footer does not jump */
 @media (max-width: 600px) { .lib-dl, .lib-copy { min-width: 40px; min-height: 40px; } }
+
+@media (hover: none) { .lib-card .node:hover .node-view img { transform: none; } }

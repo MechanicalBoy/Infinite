@@ -98,17 +98,4 @@
     for (var i = items.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = items[i]; items[i] = items[j]; items[j] = t; }
     grid.innerHTML = items.map(card).join(''); chips(); apply();
   }).catch(function () { emptyEl.hidden = false; emptyEl.textContent = 'Could not load the library.'; });
-
-  /* header: shadow on scroll + mobile menu (same behaviour as the main page) */
-  var header = document.getElementById('site-header'), btn = document.getElementById('menu-btn');
-  if (header) {
-    var onScroll = function () { header.classList.toggle('scrolled', window.scrollY > 8); };
-    window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
-    if (btn) {
-      var set = function (o) { header.classList.toggle('nav-open', o); btn.setAttribute('aria-expanded', String(o)); };
-      btn.addEventListener('click', function () { set(!header.classList.contains('nav-open')); });
-      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') set(false); });
-      document.addEventListener('click', function (e) { if (header.classList.contains('nav-open') && !header.contains(e.target)) set(false); });
-    }
-  }
 })();
