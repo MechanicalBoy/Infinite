@@ -131,6 +131,53 @@
     window.addEventListener('resize', () => { if (window.innerWidth > 900) set(false); });
   }
 
+
+  /* ------------------------------------------------------------ dock: bottom bar on phones, icon rail on desktop */
+  function initDock() {
+    const dock = $('#dock');
+    if (!dock) return;
+    const bar = $('.dock-bar', dock), thumb = $('.dock-thumb', dock);
+    const stops = $$('.dock-stop', dock), sheets = $$('.dock-sheet', dock);
+    const vertical = () => window.matchMedia('(min-width: 901px)').matches;
+    let openId = null;
+    const resting = () => stops.find((b) => b.hasAttribute('data-current') || b.getAttribute('aria-current') === 'page') || null;
+    const place = () => {
+      const on = (openId && stops.find((b) => b.dataset.group === openId)) || resting();
+      stops.forEach((b) => b.classList.toggle('is-on', b === on));
+      if (!on) { thumb.style.opacity = '0'; return; }
+      thumb.style.opacity = '';
+      thumb.style.setProperty('--x', on.offsetLeft + 'px'); thumb.style.setProperty('--y', on.offsetTop + 'px');
+      thumb.style.setProperty('--w', on.offsetWidth + 'px'); thumb.style.setProperty('--h', on.offsetHeight + 'px');
+    };
+    const show = (id) => {
+      openId = id;
+      sheets.forEach((sh) => { sh.hidden = sh.dataset.group !== id; });
+      stops.forEach((b) => { if (b.dataset.group) b.setAttribute('aria-expanded', String(b.dataset.group === id)); });
+      dock.classList.toggle('open', !!id);
+      place();
+    };
+    stops.forEach((b) => {
+      if (!b.dataset.group) return;
+      b.addEventListener('click', () => show(openId === b.dataset.group ? null : b.dataset.group));
+      b.addEventListener('pointerenter', (e) => { if (vertical() && e.pointerType === 'mouse') show(b.dataset.group); });
+    });
+    dock.addEventListener('pointerleave', (e) => { if (vertical() && e.pointerType === 'mouse') show(null); });
+    dock.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { show(null); return; }
+      const keys = vertical() ? ['ArrowUp', 'ArrowDown'] : ['ArrowLeft', 'ArrowRight'];
+      const i = stops.indexOf(document.activeElement);
+      if (i < 0 || keys.indexOf(e.key) < 0) return;
+      e.preventDefault();
+      stops[(i + (e.key === keys[1] ? 1 : stops.length - 1)) % stops.length].focus();
+    });
+    document.addEventListener('click', (e) => { if (openId && !dock.contains(e.target)) show(null); });
+    $$('.dock-sheet a', dock).forEach((a) => a.addEventListener('click', () => show(null)));
+    window.addEventListener('resize', place);
+    place();
+    requestAnimationFrame(() => requestAnimationFrame(() => dock.classList.add('ready')));
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
+  }
+
   /* ------------------------------------------------------------ the exact logo */
   function initLogo() {
     const path = $('#lemni-path');
@@ -933,6 +980,7 @@
   const boot = () => {
     initDownloads();
     initHeader();
+    initDock();
     initLogo();
     initHeroWord();
     initHud();

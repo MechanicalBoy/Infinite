@@ -22,7 +22,7 @@ Motto: inventive and intuitive. Inventive is the patch-cable, slab and spring la
 - **Cards**: surface `--card`, radius 24, shadow-1, one title, at most two lines of body. Library cards: label above, preview, one sentence, price pill left and action pill right.
 - **Lists**: no bullets in marketing sections. Use numbered cards (`01`), glyph rows or pills. Prose lists in blog posts keep a muted marker.
 - **Categorisation**: pills with a glyph. Audience glyphs: artists family-compositing, musicians family-notes, VJs perform, creative coders edit, developers cube.
-- **Navigation**: three groups (Who it's for, Explore, Learn) plus Download. On phones the sheet is an accordion with the current group open.
+- **Navigation**: a dock. Phones get a bottom bar, desktop an icon rail that opens into labels on hover, tap or arrow keys. Stops are Home, For you, Explore, Learn; each opens a small sheet of that group's pages, with the current page a filled pill. Download is the pill at the end of the phone dock and sits in the top bar on desktop.
 - **Links**: inline links in the accent ink with an underline on hover; link-like controls are pills, never bare text with arrows.
 - **Iconography**: glyphs from `art/icons/src`, 20px grid, 1.5 stroke, always beside a label, inlined with `class="ic"`.
 - **Calls to action**: one verb, sentence case (Download Infinite, Copy code, Full screen). Never two lines.

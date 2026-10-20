@@ -17,7 +17,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 W = os.path.join(ROOT, "website")
 GH = "https://github.com/n1m21n/Infinite"
 CSS_VERSION = __import__("hashlib").md5(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "website", "style.css"), "rb").read()).hexdigest()[:8]   # style.css cache key: a hash, so it changes with the file
-JS_VERSION = "13"    # site.js cache key; bump when the menu script changes
+JS_VERSION = "14"    # site.js cache key; bump when the menu script changes
 
 # (group id, label, [(page path, label, hint, external)])
 GROUPS = [
@@ -137,6 +137,36 @@ def nav_html(rel):
     return "\n".join(out)
 
 
+DOCK_STOPS = [("for", "For you", "family-compositing"), ("explore", "Explore", "grid-dots"), ("learn", "Learn", "play")]
+
+
+def _svg(name):
+    f = os.path.join(ROOT, "art", "icons", "src", name + "-20.svg")
+    return open(f, encoding="utf-8").read().strip().replace("<svg ", '<svg class="ic" aria-hidden="true" ', 1).replace("\n", "")
+
+
+def dock_html(rel):
+    """Navigation as a dock: a bottom bar on phones, an icon rail on desktop. Each group opens a small sheet of its pages."""
+    p = depth_prefix(rel)
+    home = " aria-current=\"page\"" if rel == "index.html" else ""
+    out = ['<nav class="dock" id="dock" aria-label="Main">', '  <div class="dock-bar">', '    <span class="dock-thumb" aria-hidden="true"></span>',
+           f'    <a class="dock-stop" href="{p}index.html"{home}>{_svg("viewport")}<span>Home</span></a>']
+    for gid, label, ic in DOCK_STOPS:
+        cur = " data-current" if any(is_current(i[0], rel) for g in GROUPS if g[0] == gid for i in g[2]) else ""
+        out.append(f'    <button type="button" class="dock-stop" data-group="{gid}"{cur} aria-expanded="false" aria-controls="dock-sheet-{gid}">{_svg(ic)}<span>{label}</span></button>')
+    out.append(f'    <a class="dock-dl" href="{p}index.html#download">Download</a>')
+    out.append("  </div>")
+    for gid, label, ic in DOCK_STOPS:
+        g = next(g for g in GROUPS if g[0] == gid)
+        out.append(f'  <div class="dock-sheet" id="dock-sheet-{gid}" data-group="{gid}" hidden>')
+        for path, text, hint in g[2]:
+            c = ' aria-current="page"' if is_current(path, rel) else ""
+            out.append(f'    <a href="{href(path, p)}"{link_attrs(path)}{c}>{nav_icon(path)}<span>{text}</span></a>')
+        out.append("  </div>")
+    out.append("</nav>")
+    return "\n".join(out)
+
+
 AUDIENCE_PAGES = {"artists.html": "artists", "musicians.html": "musicians", "vjs.html": "vjs",
                   "creative-coders.html": "creative-coders", "developers.html": "developers"}
 
@@ -224,6 +254,8 @@ def sync(rel, text):
         s = s.replace('</main>', '</main>\n\n  ' + footer_html(rel).lstrip(), 1)
     elif re.search(r'\n\s*<script[^>]*src=', s):
         s = re.sub(r'\n(\s*<script[^>]*src=)', lambda m: '\n  ' + footer_html(rel).lstrip() + '\n\n' + m.group(1), s, count=1)
+    s = re.sub(r'\n?<nav class="dock".*?</nav>\n?', "\n", s, flags=re.S)
+    s = s.replace('</body>', dock_html(rel) + '\n</body>', 1)
     s = re.sub(r'(style\.css\?v=)[A-Za-z0-9]+', r"\g<1>" + CSS_VERSION, s)
     s = re.sub(r'(site\.js\?v=)\d+', r"\g<1>" + JS_VERSION, s)
     # the brand link goes home from any page

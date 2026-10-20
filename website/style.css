@@ -926,3 +926,49 @@ p.mono { font-size: 0.84375rem; }
   .nav-sheet-social { padding-top: 12px; margin-top: 4px; }
   .nav-sheet-social a { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 }
+
+/* Dock: phones get a bottom bar, desktop an icon rail. Each group opens a sheet of its pages; the old header list is retired. */
+.menu-btn, .nav-links { display: none !important; }
+.dock { --dock-h: 64px; position: fixed; z-index: 120; }
+.dock-bar { position: relative; display: flex; gap: 2px; padding: 6px; border-radius: var(--r-pill); background: var(--surface-2); box-shadow: var(--shadow-2); }
+.dock-thumb { position: absolute; left: 0; top: 0; width: var(--w, 0); height: var(--h, 0); transform: translate(var(--x, 0), var(--y, 0)); border-radius: var(--r-pill);
+  background: var(--deep); opacity: 0; transition: transform var(--dur-medium, 333ms) var(--ease-out), width var(--dur-medium, 333ms) var(--ease-out), height var(--dur-medium, 333ms) var(--ease-out), opacity var(--dur-small) var(--ease-out); }
+.dock.ready .dock-thumb { opacity: 1; }
+.dock-stop { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 14px; border-radius: var(--r-pill);
+  font: 500 0.8438rem/1 "Geist", system-ui, sans-serif; color: var(--ink2); text-decoration: none; cursor: pointer; background: none; transition: color var(--dur-small) var(--ease-out); }
+.dock-stop .ic { width: 20px; height: 20px; flex: none; }
+.dock-stop.is-on { color: var(--ink); }
+.dock-stop:focus-visible, .dock-dl:focus-visible, .dock-sheet a:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--signal); }
+.dock-dl { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 18px; border-radius: var(--r-pill); background: var(--ink); color: var(--ground); font: 600 0.8438rem/1 "Geist", system-ui, sans-serif; text-decoration: none; }
+.dock-sheet { position: absolute; display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: var(--shadow-2); }
+.dock-sheet[hidden] { display: none; }
+.dock-sheet:not([hidden]) { animation: sheet-in 333ms var(--ease-out) both; }
+.dock-sheet a { display: flex; align-items: center; gap: 14px; min-height: 44px; padding: 0 16px; border-radius: var(--r-pill); color: var(--ink); text-decoration: none; font: 600 1rem/1 "Geist", system-ui, sans-serif; }
+.dock-sheet a:active, .dock-sheet a:hover { background: var(--deep); }
+.dock-sheet a[aria-current] { background: var(--ink); color: var(--ground); }
+.dock-sheet .ic { width: 20px; height: 20px; flex: none; color: var(--ink2); }
+.dock-sheet a[aria-current] .ic { color: inherit; }
+
+/* phone: bottom dock */
+@media (max-width: 900px) {
+  .dock { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); }
+  .dock-bar > .dock-stop { flex: 1 1 0; flex-direction: column; gap: 4px; min-height: 52px; padding: 0 4px; font-size: 0.6875rem; }
+  .dock-dl { flex: none; }
+  .dock-sheet { left: 0; right: 0; bottom: calc(100% + 10px); }
+  body { padding-bottom: 88px; }
+  .nav-download { display: none; }
+}
+/* desktop: icon rail that opens into labels */
+@media (min-width: 901px) {
+  .dock { left: 16px; top: 50%; transform: translateY(-50%); }
+  .dock-bar { flex-direction: column; border-radius: 32px; }
+  .dock-bar > .dock-stop { justify-content: flex-start; width: 48px; padding: 0 14px; overflow: hidden; white-space: nowrap; transition: width var(--dur-medium, 333ms) var(--ease-out), color var(--dur-small) var(--ease-out); }
+  .dock:hover .dock-stop, .dock:focus-within .dock-stop, .dock.open .dock-stop { width: 148px; }
+  .dock-bar > .dock-stop span { opacity: 0; transition: opacity var(--dur-small) var(--ease-out); }
+  .dock:hover .dock-stop span, .dock:focus-within .dock-stop span, .dock.open .dock-stop span { opacity: 1; }
+  .dock-dl { display: none; }
+  .dock-sheet { left: 170px; top: 0; width: 260px; }
+  .dock-sheet::before { content: ""; position: absolute; top: 0; bottom: 0; left: -24px; width: 24px; }
+  body { padding-left: 84px; }
+}
+@media (prefers-reduced-motion: reduce) { .dock-thumb, .dock-sheet:not([hidden]) { transition: none; animation: none; } }
