@@ -6,6 +6,7 @@
   var sec = document.getElementById('journey'); if (!sec) return;
   var stage = sec.querySelector('.ph-stage'), lines = sec.querySelector('.ph-lines'), flow = sec.querySelector('.ph-flow');
   var loopSvg = sec.querySelector('.ph-loop'), mark = sec.querySelector('.ph-mark'), endBox = sec.querySelector('.ph-end'), hint = sec.querySelector('.ph-hint');
+  var caps = [].slice.call(sec.querySelectorAll('.ph-cap')), ball = sec.querySelector('.ph-ball'), lobeA = sec.querySelector('.ph-lobe-a'), lobeB = sec.querySelector('.ph-lobe-b');
   var navs = [].slice.call(sec.querySelectorAll('.pn'));
   var bubs = [].slice.call(sec.querySelectorAll('.pb[data-id]'));
   var N = 8, human = bubs[8], machine = bubs[9];
@@ -18,7 +19,7 @@
   // the mind map, in the page's original 600 x 410 coordinates, one point per bubble (same order as the generator's NODES)
   var MIND = [[300, 58], [100, 138], [500, 138], [58, 270], [300, 208], [546, 270], [190, 350], [410, 350]];
 
-  var portrait = false, W = 0, H = 0, top = 0, cx = 0, cy = 0, A = 0, mindPts = [], scatterPts = [], loopTs = [];
+  var markLen = 1, portrait = false, W = 0, H = 0, top = 0, cx = 0, cy = 0, A = 0, mindPts = [], scatterPts = [], loopTs = [];
   var s = 0, sT = 0, orbit = 0, time = 0, clock = 0, running = false, vis = true;
   var offs = bubs.map(function () { return { x: 0, y: 0, vx: 0, vy: 0 }; });
   var drag = null, focus = -1, focusT = 0;
@@ -26,25 +27,25 @@
   function hash(n) { var x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
   function sm(t) { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); }
   function mix(a, b, t) { return a + (b - a) * t; }
-  function lem(t) { var d = 1 + Math.sin(t) * Math.sin(t); return [cx + A * Math.cos(t) / d, cy + A * Math.sin(t) * Math.cos(t) / d]; }
+  function lem(t) { var c = Math.cos(t), d = 1 + c * c; return [cx + A * 1.0 * Math.sin(t) / d, cy + A * Math.sin(t) * c / d]; }
 
   function measure() {
     W = stage.clientWidth; H = stage.clientHeight;
-    var hd = document.querySelector('.site-header'); top = hd ? hd.offsetHeight : 64;
+    var hd = document.querySelector('.site-header'); top = (hd ? hd.offsetHeight : 60) + (W < 680 ? 140 : 120);
     var hu = H - top - 96; portrait = W < H * 0.9;
     cx = W / 2; cy = top + 8 + (H - top - 64) / 2;
-    A = portrait ? W * 0.4 : Math.min(W * 0.36, hu * 1.4);
+    A = portrait ? W * 0.34 : Math.min(W * 0.27, hu * 0.62);
     var sc = portrait ? Math.min(W * 0.78 / 410, hu * 0.8 / 600) : Math.min(W * 0.8 / 600, hu * 0.9 / 410);
     mindPts = MIND.map(function (p) { var x = p[0] - 300, y = p[1] - 205; return portrait ? [cx + y * sc, cy + x * sc] : [cx + x * sc, cy + y * sc]; });
     scatterPts = bubs.map(function (b, i) { return [W * (0.12 + 0.76 * hash(i + 1)), top + 40 + (H - top - 120) * hash(i + 21)]; });
     loopTs = bubs.map(function (b, i) { return i * Math.PI * 2 / N + 0.4; });
     // the mark: a lemniscate path sized to the loop
     var d = '', k;
-    for (k = 0; k <= 120; k++) { var t = k / 120 * Math.PI * 2, q = 1 + Math.sin(t) * Math.sin(t); d += (k ? 'L' : 'M') + (280 * Math.cos(t) / q).toFixed(1) + ' ' + (280 * Math.sin(t) * Math.cos(t) / q).toFixed(1); }
-    mark.setAttribute('d', d + 'Z');
-    loopSvg.style.width = (A * 600 / 280) + 'px'; loopSvg.style.height = (A * 220 / 280) + 'px';
-    loopSvg.style.transform = 'translate3d(' + (cx - A * 300 / 280).toFixed(1) + 'px,' + (cy - A * 110 / 280).toFixed(1) + 'px,0)';
-    loopSvg.setAttribute('viewBox', '-300 -110 600 220');
+    for (k = 0; k <= 480; k++) { var t = k / 480 * Math.PI * 2, c = Math.cos(t), q = 1 + c * c; d += (k ? 'L' : 'M') + (100 * Math.sin(t) / q).toFixed(3) + ' ' + (100 * Math.sin(t) * c / q).toFixed(3); }
+    mark.setAttribute('d', d + 'Z'); mark.setAttribute('stroke-width', (87 / 338 * 100).toFixed(3)); markLen = mark.getTotalLength();
+    loopSvg.style.width = (A * 240 / 100) + 'px'; loopSvg.style.height = (A * 96 / 100) + 'px';
+    loopSvg.style.transform = 'translate3d(' + (cx - A * 1.2).toFixed(1) + 'px,' + (cy - A * 0.48).toFixed(1) + 'px,0)';
+    loopSvg.setAttribute('viewBox', '-120 -48 240 96');
     var sv = sec.querySelector('.ph-edges'); sv.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   }
 
@@ -105,11 +106,18 @@
     } else flow.style.opacity = 0;
     // the mark draws itself once the bubbles are on the loop
     var draw = sm((s - 3.35) / 1.1);
-    mark.style.strokeDashoffset = (1 - draw).toFixed(3);
+    mark.style.strokeDasharray = markLen; mark.style.strokeDashoffset = (markLen * (1 - draw)).toFixed(2);
+    if (draw > 0.98) {                       // the original mark's ember ball rides the loop, 4 s a lap
+      var u = (time / 4) % 1, e = u + 0.035 * Math.sin(u * Math.PI * 4), pt = mark.getPointAtLength((((e % 1) + 1) % 1) * markLen);
+      ball.setAttribute('cx', pt.x.toFixed(2)); ball.setAttribute('cy', pt.y.toFixed(2)); ball.style.opacity = Math.min(1, (draw - 0.98) * 50);
+    } else ball.style.opacity = 0;
+    caps.forEach(function (c, j) { c.classList.toggle('is-on', j === Math.max(0, Math.min(4, k - 1))); });
+    lobeA.style.transform = 'translate3d(' + (cx - A * 0.62 - 40).toFixed(1) + 'px,' + (cy + 62 * (A / 140)).toFixed(1) + 'px,0)';
+    lobeB.style.transform = 'translate3d(' + (cx + A * 0.62 - 12).toFixed(1) + 'px,' + (cy + 62 * (A / 140)).toFixed(1) + 'px,0)';
     loopSvg.style.opacity = s < 0.5 ? 0.1 : Math.max(0.1, draw);
     // the dock arrives with the mark
     var eo = sm((s - 4.35) / 0.65); endBox.style.opacity = eo.toFixed(3); endBox.classList.toggle('is-on', eo > 0.6);
-    hint.style.opacity = Math.max(0, 1 - s * 3).toFixed(2);
+    hint.style.visibility = s > 0.3 ? 'hidden' : '';
     if (focus >= 0 && now - focusT > 2600 && !drag && drag !== 0) setFocus(-1);
     if (vis) requestAnimationFrame(frame); else running = false;
   }

@@ -93,6 +93,16 @@ def loop_svg():
 ICONS = {"memory": "history", "rhythm": "metronome", "colour": "family-compositing", "voice": "family-synths", "motion": "family-modulators",
          "texture": "grid-dots", "space": "family-audio-effects", "light": "family-3d"}
 SCENES = [("scatter", "grid-dots", "Ideas"), ("mind", "pointer", "A mind"), ("patch", "mod-matrix", "A patch"), ("loop", "loop", "You and structure"), ("one", "star", "One")]
+CAPS = [("Why Infinite exists", "One canvas for pictures, sound and code, so an idea can travel from your head to the screen or the speakers without switching tools."),
+        ("A graph, because ideas connect", "A patch is a map of how things connect, and ideas connect in more than a line."),
+        ("Anything patches into anything", "Each node does one job and each cable says what feeds what. A sound can move a picture and a picture can move a sound."),
+        ("Flow, with a machine that follows you", "Controls stay live while a patch plays. It listens, it continues, and you decide what stays."),
+        ("Free, for everyone", "Free and open source on macOS, Windows and Linux, so the tools are not a privilege.")]
+PRINCIPLES = [("Connection", "Anything patches into anything. This is the belief the rest is built on."), ("Live", "Anything that shows a value keeps moving: meters fall, waveforms scroll, knobs breathe."),
+              ("Measured", "Motion follows the music. Every duration is a note value at the transport tempo: 125, 188, 333, 500 and 667 ms at 120 BPM."),
+              ("Calm", "One accent colour, used once in a frame. Plain words, no hype, no exclamation marks."),
+              ("Honest", "Speeds are measured and published on the benchmarks page, and the facts about each node are generated from the code."),
+              ("Free", "Free to use and open source, on macOS, Windows and Linux, so the tools are not a privilege.")]
 
 
 def main_html():
@@ -102,7 +112,9 @@ def main_html():
     who = "".join(f'<a class="pw" href="{s}.html" aria-label="{e(n)}">{ga.icon(ga.AUD_ICON[s])}</a>' for s, h, n, d in AUD)
     ids = [n[0] for n in NODES]
     edges = ",".join(f"{ids.index(a)}-{ids.index(b)}" for a, b in EDGES)
-    faq = "\n".join(f'<h2>{e(q)}</h2><p>{e(a)}</p>' for q, a in FAQ)
+    caps = "".join(f'<div class="ph-cap" data-k="{i}"><h2>{e(t)}</h2><p>{e(d)}</p></div>' for i, (t, d) in enumerate(CAPS))
+    prin = "".join(f'<li><b>{e(t)}</b><span>{e(d)}</span></li>' for t, d in PRINCIPLES)
+    faq = "".join(f'<details class="ph-q"><summary>{e(q)}</summary><p>{e(a)}</p></details>' for q, a in FAQ)
     return f'''
   <main>
     <h1 class="ph-sr">Why Infinite exists</h1>
@@ -110,16 +122,19 @@ def main_html():
       <div class="ph-stage">
         <div class="ph-glow" aria-hidden="true"></div>
         <svg class="ph-edges" aria-hidden="true"><g class="ph-lines"></g><circle class="ph-flow" r="5"/></svg>
-        <svg class="ph-loop" viewBox="-300 -80 600 160" aria-hidden="true" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="phg" x1="0" x2="1"><stop offset="0" stop-color="#F57F66"/><stop offset=".5" stop-color="#C7AFC0"/><stop offset="1" stop-color="#A9CDF1"/></linearGradient></defs><path class="ph-mark" d="" pathLength="1"/></svg>
+        <svg class="ph-loop" viewBox="-300 -80 600 160" aria-hidden="true" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="phg" x1="0" x2="1"><stop offset="0" stop-color="#F57F66"/><stop offset=".5" stop-color="#C7AFC0"/><stop offset="1" stop-color="#A9CDF1"/></linearGradient><radialGradient id="phb" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".35" stop-color="#FF9878"/><stop offset="1" stop-color="#B53700"/></radialGradient></defs><path class="ph-mark" d="" pathLength="1"/><circle class="ph-ball" r="9" fill="url(#phb)" cx="0" cy="0"/></svg>
         <div class="ph-bubbles">{bub}</div>
+        <div class="ph-caps">{caps}</div>
+        <span class="ph-lobe ph-lobe-a" aria-hidden="true">structure</span><span class="ph-lobe ph-lobe-b" aria-hidden="true">you</span>
         <nav class="ph-nav" aria-label="Chapters">{nav}</nav>
         <div class="ph-end"><div class="ph-who">{who}</div><a class="btn btn-primary ph-dl" href="index.html#setup">Download</a></div>
         <span class="ph-hint" aria-hidden="true">{ga.icon("chevron-down")}</span>
       </div>
     </section>
-    <div class="ph-sr">
-{faq}
-    </div>
+    <section class="ph-after">
+      <ul class="ph-prin">{prin}</ul>
+      <div class="ph-faq">{faq}</div>
+    </section>
 '''
 
 
@@ -133,7 +148,7 @@ def ld():
 
 
 def build():
-    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=501a4f1d">', extra_js='\n  <script src="philosophy.js?v=4" defer></script>')
+    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=2b5c04a1">', extra_js='\n  <script src="philosophy.js?v=5" defer></script>')
 
 
 def main():
