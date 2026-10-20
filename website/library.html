@@ -27,7 +27,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="brand.css?v=e96b24bf">
   <link rel="stylesheet" href="style.css?v=dba6d460">
-  <link rel="stylesheet" href="library.css?v=418c5a8e">
+  <link rel="stylesheet" href="library.css?v=c3e7895b">
   <link rel="stylesheet" href="glass.css?v=c25dae44">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-ZC4TYX1WCL"></script>
   <script>
@@ -104,38 +104,101 @@
   <main>
     <section class="section lib-hero">
       <div class="container">
-        <div class="section-head">
-          <p class="lib-hand hand">yours</p>
-          <h1 class="slab">Library</h1>
-          <p class="section-sub">Starter templates, community patches and small Field devices. Download one, open or import it, and keep patching.</p>
-        </div>
+        <div class="lib-head-bar">
+          <h1 class="slab">Library.</h1>
 
-        <div class="lib-bar">
-          <div class="lib-chips" id="chips" role="group" aria-label="Filter by category"></div>
-          <div class="lib-bar-end">
-            <span class="lib-count mono" id="count" aria-live="polite"></span>
-            <div class="lib-view" id="view" role="group" aria-label="Cards per row">
-              <button type="button" data-cols="4" aria-pressed="true" aria-label="4 cards per row">4</button>
-              <button type="button" data-cols="8" aria-pressed="false" aria-label="8 cards per row">8</button>
+          <div class="lib-bar">
+            <div class="lib-chips" id="chips" role="group" aria-label="Filter by category"></div>
+            <div class="lib-bar-end">
+              <button type="button" class="lib-icon-pill lib-shuffle-btn" id="lib-shuffle" data-lib-shuffle aria-label="Shuffle library" title="Shuffle">
+                <svg class="lib-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10V9a3 3 0 0 1 3-3h8M12.5 3.5 15 6l-2.5 2.5M16 10v1a3 3 0 0 1-3 3H5M7.5 11.5 5 14l2.5 2.5"/></svg>
+              </button>
+              <div class="lib-view" id="view" role="group" aria-label="Card arrangement">
+                <button type="button" class="lib-view-btn is-on" data-view="fan" aria-pressed="true" aria-label="Book view" title="Book">
+                  <svg class="lib-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.2" y="3.4" width="2.8" height="13.2" rx="1"/><rect x="7.4" y="3.4" width="2.8" height="13.2" rx="1"/><path d="M12.2 4.9 14.7 4.2 17.2 15.1 14.7 15.8Z"/></svg>
+                </button>
+                <button type="button" class="lib-view-btn" data-view="stack" aria-pressed="false" aria-label="Stack view" title="Stack">
+                  <svg class="lib-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5H10"/><path d="M12.5 5.5H16"/><path d="M4 10H7"/><path d="M9.5 10H16"/><path d="M4 14.5H11"/><path d="M13.5 14.5H16"/></svg>
+                </button>
+                <button type="button" class="lib-view-btn" data-view="grid" aria-pressed="false" aria-label="Grid view" title="Grid">
+                  <svg class="lib-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.4" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="14.6" r="1.1" fill="currentColor" stroke="none"/></svg>
+                </button>
+              </div>
+              <a class="lib-icon-pill lib-dl-all" href="assets/library/infinite-library.zip" download aria-label="Download all devices" title="Download all (.zip)">
+                <svg class="lib-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5v9.5m0 0-3.5-3.5M10 13l3.5-3.5M4 16.5h12"/></svg>
+              </a>
             </div>
-            <a class="btn btn-ghost btn-sm" href="assets/library/infinite-library.zip" download aria-label="Download all devices">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16"/></svg>
-              <span class="lib-dl-text">Download all</span>
-            </a>
           </div>
         </div>
 
-        <div class="lib-grid" id="grid"></div>
+        <div class="lib-stage" id="lib-stage" data-deck-mode="fan" aria-roledescription="carousel" aria-label="Infinite library cards">
+          <div class="lib-grid" id="grid"></div>
+
+          <div class="lib-hud-wrap" id="lib-hud-wrap">
+            <div class="lib-hud-pill">
+              <button type="button" class="lib-hud-nav" data-lib-prev aria-label="Previous item" title="Previous (←)">
+                <svg class="lib-arrow-ic is-prev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+              </button>
+              <div class="lib-hud-info" aria-live="polite" aria-atomic="true">
+                <span class="lib-hud-cat-ic" id="lib-hud-cat-ic"></span>
+                <div class="lib-hud-text">
+                  <span class="lib-hud-title" id="lib-hud-title">Library</span>
+                  <span class="lib-hud-meta" id="lib-hud-meta"></span>
+                </div>
+              </div>
+              <div class="lib-hud-right">
+                <button type="button" class="lib-hud-act" id="lib-hud-copy" aria-label="Copy device code" title="Copy code" hidden>
+                  <svg class="lib-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7.5" y="7.5" width="9" height="9" rx="2"/><path d="M4.5 12.5V5.5A2 2 0 0 1 6.5 3.5h7"/></svg>
+                </button>
+                <a class="lib-hud-act lib-hud-dl" id="lib-hud-dl" href="assets/library/infinite-library.zip" download aria-label="Download active item" title="Download">
+                  <svg class="lib-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5v9.5m0 0-3.5-3.5M10 13l3.5-3.5M4 16.5h12"/></svg>
+                </a>
+                <button type="button" class="lib-hud-act lib-shuffle-btn" data-lib-shuffle aria-label="Shuffle library" title="Shuffle (R)">
+                  <svg class="lib-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10V9a3 3 0 0 1 3-3h8M12.5 3.5 15 6l-2.5 2.5M16 10v1a3 3 0 0 1-3 3H5M7.5 11.5 5 14l2.5 2.5"/></svg>
+                </button>
+                <button type="button" class="lib-hud-nav" data-lib-next aria-label="Next item" title="Next (→)">
+                  <svg class="lib-arrow-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="lib-dots" id="lib-dots" role="tablist" aria-label="Browse items"></div>
+          </div>
+        </div>
+
         <p class="lib-empty" id="empty" hidden>Nothing matches that filter.</p>
       </div>
     </section>
 
-    <section class="section" id="install" aria-label="How to install">
+    <section class="section lib-dock-sec" id="install" aria-label="Workflow">
       <div class="container">
-        <div class="lib-how">
-          <div><p class="recipe-num mono">01</p><h3>Download</h3><p>Pick an item and press Download. You get one plain-text file: <code>.inf</code> for a template, <code>.field</code> for Pixel, <code>.js</code> for Sketch, <code>.md</code> for an AI skill.</p></div>
-          <div><p class="recipe-num mono">02</p><h3>Import</h3><p>Template: choose <b>File, Open</b> and pick the file. Pixel: add a Field Pixel node and press <b>Import</b> in its Devices row. Sketch: open a Sketch node's editor and paste the file. AI skill: save it as <code>SKILL.md</code> in your agent's skills folder, for example <code>.claude/skills/field-language/</code>.</p></div>
-          <div><p class="recipe-num mono">03</p><h3>Patch</h3><p>Filters read an image you cable in. Generators draw on their own. Every knob can be modulated.</p></div>
+        <div class="lib-icon-dock">
+          <div class="lib-dock-pill">
+            <span class="lib-dock-ic">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5v9.5m0 0-3.5-3.5M10 13l3.5-3.5M4 16.5h12"/></svg>
+            </span>
+            <span class="lib-dock-label">Download</span>
+            <span class="lib-dock-sub">.inf · .field · .js</span>
+          </div>
+          <span class="lib-dock-sep" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 5 12.5 10l-5 5"/></svg>
+          </span>
+          <div class="lib-dock-pill">
+            <span class="lib-dock-ic">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/><rect x="7.5" y="7.5" width="9" height="9" rx="2"/></svg>
+            </span>
+            <span class="lib-dock-label">Import</span>
+            <span class="lib-dock-sub">Canvas or node</span>
+          </div>
+          <span class="lib-dock-sep" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 5 12.5 10l-5 5"/></svg>
+          </span>
+          <div class="lib-dock-pill">
+            <span class="lib-dock-ic">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 10c1.8-5.5 3.2-5.5 4.4 0s2.8 5.5 4.4 0 3.2-5.5 4.4 0"/></svg>
+            </span>
+            <span class="lib-dock-label">Modulate</span>
+            <span class="lib-dock-sub">Live parameters</span>
+          </div>
         </div>
       </div>
     </section>
@@ -1390,6 +1453,6 @@
 
   
   <script src="site.js?v=13" defer></script>
-  <script src="library.js?v=16"></script>
+  <script src="library.js?v=17"></script>
 </body>
 </html>

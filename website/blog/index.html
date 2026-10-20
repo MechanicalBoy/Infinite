@@ -30,7 +30,7 @@
   <link rel="stylesheet" href="../brand.css?v=e96b24bf">
   <link rel="stylesheet" href="../style.css?v=dba6d460">
   <link rel="stylesheet" href="../glass.css?v=c25dae44">
-  <link rel="stylesheet" href="../blog.css?v=6194d731">
+  <link rel="stylesheet" href="../blog.css?v=df40576c">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-ZC4TYX1WCL"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -108,20 +108,28 @@
   <main>
     <section class="section blog-hero">
       <div class="container">
-        <div class="section-head text-center">
-          <div class="blog-badge-wrap"><span class="badge-pill mono">Blog</span></div>
-          <h1 class="slab">Practical notes to build <em class="hand">faster</em>.</h1>
-          <p class="section-sub">How Infinite is built, and what you can make with it. Flip through the book of notes, reshuffled on every visit.</p>
-        </div>
+        <div class="blog-head-bar">
+          <h1 class="slab">Practice notes.</h1>
 
-        <div class="blog-toolbar">
-          <div class="blog-chips" role="group" aria-label="Filter posts"><button type="button" class="chip is-on" data-filter="all"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.4" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="14.6" r="1.1" fill="currentColor" stroke="none"/></svg>All</button><button type="button" class="chip" data-filter="product"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2 16.2 6.7V13.4L10 16.9 3.8 13.4V6.7Z"/><path d="M10 10.05V3.2M10 10.05 16.2 13.4M10 10.05 3.8 13.4"/></svg>Product</button><button type="button" class="chip" data-filter="creative"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l.8-3.6L13.5 3.7a1.7 1.7 0 0 1 2.4 0l.4.4a1.7 1.7 0 0 1 0 2.4L7.6 15.2Z"/><path d="M12 5.2l2.8 2.8"/></svg>Creative</button><button type="button" class="chip" data-filter="engineering"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 10h14M10 3v14"/><circle cx="6.5" cy="6.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="13.5" cy="13.5" r="1.4" fill="currentColor" stroke="none"/></svg>Engineering</button></div>
-          <div class="blog-deck-tools" role="group" aria-label="Deck layout and shuffle">
-            <button type="button" class="chip chip-action" data-deck-shuffle title="Reshuffle the infinite deck"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10V9a3 3 0 0 1 3-3h8M12.5 3.5 15 6l-2.5 2.5M16 10v1a3 3 0 0 1-3 3H5M7.5 11.5 5 14l2.5 2.5"/></svg><span>Shuffle</span></button>
-            <div class="deck-view-switch" role="group" aria-label="Card arrangement">
-              <button type="button" class="view-pill is-on" data-deck-view="fan" aria-pressed="true" title="Book fan"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="3.4" width="2.8" height="13.2" rx="1"/><rect x="7.4" y="3.4" width="2.8" height="13.2" rx="1"/><path d="M12.2 4.9 14.7 4.2 17.2 15.1 14.7 15.8Z"/></svg><span>Book</span></button>
-              <button type="button" class="view-pill" data-deck-view="stack" aria-pressed="false" title="3D glass stack"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5H10"/><path d="M12.5 5.5H16"/><path d="M4 10H7"/><path d="M9.5 10H16"/><path d="M4 14.5H11"/><path d="M13.5 14.5H16"/></svg><span>Stack</span></button>
-              <button type="button" class="view-pill" data-deck-view="grid" aria-pressed="false" title="All cards grid"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.4" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="14.6" r="1.1" fill="currentColor" stroke="none"/></svg><span>Grid</span></button>
+          <div class="blog-toolbar">
+            <div class="blog-filter" id="blog-filter">
+              <button type="button" class="blog-select" id="blog-select" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by category">
+                <span class="blog-select-ic" id="blog-select-ic"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.4" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="14.6" r="1.1" fill="currentColor" stroke="none"/></svg></span>
+                <span class="blog-select-val" id="blog-select-val">All</span>
+                <svg class="select-chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8l4 4 4-4"/></svg>
+              </button>
+              <div class="blog-menu" id="blog-menu" role="listbox" aria-label="Category" hidden>
+                <button type="button" class="blog-opt" role="option" aria-selected="true" data-filter="all" data-label="All"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.4" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="14.6" r="1.1" fill="currentColor" stroke="none"/></svg><span>All</span></button><button type="button" class="blog-opt" role="option" aria-selected="false" data-filter="product" data-label="Product"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2 16.2 6.7V13.4L10 16.9 3.8 13.4V6.7Z"/><path d="M10 10.05V3.2M10 10.05 16.2 13.4M10 10.05 3.8 13.4"/></svg><span>Product</span></button><button type="button" class="blog-opt" role="option" aria-selected="false" data-filter="creative" data-label="Creative"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l.8-3.6L13.5 3.7a1.7 1.7 0 0 1 2.4 0l.4.4a1.7 1.7 0 0 1 0 2.4L7.6 15.2Z"/><path d="M12 5.2l2.8 2.8"/></svg><span>Creative</span></button><button type="button" class="blog-opt" role="option" aria-selected="false" data-filter="engineering" data-label="Engineering"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 10h14M10 3v14"/><circle cx="6.5" cy="6.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="13.5" cy="13.5" r="1.4" fill="currentColor" stroke="none"/></svg><span>Engineering</span></button>
+              </div>
+            </div>
+
+            <div class="blog-deck-tools" role="group" aria-label="Deck layout and shuffle">
+              <button type="button" class="chip chip-icon-only chip-action" data-deck-shuffle aria-label="Shuffle deck" title="Shuffle"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10V9a3 3 0 0 1 3-3h8M12.5 3.5 15 6l-2.5 2.5M16 10v1a3 3 0 0 1-3 3H5M7.5 11.5 5 14l2.5 2.5"/></svg></button>
+              <div class="deck-view-switch" role="group" aria-label="Card arrangement">
+                <button type="button" class="view-pill is-on" data-deck-view="fan" aria-pressed="true" aria-label="Book view" title="Book"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="3.4" width="2.8" height="13.2" rx="1"/><rect x="7.4" y="3.4" width="2.8" height="13.2" rx="1"/><path d="M12.2 4.9 14.7 4.2 17.2 15.1 14.7 15.8Z"/></svg></button>
+                <button type="button" class="view-pill" data-deck-view="stack" aria-pressed="false" aria-label="Stack view" title="Stack"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5H10"/><path d="M12.5 5.5H16"/><path d="M4 10H7"/><path d="M9.5 10H16"/><path d="M4 14.5H11"/><path d="M13.5 14.5H16"/></svg></button>
+                <button type="button" class="view-pill" data-deck-view="grid" aria-pressed="false" aria-label="Grid view" title="Grid"><svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.4" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="5.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="5.4" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="10" cy="14.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="14.6" r="1.1" fill="currentColor" stroke="none"/></svg></button>
+              </div>
             </div>
           </div>
         </div>
@@ -133,20 +141,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_euclidean_rhythm_sequencer-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>01</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">20 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>6 min read</span>
-              </div>
               <h2>Euclidean rhythm sequencer algorithms for modular music</h2>
               <p class="post-desc">How to generate Euclidean rhythm sequencer algorithms using Bjorklund integer distribution, modular arithmetic, and audio-reactive triggers in Infinite.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">20 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>6 min read</span>
               </div>
@@ -158,20 +159,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_webgl_audio_visualizer_embed-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>02</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">20 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>4 min read</span>
-              </div>
               <h2>Embedding interactive audio-reactive WebGL visuals on any website</h2>
               <p class="post-desc">How to embed responsive, microphone-reactive 3D WebGL visualisers into portfolios, documentation, and blogs using self-contained HTML iframes.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">20 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>4 min read</span>
               </div>
@@ -183,20 +177,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_original_audiovisual_nodes-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>03</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>5 min read</span>
-              </div>
               <h2>unique nodes in infinite: wave terrain, shape resonator, cymatics</h2>
               <p class="post-desc">explore infinite original nodes: convert images to sound with wave terrain, ring 3d geometry with shape resonator, and simulate chladni cymatics.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>5 min read</span>
               </div>
@@ -208,20 +195,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_ai_agent_mcp-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Product</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>04</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
-              </div>
               <h2>AI agent MCP guide for audio and visual synthesis</h2>
               <p class="post-desc">Connect AI coding agents to Infinite via MCP and Python SDK for headless audio synthesis, 3D meshes, and video rendering.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
               </div>
@@ -233,20 +213,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/og-image-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Product</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>05</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>7 min read</span>
-              </div>
               <h2>AI agents make music, art and 3D with Infinite headless engine</h2>
               <p class="post-desc">Infinite headless engine lets AI agents write text patches, inspect signals, and render music, pictures and 3D from the command line.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>7 min read</span>
               </div>
@@ -258,20 +231,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/nodegraph-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Engineering</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>06</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>writing audio dsp without juce: notes from infinite</h2>
               <p class="post-desc">why infinite&#x27;s audio engine is written in modern c++ without a framework, and what that changes for real-time safety.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -283,20 +249,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_sound_design_synth-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>07</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
-              </div>
               <h2>Sound design in Infinite: sub bass, plucks, and pads</h2>
               <p class="post-desc">Guide to modular sound design in Infinite DAW: subtractive sub bass, Karplus-Strong plucks, and ambient pads with Field kernels.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
               </div>
@@ -308,20 +267,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_hardware_midi-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Product</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>08</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>Hardware MIDI and controller mapping in Infinite</h2>
               <p class="post-desc">Connect hardware synthesizers, MIDI controllers, and DMX lighting to Infinite with low latency routing and parameter modulation.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -333,20 +285,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/sketch_showcase_preview-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>09</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>javascript sketches as nodes: draw with code, wire it to anything</h2>
               <p class="post-desc">how sketch nodes let you draw with javascript in infinite and expose real modulation pins to synths and audio signals.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -358,20 +303,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_audio_dsp_kernel-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Product</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>10</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
-              </div>
               <h2>Writing 48kHz audio DSP kernels in Field language</h2>
               <p class="post-desc">Breakdown of Infinite register machine for Field Synth and Effect nodes, compiling per-sample audio DSP kernels at 48kHz.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
               </div>
@@ -383,20 +321,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_procedural_3d_geometry-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>11</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>Procedural 3D geometry and audio mesh deformation</h2>
               <p class="post-desc">Build procedural 3D meshes in Infinite DAW, deform topology with Field modifier kernels, and drive real-time geometric mutations.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -408,20 +339,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_shadertoy_glsl-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>12</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">19 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>Bringing Shadertoy GLSL shaders into Infinite for audio reactivity</h2>
               <p class="post-desc">How to convert any Shadertoy fragment shader into a native real-time node in Infinite, hook it up to audio analysis FFT bands, and export high-resolution video.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">19 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -433,20 +357,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/field_pixel_editor-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Product</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>13</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">17 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>Field: write a short kernel and let the node decide where it runs</h2>
               <p class="post-desc">Field is the language built into Infinite. One kernel can become a shader, a geometry deformer or an audio effect, depending on the node it lives in.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">17 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -458,20 +375,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/blog_touchdesigner_alternative-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>14</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">17 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>A free TouchDesigner alternative for audio-reactive visuals?</h2>
               <p class="post-desc">An honest look at where Infinite fits next to TouchDesigner for audio-reactive visuals and VJ work, and where TouchDesigner is still the better choice.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">17 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -483,20 +393,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/og-image-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Product</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>15</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">17 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
-              </div>
               <h2>Infinite v0.6 benchmarks: where it is fast and where it is not</h2>
               <p class="post-desc">Infinite benchmarks on a base MacBook Air M2 against Blender, Vital, Serum 2 and popular DAWs, with the results published, including where Infinite is slower.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">17 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
               </div>
@@ -508,20 +411,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/howto_daw-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>16</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">17 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>Make your first audio-reactive visual in Infinite</h2>
               <p class="post-desc">A beginner walkthrough from a free template to a shape that moves with your music, using the Audio Analyze node and a single cable.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">17 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -533,20 +429,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/product_canvas_1400-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>17</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">17 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>Modulate any VST3 or AU plugin with LFOs, audio and visuals</h2>
               <p class="post-desc">Load a third-party plugin into Infinite and drive its parameters from an LFO, an envelope follower or something moving on screen.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">17 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -558,20 +447,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/og-image-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Creative</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>18</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">17 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>4 min read</span>
-              </div>
               <h2>Free motion tracking for music and visuals in Infinite</h2>
               <p class="post-desc">Hand Track, Face Track and Pose Track turn a camera or picture into modulators, so a pinch, a smile or a raised arm can drive any parameter in your patch.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">17 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>4 min read</span>
               </div>
@@ -583,20 +465,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/nodegraph-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Product</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>19</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">17 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
-              </div>
               <h2>One graph for sound and pictures: how Infinite keeps them in step</h2>
               <p class="post-desc">Infinite runs a pull-based audio graph and a GPU texture pipeline off one BPM transport, so audio can drive visuals and visuals can drive audio.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">17 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>2 min read</span>
               </div>
@@ -608,20 +483,13 @@
             <div class="post-media">
               <img src="../assets/thumbs/product_canvas_1400-720.webp" alt="" loading="lazy" decoding="async" width="720" height="450">
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>Product</span>
-                <span class="post-expand-pill"><svg class="expand-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="9.5" rx="2"/><path d="M7 16.5h6M10 13.5v3"/></svg><span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>20</span>
+                <span class="post-expand-pill" aria-hidden="true"><svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg></span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">17 Oct 2026</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
-              </div>
               <h2>Render video and audio from a text file with no window open</h2>
               <p class="post-desc">Infinite&#x27;s headless mode turns a plain-text patch into stills, video and a loudness report from the command line. Here is the five-minute workflow.</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">17 Oct 2026</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>3 min read</span>
               </div>
@@ -632,35 +500,33 @@
 
           <div class="deck-hud-wrap" id="deck-hud-wrap">
             <div class="deck-hud-pill">
-              <button type="button" class="deck-nav-btn" data-deck-prev aria-label="Previous card" title="Previous note (←)">
+              <button type="button" class="deck-nav-btn" data-deck-prev aria-label="Previous card" title="Previous (←)">
                 <svg class="deck-arrow-ic is-prev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l4 4-4 4"/></svg>
               </button>
               <div class="deck-hud-info" aria-live="polite" aria-atomic="true">
                 <img src="../assets/icon-96.png" alt="" class="deck-hud-avatar" width="36" height="36" decoding="async">
                 <div class="deck-hud-text">
                   <span class="deck-hud-title" id="deck-hud-title">Euclidean rhythm sequencer algorithms for modular music</span>
-                  <span class="deck-hud-meta mono" id="deck-hud-meta">20 Oct 2026 · 6 min read</span>
+                  <span class="deck-hud-meta" id="deck-hud-meta">20 Oct 2026 · 6 min read</span>
                 </div>
               </div>
               <div class="deck-hud-right">
-                <span class="deck-hud-counter mono" id="deck-hud-counter">01 / 20</span>
-                <button type="button" class="deck-icon-btn" data-deck-shuffle aria-label="Reshuffle deck" title="Shuffle deck (R)">
+                <button type="button" class="deck-icon-btn" data-deck-shuffle aria-label="Reshuffle deck" title="Shuffle (R)">
                   <svg class="chip-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10V9a3 3 0 0 1 3-3h8M12.5 3.5 15 6l-2.5 2.5M16 10v1a3 3 0 0 1-3 3H5M7.5 11.5 5 14l2.5 2.5"/></svg>
                 </button>
-                <button type="button" class="deck-nav-btn" data-deck-next aria-label="Next card" title="Next note (→)">
+                <button type="button" class="deck-nav-btn" data-deck-next aria-label="Next card" title="Next (→)">
                   <svg class="deck-arrow-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l4 4-4 4"/></svg>
                 </button>
               </div>
             </div>
             <div class="deck-progress-row">
               <div class="deck-progress-dots" id="deck-progress-dots" role="tablist" aria-label="Jump to note"></div>
-              <p class="deck-gesture-hint mono"><svg class="hint-ic" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10.5V5.2a1.2 1.2 0 0 1 2.4 0V9M9.4 8.5V4.2a1.2 1.2 0 0 1 2.4 0v4.3M11.8 8.5V5.2a1.2 1.2 0 0 1 2.4 0v5.3M14.2 8.8V7.6a1.2 1.2 0 0 1 2.4 0v4.6c0 3-2 4.8-5 4.8H10c-2 0-3-1-4-2.5l-2-3.2a1.2 1.2 0 0 1 2-1.3L7 12"/></svg><span>Drag, swipe, scroll or press ← → to flip · reshuffled every visit</span></p>
             </div>
           </div>
         </div>
 
         <p class="blog-empty" id="blog-empty" hidden>No posts in this group yet.</p>
-        <p class="blog-feed mono"><a href="feed.xml">RSS feed</a></p>
+        <p class="blog-feed"><a href="feed.xml">RSS feed</a></p>
       </div>
     </section>
   </main>
@@ -736,9 +602,13 @@
       var hudWrap = document.getElementById('deck-hud-wrap');
       var hudTitle = document.getElementById('deck-hud-title');
       var hudMeta = document.getElementById('deck-hud-meta');
-      var hudCounter = document.getElementById('deck-hud-counter');
       var dotsWrap = document.getElementById('deck-progress-dots');
       var empty = document.getElementById('blog-empty');
+      var filterWrap = document.getElementById('blog-filter');
+      var filterBtn = document.getElementById('blog-select');
+      var filterMenu = document.getElementById('blog-menu');
+      var filterVal = document.getElementById('blog-select-val');
+      var filterIc = document.getElementById('blog-select-ic');
       if (!stage || !grid) return;
 
       var allCards = Array.prototype.slice.call(grid.querySelectorAll('.post-card'));
@@ -765,8 +635,6 @@
       var startX = 0, startY = 0, lastX = 0, lastT = 0, vx = 0;
       var wheelAccum = 0, wheelLock = 0;
       var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
       function mod(n, m) { return m > 0 ? ((n % m) + m) % m : 0; }
 
@@ -796,8 +664,6 @@
           card.hidden = !show;
           if (show) {
             visibleCards.push(card);
-            var folio = card.querySelector('[data-card-folio]');
-            if (folio) folio.textContent = pad2(visibleCards.length);
           }
         });
         empty.hidden = visibleCards.length > 0;
@@ -815,7 +681,7 @@
             var b = document.createElement('button');
             b.type = 'button';
             b.className = 'deck-dot' + (idx === activeIdx ? ' is-on' : '');
-            b.setAttribute('aria-label', 'Note ' + (idx + 1));
+            b.setAttribute('aria-label', 'Jump to note');
             b.addEventListener('click', function () { goTo(idx); });
             dotsWrap.appendChild(b);
           })(i);
@@ -828,12 +694,10 @@
         var c = visibleCards[mod(activeIdx, total)];
         if (hudTitle) hudTitle.textContent = c.getAttribute('data-title') || '';
         if (hudMeta) {
-          var cat = c.getAttribute('data-cat-label') || '';
           var dt = c.getAttribute('data-date') || '';
           var rd = c.getAttribute('data-read') || '';
-          hudMeta.textContent = (cat ? cat + ' · ' : '') + dt + ' · ' + rd;
+          hudMeta.textContent = dt + ' · ' + rd;
         }
-        if (hudCounter) hudCounter.textContent = pad2(mod(activeIdx, total) + 1) + ' / ' + pad2(total);
         if (dotsWrap) {
           var dots = dotsWrap.children;
           for (var i = 0; i < dots.length; i++) {
@@ -916,6 +780,10 @@
           var slot = abs < 0.35 ? 'active' : (abs < 1.35 ? 'near' : (abs < 2.45 ? 'mid' : 'far'));
           card.setAttribute('data-slot', slot);
           card.setAttribute('aria-hidden', abs > 3.1 ? 'true' : 'false');
+          if (abs <= 3.2) {
+            var im = card.querySelector('img[loading="lazy"]');
+            if (im) im.setAttribute('loading', 'eager');
+          }
         });
 
         updateHud();
@@ -953,18 +821,39 @@
       /* Reshuffle on every visit */
       reshuffleDeck(false);
 
-      /* Filter chips */
-      var filterChips = document.querySelectorAll('[data-filter]');
-      filterChips.forEach(function (c) {
-        c.addEventListener('click', function () {
-          currentFilter = c.getAttribute('data-filter') || 'all';
-          filterChips.forEach(function (x) { x.classList.toggle('is-on', x === c); });
-          activeIdx = 0;
-          dragOffset = 0;
-          rebuildVisible();
-          layoutDeck(true);
+      /* Filter dropdown */
+      function setFilterOpen(open) {
+        if (!filterMenu || !filterBtn) return;
+        filterMenu.hidden = !open;
+        filterBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+      if (filterBtn && filterMenu) {
+        filterBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          setFilterOpen(filterMenu.hidden);
         });
-      });
+        var filterOpts = filterMenu.querySelectorAll('.blog-opt');
+        filterOpts.forEach(function (opt) {
+          opt.addEventListener('click', function () {
+            currentFilter = opt.getAttribute('data-filter') || 'all';
+            filterOpts.forEach(function (x) { x.setAttribute('aria-selected', x === opt ? 'true' : 'false'); });
+            if (filterVal) filterVal.textContent = opt.getAttribute('data-label') || 'All';
+            var svg = opt.querySelector('svg');
+            if (filterIc && svg) filterIc.innerHTML = svg.outerHTML;
+            setFilterOpen(false);
+            activeIdx = 0;
+            dragOffset = 0;
+            rebuildVisible();
+            layoutDeck(true);
+          });
+        });
+        document.addEventListener('click', function (e) {
+          if (filterWrap && !filterWrap.contains(e.target)) setFilterOpen(false);
+        });
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') setFilterOpen(false);
+        });
+      }
 
       /* View mode switch (Book Fan / 3D Stack / Grid) */
       var viewPills = document.querySelectorAll('[data-deck-view]');

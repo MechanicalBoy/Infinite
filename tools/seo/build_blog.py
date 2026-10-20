@@ -131,7 +131,7 @@ def head(title, desc, url, image, extra="", kind="website", depth="../"):
   <link rel="stylesheet" href="{depth}brand.css?v=e96b24bf">
   <link rel="stylesheet" href="{depth}style.css?v=dba6d460">
   <link rel="stylesheet" href="{depth}glass.css?v=c25dae44">
-  <link rel="stylesheet" href="{depth}blog.css?v=6194d731">
+  <link rel="stylesheet" href="{depth}blog.css?v=df40576c">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-ZC4TYX1WCL"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -167,30 +167,23 @@ def card(p, i):
     img = p.get("image", "")
     media_img = (f'<img src="../{e(thumb(img, 720))}" alt="" loading="lazy" decoding="async" width="720" height="450">' if img and not img.startswith("http")
                  else f'<img src="{e(img)}" alt="" loading="lazy" width="1200" height="675">' if img
-                 else '<div class="post-media-empty" aria-hidden="true"><span class="mono">infinite</span></div>')
+                 else '<div class="post-media-empty" aria-hidden="true"><span>infinite</span></div>')
     cat_label = e(CATS.get(p['category'], p['category'].capitalize()))
     date_short = e(fmt_short_date(p['date']))
     read_label = f"{p['minutes']} min read"
-    expand_ic = brand_icon("viewport", "expand-ic")
+    open_ic = '<svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg>'
     return f"""        <article class="post-card" data-cat="{e(p['category'])}" data-title="{e(p['title'])}" data-cat-label="{cat_label}" data-date="{date_short}" data-read="{read_label}" style="--i:{i}">
           <a class="post-link" href="{p['slug']}.html">
             <div class="post-media">
               {media_img}
               <div class="post-media-hud">
-                <span class="post-badge-overlay"><i class="cat-dot" aria-hidden="true"></i>{cat_label}</span>
-                <span class="post-expand-pill">{expand_ic}<span>Read note</span></span>
-                <span class="post-folio-pill mono" data-card-folio>{i + 1:02d}</span>
+                <span class="post-expand-pill" aria-hidden="true">{open_ic}</span>
               </div>
             </div>
             <div class="post-body">
-              <div class="post-meta-top mono">
-                <span class="post-meta-date">{date_short}</span>
-                <span class="post-meta-sep" aria-hidden="true">·</span>
-                <span class="post-meta-read"><i class="read-dot" aria-hidden="true"></i>{read_label}</span>
-              </div>
               <h2>{e(p['title'])}</h2>
               <p class="post-desc">{e(p['description'])}</p>
-              <div class="post-meta-foot mono">
+              <div class="post-meta-foot">
                 <span class="post-foot-date">{date_short}</span>
                 <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>{read_label}</span>
               </div>
@@ -201,15 +194,20 @@ def card(p, i):
 
 def build_index(posts, header, footer):
     items = "\n".join(card(p, i) for i, p in enumerate(posts))
-    chips = '<button type="button" class="chip is-on" data-filter="all">' + chip_icon("all") + 'All</button>' + "".join(
-        f'<button type="button" class="chip" data-filter="{k}">{chip_icon(k)}{v}</button>' for k, v in CATS.items() if any(p["category"] == k for p in posts))
+    ic_chev = brand_icon("chevron-down", "select-chev")
+    filter_opts = (
+        f'<button type="button" class="blog-opt" role="option" aria-selected="true" data-filter="all" data-label="All">{chip_icon("all")}<span>All</span></button>'
+        + "".join(
+            f'<button type="button" class="blog-opt" role="option" aria-selected="false" data-filter="{k}" data-label="{e(v)}">{chip_icon(k)}<span>{e(v)}</span></button>'
+            for k, v in CATS.items() if any(p["category"] == k for p in posts)
+        )
+    )
     ic_shuffle = brand_icon("loop", "chip-ic")
     ic_fan = brand_icon("library", "chip-ic")
     ic_stack = brand_icon("arrange", "chip-ic")
     ic_grid = brand_icon("grid-dots", "chip-ic")
     ic_prev = brand_icon("chevron-right", "deck-arrow-ic is-prev")
     ic_next = brand_icon("chevron-right", "deck-arrow-ic")
-    ic_hand = brand_icon("hand", "hint-ic")
     blog_ld = {"@context": "https://schema.org", "@type": "Blog", "name": "Infinite blog", "url": BASE + "blog/",
                "description": "Notes on building and using Infinite, the free open-source DAW for visuals, music and code.",
                "publisher": {"@type": "Person", "name": "Naman Soni", "url": "https://github.com/n1m21n"},
@@ -225,20 +223,28 @@ def build_index(posts, header, footer):
   <main>
     <section class="section blog-hero">
       <div class="container">
-        <div class="section-head text-center">
-          <div class="blog-badge-wrap"><span class="badge-pill mono">Blog</span></div>
-          <h1 class="slab">Practical notes to build <em class="hand">faster</em>.</h1>
-          <p class="section-sub">How Infinite is built, and what you can make with it. Flip through the book of notes, reshuffled on every visit.</p>
-        </div>
+        <div class="blog-head-bar">
+          <h1 class="slab">Practice notes.</h1>
 
-        <div class="blog-toolbar">
-          <div class="blog-chips" role="group" aria-label="Filter posts">{chips}</div>
-          <div class="blog-deck-tools" role="group" aria-label="Deck layout and shuffle">
-            <button type="button" class="chip chip-action" data-deck-shuffle title="Reshuffle the infinite deck">{ic_shuffle}<span>Shuffle</span></button>
-            <div class="deck-view-switch" role="group" aria-label="Card arrangement">
-              <button type="button" class="view-pill is-on" data-deck-view="fan" aria-pressed="true" title="Book fan">{ic_fan}<span>Book</span></button>
-              <button type="button" class="view-pill" data-deck-view="stack" aria-pressed="false" title="3D glass stack">{ic_stack}<span>Stack</span></button>
-              <button type="button" class="view-pill" data-deck-view="grid" aria-pressed="false" title="All cards grid">{ic_grid}<span>Grid</span></button>
+          <div class="blog-toolbar">
+            <div class="blog-filter" id="blog-filter">
+              <button type="button" class="blog-select" id="blog-select" aria-haspopup="listbox" aria-expanded="false" aria-label="Filter by category">
+                <span class="blog-select-ic" id="blog-select-ic">{chip_icon("all")}</span>
+                <span class="blog-select-val" id="blog-select-val">All</span>
+                {ic_chev}
+              </button>
+              <div class="blog-menu" id="blog-menu" role="listbox" aria-label="Category" hidden>
+                {filter_opts}
+              </div>
+            </div>
+
+            <div class="blog-deck-tools" role="group" aria-label="Deck layout and shuffle">
+              <button type="button" class="chip chip-icon-only chip-action" data-deck-shuffle aria-label="Shuffle deck" title="Shuffle">{ic_shuffle}</button>
+              <div class="deck-view-switch" role="group" aria-label="Card arrangement">
+                <button type="button" class="view-pill is-on" data-deck-view="fan" aria-pressed="true" aria-label="Book view" title="Book">{ic_fan}</button>
+                <button type="button" class="view-pill" data-deck-view="stack" aria-pressed="false" aria-label="Stack view" title="Stack">{ic_stack}</button>
+                <button type="button" class="view-pill" data-deck-view="grid" aria-pressed="false" aria-label="Grid view" title="Grid">{ic_grid}</button>
+              </div>
             </div>
           </div>
         </div>
@@ -250,35 +256,33 @@ def build_index(posts, header, footer):
 
           <div class="deck-hud-wrap" id="deck-hud-wrap">
             <div class="deck-hud-pill">
-              <button type="button" class="deck-nav-btn" data-deck-prev aria-label="Previous card" title="Previous note (←)">
+              <button type="button" class="deck-nav-btn" data-deck-prev aria-label="Previous card" title="Previous (←)">
                 {ic_prev}
               </button>
               <div class="deck-hud-info" aria-live="polite" aria-atomic="true">
                 <img src="../assets/icon-96.png" alt="" class="deck-hud-avatar" width="36" height="36" decoding="async">
                 <div class="deck-hud-text">
                   <span class="deck-hud-title" id="deck-hud-title">{e(posts[0]['title']) if posts else 'Infinite Blog'}</span>
-                  <span class="deck-hud-meta mono" id="deck-hud-meta">{e(fmt_short_date(posts[0]['date'])) if posts else ''} · {posts[0]['minutes'] if posts else 0} min read</span>
+                  <span class="deck-hud-meta" id="deck-hud-meta">{e(fmt_short_date(posts[0]['date'])) if posts else ''} · {posts[0]['minutes'] if posts else 0} min read</span>
                 </div>
               </div>
               <div class="deck-hud-right">
-                <span class="deck-hud-counter mono" id="deck-hud-counter">01 / {len(posts):02d}</span>
-                <button type="button" class="deck-icon-btn" data-deck-shuffle aria-label="Reshuffle deck" title="Shuffle deck (R)">
+                <button type="button" class="deck-icon-btn" data-deck-shuffle aria-label="Reshuffle deck" title="Shuffle (R)">
                   {ic_shuffle}
                 </button>
-                <button type="button" class="deck-nav-btn" data-deck-next aria-label="Next card" title="Next note (→)">
+                <button type="button" class="deck-nav-btn" data-deck-next aria-label="Next card" title="Next (→)">
                   {ic_next}
                 </button>
               </div>
             </div>
             <div class="deck-progress-row">
               <div class="deck-progress-dots" id="deck-progress-dots" role="tablist" aria-label="Jump to note"></div>
-              <p class="deck-gesture-hint mono">{ic_hand}<span>Drag, swipe, scroll or press ← → to flip · reshuffled every visit</span></p>
             </div>
           </div>
         </div>
 
         <p class="blog-empty" id="blog-empty" hidden>No posts in this group yet.</p>
-        <p class="blog-feed mono"><a href="feed.xml">RSS feed</a></p>
+        <p class="blog-feed"><a href="feed.xml">RSS feed</a></p>
       </div>
     </section>
   </main>
@@ -292,9 +296,13 @@ def build_index(posts, header, footer):
       var hudWrap = document.getElementById('deck-hud-wrap');
       var hudTitle = document.getElementById('deck-hud-title');
       var hudMeta = document.getElementById('deck-hud-meta');
-      var hudCounter = document.getElementById('deck-hud-counter');
       var dotsWrap = document.getElementById('deck-progress-dots');
       var empty = document.getElementById('blog-empty');
+      var filterWrap = document.getElementById('blog-filter');
+      var filterBtn = document.getElementById('blog-select');
+      var filterMenu = document.getElementById('blog-menu');
+      var filterVal = document.getElementById('blog-select-val');
+      var filterIc = document.getElementById('blog-select-ic');
       if (!stage || !grid) return;
 
       var allCards = Array.prototype.slice.call(grid.querySelectorAll('.post-card'));
@@ -321,8 +329,6 @@ def build_index(posts, header, footer):
       var startX = 0, startY = 0, lastX = 0, lastT = 0, vx = 0;
       var wheelAccum = 0, wheelLock = 0;
       var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      function pad2(n) {{ return (n < 10 ? '0' : '') + n; }}
 
       function mod(n, m) {{ return m > 0 ? ((n % m) + m) % m : 0; }}
 
@@ -352,8 +358,6 @@ def build_index(posts, header, footer):
           card.hidden = !show;
           if (show) {{
             visibleCards.push(card);
-            var folio = card.querySelector('[data-card-folio]');
-            if (folio) folio.textContent = pad2(visibleCards.length);
           }}
         }});
         empty.hidden = visibleCards.length > 0;
@@ -371,7 +375,7 @@ def build_index(posts, header, footer):
             var b = document.createElement('button');
             b.type = 'button';
             b.className = 'deck-dot' + (idx === activeIdx ? ' is-on' : '');
-            b.setAttribute('aria-label', 'Note ' + (idx + 1));
+            b.setAttribute('aria-label', 'Jump to note');
             b.addEventListener('click', function () {{ goTo(idx); }});
             dotsWrap.appendChild(b);
           }})(i);
@@ -384,12 +388,10 @@ def build_index(posts, header, footer):
         var c = visibleCards[mod(activeIdx, total)];
         if (hudTitle) hudTitle.textContent = c.getAttribute('data-title') || '';
         if (hudMeta) {{
-          var cat = c.getAttribute('data-cat-label') || '';
           var dt = c.getAttribute('data-date') || '';
           var rd = c.getAttribute('data-read') || '';
-          hudMeta.textContent = (cat ? cat + ' · ' : '') + dt + ' · ' + rd;
+          hudMeta.textContent = dt + ' · ' + rd;
         }}
-        if (hudCounter) hudCounter.textContent = pad2(mod(activeIdx, total) + 1) + ' / ' + pad2(total);
         if (dotsWrap) {{
           var dots = dotsWrap.children;
           for (var i = 0; i < dots.length; i++) {{
@@ -472,6 +474,10 @@ def build_index(posts, header, footer):
           var slot = abs < 0.35 ? 'active' : (abs < 1.35 ? 'near' : (abs < 2.45 ? 'mid' : 'far'));
           card.setAttribute('data-slot', slot);
           card.setAttribute('aria-hidden', abs > 3.1 ? 'true' : 'false');
+          if (abs <= 3.2) {{
+            var im = card.querySelector('img[loading="lazy"]');
+            if (im) im.setAttribute('loading', 'eager');
+          }}
         }});
 
         updateHud();
@@ -509,18 +515,39 @@ def build_index(posts, header, footer):
       /* Reshuffle on every visit */
       reshuffleDeck(false);
 
-      /* Filter chips */
-      var filterChips = document.querySelectorAll('[data-filter]');
-      filterChips.forEach(function (c) {{
-        c.addEventListener('click', function () {{
-          currentFilter = c.getAttribute('data-filter') || 'all';
-          filterChips.forEach(function (x) {{ x.classList.toggle('is-on', x === c); }});
-          activeIdx = 0;
-          dragOffset = 0;
-          rebuildVisible();
-          layoutDeck(true);
+      /* Filter dropdown */
+      function setFilterOpen(open) {{
+        if (!filterMenu || !filterBtn) return;
+        filterMenu.hidden = !open;
+        filterBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }}
+      if (filterBtn && filterMenu) {{
+        filterBtn.addEventListener('click', function (e) {{
+          e.stopPropagation();
+          setFilterOpen(filterMenu.hidden);
         }});
-      }});
+        var filterOpts = filterMenu.querySelectorAll('.blog-opt');
+        filterOpts.forEach(function (opt) {{
+          opt.addEventListener('click', function () {{
+            currentFilter = opt.getAttribute('data-filter') || 'all';
+            filterOpts.forEach(function (x) {{ x.setAttribute('aria-selected', x === opt ? 'true' : 'false'); }});
+            if (filterVal) filterVal.textContent = opt.getAttribute('data-label') || 'All';
+            var svg = opt.querySelector('svg');
+            if (filterIc && svg) filterIc.innerHTML = svg.outerHTML;
+            setFilterOpen(false);
+            activeIdx = 0;
+            dragOffset = 0;
+            rebuildVisible();
+            layoutDeck(true);
+          }});
+        }});
+        document.addEventListener('click', function (e) {{
+          if (filterWrap && !filterWrap.contains(e.target)) setFilterOpen(false);
+        }});
+        document.addEventListener('keydown', function (e) {{
+          if (e.key === 'Escape') setFilterOpen(false);
+        }});
+      }}
 
       /* View mode switch (Book Fan / 3D Stack / Grid) */
       var viewPills = document.querySelectorAll('[data-deck-view]');
