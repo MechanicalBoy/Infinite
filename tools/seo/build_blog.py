@@ -171,22 +171,16 @@ def card(p, i):
     cat_label = e(CATS.get(p['category'], p['category'].capitalize()))
     date_short = e(fmt_short_date(p['date']))
     read_label = f"{p['minutes']} min read"
+    ic_time = brand_icon("history", "chip-ic")
     open_ic = '<svg class="expand-ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 13.5 13.5 6.5M8 6.5h5.5V12"/></svg>'
-    return f"""        <article class="post-card" data-cat="{e(p['category'])}" data-title="{e(p['title'])}" data-cat-label="{cat_label}" data-date="{date_short}" data-read="{read_label}" style="--i:{i}">
-          <a class="post-link" href="{p['slug']}.html">
+    cat_ic = chip_icon(p['category']) if p['category'] in CHIP_ICON else chip_icon("all")
+    return f"""        <article class="post-card deck-card" data-cat="{e(p['category'])}" data-title="{e(p['title'])}" data-cat-label="{cat_label}" data-read="{read_label}" style="--i:{i}">
+          <a class="post-link" href="{p['slug']}.html" aria-label="{e(p['title'])}">
             <div class="post-media">
               {media_img}
-              <div class="post-media-hud">
-                <span class="post-expand-pill" aria-hidden="true">{open_ic}</span>
-              </div>
-            </div>
-            <div class="post-body">
-              <h2>{e(p['title'])}</h2>
-              <p class="post-desc">{e(p['description'])}</p>
-              <div class="post-meta-foot">
-                <span class="post-foot-date">{date_short}</span>
-                <span class="post-foot-read"><i class="read-dot" aria-hidden="true"></i>{read_label}</span>
-              </div>
+              <span class="post-chip post-chip-cat" title="{cat_label}">{cat_ic}</span>
+              <span class="post-chip post-chip-read"><b>{p['minutes']}</b>{ic_time}</span>
+              <h2 class="post-title">{e(p['title'])}</h2>
             </div>
           </a>
         </article>"""
@@ -217,6 +211,8 @@ def build_index(posts, header, footer):
     s = head("Infinite blog: audio-reactive visuals, node-based music and code",
              "Notes on building and using Infinite, the free open-source DAW for visuals, music and code on one canvas. Tutorials, engineering write-ups and ideas.",
              BASE + "blog/", "assets/og-image.jpg", ld(blog_ld) + ld(crumbs))
+    s = s.replace('blog.css?v=', 'blog.css?v=', 1)
+    s = re.sub(r'(<link rel="stylesheet" href="\.\./blog\.css\?v=[A-Za-z0-9]+">)', r'\1\n  <link rel="stylesheet" href="../deck.css?v=b7a9e016">', s, count=1)
     s += f"""<body class="blog-page blog-index">
   {header}
 
@@ -224,7 +220,7 @@ def build_index(posts, header, footer):
     <section class="section blog-hero">
       <div class="container">
         <div class="blog-head-bar">
-          <h1 class="slab">Practice notes.</h1>
+          <h1 class="sr-only">Practice notes</h1>
 
           <div class="blog-toolbar">
             <div class="blog-filter" id="blog-filter">
@@ -263,7 +259,6 @@ def build_index(posts, header, footer):
                 <img src="../assets/icon-96.png" alt="" class="deck-hud-avatar" width="36" height="36" decoding="async">
                 <div class="deck-hud-text">
                   <span class="deck-hud-title" id="deck-hud-title">{e(posts[0]['title']) if posts else 'Infinite Blog'}</span>
-                  <span class="deck-hud-meta" id="deck-hud-meta">{e(fmt_short_date(posts[0]['date'])) if posts else ''} · {posts[0]['minutes'] if posts else 0} min read</span>
                 </div>
               </div>
               <div class="deck-hud-right">
@@ -289,398 +284,8 @@ def build_index(posts, header, footer):
 
   {footer}
   <script src="../site.js?v=9" defer></script>
-  <script>
-    (function () {{
-      var stage = document.getElementById('blog-book-stage');
-      var grid = document.getElementById('post-grid');
-      var hudWrap = document.getElementById('deck-hud-wrap');
-      var hudTitle = document.getElementById('deck-hud-title');
-      var hudMeta = document.getElementById('deck-hud-meta');
-      var dotsWrap = document.getElementById('deck-progress-dots');
-      var empty = document.getElementById('blog-empty');
-      var filterWrap = document.getElementById('blog-filter');
-      var filterBtn = document.getElementById('blog-select');
-      var filterMenu = document.getElementById('blog-menu');
-      var filterVal = document.getElementById('blog-select-val');
-      var filterIc = document.getElementById('blog-select-ic');
-      if (!stage || !grid) return;
-
-      var allCards = Array.prototype.slice.call(grid.querySelectorAll('.post-card'));
-      var visibleCards = allCards.slice();
-      var currentFilter = 'all';
-      var params = new URLSearchParams(window.location.search);
-      var qView = params.get('view');
-      var mode = (qView === 'stack' || qView === 'grid' || qView === 'fan') ? qView : 'fan';
-      var qTheme = params.get('mode');
-      if (qTheme === 'midnight' || qTheme === 'paper' || qTheme === 'mist') {{
-        document.documentElement.setAttribute('data-mode', qTheme);
-      }}
-      if (mode !== 'fan') {{
-        document.querySelectorAll('[data-deck-view]').forEach(function (b) {{
-          var on = b.getAttribute('data-deck-view') === mode;
-          b.classList.toggle('is-on', on);
-          b.setAttribute('aria-pressed', on ? 'true' : 'false');
-        }});
-      }}
-      var activeIdx = 0;
-      var dragOffset = 0;
-      var isDragging = false;
-      var dragMoved = false;
-      var startX = 0, startY = 0, lastX = 0, lastT = 0, vx = 0;
-      var wheelAccum = 0, wheelLock = 0;
-      var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      function mod(n, m) {{ return m > 0 ? ((n % m) + m) % m : 0; }}
-
-      function circularDelta(idx, center, total) {{
-        if (total <= 1) return 0;
-        var d = idx - center;
-        var half = total / 2;
-        while (d > half) d -= total;
-        while (d <= -half) d += total;
-        return d;
-      }}
-
-      function shuffleArray(arr) {{
-        for (var i = arr.length - 1; i > 0; i--) {{
-          var j = Math.floor(Math.random() * (i + 1));
-          var tmp = arr[i];
-          arr[i] = arr[j];
-          arr[j] = tmp;
-        }}
-        return arr;
-      }}
-
-      function rebuildVisible() {{
-        visibleCards = [];
-        allCards.forEach(function (card) {{
-          var show = currentFilter === 'all' || card.getAttribute('data-cat') === currentFilter;
-          card.hidden = !show;
-          if (show) {{
-            visibleCards.push(card);
-          }}
-        }});
-        empty.hidden = visibleCards.length > 0;
-        stage.hidden = visibleCards.length === 0;
-        activeIdx = mod(activeIdx, visibleCards.length);
-        buildDots();
-      }}
-
-      function buildDots() {{
-        if (!dotsWrap) return;
-        dotsWrap.innerHTML = '';
-        var total = visibleCards.length;
-        for (var i = 0; i < total; i++) {{
-          (function (idx) {{
-            var b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'deck-dot' + (idx === activeIdx ? ' is-on' : '');
-            b.setAttribute('aria-label', 'Jump to note');
-            b.addEventListener('click', function () {{ goTo(idx); }});
-            dotsWrap.appendChild(b);
-          }})(i);
-        }}
-      }}
-
-      function updateHud() {{
-        var total = visibleCards.length;
-        if (!total) return;
-        var c = visibleCards[mod(activeIdx, total)];
-        if (hudTitle) hudTitle.textContent = c.getAttribute('data-title') || '';
-        if (hudMeta) {{
-          var dt = c.getAttribute('data-date') || '';
-          var rd = c.getAttribute('data-read') || '';
-          hudMeta.textContent = dt + ' · ' + rd;
-        }}
-        if (dotsWrap) {{
-          var dots = dotsWrap.children;
-          for (var i = 0; i < dots.length; i++) {{
-            dots[i].classList.toggle('is-on', i === mod(activeIdx, total));
-          }}
-        }}
-      }}
-
-      function layoutDeck(animate) {{
-        var total = visibleCards.length;
-        stage.setAttribute('data-deck-mode', mode);
-        if (hudWrap) hudWrap.hidden = (mode === 'grid' || total === 0);
-
-        if (mode === 'grid' || !total) {{
-          allCards.forEach(function (card) {{
-            card.style.transform = '';
-            card.style.opacity = '';
-            card.style.zIndex = '';
-            card.style.pointerEvents = '';
-            card.removeAttribute('data-slot');
-          }});
-          updateHud();
-          return;
-        }}
-
-        var isMobile = window.innerWidth < 680;
-        var isTablet = window.innerWidth >= 680 && window.innerWidth < 1040;
-        var center = activeIdx - dragOffset;
-
-        visibleCards.forEach(function (card, idx) {{
-          var d = circularDelta(idx, center, total);
-          var abs = Math.abs(d);
-          var sign = d < 0 ? -1 : (d > 0 ? 1 : 0);
-          var prevD = typeof card._lastD === 'number' ? card._lastD : d;
-          card._lastD = d;
-
-          var wrapped = Math.abs(prevD - d) > 3.2;
-          if (!animate || wrapped || reduceMotion) {{
-            card.style.transition = 'none';
-          }} else {{
-            card.style.transition = '';
-          }}
-
-          var tx = 0, ty = 0, tz = 0, rx = 0, ry = 0, rz = 0, sc = 1, op = 1;
-
-          if (mode === 'stack') {{
-            /* Ref 3 & Ref 4: 3D Diagonal Glass Plate Rack */
-            var stepX = isMobile ? 64 : (isTablet ? 98 : 126);
-            var stepY = isMobile ? -18 : -26;
-            var focus = Math.max(0, 1 - abs);
-            tx = d * stepX + (d > 0 ? (1 - focus) * 28 : (d < 0 ? -(1 - focus) * 28 : 0));
-            ty = d * stepY + focus * 10;
-            tz = focus * 52 - abs * (isMobile ? 84 : 108);
-            ry = -6 * focus + (1 - focus) * -22;
-            rx = 2 * focus + (1 - focus) * 6;
-            rz = -d * 0.8;
-            sc = Math.max(0.74, 1.02 * focus + (1 - focus) * (1 - abs * 0.055));
-            op = abs > 3.2 ? 0 : (abs > 2.5 ? Math.max(0, (3.2 - abs) / 0.7) : 1);
-          }} else {{
-            /* Ref 5 & Ref 2: Spatial Book Fan + Liquid Glass Gallery */
-            var firstStep = isMobile ? 96 : (isTablet ? 168 : 218);
-            var tailStep = isMobile ? 48 : (isTablet ? 88 : 118);
-            var spread = Math.min(abs, 1) * firstStep + Math.max(0, abs - 1) * tailStep;
-            tx = sign * spread;
-            ty = Math.pow(abs, 1.3) * (isMobile ? 9 : 14);
-            tz = -abs * (isMobile ? 86 : 116);
-            ry = -sign * Math.min(abs * (isMobile ? 13 : 16), 34);
-            rz = d * (isMobile ? 1.5 : 2.0);
-            sc = Math.max(0.74, 1 - abs * 0.065);
-            op = abs > 3.2 ? 0 : (abs > 2.5 ? Math.max(0, (3.2 - abs) / 0.7) : 1);
-          }}
-
-          var dim = Math.min(0.55, Math.max(0, (abs - 0.15) * 0.18));
-          card.style.setProperty('--card-dim', dim.toFixed(3));
-          card.style.transform = 'translate3d(' + tx.toFixed(1) + 'px,' + ty.toFixed(1) + 'px,' + tz.toFixed(1) + 'px) rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg) rotateZ(' + rz.toFixed(2) + 'deg) scale(' + sc.toFixed(3) + ')';
-          card.style.opacity = op.toFixed(3);
-          card.style.zIndex = String(Math.max(1, Math.round(100 - abs * 20)));
-          card.style.pointerEvents = op < 0.15 ? 'none' : 'auto';
-
-          var slot = abs < 0.35 ? 'active' : (abs < 1.35 ? 'near' : (abs < 2.45 ? 'mid' : 'far'));
-          card.setAttribute('data-slot', slot);
-          card.setAttribute('aria-hidden', abs > 3.1 ? 'true' : 'false');
-          if (abs <= 3.2) {{
-            var im = card.querySelector('img[loading="lazy"]');
-            if (im) im.setAttribute('loading', 'eager');
-          }}
-        }});
-
-        updateHud();
-      }}
-
-      function stepBy(delta) {{
-        var total = visibleCards.length;
-        if (!total) return;
-        activeIdx = mod(activeIdx + delta, total);
-        dragOffset = 0;
-        layoutDeck(true);
-      }}
-
-      function goTo(targetIdx) {{
-        var total = visibleCards.length;
-        if (!total) return;
-        activeIdx = mod(targetIdx, total);
-        dragOffset = 0;
-        layoutDeck(true);
-      }}
-
-      function reshuffleDeck(withPulse) {{
-        shuffleArray(allCards);
-        allCards.forEach(function (c) {{ grid.appendChild(c); c._lastD = undefined; }});
-        activeIdx = 0;
-        dragOffset = 0;
-        rebuildVisible();
-        if (withPulse && !reduceMotion) {{
-          stage.classList.add('is-shuffling');
-          setTimeout(function () {{ stage.classList.remove('is-shuffling'); }}, 460);
-        }}
-        layoutDeck(true);
-      }}
-
-      /* Reshuffle on every visit */
-      reshuffleDeck(false);
-
-      /* Filter dropdown */
-      function setFilterOpen(open) {{
-        if (!filterMenu || !filterBtn) return;
-        filterMenu.hidden = !open;
-        filterBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      }}
-      if (filterBtn && filterMenu) {{
-        filterBtn.addEventListener('click', function (e) {{
-          e.stopPropagation();
-          setFilterOpen(filterMenu.hidden);
-        }});
-        var filterOpts = filterMenu.querySelectorAll('.blog-opt');
-        filterOpts.forEach(function (opt) {{
-          opt.addEventListener('click', function () {{
-            currentFilter = opt.getAttribute('data-filter') || 'all';
-            filterOpts.forEach(function (x) {{ x.setAttribute('aria-selected', x === opt ? 'true' : 'false'); }});
-            if (filterVal) filterVal.textContent = opt.getAttribute('data-label') || 'All';
-            var svg = opt.querySelector('svg');
-            if (filterIc && svg) filterIc.innerHTML = svg.outerHTML;
-            setFilterOpen(false);
-            activeIdx = 0;
-            dragOffset = 0;
-            rebuildVisible();
-            layoutDeck(true);
-          }});
-        }});
-        document.addEventListener('click', function (e) {{
-          if (filterWrap && !filterWrap.contains(e.target)) setFilterOpen(false);
-        }});
-        document.addEventListener('keydown', function (e) {{
-          if (e.key === 'Escape') setFilterOpen(false);
-        }});
-      }}
-
-      /* View mode switch (Book Fan / 3D Stack / Grid) */
-      var viewPills = document.querySelectorAll('[data-deck-view]');
-      viewPills.forEach(function (btn) {{
-        btn.addEventListener('click', function () {{
-          mode = btn.getAttribute('data-deck-view') || 'fan';
-          viewPills.forEach(function (b) {{
-            var on = b === btn;
-            b.classList.toggle('is-on', on);
-            b.setAttribute('aria-pressed', on ? 'true' : 'false');
-          }});
-          allCards.forEach(function (c) {{ c._lastD = undefined; }});
-          layoutDeck(true);
-        }});
-      }});
-
-      /* Shuffle & Prev / Next buttons */
-      document.querySelectorAll('[data-deck-shuffle]').forEach(function (btn) {{
-        btn.addEventListener('click', function () {{ reshuffleDeck(true); }});
-      }});
-      document.querySelectorAll('[data-deck-prev]').forEach(function (btn) {{
-        btn.addEventListener('click', function () {{ stepBy(-1); }});
-      }});
-      document.querySelectorAll('[data-deck-next]').forEach(function (btn) {{
-        btn.addEventListener('click', function () {{ stepBy(1); }});
-      }});
-
-      /* Click a side card in the 3D book to flip to it; click the center card to open the article */
-      allCards.forEach(function (card) {{
-        var link = card.querySelector('.post-link');
-        if (!link) return;
-        link.addEventListener('click', function (e) {{
-          if (mode === 'grid') return;
-          if (dragMoved) {{
-            e.preventDefault();
-            return;
-          }}
-          var idx = visibleCards.indexOf(card);
-          if (idx === -1) return;
-          var d = circularDelta(idx, activeIdx, visibleCards.length);
-          if (Math.abs(d) > 0.25) {{
-            e.preventDefault();
-            stepBy(Math.round(d));
-          }}
-        }});
-      }});
-
-      /* Pointer / Touch drag gestures on desktop & mobile */
-      grid.addEventListener('pointerdown', function (e) {{
-        if (mode === 'grid' || visibleCards.length <= 1) return;
-        if (e.pointerType === 'mouse' && e.button !== 0) return;
-        isDragging = true;
-        dragMoved = false;
-        startX = lastX = e.clientX;
-        startY = e.clientY;
-        lastT = performance.now();
-        vx = 0;
-        stage.classList.add('is-dragging');
-      }}, {{ passive: true }});
-
-      window.addEventListener('pointermove', function (e) {{
-        if (!isDragging || mode === 'grid') return;
-        var dx = e.clientX - startX;
-        var dy = e.clientY - startY;
-        if (!dragMoved && Math.abs(dy) > Math.abs(dx) * 1.25 && Math.abs(dy) > 12) {{
-          isDragging = false;
-          stage.classList.remove('is-dragging');
-          dragOffset = 0;
-          layoutDeck(true);
-          return;
-        }}
-        if (Math.hypot(dx, dy) > 8) dragMoved = true;
-        var now = performance.now();
-        var dt = Math.max(1, now - lastT);
-        vx = (e.clientX - lastX) / dt;
-        lastX = e.clientX;
-        lastT = now;
-
-        var stepPx = window.innerWidth < 680 ? 150 : 230;
-        dragOffset = Math.max(-2.5, Math.min(2.5, dx / stepPx));
-        layoutDeck(false);
-      }}, {{ passive: true }});
-
-      function endDrag() {{
-        if (!isDragging) return;
-        isDragging = false;
-        stage.classList.remove('is-dragging');
-        var flick = -dragOffset - vx * 0.28;
-        var steps = 0;
-        if (Math.abs(flick) > 0.24) {{
-          steps = Math.round(flick);
-          if (steps === 0) steps = flick > 0 ? 1 : -1;
-          steps = Math.max(-3, Math.min(3, steps));
-        }}
-        activeIdx = mod(activeIdx + steps, visibleCards.length);
-        dragOffset = 0;
-        layoutDeck(true);
-        setTimeout(function () {{ dragMoved = false; }}, 40);
-      }}
-
-      window.addEventListener('pointerup', endDrag, {{ passive: true }});
-      window.addEventListener('pointercancel', endDrag, {{ passive: true }});
-
-      /* Trackpad two-finger swipe & wheel riffle */
-      grid.addEventListener('wheel', function (e) {{
-        if (mode === 'grid' || visibleCards.length <= 1) return;
-        var isHoriz = Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.85;
-        if (!isHoriz && !e.shiftKey) return;
-        e.preventDefault();
-        var now = performance.now();
-        if (now - wheelLock < 188) return;
-        var delta = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-        wheelAccum += delta;
-        if (Math.abs(wheelAccum) > 28) {{
-          stepBy(wheelAccum > 0 ? 1 : -1);
-          wheelAccum = 0;
-          wheelLock = now;
-        }}
-      }}, {{ passive: false }});
-
-      /* Keyboard navigation (← → to flip, R to reshuffle) */
-      window.addEventListener('keydown', function (e) {{
-        if (mode === 'grid' || e.defaultPrevented) return;
-        var tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
-        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-        if (e.key === 'ArrowRight') {{ e.preventDefault(); stepBy(1); }}
-        else if (e.key === 'ArrowLeft') {{ e.preventDefault(); stepBy(-1); }}
-        else if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {{ reshuffleDeck(true); }}
-      }});
-
-      window.addEventListener('resize', function () {{ layoutDeck(false); }});
-    }})();
-  </script>
+  <script src="../deck.js?v=1" defer></script>
+  <script src="../blog.js?v=1" defer></script>
 </body>
 </html>
 """

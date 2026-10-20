@@ -1,0 +1,129 @@
+/* Infinite deck: the blog's card deck in three arrangements (fan, stack, bento). Loaded after blog.css, so it wins.
+   The cards are pictures. The only words on a card are its title in the bento, and the title bar below the deck. */
+
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---- ambient light behind the deck: two soft lenses that drift with the pointer ---- */
+.blog-hero { position: relative; isolation: isolate; --px: 0; --py: 0; padding-top: 16px; }
+.blog-hero::before, .blog-hero::after {
+  content: ""; position: absolute; z-index: -1; pointer-events: none; border-radius: 50%;
+  width: min(680px, 90vw); aspect-ratio: 1; filter: blur(56px); opacity: 0.55;
+  transition: transform var(--dur-page) var(--ease-out);
+}
+.blog-hero::before {
+  left: 50%; top: 18%; margin-left: -62%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--signal) 46%, transparent), transparent);
+  transform: translate(calc(var(--px) * 56px), calc(var(--py) * 40px));
+}
+.blog-hero::after {
+  left: 50%; top: 30%; margin-left: -4%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 38%, transparent), transparent);
+  transform: translate(calc(var(--px) * -72px), calc(var(--py) * -48px));
+}
+.blog-book-stage::before { display: none; }
+
+/* ---- toolbar: icons only, centred ---- */
+.blog-head-bar { justify-content: center; margin-bottom: 8px; }
+.blog-toolbar { justify-content: center; }
+.blog-select-val { display: none; }
+.blog-select { padding: 0 12px; }
+.blog-menu { min-width: 0; display: flex; gap: 4px; left: 50%; transform: translateX(-50%); }
+.blog-opt { width: 40px; padding: 0; justify-content: center; }
+.blog-opt span { display: none; }
+
+/* ---- stage ---- */
+.blog-book-stage:not([data-deck-mode="grid"]) .post-grid { height: 480px; perspective: 1400px; perspective-origin: 50% 36%; }
+.blog-book-stage:not([data-deck-mode="grid"]) .post-card {
+  width: 336px; height: 420px; margin-left: -168px; margin-top: -210px;
+  transform-origin: 50% 50%; will-change: transform, opacity;
+  transition: box-shadow var(--dur-medium) var(--ease-out);          /* position is driven per frame by deck.js */
+}
+@media (max-width: 680px) {
+  .blog-book-stage:not([data-deck-mode="grid"]) .post-grid { height: 400px; }
+  .blog-book-stage:not([data-deck-mode="grid"]) .post-card { width: 264px; height: 336px; margin-left: -132px; margin-top: -168px; border-radius: 20px; }
+}
+
+/* ---- a card is a picture: no glass blur on the card (it is expensive and it hides the picture) ---- */
+.post-card { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--surface-2); }
+.post-card .post-link { padding: 0; position: absolute; inset: 0; display: block; }
+.post-card .post-media { position: absolute; inset: 0; aspect-ratio: auto; border-radius: inherit; box-shadow: none; }
+.post-card .post-media img { transition: transform var(--dur-page) var(--ease-out); }
+.post-card .post-media::after {                                     /* depth: a light edge at the top, a soft shade at the foot */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 14%, transparent), transparent 26%, transparent 62%, color-mix(in srgb, #000 36%, transparent));
+}
+.post-card::after { z-index: 4; }
+
+/* chips: glass, icon first */
+.post-chip {
+  position: absolute; z-index: 3; top: 12px; height: 32px; min-width: 32px; padding: 0 12px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  color: #fff; background: color-mix(in srgb, #fff 20%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6); backdrop-filter: blur(14px) saturate(1.6);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 38%, transparent), 0 4px 14px color-mix(in srgb, #000 18%, transparent);
+  font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace;
+}
+.post-chip .chip-ic { width: 16px; height: 16px; }
+.post-chip b { font-weight: 500; }
+.post-chip-cat { left: 12px; padding: 0; width: 32px; }
+.post-chip-read { right: 12px; }
+.post-chip-read .chip-ic { order: -1; }
+.post-card .post-media-hud, .post-card .post-body, .post-card .post-meta-foot, .post-card .post-desc { display: none; }
+
+/* a title shows only in the bento, as one line on glass */
+.post-card .post-title {
+  display: none; position: absolute; z-index: 3; left: 8px; right: 8px; bottom: 8px; margin: 0;
+  padding: 12px 16px; border-radius: 16px; color: #fff;
+  background: color-mix(in srgb, #000 30%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5); backdrop-filter: blur(16px) saturate(1.5);
+  font: 600 0.8438rem/1.3 var(--font-sans); letter-spacing: -0.01em;
+  -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* the front card carries a faint accent light; every card in the stack keeps its own depth shadow */
+.blog-book-stage:not([data-deck-mode="grid"]) .post-card[data-slot="active"] {
+  box-shadow: inset 0 1.5px 0 color-mix(in srgb, #fff 40%, transparent), 0 0 0 1px color-mix(in srgb, var(--ink) 8%, transparent), 0 32px 72px color-mix(in srgb, var(--shadow) 30%, transparent);
+}
+
+/* ---- bento ---- */
+.blog-book-stage[data-deck-mode="grid"] .post-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 168px; grid-auto-flow: dense; gap: 12px;
+  max-width: 1120px; margin: 0 auto;
+}
+@media (min-width: 640px) {
+  .blog-book-stage[data-deck-mode="grid"] .post-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 200px; gap: 16px; }
+}
+@media (min-width: 980px) {
+  .blog-book-stage[data-deck-mode="grid"] .post-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 224px; }
+}
+.blog-book-stage[data-deck-mode="grid"] .post-card { position: relative; width: auto; height: auto; margin: 0; opacity: 1 !important; transform: none; --card-dim: 0 !important;
+  transition: transform var(--spring-slab-ms) var(--spring-slab), box-shadow var(--dur-medium) var(--ease-out); }
+.blog-book-stage[data-deck-mode="grid"] .post-card::after { display: none; }
+.blog-book-stage[data-deck-mode="grid"] .post-card[data-bento="big"] { grid-column: span 2; grid-row: span 2; }
+.blog-book-stage[data-deck-mode="grid"] .post-card[data-bento="wide"] { grid-column: span 2; }
+.blog-book-stage[data-deck-mode="grid"] .post-title { display: block; }
+@media (max-width: 639px) { .blog-book-stage[data-deck-mode="grid"] .post-card:not([data-bento="big"]) .post-title { display: none; } }
+.blog-book-stage[data-deck-mode="grid"] .post-card[data-bento="big"] .post-title { font-size: 1rem; padding: 16px 24px; }
+@media (hover: hover) {
+  .blog-book-stage[data-deck-mode="grid"] .post-card:hover { transform: translateY(-4px); }
+  .blog-book-stage[data-deck-mode="grid"] .post-card:hover .post-media img { transform: scale(1.05); }
+}
+
+/* ---- title bar: one line, thumb-sized controls ---- */
+.deck-hud-pill { padding: 6px; }
+.deck-hud-info { min-width: 0; flex: 1; justify-content: center; }
+.deck-hud-text { min-width: 0; }
+.deck-hud-title { font-weight: 600; font-size: 0.8438rem; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deck-hud-meta { display: none; }
+.deck-hud-avatar { display: none; }
+.blog-feed { display: none; }
+.deck-progress-row { overflow: hidden; max-width: 100%; }
+
+/* the pile sits lower so its receding edges have room above */
+.blog-book-stage[data-deck-mode="stack"] .post-grid { height: 540px; }
+@media (max-width: 680px) { .blog-book-stage[data-deck-mode="stack"] .post-grid { height: 440px; } }
+
+/* the fan reaches past the screen edge: clip it so the page never scrolls sideways */
+.blog-hero { overflow-x: clip; overflow-y: visible; }
+.blog-book-stage { overflow-x: clip; overflow-y: visible; }
+@media (max-width: 680px) { .view-pill { width: 44px; height: 44px; } }
