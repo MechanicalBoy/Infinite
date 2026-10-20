@@ -17,22 +17,18 @@
 .ph-bubbles { position: absolute; inset: 0; }
 .pb { position: absolute; left: 0; top: 0; width: var(--b); height: var(--b); margin: calc(var(--b) / -2) 0 0 calc(var(--b) / -2); padding: 0; border: 0; cursor: grab; touch-action: pan-y;
   display: grid; place-items: center; color: #fff; will-change: transform, opacity; -webkit-tap-highlight-color: transparent;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--c, #A7B1FF) 55%, #fff 8%), color-mix(in srgb, var(--c, #A7B1FF) 22%, #0B0D18));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent), 0 10px 26px color-mix(in srgb, #000 45%, transparent), 0 0 30px color-mix(in srgb, var(--c, #A7B1FF) 30%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--signal, #A7B1FF) 52%, #fff 6%), color-mix(in srgb, var(--signal, #A7B1FF) 20%, #151930));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent), 0 10px 26px color-mix(in srgb, #000 45%, transparent), 0 0 30px color-mix(in srgb, #A7B1FF 26%, transparent);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); transition: filter var(--dur-fast, 188ms), box-shadow var(--dur-fast, 188ms); }
 .pb:active { cursor: grabbing; }
 .pb .ic { width: var(--ic); height: var(--ic); pointer-events: none; }
-.pb:nth-child(1) { --c: var(--cat-notes, #4CD964); } .pb:nth-child(2) { --c: var(--cat-macros, #FC963C); } .pb:nth-child(3) { --c: var(--cat-compositing, #818CF8); }
-.pb:nth-child(4) { --c: var(--cat-synths, #6992F6); } .pb:nth-child(5) { --c: var(--cat-modulators, #A3E635); } .pb:nth-child(6) { --c: var(--cat-effects, #FACC15); }
-.pb:nth-child(7) { --c: var(--cat-audioeffects, #53C7E3); } .pb:nth-child(8) { --c: var(--cat-3d, #38BDF8); }
-.pb-x { --c: #F6B4C8; cursor: default; pointer-events: none; }
-.pb-x + .pb-x { --c: #8FE3D0; }
+.pb-x { cursor: default; pointer-events: none; }
 /* patch scene: a rounded square with a port on each side, like a node */
 .pb::before, .pb::after { content: ""; position: absolute; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: #fff; opacity: 0; transition: opacity var(--dur-fast, 188ms); }
 .pb::before { left: -4px; } .pb::after { right: -4px; }
 .ph[data-s="3"] .pb::before, .ph[data-s="3"] .pb::after { opacity: 0.9; }
 .ph.has-focus .pb:not(.on) { filter: saturate(0.4) brightness(0.7); }
-.ph.has-focus .pb.on { box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent), 0 12px 30px color-mix(in srgb, #000 45%, transparent), 0 0 44px color-mix(in srgb, var(--c) 70%, transparent); }
+.ph.has-focus .pb.on { box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent), 0 12px 30px color-mix(in srgb, #000 45%, transparent), 0 0 44px color-mix(in srgb, #A7B1FF 65%, transparent); }
 
 .ph-nav { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: var(--r-pill, 999px);
   background: color-mix(in srgb, #fff 8%, transparent); -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4); }
