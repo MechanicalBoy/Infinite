@@ -81,3 +81,13 @@
 .ph-prin li { justify-items: start; align-content: start; }
 .ph-prin .ic { width: 28px; height: 28px; color: #A7B1FF; }
 @media (max-width: 760px) { .ph-prin { grid-template-columns: 1fr 1fr; } .ph-prin li { padding: 20px 16px; } .ph-prin b { font-size: 1.0625rem; } .ph-prin span { font-size: 0.875rem; } }
+
+/* the closing dock: who it is for, in words, then one button */
+.ph-who { flex-wrap: wrap; justify-content: center; gap: 8px; padding: 0; max-width: min(560px, calc(100% - 32px)); background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.pw { width: auto; height: 40px; padding: 0 16px 0 12px; gap: 8px; display: inline-flex; border-radius: var(--r-pill, 999px); background: color-mix(in srgb, #fff 9%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); font: 600 0.875rem/1 Geist, system-ui, sans-serif; }
+.pw .ic { width: 16px; height: 16px; color: #A7B1FF; }
+@media (max-width: 680px) { .ph[data-s="5"] .ph-nav { opacity: 0; pointer-events: none; } .ph-end { bottom: max(28px, env(safe-area-inset-bottom)); } }
+.pw, .pw:hover { text-decoration: none; color: #EEF1FA; }
+.ph-who { max-width: min(760px, calc(100% - 32px)); }
+.ph-dl { background: #EEF1FA; color: #0B0D18; }
+.ph-prin .ic { width: 22px; height: 22px; }

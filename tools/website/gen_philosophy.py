@@ -106,7 +106,7 @@ def main_html():
     bub = "".join(f'<button class="pb" type="button" data-id="{nid}" style="--i:{i}" aria-label="{e(mind)}">{ga.icon(ICONS[nid])}</button>' for i, (nid, x, y, mind, patch, ms, ps) in enumerate(NODES))
     bub += f'<span class="pb pb-x" data-id="human" aria-hidden="true">{ga.icon("hand")}</span><span class="pb pb-x" data-id="machine" aria-hidden="true">{ga.icon("family-prediction")}</span>'
     nav = "".join(f'<button class="pn" type="button" data-go="{i}" aria-label="{e(lab)}">{ga.icon(ic)}</button>' for i, (sid, ic, lab) in enumerate(SCENES))
-    who = "".join(f'<a class="pw" href="{s}.html" aria-label="{e(n)}">{ga.icon(ga.AUD_ICON[s])}</a>' for s, h, n, d in AUD)
+    who = "".join(f'<a class="pw" href="{s}.html">{ga.icon(ga.AUD_ICON[s])}<span>{e(n.replace("Developers and agents", "Developers"))}</span></a>' for s, h, n, d in AUD)
     ids = [n[0] for n in NODES]
     edges = ",".join(f"{ids.index(a)}-{ids.index(b)}" for a, b in EDGES)
     caps = "".join(f'<div class="ph-cap" data-k="{i}"><h2>{e(t)}</h2><p>{e(d)}</p></div>' for i, (t, d) in enumerate(CAPS))
@@ -145,7 +145,7 @@ def ld():
 
 
 def build():
-    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=a38ecae6">', extra_js='\n  <script src="philosophy.js?v=5" defer></script>')
+    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=3e7cec5b">', extra_js='\n  <script src="philosophy.js?v=5" defer></script>')
 
 
 def main():
