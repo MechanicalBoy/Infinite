@@ -90,6 +90,11 @@
       "slug": "quantum-vortex",
       "title": "Quantum Vortex",
       "description": "Relativistic swirling energy vortex with audio-reactive event horizon warping and chromatic accretion glow."
+    },
+    {
+      "slug": "pulsar-beam",
+      "title": "Pulsar Beam",
+      "description": "Rotating magnetized neutron star with relativistic synchrotron light cones, dipole magnetic flux arcs and audio-reactive horizon flare."
     }
   ]
 }

@@ -50,6 +50,8 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Field](https://infinitedevices.org/library/field.html): Write a picture as a formula. (file: https://infinitedevices.org/assets/templates/field.inf)
 - [Acid Bass Synth](https://infinitedevices.org/library/acid-bass-synth.html): Resonant transistor-style acid bass synthesizer with saturated diode ladder filter. (file: https://infinitedevices.org/assets/templates/acid-bass-synth.inf)
 - [Space Tape FX](https://infinitedevices.org/library/space-tape-fx.html): Dual-peak resonant formant filter with LFO vowel morphing and warm saturation. (file: https://infinitedevices.org/assets/templates/space-tape-fx.inf)
+- [Supersaw Lead Synth](https://infinitedevices.org/library/supersaw-lead-synth.html): Multi-oscillator detuned hypersaw lead synthesizer with resonant filter. (file: https://infinitedevices.org/assets/templates/supersaw-lead-synth.inf)
+- [Tape Phaser FX](https://infinitedevices.org/library/tape-phaser-fx.html): 4-stage optical tape phaser with swept allpass notches and feedback saturation. (file: https://infinitedevices.org/assets/templates/tape-phaser-fx.inf)
 
 ## Library: Community
 
@@ -104,6 +106,7 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Phyllotaxis Bloom](https://infinitedevices.org/library/phyllotaxis-bloom.html): A sunflower of golden-angle seeds, each dot coloured along the spiral. Seed count and turn are live. (file: https://infinitedevices.org/assets/library/pixel/phyllotaxis-bloom.field)
 - [Chladni Cymatics](https://infinitedevices.org/library/chladni-cymatics.html): Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry between harmonics. (file: https://infinitedevices.org/assets/library/pixel/chladni-cymatics.field)
 - [Quantum Vortex](https://infinitedevices.org/library/quantum-vortex.html): Relativistic swirling energy vortex with audio-reactive event horizon warping and chromatic accretion glow. (file: https://infinitedevices.org/assets/library/pixel/quantum-vortex.field)
+- [Pulsar Beam](https://infinitedevices.org/library/pulsar-beam.html): Rotating magnetized neutron star with relativistic synchrotron light cones, dipole magnetic flux arcs and audio-reactive horizon flare. (file: https://infinitedevices.org/assets/library/pixel/pulsar-beam.field)
 
 ## Library: Sketch
 
@@ -113,22 +116,26 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Rule 110](https://infinitedevices.org/library/rule-110.html): A one-dimensional cellular automaton that is Turing-complete. Gliders scroll down the page, one generation at a time. (file: https://infinitedevices.org/assets/library/sketch/rule-110.js)
 - [Clifford Attractor](https://infinitedevices.org/library/clifford-attractor.html): A strange attractor drawn as a cloud of 20,000 points. Slowly drifting parameters keep reshaping the lace. (file: https://infinitedevices.org/assets/library/sketch/clifford-attractor.js)
 - [Rössler Attractor](https://infinitedevices.org/library/rossler-attractor.html): Continuous-time chaotic attractor with a spiraling planar disc and vertical folding plume. (file: https://infinitedevices.org/assets/library/sketch/rossler-attractor.js)
+- [De Jong Attractor](https://infinitedevices.org/library/de-jong-attractor.html): Peter de Jong chaotic map accumulating glowing density filaments from four sinusoidal phase terms. (file: https://infinitedevices.org/assets/library/sketch/de-jong-attractor.js)
 
 ## Library: Sketch 3D
 
 - [Torus Knot 3D](https://infinitedevices.org/library/torus-knot-3d.html): Parametric braided (p, q) torus knot with tubular geometry and orbiting satellite spheres. (file: https://infinitedevices.org/assets/library/sketch/torus-knot-3d.js)
+- [Möbius Strip 3D](https://infinitedevices.org/library/mobius-strip-3d.html): Parametric non-orientable Möbius ribbon with transverse tubular rungs, edge rails and orbiting satellites. (file: https://infinitedevices.org/assets/library/sketch/mobius-strip-3d.js)
 
 ## Library: Synths
 
 - [Acid Bass Synth](https://infinitedevices.org/library/acid-bass-synth.html): Resonant transistor-style acid bass synthesizer with saturated diode ladder filter and sub-octave drive. (file: https://infinitedevices.org/assets/templates/acid-bass-synth.inf)
+- [Supersaw Lead Synth](https://infinitedevices.org/library/supersaw-lead-synth.html): Multi-oscillator detuned hypersaw lead synthesizer with sub-octave support, resonant filter and snappy ADSR envelope. (file: https://infinitedevices.org/assets/templates/supersaw-lead-synth.inf)
 
 ## Library: Audio Effects
 
 - [Space Tape FX](https://infinitedevices.org/library/space-tape-fx.html): Dual-peak resonant formant filter with LFO vowel morphing and warm saturation. (file: https://infinitedevices.org/assets/templates/space-tape-fx.inf)
+- [Tape Phaser FX](https://infinitedevices.org/library/tape-phaser-fx.html): 4-stage optical tape phaser with swept allpass notches, feedback resonance and warm diode saturation. (file: https://infinitedevices.org/assets/templates/tape-phaser-fx.inf)
 
 ## Embeds
 
-- [Embed gallery](https://infinitedevices.org/embeds/): 18 live audio-reactive WebGL visuals, each with a copy-paste iframe
+- [Embed gallery](https://infinitedevices.org/embeds/): 19 live audio-reactive WebGL visuals, each with a copy-paste iframe
 - [Cyber Tunnel](https://infinitedevices.org/embeds/cyber-tunnel.html): Neon cyan rings in perspective around a magenta core. Bass warps the tunnel, mids lift the glow.
 - [Iridescent Orb](https://infinitedevices.org/embeds/iridescent-orb.html): A floating pearlescent sphere with a rim and a gloss. Bass pulses it, mids make it wobble.
 - [Hyperspace Tunnel](https://infinitedevices.org/embeds/hyperspace-tunnel.html): Radial stars and light streaks. The warp speeds up on the beat.
@@ -147,6 +154,7 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Fractal Flame](https://infinitedevices.org/embeds/fractal-flame.html): A recursive, folded flame. Sound drives the fold and the glow.
 - [Chladni Cymatics](https://infinitedevices.org/embeds/chladni-cymatics.html): Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry.
 - [Quantum Vortex](https://infinitedevices.org/embeds/quantum-vortex.html): Relativistic swirling energy vortex with audio-reactive event horizon warping and chromatic accretion glow.
+- [Pulsar Beam](https://infinitedevices.org/embeds/pulsar-beam.html): Rotating magnetized neutron star with relativistic synchrotron light cones, dipole magnetic flux arcs and audio-reactive horizon flare.
 
 ## For AI agents
 

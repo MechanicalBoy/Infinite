@@ -14,6 +14,7 @@ Exit codes: 0 written, 2 missing data file.
 """
 import html
 import json
+import math
 import os
 import re
 import shutil
@@ -343,51 +344,76 @@ table.t td { padding: 8px 12px; color: var(--ink2); border-bottom: 1px solid col
 table.t td:first-child { color: var(--ink); font-weight: 600; }
 .bm-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 8px; }
 
-/* ---- visual layer ---- */
+/* ---- visual layer: bento tiles, gauges, segmented control, column charts. Brand: card 24, pills, no outlines, one Ember per frame. ---- */
 .bm-hero h1 { margin: 0; }
 .bm-spec { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.8438rem; margin: 8px 0 0; }
 .ic { width: 20px; height: 20px; flex: none; fill: currentColor; }
 .bm-actions .btn { display: inline-flex; align-items: center; gap: 8px; }
-.bm-rail { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin: 32px -16px 8px; padding: 4px 16px 16px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
-.bm-rail::-webkit-scrollbar { display: none; }
-.bm-stat { scroll-snap-align: center; flex: 0 0 148px; height: 168px; border-radius: var(--radius-card); background: var(--card); box-shadow: var(--shadow-1); padding: 18px; display: flex; flex-direction: column; justify-content: space-between; color: var(--accent); }
-.bm-stat b { font-size: 2.25rem; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); line-height: 1; }
-.bm-stat b small { font-size: 0.9rem; font-weight: 600; color: var(--muted); margin-left: 3px; }
-.bm-stat span { font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.7188rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-.bm-panel { margin: 24px 0; padding: 24px; border-radius: var(--radius-card); background: var(--card); box-shadow: var(--shadow-1); }
-.bm-wrap .bm-panel h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; font-size: 1.25rem; color: var(--ink); }
-.bm-panel h2 .ic { color: var(--accent); width: 24px; height: 24px; }
-.bm-wrap .bm-panel .cap { margin: 16px 0 12px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.7188rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); max-width: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.key { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.key.a, .pr i.a { background: var(--accent); } .key.b, .pr i.b { background: color-mix(in srgb, var(--ink) 32%, transparent); }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font-size: 0.8438rem; font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
-.chip .ic { color: var(--accent); width: 18px; height: 18px; }
-.chip.warn { background: color-mix(in srgb, var(--signal, #A7B1FF) 16%, transparent); } .chip.warn .ic { color: var(--signal, #A7B1FF); }
-.chips.big .chip { padding: 12px 18px; font-size: 0.9375rem; }
-.bar { display: grid; grid-template-columns: 76px 1fr 64px; align-items: center; gap: 12px; margin: 8px 0; font-size: 0.8438rem; }
-.bl { color: var(--ink2); font-weight: 600; } .bv { text-align: right; font-family: "Geist Mono", ui-monospace, monospace; color: var(--ink); } .bv small { color: var(--muted); margin-left: 2px; }
-.bt, .pr { height: 14px; border-radius: 7px; background: color-mix(in srgb, var(--ink) 8%, transparent); position: relative; overflow: hidden; }
-.bt i, .pr i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 7px; background: color-mix(in srgb, var(--ink) 32%, transparent); transition: width var(--dur-page, 667ms) cubic-bezier(.2,.8,.2,1); }
-.bar.inf .bt i { background: var(--accent); }
-.in .bt i, .in .pr i, .view.on.re .bt i { width: var(--w); }
+.pill { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: 999px; font-size: 0.8438rem; font-weight: 500; white-space: nowrap; color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.pill .ic { width: 16px; height: 16px; color: var(--signal); }
+.bm-bento { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 32px 0 16px; }
+.tile, .bm-card { background: var(--card); border-radius: var(--r-lg, 24px); box-shadow: var(--shadow-1); padding: 24px; }
+.tile { display: flex; flex-direction: column; justify-content: space-between; min-height: 168px; }
+.th { display: flex; align-items: center; gap: 8px; font-size: 0.9375rem; font-weight: 600; color: var(--ink); }
+.th .ic { width: 20px; height: 20px; color: var(--accent); }
+.tb { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.tb b { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--ink); }
+.tb b small { font-size: 0.9375rem; font-weight: 600; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+.rg { width: 64px; height: 64px; flex: none; transform: rotate(-90deg); }
+.rg circle { fill: none; stroke-width: 9; stroke-linecap: round; }
+.rg .t { stroke: color-mix(in srgb, var(--ink) 10%, transparent); }
+.rg .f { stroke: var(--accent); stroke-dasharray: 0 100; transition: stroke-dasharray var(--dur-page, 667ms) var(--ease-out, ease-out) 125ms; }
+.in .rg .f { stroke-dasharray: var(--p) 100; }
+.mc { display: flex; align-items: flex-end; gap: 4px; height: 56px; }
+.mc i { width: 8px; height: var(--h); border-radius: 4px; background: color-mix(in srgb, var(--ink) 14%, transparent); transform-origin: bottom; transform: scaleY(0); transition: transform var(--dur-page, 667ms) var(--ease-out, ease-out) calc(var(--k) * 40ms); }
+.mc i.hi { background: var(--accent); }
+.in .mc i { transform: none; }
+.sl { width: 80px; height: 40px; }
+.sl path { fill: none; stroke: var(--signal); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset var(--dur-page, 667ms) var(--ease-out, ease-out); }
+.sl circle { fill: var(--accent); opacity: 0; transition: opacity var(--dur-medium, 333ms) 500ms; }
+.in .sl path { stroke-dashoffset: 0; } .in .sl circle { opacity: 1; }
+.tile.arc { grid-column: 3 / 5; grid-row: 2 / 4; position: relative; align-items: stretch; }
+.ac { width: 100%; max-width: 420px; margin: 16px auto 0; display: block; }
+.sg { stroke-width: 4; stroke-linejoin: round; transition: opacity var(--dur-medium, 333ms) var(--ease-out, ease-out) calc(var(--k, 0) * 60ms); opacity: 0; }
+.in .sg { opacity: 1; }
+.sg.win { fill: var(--accent); stroke: var(--accent); } .sg.tie { fill: var(--signal); stroke: var(--signal); } .sg.lose { fill: color-mix(in srgb, var(--ink) 14%, transparent); stroke: color-mix(in srgb, var(--ink) 14%, transparent); }
+.ac-n { text-align: center; margin-top: -64px; } .ac-n b { font-size: 3rem; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); } .ac-n small { font-size: 1.25rem; color: var(--muted); margin-left: 2px; }
+.ac-k { display: flex; justify-content: center; gap: 8px; margin-top: 24px; }
+.pill i.sg { width: 10px; height: 10px; border-radius: 50%; opacity: 1; stroke: none; }
+.pill i.sg.win { background: var(--accent); } .pill i.sg.tie { background: var(--signal); } .pill i.sg.lose { background: color-mix(in srgb, var(--ink) 25%, transparent); }
+.bm-card { margin: 16px 0; }
+.seg { position: relative; display: grid; grid-template-columns: repeat(var(--n), 1fr); padding: 4px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.seg .th-b { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / var(--n)); border-radius: 999px; background: var(--surface-1); box-shadow: var(--shadow-1); transform: translateX(calc(var(--i) * 100%)); transition: transform var(--spring-slab-ms, 333ms) var(--spring-slab, ease-out); }
+.seg button { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border: 0; background: none; cursor: pointer; font: inherit; font-size: 0.8438rem; font-weight: 500; color: var(--muted); border-radius: 999px; -webkit-tap-highlight-color: transparent; transition: color var(--dur-small, 188ms); }
+.seg button.on { color: var(--ink); } .seg button .ic { width: 16px; height: 16px; }
+.key { display: flex; gap: 16px; margin-top: 16px; font-size: 0.8438rem; color: var(--muted); } .key span { display: inline-flex; align-items: center; gap: 8px; }
+.key i { width: 10px; height: 10px; border-radius: 50%; } .key .a, .ro-n .a { color: var(--accent); } .key i.a { background: var(--accent); } .key i.b { background: var(--signal); }
 .view { display: none; } .view.on { display: block; }
-.fxg { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.fx { padding: 12px 14px; border-radius: 16px; background: color-mix(in srgb, var(--ink) 4%, transparent); border: 2px solid transparent; }
-.fx.win { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-.fx b { display: block; font-size: 0.875rem; color: var(--ink); margin-bottom: 8px; }
-.pr { margin: 5px 40px 5px 0; height: 14px; overflow: visible; background: none; position: relative; }
-.pr i { top: 0; bottom: 0; }
-.pr em { position: absolute; right: -40px; top: 0; width: 36px; text-align: right; font-style: normal; font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.7188rem; color: var(--ink2); line-height: 14px; }
-.vd { display: grid; grid-template-columns: 52px 1fr 64px; gap: 4px 12px; align-items: center; margin: 14px 0; }
-.vd b { grid-row: span 2; color: var(--ink); } .vd u { grid-row: span 2; text-decoration: none; font-weight: 800; font-size: 1.5rem; letter-spacing: -0.02em; color: var(--accent); text-align: right; }
-.tabs { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
-.tab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 0.8438rem; font-weight: 600; color: var(--ink2); background: color-mix(in srgb, var(--ink) 7%, transparent); -webkit-tap-highlight-color: transparent; }
-.tab.on { color: var(--ink); background: color-mix(in srgb, var(--accent) 22%, transparent); } .tab.on .ic { color: var(--accent); }
-.bm-full { margin: 32px 0 0; } .bm-full > summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-radius: 999px; cursor: pointer; background: var(--card); box-shadow: var(--shadow-1); color: var(--ink); font-weight: 600; width: fit-content; }
+.ro { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 24px 0 8px; }
+.ro-t { flex: 1 0 100%; font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.7188rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.ro-n { display: flex; align-items: baseline; gap: 16px; } .ro-n b { font-size: 2.75rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--ink); }
+.ro-n .a { color: var(--accent); } .ro-n .b { color: var(--signal); }
+.ro-p { min-height: 32px; padding: 0 12px; font-size: 0.8125rem; }
+.cols { position: relative; display: flex; align-items: flex-end; gap: 6px; height: 200px; margin: 16px 0 28px; }
+.cl { position: absolute; left: 0; right: 0; top: 100%; margin-top: 8px; font-style: normal; font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.6875rem; color: var(--muted); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.md { position: absolute; left: 0; right: 0; bottom: var(--md, 50%); height: 0; border-top: 2px dashed color-mix(in srgb, var(--ink) 20%, transparent); pointer-events: none; }
+.col, .grp { position: relative; flex: 1; height: 100%; padding: 0; border: 0; background: none; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; gap: 3px; border-radius: 12px; -webkit-tap-highlight-color: transparent; transition: background var(--dur-small, 188ms); }
+.grp.sel, .col.sel { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.col i, .grp i { display: block; width: 100%; max-width: 40px; height: var(--h); border-radius: 10px 10px 6px 6px; transform-origin: bottom; background: color-mix(in srgb, var(--signal) 30%, transparent); animation: grow var(--dur-page, 667ms) var(--ease-out, ease-out) both; animation-delay: calc(var(--k, 0) * 40ms); transition: background var(--dur-small, 188ms); }
+.grp i { max-width: 18px; }
+.cmp:not(.in) .col i, .cmp:not(.in) .grp i { animation-play-state: paused; }
+.col.inf i { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.col.sel i { background: var(--signal); } .col.inf.sel i { background: var(--accent); }
+.grp i.a { background: color-mix(in srgb, var(--accent) 45%, transparent); } .grp i.b { background: color-mix(in srgb, var(--signal) 30%, transparent); }
+.grp.sel i.a { background: var(--accent); } .grp.sel i.b { background: var(--signal); }
+@keyframes grow { from { transform: scaleY(0); } }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.bm-full { margin: 32px 0 0; } .bm-full > summary { list-style: none; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 20px; border-radius: 999px; cursor: pointer; background: var(--card); box-shadow: var(--shadow-1); color: var(--ink); font-weight: 600; width: fit-content; }
 .bm-full > summary::-webkit-details-marker { display: none; } .bm-full[open] > summary .ic:last-child { transform: rotate(180deg); }
-@media (max-width: 680px) { .tab span { display: none; } .tab { padding: 12px 16px; } .bm-panel { padding: 18px; } .bar { grid-template-columns: 62px 1fr 56px; gap: 8px; } .bm-stat { flex-basis: 132px; height: 152px; } }
-@media (prefers-reduced-motion: reduce) { .bt i, .pr i { transition: none; } }
+@media (max-width: 900px) { .bm-bento { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tile.arc { grid-column: 1 / 3; grid-row: auto; order: -1; } }
+@media (max-width: 680px) { .tile, .bm-card { padding: 20px; border-radius: 20px; } .tile { min-height: 168px; } .tb { flex-direction: column; align-items: flex-start; gap: 12px; } .tb b { font-size: 2rem; } .rg { width: 52px; height: 52px; } .mc { height: 44px; } .mc i { width: 6px; }
+  .seg button .ic { display: none; } .cols { height: 168px; gap: 4px; margin-bottom: 8px; } .cl { display: none; } .ro-n b { font-size: 2.25rem; } .ac-n b { font-size: 2.25rem; } .ac-n { margin-top: -48px; } .ac-k { margin-top: 16px; } }
+@media (prefers-reduced-motion: reduce) { .col i, .grp i { animation: none; } }
 """
 
 
@@ -430,95 +456,163 @@ def _ic(name):
     return svg.replace("<svg ", '<svg class="ic" aria-hidden="true" ', 1).replace("\n", "")
 
 
-def bars(rows, unit="", lower_better=True, log=False):
-    """rows: [(label, value, is_infinite)]. One bar each, width relative to the largest; Infinite takes the accent."""
-    import math
-    f = (lambda v: math.log10(1 + v)) if log else (lambda v: v)
-    mx = max(f(v) for _, v, _ in rows) or 1
-    best = (min if lower_better else max)(v for _, v, _ in rows)
-    out = ""
-    for lab, v, inf in rows:
-        w = max(2.5, 100 * f(v) / mx)
-        cls = "bar" + (" inf" if inf else "") + (" best" if v == best else "")
-        shown = f"{v:g}" if isinstance(v, int) or v == int(v) else f"{v:.2f}".rstrip("0").rstrip(".")
-        out += f'<div class="{cls}"><span class="bl">{esc(lab)}</span><span class="bt"><i style="--w:{w:.1f}%"></i></span><span class="bv">{shown}<small>{unit}</small></span></div>'
+def _num(v):
+    return f"{v:g}" if v == int(v) else f"{v:.2f}".rstrip("0").rstrip(".")
+
+
+def ring(pct):
+    return (f'<svg class="rg" viewBox="0 0 80 80" aria-hidden="true"><circle class="t" cx="40" cy="40" r="32" pathLength="100"/>'
+            f'<circle class="f" cx="40" cy="40" r="32" pathLength="100" style="--p:{pct}"/></svg>')
+
+
+def mini_cols(vals, hi):
+    mx = max(vals)
+    return '<div class="mc" aria-hidden="true">' + "".join(
+        f'<i class="{"hi" if n == hi else ""}" style="--h:{max(8, 100 * v / mx):.0f}%;--k:{n}"></i>' for n, v in enumerate(vals)) + "</div>"
+
+
+def tiles():
+    inf = apk("Infinite")
+    names = ["Infinite", "Logic", "Ableton", "Bitwig", "TouchDesigner", "Blender", "VCV", "Bespoke", "Vital"]
+    mem = [float(apk(k)["Memory MB (footprint)"]) for k in names]
+    exp = [math.log10(1 + v) for v in (106, 68, 88)]
+    t = [
+        ("power", "Launch", "0.34", "s", ring(34)),
+        ("snap", "Pitch", "0.2", "¢", ring(20)),
+        ("loop", "Export", "100", "×", mini_cols(exp, 0)),
+        ("library", "Memory", inf["Memory MB (footprint)"], "MB", mini_cols(sorted(mem), sorted(mem).index(mem[0]))),
+        ("family-utility", "Plugins", "97.6", "%", ring(97.6)),
+        ("folder", "Size", inf["Bundle MB"], "MB", mini_cols(sorted(math.sqrt(float(apk(k)["Bundle MB"])) for k in names), 0)),
+        ("pointer", "Latency", "1", "frame", ring(50)),
+        ("pause", "Dropouts", "0", "", '<svg class="sl" viewBox="0 0 80 40" aria-hidden="true"><path d="M2 20H78" pathLength="100"/><circle cx="76" cy="20" r="4"/></svg>'),
+    ]
+    return '<div class="bm-bento">' + "".join(
+        f'<div class="tile"><div class="th">{_ic(i)}<span>{lab}</span></div><div class="tb"><b>{n}<small>{u}</small></b>{viz}</div></div>'
+        for i, lab, n, u, viz in t)
+
+
+def effect_pairs():
+    pairs = [("Reverb", "node:Reverb", "ValhallaRoom"), ("Delay", "node:Delay", "ValhallaDelay"), ("Compressor", "node:Dynamics", "Pro-C 2"),
+             ("Limiter", "node:Limiter", "Pro-L 2"), ("EQ", "node:EQ", "Pro-Q 4"), ("Drive", "node:Drive", "Saturn 2"),
+             ("Chorus", "node:Chorus", "kHs Chorus"), ("Flanger", "node:Flanger", "kHs Flanger"), ("Phaser", "node:Phaser", "kHs Phaser")]
+    out = []
+    for kind, a, b in pairs:
+        ca, cb = cpu(fxk(a)), cpu(fxk(b))
+        out.append((kind, ca, cb, "win" if ca < cb - 1 else ("lose" if cb < ca - 1 else "tie")))
     return out
 
 
-def v_stats():
-    inf = apk("Infinite")
-    st = [("power", "0.34", "s", "launch"), ("snap", "0.2", "¢", "pitch"), ("loop", "100", "×", "export"),
-          ("library", inf["Memory MB (footprint)"], "MB", "memory"), ("star", "97.6", "%", "plugins"), ("pause", "0", "", "dropouts")]
-    return '<div class="bm-rail" role="list">' + "".join(
-        f'<div class="bm-stat" role="listitem">{_ic(i)}<b>{esc(n)}<small>{esc(u)}</small></b><span>{esc(l)}</span></div>' for i, n, u, l in st) + "</div>"
+def arc_card():
+    fxs = sorted(effect_pairs(), key=lambda f: {'win': 0, 'tie': 1, 'lose': 2}[f[3]])
+    n = len(fxs)
+    R, r, gap = 112.0, 62.0, 6.0
+    seg = 180.0 / n
+    paths = ""
+    for k, (_, _, _, v) in enumerate(fxs):
+        a0, a1 = math.radians(180 + k * seg + gap / 2), math.radians(180 + (k + 1) * seg - gap / 2)
+        p = lambda ang, rad: f"{120 + rad * math.cos(ang):.1f} {122 + rad * math.sin(ang):.1f}"
+        d = f"M{p(a0, R)} A{R} {R} 0 0 1 {p(a1, R)} L{p(a1, r)} A{r} {r} 0 0 0 {p(a0, r)}Z"
+        paths += f'<path class="sg {v}" style="--k:{k}" d="{d}"/>'
+    w = sum(1 for f in fxs if f[3] == "win")
+    l = sum(1 for f in fxs if f[3] == "lose")
+    return (f'<div class="tile arc"><div class="th">{_ic("family-effects")}<span>Effects</span></div>'
+            f'<svg class="ac" viewBox="0 0 240 130" role="img" aria-label="Infinite is lighter on {w} of {n} effects">{paths}</svg>'
+            f'<div class="ac-n"><b>{w}<small>/{n}</small></b></div>'
+            f'<div class="ac-k"><span class="pill"><i class="sg win"></i>{w}</span><span class="pill"><i class="sg tie"></i>{n - w - l}</span><span class="pill"><i class="sg lose"></i>{l}</span></div></div>')
 
 
-def v_sound():
-    rows = [("Wavetable", float(vc("node:Wavetable")), True), ("Analog", float(vc("node:Analog")), True),
-            ("Vital", float(vc("Vital")), False), ("Serum 2", float(vc("Serum 2")), False)]
-    chips = "".join(f'<span class="chip">{_ic(i)}{esc(t)}</span>' for i, t in
-                    (("snap", "0.2¢ pitch"), ("hand", "24 dB touch"), ("eye", "−81 dB clean")))
-    return (f'<section class="bm-panel" id="sound"><h2>{_ic("family-synths")}Sound</h2><div class="chips">{chips}</div>'
-            f'<p class="cap">CPU per voice, ms/s</p>{bars(rows)}</section>')
+def seg_ctrl(items):
+    n = len(items)
+    return (f'<div class="seg" style="--n:{n};--i:0"><i class="th-b"></i>' + "".join(
+        f'<button type="button" class="{"on" if k == 0 else ""}" data-i="{k}" aria-label="{lab}">{_ic(ic)}<span>{lab}</span></button>'
+        for k, (ic, lab) in enumerate(items)) + "</div>")
 
 
-def v_fx():
-    pairs = [("Reverb", "node:Reverb", "ValhallaRoom"), ("Delay", "node:Delay", "ValhallaDelay"), ("Comp", "node:Dynamics", "Pro-C 2"),
-             ("Limiter", "node:Limiter", "Pro-L 2"), ("EQ", "node:EQ", "Pro-Q 4"), ("Drive", "node:Drive", "Saturn 2"),
-             ("Chorus", "node:Chorus", "kHs Chorus"), ("Flanger", "node:Flanger", "kHs Flanger"), ("Phaser", "node:Phaser", "kHs Phaser")]
-    grid = ""
-    for kind, a, b in pairs:
-        ca, cb = cpu(fxk(a)), cpu(fxk(b))
-        win = "win" if ca < cb - 1 else ("lose" if cb < ca - 1 else "tie")
-        mx = max(ca, cb, 0.1)
-        grid += (f'<div class="fx {win}"><b>{kind}</b><div class="pr"><i class="a" style="--w:{max(3, 100*ca/mx):.0f}%"></i><em>{ca:.1f}</em></div>'
-                 f'<div class="pr"><i class="b" style="--w:{max(3, 100*cb/mx):.0f}%"></i><em>{cb:.1f}</em></div></div>')
-    return (f'<section class="bm-panel" id="effects"><h2>{_ic("family-effects")}Effects</h2>'
-            f'<p class="cap"><span class="key a"></span>Infinite <span class="key b"></span>Plugin · CPU ms/s, shorter is lighter</p><div class="fxg">{grid}</div></section>')
+def readout(title, a, b=None, pill=""):
+    nums = f'<b class="a">{a}</b>' + (f'<b class="b">{b}</b>' if b is not None else "")
+    return f'<div class="ro"><span class="ro-t">{esc(title)}</span><div class="ro-n">{nums}</div><span class="pill ro-p">{esc(pill)}</span></div>'
 
 
-def v_video():
-    rows = [("720p", 170, 1.6), ("1080p", 81, 1.2), ("4K", 44, 0.5)]
-    out = "".join(f'<div class="vd"><b>{l}</b><div class="pr"><i class="a" style="--w:100%"></i><em>{a} fps</em></div>'
-                  f'<div class="pr"><i class="b" style="--w:{max(1.5, 100*b/a):.1f}%"></i><em>{b} fps</em></div><u>{a/b:.0f}×</u></div>' for l, a, b in rows)
-    return (f'<section class="bm-panel" id="video"><h2>{_ic("family-3d")}Export</h2>'
-            f'<p class="cap"><span class="key a"></span>Infinite <span class="key b"></span>Blender · ProRes 4444 frames per second</p>{out}</section>')
+def col_single(rows, unit, scale="lin"):
+    """rows: [(name, value, is_infinite)] already ordered. Heights are relative to the largest, sqrt or log when the spread is huge."""
+    f = {"lin": lambda v: v, "sqrt": math.sqrt, "log": lambda v: math.log10(1 + v)}[scale]
+    mx = max(f(v) for _, v, _ in rows)
+    vals = sorted(v for _, v, _ in rows)
+    med = vals[len(vals) // 2]
+    out = ""
+    s0 = next((i for i, r in enumerate(rows) if r[2]), 0)
+    for k, (nm, v, inf) in enumerate(rows):
+        rank = sorted(vals).index(v) + 1
+        out += (f'<button type="button" class="col{" inf" if inf else ""}{" sel" if k == s0 else ""}" style="--h:{max(5, 100 * f(v) / mx):.1f}%;--k:{k}" aria-label="{esc(nm)} {_num(v)} {unit}" '
+                f'data-t="{esc(nm)} · {unit}" data-a="{_num(v)}" data-p="#{rank} of {len(rows)}"><i></i><em class="cl">{esc(nm)}</em></button>')
+    first = rows[s0]
+    rank0 = vals.index(first[1]) + 1
+    ro = readout(f"{first[0]} · {unit}", _num(first[1]), None, f"#{rank0} of {len(rows)}")
+    return ro + f'<div class="cols" style="--md:{100 * f(med) / mx:.1f}%"><u class="md"></u>{out}</div>'
 
 
-def v_apps():
-    names = [("Infinite", "Infinite"), ("Logic", "Logic"), ("Live", "Ableton"), ("Bitwig", "Bitwig"), ("TD", "TouchDesigner"),
-             ("Blender", "Blender"), ("VCV", "VCV"), ("Bespoke", "Bespoke"), ("Vital", "Vital")]
-    metrics = [("power", "Launch", "s", lambda r: float(r["Window s (1st)"])),
-               ("library", "Memory", "MB", lambda r: float(r["Memory MB (footprint)"])),
-               ("folder", "Size", "MB", lambda r: float(r["Bundle MB"])),
-               ("pause", "Idle", "%", lambda r: float(r["Idle CPU % mean / max"].split("/")[0]))]
-    tabs, views = "", ""
-    for n, (ic, lab, unit, fn) in enumerate(metrics):
-        rows = sorted([(l, fn(apk(k)), k == "Infinite") for l, k in names], key=lambda t: t[1])
-        tabs += f'<button type="button" class="tab{" on" if n == 0 else ""}" data-t="{n}" aria-label="{lab}">{_ic(ic)}<span>{lab}</span></button>'
-        views += f'<div class="view{" on" if n == 0 else ""}" data-v="{n}">{bars(rows, unit, log=(lab == "Size"))}</div>'
-    return f'<section class="bm-panel" id="apps"><h2>{_ic("viewport")}Apps</h2><div class="tabs">{tabs}</div>{views}</section>'
+def col_groups(groups, unit, scale="lin"):
+    """groups: [(name, a, b, pill)]: Infinite then the other tool, side by side."""
+    f = {"lin": lambda v: v, "log": lambda v: math.log10(1 + v)}[scale]
+    mx = max(max(f(a), f(b)) for _, a, b, _ in groups)
+    out = ""
+    for k, (nm, a, b, pill) in enumerate(groups):
+        out += (f'<button type="button" class="grp{" sel" if k == 0 else ""}" style="--k:{k}" aria-label="{esc(nm)}: Infinite {_num(a)}, other {_num(b)} {unit}" '
+                f'data-t="{esc(nm)} · {unit}" data-a="{_num(a)}" data-b="{_num(b)}" data-p="{esc(pill)}">'
+                f'<i class="a" style="--h:{max(4, 100 * f(a) / mx):.1f}%"></i><i class="b" style="--h:{max(4, 100 * f(b) / mx):.1f}%"></i><em class="cl">{esc(nm)}</em></button>')
+    g0 = groups[0]
+    return readout(f"{g0[0]} · {unit}", _num(g0[1]), _num(g0[2]), g0[3]) + f'<div class="cols grps">{out}</div>'
+
+
+def compare_apps():
+    names = [("Infinite", "Infinite"), ("Logic", "Logic"), ("Ableton", "Ableton"), ("Bitwig", "Bitwig"), ("TouchDesigner", "TouchDesigner"),
+             ("Blender", "Blender"), ("VCV Rack", "VCV"), ("Bespoke", "Bespoke"), ("Vital", "Vital")]
+    metrics = [("power", "Launch", "s", lambda r: float(r["Window s (1st)"]), "lin"), ("library", "Memory", "MB", lambda r: float(r["Memory MB (footprint)"]), "lin"),
+               ("folder", "Size", "MB", lambda r: float(r["Bundle MB"]), "sqrt"), ("pause", "Idle", "% CPU", lambda r: float(r["Idle CPU % mean / max"].split("/")[0]), "lin")]
+    views = ""
+    for n, (_, lab, unit, fn, sc) in enumerate(metrics):
+        rows = [(a, fn(apk(k)), k == "Infinite") for a, k in names]
+        rows.sort(key=lambda t: t[1])
+        views += f'<div class="view{" on" if n == 0 else ""}">{col_single(rows, unit, sc)}</div>'
+    return f'<section class="bm-card cmp" id="apps">{seg_ctrl([(m[0], m[1]) for m in metrics])}{views}</section>'
+
+
+def compare_head():
+    snd = [(lab, float(vc(k)), inf) for lab, k, inf in (("Wavetable", "node:Wavetable", True), ("Analog", "node:Analog", True), ("Vital", "Vital", False), ("Serum 2", "Serum 2", False))]
+    fx = [(k, a, b, {"win": "Lighter", "lose": "Heavier", "tie": "Level"}[v]) for k, a, b, v in effect_pairs()]
+    ex = [(l, a, b, f"{a / b:.0f}×") for l, a, b in (("720p", 170, 1.6), ("1080p", 81, 1.2), ("4K", 44, 0.5))]
+    views = (f'<div class="view on">{col_single(snd, "ms/s per voice")}</div>'
+             f'<div class="view">{col_groups(fx, "ms/s")}</div>'
+             f'<div class="view">{col_groups(ex, "fps", "log")}</div>')
+    key = '<div class="key"><span><i class="a"></i>Infinite</span><span><i class="b"></i>Other</span></div>'
+    return f'<section class="bm-card cmp" id="head">{seg_ctrl([("family-synths", "Sound"), ("family-effects", "Effects"), ("family-3d", "Export")])}{key}{views}</section>'
 
 
 def v_behind():
-    items = [("power", "Idle CPU"), ("family-audio-effects", "EQ · Limiter · Drive · Chorus"), ("cube", "10k instances"), ("viewport", "4× 4K, 3 windows"), ("mixer", "Default levels")]
-    return (f'<section class="bm-panel" id="behind"><h2>{_ic("warning")}Behind</h2><div class="chips big">' +
-            "".join(f'<span class="chip warn">{_ic(i)}{esc(t)}</span>' for i, t in items) + "</div></section>")
+    items = [("power", "Idle CPU"), ("family-audio-effects", "EQ, limiter, drive, chorus"), ("cube", "10k instances"), ("viewport", "4× 4K, 3 windows"), ("mixer", "Default levels")]
+    return (f'<section class="bm-card" id="behind"><div class="th">{_ic("warning")}<span>Behind</span></div><div class="chips">' +
+            "".join(f'<span class="pill">{_ic(i)}{esc(t)}</span>' for i, t in items) + "</div></section>")
 
 
 VISUAL_JS = """(function(){
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.25});
-  document.querySelectorAll('.bm-panel,.bm-rail').forEach(function(n){io.observe(n);});
-  document.querySelectorAll('.tabs').forEach(function(t){
-    t.addEventListener('click',function(e){var b=e.target.closest('.tab');if(!b)return;var p=t.parentNode,n=b.getAttribute('data-t');
-      p.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('on',x===b);});
-      p.querySelectorAll('.view').forEach(function(v){var on=v.getAttribute('data-v')===n;v.classList.toggle('on',on);if(on){v.classList.remove('re');void v.offsetWidth;v.classList.add('re');}});});});
-  var r=document.querySelector('.bm-rail');if(r){var tp=0;r.addEventListener('wheel',function(e){if(Math.abs(e.deltaY)>Math.abs(e.deltaX)&&e.shiftKey){r.scrollLeft+=e.deltaY;e.preventDefault();}},{passive:false});}
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.2});
+  document.querySelectorAll('.bm-bento,.cmp').forEach(function(n){io.observe(n);});
+  document.querySelectorAll('.cmp').forEach(function(card){
+    var seg=card.querySelector('.seg'),views=card.querySelectorAll('.view');
+    seg.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var i=+b.getAttribute('data-i');
+      seg.style.setProperty('--i',i);seg.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});
+      views.forEach(function(v,k){v.classList.toggle('on',k===i);});});
+    card.addEventListener('click',function(e){var c=e.target.closest('.col,.grp');if(!c)return;var v=c.closest('.view');
+      v.querySelectorAll('.sel').forEach(function(x){x.classList.remove('sel');});c.classList.add('sel');
+      var ro=v.querySelector('.ro');ro.querySelector('.ro-t').textContent=c.getAttribute('data-t');
+      var n=ro.querySelector('.ro-n'),a=c.getAttribute('data-a'),b=c.getAttribute('data-b');
+      n.innerHTML='<b class="a">'+a+'</b>'+(b!==null?'<b class="b">'+b+'</b>':'');ro.querySelector('.ro-p').textContent=c.getAttribute('data-p');});
+  });
 })();"""
 
 
 def visual_html():
-    return v_stats() + v_sound() + v_fx() + v_video() + v_apps() + v_behind()
+    return tiles() + arc_card() + "</div>" + compare_apps() + compare_head() + v_behind()
 
 
 def page(body, n):
@@ -533,12 +627,12 @@ def page(body, n):
     head = re.sub(r'(og:image" content=")[^"]*', lambda m: m.group(1) + BASE + "assets/og-image.jpg", head)
     head = re.sub(r'(twitter:image" content=")[^"]*', lambda m: m.group(1) + BASE + "assets/og-image.jpg", head)
     head = head.replace('  <link rel="alternate" type="application/json" href="assets/extensions/extensions.json" title="Extensions">\n', "")
-    head = head.replace("extensions.css?v=e791dc75", "benchmarks.css?v=cea1bd48")
+    head = head.replace("extensions.css?v=e791dc75", "benchmarks.css?v=0db9760e")
     head += f'  <link rel="alternate" type="application/json" href="assets/benchmarks.json" title="Benchmark data">\n  <link rel="alternate" type="application/pdf" href="assets/{PDF_NAME}" title="Benchmark report (PDF)">\n'
     head += f'  <script type="application/ld+json">\n{jsonld(n)}\n  </script>\n'
     nav_start = rest.index("<body")
     header = rest[nav_start:rest.index("<main>")]
-    header = header.replace('class="extensions-page"', 'class="benchmarks-page"').replace(' aria-current="page"', "")
+    header = header.replace('class="extensions-page"', 'class="benchmarks-page"').replace(' aria-current="page"', "").replace('href="benchmarks.html">', 'href="benchmarks.html" aria-current="page">')
     # wrap tables in a scroller so phones scroll the table, not the page
     body_w = re.sub(r"(<table class=\"t.*?</table>)", r'<div class="bm-scroll">\1</div>', body, flags=re.S)
     qa = "".join(f"<h3>{esc(q)}</h3><p>{esc(a)}</p>" for q, a in faq())

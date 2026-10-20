@@ -273,6 +273,38 @@
     "Field Effect",
     "Audio Out"
    ]
+  },
+  {
+   "id": "supersaw-lead-synth",
+   "name": "Supersaw Lead Synth",
+   "category": "Templates",
+   "kind": "Template",
+   "group": "Synths",
+   "description": "Multi-oscillator detuned hypersaw lead synthesizer with resonant filter.",
+   "price": 0,
+   "preview": "assets/templates/supersaw-lead-synth.webp",
+   "file": "assets/templates/supersaw-lead-synth.inf",
+   "nodes": [
+    "Random Note Generator",
+    "Field Synth",
+    "Audio Out"
+   ]
+  },
+  {
+   "id": "tape-phaser-fx",
+   "name": "Tape Phaser FX",
+   "category": "Templates",
+   "kind": "Template",
+   "group": "Audio effects",
+   "description": "4-stage optical tape phaser with swept allpass notches and feedback saturation.",
+   "price": 0,
+   "preview": "assets/templates/tape-phaser-fx.webp",
+   "file": "assets/templates/tape-phaser-fx.inf",
+   "nodes": [
+    "Analog",
+    "Field Effect",
+    "Audio Out"
+   ]
   }
  ]
 }

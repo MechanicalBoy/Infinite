@@ -203,9 +203,11 @@ strong { font-weight: 600; color: var(--ink); }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes nav-pop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .nav-trigger[aria-expanded="true"] + .nav-menu { animation: none; } }
-.nav-menu a { display: flex; align-items: center; padding: 12px 16px; border-radius: var(--r-sm); text-decoration: none; font-size: 0.8438rem; font-weight: 600; color: var(--ink); }
+.nav-menu a { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r-sm); text-decoration: none; font-size: 0.8438rem; font-weight: 600; color: var(--ink); }
 .nav-menu a:hover, .nav-menu a:focus-visible { background: var(--deep); }
-.nav-menu a[aria-current] { background: var(--deep); }
+.nav-menu a[aria-current] { background: var(--ink); color: var(--ground); }
+.nav-menu .ic { width: 18px; height: 18px; flex: none; color: var(--ink2); }
+.nav-menu a[aria-current] .ic { color: inherit; }
 
 .nav-actions { display: flex; align-items: center; gap: 4px; }
 .nav-download { margin-left: 8px; }
@@ -905,3 +907,22 @@ p.mono { font-size: 0.84375rem; }
 @media (max-width: 640px) { .counter { min-height: 44px; display: inline-flex; align-items: center; } }
 
 @media (hover: none) { .btn:hover, .node:hover, .doc-card:hover, .ticker-pill:hover, .footer-social a:hover { transform: none; } .play-btn:hover, .yt-poster:hover img, .yt-poster:hover .yt-play { transform: none; } }
+
+/* Phone menu: a glass side panel, every group open, the current page a solid pill (BRAND.md section 6: pills, no outlines, no dividers). */
+@media (max-width: 900px) {
+  .nav-links { left: 12px; right: auto; top: calc(var(--header-h) + 8px); width: min(88vw, 340px); height: auto; max-height: calc(100dvh - var(--header-h) - 20px);
+    padding: 12px; border-radius: var(--r-lg); background: var(--surface-1);
+    box-shadow: var(--shadow-3, 0 24px 64px rgba(0,0,0,.35)), var(--shadow-2); transform: translateX(-14px) scale(0.98); transform-origin: top left; }
+  .nav-open .nav-links { transform: none; }
+  .nav-group { border: 0; }
+  .nav-trigger { min-height: 0 !important; padding: 12px 14px 6px !important; font: 500 0.6875rem/1 "Geist Mono", ui-monospace, monospace !important; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted) !important; pointer-events: none !important; }
+  .nav-trigger::after { display: none; }
+  .nav-menu { max-height: none; visibility: inherit; transition: none; padding-bottom: 4px; gap: 2px; }
+  .nav-open .nav-trigger[aria-expanded="true"] + .nav-menu { max-height: none; padding-bottom: 4px; }
+  .nav-menu a { min-height: 44px; gap: 14px; padding: 0 16px; border-radius: var(--r-pill); font-size: 1rem; font-weight: 600; color: var(--ink); }
+  .nav-menu a:active { background: var(--deep); }
+  .nav-menu a[aria-current] { background: var(--ink); color: var(--ground); }
+  .nav-menu .ic { width: 20px; height: 20px; }
+  .nav-sheet-social { padding-top: 12px; margin-top: 4px; }
+  .nav-sheet-social a { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+}

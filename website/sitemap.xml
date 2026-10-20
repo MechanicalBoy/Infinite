@@ -41,6 +41,7 @@
   <url><loc>https://infinitedevices.org/embeds/fractal-flame.html</loc><lastmod>2026-10-20</lastmod><priority>0.7</priority></url>
   <url><loc>https://infinitedevices.org/embeds/chladni-cymatics.html</loc><lastmod>2026-10-20</lastmod><priority>0.7</priority></url>
   <url><loc>https://infinitedevices.org/embeds/quantum-vortex.html</loc><lastmod>2026-10-20</lastmod><priority>0.7</priority></url>
+  <url><loc>https://infinitedevices.org/embeds/pulsar-beam.html</loc><lastmod>2026-10-20</lastmod><priority>0.7</priority></url>
   <url><loc>https://infinitedevices.org/developers.html</loc><lastmod>2026-10-20</lastmod><priority>0.7</priority></url>
   <url><loc>https://infinitedevices.org/philosophy.html</loc><lastmod>2026-10-20</lastmod><priority>0.7</priority></url>
   <url><loc>https://infinitedevices.org/artists.html</loc><lastmod>2026-10-20</lastmod><priority>0.7</priority></url>
@@ -70,6 +71,8 @@
   <url><loc>https://infinitedevices.org/library/field.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
   <url><loc>https://infinitedevices.org/library/acid-bass-synth.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
   <url><loc>https://infinitedevices.org/library/space-tape-fx.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
+  <url><loc>https://infinitedevices.org/library/supersaw-lead-synth.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
+  <url><loc>https://infinitedevices.org/library/tape-phaser-fx.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
   <url><loc>https://infinitedevices.org/library/terrain-mandala.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
   <url><loc>https://infinitedevices.org/library/glitch-feedback.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
   <url><loc>https://infinitedevices.org/library/shifted-blend.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
@@ -121,4 +124,9 @@
   <url><loc>https://infinitedevices.org/library/acid-bass-synth.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
   <url><loc>https://infinitedevices.org/library/space-tape-fx.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
   <url><loc>https://infinitedevices.org/library/quantum-vortex.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
+  <url><loc>https://infinitedevices.org/library/de-jong-attractor.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
+  <url><loc>https://infinitedevices.org/library/mobius-strip-3d.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
+  <url><loc>https://infinitedevices.org/library/supersaw-lead-synth.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
+  <url><loc>https://infinitedevices.org/library/tape-phaser-fx.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
+  <url><loc>https://infinitedevices.org/library/pulsar-beam.html</loc><lastmod>2026-10-20</lastmod><priority>0.5</priority></url>
 </urlset>

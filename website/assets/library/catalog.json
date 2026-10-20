@@ -1,7 +1,7 @@
 {
  "name": "Infinite Library",
  "url": "https://infinitedevices.org/library.html",
- "count": 68,
+ "count": 75,
  "items": [
   {
    "id": "first-sound",
@@ -206,6 +206,30 @@
    "file": "https://infinitedevices.org/assets/templates/space-tape-fx.inf",
    "preview": "https://infinitedevices.org/assets/templates/space-tape-fx.webp",
    "page": "https://infinitedevices.org/library/space-tape-fx.html"
+  },
+  {
+   "id": "supersaw-lead-synth",
+   "name": "Supersaw Lead Synth",
+   "category": "Templates",
+   "type": "Template",
+   "description": "Multi-oscillator detuned hypersaw lead synthesizer with resonant filter.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/templates/supersaw-lead-synth.inf",
+   "preview": "https://infinitedevices.org/assets/templates/supersaw-lead-synth.webp",
+   "page": "https://infinitedevices.org/library/supersaw-lead-synth.html"
+  },
+  {
+   "id": "tape-phaser-fx",
+   "name": "Tape Phaser FX",
+   "category": "Templates",
+   "type": "Template",
+   "description": "4-stage optical tape phaser with swept allpass notches and feedback saturation.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/templates/tape-phaser-fx.inf",
+   "preview": "https://infinitedevices.org/assets/templates/tape-phaser-fx.webp",
+   "page": "https://infinitedevices.org/library/tape-phaser-fx.html"
   },
   {
    "id": "terrain-mandala",
@@ -818,6 +842,66 @@
    "file": "https://infinitedevices.org/assets/library/pixel/quantum-vortex.field",
    "preview": "https://infinitedevices.org/assets/library/previews/quantum-vortex.jpg",
    "page": "https://infinitedevices.org/library/quantum-vortex.html"
+  },
+  {
+   "id": "de-jong-attractor",
+   "name": "De Jong Attractor",
+   "category": "Sketch",
+   "type": "Generator",
+   "description": "Peter de Jong chaotic map accumulating glowing density filaments from four sinusoidal phase terms.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/library/sketch/de-jong-attractor.js",
+   "preview": "https://infinitedevices.org/assets/library/previews/de-jong-attractor.jpg",
+   "page": "https://infinitedevices.org/library/de-jong-attractor.html"
+  },
+  {
+   "id": "mobius-strip-3d",
+   "name": "Möbius Strip 3D",
+   "category": "Sketch 3D",
+   "type": "Generator",
+   "description": "Parametric non-orientable Möbius ribbon with transverse tubular rungs, edge rails and orbiting satellites.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/library/sketch/mobius-strip-3d.js",
+   "preview": "https://infinitedevices.org/assets/library/previews/mobius-strip-3d.jpg",
+   "page": "https://infinitedevices.org/library/mobius-strip-3d.html"
+  },
+  {
+   "id": "supersaw-lead-synth",
+   "name": "Supersaw Lead Synth",
+   "category": "Synths",
+   "type": "Generator",
+   "description": "Multi-oscillator detuned hypersaw lead synthesizer with sub-octave support, resonant filter and snappy ADSR envelope.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/templates/supersaw-lead-synth.inf",
+   "preview": "https://infinitedevices.org/assets/library/previews/supersaw-lead-synth.jpg",
+   "page": "https://infinitedevices.org/library/supersaw-lead-synth.html"
+  },
+  {
+   "id": "tape-phaser-fx",
+   "name": "Tape Phaser FX",
+   "category": "Audio Effects",
+   "type": "Filter",
+   "description": "4-stage optical tape phaser with swept allpass notches, feedback resonance and warm diode saturation.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/templates/tape-phaser-fx.inf",
+   "preview": "https://infinitedevices.org/assets/library/previews/tape-phaser-fx.jpg",
+   "page": "https://infinitedevices.org/library/tape-phaser-fx.html"
+  },
+  {
+   "id": "pulsar-beam",
+   "name": "Pulsar Beam",
+   "category": "Pixel",
+   "type": "Generator",
+   "description": "Rotating magnetized neutron star with relativistic synchrotron light cones, dipole magnetic flux arcs and audio-reactive horizon flare.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/library/pixel/pulsar-beam.field",
+   "preview": "https://infinitedevices.org/assets/library/previews/pulsar-beam.jpg",
+   "page": "https://infinitedevices.org/library/pulsar-beam.html"
   }
  ]
 }

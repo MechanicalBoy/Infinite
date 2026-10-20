@@ -107,6 +107,16 @@ def is_current(path, rel):
     return rel == path
 
 
+NAV_ICON = {"artists.html": "family-compositing", "musicians.html": "family-notes", "vjs.html": "perform", "creative-coders.html": "edit",
+            "developers.html": "cube", "library.html": "library", "artworks.html": "viewport", "embeds/": "grid-dots", "extensions.html": "pointer",
+            "benchmarks.html": "range", "index.html#learn": "play", "philosophy.html": "loop", "blog/": "pencil"}
+
+
+def nav_icon(path):
+    f = os.path.join(ROOT, "art", "icons", "src", NAV_ICON[path] + "-20.svg")
+    return open(f, encoding="utf-8").read().strip().replace("<svg ", '<svg class="ic" aria-hidden="true" ', 1).replace("\n", "")
+
+
 def nav_html(rel):
     p = depth_prefix(rel)
     out = ['<nav class="nav-links" id="nav-links" aria-label="Main">']
@@ -117,7 +127,7 @@ def nav_html(rel):
         out.append(f'        <div class="nav-menu" id="nav-menu-{gid}">')
         for path, text, hint in items:
             c = ' aria-current="page"' if is_current(path, rel) else ""
-            out.append(f'          <a href="{href(path, p)}"{link_attrs(path)}{c}>{text}</a>')
+            out.append(f'          <a href="{href(path, p)}"{link_attrs(path)}{c}>{nav_icon(path)}<span>{text}</span></a>')
         out.append("        </div>")
         out.append("      </div>")
     out.append('      <div class="nav-sheet-social">')

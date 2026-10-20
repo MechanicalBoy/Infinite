@@ -1,0 +1,24 @@
+{
+  "format": "field",
+  "version": 1,
+  "meta": {
+    "name": "Pulsar Beam",
+    "author": "Infinite",
+    "description": "Rapidly rotating magnetized neutron star with relativistic synchrotron light cones, magnetic dipole flux arcs and audio-reactive horizon flare.",
+    "domain": "pixel"
+  },
+  "device": {
+    "code": "param float spin = 2.4 [0.5, 8.0];\nparam float beamWidth = 0.28 [0.08, 0.8];\nparam float flux = 1.35 [0.2, 3.5];\nparam float coreSize = 0.22 [0.05, 0.6];\np = (uv - 0.5) * 2.2;\np.x = p.x * aspect;\nr = length(p);\na = atan2(p.y, p.x);\n\nrot = t * spin;\nbeamAngle1 = abs(sin(a - rot));\nbeamAngle2 = abs(sin(a - rot + 3.14159));\nbeam = exp(-beamAngle1 * beamAngle1 / (beamWidth * beamWidth * 0.15)) + exp(-beamAngle2 * beamAngle2 / (beamWidth * beamWidth * 0.15));\n\ndipole = sin(a * 2.0 + rot * 0.5 - log(r + 0.05) * 3.0);\narcs = pow(max(0.0, dipole), 4.0) * exp(-r * 1.8) * flux;\n\ncore = exp(-r * r / (coreSize * coreSize * 0.5)) * 1.8;\nring = exp(-abs(r - coreSize * 1.6) * 6.0) * 0.8;\n\nsignal = vec3(0.655, 0.694, 1.0);\nember = vec3(1.0, 0.42, 0.21);\nground = vec3(0.082, 0.098, 0.188);\n\ncol = ground;\ncol = col + signal * beam * (0.6 + 0.8 / (r + 0.2));\ncol = col + mix(signal, ember, sin(rot + r * 4.0) * 0.5 + 0.5) * arcs;\ncol = col + mix(ember, vec3(1.0, 0.95, 0.85), 0.6) * (core + ring);\nalpha = 1.0;\n",
+    "params": {
+      "spin": 2.4,
+      "beamWidth": 0.28,
+      "flux": 1.35,
+      "coreSize": 0.22
+    },
+    "nodeSettings": {
+      "width": 1280.0,
+      "height": 720.0,
+      "animate": 1.0
+    }
+  }
+}
