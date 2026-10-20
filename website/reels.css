@@ -255,3 +255,9 @@ body.reels-page {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* the bottom dock sits over the viewport on phones: lift the rail and caption above it */
+@media (max-width: 900px) {
+  .reel-rail { bottom: calc(92px + env(safe-area-inset-bottom)); }
+  .reel-meta { bottom: calc(92px + env(safe-area-inset-bottom)); }
+}

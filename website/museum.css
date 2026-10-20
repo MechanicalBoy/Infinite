@@ -207,3 +207,11 @@ body.nogl .plain img { width: 100%; height: auto; display: block; border-radius:
   .sitenav { top: calc(max(18px, env(safe-area-inset-top)) + 46px); font-size: 11.5px; }
   .sitenav a { padding: 8px 12px; }
 }
+
+/* the bottom dock sits over the viewport on phones: lift every bottom control above it */
+@media (max-width: 900px) {
+  .modes { bottom: calc(92px + env(safe-area-inset-bottom)); }
+  .hint { bottom: calc(150px + env(safe-area-inset-bottom)); }
+  .focus-ui { bottom: calc(92px + env(safe-area-inset-bottom)); }
+  .plaque { bottom: calc(150px + env(safe-area-inset-bottom)); }
+}

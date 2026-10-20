@@ -170,7 +170,7 @@ def build_gallery(items):
   <link rel="stylesheet" href="../style.css?v=1b9c9ca0">
   <link rel="stylesheet" href="../glass.css?v=c25dae44">
   <link rel="stylesheet" href="../blog.css?v=df40576c">
-  <link rel="stylesheet" href="../reels.css?v=e224f237">
+  <link rel="stylesheet" href="../reels.css?v=b4253cfc">
   <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>
 <body class="blog-page reels-page">

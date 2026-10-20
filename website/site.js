@@ -141,8 +141,9 @@
     const vertical = () => window.matchMedia('(min-width: 901px)').matches;
     let openId = null;
     const resting = () => stops.find((b) => b.hasAttribute('data-current') || b.getAttribute('aria-current') === 'page') || null;
+    let hov = null;
     const place = () => {
-      const on = (openId && stops.find((b) => b.dataset.group === openId)) || resting();
+      const on = hov || (openId && stops.find((b) => b.dataset.group === openId)) || resting();
       stops.forEach((b) => b.classList.toggle('is-on', b === on));
       if (!on) { thumb.style.opacity = '0'; return; }
       if (!vertical()) thumb.style.removeProperty('--y');
@@ -158,11 +159,11 @@
       place();
     };
     stops.forEach((b) => {
+      b.addEventListener('pointerenter', (e) => { if (vertical() && e.pointerType === 'mouse') { hov = b; show(b.dataset.group || null); } });
       if (!b.dataset.group) return;
       b.addEventListener('click', () => show(openId === b.dataset.group ? null : b.dataset.group));
-      b.addEventListener('pointerenter', (e) => { if (vertical() && e.pointerType === 'mouse') show(b.dataset.group); });
     });
-    dock.addEventListener('pointerleave', (e) => { if (vertical() && e.pointerType === 'mouse') show(null); });
+    dock.addEventListener('pointerleave', (e) => { if (vertical() && e.pointerType === 'mouse') { hov = null; show(null); } });
     dock.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { show(null); return; }
       const keys = vertical() ? ['ArrowUp', 'ArrowDown'] : ['ArrowLeft', 'ArrowRight'];
