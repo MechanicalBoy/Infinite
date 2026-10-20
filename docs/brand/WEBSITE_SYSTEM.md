@@ -40,6 +40,15 @@ Motto: inventive and intuitive. Inventive is the patch-cable, slab and spring la
 
 Shaders run only while visible, pause under reduced motion and fall back to a still frame. Each demo has one control group. Controls use the pill geometry. Pages have a transfer budget of 1.8 MB before the optional 3D model viewer loads.
 
+## Card pictures
+
+Blog and library cards share one picture standard, built in CSS only. Never bake, generate or crop-to-poster a card image.
+
+- The card is a gradient of its category colour (`--cat`) over a dark base. The source picture sits inside it, framed: 14px side inset, 16px radius, soft shadow, 16:10, centred above the title zone.
+- The grid (bento) view shows the same picture full bleed.
+- Sources are at least 720px wide and 16:10, with no text baked in. Keep the subject clear of the top chip row and the bottom title bar.
+- Titles sit on a glass bar at the foot, two lines at most. Chips are glass. The card itself is solid.
+
 ## Not yet covered (candidates)
 
-Forms (the sign-up field), empty and loading states, focus and keyboard order, the image and screenshot treatment, the sound design of the demos, and the voice of copy. Each should get a section here before it is changed.
+Forms (the sign-up field), empty and loading states, focus and keyboard order, the sound design of the demos, and the voice of copy. Each should get a section here before it is changed.
