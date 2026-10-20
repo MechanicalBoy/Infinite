@@ -145,6 +145,7 @@
       const on = (openId && stops.find((b) => b.dataset.group === openId)) || resting();
       stops.forEach((b) => b.classList.toggle('is-on', b === on));
       if (!on) { thumb.style.opacity = '0'; return; }
+      if (!vertical()) thumb.style.removeProperty('--y');
       thumb.style.opacity = '';
       thumb.style.setProperty('--x', on.offsetLeft + 'px'); thumb.style.setProperty('--y', on.offsetTop + 'px');
       thumb.style.setProperty('--w', on.offsetWidth + 'px'); thumb.style.setProperty('--h', on.offsetHeight + 'px');

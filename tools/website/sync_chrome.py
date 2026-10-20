@@ -17,7 +17,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 W = os.path.join(ROOT, "website")
 GH = "https://github.com/n1m21n/Infinite"
 CSS_VERSION = __import__("hashlib").md5(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "website", "style.css"), "rb").read()).hexdigest()[:8]   # style.css cache key: a hash, so it changes with the file
-JS_VERSION = "15"    # site.js cache key; bump when the menu script changes
+JS_VERSION = "16"    # site.js cache key; bump when the menu script changes
 
 # (group id, label, [(page path, label, hint, external)])
 GROUPS = [

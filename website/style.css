@@ -935,6 +935,7 @@ p.mono { font-size: 0.84375rem; }
 :root { --dock-hi: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 0 rgba(255, 255, 255, 0.04); }
 /* Dock: phones get a bottom bar, desktop an icon rail. Each group opens a sheet of its pages; the old header list is retired. */
 .menu-btn, .nav-links { display: none !important; }
+.nav-actions { margin-left: auto; }
 .dock { --dock-h: 64px; position: fixed; z-index: 120; }
 .dock-bar { position: relative; display: flex; gap: 2px; padding: 6px; border-radius: var(--r-pill); background: var(--glass); backdrop-filter: saturate(1.8) blur(24px); -webkit-backdrop-filter: saturate(1.8) blur(24px); box-shadow: var(--dock-hi), var(--shadow-2); }
 .dock-thumb { position: absolute; left: 0; top: 0; width: var(--w, 0); height: var(--h, 0); transform: translate(var(--x, 0), var(--y, 0)); border-radius: var(--r-pill);
@@ -969,9 +970,11 @@ p.mono { font-size: 0.84375rem; }
   .dock { left: 16px; top: 50%; transform: translateY(-50%); }
   .dock-bar { flex-direction: column; border-radius: 32px; }
   .dock-bar > .dock-stop { justify-content: flex-start; width: 48px; padding: 0 14px; overflow: hidden; white-space: nowrap; transition: width var(--dur-medium, 333ms) var(--ease-out), color var(--dur-small) var(--ease-out); }
-  .dock:hover .dock-stop, .dock:focus-within .dock-stop, .dock.open .dock-stop { width: 148px; }
+  .dock:hover .dock-stop, .dock:has(:focus-visible) .dock-stop, .dock.open .dock-stop { width: 148px; }
+  .dock-thumb { width: 48px; transform: translate(6px, var(--y, 0)); transition: transform var(--dur-medium, 333ms) var(--ease-out), width var(--dur-medium, 333ms) var(--ease-out), height var(--dur-medium, 333ms) var(--ease-out), opacity var(--dur-small) var(--ease-out); }
+  .dock:hover .dock-thumb, .dock:has(:focus-visible) .dock-thumb, .dock.open .dock-thumb { width: 148px; }
   .dock-bar > .dock-stop span { opacity: 0; transition: opacity var(--dur-small) var(--ease-out); }
-  .dock:hover .dock-stop span, .dock:focus-within .dock-stop span, .dock.open .dock-stop span { opacity: 1; }
+  .dock:hover .dock-stop span, .dock:has(:focus-visible) .dock-stop span, .dock.open .dock-stop span { opacity: 1; }
   .dock-dl { display: none; }
   .dock-sheet { left: 170px; top: 0; width: 260px; }
   .dock-sheet::before { content: ""; position: absolute; top: 0; bottom: 0; left: -24px; width: 24px; }
