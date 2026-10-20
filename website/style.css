@@ -580,9 +580,8 @@ strong { font-weight: 600; color: var(--ink); }
   font-size: 0.8438rem; font-weight: 500; white-space: nowrap;
   transition: transform var(--spring-slab-ms) var(--spring-slab), color var(--dur-small) var(--ease-out), box-shadow var(--dur-small) var(--ease-out);
 }
-.ticker-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cat) 20%, transparent); }
 .ticker-pill small { font-family: var(--font-mono); font-size: 0.6875rem; color: var(--muted); }
-.ticker-pill:hover { color: var(--ink); transform: translateY(-2px); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cat) 60%, transparent), var(--shadow-1); }
+.ticker-pill:hover { color: var(--ink); background: var(--surface-2); transform: translateY(-2px); box-shadow: var(--shadow-1); }
 .ticker-pill:active { transform: scale(0.95); transition-duration: 0.08s; }
 .ticker-forward { animation: tick-fwd var(--dur, 60s) linear infinite; }
 .ticker-reverse { animation: tick-rev var(--dur, 60s) linear infinite; }
@@ -692,13 +691,19 @@ strong { font-weight: 600; color: var(--ink); }
 .modal-close:hover { background: var(--inner); }
 .modal-close svg { width: 18px; height: 18px; }
 .modal-badge {
-  display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: var(--r-pill);
-  background: var(--inner); font-family: var(--font-mono); font-size: 0.7188rem; color: var(--ink2);
+  display: inline-flex; align-items: center; gap: 8px; border-radius: var(--r-pill);
+  min-height: 32px; padding: 0 14px 0 10px; background: var(--glass); box-shadow: var(--dock-hi); color: var(--ink2);
+  font: 500 0.8438rem/1 "Geist", system-ui, sans-serif;
 }
-.modal-badge::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--cat, var(--muted)); }
+.modal-badge .ic { width: 18px; height: 18px; }
 .modal-title { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.03em; margin: 10px 0 6px; }
 .modal-desc { color: var(--ink2); }
-.modal-doc-link { display: inline-block; margin-top: 14px; font-size: 0.8438rem; font-weight: 600; color: var(--accent-ink); }
+.modal-doc-link { display: inline-flex; align-items: center; gap: 10px; margin-top: 18px; min-height: 40px; padding: 0 18px 0 14px; border-radius: var(--r-pill); background: var(--ink); color: var(--ground); text-decoration: none; font-size: 0.8438rem; font-weight: 500; }
+.modal-doc-link .ic { width: 18px; height: 18px; }
+.modal-title { font-size: 1.75rem; }
+.modal-close { background: var(--glass); box-shadow: var(--dock-hi); }
+.modal-card { padding: 28px; max-width: 440px; }
+@media (max-width: 680px) { .modal-card { border-radius: 20px; padding: 24px; } .modal-doc-link { min-height: 44px; } .modal-close { width: 44px; height: 44px; } }
 
 /* --------------------------------------------------------------------------
    Footer: the loop frame
@@ -927,33 +932,34 @@ p.mono { font-size: 0.84375rem; }
   .nav-sheet-social a { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 }
 
+:root { --dock-hi: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 0 rgba(255, 255, 255, 0.04); }
 /* Dock: phones get a bottom bar, desktop an icon rail. Each group opens a sheet of its pages; the old header list is retired. */
 .menu-btn, .nav-links { display: none !important; }
 .dock { --dock-h: 64px; position: fixed; z-index: 120; }
-.dock-bar { position: relative; display: flex; gap: 2px; padding: 6px; border-radius: var(--r-pill); background: var(--surface-2); box-shadow: var(--shadow-2); }
+.dock-bar { position: relative; display: flex; gap: 2px; padding: 6px; border-radius: var(--r-pill); background: var(--glass); backdrop-filter: saturate(1.8) blur(24px); -webkit-backdrop-filter: saturate(1.8) blur(24px); box-shadow: var(--dock-hi), var(--shadow-2); }
 .dock-thumb { position: absolute; left: 0; top: 0; width: var(--w, 0); height: var(--h, 0); transform: translate(var(--x, 0), var(--y, 0)); border-radius: var(--r-pill);
-  background: var(--deep); opacity: 0; transition: transform var(--dur-medium, 333ms) var(--ease-out), width var(--dur-medium, 333ms) var(--ease-out), height var(--dur-medium, 333ms) var(--ease-out), opacity var(--dur-small) var(--ease-out); }
+  background: color-mix(in srgb, var(--ink) 14%, transparent); box-shadow: var(--dock-hi); opacity: 0; transition: transform var(--dur-medium, 333ms) var(--ease-out), width var(--dur-medium, 333ms) var(--ease-out), height var(--dur-medium, 333ms) var(--ease-out), opacity var(--dur-small) var(--ease-out); }
 .dock.ready .dock-thumb { opacity: 1; }
+.dock-dl { display: none !important; }
 .dock-stop { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 14px; border-radius: var(--r-pill);
   font: 500 0.8438rem/1 "Geist", system-ui, sans-serif; color: var(--ink2); text-decoration: none; cursor: pointer; background: none; transition: color var(--dur-small) var(--ease-out); }
 .dock-stop .ic { width: 20px; height: 20px; flex: none; }
 .dock-stop.is-on { color: var(--ink); }
 .dock-stop:focus-visible, .dock-dl:focus-visible, .dock-sheet a:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--signal); }
 .dock-dl { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 18px; border-radius: var(--r-pill); background: var(--ink); color: var(--ground); font: 600 0.8438rem/1 "Geist", system-ui, sans-serif; text-decoration: none; }
-.dock-sheet { position: absolute; display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: var(--shadow-2); }
+.dock-sheet { position: absolute; display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--surface-1) 86%, transparent); backdrop-filter: saturate(1.8) blur(28px); -webkit-backdrop-filter: saturate(1.8) blur(24px); box-shadow: var(--dock-hi), var(--shadow-2); }
 .dock-sheet[hidden] { display: none; }
 .dock-sheet:not([hidden]) { animation: sheet-in 333ms var(--ease-out) both; }
 .dock-sheet a { display: flex; align-items: center; gap: 14px; min-height: 44px; padding: 0 16px; border-radius: var(--r-pill); color: var(--ink); text-decoration: none; font: 600 1rem/1 "Geist", system-ui, sans-serif; }
-.dock-sheet a:active, .dock-sheet a:hover { background: var(--deep); }
-.dock-sheet a[aria-current] { background: var(--ink); color: var(--ground); }
+.dock-sheet a:active, .dock-sheet a:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.dock-sheet a[aria-current] { background: color-mix(in srgb, var(--ink) 14%, transparent); box-shadow: var(--dock-hi); }
 .dock-sheet .ic { width: 20px; height: 20px; flex: none; color: var(--ink2); }
-.dock-sheet a[aria-current] .ic { color: inherit; }
+.dock-sheet a[aria-current] .ic { color: var(--ink); }
 
 /* phone: bottom dock */
 @media (max-width: 900px) {
   .dock { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); }
   .dock-bar > .dock-stop { flex: 1 1 0; flex-direction: column; gap: 4px; min-height: 52px; padding: 0 4px; font-size: 0.6875rem; }
-  .dock-dl { flex: none; }
   .dock-sheet { left: 0; right: 0; bottom: calc(100% + 10px); }
   body { padding-bottom: 88px; }
   .nav-download { display: none; }
