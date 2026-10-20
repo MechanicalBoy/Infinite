@@ -1,5 +1,14 @@
 [
  {
+  "slug": "interactive-audio-reactive-webgl-embeds-for-websites",
+  "title": "Embedding interactive audio-reactive WebGL visuals on any website",
+  "description": "How to embed responsive, microphone-reactive 3D WebGL visualisers into portfolios, documentation, and blogs using self-contained HTML iframes.",
+  "date": "2026-10-20",
+  "updated": "2026-10-20",
+  "category": "creative",
+  "url": "https://infinitedevices.org/blog/interactive-audio-reactive-webgl-embeds-for-websites.html"
+ },
+ {
   "slug": "original-audiovisual-nodes-wave-terrain-shape-resonator-cymatics",
   "title": "unique nodes in infinite: wave terrain, shape resonator, cymatics",
   "description": "explore infinite original nodes: convert images to sound with wave terrain, ring 3d geometry with shape resonator, and simulate chladni cymatics.",
