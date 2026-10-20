@@ -978,6 +978,5 @@ p.mono { font-size: 0.84375rem; }
   .dock-dl { display: none; }
   .dock-sheet { left: 170px; top: 0; width: 260px; }
   .dock-sheet::before { content: ""; position: absolute; top: 0; bottom: 0; left: -24px; width: 24px; }
-  body { padding-left: 84px; }
 }
 @media (prefers-reduced-motion: reduce) { .dock-thumb, .dock-sheet:not([hidden]) { transition: none; animation: none; } }
