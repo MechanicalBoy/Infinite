@@ -1,7 +1,7 @@
 {
  "name": "Infinite Library",
  "url": "https://infinitedevices.org/library.html",
- "count": 61,
+ "count": 68,
  "items": [
   {
    "id": "first-sound",
@@ -182,6 +182,30 @@
    "file": "https://infinitedevices.org/assets/templates/field.inf",
    "preview": "https://infinitedevices.org/assets/templates/field.webp",
    "page": "https://infinitedevices.org/library/field.html"
+  },
+  {
+   "id": "acid-bass-synth",
+   "name": "Acid Bass Synth",
+   "category": "Templates",
+   "type": "Template",
+   "description": "Resonant transistor-style acid bass synthesizer with saturated diode ladder filter.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/templates/acid-bass-synth.inf",
+   "preview": "https://infinitedevices.org/assets/templates/acid-bass-synth.webp",
+   "page": "https://infinitedevices.org/library/acid-bass-synth.html"
+  },
+  {
+   "id": "space-tape-fx",
+   "name": "Space Tape FX",
+   "category": "Templates",
+   "type": "Template",
+   "description": "Dual-peak resonant formant filter with LFO vowel morphing and warm saturation.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/templates/space-tape-fx.inf",
+   "preview": "https://infinitedevices.org/assets/templates/space-tape-fx.webp",
+   "page": "https://infinitedevices.org/library/space-tape-fx.html"
   },
   {
    "id": "terrain-mandala",
@@ -734,6 +758,66 @@
    "file": "https://infinitedevices.org/assets/library/pixel/chladni-cymatics.field",
    "preview": "https://infinitedevices.org/assets/library/previews/chladni-cymatics.jpg",
    "page": "https://infinitedevices.org/library/chladni-cymatics.html"
+  },
+  {
+   "id": "rossler-attractor",
+   "name": "Rössler Attractor",
+   "category": "Sketch",
+   "type": "Generator",
+   "description": "Continuous-time chaotic attractor with a spiraling planar disc and vertical folding plume.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/library/sketch/rossler-attractor.js",
+   "preview": "https://infinitedevices.org/assets/library/previews/rossler-attractor.jpg",
+   "page": "https://infinitedevices.org/library/rossler-attractor.html"
+  },
+  {
+   "id": "torus-knot-3d",
+   "name": "Torus Knot 3D",
+   "category": "Sketch 3D",
+   "type": "Generator",
+   "description": "Parametric braided (p, q) torus knot with tubular geometry and orbiting satellite spheres.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/library/sketch/torus-knot-3d.js",
+   "preview": "https://infinitedevices.org/assets/library/previews/torus-knot-3d.jpg",
+   "page": "https://infinitedevices.org/library/torus-knot-3d.html"
+  },
+  {
+   "id": "acid-bass-synth",
+   "name": "Acid Bass Synth",
+   "category": "Synths",
+   "type": "Generator",
+   "description": "Resonant transistor-style acid bass synthesizer with saturated diode ladder filter and sub-octave drive.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/templates/acid-bass-synth.inf",
+   "preview": "https://infinitedevices.org/assets/library/previews/acid-bass-synth.jpg",
+   "page": "https://infinitedevices.org/library/acid-bass-synth.html"
+  },
+  {
+   "id": "space-tape-fx",
+   "name": "Space Tape FX",
+   "category": "Audio Effects",
+   "type": "Filter",
+   "description": "Dual-peak resonant formant filter with LFO vowel morphing and warm saturation.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/templates/space-tape-fx.inf",
+   "preview": "https://infinitedevices.org/assets/library/previews/space-tape-fx.jpg",
+   "page": "https://infinitedevices.org/library/space-tape-fx.html"
+  },
+  {
+   "id": "quantum-vortex",
+   "name": "Quantum Vortex",
+   "category": "Pixel",
+   "type": "Generator",
+   "description": "Relativistic swirling energy vortex with audio-reactive event horizon warping and chromatic accretion glow.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/library/pixel/quantum-vortex.field",
+   "preview": "https://infinitedevices.org/assets/library/previews/quantum-vortex.jpg",
+   "page": "https://infinitedevices.org/library/quantum-vortex.html"
   }
  ]
 }

@@ -60,9 +60,9 @@ col = (wire + center) * (0.7 + 0.5 * bass);
 You can test this exact visualizer running live in WebGL below:
 
 <figure style="margin:24px 0;width:100%;max-width:720px;">
-  <iframe src="https://infinitedevices.org/embeds/cyber-tunnel.html" title="Cyber Tunnel — Audio-Reactive Visualizer by Naman Soni (Infinite)" width="100%" height="400" frameborder="0" allow="microphone" style="border-radius:12px;border:1px solid #1f253d;display:block;"></iframe>
-  <figcaption style="font-size:11px;color:#8f9bb3;text-align:right;margin-top:6px;">
-    powered by <a href="https://infinitedevices.org" target="_blank" rel="noopener" style="color:#f57f66;text-decoration:none;">infinite by naman soni</a>
+  <iframe src="https://infinitedevices.org/embeds/cyber-tunnel.html" title="Cyber Tunnel — Audio-Reactive Visualizer by Naman Soni (Infinite)" width="100%" height="400" frameborder="0" allow="microphone" style="border-radius:12px;border:1px solid #20263f;display:block;"></iframe>
+  <figcaption style="font-size:11px;color:#8890b1;text-align:right;margin-top:6px;">
+    powered by <a href="https://infinitedevices.org" target="_blank" rel="noopener" style="color:#ff6b35;text-decoration:none;">infinite by naman soni</a>
   </figcaption>
 </figure>
 

@@ -60,7 +60,7 @@ SHELL_HEAD = """<!DOCTYPE html>
     .controls { position: absolute; left: 14px; bottom: 14px; z-index: 10; }
     .controls .btn { position: static; border: 0; cursor: pointer; font-family: inherit; min-height: 44px; width: 44px; padding: 0; justify-content: center; }
     .controls .btn.on { background: var(--ember); color: #151930; }
-    .controls .btn.off { color: var(--muted, #8A93B5); }
+    .controls .btn.off { color: var(--muted, #8890B1); }
     .badge:hover, .btn:hover { transform: translateY(-2px); background: rgba(52, 59, 94, 0.9); }
     .badge:focus-visible, .btn:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { .badge, .btn { transition: none; } .badge:hover, .btn:hover { transform: none; } }
@@ -169,7 +169,7 @@ def build_gallery(items):
   <link rel="stylesheet" href="../brand.css?v=e96b24bf">
   <link rel="stylesheet" href="../style.css?v=dba6d460">
   <link rel="stylesheet" href="../glass.css?v=c25dae44">
-  <link rel="stylesheet" href="../blog.css?v=e2904242">
+  <link rel="stylesheet" href="../blog.css?v=6194d731">
   <link rel="stylesheet" href="../reels.css?v=2dc9f572">
   <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>

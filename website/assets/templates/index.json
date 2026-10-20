@@ -241,6 +241,38 @@
    "nodes": [
     "FieldPixel"
    ]
+  },
+  {
+   "id": "acid-bass-synth",
+   "name": "Acid Bass Synth",
+   "category": "Templates",
+   "kind": "Template",
+   "group": "Synths",
+   "description": "Resonant transistor-style acid bass synthesizer with saturated diode ladder filter.",
+   "price": 0,
+   "preview": "assets/templates/acid-bass-synth.webp",
+   "file": "assets/templates/acid-bass-synth.inf",
+   "nodes": [
+    "Random Note Generator",
+    "Field Synth",
+    "Audio Out"
+   ]
+  },
+  {
+   "id": "space-tape-fx",
+   "name": "Space Tape FX",
+   "category": "Templates",
+   "kind": "Template",
+   "group": "Audio effects",
+   "description": "Dual-peak resonant formant filter with LFO vowel morphing and warm saturation.",
+   "price": 0,
+   "preview": "assets/templates/space-tape-fx.webp",
+   "file": "assets/templates/space-tape-fx.inf",
+   "nodes": [
+    "Analog",
+    "Field Effect",
+    "Audio Out"
+   ]
   }
  ]
 }

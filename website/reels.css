@@ -1,6 +1,6 @@
 /* Embeds as a reel (made for tools/website/gen_embeds.py): full-screen TikTok/Instagram reel experience */
 :root {
-  --reels-bg: #070913;
+  --reels-bg: #04050E;
 }
 
 html.has-reels,
@@ -107,7 +107,7 @@ body.reels-page {
   right: 0;
   bottom: 0;
   height: 38%;
-  background: linear-gradient(to top, rgba(7, 9, 19, 0.88) 0%, rgba(7, 9, 19, 0.42) 55%, transparent 100%);
+  background: linear-gradient(to top, rgba(4, 5, 14, 0.88) 0%, rgba(4, 5, 14, 0.42) 55%, transparent 100%);
   pointer-events: none;
   z-index: 2;
 }
@@ -235,7 +235,7 @@ body.reels-page {
   }
   .rail-btn:hover .ic {
     transform: translateY(-2px);
-    background: rgba(38, 45, 82, 0.9);
+    background: rgba(42, 48, 82, 0.9);
   }
 }
 

@@ -85,6 +85,11 @@
       "slug": "chladni-cymatics",
       "title": "Chladni Cymatics",
       "description": "Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry."
+    },
+    {
+      "slug": "quantum-vortex",
+      "title": "Quantum Vortex",
+      "description": "Relativistic swirling energy vortex with audio-reactive event horizon warping and chromatic accretion glow."
     }
   ]
 }

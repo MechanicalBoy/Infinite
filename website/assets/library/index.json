@@ -217,6 +217,99 @@
       "file": "assets/library/pixel/chladni-cymatics.field",
       "preview": "assets/library/previews/chladni-cymatics.jpg",
       "bytes": 1412
+    },
+    {
+      "id": "rossler-attractor",
+      "name": "Rössler Attractor",
+      "kind": "Generator",
+      "tags": [
+        "chaos",
+        "attractor",
+        "math"
+      ],
+      "description": "Continuous-time chaotic attractor with a spiraling planar disc and vertical folding plume.",
+      "price": 0,
+      "domain": "sketch",
+      "category": "Sketch",
+      "params": 5,
+      "file": "assets/library/sketch/rossler-attractor.js",
+      "preview": "assets/library/previews/rossler-attractor.jpg",
+      "bytes": 1473
+    },
+    {
+      "id": "torus-knot-3d",
+      "name": "Torus Knot 3D",
+      "kind": "Generator",
+      "tags": [
+        "geometry",
+        "3d",
+        "parametric"
+      ],
+      "description": "Parametric braided (p, q) torus knot with tubular geometry and orbiting satellite spheres.",
+      "price": 0,
+      "domain": "sketch",
+      "category": "Sketch 3D",
+      "params": 6,
+      "file": "assets/library/sketch/torus-knot-3d.js",
+      "preview": "assets/library/previews/torus-knot-3d.jpg",
+      "bytes": 1481
+    },
+    {
+      "id": "acid-bass-synth",
+      "name": "Acid Bass Synth",
+      "kind": "Generator",
+      "tags": [
+        "synth",
+        "acid",
+        "audio",
+        "dsp"
+      ],
+      "description": "Resonant transistor-style acid bass synthesizer with saturated diode ladder filter and sub-octave drive.",
+      "price": 0,
+      "domain": "synth",
+      "category": "Synths",
+      "params": 6,
+      "file": "assets/templates/acid-bass-synth.inf",
+      "preview": "assets/library/previews/acid-bass-synth.jpg",
+      "bytes": 1892
+    },
+    {
+      "id": "space-tape-fx",
+      "name": "Space Tape FX",
+      "kind": "Filter",
+      "tags": [
+        "effects",
+        "filter",
+        "vocal",
+        "dsp"
+      ],
+      "description": "Dual-peak resonant formant filter with LFO vowel morphing and warm saturation.",
+      "price": 0,
+      "domain": "sample",
+      "category": "Audio Effects",
+      "params": 6,
+      "file": "assets/templates/space-tape-fx.inf",
+      "preview": "assets/library/previews/space-tape-fx.jpg",
+      "bytes": 1773
+    },
+    {
+      "id": "quantum-vortex",
+      "name": "Quantum Vortex",
+      "kind": "Generator",
+      "tags": [
+        "vortex",
+        "reactive",
+        "plasma",
+        "visuals"
+      ],
+      "description": "Relativistic swirling energy vortex with audio-reactive event horizon warping and chromatic accretion glow.",
+      "price": 0,
+      "domain": "pixel",
+      "category": "Pixel",
+      "params": 4,
+      "file": "assets/library/pixel/quantum-vortex.field",
+      "preview": "assets/library/previews/quantum-vortex.jpg",
+      "bytes": 1243
     }
   ]
 }

@@ -1,0 +1,24 @@
+{
+  "format": "field",
+  "version": 1,
+  "meta": {
+    "name": "Quantum Vortex",
+    "author": "Infinite",
+    "description": "Relativistic swirling energy vortex with audio-reactive event horizon warping, chromatic accretion glow, and plasma filaments.",
+    "domain": "pixel"
+  },
+  "device": {
+    "code": "param float twist = 3.5 [0.5, 8.0];\nparam float glow = 1.2 [0.2, 3.0];\nparam float radius = 0.35 [0.1, 0.8];\nparam float speed = 1.4 [0.1, 5.0];\np = (uv - 0.5) * 2.2;\np.x = p.x * aspect;\nr = length(p);\na = atan2(p.y, p.x);\nhorizon = smoothstep(radius * 0.4, radius, r);\nspiral = sin(a * 4.0 - log(r + 0.001) * twist + t * speed);\nfilaments = pow(max(0.0, spiral), 3.0);\naccretion = exp(-abs(r - radius) * 4.0) * glow;\nsignal = vec3(0.655, 0.694, 1.0);\nember = vec3(1.0, 0.42, 0.21);\nground = vec3(0.082, 0.098, 0.188);\ncore = mix(signal, ember, sin(a * 2.0 + t) * 0.5 + 0.5);\ncol = ground + core * (accretion + filaments * 0.9) * horizon;\ncol = col + vec3(1.0, 0.9, 0.8) * exp(-r * 8.0) * 0.8;\nalpha = 1.0;\n",
+    "params": {
+      "twist": 3.5,
+      "glow": 1.2,
+      "radius": 0.35,
+      "speed": 1.4
+    },
+    "nodeSettings": {
+      "width": 1280.0,
+      "height": 720.0,
+      "animate": 1.0
+    }
+  }
+}
