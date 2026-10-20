@@ -199,6 +199,24 @@
       "file": "assets/library/sketch/clifford-attractor.js",
       "preview": "assets/library/previews/clifford-attractor.jpg",
       "bytes": 791
+    },
+    {
+      "id": "chladni-cymatics",
+      "name": "Chladni Cymatics",
+      "kind": "Generator",
+      "tags": [
+        "physics",
+        "cymatics",
+        "sound"
+      ],
+      "description": "Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry between harmonics.",
+      "price": 0,
+      "domain": "pixel",
+      "category": "Pixel",
+      "params": 4,
+      "file": "assets/library/pixel/chladni-cymatics.field",
+      "preview": "assets/library/previews/chladni-cymatics.jpg",
+      "bytes": 1412
     }
   ]
 }

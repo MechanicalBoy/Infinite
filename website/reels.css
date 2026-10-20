@@ -1,42 +1,257 @@
-/* Embeds as a reel (made for tools/website/gen_embeds.py): one live visual per screen, swipe or scroll to the next. */
-html:has(.reels) { scroll-snap-type: y mandatory; scroll-padding-top: 0; }
-.reels-page main { padding: 0; margin-top: calc(-1 * var(--header-h)); }   /* the header floats over the first screen */
-.reel-slide { box-sizing: border-box; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; display: flex; justify-content: center; align-items: center; }
-.reel-wrap { position: relative; width: 100%; height: 100%; }
-.reel-card { position: relative; width: 100%; height: 100%; border-radius: 0; overflow: hidden; background: #0D1020; box-shadow: var(--shadow-2); isolation: isolate; }
-.reel-card iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
-/* the caption, the counter and a scrim over the foot of the picture */
-.reel-card::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 40%; background: linear-gradient(to top, rgba(13, 16, 32, 0.72), transparent); pointer-events: none; z-index: 1; }
-.reel-count { position: absolute; top: calc(var(--header-h) + 12px); left: 12px; z-index: 2; display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: var(--r-pill); background: rgba(21, 25, 48, 0.66); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: #EEF1FA; font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace; letter-spacing: 0.04em; }
-.reel-meta { position: absolute; left: 16px; right: 80px; bottom: 80px; z-index: 2; pointer-events: none; }
-.reel-meta h2 { margin: 0; color: #EEF1FA; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; text-shadow: 0 1px 12px rgba(4, 5, 14, 0.5); }
-/* the action rail: icon over a one-word label, like a reel */
-.reel-rail { position: absolute; right: 12px; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 3; display: grid; gap: 16px; justify-items: center; }
-.rail-btn { display: grid; justify-items: center; gap: 4px; width: 56px; padding: 0; background: none; border: 0; color: #EEF1FA; font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace; text-decoration: none; cursor: pointer; }
-.rail-btn .ic { box-sizing: content-box; width: 20px; height: 20px; padding: 14px; border-radius: 50%; background: rgba(21, 25, 48, 0.66); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); transition: transform var(--dur-small) var(--ease-out), background-color var(--dur-small) var(--ease-out); }
-.rail-btn:active .ic { transform: scale(0.94); }
-.rail-btn.is-done .ic { background: var(--ember); color: #151930; }
-.rail-btn:focus-visible { outline: 0; }
-.rail-btn:focus-visible .ic { box-shadow: 0 0 0 2px var(--signal); }
-.reels .snippet { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; opacity: 0; pointer-events: none; overflow: hidden; resize: none; }
-/* touch: a swipe on the picture scrolls the reel; the mic corner of the widget stays tappable */
-@media (hover: none) { .reel-swipe { position: absolute; inset: 0; z-index: 1; clip-path: polygon(0 0, 100% 0, 100% 100%, 88px 100%, 88px calc(100% - 88px), 0 calc(100% - 88px)); } }
+/* Embeds as a reel (made for tools/website/gen_embeds.py): full-screen TikTok/Instagram reel experience */
+:root {
+  --reels-bg: #070913;
+}
 
-/* wide screens: the rail sits beside the card on the page, not on the picture */
+html.has-reels,
+body.reels-page {
+  height: 100dvh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--reels-bg);
+}
+
+.reels-page header.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: transparent;
+  pointer-events: none;
+}
+
+.reels-page header.site-header * {
+  pointer-events: auto;
+}
+
+.reels-page footer.site-footer {
+  display: none !important;
+}
+
+.reels-page main {
+  height: 100dvh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.reels {
+  height: 100dvh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.reels::-webkit-scrollbar {
+  display: none;
+}
+
+.reel-slide {
+  box-sizing: border-box;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  width: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.reel-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.reel-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0D1020;
+  isolation: isolate;
+}
+
+.reel-card iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* Bottom gradient scrim for high readability of titles */
+.reel-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38%;
+  background: linear-gradient(to top, rgba(7, 9, 19, 0.88) 0%, rgba(7, 9, 19, 0.42) 55%, transparent 100%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.reel-count {
+  display: none !important;
+}
+
+.reel-meta {
+  position: absolute;
+  left: 16px;
+  right: 76px;
+  bottom: 24px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.reel-meta h2 {
+  margin: 0;
+  color: #EEF1FA;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+}
+
+/* Action rail on bottom right */
+.reel-rail {
+  position: absolute;
+  right: 14px;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  justify-items: center;
+}
+
+.rail-btn {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 54px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--r-pill, 999px);
+  color: #EEF1FA;
+  font: 500 0.7188rem/1 'Geist Mono', ui-monospace, monospace;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.rail-btn .ic {
+  box-sizing: content-box;
+  width: 20px;
+  height: 20px;
+  padding: 13px;
+  border-radius: 50%;
+  background: rgba(21, 25, 48, 0.72);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform var(--dur-small, 0.2s) var(--ease-out, ease-out), background-color var(--dur-small, 0.2s) var(--ease-out, ease-out);
+}
+
+.rail-btn:active .ic {
+  transform: scale(0.92);
+}
+
+.rail-btn.is-done .ic {
+  background: var(--ember, #FF6B35);
+  color: #151930;
+}
+
+.rail-btn:focus-visible {
+  outline: 0;
+}
+
+.rail-btn:focus-visible .ic {
+  box-shadow: 0 0 0 2px var(--signal, #A7B1FF);
+}
+
+.reels .snippet {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  resize: none;
+}
+
+@media (hover: none) {
+  .reel-swipe {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 88px 100%, 88px calc(100% - 88px), 0 calc(100% - 88px));
+  }
+}
+
+/* Desktop: centered mobile reel container with side action rail */
 @media (min-width: 601px) {
-  .reel-slide { padding: calc(var(--header-h) + 8px) 0 24px; }
-  .reel-wrap { width: min(100%, 420px); }
-  .reel-card { border-radius: 24px; }
-  .reel-count { top: 12px; }
+  .reel-slide {
+    padding: calc(var(--header-h, 56px) + 8px) 0 24px;
+  }
+  .reel-wrap {
+    height: min(88dvh, 820px);
+    width: auto;
+    aspect-ratio: 9 / 16;
+    max-width: calc(100vw - 160px);
+  }
+  .reel-card {
+    border-radius: 20px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+  .reel-rail {
+    right: auto;
+    left: calc(100% + 18px);
+    bottom: 24px;
+  }
+  .rail-btn:hover .ic {
+    transform: translateY(-2px);
+    background: rgba(38, 45, 82, 0.9);
+  }
 }
-@media (min-width: 900px) {
-  .reel-meta { bottom: 24px; right: 16px; }
-  .reel-rail { right: auto; left: calc(100% + 16px); bottom: 0; }
-  .rail-btn { color: var(--ink); }
-  .rail-btn .ic { background: var(--card); box-shadow: var(--shadow-1); -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .rail-btn:hover .ic { transform: translateY(-2px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .reels {
+    scroll-behavior: auto;
+  }
 }
-@media (prefers-reduced-motion: reduce) { html:has(.reels) { scroll-snap-type: none; } }
-.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.reel-meta { bottom: 80px !important; }
-.rail-btn { border-radius: var(--r-pill); }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

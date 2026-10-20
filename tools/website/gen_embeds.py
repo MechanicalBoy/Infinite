@@ -120,7 +120,6 @@ CARD = """      <section class="reel-slide" aria-label="{title}">
           <div class="reel-card">
             <iframe data-src="{slug}.html" title="{title}: audio-reactive visual" allow="microphone"></iframe>
             <div class="reel-swipe" aria-hidden="true"></div>
-            <span class="reel-count mono" aria-hidden="true">{n:02d} / {total:02d}</span>
             <div class="reel-meta"><h2>{title}</h2></div>
           </div>
           <div class="reel-rail">
@@ -136,21 +135,21 @@ def build_gallery(items):
     rel = "embeds/index.html"
     header = chrome.header_html(rel)
     footer = chrome.footer_html(rel)
-    cards = "\n".join(CARD.format(ic_copy=icon("capture"), ic_full=icon("viewport"), slug=i["slug"], title=e(i["title"]), code=e(snippet(i)), n=n + 1, total=len(items)) for n, i in enumerate(items))
+    cards = "\n".join(CARD.format(ic_copy=icon("capture"), ic_full=icon("viewport"), slug=i["slug"], title=e(i["title"]), code=e(snippet(i))) for i in items)
     ld = {"@context": "https://schema.org", "@type": "CollectionPage", "name": "Infinite embeds", "url": BASE + "embeds/",
           "description": "Audio-reactive WebGL visuals you can put on any page with one iframe.",
           "isPartOf": {"@type": "WebSite", "url": BASE},
           "mainEntity": {"@type": "ItemList", "numberOfItems": len(items), "itemListElement": [
               {"@type": "ListItem", "position": n + 1, "url": f"{BASE}embeds/{i['slug']}.html", "name": i["title"]} for n, i in enumerate(items)]}}
     return f"""<!DOCTYPE html>
-<html lang="en" data-mode="paper">
+<html lang="en" data-mode="paper" class="has-reels">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#FBFAF6">
   <script>window.INFINITE_DEFAULT_MODE = 'paper';</script>
   <script src="../theme.js?v=2"></script>
-  <title>Infinite embeds: {len(items)} audio-reactive visuals for any page</title>
+  <title>Infinite embeds: audio-reactive visuals for any page</title>
   <meta name="description" content="Free audio-reactive WebGL visuals made in Infinite. Copy one iframe into a portfolio, blog or landing page.">
   <link rel="canonical" href="{BASE}embeds/">
   <meta property="og:title" content="Infinite embeds: audio-reactive visuals for any page">
@@ -171,7 +170,7 @@ def build_gallery(items):
   <link rel="stylesheet" href="../style.css?v=dba6d460">
   <link rel="stylesheet" href="../glass.css?v=c25dae44">
   <link rel="stylesheet" href="../blog.css?v=e5fec6e7">
-  <link rel="stylesheet" href="../reels.css?v=faea6d9a">
+  <link rel="stylesheet" href="../reels.css?v=2dc9f572">
   <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>
 <body class="blog-page reels-page">
@@ -184,10 +183,14 @@ def build_gallery(items):
     </div>
   </main>
 
-  <script src="../site.js?v=11" defer></script>
+  {footer}
+
+  <script src="../site.js?v={chrome.JS_VERSION}" defer></script>
   <script>
     (function () {{
       var reels = document.getElementById('reels'), base = [].slice.call(reels.querySelectorAll('.reel-slide')), loops = 0;
+      var isLock = false, lockTimer = null;
+
       /* only the slide on screen and its neighbours keep a live WebGL context */
       var io = new IntersectionObserver(function (es) {{
         es.forEach(function (en) {{
@@ -195,11 +198,13 @@ def build_gallery(items):
           if (en.isIntersecting) {{ if (!f.getAttribute('src')) f.setAttribute('src', s); }}
           else if (f.getAttribute('src')) f.removeAttribute('src');
         }});
-      }}, {{ rootMargin: '60% 0px' }});
+      }}, {{ root: reels, rootMargin: '60% 0px' }});
+
       /* the reel never ends: when the last slide comes near, the list is added again */
       var more = new IntersectionObserver(function (es) {{
         if (es.some(function (en) {{ return en.isIntersecting; }})) add();
-      }}, {{ rootMargin: '150% 0px' }});
+      }}, {{ root: reels, rootMargin: '120% 0px' }});
+
       function wire(s) {{
         io.observe(s);
         var b = s.querySelector('[data-copy]'), label = b.querySelector('span'), text = label.textContent;
@@ -210,6 +215,7 @@ def build_gallery(items):
           else {{ t.select(); document.execCommand('copy'); done(); }}
         }});
       }}
+
       function add() {{
         loops += 1; more.disconnect();
         var last;
@@ -220,14 +226,70 @@ def build_gallery(items):
         }});
         more.observe(last.previousElementSibling || last);
       }}
+
       base.forEach(wire);
       add();
+
+      function getActiveIndex() {{
+        var all = [].slice.call(reels.children);
+        var midY = reels.scrollTop + reels.clientHeight / 2;
+        var best = 0, minDist = Infinity;
+        for (var i = 0; i < all.length; i++) {{
+          var top = all[i].offsetTop;
+          var center = top + all[i].clientHeight / 2;
+          var d = Math.abs(midY - center);
+          if (d < minDist) {{ minDist = d; best = i; }}
+        }}
+        return best;
+      }}
+
+      function goTo(idx) {{
+        var all = [].slice.call(reels.children);
+        if (idx < 0) idx = 0;
+        if (idx >= all.length) return;
+        isLock = true;
+        all[idx].scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+        clearTimeout(lockTimer);
+        lockTimer = setTimeout(function () {{ isLock = false; }}, 460);
+      }}
+
+      /* Desktop wheel controller: single flick cleanly switches to next/prev reel without partial scroll */
+      window.addEventListener('wheel', function (e) {{
+        if (Math.abs(e.deltaY) < 14) return;
+        e.preventDefault();
+        if (isLock) return;
+        var cur = getActiveIndex();
+        if (e.deltaY > 0) goTo(cur + 1);
+        else goTo(cur - 1);
+      }}, {{ passive: false }});
+
+      /* Keyboard controls */
       document.addEventListener('keydown', function (e) {{
-        var d = {{ ArrowDown: 1, PageDown: 1, ArrowUp: -1, PageUp: -1 }}[e.key];
+        var d = {{ ArrowDown: 1, PageDown: 1, ArrowUp: -1, PageUp: -1, j: 1, k: -1, ' ': 1 }}[e.key];
         if (!d || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
-        var all = [].slice.call(reels.children), y = window.innerHeight / 2, i = all.findIndex(function (s) {{ var r = s.getBoundingClientRect(); return r.top <= y && r.bottom > y; }});
-        if (all[i + d]) {{ e.preventDefault(); all[i + d].scrollIntoView({{ behavior: 'smooth', block: 'start' }}); }}
+        e.preventDefault();
+        var cur = getActiveIndex();
+        goTo(cur + d);
       }});
+
+      /* Mobile touch swipe: clean full snap transition */
+      var touchY = 0, touchX = 0;
+      window.addEventListener('touchstart', function (e) {{
+        if (!e.touches.length) return;
+        touchY = e.touches[0].clientY;
+        touchX = e.touches[0].clientX;
+      }}, {{ passive: true }});
+
+      window.addEventListener('touchend', function (e) {{
+        if (!e.changedTouches.length || isLock) return;
+        var dy = touchY - e.changedTouches[0].clientY;
+        var dx = touchX - e.changedTouches[0].clientX;
+        if (Math.abs(dy) > 38 && Math.abs(dy) > Math.abs(dx)) {{
+          var cur = getActiveIndex();
+          if (dy > 0) goTo(cur + 1);
+          else goTo(cur - 1);
+        }}
+      }}, {{ passive: true }});
     }})();
   </script>
 </body>

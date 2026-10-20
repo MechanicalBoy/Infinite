@@ -1,0 +1,24 @@
+{
+  "format": "field",
+  "version": 1,
+  "meta": {
+    "name": "Chladni Cymatics",
+    "author": "Infinite",
+    "description": "Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry between harmonics.",
+    "domain": "pixel"
+  },
+  "device": {
+    "code": "param float n = 3.0 [1.0, 8.0];\nparam float m = 5.0 [1.0, 8.0];\nparam float blend = 0.5 [0.0, 1.0];\nparam float width = 0.08 [0.01, 0.3];\np = (uv - 0.5) * 2.3;\npi = 3.14159265;\nw1 = sin(n * pi * p.x) * sin(m * pi * p.y);\nw2 = sin(m * pi * p.x) * sin(n * pi * p.y);\nchladni1 = abs(w1 - w2);\nw3 = sin((n + 1.0) * pi * p.x) * sin(m * pi * p.y);\nw4 = sin(m * pi * p.x) * sin((n + 1.0) * pi * p.y);\nchladni2 = abs(w3 + w4);\nchladni = mix(chladni1, chladni2, blend);\nline = smoothstep(width, 0.0, chladni);\nglow = exp(-chladni * 3.5);\nr = length(p);\nplate = smoothstep(1.15, 1.05, r);\nrim = smoothstep(1.04, 1.06, r) * (1.0 - smoothstep(1.07, 1.12, r));\nember = vec3(1.0, 0.42, 0.21);\nsignal = vec3(0.655, 0.694, 1.0);\nground = vec3(0.082, 0.098, 0.188);\ncol = ground + mix(signal, ember, sin(r * 4.0) * 0.5 + 0.5) * (line * 1.6 + glow * 0.85) + rim * signal * 0.6;\ncol = col * plate;\nalpha = plate;\n",
+    "params": {
+      "n": 3.0,
+      "m": 5.0,
+      "blend": 0.5,
+      "width": 0.08
+    },
+    "nodeSettings": {
+      "width": 1280.0,
+      "height": 720.0,
+      "animate": 1.0
+    }
+  }
+}

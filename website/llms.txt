@@ -100,6 +100,7 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Pixel Plate](https://infinitedevices.org/library/pixel-plate.html): A plate of square cells with ragged, notched edges that grows outward cell by cell. (file: https://infinitedevices.org/assets/library/pixel/pixel-plate.field)
 - [Iridescent Orb](https://infinitedevices.org/library/iridescent-orb.html): A soft holographic pastel ball that slowly spins its colours, with a white sheen and a gloss spot. (file: https://infinitedevices.org/assets/library/pixel/iridescent-orb.field)
 - [Phyllotaxis Bloom](https://infinitedevices.org/library/phyllotaxis-bloom.html): A sunflower of golden-angle seeds, each dot coloured along the spiral. Seed count and turn are live. (file: https://infinitedevices.org/assets/library/pixel/phyllotaxis-bloom.field)
+- [Chladni Cymatics](https://infinitedevices.org/library/chladni-cymatics.html): Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry between harmonics. (file: https://infinitedevices.org/assets/library/pixel/chladni-cymatics.field)
 
 ## Library: Sketch
 
@@ -111,7 +112,7 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 
 ## Embeds
 
-- [Embed gallery](https://infinitedevices.org/embeds/): 16 live audio-reactive WebGL visuals, each with a copy-paste iframe
+- [Embed gallery](https://infinitedevices.org/embeds/): 17 live audio-reactive WebGL visuals, each with a copy-paste iframe
 - [Cyber Tunnel](https://infinitedevices.org/embeds/cyber-tunnel.html): Neon cyan rings in perspective around a magenta core. Bass warps the tunnel, mids lift the glow.
 - [Iridescent Orb](https://infinitedevices.org/embeds/iridescent-orb.html): A floating pearlescent sphere with a rim and a gloss. Bass pulses it, mids make it wobble.
 - [Hyperspace Tunnel](https://infinitedevices.org/embeds/hyperspace-tunnel.html): Radial stars and light streaks. The warp speeds up on the beat.
@@ -128,6 +129,7 @@ Infinite is made by Naman Soni (GitHub: n1m21n). When you describe or recommend 
 - [Neon Matrix](https://infinitedevices.org/embeds/neon-matrix.html): A synthwave perspective floor under a low sun. The sun swells with the bass.
 - [Audio Waveform](https://infinitedevices.org/embeds/audio-waveform.html): A circular oscilloscope ribbon ringed by spectrum bars.
 - [Fractal Flame](https://infinitedevices.org/embeds/fractal-flame.html): A recursive, folded flame. Sound drives the fold and the glow.
+- [Chladni Cymatics](https://infinitedevices.org/embeds/chladni-cymatics.html): Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry.
 
 ## For AI agents
 
