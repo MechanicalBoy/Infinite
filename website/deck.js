@@ -210,7 +210,7 @@
       if (moved) { e.preventDefault(); return; }
       var list = cards(), i = list.indexOf(c); if (i < 0) return;
       var d = delta(i, list.length);
-      if (Math.abs(d) > 0.3) { e.preventDefault(); step(Math.round(d)); }
+      if (Math.abs(d) > 0.3) { e.preventDefault(); e.stopPropagation(); step(Math.round(d)); }
     }, true);
 
     window.addEventListener('resize', function () { paint(); });

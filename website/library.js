@@ -50,17 +50,12 @@
     'Extensions': 'var(--cat-prediction)'
   };
 
+
   var items = [];
   var allCards = [];
   var visibleCards = [];
   var activeFilter = 'All';
-  var activeIdx = 0;
-  var dragOffset = 0;
-  var isDragging = false;
-  var dragMoved = false;
-  var startX = 0, startY = 0, lastX = 0, lastT = 0, vx = 0;
-  var wheelAccum = 0, wheelLock = 0;
-  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var deck = null;
 
   var params = new URLSearchParams(window.location.search);
   var qView = params.get('view');
@@ -75,59 +70,34 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
-
   function normCat(cat) {
     if (!cat) return 'Pixel';
     if (cat === 'Audio Effects') return 'Audio FX';
     if (cat === 'Sketch 3D') return 'Sketch';
     return cat;
   }
+  function catIcon(cat) { return CAT_ICONS[cat] || CAT_ICONS[normCat(cat)] || CAT_ICONS['Pixel']; }
 
-  function catIcon(cat) {
-    return CAT_ICONS[cat] || CAT_ICONS[normCat(cat)] || CAT_ICONS['Pixel'];
-  }
-
-  function mod(n, m) { return m > 0 ? ((n % m) + m) % m : 0; }
-
-  function circularDelta(idx, center, total) {
-    if (total <= 1) return 0;
-    var d = idx - center;
-    var half = total / 2;
-    while (d > half) d -= total;
-    while (d <= -half) d += total;
-    return d;
-  }
-
+  /* A card is a picture: a category chip, an open chip, and (in the bento only) a title bar and two action chips. */
   function card(it, i) {
     var rawCat = it.category || 'Pixel';
     var cat = normCat(rawCat);
     var hasCopy = !(it.kind === 'Template' || it.kind === 'Patch' || it.kind === 'Skill' || it.kind === 'Extension');
     var isExt = it.kind === 'Extension';
     var detailHref = 'library/' + esc(it.id) + '.html';
-
-    return '<article class="lib-card" data-cat="' + esc(cat) + '" data-raw-cat="' + esc(rawCat) + '" data-name="' + esc(it.name) + '" data-file="' + esc(it.file) + '" data-has-copy="' + (hasCopy ? '1' : '0') + '" data-ext="' + (isExt ? '1' : '0') + '" style="--cat:' + (COLOUR[rawCat] || COLOUR[cat] || 'var(--accent)') + '; --i:' + Math.min(i, 8) + '">' +
-      '<div class="lib-card-shell">' +
-        '<div class="lib-card-media">' +
-          '<a class="lib-media-link" href="' + detailHref + '" tabindex="-1" aria-hidden="true">' +
-            '<img data-src="' + esc(it.preview) + '" alt="" decoding="async" width="720" height="450">' +
-          '</a>' +
-          '<div class="lib-media-hud">' +
-            '<a class="lib-open-pill" href="' + detailHref + '" aria-label="Open ' + esc(it.name) + '" title="Open">' + IC_OPEN + '</a>' +
-          '</div>' +
-        '</div>' +
-        '<div class="lib-card-foot">' +
-          '<a class="lib-card-id" href="' + detailHref + '">' +
-            '<span class="lib-cat-badge" title="' + esc(rawCat) + '">' + catIcon(rawCat) + '</span>' +
-            '<h2 class="lib-card-title">' + esc(it.name) + '</h2>' +
-          '</a>' +
-          '<div class="lib-acts">' +
-            (hasCopy ? '<button class="lib-act-btn lib-copy" type="button" data-file="' + esc(it.file) + '" aria-label="Copy code for ' + esc(it.name) + '" title="Copy code">' + IC_COPY + '</button>' : '') +
-            (isExt
-              ? '<a class="lib-act-btn lib-dl" href="' + esc(it.file) + '" aria-label="Install ' + esc(it.name) + '" title="Install">' + IC_OPEN + '</a>'
-              : '<a class="lib-act-btn lib-dl" href="' + esc(it.file) + '" download aria-label="Download ' + esc(it.name) + '" title="Download">' + IC_DL + '</a>') +
-          '</div>' +
-        '</div>' +
+    return '<article class="lib-card deck-card" data-cat="' + esc(cat) + '" data-raw-cat="' + esc(rawCat) + '" data-name="' + esc(it.name) + '" data-file="' + esc(it.file) + '" data-has-copy="' + (hasCopy ? '1' : '0') + '" data-ext="' + (isExt ? '1' : '0') + '" style="--cat:' + (COLOUR[rawCat] || COLOUR[cat] || 'var(--accent)') + '">' +
+      '<a class="lib-media-link" href="' + detailHref + '" aria-label="Open ' + esc(it.name) + '">' +
+        '<img data-src="' + esc(it.preview) + '" alt="" decoding="async" width="720" height="450">' +
+      '</a>' +
+      '<span class="lib-chip lib-chip-cat" title="' + esc(rawCat) + '">' + catIcon(rawCat) + '</span>' +
+      '<span class="lib-chip lib-chip-open" aria-hidden="true">' + IC_OPEN + '</span>' +
+      '<div class="lib-acts">' +
+        (hasCopy ? '<button class="lib-chip lib-act-btn lib-copy" type="button" data-file="' + esc(it.file) + '" aria-label="Copy code for ' + esc(it.name) + '" title="Copy code">' + IC_COPY + '</button>' : '') +
+        (isExt
+          ? '<a class="lib-chip lib-act-btn lib-dl" href="' + esc(it.file) + '" aria-label="Install ' + esc(it.name) + '" title="Install">' + IC_OPEN + '</a>'
+          : '<a class="lib-chip lib-act-btn lib-dl" href="' + esc(it.file) + '" download aria-label="Download ' + esc(it.name) + '" title="Download">' + IC_DL + '</a>') +
       '</div>' +
+      '<h2 class="lib-card-title">' + esc(it.name) + '</h2>' +
     '</article>';
   }
 
@@ -141,17 +111,15 @@
       '</button>' +
       '<div class="lib-menu" role="listbox" aria-label="Category" hidden>' +
         cs.map(function (c) {
-          return '<button class="lib-opt" type="button" role="option" aria-selected="' + (c === activeFilter) + '" data-f="' + esc(c) + '">' +
+          return '<button class="lib-opt" type="button" role="option" aria-selected="' + (c === activeFilter) + '" data-f="' + esc(c) + '" aria-label="' + esc(c) + '" title="' + esc(c) + '">' +
             catIcon(c) +
             '<span>' + esc(c) + '</span>' +
           '</button>';
         }).join('') +
       '</div>';
   }
-
   function setMenuOpen(open) {
-    var m = chipsEl.querySelector('.lib-menu'),
-        t = chipsEl.querySelector('.lib-select');
+    var m = chipsEl.querySelector('.lib-menu'), t = chipsEl.querySelector('.lib-select');
     if (!m || !t) return;
     m.hidden = !open;
     t.setAttribute('aria-expanded', String(open));
@@ -169,26 +137,21 @@
         b.type = 'button';
         b.className = 'lib-dot';
         b.setAttribute('aria-label', 'Jump to item');
-        b.addEventListener('click', function () {
-          var target = Math.round((slotIdx / Math.max(1, maxDots - 1)) * (total - 1));
-          goTo(target);
-        });
+        b.addEventListener('click', function () { deck.goTo(Math.round((slotIdx / Math.max(1, maxDots - 1)) * (total - 1))); });
         dotsWrap.appendChild(b);
       })(i);
     }
   }
 
-  function updateHud() {
+  function updateHud(curIdx) {
     var total = visibleCards.length;
-    if (!total) return;
-    var curIdx = mod(activeIdx, total);
     var c = visibleCards[curIdx];
+    if (!total || !c) return;
     var rawCat = c.getAttribute('data-raw-cat') || 'Pixel';
     var name = c.getAttribute('data-name') || '';
     var file = c.getAttribute('data-file') || '';
     var hasCopy = c.getAttribute('data-has-copy') === '1';
     var isExt = c.getAttribute('data-ext') === '1';
-
     if (hudCatIc) hudCatIc.innerHTML = catIcon(rawCat);
     if (hudTitle) hudTitle.textContent = name;
     if (hudMeta) hudMeta.textContent = rawCat;
@@ -199,20 +162,13 @@
     }
     if (hudDl) {
       hudDl.href = file;
-      if (isExt) {
-        hudDl.removeAttribute('download');
-        hudDl.setAttribute('aria-label', 'Install ' + name);
-      } else {
-        hudDl.setAttribute('download', '');
-        hudDl.setAttribute('aria-label', 'Download ' + name);
-      }
+      if (isExt) { hudDl.removeAttribute('download'); hudDl.setAttribute('aria-label', 'Install ' + name); }
+      else { hudDl.setAttribute('download', ''); hudDl.setAttribute('aria-label', 'Download ' + name); }
     }
     if (dotsWrap && dotsWrap.children.length) {
       var dots = dotsWrap.children;
       var activeDot = dots.length <= 1 ? 0 : Math.round((curIdx / Math.max(1, total - 1)) * (dots.length - 1));
-      for (var i = 0; i < dots.length; i++) {
-        dots[i].classList.toggle('is-on', i === activeDot);
-      }
+      for (var i = 0; i < dots.length; i++) dots[i].classList.toggle('is-on', i === activeDot);
     }
   }
 
@@ -223,177 +179,58 @@
       c.hidden = !show;
       if (show) visibleCards.push(c);
     });
+    visibleCards.forEach(function (c, k) { c.setAttribute('data-bento', k % 7 === 0 ? 'big' : (k % 7 === 4 ? 'wide' : '')); });
     emptyEl.hidden = visibleCards.length > 0;
     stage.hidden = visibleCards.length === 0;
-    activeIdx = mod(activeIdx, visibleCards.length);
-
-    var valEl = chipsEl.querySelector('.lib-select-val');
-    var icEl = chipsEl.querySelector('.lib-select-ic');
+    var valEl = chipsEl.querySelector('.lib-select-val'), icEl = chipsEl.querySelector('.lib-select-ic');
     if (valEl) valEl.textContent = activeFilter;
     if (icEl) icEl.innerHTML = catIcon(activeFilter);
     Array.prototype.forEach.call(chipsEl.querySelectorAll('.lib-opt'), function (opt) {
       opt.setAttribute('aria-selected', String(opt.getAttribute('data-f') === activeFilter));
     });
-
     buildDots();
+    if (deck) { deck.refresh(false); updateHud(0); }
   }
 
-  function layoutDeck(animate) {
-    var total = visibleCards.length;
-    stage.setAttribute('data-deck-mode', mode);
-    if (hudWrap) hudWrap.hidden = (mode === 'grid' || total === 0);
-
-    if (mode === 'grid' || !total) {
-      allCards.forEach(function (c) {
-        c.style.transform = '';
-        c.style.opacity = '';
-        c.style.zIndex = '';
-        c.style.pointerEvents = '';
-        c.removeAttribute('data-slot');
-        c.removeAttribute('aria-hidden');
-        var im = c.querySelector('img[data-src]');
-        if (im) { im.src = im.getAttribute('data-src'); im.removeAttribute('data-src'); }
-      });
-      updateHud();
-      return;
-    }
-
-    var isMobile = window.innerWidth < 680;
-    var isTablet = window.innerWidth >= 680 && window.innerWidth < 1040;
-    var center = activeIdx - dragOffset;
-
-    visibleCards.forEach(function (c, idx) {
-      var d = circularDelta(idx, center, total);
-      var abs = Math.abs(d);
-      var sign = d < 0 ? -1 : (d > 0 ? 1 : 0);
-      var prevD = typeof c._lastD === 'number' ? c._lastD : d;
-      c._lastD = d;
-
-      var wrapped = Math.abs(prevD - d) > 3.2;
-      if (!animate || wrapped || reduceMotion) {
-        c.style.transition = 'none';
-      } else {
-        c.style.transition = '';
-      }
-
-      var tx = 0, ty = 0, tz = 0, rx = 0, ry = 0, rz = 0, sc = 1, op = 1;
-
-      if (mode === 'stack') {
-        var stepX = isMobile ? 64 : (isTablet ? 98 : 126);
-        var stepY = isMobile ? -18 : -26;
-        var focus = Math.max(0, 1 - abs);
-        tx = d * stepX + (d > 0 ? (1 - focus) * 28 : (d < 0 ? -(1 - focus) * 28 : 0));
-        ty = d * stepY + focus * 10;
-        tz = focus * 52 - abs * (isMobile ? 84 : 108);
-        ry = -6 * focus + (1 - focus) * -22;
-        rx = 2 * focus + (1 - focus) * 6;
-        rz = -d * 0.8;
-        sc = Math.max(0.74, 1.02 * focus + (1 - focus) * (1 - abs * 0.055));
-        op = abs > 3.2 ? 0 : (abs > 2.5 ? Math.max(0, (3.2 - abs) / 0.7) : 1);
-      } else {
-        var firstStep = isMobile ? 96 : (isTablet ? 168 : 218);
-        var tailStep = isMobile ? 48 : (isTablet ? 88 : 118);
-        var spread = Math.min(abs, 1) * firstStep + Math.max(0, abs - 1) * tailStep;
-        tx = sign * spread;
-        ty = Math.pow(abs, 1.3) * (isMobile ? 9 : 14);
-        tz = -abs * (isMobile ? 86 : 116);
-        ry = -sign * Math.min(abs * (isMobile ? 13 : 16), 34);
-        rz = d * (isMobile ? 1.5 : 2.0);
-        sc = Math.max(0.74, 1 - abs * 0.065);
-        op = abs > 3.2 ? 0 : (abs > 2.5 ? Math.max(0, (3.2 - abs) / 0.7) : 1);
-      }
-
-      var dim = Math.min(0.55, Math.max(0, (abs - 0.15) * 0.18));
-      c.style.setProperty('--card-dim', dim.toFixed(3));
-      c.style.transform = 'translate3d(' + tx.toFixed(1) + 'px,' + ty.toFixed(1) + 'px,' + tz.toFixed(1) + 'px) rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg) rotateZ(' + rz.toFixed(2) + 'deg) scale(' + sc.toFixed(3) + ')';
-      c.style.opacity = op.toFixed(3);
-      c.style.zIndex = String(Math.max(1, Math.round(100 - abs * 20)));
-      c.style.pointerEvents = op < 0.15 ? 'none' : 'auto';
-
-      var slot = abs < 0.35 ? 'active' : (abs < 1.35 ? 'near' : (abs < 2.45 ? 'mid' : 'far'));
-      c.setAttribute('data-slot', slot);
-      c.setAttribute('aria-hidden', abs > 3.1 ? 'true' : 'false');
-      if (abs <= 4.2) {
-        var im = c.querySelector('img[data-src]');
-        if (im) { im.src = im.getAttribute('data-src'); im.removeAttribute('data-src'); }
-      }
+  function setView(m) {
+    mode = m;
+    if (viewEl) Array.prototype.forEach.call(viewEl.querySelectorAll('[data-view]'), function (b) {
+      var on = b.getAttribute('data-view') === m;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-
-    updateHud();
+    if (hudWrap) hudWrap.hidden = (m === 'grid' || !visibleCards.length);
+    if (deck) deck.setMode(m);
   }
 
-  function stepBy(delta) {
-    var total = visibleCards.length;
-    if (!total) return;
-    activeIdx = mod(activeIdx + delta, total);
-    dragOffset = 0;
-    layoutDeck(true);
-  }
-
-  function goTo(targetIdx) {
-    var total = visibleCards.length;
-    if (!total) return;
-    activeIdx = mod(targetIdx, total);
-    dragOffset = 0;
-    layoutDeck(true);
-  }
-
-  function reshuffleDeck(withPulse) {
+  function reshuffleDeck() {
     for (var i = allCards.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var tmp = allCards[i];
-      allCards[i] = allCards[j];
-      allCards[j] = tmp;
+      var j = Math.floor(Math.random() * (i + 1)), tmp = allCards[i];
+      allCards[i] = allCards[j]; allCards[j] = tmp;
     }
-    allCards.forEach(function (c) { grid.appendChild(c); c._lastD = undefined; });
-    activeIdx = 0;
-    dragOffset = 0;
+    allCards.forEach(function (c) { grid.appendChild(c); });
     rebuildVisible();
-    if (withPulse && !reduceMotion) {
-      stage.classList.add('is-shuffling');
-      setTimeout(function () { stage.classList.remove('is-shuffling'); }, 460);
-    }
-    layoutDeck(true);
   }
 
   function copyDeviceCode(btn) {
     var file = btn.getAttribute('data-file');
     if (!file) return;
     fetch(file).then(function (r) { return r.text(); }).then(function (txt) {
-      if (/\.field$/.test(file)) {
-        try { txt = JSON.parse(txt).device.code; } catch (x) {}
-      }
+      if (/\.field$/.test(file)) { try { txt = JSON.parse(txt).device.code; } catch (x) {} }
       return navigator.clipboard.writeText(txt);
     }).then(function () {
       btn.classList.add('done');
       btn.innerHTML = IC_CHECK;
-      setTimeout(function () {
-        btn.classList.remove('done');
-        btn.innerHTML = IC_COPY;
-      }, 1400);
+      setTimeout(function () { btn.classList.remove('done'); btn.innerHTML = IC_COPY; }, 1400);
     }).catch(function () {});
   }
 
-  /* View switcher (Book / Stack / Grid) */
   if (viewEl) {
     Array.prototype.forEach.call(viewEl.querySelectorAll('[data-view]'), function (btn) {
-      var on = btn.getAttribute('data-view') === mode;
-      btn.classList.toggle('is-on', on);
-      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-      btn.addEventListener('click', function () {
-        mode = btn.getAttribute('data-view') || 'fan';
-        Array.prototype.forEach.call(viewEl.querySelectorAll('[data-view]'), function (b) {
-          var isSel = b === btn;
-          b.classList.toggle('is-on', isSel);
-          b.setAttribute('aria-pressed', isSel ? 'true' : 'false');
-        });
-        allCards.forEach(function (c) { c._lastD = undefined; });
-        layoutDeck(true);
-      });
+      btn.addEventListener('click', function () { setView(btn.getAttribute('data-view') || 'fan'); });
     });
   }
 
-  /* Category dropdown events */
   chipsEl.addEventListener('click', function (e) {
     if (e.target.closest('.lib-select')) {
       var m = chipsEl.querySelector('.lib-menu');
@@ -404,121 +241,33 @@
     if (!b) return;
     activeFilter = b.getAttribute('data-f') || 'All';
     setMenuOpen(false);
-    activeIdx = 0;
-    dragOffset = 0;
     rebuildVisible();
-    layoutDeck(true);
   });
-  document.addEventListener('click', function (e) {
-    if (!chipsEl.contains(e.target)) setMenuOpen(false);
-  });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') setMenuOpen(false);
-  });
+  document.addEventListener('click', function (e) { if (!chipsEl.contains(e.target)) setMenuOpen(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setMenuOpen(false); });
 
-  /* Shuffle & Prev / Next buttons */
-  document.querySelectorAll('[data-lib-shuffle]').forEach(function (btn) {
-    btn.addEventListener('click', function () { reshuffleDeck(true); });
-  });
-  document.querySelectorAll('[data-lib-prev]').forEach(function (btn) {
-    btn.addEventListener('click', function () { stepBy(-1); });
-  });
-  document.querySelectorAll('[data-lib-next]').forEach(function (btn) {
-    btn.addEventListener('click', function () { stepBy(1); });
-  });
-  if (hudCopy) {
-    hudCopy.addEventListener('click', function () { copyDeviceCode(hudCopy); });
-  }
-
-  /* Pointer / Touch drag gestures */
-  grid.addEventListener('pointerdown', function (e) {
-    if (mode === 'grid' || visibleCards.length <= 1) return;
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (e.target.closest('.lib-act-btn')) return;
-    isDragging = true;
-    dragMoved = false;
-    startX = lastX = e.clientX;
-    startY = e.clientY;
-    lastT = performance.now();
-    vx = 0;
-    stage.classList.add('is-dragging');
-  }, { passive: true });
-
-  window.addEventListener('pointermove', function (e) {
-    if (!isDragging || mode === 'grid') return;
-    var dx = e.clientX - startX;
-    var dy = e.clientY - startY;
-    if (!dragMoved && Math.abs(dy) > Math.abs(dx) * 1.25 && Math.abs(dy) > 12) {
-      isDragging = false;
-      stage.classList.remove('is-dragging');
-      dragOffset = 0;
-      layoutDeck(true);
-      return;
-    }
-    if (Math.hypot(dx, dy) > 8) dragMoved = true;
-    var now = performance.now();
-    var dt = Math.max(1, now - lastT);
-    vx = (e.clientX - lastX) / dt;
-    lastX = e.clientX;
-    lastT = now;
-
-    var stepPx = window.innerWidth < 680 ? 150 : 230;
-    dragOffset = Math.max(-2.5, Math.min(2.5, dx / stepPx));
-    layoutDeck(false);
-  }, { passive: true });
-
-  function endDrag() {
-    if (!isDragging) return;
-    isDragging = false;
-    stage.classList.remove('is-dragging');
-    var flick = -dragOffset - vx * 0.28;
-    var steps = 0;
-    if (Math.abs(flick) > 0.24) {
-      steps = Math.round(flick);
-      if (steps === 0) steps = flick > 0 ? 1 : -1;
-      steps = Math.max(-3, Math.min(3, steps));
-    }
-    activeIdx = mod(activeIdx + steps, visibleCards.length);
-    dragOffset = 0;
-    layoutDeck(true);
-    setTimeout(function () { dragMoved = false; }, 40);
-  }
-
-  window.addEventListener('pointerup', endDrag, { passive: true });
-  window.addEventListener('pointercancel', endDrag, { passive: true });
-
-  /* Trackpad two-finger swipe & wheel riffle */
-  grid.addEventListener('wheel', function (e) {
-    if (mode === 'grid' || visibleCards.length <= 1) return;
-    var isHoriz = Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.85;
-    if (!isHoriz && !e.shiftKey) return;
-    e.preventDefault();
-    var now = performance.now();
-    if (now - wheelLock < 188) return;
-    var delta = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-    wheelAccum += delta;
-    if (Math.abs(wheelAccum) > 28) {
-      stepBy(wheelAccum > 0 ? 1 : -1);
-      wheelAccum = 0;
-      wheelLock = now;
-    }
-  }, { passive: false });
-
-  /* Keyboard navigation */
+  document.querySelectorAll('[data-lib-shuffle]').forEach(function (btn) { btn.addEventListener('click', reshuffleDeck); });
+  document.querySelectorAll('[data-lib-prev]').forEach(function (btn) { btn.addEventListener('click', function () { deck.step(-1); }); });
+  document.querySelectorAll('[data-lib-next]').forEach(function (btn) { btn.addEventListener('click', function () { deck.step(1); }); });
+  if (hudCopy) hudCopy.addEventListener('click', function () { copyDeviceCode(hudCopy); });
   window.addEventListener('keydown', function (e) {
-    if (mode === 'grid' || e.defaultPrevented) return;
-    var tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
-    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-    if (e.key === 'ArrowRight') { e.preventDefault(); stepBy(1); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBy(-1); }
-    else if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) { reshuffleDeck(true); }
+    if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey && mode !== 'grid') {
+      var t = e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '';
+      if (t !== 'input' && t !== 'textarea' && t !== 'select') reshuffleDeck();
+    }
   });
 
-  window.addEventListener('resize', function () { layoutDeck(false); });
+  /* ambient light follows the pointer */
+  var hero = stage.closest('.lib-hero') || stage;
+  if (!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    addEventListener('pointermove', function (e) {
+      hero.style.setProperty('--px', (e.clientX / innerWidth - 0.5).toFixed(3));
+      hero.style.setProperty('--py', (e.clientY / innerHeight - 0.5).toFixed(3));
+    }, { passive: true });
+  }
 
   renderDropdown();
 
-  /* Load catalog & initialize shuffled deck */
   Promise.all([
     fetch('assets/library/index.json?v=4').then(function (r) { return r.json(); }),
     fetch('assets/templates/index.json?v=3').then(function (r) { return r.json(); }).catch(function () { return { items: [] }; }),
@@ -529,47 +278,27 @@
     items = all[1].items.concat(all[2].items, all[3].items, all[4].items, all[0].items);
     for (var i = items.length - 1; i > 0; i--) {
       var j = Math.floor(Math.random() * (i + 1)), t = items[i];
-      items[i] = items[j];
-      items[j] = t;
+      items[i] = items[j]; items[j] = t;
     }
     grid.innerHTML = items.map(card).join('');
     allCards = Array.prototype.slice.call(grid.querySelectorAll('.lib-card'));
     renderDropdown();
 
+    // copy and download chips act only on the card in front (or in the bento); on any other card the tap brings it forward
     grid.addEventListener('click', function (e) {
       var copyBtn = e.target.closest('.lib-copy');
-      if (copyBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        copyDeviceCode(copyBtn);
-        return;
-      }
+      if (copyBtn) { e.preventDefault(); e.stopPropagation(); copyDeviceCode(copyBtn); return; }
       var dlBtn = e.target.closest('.lib-dl');
-      if (dlBtn) {
-        if (dragMoved) { e.preventDefault(); return; }
-        e.stopPropagation();
-        return;
-      }
-      var cardEl = e.target.closest('.lib-card');
-      if (!cardEl) return;
-      if (mode !== 'grid') {
-        if (dragMoved) {
-          e.preventDefault();
-          return;
-        }
-        var idx = visibleCards.indexOf(cardEl);
-        if (idx !== -1) {
-          var d = circularDelta(idx, activeIdx, visibleCards.length);
-          if (Math.abs(d) > 0.25) {
-            e.preventDefault();
-            stepBy(Math.round(d));
-          }
-        }
-      }
+      if (dlBtn) e.stopPropagation();
     });
 
+    deck = InfiniteDeck.create({
+      stage: stage, grid: grid, cardSel: '.lib-card', mode: mode,
+      getCards: function () { return visibleCards; },
+      onChange: updateHud
+    });
     rebuildVisible();
-    layoutDeck(true);
+    setView(mode);
   }).catch(function () {
     emptyEl.hidden = false;
     emptyEl.textContent = 'Could not load the library.';
