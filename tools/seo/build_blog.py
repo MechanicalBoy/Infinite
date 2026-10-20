@@ -126,7 +126,7 @@ def head(title, desc, url, image, extra="", kind="website", depth="../"):
   <link rel="stylesheet" href="{depth}brand.css?v=e96b24bf">
   <link rel="stylesheet" href="{depth}style.css?v=dba6d460">
   <link rel="stylesheet" href="{depth}glass.css?v=c25dae44">
-  <link rel="stylesheet" href="{depth}blog.css?v=e5fec6e7">
+  <link rel="stylesheet" href="{depth}blog.css?v=e2904242">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-ZC4TYX1WCL"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -152,23 +152,58 @@ def fmt_date(d):
 
 def card(p, i):
     img = p.get("image", "")
-    media = (f'<div class="post-media"><img src="../{e(thumb(img, 720))}" alt="" loading="lazy" decoding="async" width="720" height="405"></div>' if img and not img.startswith("http")
-             else f'<div class="post-media"><img src="{e(img)}" alt="" loading="lazy" width="1200" height="675"></div>' if img
-             else '<div class="post-media post-media-empty" aria-hidden="true"><span class="mono">infinite</span></div>')
+    media_img = (f'<img src="../{e(thumb(img, 720))}" alt="" loading="lazy" decoding="async" width="720" height="450">' if img and not img.startswith("http")
+                 else f'<img src="{e(img)}" alt="" loading="lazy" width="1200" height="675">' if img
+                 else '<div class="post-media-empty" aria-hidden="true"><span class="mono">infinite</span></div>')
+    cat_label = e(CATS.get(p['category'], p['category']))
     return f"""        <article class="post-card" data-cat="{e(p['category'])}" style="--i:{i}">
           <a class="post-link" href="{p['slug']}.html">
-            {media}
+            <div class="post-media">
+              {media_img}
+              <span class="post-badge-overlay">{cat_label}</span>
+            </div>
             <div class="post-body">
-              <p class="post-kicker mono">{e(CATS.get(p['category'], p['category']))}<span class="kd"> · {e(fmt_date(p['date']))}</span> · {p['minutes']} min</p>
               <h2>{e(p['title'])}</h2>
               <p class="post-desc">{e(p['description'])}</p>
+              <div class="post-meta-foot mono">
+                <span>{e(fmt_date(p['date']))}</span>
+                <span>• {p['minutes']} min read</span>
+              </div>
+            </div>
+          </a>
+        </article>"""
+
+
+def featured_card(p):
+    img = p.get("image", "")
+    media_img = (f'<img src="../{e(thumb(img, 1200))}" alt="" loading="eager" decoding="async" width="1200" height="675">' if img and not img.startswith("http")
+                 else f'<img src="{e(img)}" alt="" loading="eager" width="1200" height="675">' if img
+                 else '<div class="post-media-empty" aria-hidden="true"><span class="mono">infinite</span></div>')
+    cat_label = e(CATS.get(p['category'], p['category']))
+    author_name = e(p.get("author", "Naman Soni"))
+    return f"""        <article class="post-featured-card" data-cat="{e(p['category'])}">
+          <a class="post-featured-link" href="{p['slug']}.html">
+            <div class="post-featured-media">
+              {media_img}
+            </div>
+            <div class="post-featured-body">
+              <div class="post-featured-top">
+                <span class="post-pill-badge mono">{cat_label}</span>
+              </div>
+              <h2 class="post-featured-title">{e(p['title'])}</h2>
+              <p class="post-featured-desc">{e(p['description'])}</p>
+              <div class="post-featured-foot">
+                <span class="post-read-time mono">• {p['minutes']} min read</span>
+                <span class="post-byline">by {author_name}</span>
+              </div>
             </div>
           </a>
         </article>"""
 
 
 def build_index(posts, header, footer):
-    items = "\n".join(card(p, i) for i, p in enumerate(posts))
+    feat = featured_card(posts[0]) if posts else ""
+    items = "\n".join(card(p, i) for i, p in enumerate(posts[1:]))
     chips = '<button type="button" class="chip is-on" data-filter="all">' + chip_icon("all") + 'All</button>' + "".join(
         f'<button type="button" class="chip" data-filter="{k}">{chip_icon(k)}{v}</button>' for k, v in CATS.items() if any(p["category"] == k for p in posts))
     blog_ld = {"@context": "https://schema.org", "@type": "Blog", "name": "Infinite blog", "url": BASE + "blog/",
@@ -186,12 +221,13 @@ def build_index(posts, header, footer):
   <main>
     <section class="section blog-hero">
       <div class="container">
-        <div class="section-head">
-          <p class="blog-hand hand">notes</p>
-          <h1 class="slab">Blog</h1>
-          <p class="section-sub">How Infinite is built, and what you can make with it. Tutorials for musicians, VJs and 3D artists, and engineering write-ups for the curious.</p>
+        <div class="section-head text-center">
+          <div class="blog-badge-wrap"><span class="badge-pill mono">Blog</span></div>
+          <h1 class="slab">Practical notes to build <em class="hand">faster</em>.</h1>
+          <p class="section-sub">How Infinite is built, and what you can make with it. Tutorials for musicians, VJs and creative coders, and engineering write-ups for the curious.</p>
         </div>
         <div class="blog-chips" role="group" aria-label="Filter posts">{chips}</div>
+{feat}
         <div class="post-grid" id="post-grid">
 {items}
         </div>
@@ -205,7 +241,7 @@ def build_index(posts, header, footer):
   <script src="../site.js?v=9" defer></script>
   <script>
     (function () {{
-      var chips = document.querySelectorAll('[data-filter]'), cards = document.querySelectorAll('.post-card'), empty = document.getElementById('blog-empty');
+      var chips = document.querySelectorAll('[data-filter]'), cards = document.querySelectorAll('.post-card, .post-featured-card'), empty = document.getElementById('blog-empty');
       chips.forEach(function (c) {{ c.addEventListener('click', function () {{
         var f = c.getAttribute('data-filter'), n = 0;
         chips.forEach(function (x) {{ x.classList.toggle('is-on', x === c); }});
@@ -217,6 +253,7 @@ def build_index(posts, header, footer):
 </body>
 </html>
 """
+    open(os.path.join(BLOG, "index.html"), "w", encoding="utf-8").write(s)
     open(os.path.join(BLOG, "index.html"), "w", encoding="utf-8").write(s)
 
 
