@@ -342,6 +342,52 @@ table.t th { text-align: left; font-weight: 600; color: var(--ink); padding: 12p
 table.t td { padding: 8px 12px; color: var(--ink2); border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent); vertical-align: top; }
 table.t td:first-child { color: var(--ink); font-weight: 600; }
 .bm-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 8px; }
+
+/* ---- visual layer ---- */
+.bm-hero h1 { margin: 0; }
+.bm-spec { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.8438rem; margin: 8px 0 0; }
+.ic { width: 20px; height: 20px; flex: none; fill: currentColor; }
+.bm-actions .btn { display: inline-flex; align-items: center; gap: 8px; }
+.bm-rail { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin: 32px -16px 8px; padding: 4px 16px 16px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.bm-rail::-webkit-scrollbar { display: none; }
+.bm-stat { scroll-snap-align: center; flex: 0 0 148px; height: 168px; border-radius: var(--radius-card); background: var(--card); box-shadow: var(--shadow-1); padding: 18px; display: flex; flex-direction: column; justify-content: space-between; color: var(--accent); }
+.bm-stat b { font-size: 2.25rem; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); line-height: 1; }
+.bm-stat b small { font-size: 0.9rem; font-weight: 600; color: var(--muted); margin-left: 3px; }
+.bm-stat span { font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.7188rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.bm-panel { margin: 24px 0; padding: 24px; border-radius: var(--radius-card); background: var(--card); box-shadow: var(--shadow-1); }
+.bm-wrap .bm-panel h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; font-size: 1.25rem; color: var(--ink); }
+.bm-panel h2 .ic { color: var(--accent); width: 24px; height: 24px; }
+.bm-wrap .bm-panel .cap { margin: 16px 0 12px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.7188rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); max-width: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.key { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.key.a, .pr i.a { background: var(--accent); } .key.b, .pr i.b { background: color-mix(in srgb, var(--ink) 32%, transparent); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font-size: 0.8438rem; font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.chip .ic { color: var(--accent); width: 18px; height: 18px; }
+.chip.warn { background: color-mix(in srgb, var(--signal, #A7B1FF) 16%, transparent); } .chip.warn .ic { color: var(--signal, #A7B1FF); }
+.chips.big .chip { padding: 12px 18px; font-size: 0.9375rem; }
+.bar { display: grid; grid-template-columns: 76px 1fr 64px; align-items: center; gap: 12px; margin: 8px 0; font-size: 0.8438rem; }
+.bl { color: var(--ink2); font-weight: 600; } .bv { text-align: right; font-family: "Geist Mono", ui-monospace, monospace; color: var(--ink); } .bv small { color: var(--muted); margin-left: 2px; }
+.bt, .pr { height: 14px; border-radius: 7px; background: color-mix(in srgb, var(--ink) 8%, transparent); position: relative; overflow: hidden; }
+.bt i, .pr i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 7px; background: color-mix(in srgb, var(--ink) 32%, transparent); transition: width var(--dur-page, 667ms) cubic-bezier(.2,.8,.2,1); }
+.bar.inf .bt i { background: var(--accent); }
+.in .bt i, .in .pr i, .view.on.re .bt i { width: var(--w); }
+.view { display: none; } .view.on { display: block; }
+.fxg { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.fx { padding: 12px 14px; border-radius: 16px; background: color-mix(in srgb, var(--ink) 4%, transparent); border: 2px solid transparent; }
+.fx.win { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.fx b { display: block; font-size: 0.875rem; color: var(--ink); margin-bottom: 8px; }
+.pr { margin: 5px 40px 5px 0; height: 14px; overflow: visible; background: none; position: relative; }
+.pr i { top: 0; bottom: 0; }
+.pr em { position: absolute; right: -40px; top: 0; width: 36px; text-align: right; font-style: normal; font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.7188rem; color: var(--ink2); line-height: 14px; }
+.vd { display: grid; grid-template-columns: 52px 1fr 64px; gap: 4px 12px; align-items: center; margin: 14px 0; }
+.vd b { grid-row: span 2; color: var(--ink); } .vd u { grid-row: span 2; text-decoration: none; font-weight: 800; font-size: 1.5rem; letter-spacing: -0.02em; color: var(--accent); text-align: right; }
+.tabs { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+.tab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 0.8438rem; font-weight: 600; color: var(--ink2); background: color-mix(in srgb, var(--ink) 7%, transparent); -webkit-tap-highlight-color: transparent; }
+.tab.on { color: var(--ink); background: color-mix(in srgb, var(--accent) 22%, transparent); } .tab.on .ic { color: var(--accent); }
+.bm-full { margin: 32px 0 0; } .bm-full > summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-radius: 999px; cursor: pointer; background: var(--card); box-shadow: var(--shadow-1); color: var(--ink); font-weight: 600; width: fit-content; }
+.bm-full > summary::-webkit-details-marker { display: none; } .bm-full[open] > summary .ic:last-child { transform: rotate(180deg); }
+@media (max-width: 680px) { .tab span { display: none; } .tab { padding: 12px 16px; } .bm-panel { padding: 18px; } .bar { grid-template-columns: 62px 1fr 56px; gap: 8px; } .bm-stat { flex-basis: 132px; height: 152px; } }
+@media (prefers-reduced-motion: reduce) { .bt i, .pr i { transition: none; } }
 """
 
 
@@ -378,6 +424,103 @@ def jsonld(n):
             {"@type": "ListItem", "position": 2, "name": "Benchmarks", "item": url}]}]}, indent=1, ensure_ascii=False)
 
 
+# ---------------------------------------------------------------------------------------------------- visual page
+def _ic(name):
+    svg = open(os.path.join(ROOT, "art", "icons", "src", name + "-20.svg"), encoding="utf-8").read().strip()
+    return svg.replace("<svg ", '<svg class="ic" aria-hidden="true" ', 1).replace("\n", "")
+
+
+def bars(rows, unit="", lower_better=True, log=False):
+    """rows: [(label, value, is_infinite)]. One bar each, width relative to the largest; Infinite takes the accent."""
+    import math
+    f = (lambda v: math.log10(1 + v)) if log else (lambda v: v)
+    mx = max(f(v) for _, v, _ in rows) or 1
+    best = (min if lower_better else max)(v for _, v, _ in rows)
+    out = ""
+    for lab, v, inf in rows:
+        w = max(2.5, 100 * f(v) / mx)
+        cls = "bar" + (" inf" if inf else "") + (" best" if v == best else "")
+        shown = f"{v:g}" if isinstance(v, int) or v == int(v) else f"{v:.2f}".rstrip("0").rstrip(".")
+        out += f'<div class="{cls}"><span class="bl">{esc(lab)}</span><span class="bt"><i style="--w:{w:.1f}%"></i></span><span class="bv">{shown}<small>{unit}</small></span></div>'
+    return out
+
+
+def v_stats():
+    inf = apk("Infinite")
+    st = [("power", "0.34", "s", "launch"), ("snap", "0.2", "¢", "pitch"), ("loop", "100", "×", "export"),
+          ("library", inf["Memory MB (footprint)"], "MB", "memory"), ("star", "97.6", "%", "plugins"), ("pause", "0", "", "dropouts")]
+    return '<div class="bm-rail" role="list">' + "".join(
+        f'<div class="bm-stat" role="listitem">{_ic(i)}<b>{esc(n)}<small>{esc(u)}</small></b><span>{esc(l)}</span></div>' for i, n, u, l in st) + "</div>"
+
+
+def v_sound():
+    rows = [("Wavetable", float(vc("node:Wavetable")), True), ("Analog", float(vc("node:Analog")), True),
+            ("Vital", float(vc("Vital")), False), ("Serum 2", float(vc("Serum 2")), False)]
+    chips = "".join(f'<span class="chip">{_ic(i)}{esc(t)}</span>' for i, t in
+                    (("snap", "0.2¢ pitch"), ("hand", "24 dB touch"), ("eye", "−81 dB clean")))
+    return (f'<section class="bm-panel" id="sound"><h2>{_ic("family-synths")}Sound</h2><div class="chips">{chips}</div>'
+            f'<p class="cap">CPU per voice, ms/s</p>{bars(rows)}</section>')
+
+
+def v_fx():
+    pairs = [("Reverb", "node:Reverb", "ValhallaRoom"), ("Delay", "node:Delay", "ValhallaDelay"), ("Comp", "node:Dynamics", "Pro-C 2"),
+             ("Limiter", "node:Limiter", "Pro-L 2"), ("EQ", "node:EQ", "Pro-Q 4"), ("Drive", "node:Drive", "Saturn 2"),
+             ("Chorus", "node:Chorus", "kHs Chorus"), ("Flanger", "node:Flanger", "kHs Flanger"), ("Phaser", "node:Phaser", "kHs Phaser")]
+    grid = ""
+    for kind, a, b in pairs:
+        ca, cb = cpu(fxk(a)), cpu(fxk(b))
+        win = "win" if ca < cb - 1 else ("lose" if cb < ca - 1 else "tie")
+        mx = max(ca, cb, 0.1)
+        grid += (f'<div class="fx {win}"><b>{kind}</b><div class="pr"><i class="a" style="--w:{max(3, 100*ca/mx):.0f}%"></i><em>{ca:.1f}</em></div>'
+                 f'<div class="pr"><i class="b" style="--w:{max(3, 100*cb/mx):.0f}%"></i><em>{cb:.1f}</em></div></div>')
+    return (f'<section class="bm-panel" id="effects"><h2>{_ic("family-effects")}Effects</h2>'
+            f'<p class="cap"><span class="key a"></span>Infinite <span class="key b"></span>Plugin · CPU ms/s, shorter is lighter</p><div class="fxg">{grid}</div></section>')
+
+
+def v_video():
+    rows = [("720p", 170, 1.6), ("1080p", 81, 1.2), ("4K", 44, 0.5)]
+    out = "".join(f'<div class="vd"><b>{l}</b><div class="pr"><i class="a" style="--w:100%"></i><em>{a} fps</em></div>'
+                  f'<div class="pr"><i class="b" style="--w:{max(1.5, 100*b/a):.1f}%"></i><em>{b} fps</em></div><u>{a/b:.0f}×</u></div>' for l, a, b in rows)
+    return (f'<section class="bm-panel" id="video"><h2>{_ic("family-3d")}Export</h2>'
+            f'<p class="cap"><span class="key a"></span>Infinite <span class="key b"></span>Blender · ProRes 4444 frames per second</p>{out}</section>')
+
+
+def v_apps():
+    names = [("Infinite", "Infinite"), ("Logic", "Logic"), ("Live", "Ableton"), ("Bitwig", "Bitwig"), ("TD", "TouchDesigner"),
+             ("Blender", "Blender"), ("VCV", "VCV"), ("Bespoke", "Bespoke"), ("Vital", "Vital")]
+    metrics = [("power", "Launch", "s", lambda r: float(r["Window s (1st)"])),
+               ("library", "Memory", "MB", lambda r: float(r["Memory MB (footprint)"])),
+               ("folder", "Size", "MB", lambda r: float(r["Bundle MB"])),
+               ("pause", "Idle", "%", lambda r: float(r["Idle CPU % mean / max"].split("/")[0]))]
+    tabs, views = "", ""
+    for n, (ic, lab, unit, fn) in enumerate(metrics):
+        rows = sorted([(l, fn(apk(k)), k == "Infinite") for l, k in names], key=lambda t: t[1])
+        tabs += f'<button type="button" class="tab{" on" if n == 0 else ""}" data-t="{n}" aria-label="{lab}">{_ic(ic)}<span>{lab}</span></button>'
+        views += f'<div class="view{" on" if n == 0 else ""}" data-v="{n}">{bars(rows, unit, log=(lab == "Size"))}</div>'
+    return f'<section class="bm-panel" id="apps"><h2>{_ic("viewport")}Apps</h2><div class="tabs">{tabs}</div>{views}</section>'
+
+
+def v_behind():
+    items = [("power", "Idle CPU"), ("family-audio-effects", "EQ · Limiter · Drive · Chorus"), ("cube", "10k instances"), ("viewport", "4× 4K, 3 windows"), ("mixer", "Default levels")]
+    return (f'<section class="bm-panel" id="behind"><h2>{_ic("warning")}Behind</h2><div class="chips big">' +
+            "".join(f'<span class="chip warn">{_ic(i)}{esc(t)}</span>' for i, t in items) + "</div></section>")
+
+
+VISUAL_JS = """(function(){
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.25});
+  document.querySelectorAll('.bm-panel,.bm-rail').forEach(function(n){io.observe(n);});
+  document.querySelectorAll('.tabs').forEach(function(t){
+    t.addEventListener('click',function(e){var b=e.target.closest('.tab');if(!b)return;var p=t.parentNode,n=b.getAttribute('data-t');
+      p.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('on',x===b);});
+      p.querySelectorAll('.view').forEach(function(v){var on=v.getAttribute('data-v')===n;v.classList.toggle('on',on);if(on){v.classList.remove('re');void v.offsetWidth;v.classList.add('re');}});});});
+  var r=document.querySelector('.bm-rail');if(r){var tp=0;r.addEventListener('wheel',function(e){if(Math.abs(e.deltaY)>Math.abs(e.deltaX)&&e.shiftKey){r.scrollLeft+=e.deltaY;e.preventDefault();}},{passive:false});}
+})();"""
+
+
+def visual_html():
+    return v_stats() + v_sound() + v_fx() + v_video() + v_apps() + v_behind()
+
+
 def page(body, n):
     tpl = open(os.path.join(W, "extensions.html")).read()
     head, rest = tpl.split("</head>", 1)
@@ -390,7 +533,7 @@ def page(body, n):
     head = re.sub(r'(og:image" content=")[^"]*', lambda m: m.group(1) + BASE + "assets/og-image.jpg", head)
     head = re.sub(r'(twitter:image" content=")[^"]*', lambda m: m.group(1) + BASE + "assets/og-image.jpg", head)
     head = head.replace('  <link rel="alternate" type="application/json" href="assets/extensions/extensions.json" title="Extensions">\n', "")
-    head = head.replace("extensions.css?v=e791dc75", "benchmarks.css?v=70dc99be")
+    head = head.replace("extensions.css?v=e791dc75", "benchmarks.css?v=cea1bd48")
     head += f'  <link rel="alternate" type="application/json" href="assets/benchmarks.json" title="Benchmark data">\n  <link rel="alternate" type="application/pdf" href="assets/{PDF_NAME}" title="Benchmark report (PDF)">\n'
     head += f'  <script type="application/ld+json">\n{jsonld(n)}\n  </script>\n'
     nav_start = rest.index("<body")
@@ -399,14 +542,16 @@ def page(body, n):
     # wrap tables in a scroller so phones scroll the table, not the page
     body_w = re.sub(r"(<table class=\"t.*?</table>)", r'<div class="bm-scroll">\1</div>', body, flags=re.S)
     qa = "".join(f"<h3>{esc(q)}</h3><p>{esc(a)}</p>" for q, a in faq())
-    main = (f'<main>\n    <section class="section lib-hero">\n      <div class="container bm-wrap">\n        <div class="section-head">\n'
-            '          <p class="lib-hand hand">measured</p>\n          <h1 class="slab">Infinite benchmarks</h1>\n'
-            '          <p class="section-sub">How Infinite v0.6 compares with the instruments, effects and creative tools you already use, on a base MacBook Air. Including the parts where it is slower.</p>\n'
-            f'          <div class="bm-actions"><a class="btn btn-primary" href="assets/{PDF_NAME}" download>Download the PDF</a>'
-            '<a class="btn btn-ghost" href="assets/benchmarks.json">Raw data (JSON)</a>'
-            '<a class="btn btn-ghost" href="https://github.com/n1m21n/Infinite/tree/main/tools/re-survey" target="_blank" rel="noopener">Test tools</a></div>\n'
-            f'          <p class="mono" style="color:var(--muted);font-size:.8438rem">Version 0.6.0 &middot; Measured {DATE} &middot; Apple M2, 8 GB</p>\n        </div>\n'
-            f'{body_w}\n<h2 id="faq">Questions people ask</h2>{qa}\n      </div>\n    </section>\n  </main>\n')
+    main = (f'<main>\n    <section class="section lib-hero bm-hero">\n      <div class="container bm-wrap">\n'
+            '        <h1 class="slab">Benchmarks</h1>\n'
+            f'        <p class="bm-spec mono">{_ic("metronome")}M2 · 8 GB · v0.6 · {DATE}</p>\n'
+            f'        <div class="bm-actions"><a class="btn btn-primary" href="assets/{PDF_NAME}" download aria-label="Download the PDF">{_ic("arrange")}PDF</a>'
+            f'<a class="btn btn-ghost" href="assets/benchmarks.json" aria-label="Raw data as JSON">{_ic("grid-dots")}JSON</a>'
+            f'<a class="btn btn-ghost" href="https://github.com/n1m21n/Infinite/tree/main/tools/re-survey" target="_blank" rel="noopener" aria-label="Test tools">{_ic("settings")}Tools</a></div>\n'
+            f'{visual_html()}\n'
+            f'<details class="bm-full"><summary>{_ic("library")}<span>Full report</span>{_ic("chevron-down")}</summary>\n'
+            f'<div class="bm-fullbody">{body_w}\n<h2 id="faq">Questions people ask</h2>{qa}</div></details>\n'
+            f'      </div>\n    </section>\n  </main>\n<script>{VISUAL_JS}</script>\n')
     tail = rest[rest.index("</main>") + len("</main>"):]
     return head + "</head>" + header + main + tail
 
