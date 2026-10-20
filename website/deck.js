@@ -19,6 +19,9 @@
     var raf = 0, last = 0;
     var drag = null, moved = false, wheelT = 0, wheelIdle = 0;
     var lastIdx = -1;
+    var io = 'IntersectionObserver' in window ? new IntersectionObserver(function (es) {
+      es.forEach(function (en) { if (en.isIntersecting) { wake(en.target); io.unobserve(en.target); } });
+    }, { rootMargin: '600px 0px' }) : null;
 
     var cards = function () { return o.getCards() || []; };
     var coarse = function () { return window.innerWidth < 680; };
@@ -71,16 +74,18 @@
       stage.setAttribute('data-deck-mode', mode);
       if (mode === 'grid' || !n) {
         list.forEach(function (c) {
+          c.style.display = '';
           c.style.transform = ''; c.style.opacity = ''; c.style.zIndex = ''; c.style.pointerEvents = '';
           c.style.setProperty('--card-dim', '0');
           c.removeAttribute('data-slot'); c.removeAttribute('aria-hidden');
-          wake(c);
+          if (io) io.observe(c); else wake(c);
         });
         return;
       }
       list.forEach(function (c, i) {
         var d = delta(i, n), p = pose(d);
         c.style.transform = 'translate3d(' + p.tx.toFixed(1) + 'px,' + p.ty.toFixed(1) + 'px,' + p.tz.toFixed(1) + 'px) rotateY(' + p.ry.toFixed(2) + 'deg) rotateZ(' + p.rz.toFixed(2) + 'deg) scale(' + p.sc.toFixed(3) + ')';
+        c.style.display = p.ab > 4.6 ? 'none' : '';
         c.style.opacity = p.op.toFixed(3);
         c.style.zIndex = String(Math.round(200 - (mode === 'stack' ? d : p.ab) * 20));
         c.style.pointerEvents = p.op < 0.15 ? 'none' : 'auto';
@@ -106,7 +111,7 @@
       var dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
       if (drag) { pos = target; vel = 0; }
       else {
-        var om = 2 / 0.26, x = om * dt, ex = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+        var om = 2 / 0.17, x = om * dt, ex = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
         var ch = pos - target, tmp = (vel + om * ch) * dt;
         vel = (vel - om * tmp) * ex;
         pos = target + (ch + tmp) * ex;
@@ -141,7 +146,7 @@
     }
 
     // ---- gestures ----
-    var stepPx = function () { return coarse() ? 150 : 240; };
+    var stepPx = function () { return coarse() ? 105 : 200; };
     grid.addEventListener('pointerdown', function (e) {
       if (mode === 'grid' || cards().length <= 1) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -169,7 +174,7 @@
       if (!was.live) return;
       // release: carry the flick, settle on a card
       var fling = -was.vx * 0.32;                  // px/ms to card units
-      target = Math.round(clamp(target + fling * 1.6, was.base - 4, was.base + 4));
+      target = Math.round(clamp(target + fling * 2.2, was.base - 4, was.base + 4));
       pos = pos; vel = reduce ? 0 : -was.vx / stepPx() * 1000 * 0.35;
       setTimeout(function () { moved = false; }, 60);
       run();

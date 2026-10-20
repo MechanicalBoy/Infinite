@@ -167,3 +167,10 @@
 }
 .post-card .post-media { background: transparent; }
 .blog-book-stage[data-deck-mode="grid"] .post-card .post-media { background: var(--surface-3); }
+
+/* memory: composite only the cards in the hand, and keep blur off the chips of cards that are not in front (iOS ends the page otherwise) */
+.deck-card { will-change: auto; }
+.deck-card[data-slot="active"], .deck-card[data-slot="near"] { will-change: transform, opacity; }
+.deck-card:not([data-slot="active"]) .post-chip, .deck-card:not([data-slot="active"]) .lib-chip-cat, .deck-card:not([data-slot="active"]) .lib-chip-open, .deck-card:not([data-slot="active"]) .lib-acts button,
+.deck-card[data-slot="active"] .post-chip { -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (max-width: 680px) { .lib-card *, .post-card * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; } }

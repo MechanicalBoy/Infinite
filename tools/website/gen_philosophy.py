@@ -90,126 +90,35 @@ def loop_svg():
             f'<text class="loop-t t-human" x="425" y="156" text-anchor="middle">you</text><text class="loop-t t-struct" x="175" y="156" text-anchor="middle">structure</text></svg>')
 
 
+ICONS = {"memory": "history", "rhythm": "metronome", "colour": "family-compositing", "voice": "family-synths", "motion": "family-modulators",
+         "texture": "grid-dots", "space": "family-audio-effects", "light": "family-3d"}
+SCENES = [("scatter", "grid-dots", "Ideas"), ("mind", "pointer", "A mind"), ("patch", "mod-matrix", "A patch"), ("loop", "loop", "You and structure"), ("one", "star", "One")]
+
+
 def main_html():
-    who = "\n".join(f'          <a class="who-card reveal" style="--i:{i}" href="{s}.html">{ga.icon(ga.AUD_ICON[s])}<b>{e(n)}</b><span>{e(d)}</span></a>' for i, (s, h, n, d) in enumerate(AUD))
-    protect = [("Nothing between you and the result", "Controls stay live while a patch plays. You change a value and you see or hear it change."),
-               ("One canvas", "Pictures, sound, 3D and code are nodes in one graph, so nothing is exported from one tool to be imported into another."),
-               ("Hands before menus", "Any knob can be moved by a controller, an LFO, an envelope or the audio itself, so the instrument is played, not configured."),
-               ("Patch the way you think", "Start with one node, add whatever comes to mind next, and connect it. There is no fixed order you must follow.")]
-    prot = "\n".join(f'          <article class="aud-card reveal" style="--i:{i}"><span class="num">{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></article>' for i, (t, d) in enumerate(protect))
-    machine = [("It listens", "Audio Analyze turns sound into numbers a knob can follow, so a picture can lean on a bassline without a single keyframe.", None),
-               ("It continues", "Predictive nodes such as Predictive Notes and Predictive Rhythm carry on a pattern you started. You keep what you like and patch away what you do not.", None),
-               ("It can use the same tools", "Patches are plain text, so an AI agent can read and write them. Headless rendering, a Python SDK and nine MCP tools give an agent the graph you work in. The person decides what stays.", ("developers.html", "For developers and agents"))]
-    mach = "\n".join(f'          <article class="aud-card reveal" style="--i:{i}"><span class="num">{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p>' + (f'<p><a class="inline" href="{l[0]}">{e(l[1])}</a></p>' if l else "") + "</article>" for i, (t, d, l) in enumerate(machine))
-    principles = [("Connection", "Anything patches into anything. This is the belief the rest is built on."), ("Live", "Anything that shows a value keeps moving: meters fall, waveforms scroll, knobs breathe."),
-                  ("Measured", "Motion follows the music. Every duration is a note value at the transport tempo: 125, 188, 333, 500 and 667 ms at 120 BPM."),
-                  ("Calm", "One accent colour, used once in a frame. Plain words, no hype, no exclamation marks."),
-                  ("Honest", "Speeds are measured and published on the benchmarks page, and the facts about each node are generated from the code."),
-                  ("Free", "Free to use and open source, on macOS, Windows and Linux, so the tools are not a privilege.")]
-    prin = "\n".join(f'          <li class="reveal" style="--i:{i}"><b>{e(t)}</b><span>{e(d)}</span></li>' for i, (t, d) in enumerate(principles))
-    springs = "".join(f'<button class="spring" type="button" data-spring="{s}" aria-label="Play the {s} spring"><span class="spring-name">{s}</span><span class="spring-track"><i class="spring-dot"></i></span><span class="spring-note">{n}</span></button>'
-                      for s, n in [("slab", "12.6% overshoot"), ("letter", "9.5%"), ("soft", "0.2%"), ("press", "none")])
-    faq = "\n".join(f'          <details class="faq-item"><summary>{e(q)}</summary><p>{e(a)}</p></details>' for q, a in FAQ)
+    bub = "".join(f'<button class="pb" type="button" data-id="{nid}" style="--i:{i}" aria-label="{e(mind)}">{ga.icon(ICONS[nid])}</button>' for i, (nid, x, y, mind, patch, ms, ps) in enumerate(NODES))
+    bub += f'<span class="pb pb-x" data-id="human" aria-hidden="true">{ga.icon("hand")}</span><span class="pb pb-x" data-id="machine" aria-hidden="true">{ga.icon("family-prediction")}</span>'
+    nav = "".join(f'<button class="pn" type="button" data-go="{i}" aria-label="{e(lab)}">{ga.icon(ic)}</button>' for i, (sid, ic, lab) in enumerate(SCENES))
+    who = "".join(f'<a class="pw" href="{s}.html" aria-label="{e(n)}">{ga.icon(ga.AUD_ICON[s])}</a>' for s, h, n, d in AUD)
+    ids = [n[0] for n in NODES]
+    edges = ",".join(f"{ids.index(a)}-{ids.index(b)}" for a, b in EDGES)
+    faq = "\n".join(f'<h2>{e(q)}</h2><p>{e(a)}</p>' for q, a in FAQ)
     return f'''
   <main>
-    <section class="ah">
-      <div class="container ah-grid">
-        <div class="ah-text">
-          <span class="blog-hand hand">why</span>
-          <h1 class="slab">Why Infinite exists</h1>
-          <p class="lead">Infinite is one canvas for pictures, sound and code, so an idea can travel from your head to the screen or the speakers without switching tools.</p>
-          <div class="aud-cta">
-            <a href="index.html#setup" class="btn btn-primary">Download Infinite</a>
-            <a href="#who" class="btn btn-ghost">Who it is for</a>
-          </div>
-          <ul class="facts"><li>Free and open source</li><li>macOS, Windows, Linux</li><li>A DAW for you</li></ul>
-        </div>
-        <div class="vstage">
-          <canvas data-shader="mind" aria-hidden="true"></canvas>
-          <span class="vstage-float"><img class="vstage-3d" src="assets/3d/logo_3d.webp" alt="The Infinite mark as a 3D object" width="700" height="394" decoding="async"></span>
-          <span class="vstage-tag">live shader · move the pointer</span>
-        </div>
+    <h1 class="ph-sr">Why Infinite exists</h1>
+    <section class="ph" id="journey" aria-label="A journey through the ideas behind Infinite" data-edges="{e(edges)}">
+      <div class="ph-stage">
+        <div class="ph-glow" aria-hidden="true"></div>
+        <svg class="ph-edges" aria-hidden="true"><g class="ph-lines"></g><circle class="ph-flow" r="5"/></svg>
+        <svg class="ph-loop" viewBox="-300 -80 600 160" aria-hidden="true" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="phg" x1="0" x2="1"><stop offset="0" stop-color="#F57F66"/><stop offset=".5" stop-color="#C7AFC0"/><stop offset="1" stop-color="#A9CDF1"/></linearGradient></defs><path class="ph-mark" d="" pathLength="1"/></svg>
+        <div class="ph-bubbles">{bub}</div>
+        <nav class="ph-nav" aria-label="Chapters">{nav}</nav>
+        <div class="ph-end"><div class="ph-who">{who}</div><a class="btn btn-primary ph-dl" href="index.html#setup">Download</a></div>
+        <span class="ph-hint" aria-hidden="true">{ga.icon("chevron-down")}</span>
       </div>
     </section>
-
-    <div class="container phil">
-      <section class="aud-section reveal" id="mission">
-        <div class="split">
-          <div class="split-text">
-            <span class="blog-hand hand">mission</span>
-            <h2>Creative liberation, through tools that stay out of the way</h2>
-            <div class="ptext">
-              <p>Making things should feel like thinking out loud. Too much creative software asks you to stop, change tool, export, import, and then remember what you were doing. Infinite exists to remove those stops.</p>
-              <p>The name is a promise about reach, not size. When connections are free, the number of things you can make has no obvious end.</p>
-              <p>It is free and open source, and it runs on macOS, Windows and Linux. A tool that frees people to make should not be a privilege.</p>
-            </div>
-          </div>
-          <blockquote class="pull"><p>Anything patches into anything.</p><ul><li>A sound moves a picture.</li><li>A picture moves a sound.</li><li>A line of code moves both.</li></ul><cite>The belief behind Infinite</cite></blockquote>
-        </div>
-      </section>
-
-      <section class="aud-section" id="who">
-        <h2>One canvas, many people</h2>
-        <p class="sec-sub">The same graph serves very different work. Pick the page that is closest to yours.</p>
-        <div class="who-grid">
-{who}
-        </div>
-      </section>
-
-      <section class="aud-section reveal" id="graph">
-        <div class="split">
-          <div class="split-text">
-            <h2>A graph, because ideas connect</h2>
-            <div class="ptext">
-              <p>A timeline puts your work in a line. A stack of menus puts it in a hierarchy. Thinking does neither: one idea leads to three others, and two of those meet again later. A patch is a map of exactly that. Each node does one job, each cable says what feeds what, and you can see the whole shape of what you are making at once.</p>
-              <p>A node graph is also a mind map. Brains are not patches, and we do not claim they are, but the comparison is useful: parts that do different jobs, joined by many connections, where the interesting results come from what talks to what.</p>
-              <p>Switch between the two views. The connections stay the same; only the names change.</p>
-            </div>
-          </div>
-          <figure class="mind" data-view="mind">
-            <div class="seg" role="group" aria-label="View"><button type="button" data-v="mind" aria-pressed="true">A mind</button><button type="button" data-v="patch" aria-pressed="false">A patch</button></div>
-            {mind_svg()}
-            <figcaption class="mind-cap" aria-live="polite">Tap or hover an idea to see what it connects to. One thought, in Ember, travels the connections.</figcaption>
-          </figure>
-        </div>
-      </section>
-
-      <section class="aud-section reveal" id="flow">
-        <div class="split flip">
-          <figure class="loop-fig">{loop_svg()}</figure>
-          <div class="split-text">
-            <h2>Flow, and what breaks it</h2>
-            <div class="ptext">
-              <p>Flow is the state where doing and thinking are the same act. It breaks easily: a dialog, a loading bar, a menu three levels deep, a sound that arrives late. A stream of ideas needs somewhere to land at the speed it arrives.</p>
-              <p>Infinite is designed around not breaking that stream, whether you are making music, an image or a live set. Four things are protected.</p>
-            </div>
-          </div>
-        </div>
-        <div class="aud-grid four">
-{prot}
-        </div>
-      </section>
-
-      <section class="aud-section reveal" id="machines">
-        <h2>The machine follows you</h2>
-        <p class="sec-sub">A good instrument does what the hand means and then gets out of the way. The machine listens, carries the connections and offers; the person decides.</p>
-        <div class="aud-grid">
-{mach}
-        </div>
-      </section>
-
-      <section class="aud-section reveal" id="faq">
-        <h2>Questions</h2>
-        <div class="faq">
+    <div class="ph-sr">
 {faq}
-        </div>
-      </section>
-
-      <section class="aud-section reveal cta-end">
-        <h2>Make the first thing</h2>
-        <p class="sec-sub">Download Infinite, open a library patch, and turn one knob.</p>
-        <div class="aud-cta"><a href="index.html#setup" class="btn btn-primary">Download Infinite</a><a href="library.html" class="btn btn-ghost">Open the library</a></div>
-      </section>
     </div>
 '''
 
@@ -224,7 +133,7 @@ def ld():
 
 
 def build():
-    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=afbb64ff">', extra_js='\n  <script src="philosophy.js?v=3" defer></script>')
+    return ga.shell("philosophy.html", TITLE, DESC, ld(), main_html(), extra_head='\n  <link rel="stylesheet" href="philosophy.css?v=501a4f1d">', extra_js='\n  <script src="philosophy.js?v=4" defer></script>')
 
 
 def main():
