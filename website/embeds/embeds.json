@@ -80,6 +80,11 @@
       "slug": "fractal-flame",
       "title": "Fractal Flame",
       "description": "A recursive, folded flame. Sound drives the fold and the glow."
+    },
+    {
+      "slug": "chladni-cymatics",
+      "title": "Chladni Cymatics",
+      "description": "Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry."
     }
   ]
 }

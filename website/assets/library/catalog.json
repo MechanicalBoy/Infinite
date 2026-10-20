@@ -1,7 +1,7 @@
 {
  "name": "Infinite Library",
  "url": "https://infinitedevices.org/library.html",
- "count": 60,
+ "count": 61,
  "items": [
   {
    "id": "first-sound",
@@ -722,6 +722,18 @@
    "file": "https://infinitedevices.org/assets/library/sketch/clifford-attractor.js",
    "preview": "https://infinitedevices.org/assets/library/previews/clifford-attractor.jpg",
    "page": "https://infinitedevices.org/library/clifford-attractor.html"
+  },
+  {
+   "id": "chladni-cymatics",
+   "name": "Chladni Cymatics",
+   "category": "Pixel",
+   "type": "Generator",
+   "description": "Resonant 2D standing wave nodal lines on a circular plate. Sound shifts the modal geometry between harmonics.",
+   "author": "",
+   "price": 0,
+   "file": "https://infinitedevices.org/assets/library/pixel/chladni-cymatics.field",
+   "preview": "https://infinitedevices.org/assets/library/previews/chladni-cymatics.jpg",
+   "page": "https://infinitedevices.org/library/chladni-cymatics.html"
   }
  ]
 }
