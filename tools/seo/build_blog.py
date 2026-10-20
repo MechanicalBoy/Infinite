@@ -165,7 +165,7 @@ def fmt_short_date(d):
 
 def card(p, i):
     img = p.get("image", "")
-    media_img = (f'<img src="../{e(thumb(img, 720))}" alt="" loading="lazy" decoding="async" width="720" height="450">' if img and not img.startswith("http")
+    media_img = (f'<img src="../{e(thumb(img, 1200))}" alt="" loading="lazy" decoding="async" width="1200" height="750">' if img and not img.startswith("http")
                  else f'<img src="{e(img)}" alt="" loading="lazy" width="1200" height="675">' if img
                  else '<div class="post-media-empty" aria-hidden="true"><span>infinite</span></div>')
     cat_label = e(CATS.get(p['category'], p['category'].capitalize()))
@@ -212,7 +212,7 @@ def build_index(posts, header, footer):
              "Notes on building and using Infinite, the free open-source DAW for visuals, music and code on one canvas. Tutorials, engineering write-ups and ideas.",
              BASE + "blog/", "assets/og-image.jpg", ld(blog_ld) + ld(crumbs))
     s = s.replace('blog.css?v=', 'blog.css?v=', 1)
-    s = re.sub(r'(<link rel="stylesheet" href="\.\./blog\.css\?v=[A-Za-z0-9]+">)', r'\1\n  <link rel="stylesheet" href="../deck.css?v=b7a9e016">', s, count=1)
+    s = re.sub(r'(<link rel="stylesheet" href="\.\./blog\.css\?v=[A-Za-z0-9]+">)', r'\1\n  <link rel="stylesheet" href="../deck.css?v=9861e99f">', s, count=1)
     s += f"""<body class="blog-page blog-index">
   {header}
 
@@ -220,7 +220,7 @@ def build_index(posts, header, footer):
     <section class="section blog-hero">
       <div class="container">
         <div class="blog-head-bar">
-          <h1 class="sr-only">Practice notes</h1>
+          <h1 class="deck-title">Blog</h1>
 
           <div class="blog-toolbar">
             <div class="blog-filter" id="blog-filter">
