@@ -1,5 +1,14 @@
 [
  {
+  "slug": "euclidean-rhythm-sequencer-algorithm",
+  "title": "Euclidean rhythm sequencer algorithms for modular music",
+  "description": "How to generate Euclidean rhythm sequencer algorithms using Bjorklund integer distribution, modular arithmetic, and audio-reactive triggers in Infinite.",
+  "date": "2026-10-20",
+  "updated": "2026-10-20",
+  "category": "creative",
+  "url": "https://infinitedevices.org/blog/euclidean-rhythm-sequencer-algorithm.html"
+ },
+ {
   "slug": "interactive-audio-reactive-webgl-embeds-for-websites",
   "title": "Embedding interactive audio-reactive WebGL visuals on any website",
   "description": "How to embed responsive, microphone-reactive 3D WebGL visualisers into portfolios, documentation, and blogs using self-contained HTML iframes.",
